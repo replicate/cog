@@ -1,0 +1,13 @@
+# Test stdin piped through cat and returned to stdout
+# Source: test_run.py::test_run_with_piped_stdin_returned_to_stdout
+
+stdin input.txt
+cog run cat
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.13"
+
+-- input.txt --
+hello world

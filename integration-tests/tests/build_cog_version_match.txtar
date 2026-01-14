@@ -1,0 +1,29 @@
+# Test that cog version in base image contains a version number
+# Source: test_build.py::test_cog_install_base_image
+#
+# This test verifies that when building with --use-cog-base-image,
+# the installed Python cog package has a valid version number.
+
+# Build using cog base image
+cog build -t $TEST_IMAGE --use-cog-base-image=true
+
+# Check that cog Python package reports a version (should match semver pattern)
+exec docker run $TEST_IMAGE python -c 'import cog; print(cog.__version__)'
+stdout '[0-9]+\.[0-9]+\.[0-9]+'
+
+# Check that the cog binary also reports a version (could be semver or "dev")
+cog --version
+stdout 'cog version'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
