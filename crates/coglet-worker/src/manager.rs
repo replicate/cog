@@ -275,6 +275,7 @@ impl Worker {
         let socket = self.transport.slot_socket(index)
             .ok_or_else(|| WorkerError::Protocol(format!("No socket for slot {}", slot)))?;
 
+        tracing::debug!(%slot, %id, "Dispatching prediction to slot");
         let request = SlotRequest::Predict { id, input };
         let mut writer = FramedWrite::new(socket, JsonCodec::<SlotRequest>::new());
         writer
@@ -301,6 +302,7 @@ impl Worker {
 
     /// Send cancel request for a slot.
     pub async fn cancel(&mut self, slot: SlotId) -> Result<(), WorkerError> {
+        tracing::debug!(%slot, "Sending cancel to worker");
         let request = ControlRequest::Cancel { slot };
         self.ctrl_writer
             .send(request)
@@ -310,6 +312,7 @@ impl Worker {
 
     /// Request graceful shutdown.
     pub async fn shutdown(&mut self) -> Result<(), WorkerError> {
+        tracing::info!("Sending shutdown to worker");
         self.ctrl_writer
             .send(ControlRequest::Shutdown)
             .await
