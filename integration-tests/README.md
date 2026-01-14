@@ -183,7 +183,7 @@ Use conditions to control when tests run based on environment. Conditions are ev
 
 | Condition | Evaluates to True When | Negated | Example Use Case |
 |-----------|------------------------|---------|------------------|
-| `[slow]` | `COG_TEST_FAST=1` is set (in fast mode) | `[!slow]` | Use `[slow] skip` to skip GPU tests, long builds, or slow framework installs when running in fast mode |
+| `[fast]` | `COG_TEST_FAST=1` is set (in fast mode) | `[!fast]` | Use `[fast] skip` to skip GPU tests, long builds, or slow framework installs when running in fast mode |
 | `[linux]` | Running on Linux | `[!linux]` | Tests requiring Linux-specific features |
 | `[amd64]` | Running on amd64/x86_64 architecture | `[!amd64]` | Tests requiring specific CPU architecture |
 | `[linux_amd64]` | Running on Linux AND amd64 | `[!linux_amd64]` | Tests requiring both Linux and amd64 (e.g., monobase images) |
@@ -193,7 +193,7 @@ Use conditions to control when tests run based on environment. Conditions are ev
 **Skip slow tests:**
 
 ```txtar
-[slow] skip 'requires GPU or long build time'
+[fast] skip 'requires GPU or long build time'
 
 cog build -t $TEST_IMAGE
 # ... rest of test
@@ -231,10 +231,10 @@ cog build -t $TEST_IMAGE --use-cog-base-image
 ### Condition Logic
 
 Conditions can be negated with `!`:
-- `[slow]` - True when `COG_TEST_FAST=1` is set (in fast mode)
-  - Use `[slow] skip` to skip a slow test when running in fast mode
-- `[!slow]` - True when `COG_TEST_FAST` is NOT set (in full test mode)
-  - Use `[!slow] skip` to only run a test in fast mode (rare)
+- `[fast]` - True when `COG_TEST_FAST=1` is set (in fast mode)
+  - Use `[fast] skip` to skip a slow test when running in fast mode
+- `[!fast]` - True when `COG_TEST_FAST` is NOT set (in full test mode)
+  - Use `[!fast] skip` to only run a test in fast mode (rare)
 - `[!linux]` - True when NOT on Linux
   - Use `[!linux] skip` to skip non-Linux tests
 - `[linux_amd64]` - True when on Linux AND amd64
@@ -243,7 +243,7 @@ Conditions can be negated with `!`:
 Multiple conditions can be used on separate lines:
 
 ```txtar
-[slow] skip 'requires long build time'
+[fast] skip 'requires long build time'
 [!linux] skip 'requires Linux'
 
 # Only runs on Linux when COG_TEST_FAST is not set
