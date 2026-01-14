@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rogpeppe/go-internal/testscript"
@@ -24,8 +26,9 @@ type Harness struct {
 	CogBinary string
 	// realHome is captured at creation time before testscript overrides HOME
 	realHome string
-	// serverProcs tracks background cog serve processes for cleanup
-	serverProcs map[*testscript.TestScript]*exec.Cmd
+	// serverProcs tracks background cog serve processes for cleanup, keyed by work directory
+	serverProcs   map[string]*exec.Cmd
+	serverProcsMu sync.Mutex
 }
 
 // New creates a new Harness, resolving the cog binary location.
@@ -37,7 +40,7 @@ func New() (*Harness, error) {
 	return &Harness{
 		CogBinary:   cogBinary,
 		realHome:    os.Getenv("HOME"),
-		serverProcs: make(map[*testscript.TestScript]*exec.Cmd),
+		serverProcs: make(map[string]*exec.Cmd),
 	}, nil
 }
 
@@ -213,12 +216,13 @@ func (h *Harness) Setup(env *testscript.Env) error {
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)
 
+	// Capture the work directory for this test (used as key for server tracking)
+	workDir := env.WorkDir
+
 	// Register cleanup to remove the Docker image and stop any servers after the test
 	env.Defer(func() {
-		// Stop any running servers
-		for ts := range h.serverProcs {
-			h.StopServer(ts)
-		}
+		// Stop the server for this specific test (if any)
+		h.stopServerByWorkDir(workDir)
 		removeDockerImage(imageName)
 	})
 
@@ -263,10 +267,15 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 		ts.Fatalf("serve command does not support negation")
 	}
 
+	workDir := ts.Getenv("WORK")
+
 	// Check if server is already running
-	if _, exists := h.serverProcs[ts]; exists {
+	h.serverProcsMu.Lock()
+	if _, exists := h.serverProcs[workDir]; exists {
+		h.serverProcsMu.Unlock()
 		ts.Fatalf("server already running")
 	}
+	h.serverProcsMu.Unlock()
 
 	// Allocate a random available port
 	port, err := allocatePort()
@@ -286,7 +295,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 
 	// Start the server process
 	cmd := exec.Command(h.CogBinary, expandedArgs...)
-	cmd.Dir = ts.Getenv("WORK")
+	cmd.Dir = workDir
 
 	// Build environment from testscript
 	var env []string
@@ -305,8 +314,10 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 		ts.Fatalf("failed to start server: %v", err)
 	}
 
-	// Store the process for cleanup
-	h.serverProcs[ts] = cmd
+	// Store the process for cleanup (keyed by work directory)
+	h.serverProcsMu.Lock()
+	h.serverProcs[workDir] = cmd
+	h.serverProcsMu.Unlock()
 
 	// Wait for server to be healthy
 	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
@@ -373,7 +384,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 			respBodyBuilder.Write(buf[:n])
 		}
 		if err != nil {
-			if err.Error() != "EOF" {
+			if !errors.Is(err, io.EOF) {
 				ts.Fatalf("curl: failed to read response: %v", err)
 			}
 			break
@@ -405,22 +416,30 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 
 // StopServer stops the background server process for a test script.
 func (h *Harness) StopServer(ts *testscript.TestScript) {
-	if cmd, exists := h.serverProcs[ts]; exists {
-		// Try graceful shutdown first
-		serverURL := ts.Getenv("SERVER_URL")
-		if serverURL != "" {
-			client := &http.Client{Timeout: 5 * time.Second}
-			client.Post(serverURL+"/shutdown", "application/json", nil) //nolint:errcheck
-			time.Sleep(100 * time.Millisecond)
-		}
+	workDir := ts.Getenv("WORK")
+	h.stopServerByWorkDir(workDir)
+}
 
-		// Force kill if still running
-		if cmd.Process != nil {
-			cmd.Process.Kill()
-		}
-		cmd.Wait()
-		delete(h.serverProcs, ts)
+// stopServerByWorkDir stops the server process associated with a work directory.
+func (h *Harness) stopServerByWorkDir(workDir string) {
+	h.serverProcsMu.Lock()
+	cmd, exists := h.serverProcs[workDir]
+	if !exists {
+		h.serverProcsMu.Unlock()
+		return
 	}
+	delete(h.serverProcs, workDir)
+	h.serverProcsMu.Unlock()
+
+	// Try graceful shutdown first via /shutdown endpoint
+	// Note: We don't have SERVER_URL here, so just force kill
+	// The graceful shutdown is attempted in stopServerWithURL when called from tests
+
+	// Force kill if still running
+	if cmd.Process != nil {
+		cmd.Process.Kill()
+	}
+	cmd.Wait()
 }
 
 // allocatePort finds an available TCP port.
@@ -642,7 +661,7 @@ func (h *Harness) cmdRetryCurl(ts *testscript.TestScript, neg bool, args []strin
 				respBodyBuilder.Write(buf[:n])
 			}
 			if readErr != nil {
-				if readErr.Error() != "EOF" {
+				if !errors.Is(readErr, io.EOF) {
 					ts.Fatalf("retry-curl: failed to read response: %v", readErr)
 				}
 				break
