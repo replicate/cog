@@ -2,7 +2,7 @@
 # Source: test_predict.py::test_predict_with_fast_build_with_local_image
 # Note: This test requires linux/amd64 architecture for monobase to work
 
-[slow] skip 'requires linux/amd64 for monobase build'
+[!linux_amd64] skip 'requires linux/amd64 for monobase build'
 
 # Build with localimage flag
 cog build -t $TEST_IMAGE --x-localimage
