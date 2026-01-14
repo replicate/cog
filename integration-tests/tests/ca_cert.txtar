@@ -1,0 +1,127 @@
+# Test CA certificate injection via COG_CA_CERT
+#
+# This test verifies that custom CA certificates can be injected into
+# cog-built images, allowing HTTPS connections to servers using those CAs.
+
+# Build the HTTPS test server helper
+exec go build -C $REPO_ROOT/test-helpers/https-server -o $WORK/https-server .
+
+# Start the HTTPS test server in background using the embedded certs
+exec $WORK/https-server --cert=$WORK/certs/server.crt --key=$WORK/certs/server.key --addr=:8443 &
+
+# Wait for the server to be ready
+exec sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do curl -ksf https://localhost:8443/ && exit 0; sleep 1; done; exit 1'
+
+# Build a minimal cog image
+cog build -t $TEST_IMAGE
+
+# ============================================
+# Test 1: Without CA cert, HTTPS should FAIL
+# ============================================
+# The container tries to curl the HTTPS server, which uses a self-signed cert.
+# Without the CA cert installed, this should fail with a certificate error.
+! docker-run $TEST_IMAGE curl --fail --max-time 5 https://host.docker.internal:8443/
+
+# ============================================
+# Test 2: With COG_CA_CERT, HTTPS should WORK
+# ============================================
+# Set the CA cert environment variable and rebuild
+env COG_CA_CERT=$WORK/certs/ca.crt
+
+cog build -t $TEST_IMAGE-with-ca
+
+# Now the HTTPS request should succeed because the CA cert is installed
+docker-run $TEST_IMAGE-with-ca curl --fail --max-time 5 https://host.docker.internal:8443/
+stdout 'OK'
+
+# Verify the environment variables are set correctly in the image
+docker-run $TEST_IMAGE-with-ca printenv SSL_CERT_FILE
+stdout '/etc/ssl/certs/ca-certificates.crt'
+
+docker-run $TEST_IMAGE-with-ca printenv REQUESTS_CA_BUNDLE
+stdout '/etc/ssl/certs/ca-certificates.crt'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+
+-- certs/ca.crt --
+-----BEGIN CERTIFICATE-----
+MIIDDTCCAfWgAwIBAgIUayiqAjIWvavCGAlFwU4CtOlDyjgwDQYJKoZIhvcNAQEL
+BQAwFjEUMBIGA1UEAwwLQ29nIFRlc3QgQ0EwHhcNMjYwMTE0MjAxMjE0WhcNMzYw
+MTEyMjAxMjE0WjAWMRQwEgYDVQQDDAtDb2cgVGVzdCBDQTCCASIwDQYJKoZIhvcN
+AQEBBQADggEPADCCAQoCggEBAOanC1VJPLjZrfW+hLL6FmDsnNokMU1rI8KCWjrE
+G2BLWOODSOECd1TWuJ84leiwOKuqj9FXlHzf0wr/D6MnQq39R4yDHKdbHYVuwRBu
+uP3M3M3LWkqs7FDcXRz2htEoSoFAfoNo85Paj8rpFYwzLsuS/DtxX2yM5ja1UAZk
+SNjrWF7DY97cT9njLF2QYFLj1unWAlVKoR90cYZZ72S4QIWsTQXBNN3GR/GC80AJ
+vaxC83n4fCN94vJgO4reMAlojFNlXSgqQkEf8z+SMcuzHNcV/FkNOArTXHaYLeaB
+yKChtDIlHV9W0+Ifsr+qYkWCN2Aznw5Yz5bhXrFLd+BcHUcCAwEAAaNTMFEwHQYD
+VR0OBBYEFDAHM6Rgg47dX2D0h7gBw365IZ6kMB8GA1UdIwQYMBaAFDAHM6Rgg47d
+X2D0h7gBw365IZ6kMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEB
+AMd8xNa6BO7nZBfpwrPaijLMawIkv37ngM2dkNFKPMV/Vl9urAAnCDtjFq/pCXnC
+lXvja0vy6nFmRITmetabLdhBHeDe8lcV1OHgyksy6AnRT6zLu/Jw3cx5/U3zLwM7
+zLZkSylhYaNVpqaTRyzdFbP5V8h/QjpL+ffYTQgNMtRT0PphV4AvAqpfJJ18Jtcc
+K4jIXYMUKU4ZkAT9JUSTXa2aefudzjMMr9GwvZGn/6ZpU3Y8H/DmmizoHNQRuC97
+uGnxwufInGQ9W20UnUam9May0tsea654Ebtjw7QDzvMTFIsMFVOjBVOXMuB8PAfL
+ATgc+2ToYm+V3Z1f46mm/4U=
+-----END CERTIFICATE-----
+
+-- certs/server.crt --
+-----BEGIN CERTIFICATE-----
+MIIDRzCCAi+gAwIBAgIUa+aDQvQpf7Sq+7foxZ7MNjJKcnIwDQYJKoZIhvcNAQEL
+BQAwFjEUMBIGA1UEAwwLQ29nIFRlc3QgQ0EwHhcNMjYwMTE0MjAxMjE5WhcNMzYw
+MTEyMjAxMjE5WjAfMR0wGwYDVQQDDBRob3N0LmRvY2tlci5pbnRlcm5hbDCCASIw
+DQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAJuuQyShcfUyXWhVzYGZ2UTo2Do1
+TfHFrcHLsXB2UvuMnH67x3h1ylLM2gmMnMipVFVTL6OAhZQi9BHiRRoCepMyFJKU
+RKxkXpIF6knfsmB3FsAcTKale3PUYrzTj63BCGZmnS768Drv9e48A2ZvsPTBkyuN
+kjTgC8tIDt5b8xKMRDFG5ZhBxC2+nNBoLBB4ujBF32dWcxGWkFUWsIyN3oH3MsQp
+ydO2FnOlc+bQI/hlanl+4CnL/TczOe5O906TL/oC8Wq5nYooGgfG2ZDfSpw7/Ver
+lE0nc4Sy8+d8XL2fNWgM9ISL2sCJ1DT8dZVufmda5MIo0UMCRzCmy0Q6aqcCAwEA
+AaOBgzCBgDA+BgNVHREENzA1ghRob3N0LmRvY2tlci5pbnRlcm5hbIIJbG9jYWxo
+b3N0ggxodHRwcy1zZXJ2ZXKHBH8AAAEwHQYDVR0OBBYEFK/uLPc1TpgjXzMTPCMJ
+Qjfx52+6MB8GA1UdIwQYMBaAFDAHM6Rgg47dX2D0h7gBw365IZ6kMA0GCSqGSIb3
+DQEBCwUAA4IBAQBYvP1G1bJM6tOVixEqpxWkGd6Ghr3J/R4hzJDKtMfO8O4FdlZJ
+FG9OaAXJqWmlXszXF2cD2IcdOeayR1oTDTyaId464Y5Fi5WDhaIOAuwlepvAwQod
+p1xXbbI6k2n60sSvaCOT9KWwM/zMda94awc2oBYWAaqAJWtRqR+sHnpIe5PmVQN/
+kMfugBZCt21v6tvOEyc94xU6XgqYbbAyZlrFL33KbDpOhnEQzq4F0fKcWit3STR1
+oyzlcWaFNysaNOBjxBflBMIKMnpg3DvcK8SUHqCDYjGZzodtC/7f7/I/1zkBvouN
+AdvFtZREbY0xv0tnHl0Afx46Z+hR9rPtjzWh
+-----END CERTIFICATE-----
+
+-- certs/server.key --
+-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCbrkMkoXH1Ml1o
+Vc2BmdlE6Ng6NU3xxa3By7FwdlL7jJx+u8d4dcpSzNoJjJzIqVRVUy+jgIWUIvQR
+4kUaAnqTMhSSlESsZF6SBepJ37JgdxbAHEympXtz1GK804+twQhmZp0u+vA67/Xu
+PANmb7D0wZMrjZI04AvLSA7eW/MSjEQxRuWYQcQtvpzQaCwQeLowRd9nVnMRlpBV
+FrCMjd6B9zLEKcnTthZzpXPm0CP4ZWp5fuApy/03MznuTvdOky/6AvFquZ2KKBoH
+xtmQ30qcO/1Xq5RNJ3OEsvPnfFy9nzVoDPSEi9rAidQ0/HWVbn5nWuTCKNFDAkcw
+pstEOmqnAgMBAAECggEAC+dIJP3fK8NdFwQwgW9VCIrRNaoruofF4GKFv7acY7V9
+pccP2msPPEODjGVe+4zO8PM6WkMSc6A0j0WAyRtVafnTTt3dXl0SShH/twROrEeO
+ysOfLMLMbK/ZmNyISN3QmZvQ+u2e/rKoWD3oeKWjnyNJ8HOTsU1MOY/Z6zCWpl1K
+pAiVVvDVvUzrenMLVHlbyHXPYOS+oktctVd57bCNnipG4b/i4pqw08LAkP26jSCm
+yIOg0r+RocN4GhhbmzP4Plmv0JCXhQposIDhC7KfbXEWaa3nFF2nfR5QPVUF5tht
+xLPVrBMac8oT2owQoerhrgCQLi3b4Lmdloz7TwEcQQKBgQDVrwajIW1z5W+HdUm6
+VcJf6+I9v4vL0EXPMSK4+XwLzTkC/RCz0wPfrRGlhdrMZ1wU9zCqFw1LCp+ixsMN
+tC3MWGncFY5TOVf+jqom3PTESC5O9AySRAqI1jE9BwnmDkLpQ5zkYZaF/MAg07px
+CW5r43EKGL5AW4Umv0OEuAEExwKBgQC6grMIz4IuWnZhj03DPRqSx4AymyqrzMjp
+kNzCb1Wz6iKFMeIIPC8Mz0iju9QBVofh8Lxj1Bdqbh3kN4NyfT8nII3i/6Cvb9Ol
+agMgTq1q5BgcSl4jliDbn1gCMq9MCJf8y+xXDQCLIKNaJidXQjQZn1XK/bV1IkPx
+lkuG6znLIQKBgEVcV+Ix4o5hJi+pEbKLTdnG/pwehek1hMN5ZpT2Xp6SEfR3YqmM
+UFCVpAm/hkMdNdWUW1aKvwThwOmcbQoQt2ECPfJziMxY68g0VOTiig0AhQ+Zxk7g
+CS9bn4X4t+zWKj//c3jqeGqrnU3KjFVOw2n/3NxzJaZMTs9B/E+jTqlXAoGBALKc
+QanZVvjfBulM3BJxrMYNqZZNBGM8HNeYM+E7z54ZRW+6opRyVjh1NUIfuNqDLGPS
+MAeF79qrk5KfGxGEIfttcJOHbDE17UBGsrG4xthLkU9eZKK9vb+07ApG0ZsFy896
+1l1TBUc3PVgym5AzxUMYVIetyZ1f8CMmZDPThighAoGBAIaoc0LvNVW9O9wT74dr
+y1ThnmpgeIfg+4yyfY3Eel5wnfdOJ+J9g0vfV+PH/2B45Jdkr82L+XjPipzP3tqP
+fQnfvBCfWXqiCV5yTK4OcVCicKNRj25Oq0vUAgSua8tE6hFaIp5hnmbLYiLIyOAO
+ng5irDkEC4tQl7D4WoX1Viye
+-----END PRIVATE KEY-----
