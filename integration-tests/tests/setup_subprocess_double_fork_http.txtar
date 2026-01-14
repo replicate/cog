@@ -57,6 +57,19 @@ class Predictor(BasePredictor):
 
         print(f"---> started background process pid={self.bg.pid}")
 
+        # Wait for HTTP server to be ready
+        import time
+        for i in range(30):
+            try:
+                requests.get("http://127.0.0.1:7777/ping", timeout=1)
+                print("---> background HTTP server is ready")
+                break
+            except Exception:
+                print(f"---> waiting for HTTP server ({i+1}/30)")
+                time.sleep(0.5)
+        else:
+            raise RuntimeError("Background HTTP server failed to start")
+
     def predict(self, s: str) -> str:
         status = self.bg.poll()
 
