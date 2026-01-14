@@ -1,0 +1,57 @@
+# Test predict with many input types against pre-built image
+# Source: test_predict.py::test_predict_many_inputs_with_existing_image
+#
+# This test builds an image first, then runs predictions against that image
+# from a different directory (simulating using a pre-built image).
+
+# Build the image first
+cog build -t $TEST_IMAGE
+
+# Run prediction against the built image with various input types
+# Using @ syntax for file inputs
+cog predict $TEST_IMAGE -i no_default=hello -i path=@path.txt -i image=@image.jpg -i choices=foo -i int_choices=3
+stdout 'hello default 20 world jpg foo 6'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input, Path
+
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        no_default: str,
+        default_without_input: str = "default",
+        input_with_default: int = Input(default=10),
+        path: Path = Input(description="Some path"),
+        image: Path = Input(description="Some path"),
+        choices: str = Input(choices=["foo", "bar"]),
+        int_choices: int = Input(description="hello", choices=[3, 4, 5]),
+    ) -> str:
+        with path.open() as f:
+            path_contents = f.read().strip()
+        image_extension = str(image).split(".")[-1]
+        return (
+            no_default
+            + " "
+            + default_without_input
+            + " "
+            + str(input_with_default * 2)
+            + " "
+            + path_contents
+            + " "
+            + image_extension
+            + " "
+            + choices
+            + " "
+            + str(int_choices * 2)
+        )
+
+-- path.txt --
+world
+-- image.jpg --
+fake image content

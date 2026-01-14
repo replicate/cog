@@ -1,0 +1,25 @@
+# Test that image: option in cog.yaml names the built image
+# Source: test_build.py::test_build_names_uses_image_option_in_cog_yaml
+
+# Build without explicit -t flag, should use image from cog.yaml
+cog build
+
+# Verify image exists with the name from cog.yaml
+exec docker images --format '{{.Repository}}'
+stdout 'cog-test-image-option'
+
+# Cleanup the custom image
+exec docker rmi cog-test-image-option
+
+-- cog.yaml --
+image: cog-test-image-option
+build:
+  python_version: "3.12"
+predict: predict.py:Predictor
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text

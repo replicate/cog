@@ -1,0 +1,29 @@
+# Test cog run with fast build mode enabled
+# Source: test_run.py::test_run_fast_build
+
+[slow] skip 'requires torch installation'
+
+cog run echo hello world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_requirements: requirements.txt
+  system_packages:
+    - "git"
+  fast: true
+predict: "predict.py:Predictor"
+
+-- requirements.txt --
+torch==2.5.0
+beautifulsoup4==4.12.3
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    test_inputs = {"s": "world"}
+
+    def predict(self, s: str) -> str:
+        return "hello " + s

@@ -1,0 +1,16 @@
+# Test that cog.yaml is discovered from subdirectories
+# Source: test_config.py::test_config
+
+# Create a subdirectory structure
+mkdir some
+mkdir some/sub
+mkdir some/sub/dir
+
+# Run cog from a subdirectory - it should find cog.yaml in parent
+cd some/sub/dir
+cog run echo hello world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"

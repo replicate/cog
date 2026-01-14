@@ -1,0 +1,37 @@
+# Test that OpenAPI schema is embedded in image labels
+# Source: test_build.py::test_build_with_model
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Check the openapi_schema label exists and contains expected schema structure
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout '"title":"Input"'
+stdout '"required":\["text","path"\]'
+stdout '"text":'
+stdout '"path":'
+stdout '"type":"string"'
+stdout '"format":"uri"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: predict.py:Predictor
+
+-- predict.py --
+import tempfile
+
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def setup(self):
+        self.foo = "foo"
+
+    def predict(self, text: str, path: Path) -> Path:
+        with open(path) as f:
+            output = self.foo + text + f.read()
+        tmpdir = Path(tempfile.mkdtemp())
+        with open(tmpdir / "output.txt", "w") as fh:
+            fh.write(output)
+        return tmpdir / "output.txt"
