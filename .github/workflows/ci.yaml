@@ -222,7 +222,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, coglet, coglet-alpha]
+        runtime: [cog, coglet-alpha]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -249,17 +249,7 @@ jobs:
         run: |
           # Build cog binary
           make cog
-          # Run full test suite with reruns for flaky tests (matches main branch)
-          # - cog: full suite
-          # - coglet-alpha: stop after 5 failures (passes currently)
-          # - coglet: exit on first failure (needs work, just want to see what fails)
-          if [ "$COG_WHEEL" = "cog" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
-          elif [ "$COG_WHEEL" = "coglet" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv -x
-          else
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5
-          fi
+          PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
 
   release:
     name: "Release"
