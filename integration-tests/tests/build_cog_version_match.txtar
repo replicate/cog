@@ -8,8 +8,116 @@
 cog build -t $TEST_IMAGE --use-cog-base-image=true
 
 # Compare the embedded version label with the Python package version inside the image
-exec python3 -c 'import os,re,subprocess; image=os.environ["TEST_IMAGE"]; label=subprocess.check_output(["docker","inspect",image,"--format={{index .Config.Labels \"run.cog.version\"}}"], text=True).strip(); package=subprocess.check_output(["docker","run","--rm","-t",image,"python","-c","import cog; print(cog.__version__)"] , text=True).strip(); pattern=re.compile(r"^\d+\.\d+\.\d+"); assert pattern.search(package), f"Invalid package version: {package}"; assert label == "dev" or pattern.search(label), f"Invalid label version: {label}"; assert label == "dev" or label == package, f"Label version {label} != package version {package}"; print(package)'
+exec python3 check_versions.py
 stdout '[0-9]+\.[0-9]+\.[0-9]+'
+
+-- check_versions.py --
+import os
+import re
+import subprocess
+
+# SemVer pattern from https://semver.org/
+SEMVER_PATTERN = r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
+
+# PEP 440 pattern from packaging.version.VERSION_PATTERN
+PEP440_PATTERN = r"""
+    v?
+    (?:
+        (?:(?P<epoch>[0-9]+)!)?                           # epoch
+        (?P<release>[0-9]+(?:\.[0-9]+)*)                  # release segment
+        (?P<pre>                                           # pre-release
+            [-_\.]?
+            (?P<pre_l>(a|alpha|b|beta|c|rc))
+            [-_\.]?
+            (?P<pre_n>[0-9]+)?
+        )?
+        (?P<post>                                          # post release
+            (?:-(?P<post_n1>[0-9]+))
+            |
+            (?:
+                [-_\.]?
+                (?P<post_l>post|rev|r)
+                [-_\.]?
+                (?P<post_n2>[0-9]+)?
+            )
+        )?
+        (?P<dev>                                           # dev release
+            [-_\.]?
+            (?P<dev_l>dev)
+            [-_\.]?
+            (?P<dev_n>[0-9]+)?
+        )?
+    )
+    (?:\+(?P<local>[a-z0-9]+(?:[-_\.][a-z0-9]+)*))?       # local version
+"""
+
+def assert_versions_match(semver_version, pep440_version):
+    semver_re = re.compile(SEMVER_PATTERN)
+    pep440_re = re.compile(PEP440_PATTERN, re.VERBOSE | re.IGNORECASE)
+
+    semver_match = semver_re.match(semver_version)
+    pep440_match = pep440_re.match(pep440_version)
+
+    assert semver_match, f"Invalid semver version: {semver_version}"
+    assert pep440_match, f"Invalid PEP 440 version: {pep440_version}"
+
+    semver_groups = semver_match.groupdict()
+    pep440_groups = pep440_match.groupdict()
+
+    semver_release = f"{semver_groups['major']}.{semver_groups['minor']}.{semver_groups['patch']}"
+
+    # Check base release version
+    assert semver_release == pep440_groups["release"], (
+        f"Release versions do not match: {semver_release} != {pep440_groups['release']}"
+    )
+
+    # Check prerelease status
+    semver_pre = semver_groups["prerelease"]
+    pep440_pre = pep440_groups["pre"] or pep440_groups["dev"]
+
+    assert bool(semver_pre) == bool(pep440_pre), "Pre-release status does not match"
+
+    if semver_pre:
+        if semver_pre.startswith("alpha"):
+            assert pep440_groups["pre_l"] == "a", "Alpha pre-release status does not match"
+            assert not pep440_groups["dev"], "Semver pre-release cannot also be a PEP440 dev build"
+
+        if semver_pre.startswith("beta"):
+            assert pep440_groups["pre_l"] == "b", "Beta pre-release status does not match"
+            assert not pep440_groups["dev"], "Semver pre-release cannot also be a PEP440 dev build"
+
+        if semver_pre.startswith("rc"):
+            assert pep440_groups["pre_l"] == "rc", "Release candidate pre-release status does not match"
+            assert not pep440_groups["dev"], "Semver pre-release cannot also be a PEP440 dev build"
+
+        if semver_pre.startswith("dev"):
+            assert pep440_groups["dev_l"] == "dev", "Dev build status does not match"
+
+    if pep440_groups["local"] is not None and semver_groups["buildmetadata"] is not None:
+        assert pep440_groups["local"].startswith(semver_groups["buildmetadata"]), (
+            f"Local/build metadata component does not match: {semver_groups['buildmetadata']} != {pep440_groups['local']}"
+        )
+
+image = os.environ["TEST_IMAGE"]
+label = subprocess.check_output(
+    ["docker", "inspect", image, "--format={{index .Config.Labels \"run.cog.version\"}}"],
+    text=True
+).strip()
+package = subprocess.check_output(
+    ["docker", "run", "--rm", "-t", image, "python", "-c", "import cog; print(cog.__version__)"],
+    text=True
+).strip()
+
+# Validate package version format
+pattern = re.compile(r"^\d+\.\d+\.\d+")
+assert pattern.search(package), f"Invalid package version: {package}"
+
+# If label is "dev", skip version matching (special dev builds)
+if label != "dev":
+    assert pattern.search(label), f"Invalid label version: {label}"
+    assert_versions_match(label, package)
+
+print(package)
 
 -- cog.yaml --
 build:
