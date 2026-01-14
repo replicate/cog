@@ -13,21 +13,20 @@
 //!
 //! Communication uses LengthDelimitedCodec with serde_json.
 
-mod codec;
 mod manager;
-mod protocol;
-mod transport;
 mod worker;
 
-pub use codec::JsonCodec;
 pub use manager::{SpawnConfig, Worker, WorkerError};
-pub use protocol::{
-    ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
-};
-pub use transport::{
-    ChildTransportInfo, NamedSocketTransport, SlotTransport, TRANSPORT_INFO_ENV, connect_transport,
-    create_transport, get_transport_info_from_env,
-};
 pub use worker::{
     PredictHandler, PredictResult, SetupLogHook, SlotSender, WorkerConfig, run_worker,
+};
+
+// Re-export bridge types for backward compatibility
+pub use coglet_bridge::codec::JsonCodec;
+pub use coglet_bridge::protocol::{
+    ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
+};
+pub use coglet_bridge::transport::{
+    ChildTransportInfo, NamedSocketTransport, SlotTransport, TRANSPORT_INFO_ENV, connect_transport,
+    create_transport, get_transport_info_from_env,
 };

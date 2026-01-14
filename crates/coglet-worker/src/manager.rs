@@ -16,9 +16,9 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 
 use std::collections::HashMap;
 
-use crate::codec::JsonCodec;
-use crate::protocol::{ControlRequest, ControlResponse, SlotId, SlotRequest, SlotResponse};
-use crate::transport::{SlotTransport, TRANSPORT_INFO_ENV, create_transport};
+use coglet_bridge::codec::JsonCodec;
+use coglet_bridge::protocol::{ControlRequest, ControlResponse, SlotId, SlotRequest, SlotResponse};
+use coglet_bridge::transport::{SlotTransport, TRANSPORT_INFO_ENV, create_transport};
 
 /// Error from worker operations.
 #[derive(Debug, thiserror::Error)]

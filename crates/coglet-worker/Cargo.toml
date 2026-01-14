@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 async-trait = "0.1.89"
-bytes = "1.11"
+coglet-bridge.workspace = true
 futures = "0.3.31"
 serde.workspace = true
 serde_json.workspace = true
@@ -14,7 +14,6 @@ tokio.workspace = true
 tokio-util = { workspace = true, features = ["codec"] }
 thiserror.workspace = true
 tracing.workspace = true
-uuid.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.30.1", features = ["signal"] }

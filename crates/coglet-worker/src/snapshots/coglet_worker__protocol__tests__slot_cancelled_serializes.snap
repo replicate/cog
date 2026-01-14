@@ -1,9 +1,0 @@
----
-source: coglet-worker/src/protocol.rs
-assertion_line: 242
-expression: resp
----
-{
-  "type": "cancelled",
-  "id": "pred_123"
-}

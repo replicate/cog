@@ -1,9 +1,0 @@
----
-source: coglet-worker/src/protocol.rs
-assertion_line: 215
-expression: resp
----
-{
-  "type": "output",
-  "output": "chunk 1"
-}

@@ -255,7 +255,7 @@ name = "coglet-worker"
 version = "0.1.1"
 dependencies = [
  "async-trait",
- "bytes",
+ "coglet-bridge",
  "futures",
  "insta",
  "nix",
@@ -265,7 +265,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "uuid",
 ]
 
 [[package]]

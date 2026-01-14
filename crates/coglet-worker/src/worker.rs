@@ -16,11 +16,11 @@ use tokio::io::{stdin, stdout};
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
-use crate::codec::JsonCodec;
-use crate::protocol::{
+use coglet_bridge::codec::JsonCodec;
+use coglet_bridge::protocol::{
     ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
-use crate::transport::{connect_transport, get_transport_info_from_env};
+use coglet_bridge::transport::{connect_transport, get_transport_info_from_env};
 
 /// Type alias for slot response writers (reduces type complexity).
 type SlotWriter =
