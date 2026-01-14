@@ -453,7 +453,7 @@ fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyRes
 
     // Run worker event loop
     // IMPORTANT: Release the GIL before blocking, so spawned tasks can acquire it
-    py.allow_threads(|| {
+    py.detach(|| {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 

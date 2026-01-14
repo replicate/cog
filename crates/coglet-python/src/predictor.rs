@@ -562,21 +562,25 @@ impl PythonPredictor {
         })
     }
 
-    /// Worker mode async predict - runs synchronously via asyncio.run().
+    /// Worker mode async predict - submits to shared event loop.
     ///
-    /// Use this in worker subprocess where we don't need true async concurrency
-    /// (the worker handles one request at a time anyway). Logs flow through
-    /// SlotLogWriter - streamed via slot socket, accumulated by parent.
-    pub fn predict_async_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
+    /// Uses run_coroutine_threadsafe to submit the coroutine to the provided event loop.
+    /// Returns the concurrent.futures.Future for cancellation support.
+    /// Caller should block on future.result() to get the result.
+    ///
+    /// Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
+    pub fn predict_async_worker(
+        &self,
+        input: serde_json::Value,
+        event_loop: &Py<PyAny>,
+    ) -> Result<(Py<PyAny>, bool), PredictionError> {
+        // Returns (future, is_async_gen) - caller will block on future.result()
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;
             let asyncio = py.import("asyncio").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import asyncio: {}", e))
-            })?;
-            let types_module = py.import("types").map_err(|e| {
-                PredictionError::Failed(format!("Failed to import types module: {}", e))
             })?;
 
             let input_str = serde_json::to_string(&input)
@@ -593,8 +597,6 @@ impl PythonPredictor {
             let input_dict = self.input_processor.prepare(py, raw_input_dict).map_err(|e| {
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
-
-            // Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
 
             // Call predict - returns coroutine
             let instance = self.instance.bind(py);
@@ -633,81 +635,98 @@ async def _collect_async_gen(agen):
                 coro
             };
 
-            // Run coroutine synchronously
-            let result = asyncio.call_method1("run", (&coro,)).map_err(|e| {
-                if e.to_string().contains("CancelledError") {
-                    return PredictionError::Cancelled;
-                }
-                PredictionError::Failed(format!("Async prediction failed: {}", e))
-            })?;
+            // Submit coroutine to shared event loop via run_coroutine_threadsafe
+            let future = asyncio
+                .call_method1("run_coroutine_threadsafe", (&coro, event_loop.bind(py)))
+                .map_err(|e| PredictionError::Failed(format!("Failed to submit coroutine: {}", e)))?;
 
-            // Process output
-            let output = if self.is_async_gen {
-                // Result is a list
-                let mut outputs = Vec::new();
-                if let Ok(list) = result.extract::<Vec<Bound<'_, PyAny>>>() {
-                    for item in list {
-                        let processed = output::process_output_item(py, &item).map_err(|e| {
-                            PredictionError::Failed(format!("Failed to process output item: {}", e))
-                        })?;
-                        let item_str: String = json_module
-                            .call_method1("dumps", (&processed,))
-                            .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
-                            .extract()
-                            .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
-                        let item_json: serde_json::Value = serde_json::from_str(&item_str)
-                            .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
-                        outputs.push(item_json);
-                    }
-                }
-                PredictionOutput::Stream(outputs)
-            } else {
-                // Check if result is a generator (sync generator from async predict)
-                let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
-                    PredictionError::Failed(format!("Failed to get GeneratorType: {}", e))
-                })?;
-                let is_generator: bool = result.is_instance(&generator_type).unwrap_or(false);
+            Ok((future.unbind(), self.is_async_gen))
+        })
+    }
 
-                if is_generator {
-                    let mut outputs = Vec::new();
-                    let iter = result.try_iter().map_err(|e| {
-                        PredictionError::Failed(format!("Failed to iterate generator: {}", e))
+    /// Process the result from an async prediction future.
+    ///
+    /// Call this after future.result() returns to convert the Python result
+    /// to a PredictionResult.
+    pub fn process_async_result(
+        &self,
+        py: Python<'_>,
+        result: &Bound<'_, PyAny>,
+        is_async_gen: bool,
+    ) -> Result<PredictionResult, PredictionError> {
+        let json_module = py.import("json").map_err(|e| {
+            PredictionError::Failed(format!("Failed to import json module: {}", e))
+        })?;
+        let types_module = py.import("types").map_err(|e| {
+            PredictionError::Failed(format!("Failed to import types module: {}", e))
+        })?;
+
+        // Process output
+        let output = if is_async_gen {
+            // Result is a list
+            let mut outputs = Vec::new();
+            if let Ok(list) = result.extract::<Vec<Bound<'_, PyAny>>>() {
+                for item in list {
+                    let processed = output::process_output_item(py, &item).map_err(|e| {
+                        PredictionError::Failed(format!("Failed to process output item: {}", e))
                     })?;
-                    for item in iter {
-                        let item = item.map_err(|e| {
-                            PredictionError::Failed(format!("Generator iteration error: {}", e))
-                        })?;
-                        let processed = output::process_output_item(py, &item).map_err(|e| {
-                            PredictionError::Failed(format!("Failed to process output item: {}", e))
-                        })?;
-                        let item_str: String = json_module
-                            .call_method1("dumps", (&processed,))
-                            .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
-                            .extract()
-                            .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
-                        let item_json: serde_json::Value = serde_json::from_str(&item_str)
-                            .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
-                        outputs.push(item_json);
-                    }
-                    PredictionOutput::Stream(outputs)
-                } else {
-                    let processed = output::process_output(py, &result, None).map_err(|e| {
-                        PredictionError::Failed(format!("Failed to process output: {}", e))
-                    })?;
-                    let result_str: String = json_module
+                    let item_str: String = json_module
                         .call_method1("dumps", (&processed,))
                         .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
                         .extract()
                         .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
-                    let output_json: serde_json::Value = serde_json::from_str(&result_str)
+                    let item_json: serde_json::Value = serde_json::from_str(&item_str)
                         .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
-                    PredictionOutput::Single(output_json)
+                    outputs.push(item_json);
                 }
-            };
+            }
+            PredictionOutput::Stream(outputs)
+        } else {
+            // Check if result is a generator (sync generator from async predict)
+            let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
+                PredictionError::Failed(format!("Failed to get GeneratorType: {}", e))
+            })?;
+            let is_generator: bool = result.is_instance(&generator_type).unwrap_or(false);
 
-            // Logs already streamed via SlotLogWriter, accumulated by parent
-            Ok(PredictionResult { output, predict_time: None, logs: String::new() })
-        })
+            if is_generator {
+                let mut outputs = Vec::new();
+                let iter = result.try_iter().map_err(|e| {
+                    PredictionError::Failed(format!("Failed to iterate generator: {}", e))
+                })?;
+                for item in iter {
+                    let item = item.map_err(|e| {
+                        PredictionError::Failed(format!("Generator iteration error: {}", e))
+                    })?;
+                    let processed = output::process_output_item(py, &item).map_err(|e| {
+                        PredictionError::Failed(format!("Failed to process output item: {}", e))
+                    })?;
+                    let item_str: String = json_module
+                        .call_method1("dumps", (&processed,))
+                        .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
+                        .extract()
+                        .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
+                    let item_json: serde_json::Value = serde_json::from_str(&item_str)
+                        .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
+                    outputs.push(item_json);
+                }
+                PredictionOutput::Stream(outputs)
+            } else {
+                let processed = output::process_output(py, result, None).map_err(|e| {
+                    PredictionError::Failed(format!("Failed to process output: {}", e))
+                })?;
+                let result_str: String = json_module
+                    .call_method1("dumps", (&processed,))
+                    .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
+                    .extract()
+                    .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
+                let output_json: serde_json::Value = serde_json::from_str(&result_str)
+                    .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
+                PredictionOutput::Single(output_json)
+            }
+        };
+
+        // Logs already streamed via SlotLogWriter, accumulated by parent
+        Ok(PredictionResult { output, predict_time: None, logs: String::new() })
     }
 
     /// Worker mode train - captures stdout/stderr and returns them as logs.
@@ -814,21 +833,27 @@ async def _collect_async_gen(agen):
         })
     }
 
-    /// Worker mode async train - runs synchronously via asyncio.run().
+    /// Worker mode async train - submits to shared event loop.
     ///
-    /// Use this in worker subprocess where we don't need true async concurrency
-    /// (the worker handles one request at a time anyway). Logs flow through
-    /// SlotLogWriter - streamed via slot socket, accumulated by parent.
-    pub fn train_async_worker(&self, input: serde_json::Value) -> Result<PredictionResult, PredictionError> {
+    /// Uses run_coroutine_threadsafe to submit the coroutine to the provided event loop.
+    /// Returns the concurrent.futures.Future for cancellation support.
+    /// Caller should block on future.result() to get the result.
+    ///
+    /// Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
+    pub fn train_async_worker(
+        &self,
+        input: serde_json::Value,
+        event_loop: &Py<PyAny>,
+    ) -> Result<(Py<PyAny>, bool), PredictionError> {
+        // Returns (future, is_async_gen) - caller will block on future.result()
+        // Note: For train, we use is_train_async_gen (if we add it) or assume false for now
+        // since async generator training is rare.
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;
             let asyncio = py.import("asyncio").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import asyncio: {}", e))
-            })?;
-            let types_module = py.import("types").map_err(|e| {
-                PredictionError::Failed(format!("Failed to import types module: {}", e))
             })?;
 
             let input_str = serde_json::to_string(&input)
@@ -846,8 +871,6 @@ async def _collect_async_gen(agen):
                 PredictionError::InvalidInput(format!("Input validation failed: {}", e))
             })?;
 
-            // Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
-
             // Call train - returns coroutine
             // For standalone functions, call directly; for classes, call .train() method
             let instance = self.instance.bind(py);
@@ -857,58 +880,13 @@ async def _collect_async_gen(agen):
                 instance.call_method("train", (), Some(&input_dict))
             }.map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
 
-            // Run coroutine synchronously
-            let result = asyncio.call_method1("run", (&coro,)).map_err(|e| {
-                if e.to_string().contains("CancelledError") {
-                    return PredictionError::Cancelled;
-                }
-                PredictionError::Failed(format!("Async training failed: {}", e))
-            })?;
+            // Submit coroutine to shared event loop via run_coroutine_threadsafe
+            let future = asyncio
+                .call_method1("run_coroutine_threadsafe", (&coro, event_loop.bind(py)))
+                .map_err(|e| PredictionError::Failed(format!("Failed to submit coroutine: {}", e)))?;
 
-            // Process output - check if it's a generator
-            let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
-                PredictionError::Failed(format!("Failed to get GeneratorType: {}", e))
-            })?;
-            let is_generator: bool = result.is_instance(&generator_type).unwrap_or(false);
-
-            let output = if is_generator {
-                let mut outputs = Vec::new();
-                let iter = result.try_iter().map_err(|e| {
-                    PredictionError::Failed(format!("Failed to iterate generator: {}", e))
-                })?;
-                for item in iter {
-                    let item = item.map_err(|e| {
-                        PredictionError::Failed(format!("Generator iteration error: {}", e))
-                    })?;
-                    let processed = output::process_output_item(py, &item).map_err(|e| {
-                        PredictionError::Failed(format!("Failed to process output item: {}", e))
-                    })?;
-                    let item_str: String = json_module
-                        .call_method1("dumps", (&processed,))
-                        .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
-                        .extract()
-                        .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
-                    let item_json: serde_json::Value = serde_json::from_str(&item_str)
-                        .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
-                    outputs.push(item_json);
-                }
-                PredictionOutput::Stream(outputs)
-            } else {
-                let processed = output::process_output(py, &result, None).map_err(|e| {
-                    PredictionError::Failed(format!("Failed to process output: {}", e))
-                })?;
-                let result_str: String = json_module
-                    .call_method1("dumps", (&processed,))
-                    .map_err(|e| PredictionError::Failed(format!("Failed to serialize: {}", e)))?
-                    .extract()
-                    .map_err(|e| PredictionError::Failed(format!("Failed to extract: {}", e)))?;
-                let output_json: serde_json::Value = serde_json::from_str(&result_str)
-                    .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
-                PredictionOutput::Single(output_json)
-            };
-
-            // Logs already streamed via SlotLogWriter, accumulated by parent
-            Ok(PredictionResult { output, predict_time: None, logs: String::new() })
+            // Train doesn't typically use async generators, but we return false for consistency
+            Ok((future.unbind(), false))
         })
     }
 }

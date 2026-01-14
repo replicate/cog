@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 use pyo3::prelude::*;
 
@@ -17,6 +18,8 @@ struct SlotState {
     in_progress: bool,
     /// Whether the current prediction is async (for cancel routing).
     is_async: bool,
+    /// For async predictions: the concurrent.futures.Future (for cancellation).
+    async_future: Option<Py<PyAny>>,
 }
 
 impl Default for SlotState {
@@ -25,6 +28,7 @@ impl Default for SlotState {
             cancelled: false,
             in_progress: false,
             is_async: false,
+            async_future: None,
         }
     }
 }
@@ -47,16 +51,23 @@ pub struct PythonPredictHandler {
     /// If true, predict() calls train() instead of predict().
     /// BUG: cog mainline always sets this to false, even for training routes.
     is_train: bool,
+    /// Shared asyncio event loop for async predictions (runs in dedicated thread).
+    async_loop: Mutex<Option<Py<PyAny>>>,
+    /// Handle to the asyncio loop thread for joining on shutdown.
+    async_thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl PythonPredictHandler {
     /// Create a handler in prediction mode.
     pub fn new(predictor_ref: String) -> Self {
+        let (loop_obj, thread) = Self::init_async_loop();
         Self {
             predictor_ref,
             predictor: Mutex::new(None),
             slots: Mutex::new(HashMap::new()),
             is_train: false,
+            async_loop: Mutex::new(Some(loop_obj)),
+            async_thread: Mutex::new(Some(thread)),
         }
     }
 
@@ -66,12 +77,47 @@ impl PythonPredictHandler {
     /// Cog mainline's training routes incorrectly use a predict-mode worker.
     #[allow(dead_code)]
     pub fn new_train(predictor_ref: String) -> Self {
+        let (loop_obj, thread) = Self::init_async_loop();
         Self {
             predictor_ref,
             predictor: Mutex::new(None),
             slots: Mutex::new(HashMap::new()),
             is_train: true,
+            async_loop: Mutex::new(Some(loop_obj)),
+            async_thread: Mutex::new(Some(thread)),
         }
+    }
+
+    /// Initialize the shared asyncio event loop in a dedicated thread.
+    fn init_async_loop() -> (Py<PyAny>, JoinHandle<()>) {
+        Python::attach(|py| {
+            let asyncio = py.import("asyncio").expect("Failed to import asyncio");
+            let loop_obj = asyncio
+                .call_method0("new_event_loop")
+                .expect("Failed to create event loop");
+            
+            // Clone for the thread
+            let loop_for_thread = loop_obj.clone().unbind();
+            let loop_result = loop_obj.unbind();
+            
+            // Spawn thread running loop.run_forever()
+            let thread = std::thread::spawn(move || {
+                Python::attach(|py| {
+                    let loop_ref = loop_for_thread.bind(py);
+                    let asyncio = py.import("asyncio").expect("Failed to import asyncio in loop thread");
+                    asyncio
+                        .call_method1("set_event_loop", (loop_ref,))
+                        .expect("Failed to set event loop");
+                    tracing::debug!("Asyncio event loop thread starting");
+                    if let Err(e) = loop_ref.call_method0("run_forever") {
+                        tracing::error!(error = %e, "Asyncio event loop error");
+                    }
+                    tracing::debug!("Asyncio event loop thread exiting");
+                });
+            });
+            
+            (loop_result, thread)
+        })
     }
 
     /// Check and clear the cancelled flag for a slot.
@@ -98,9 +144,50 @@ impl PythonPredictHandler {
         if let Some(state) = slots.get_mut(&slot) {
             state.in_progress = false;
             state.is_async = false;
+            state.async_future = None;
         }
-        
+    }
 
+    /// Store the async future for a slot (for cancellation).
+    fn set_async_future(&self, slot: SlotId, future: Py<PyAny>) {
+        let mut slots = self.slots.lock().unwrap();
+        if let Some(state) = slots.get_mut(&slot) {
+            state.async_future = Some(future);
+        }
+    }
+
+    /// Cancel an async prediction using future.cancel().
+    /// Returns true if cancellation was requested, false if no future found.
+    fn cancel_async_future(&self, slot: SlotId) -> bool {
+        Python::attach(|py| {
+            let future = {
+                let slots = self.slots.lock().unwrap();
+                slots.get(&slot).and_then(|s| s.async_future.as_ref().map(|f| f.clone_ref(py)))
+            };
+            
+            if let Some(future) = future {
+                match future.call_method0(py, "cancel") {
+                    Ok(_) => {
+                        tracing::debug!(%slot, "Cancelled async future");
+                        true
+                    }
+                    Err(e) => {
+                        tracing::warn!(%slot, error = %e, "Failed to cancel async future");
+                        false
+                    }
+                }
+            } else {
+                tracing::debug!(%slot, "No async future to cancel");
+                false
+            }
+        })
+    }
+
+    /// Get a reference to the shared asyncio event loop.
+    fn get_async_loop(&self) -> Option<Py<PyAny>> {
+        Python::attach(|py| {
+            self.async_loop.lock().unwrap().as_ref().map(|l| l.clone_ref(py))
+        })
     }
 }
 
@@ -197,7 +284,56 @@ impl PredictHandler for PythonPredictHandler {
             }
             // Use worker-mode train
             if pred.is_train_async() {
-                pred.train_async_worker(input)
+                // Async train - submit to shared event loop (same as predict)
+                let loop_obj = match self.get_async_loop() {
+                    Some(l) => l,
+                    None => {
+                        return PredictResult::failed(
+                            "Async event loop not initialized".to_string(),
+                            start.elapsed().as_secs_f64(),
+                        );
+                    }
+                };
+
+                // Submit coroutine and get future
+                let (future, is_async_gen) = match pred.train_async_worker(input, &loop_obj) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        self.finish_prediction(slot);
+                        drop(log_guard);
+                        return if matches!(e, coglet_core::PredictionError::Cancelled) {
+                            PredictResult::cancelled(start.elapsed().as_secs_f64())
+                        } else {
+                            PredictResult::failed(e.to_string(), start.elapsed().as_secs_f64())
+                        };
+                    }
+                };
+
+                // Store future for cancellation (clone_ref requires GIL)
+                Python::attach(|py| {
+                    self.set_async_future(slot, future.clone_ref(py));
+                });
+
+                // Block on future.result() - releases GIL internally
+                Python::attach(|py| {
+                    match future.call_method0(py, "result") {
+                        Ok(result) => {
+                            // Process the result
+                            pred.process_async_result(py, result.bind(py), is_async_gen)
+                        }
+                        Err(e) => {
+                            // Check for CancelledError
+                            let err_str = e.to_string();
+                            if err_str.contains("CancelledError") || err_str.contains("cancelled") {
+                                Err(coglet_core::PredictionError::Cancelled)
+                            } else {
+                                Err(coglet_core::PredictionError::Failed(format!(
+                                    "Async training failed: {}", e
+                                )))
+                            }
+                        }
+                    }
+                })
             } else {
                 // Sync train - set sync prediction ID for log routing
                 crate::log_writer::set_sync_prediction_id(Some(&id));
@@ -212,7 +348,58 @@ impl PredictHandler for PythonPredictHandler {
             // Prediction mode
             tracing::debug!(%slot, %id, is_async = pred.is_async(), "Running prediction");
             if pred.is_async() {
-                pred.predict_async_worker(input)
+                // Async predict - submit to shared event loop
+                let loop_obj = match self.get_async_loop() {
+                    Some(l) => l,
+                    None => {
+                        return PredictResult::failed(
+                            "Async event loop not initialized".to_string(),
+                            start.elapsed().as_secs_f64(),
+                        );
+                    }
+                };
+
+                // Submit coroutine and get future
+                let (future, is_async_gen) = match pred.predict_async_worker(input, &loop_obj) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        self.finish_prediction(slot);
+                        drop(log_guard);
+                        return if matches!(e, coglet_core::PredictionError::Cancelled) {
+                            PredictResult::cancelled(start.elapsed().as_secs_f64())
+                        } else {
+                            PredictResult::failed(e.to_string(), start.elapsed().as_secs_f64())
+                        };
+                    }
+                };
+
+                // Store future for cancellation (clone_ref requires GIL)
+                Python::attach(|py| {
+                    self.set_async_future(slot, future.clone_ref(py));
+                });
+
+                // Block on future.result() - releases GIL internally
+                let result = Python::attach(|py| {
+                    match future.call_method0(py, "result") {
+                        Ok(result) => {
+                            // Process the result
+                            pred.process_async_result(py, result.bind(py), is_async_gen)
+                        }
+                        Err(e) => {
+                            // Check for CancelledError
+                            let err_str = e.to_string();
+                            if err_str.contains("CancelledError") || err_str.contains("cancelled") {
+                                Err(coglet_core::PredictionError::Cancelled)
+                            } else {
+                                Err(coglet_core::PredictionError::Failed(format!(
+                                    "Async prediction failed: {}", e
+                                )))
+                            }
+                        }
+                    }
+                });
+
+                result
             } else {
                 // Sync predict - set sync prediction ID for log routing
                 crate::log_writer::set_sync_prediction_id(Some(&id));
@@ -257,22 +444,60 @@ impl PredictHandler for PythonPredictHandler {
 
     fn cancel(&self, slot: SlotId) {
         // Set cancelled flag (checked by sync predictors between operations)
-        {
+        let is_async = {
             let mut slots = self.slots.lock().unwrap();
             let state = slots.entry(slot).or_default();
             state.cancelled = true;
-        }
+            state.is_async
+        };
         
-        // Send SIGUSR1 to interrupt Python code (works for both sync and async)
-        // For async, this will raise CancelledError in the running coroutine
-        if let Err(e) = crate::cancel::send_cancel_signal() {
-            tracing::warn!(%slot, error = %e, "Failed to send cancel signal");
+        if is_async {
+            // Async: cancel via future.cancel() - thread-safe, interrupts the asyncio task
+            if !self.cancel_async_future(slot) {
+                tracing::debug!(%slot, "No async future to cancel (prediction may have completed)");
+            }
+        } else {
+            // Sync: send SIGUSR1 to interrupt Python code
+            if let Err(e) = crate::cancel::send_cancel_signal() {
+                tracing::warn!(%slot, error = %e, "Failed to send cancel signal");
+            }
         }
     }
 
     fn schema(&self) -> Option<serde_json::Value> {
         let guard = self.predictor.lock().unwrap();
         guard.as_ref().and_then(|pred| pred.schema())
+    }
+}
+
+/// Shutdown the asyncio event loop and join the thread.
+/// Matches cog mainline behavior: immediate shutdown, doesn't wait for in-flight predictions.
+impl Drop for PythonPredictHandler {
+    fn drop(&mut self) {
+        // Stop the event loop
+        if let Some(loop_obj) = self.async_loop.lock().unwrap().take() {
+            Python::attach(|py| {
+                let loop_ref = loop_obj.bind(py);
+                // Get the stop method and schedule it via call_soon_threadsafe
+                match loop_ref.getattr("stop") {
+                    Ok(stop_method) => {
+                        if let Err(e) = loop_ref.call_method1("call_soon_threadsafe", (stop_method,)) {
+                            tracing::warn!(error = %e, "Failed to stop asyncio loop");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Failed to get loop.stop method");
+                    }
+                }
+            });
+        }
+        
+        // Join the thread
+        if let Some(thread) = self.async_thread.lock().unwrap().take() {
+            if let Err(e) = thread.join() {
+                tracing::warn!("Failed to join asyncio loop thread: {:?}", e);
+            }
+        }
     }
 }
 
