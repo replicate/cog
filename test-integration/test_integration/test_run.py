@@ -1,4 +1,5 @@
 import subprocess
+from typing import Any
 
 import pexpect
 import pytest
@@ -8,7 +9,9 @@ import pytest
     pexpect is None,
     reason="pexpect not available; install it in integration env",
 )
-def test_run_shell_with_with_interactive_tty(tmpdir_factory, cog_binary):
+def test_run_shell_with_with_interactive_tty(
+    tmpdir_factory: Any, cog_binary: str
+) -> None:
     tmpdir = tmpdir_factory.mktemp("project")
     (tmpdir / "cog.yaml").write_text(
         "build:\n  python_version: '3.13'\n  cog_runtime: true\n",

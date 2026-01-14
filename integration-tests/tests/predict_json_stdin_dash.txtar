@@ -1,0 +1,25 @@
+# Test --json - reads JSON directly from stdin
+# Source: test_predict.py::test_predict_json_input_stdin_dash
+
+# Build and run prediction with JSON from stdin using literal '-'
+cog build -t $TEST_IMAGE
+stdin input.json
+cog predict $TEST_IMAGE --json -
+stdout '"status": "succeeded"'
+stdout '"output": "hello sackfield"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
+
+-- input.json --
+{"s": "sackfield"}
