@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "coglet"
 description = "Rust execution engine for cog models"
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",

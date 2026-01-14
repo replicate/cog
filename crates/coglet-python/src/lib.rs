@@ -23,9 +23,7 @@ use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberI
 
 use coglet_core::{Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, PredictionService, SetupResult, VersionInfo};
 use coglet_transport::{serve as http_serve, ServerConfig};
-use coglet_worker::{ControlResponse, SlotResponse, SpawnConfig, Worker};
-
-use predictor::PythonPredictor;
+use coglet_worker::{SlotResponse, SpawnConfig, Worker};
 
 /// Initialize tracing with COG_LOG and LOG_FORMAT support.
 ///
@@ -217,7 +215,7 @@ fn detect_version(py: Python<'_>) -> VersionInfo {
     version
 }
 
-/// Read max concurrency from cog.yaml (or return default).
+/// Read max concurrency from cog.yaml (or return default of 1).
 fn read_max_concurrency(py: Python<'_>) -> usize {
     // Try to read from cog.yaml via cog.config.Config.max_concurrency
     let result = (|| -> PyResult<usize> {
@@ -226,15 +224,13 @@ fn read_max_concurrency(py: Python<'_>) -> usize {
         let config = config_class.call0()?;
         
         // max_concurrency property reads from cog.yaml concurrency.max
-        let max = config.getattr("max_concurrency")?.extract::<usize>()?;
-        info!(max_concurrency = max, "Read max_concurrency from cog.yaml");
-        Ok(max)
+        config.getattr("max_concurrency")?.extract::<usize>()
     })();
     
     match result {
         Ok(max) => max,
         Err(e) => {
-            warn!(error = %e, "Failed to read concurrency config from cog.yaml, using default=1");
+            warn!(error = %e, "Failed to read concurrency config, using default=1");
             1
         }
     }
@@ -242,14 +238,10 @@ fn read_max_concurrency(py: Python<'_>) -> usize {
 
 /// Start the coglet HTTP server with a predictor.
 ///
-/// For sync predictors:
-/// - Uses subprocess isolation (crash/memory isolation)
-/// - max_concurrency = 1 (Python GIL serializes execution anyway)
-///
-/// For async predictors:
-/// - Uses in-process execution with true async concurrency
-/// - Reads max_concurrency from cog.yaml (concurrency.max)
-/// - Multiple predictions can run concurrently via asyncio
+/// All predictors (sync and async) use subprocess isolation for:
+/// - Crash isolation (subprocess crash doesn't kill server)
+/// - Memory isolation (clean slate per worker)
+/// - Flexibility (transport abstraction enables sidecar/remote workers)
 /// 
 /// Args:
 ///     predictor_ref: Path to predictor like "predict.py:Predictor"
@@ -303,91 +295,8 @@ fn serve(py: Python<'_>, predictor_ref: Option<String>, host: String, port: u16,
         });
     };
 
-    // Read max concurrency from cog.yaml
-    let max_concurrency = read_max_concurrency(py);
-    
-    // Load predictor to detect if it's async
-    info!(predictor_ref = %pred_ref, "Loading predictor to detect async");
-    let predictor = PythonPredictor::load(py, &pred_ref)?;
-    let is_async = predictor.is_async();
-    
-    // For async predictors with concurrency > 1, use in-process execution
-    // This enables true concurrent predictions via Python asyncio
-    if is_async && max_concurrency > 1 {
-        info!(predictor_ref = %pred_ref, max_concurrency, "Async predictor detected, using in-process execution");
-        serve_async_inprocess(py, predictor, pred_ref, config, version, max_concurrency, is_train)
-    } else {
-        // For sync predictors (or async with concurrency=1), use subprocess isolation
-        // Drop the predictor - it will be reloaded in subprocess
-        drop(predictor);
-        info!(predictor_ref = %pred_ref, is_train, is_async, "Using subprocess isolation");
-        serve_subprocess(py, pred_ref, config, version, is_train)
-    }
-}
-
-/// Serve with in-process async predictor.
-/// 
-/// This is used for async predictors where we want true concurrency.
-/// The predictor runs in the same process as the server, but predictions
-/// are executed concurrently via Python asyncio and Rust tokio.
-fn serve_async_inprocess(
-    py: Python<'_>,
-    predictor: PythonPredictor,
-    pred_ref: String,
-    config: ServerConfig,
-    version: VersionInfo,
-    max_concurrency: usize,
-    _is_train: bool,  // TODO: support training mode
-) -> PyResult<()> {
-    // Run setup synchronously before starting server
-    info!("Running predictor setup");
-    predictor.setup(py)?;
-    
-    // Get OpenAPI schema
-    let schema = predictor.schema();
-    
-    // Wrap predictor in Arc for sharing across async tasks
-    let predictor = Arc::new(predictor);
-    
-    // Create prediction service with configured concurrency
-    let service = PredictionService::new(max_concurrency)
-        .with_health(Health::Ready)  // Ready immediately after setup
-        .with_version(version);
-    
-    // Create async predict function using predict_async
-    let predictor_clone = Arc::clone(&predictor);
-    let async_predict_fn = Arc::new(move |input: serde_json::Value| -> PredictFuture {
-        let pred = Arc::clone(&predictor_clone);
-        Box::pin(async move { pred.predict_async(input).await })
-    }) as Arc<coglet_core::AsyncPredictFn>;
-    
-    let service = Arc::new(service.with_async_predict_fn(async_predict_fn));
-    
-    // Set schema if available
-    let service_for_schema = Arc::clone(&service);
-    let schema_clone = schema.clone();
-    
-    // Release GIL and run server
-    py.detach(move || {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        
-        rt.block_on(async {
-            // Set schema
-            if let Some(s) = schema_clone {
-                service_for_schema.set_schema(s).await;
-            }
-            
-            // Set setup result as succeeded
-            service_for_schema.set_setup_result(SetupResult::starting().succeeded()).await;
-            
-            info!(max_concurrency, "Async server ready, starting HTTP server");
-            
-            http_serve(config, service_for_schema)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    })
+    info!(predictor_ref = %pred_ref, is_train, "Using subprocess isolation");
+    serve_subprocess(py, pred_ref, config, version, is_train)
 }
 
 /// Serve with subprocess worker.
@@ -398,6 +307,10 @@ fn serve_subprocess(
     version: VersionInfo,
     is_train: bool,
 ) -> PyResult<()> {
+    // Read max concurrency from cog.yaml
+    let max_concurrency = read_max_concurrency(py);
+    info!(max_concurrency, "Configuring subprocess worker");
+
     // Get Python executable for worker subprocess
     let python_exe = std::env::var("COG_PYTHON_EXE")
         .or_else(|_| {
@@ -415,16 +328,12 @@ fn serve_subprocess(
     }
     let spawn_config = SpawnConfig {
         python_exe,
-        max_concurrency: 1, // Sync predictors use single slot
+        max_concurrency,
         env,
     };
 
     // Create worker handle
     let worker = Arc::new(WorkerHandle::new(pred_ref, spawn_config));
-
-    // Sync predictors use max_concurrency=1
-    let max_concurrency = 1;
-    info!(max_concurrency, "Configuring sync predictor with subprocess");
 
     // Start with Starting health - will become Ready after worker init
     let service = PredictionService::new(max_concurrency)

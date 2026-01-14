@@ -20,6 +20,10 @@ run = "cd crates/coglet-python && maturin develop"
 description = "Build coglet Python wheel for development (native platform only)"
 run = "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml"
 
+[tasks."build:coglet:wheel:linux"]
+description = "Build coglet Python wheel for Linux x86_64 (uses zig for cross-compilation)"
+run = "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig"
+
 [tasks."build:coglet:wheel:all"]
 description = "Build coglet Python wheels for all platforms (Linux x86_64 + macOS)"
 run = """

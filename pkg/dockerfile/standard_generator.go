@@ -506,15 +506,23 @@ func (g *StandardGenerator) installEmbeddedCogletWheel() (string, error) {
 		return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
 	}
 
-	// Get both wheels - use manylinux wheel for Docker builds
-	cogletFilename, cogletData := wheels.ReadCogletWheelForPlatform("manylinux")
+	// Get wheels - include both x86_64 and aarch64 manylinux wheels
+	cogletX86Filename, cogletX86Data := wheels.ReadCogletWheelForPlatform("manylinux_2_17_x86_64")
+	cogletArmFilename, cogletArmData := wheels.ReadCogletWheelForPlatform("manylinux_2_17_aarch64")
 	cogFilename, cogData := wheels.ReadCogWheel()
 
-	// Write coglet wheel to temp
-	lines, cogletPath, err := g.writeTemp(cogletFilename, cogletData)
+	// Write coglet x86_64 wheel to temp
+	lines, cogletX86Path, err := g.writeTemp(cogletX86Filename, cogletX86Data)
 	if err != nil {
 		return "", err
 	}
+
+	// Write coglet aarch64 wheel to temp
+	armLines, cogletArmPath, err := g.writeTemp(cogletArmFilename, cogletArmData)
+	if err != nil {
+		return "", err
+	}
+	lines = append(lines, armLines...)
 
 	// Write cog wheel to temp
 	cogLines, cogPath, err := g.writeTemp(cogFilename, cogData)
@@ -523,12 +531,19 @@ func (g *StandardGenerator) installEmbeddedCogletWheel() (string, error) {
 	}
 	lines = append(lines, cogLines...)
 
-	// Install both cog (for BasePredictor, Input, types) and coglet (for Rust runtime)
+	// Install cog and coglet wheels - detect architecture and install the right coglet wheel
 	// Python http.py will try to import coglet and use Rust server if available
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir"
-	pipInstallLine += " " + cogPath    // cog wheel first
-	pipInstallLine += " " + cogletPath // coglet wheel second (provides coglet module)
-	pipInstallLine += " 'pydantic>=1.9,<3'"
+	pipInstallLine := fmt.Sprintf(`RUN --mount=type=cache,target=/root/.cache/pip \
+    ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        COGLET_WHEEL=%s; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        COGLET_WHEEL=%s; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi && \
+    pip install --no-cache-dir %s $COGLET_WHEEL 'pydantic>=1.9,<3'`,
+		cogletX86Path, cogletArmPath, cogPath)
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
