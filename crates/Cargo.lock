@@ -242,12 +242,14 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
+ "coglet-bridge",
  "coglet-core",
  "http-body-util",
  "insta",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-util",
  "tower",
  "tracing",
 ]

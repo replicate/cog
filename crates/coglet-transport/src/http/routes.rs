@@ -269,9 +269,10 @@ async fn create_prediction_with_id(
         }
 
         let service_clone = Arc::clone(&service);
+        let id_for_unregister = prediction_id.clone();
         tokio::spawn(async move {
             let _ = service_clone.predict(&mut prediction, input).await;
-            service_clone.unregister_prediction(prediction.id()).await;
+            service_clone.unregister_prediction(&id_for_unregister).await;
             // prediction drops here, sending terminal webhook
         });
 
@@ -448,7 +449,22 @@ mod tests {
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
-    use coglet_core::{PredictionOutput, PredictionResult};
+    use coglet_bridge::codec::JsonCodec;
+    use coglet_bridge::protocol::SlotId;
+    use coglet_core::{PermitPool, PredictionOutput, PredictionResult};
+    use tokio::net::UnixStream;
+    use tokio_util::codec::FramedWrite;
+
+    /// Create a test pool with N slots backed by socket pairs.
+    async fn make_test_pool(n: usize) -> Arc<PermitPool> {
+        let pool = Arc::new(PermitPool::new(n));
+        for _ in 0..n {
+            let (a, _b) = UnixStream::pair().unwrap();
+            let (_, write) = a.into_split();
+            pool.add_permit(SlotId::new(), FramedWrite::new(write, JsonCodec::new()));
+        }
+        pool
+    }
 
     async fn response_json(response: axum::response::Response) -> serde_json::Value {
         let body = response.into_body();
@@ -458,7 +474,8 @@ mod tests {
 
     #[tokio::test]
     async fn health_check_returns_status_and_version() {
-        let service = Arc::new(PredictionService::new(1).with_health(Health::Ready));
+        let pool = make_test_pool(1).await;
+        let service = Arc::new(PredictionService::new(pool).with_health(Health::Ready));
         let app = routes(service);
 
         let response = app
@@ -475,7 +492,8 @@ mod tests {
 
     #[tokio::test]
     async fn health_check_unknown_when_no_predictor() {
-        let service = Arc::new(PredictionService::new(1)); // Default health is Unknown
+        let pool = make_test_pool(1).await;
+        let service = Arc::new(PredictionService::new(pool)); // Default health is Unknown
         let app = routes(service);
 
         let response = app
@@ -489,7 +507,8 @@ mod tests {
 
     #[tokio::test]
     async fn health_check_returns_busy_when_at_capacity() {
-        let service = Arc::new(PredictionService::new(1).with_health(Health::Ready));
+        let pool = make_test_pool(1).await;
+        let service = Arc::new(PredictionService::new(pool).with_health(Health::Ready));
 
         // Take the only slot
         let _pred = service
@@ -510,7 +529,8 @@ mod tests {
 
     #[tokio::test]
     async fn predictions_returns_503_when_not_ready() {
-        let service = Arc::new(PredictionService::new(1)); // Health is Unknown
+        let pool = make_test_pool(1).await;
+        let service = Arc::new(PredictionService::new(pool)); // Health is Unknown
         let app = routes(service);
 
         let response = app
@@ -532,7 +552,8 @@ mod tests {
 
     #[tokio::test]
     async fn predictions_returns_503_when_no_predictor_loaded() {
-        let service = Arc::new(PredictionService::new(1).with_health(Health::Ready));
+        let pool = make_test_pool(1).await;
+        let service = Arc::new(PredictionService::new(pool).with_health(Health::Ready));
         let app = routes(service);
 
         let response = app
@@ -554,8 +575,9 @@ mod tests {
 
     #[tokio::test]
     async fn predictions_success_with_sync_predictor() {
+        let pool = make_test_pool(1).await;
         let service = Arc::new(
-            PredictionService::new(1)
+            PredictionService::new(pool)
                 .with_health(Health::Ready)
                 .with_predict_fn(Arc::new(|input| {
                     let name = input["name"].as_str().unwrap_or("world");
@@ -565,6 +587,7 @@ mod tests {
                             name
                         ))),
                         predict_time: None,
+                        logs: String::new(),
                     })
                 })),
         );
@@ -590,8 +613,9 @@ mod tests {
 
     #[tokio::test]
     async fn predictions_returns_error_on_invalid_input() {
+        let pool = make_test_pool(1).await;
         let service = Arc::new(
-            PredictionService::new(1)
+            PredictionService::new(pool)
                 .with_health(Health::Ready)
                 .with_predict_fn(Arc::new(|_| {
                     Err(PredictionError::InvalidInput(
@@ -620,7 +644,8 @@ mod tests {
 
     #[tokio::test]
     async fn openapi_returns_503_when_schema_not_available() {
-        let service = Arc::new(PredictionService::new(1));
+        let pool = make_test_pool(1).await;
+        let service = Arc::new(PredictionService::new(pool));
         let app = routes(service);
 
         let response = app
@@ -636,7 +661,8 @@ mod tests {
 
     #[tokio::test]
     async fn openapi_returns_schema_when_available() {
-        let service = Arc::new(PredictionService::new(1));
+        let pool = make_test_pool(1).await;
+        let service = Arc::new(PredictionService::new(pool));
         service
             .set_schema(serde_json::json!({
                 "openapi": "3.0.2",

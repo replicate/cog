@@ -9,6 +9,7 @@ mod version;
 pub mod webhook;
 
 pub use health::{Health, SetupResult, SetupStatus};
+pub use permit::{Permit, PermitError, PermitPool, PredictionSlot};
 pub use prediction::{Prediction, PredictionStatus};
 pub use predictor::{
     AsyncPredictFn, CancellationToken, PredictFn, PredictFuture, PredictionError, PredictionGuard,

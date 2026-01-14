@@ -7,7 +7,7 @@
 //!
 //! Permits are returned to the pool on drop if idle, or orphaned if poisoned.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use futures::SinkExt;
@@ -39,11 +39,13 @@ pub struct Permit {
     idle_flag: Arc<AtomicBool>,
     /// Channel to return permit to pool.
     pool_tx: mpsc::Sender<PermitInner>,
+    /// Pool's available count (incremented on return).
+    pool_available: Arc<AtomicUsize>,
 }
 
 impl Permit {
     /// Create a new permit from inner data.
-    pub(crate) fn new(inner: PermitInner, pool_tx: mpsc::Sender<PermitInner>) -> Self {
+    pub(crate) fn new(inner: PermitInner, pool_tx: mpsc::Sender<PermitInner>, pool_available: Arc<AtomicUsize>) -> Self {
         // Clear idle flag - slot is now in use
         inner.idle_flag.store(false, Ordering::Release);
 
@@ -52,6 +54,7 @@ impl Permit {
             writer: Some(inner.writer),
             idle_flag: inner.idle_flag,
             pool_tx,
+            pool_available,
         }
     }
 
@@ -92,7 +95,9 @@ impl Drop for Permit {
                 };
 
                 // Try to return to pool (ignore error if pool is closed)
-                let _ = self.pool_tx.try_send(inner);
+                if self.pool_tx.try_send(inner).is_ok() {
+                    self.pool_available.fetch_add(1, Ordering::Release);
+                }
             }
         } else {
             // Slot is poisoned - log and orphan
@@ -121,6 +126,8 @@ pub struct PermitPool {
     available_tx: mpsc::Sender<PermitInner>,
     /// Total number of slots (for health reporting).
     num_slots: usize,
+    /// Current count of available permits (tracked separately since mpsc doesn't expose len).
+    available_count: Arc<AtomicUsize>,
 }
 
 impl PermitPool {
@@ -135,6 +142,7 @@ impl PermitPool {
             available_rx: Mutex::new(rx),
             available_tx: tx,
             num_slots,
+            available_count: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -151,6 +159,8 @@ impl PermitPool {
         // This should not fail during init (channel has capacity)
         if let Err(e) = self.available_tx.try_send(inner) {
             tracing::error!(slot = %slot_id, error = %e, "Failed to add permit to pool");
+        } else {
+            self.available_count.fetch_add(1, Ordering::Release);
         }
     }
 
@@ -160,14 +170,16 @@ impl PermitPool {
     pub fn try_acquire(&self) -> Option<Permit> {
         let mut rx = self.available_rx.try_lock().ok()?;
         let inner = rx.try_recv().ok()?;
-        Some(Permit::new(inner, self.available_tx.clone()))
+        self.available_count.fetch_sub(1, Ordering::Release);
+        Some(Permit::new(inner, self.available_tx.clone(), Arc::clone(&self.available_count)))
     }
 
     /// Acquire a permit, waiting if none available.
     pub async fn acquire(&self) -> Option<Permit> {
         let mut rx = self.available_rx.lock().await;
         let inner = rx.recv().await?;
-        Some(Permit::new(inner, self.available_tx.clone()))
+        self.available_count.fetch_sub(1, Ordering::Release);
+        Some(Permit::new(inner, self.available_tx.clone(), Arc::clone(&self.available_count)))
     }
 
     /// Get the total number of slots.
@@ -179,12 +191,7 @@ impl PermitPool {
     ///
     /// Note: This is approximate due to concurrency.
     pub fn available(&self) -> usize {
-        // Channel length gives us available count
-        // This is a bit hacky but mpsc doesn't expose len() directly
-        // We'd need to track this separately for accurate count
-        // For now, return 0 as placeholder
-        // TODO: Track available count properly
-        0
+        self.available_count.load(Ordering::Acquire)
     }
 }
 

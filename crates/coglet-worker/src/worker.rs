@@ -332,6 +332,11 @@ pub async fn run_worker<H: PredictHandler>(
             // Control channel messages (highest priority)
             ctrl_msg = ctrl_reader.next() => {
                 match ctrl_msg {
+                    Some(Ok(ControlRequest::Init { .. })) => {
+                        // Init is handled at startup, not in the event loop
+                        // If we receive it here, it's a protocol error
+                        tracing::warn!("Received Init in event loop (should be at startup)");
+                    }
                     Some(Ok(ControlRequest::Cancel { slot })) => {
                         tracing::debug!(%slot, "Cancel requested");
                         handler.cancel(slot);

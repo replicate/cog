@@ -1,13 +1,18 @@
-//! RAII Prediction struct that owns resources and guarantees cleanup.
+//! Prediction struct for tracking prediction state.
 //!
-//! The `Prediction` struct ensures:
-//! - Terminal webhook is sent before resources are released
-//! - Slot permit is released only after webhook completes
-//! - Cleanup happens even on panic (via Drop)
+//! The `Prediction` struct holds:
+//! - Status and timing information
+//! - Accumulated logs and outputs
+//! - Completion notification
+//!
+//! Note: Prediction does NOT own the slot permit. The permit lives in
+//! `PredictionSlot` alongside the prediction, allowing the idle flag
+//! to be set without holding the prediction lock.
 
+use std::sync::Arc;
 use std::time::Instant;
 
-use tokio::sync::OwnedSemaphorePermit;
+use tokio::sync::Notify;
 
 use crate::predictor::{CancellationToken, PredictionOutput};
 use crate::webhook::WebhookSender;
@@ -45,21 +50,13 @@ impl PredictionStatus {
     }
 }
 
-/// RAII prediction that owns resources and guarantees cleanup.
+/// Prediction state and accumulated results.
 ///
-/// When dropped:
-/// 1. Sends terminal webhook (if configured) via `send_terminal_sync`
-/// 2. Releases slot permit (after webhook completes)
-///
-/// This ensures the platform receives the terminal webhook before the slot
-/// becomes available for new predictions.
+/// Tracks the lifecycle of a prediction including logs, outputs, and status.
+/// Does NOT own the slot permit - that's managed separately by `PredictionSlot`.
 pub struct Prediction {
     /// Prediction ID.
     id: String,
-
-    /// Slot permit (released on drop, after webhook).
-    #[allow(dead_code)]
-    slot_permit: OwnedSemaphorePermit,
 
     /// Cancellation token for this prediction.
     cancel_token: CancellationToken,
@@ -70,34 +67,41 @@ pub struct Prediction {
     /// Current status.
     status: PredictionStatus,
 
-    /// Output (set when prediction succeeds).
+    /// Accumulated logs during prediction.
+    logs: String,
+
+    /// Streaming outputs (for generators).
+    outputs: Vec<serde_json::Value>,
+
+    /// Final output (set when prediction succeeds).
     output: Option<PredictionOutput>,
 
     /// Error message (set when prediction fails).
     error: Option<String>,
 
-    /// Webhook sender (consumed on drop).
+    /// Webhook sender (consumed on completion).
     webhook: Option<WebhookSender>,
+
+    /// Notifies waiters when prediction completes.
+    completion: Arc<Notify>,
 }
 
 impl Prediction {
     /// Create a new prediction.
     ///
     /// The prediction starts in `Starting` status.
-    pub fn new(
-        id: String,
-        slot_permit: OwnedSemaphorePermit,
-        webhook: Option<WebhookSender>,
-    ) -> Self {
+    pub fn new(id: String, webhook: Option<WebhookSender>) -> Self {
         Self {
             id,
-            slot_permit,
             cancel_token: CancellationToken::new(),
             started_at: Instant::now(),
             status: PredictionStatus::Starting,
+            logs: String::new(),
+            outputs: Vec::new(),
             output: None,
             error: None,
             webhook,
+            completion: Arc::new(Notify::new()),
         }
     }
 
@@ -130,17 +134,20 @@ impl Prediction {
     pub fn set_succeeded(&mut self, output: PredictionOutput) {
         self.status = PredictionStatus::Succeeded;
         self.output = Some(output);
+        self.completion.notify_waiters();
     }
 
     /// Mark the prediction as failed with error.
     pub fn set_failed(&mut self, error: String) {
         self.status = PredictionStatus::Failed;
         self.error = Some(error);
+        self.completion.notify_waiters();
     }
 
     /// Mark the prediction as canceled.
     pub fn set_canceled(&mut self) {
         self.status = PredictionStatus::Canceled;
+        self.completion.notify_waiters();
     }
 
     /// Get elapsed time since prediction started.
@@ -148,8 +155,56 @@ impl Prediction {
         self.started_at.elapsed()
     }
 
+    /// Append log data.
+    pub fn append_log(&mut self, data: &str) {
+        self.logs.push_str(data);
+    }
+
+    /// Get accumulated logs.
+    pub fn logs(&self) -> &str {
+        &self.logs
+    }
+
+    /// Append a streaming output value (for generators).
+    pub fn append_output(&mut self, output: serde_json::Value) {
+        self.outputs.push(output);
+    }
+
+    /// Get streaming outputs.
+    pub fn outputs(&self) -> &[serde_json::Value] {
+        &self.outputs
+    }
+
+    /// Get the final output.
+    pub fn output(&self) -> Option<&PredictionOutput> {
+        self.output.as_ref()
+    }
+
+    /// Get the error message.
+    pub fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
+    /// Wait for prediction to complete.
+    pub async fn wait(&self) {
+        if self.status.is_terminal() {
+            return;
+        }
+        self.completion.notified().await;
+    }
+
+    /// Get the completion notifier (for sharing).
+    pub fn completion(&self) -> Arc<Notify> {
+        Arc::clone(&self.completion)
+    }
+
+    /// Take the webhook sender (for sending on drop).
+    pub fn take_webhook(&mut self) -> Option<WebhookSender> {
+        self.webhook.take()
+    }
+
     /// Build the terminal webhook response payload.
-    fn build_terminal_response(&self) -> serde_json::Value {
+    pub fn build_terminal_response(&self) -> serde_json::Value {
         let predict_time = self.elapsed().as_secs_f64();
 
         match self.status {
@@ -182,7 +237,7 @@ impl Prediction {
                     }
                 })
             }
-            // Non-terminal statuses shouldn't reach Drop with webhook,
+            // Non-terminal statuses shouldn't reach here,
             // but handle gracefully
             _ => {
                 serde_json::json!({
@@ -198,38 +253,12 @@ impl Prediction {
     }
 }
 
-impl Drop for Prediction {
-    fn drop(&mut self) {
-        // Send terminal webhook if configured
-        if let Some(webhook) = self.webhook.take() {
-            let response = self.build_terminal_response();
-
-            // Spawn a thread to send the webhook synchronously.
-            // This blocks Drop (and thus slot release) until webhook completes,
-            // but doesn't block the tokio runtime.
-            let handle = std::thread::spawn(move || {
-                webhook.send_terminal_sync(&response);
-            });
-
-            // Wait for webhook to complete before releasing slot
-            if let Err(e) = handle.join() {
-                tracing::error!("Terminal webhook thread panicked: {:?}", e);
-            }
-        }
-        // OwnedSemaphorePermit drops here → slot released
-    }
-}
+// Note: Prediction does NOT implement Drop. RAII cleanup (webhook, permit return)
+// is handled by PredictionSlot which owns both the Prediction and Permit.
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use tokio::sync::Semaphore;
-
-    fn make_permit() -> OwnedSemaphorePermit {
-        let sem = Arc::new(Semaphore::new(1));
-        sem.try_acquire_owned().unwrap()
-    }
 
     #[test]
     fn prediction_status_is_terminal() {
@@ -242,35 +271,35 @@ mod tests {
 
     #[test]
     fn prediction_new_starts_in_starting_status() {
-        let pred = Prediction::new("test".to_string(), make_permit(), None);
+        let pred = Prediction::new("test".to_string(), None);
         assert_eq!(pred.status(), PredictionStatus::Starting);
         assert_eq!(pred.id(), "test");
     }
 
     #[test]
     fn prediction_set_succeeded() {
-        let mut pred = Prediction::new("test".to_string(), make_permit(), None);
+        let mut pred = Prediction::new("test".to_string(), None);
         pred.set_succeeded(PredictionOutput::Single(serde_json::json!("hello")));
         assert_eq!(pred.status(), PredictionStatus::Succeeded);
     }
 
     #[test]
     fn prediction_set_failed() {
-        let mut pred = Prediction::new("test".to_string(), make_permit(), None);
+        let mut pred = Prediction::new("test".to_string(), None);
         pred.set_failed("something went wrong".to_string());
         assert_eq!(pred.status(), PredictionStatus::Failed);
     }
 
     #[test]
     fn prediction_set_canceled() {
-        let mut pred = Prediction::new("test".to_string(), make_permit(), None);
+        let mut pred = Prediction::new("test".to_string(), None);
         pred.set_canceled();
         assert_eq!(pred.status(), PredictionStatus::Canceled);
     }
 
     #[test]
     fn prediction_cancel_token_works() {
-        let pred = Prediction::new("test".to_string(), make_permit(), None);
+        let pred = Prediction::new("test".to_string(), None);
         let token = pred.cancel_token();
 
         assert!(!pred.is_canceled());
@@ -280,7 +309,7 @@ mod tests {
 
     #[test]
     fn prediction_elapsed_time_increases() {
-        let pred = Prediction::new("test".to_string(), make_permit(), None);
+        let pred = Prediction::new("test".to_string(), None);
         let t1 = pred.elapsed();
         std::thread::sleep(std::time::Duration::from_millis(10));
         let t2 = pred.elapsed();
@@ -288,86 +317,28 @@ mod tests {
     }
 
     #[test]
-    fn prediction_drop_releases_slot_without_webhook() {
-        let sem = Arc::new(Semaphore::new(1));
-        let permit = sem.clone().try_acquire_owned().unwrap();
+    fn prediction_append_log() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.append_log("line 1\n");
+        pred.append_log("line 2\n");
+        assert_eq!(pred.logs(), "line 1\nline 2\n");
+    }
 
-        // Slot is taken
-        assert_eq!(sem.available_permits(), 0);
-
-        {
-            let _pred = Prediction::new("test".to_string(), permit, None);
-            // Still taken
-            assert_eq!(sem.available_permits(), 0);
-        }
-
-        // Slot released after drop
-        assert_eq!(sem.available_permits(), 1);
+    #[test]
+    fn prediction_append_output() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.append_output(serde_json::json!("chunk1"));
+        pred.append_output(serde_json::json!("chunk2"));
+        assert_eq!(pred.outputs().len(), 2);
     }
 
     #[tokio::test]
-    async fn prediction_drop_sends_webhook_before_releasing_slot() {
-        use crate::webhook::{WebhookConfig, WebhookSender};
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/webhook"))
-            .respond_with(ResponseTemplate::new(200))
-            .expect(1)
-            .mount(&server)
-            .await;
-
-        let sem = Arc::new(Semaphore::new(1));
-        let permit = sem.clone().try_acquire_owned().unwrap();
-
-        let webhook = WebhookSender::new(
-            format!("{}/webhook", server.uri()),
-            WebhookConfig::default(),
-        );
-
-        {
-            let mut pred = Prediction::new("test_123".to_string(), permit, Some(webhook));
-            pred.set_succeeded(PredictionOutput::Single(serde_json::json!("result")));
-            // Drop happens here, webhook is sent, then slot released
-        }
-
-        // Slot should be released after webhook
-        assert_eq!(sem.available_permits(), 1);
-
-        // wiremock verifies the webhook was called via expect(1)
-    }
-
-    #[tokio::test]
-    async fn prediction_drop_sends_webhook_on_failure() {
-        use crate::webhook::{WebhookConfig, WebhookSender};
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/webhook"))
-            .respond_with(ResponseTemplate::new(200))
-            .expect(1)
-            .mount(&server)
-            .await;
-
-        let sem = Arc::new(Semaphore::new(1));
-        let permit = sem.clone().try_acquire_owned().unwrap();
-
-        let webhook = WebhookSender::new(
-            format!("{}/webhook", server.uri()),
-            WebhookConfig::default(),
-        );
-
-        {
-            let mut pred = Prediction::new("test_456".to_string(), permit, Some(webhook));
-            pred.set_failed("something broke".to_string());
-        }
-
-        assert_eq!(sem.available_permits(), 1);
+    async fn prediction_wait_returns_immediately_if_terminal() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_succeeded(PredictionOutput::Single(serde_json::json!("done")));
+        
+        // Should return immediately, not block
+        pred.wait().await;
+        assert_eq!(pred.status(), PredictionStatus::Succeeded);
     }
 }
