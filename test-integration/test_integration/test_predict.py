@@ -1,8 +1,5 @@
 import asyncio
 import os
-import pathlib
-import shutil
-import subprocess
 import time
 from pathlib import Path
 
@@ -13,152 +10,22 @@ from werkzeug import Request, Response
 
 from .util import cog_server_http_run
 
-DEFAULT_TIMEOUT = 60
-
-
-def test_predict_takes_string_inputs_and_returns_strings_to_stdout(cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/string-project"
-    result = subprocess.run(
-        [cog_binary, "predict", "--debug", "-i", "s=world"],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_TIMEOUT,
-    )
-    # stdout should be clean without any log messages so it can be piped to other commands
-    assert result.stdout == "hello world\n"
-    assert "cannot use fast loader as current Python <3.9" in result.stderr
-    assert "falling back to slow loader" in result.stderr
-
-
-def test_predict_writes_files_to_files_with_custom_name(tmpdir_factory, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/path-output-project"
-    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
-    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
-    result = subprocess.run(
-        [cog_binary, "predict", "--debug", "-o", out_dir / "myoutput.bmp"],
-        cwd=out_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_TIMEOUT,
-    )
-
-    assert result.returncode == 0
-    assert result.stdout == ""
-    with open(out_dir / "myoutput.bmp", "rb") as f:
-        assert len(f.read()) == 195894
-    assert "falling back to slow loader" not in result.stderr
-
-
-def test_predict_writes_strings_to_files(tmpdir_factory, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/string-project"
-    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
-    result = subprocess.run(
-        [cog_binary, "predict", "--debug", "-i", "s=world", "-o", out_dir / "out.txt"],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_TIMEOUT,
-    )
-    assert result.stdout == ""
-    with open(out_dir / "out.txt", encoding="utf-8") as f:
-        assert f.read() == "hello world"
-    assert "cannot use fast loader as current Python <3.9" in result.stderr
-    assert "falling back to slow loader" in result.stderr
-
-
-def test_predict_runs_an_existing_image(docker_image, tmpdir_factory, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/string-project"
-
-    subprocess.run(
-        [cog_binary, "build", "--debug", "-t", docker_image],
-        cwd=project_dir,
-        check=True,
-    )
-
-    # Run in another directory to ensure it doesn't use cog.yaml
-    another_directory = tmpdir_factory.mktemp("project")
-    result = subprocess.run(
-        [cog_binary, "predict", "--debug", docker_image, "-i", "s=world"],
-        cwd=another_directory,
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_TIMEOUT,
-    )
-    assert result.returncode == 0
-    assert result.stdout == "hello world\n"
-    assert "cannot use fast loader as current Python <3.9" in result.stderr
-    assert "falling back to slow loader" in result.stderr
-
-
-# https://github.com/replicate/cog/commit/28202b12ea40f71d791e840b97a51164e7be3b3c
-# we need to find a better way to test this
-@pytest.mark.skip("incredibly slow")
-def test_predict_with_remote_image(tmpdir_factory, cog_binary):
-    image_name = "r8.im/replicate/hello-world@sha256:5c7d5dc6dd8bf75c1acaa8565735e7986bc5b66206b55cca93cb72c9bf15ccaa"
-    subprocess.run(["docker", "rmi", "-f", image_name], check=True)
-
-    # Run in another directory to ensure it doesn't use cog.yaml
-    another_directory = tmpdir_factory.mktemp("project")
-    result = subprocess.run(
-        [cog_binary, "predict", image_name, "-i", "text=world"],
-        cwd=another_directory,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_TIMEOUT,
-    )
-
-    # lots of docker pull logs are written to stdout before writing the actual output
-    # TODO: clean up docker output so cog predict is always clean
-    assert result.stdout.strip().endswith("hello world")
-
-
-def test_predict_many_inputs_with_existing_image(
-    docker_image, tmpdir_factory, cog_binary
-):
-    project_dir = Path(__file__).parent / "fixtures/many-inputs-project"
-
-    subprocess.run(
-        [cog_binary, "build", "--debug", "-t", docker_image],
-        cwd=project_dir,
-        check=True,
-    )
-
-    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
-    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
-    inputs = {
-        "no_default": "hello",
-        "path": "@path.txt",
-        "image": "@image.jpg",
-        "choices": "foo",
-        "int_choices": 3,
-    }
-    with open(out_dir / "path.txt", "w", encoding="utf-8") as fh:
-        fh.write("world")
-    with open(out_dir / "image.jpg", "w", encoding="utf-8") as fh:
-        fh.write("")
-    cmd = [cog_binary, "--debug", "predict", docker_image]
-
-    for k, v in inputs.items():
-        cmd += ["-i", f"{k}={v}"]
-
-    result = subprocess.run(
-        cmd,
-        cwd=out_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert result.stdout == "hello default 20 world jpg foo 6\n"
-    assert "falling back to slow loader" not in str(result.stderr)
-
 
 @pytest.mark.asyncio
 async def test_concurrent_predictions(cog_binary):
+    """Test that concurrent async predictions complete properly with server shutdown.
+
+    This test verifies:
+    1. Multiple predictions can run concurrently
+    2. Server shutdown waits for running predictions to complete
+    3. All predictions return correct results
+
+    This test is kept in Python because it requires:
+    - Async HTTP client (httpx.AsyncClient)
+    - asyncio.TaskGroup for concurrent requests
+    - Precise timing verification
+    """
+
     async def make_request(i: int) -> httpx.Response:
         return await client.post(
             f"{addr}/predictions",
@@ -188,262 +55,18 @@ async def test_concurrent_predictions(cog_binary):
                 assert task.result().json()["output"] == f"wake up sleepyhead{i}"
 
 
-def test_predict_with_fast_build_with_local_image(fixture, docker_image, cog_binary):
-    project_dir = fixture("fast-build")
-    weights_file = os.path.join(project_dir, "weights.h5")
-    with open(weights_file, "w", encoding="utf8") as handle:
-        handle.seek(256 * 1024 * 1024)
-        handle.write("\0")
-
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image, "--x-localimage"],
-        cwd=project_dir,
-        capture_output=True,
-    )
-
-    result = subprocess.run(
-        [
-            cog_binary,
-            "predict",
-            docker_image,
-            "--x-localimage",
-            "--debug",
-            "-i",
-            "s=world",
-        ],
-        cwd=project_dir,
-        capture_output=True,
-    )
-
-    assert build_process.returncode == 0
-    assert result.returncode == 0
-
-
-def test_predict_overrides_project(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/overrides-project"
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 0
-    result = subprocess.run(
-        [cog_binary, "predict", "--debug", docker_image],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_TIMEOUT,
-    )
-    assert result.returncode == 0
-    assert result.stdout == "hello 1.26.4\n"
-
-
-def test_predict_string_list(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/string-list-project"
-    build_process = subprocess.run(
-        [cog_binary, "build", "-t", docker_image],
-        cwd=project_dir,
-        capture_output=True,
-    )
-    assert build_process.returncode == 0
-    result = subprocess.run(
-        [cog_binary, "predict", "--debug", docker_image, "-i", "s=world"],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_TIMEOUT,
-    )
-    assert result.returncode == 0
-    assert result.stdout == "hello world\n"
-
-
-def test_predict_fast_build(docker_image, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/fast-build"
-
-    result = subprocess.run(
-        [cog_binary, "predict", "-i", "s=world"],
-        cwd=project_dir,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0
-    assert result.stdout == "hello world\n"
-
-
-def test_predict_json_input(cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/string-project"
-
-    result = subprocess.run(
-        [
-            cog_binary,
-            "predict",
-            "--debug",
-            "--json",
-            '{"s": "sackfield"}',
-        ],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120.0,
-    )
-    assert result.returncode == 0
-    assert (
-        result.stdout
-        == """{
-  "status": "succeeded",
-  "output": "hello sackfield",
-  "error": ""
-}
-"""
-    )
-
-
-def test_predict_json_input_filename(cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/string-project"
-
-    result = subprocess.run(
-        [
-            cog_binary,
-            "predict",
-            "--debug",
-            "--json",
-            "@input.json",
-        ],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120.0,
-    )
-    assert result.returncode == 0
-    assert (
-        result.stdout
-        == """{
-  "status": "succeeded",
-  "output": "hello sackfield",
-  "error": ""
-}
-"""
-    )
-
-
-def test_predict_json_input_stdin(cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/string-project"
-
-    result = subprocess.run(
-        [
-            cog_binary,
-            "predict",
-            "--debug",
-            "--json",
-            "@-",
-        ],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120.0,
-        input='{"s": "sackfield"}',
-    )
-    assert result.returncode == 0
-    assert (
-        result.stdout
-        == """{
-  "status": "succeeded",
-  "output": "hello sackfield",
-  "error": ""
-}
-"""
-    )
-
-
-def test_predict_json_output(tmpdir_factory, cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/string-project"
-    out_dir = pathlib.Path(tmpdir_factory.mktemp("project"))
-    shutil.copytree(project_dir, out_dir, dirs_exist_ok=True)
-
-    result = subprocess.run(
-        [
-            cog_binary,
-            "predict",
-            "--debug",
-            "--json",
-            '{"s": "sackfield"}',
-            "--output",
-            "output.json",
-        ],
-        cwd=out_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120.0,
-    )
-    assert result.returncode == 0
-    with open(out_dir / "output.json", encoding="utf-8") as f:
-        assert (
-            f.read()
-            == """{
-  "status": "succeeded",
-  "output": "hello sackfield",
-  "error": ""
-}"""
-        )
-
-
-def test_predict_json_input_stdin_dash(cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/string-project"
-
-    result = subprocess.run(
-        [
-            cog_binary,
-            "predict",
-            "--debug",
-            "--json",
-            "-",
-        ],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120.0,
-        input='{"s": "sackfield"}',
-    )
-    assert result.returncode == 0
-    assert (
-        result.stdout
-        == """{
-  "status": "succeeded",
-  "output": "hello sackfield",
-  "error": ""
-}
-"""
-    )
-
-
-def test_predict_pipeline(cog_binary):
-    project_dir = Path(__file__).parent / "fixtures/procedure-project"
-    result = subprocess.run(
-        [cog_binary, "predict", "--x-pipeline", "--debug", "-i", "prompt=test"],
-        cwd=project_dir,
-        capture_output=True,
-        text=True,
-        timeout=120.0,
-    )
-    assert result.returncode == 0
-    assert result.stdout == "HELLO TEST\n"
-
-
 def test_predict_pipeline_downloaded_requirements(cog_binary):
-    """Test that pipeline builds download runtime requirements and make dependencies available"""
+    """Test that pipeline builds download runtime requirements and make dependencies available.
+
+    This test is kept in Python because it requires:
+    - pytest_httpserver for mock HTTP server
+    - Complex environment variable setup
+    - Verification of downloaded requirements content
+    """
     project_dir = Path(__file__).parent / "fixtures/pipeline-requirements-project"
 
     # Create initial local requirements.txt that differs from what mock server will return
     # This simulates the out-of-sync scenario
-    # TODO[md]: remove this stuff once tests are ported to go and each test
-    # has an isolated temp dir so we don't need to care about temp files polluting the work tree
     initial_local_requirements = """# pipelines-runtime@sha256:d1b9fbd673288453fdf12806f4cba9e9e454f0f89b187eac2db5731792f71d60
 moviepy==v2.2.1
 numpy==v2.3.2
@@ -488,6 +111,8 @@ urllib3==2.0.4
             server_host = f"127.0.0.1:{httpserver.port}"
 
             # Run prediction with pipeline flag and mock server
+            import subprocess
+
             env = os.environ.copy()
             env["R8_PIPELINES_RUNTIME_HOST"] = server_host
             env["R8_SCHEME"] = "http"  # Use HTTP instead of HTTPS for testing
@@ -505,7 +130,6 @@ urllib3==2.0.4
             assert result.returncode == 0
 
             # The output should list all installed packages (one per line)
-            # No header since predict function was simplified to just return package list
             assert (
                 len(result.stdout.strip().split("\n")) > 10
             )  # Should have many packages
@@ -519,7 +143,6 @@ urllib3==2.0.4
             assert "requests==2.32.5" in result.stderr
 
             # Verify that specific versions from mock are present in the installed packages list
-            # This proves the mock requirements were actually installed and used
             assert "requests==2.32.5" in result.stdout
             assert (
                 "urllib3==" in result.stdout
