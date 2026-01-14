@@ -1,11 +1,34 @@
 import contextlib
+import random
 import signal
 import socket
+import string
 import subprocess
 import sys
 import time
 
 import httpx
+
+
+def random_string(length: int) -> str:
+    return "".join(random.choice(string.ascii_lowercase) for _ in range(length))
+
+
+def remove_docker_image(
+    image_name: str, max_attempts: int = 5, wait_seconds: int = 1
+) -> None:
+    for attempt in range(max_attempts):
+        try:
+            subprocess.run(
+                ["docker", "rmi", "-f", image_name], check=True, capture_output=True
+            )
+            print(f"Image {image_name} successfully removed.")
+            break
+        except subprocess.CalledProcessError as exc:
+            print(f"Attempt {attempt + 1} failed: {exc.stderr.decode()}")
+            time.sleep(wait_seconds)
+    else:
+        print(f"Failed to remove image {image_name} after {max_attempts} attempts.")
 
 
 def random_port() -> int:
@@ -21,7 +44,7 @@ def cog_server_http_run(project_dir: str, cog_binary: str):
     port = random_port()
     addr = f"http://127.0.0.1:{port}"
 
-    server: subprocess.Popen | None = None
+    server: subprocess.Popen[bytes] | None = None
 
     try:
         server = subprocess.Popen(

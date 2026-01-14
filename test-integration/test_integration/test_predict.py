@@ -12,7 +12,7 @@ from .util import cog_server_http_run
 
 
 @pytest.mark.asyncio
-async def test_concurrent_predictions(cog_binary):
+async def test_concurrent_predictions(cog_binary: str) -> None:
     """Test that concurrent async predictions complete properly with server shutdown.
 
     This test verifies:
@@ -36,7 +36,8 @@ async def test_concurrent_predictions(cog_binary):
         )
 
     with cog_server_http_run(
-        Path(__file__).parent / "fixtures" / "async-sleep-project", cog_binary
+        str(Path(__file__).parent / "fixtures" / "async-sleep-project"),
+        cog_binary,
     ) as addr:
         async with httpx.AsyncClient() as client:
             tasks = []
@@ -55,7 +56,7 @@ async def test_concurrent_predictions(cog_binary):
                 assert task.result().json()["output"] == f"wake up sleepyhead{i}"
 
 
-def test_predict_pipeline_downloaded_requirements(cog_binary):
+def test_predict_pipeline_downloaded_requirements(cog_binary: str) -> None:
     """Test that pipeline builds download runtime requirements and make dependencies available.
 
     This test is kept in Python because it requires:

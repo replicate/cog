@@ -4,8 +4,8 @@
 # Build with --use-cog-base-image flag
 cog build -t $TEST_IMAGE --use-cog-base-image
 
-# Check the base image layer hash label exists
-exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.cog-base-image-last-layer-sha"}}'
+# Verify the base image layer label matches one of the actual layers
+exec python3 -c 'import json,os,subprocess; image=os.environ["TEST_IMAGE"]; base_layer=subprocess.check_output(["docker","inspect",image,"--format={{index .Config.Labels \"run.cog.cog-base-image-last-layer-sha\"}}"], text=True).strip(); assert base_layer.startswith("sha256:"), f"Base layer label missing sha256 digest: {base_layer}"; layers=json.loads(subprocess.check_output(["docker","inspect",image,"--format={{json .RootFS.Layers}}"], text=True)); assert base_layer in layers, f"Base layer {base_layer} not found in RootFS layers"; print(base_layer)'
 stdout 'sha256:'
 
 -- cog.yaml --

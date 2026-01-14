@@ -7,13 +7,9 @@
 # Build using cog base image
 cog build -t $TEST_IMAGE --use-cog-base-image=true
 
-# Check that cog Python package reports a version (should match semver pattern)
-exec docker run $TEST_IMAGE python -c 'import cog; print(cog.__version__)'
+# Compare the embedded version label with the Python package version inside the image
+exec python3 -c 'import os,re,subprocess; image=os.environ["TEST_IMAGE"]; label=subprocess.check_output(["docker","inspect",image,"--format={{index .Config.Labels \"run.cog.version\"}}"], text=True).strip(); package=subprocess.check_output(["docker","run","--rm","-t",image,"python","-c","import cog; print(cog.__version__)"] , text=True).strip(); pattern=re.compile(r"^\d+\.\d+\.\d+"); assert pattern.search(package), f"Invalid package version: {package}"; assert label == "dev" or pattern.search(label), f"Invalid label version: {label}"; assert label == "dev" or label == package, f"Label version {label} != package version {package}"; print(package)'
 stdout '[0-9]+\.[0-9]+\.[0-9]+'
-
-# Check that the cog binary also reports a version (could be semver or "dev")
-cog --version
-stdout 'cog version'
 
 -- cog.yaml --
 build:
