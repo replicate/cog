@@ -315,10 +315,10 @@ class Predictor(BasePredictor):
 
 Use conditions to control when tests run based on environment:
 
-**`[slow]` - Skip slow tests in fast mode:**
+**`[fast]` - Skip slow tests in fast mode:**
 
 ```txtar
-[slow] skip 'requires GPU or long build time'
+[fast] skip 'requires GPU or long build time'
 
 cog build -t $TEST_IMAGE
 # ... rest of test
@@ -356,8 +356,8 @@ cog build -t $TEST_IMAGE
 **Combining conditions:**
 
 Conditions can be negated with `!`. Examples:
-- `[slow]` - True when `COG_TEST_FAST=1` is set (meaning "we're in fast mode, so skip this slow test")
-- `[!slow]` - True when `COG_TEST_FAST` is NOT set (meaning "only run this in full test mode")
+- `[fast]` - True when `COG_TEST_FAST=1` is set (skip this test in fast mode)
+- `[!fast]` - True when `COG_TEST_FAST` is NOT set (only run this in full test mode)
 - `[!linux]` - True when NOT on Linux
 - `[linux_amd64]` - True when on Linux AND amd64
 

@@ -1,4 +1,4 @@
-[slow] skip 'slow test - run without COG_TEST_FAST=1'
+[fast] skip 'slow test - run without COG_TEST_FAST=1'
 
 # Test Torch 2.7.0 + CUDA 12.6 base image build
 cog build -t $TEST_IMAGE

@@ -28,7 +28,7 @@ func TestIntegration(t *testing.T) {
 
 // condition provides custom conditions for testscript.
 // Supported conditions:
-//   - slow: marks a test as slow. Use [slow] skip to skip when COG_TEST_FAST=1 is set.
+//   - fast: true when COG_TEST_FAST=1 is set. Use [fast] skip to skip slow tests in fast mode.
 //   - linux/linux_amd64/amd64: platform guards for specialized tests.
 func condition(cond string) (bool, error) {
 	negated := false
@@ -39,7 +39,7 @@ func condition(cond string) (bool, error) {
 
 	var value bool
 	switch cond {
-	case "slow":
+	case "fast":
 		value = os.Getenv("COG_TEST_FAST") == "1"
 	case "linux":
 		value = runtime.GOOS == "linux"

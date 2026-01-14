@@ -1,7 +1,7 @@
 # Test cog run with fast build mode enabled
 # Source: test_run.py::test_run_fast_build
 
-[slow] skip 'requires torch installation'
+[fast] skip 'requires torch installation'
 
 cog run echo hello world
 stdout 'hello world'
