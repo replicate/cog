@@ -211,12 +211,22 @@ impl SlotLogWriter {
                 // Have prediction ID - check if still active
                 if let Some(sender) = get_prediction_sender(&prediction_id) {
                     // Active prediction - route to slot
+                    tracing::trace!(
+                        prediction_id = %prediction_id,
+                        source = ?self.source,
+                        bytes = data.len(),
+                        "Log routed to slot"
+                    );
                     sender.send_log(self.source, data).map_err(|e| {
                         pyo3::exceptions::PyIOError::new_err(e.to_string())
                     })?;
                 } else {
                     // Orphan task - prediction completed but task still running
-                    // Try setup sender, then fallback to stderr
+                    tracing::trace!(
+                        prediction_id = %prediction_id,
+                        source = ?self.source,
+                        "Orphan log (prediction completed)"
+                    );
                     self.write_outside_prediction(py, data)?;
                 }
             }
@@ -353,6 +363,11 @@ impl SlotLogWriter {
         // Try setup sender (registered during setup phase)
         if let Some(sender) = get_setup_sender() {
             if sender.send_log(self.source, data).is_ok() {
+                tracing::trace!(
+                    source = ?self.source,
+                    bytes = data.len(),
+                    "Log routed via control channel (setup)"
+                );
                 return Ok(());
             }
             // If send fails, fall through to tracing
