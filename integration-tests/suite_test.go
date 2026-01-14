@@ -3,6 +3,8 @@ package integration_test
 import (
 	"fmt"
 	"os"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/rogpeppe/go-internal/testscript"
@@ -27,12 +29,30 @@ func TestIntegration(t *testing.T) {
 // condition provides custom conditions for testscript.
 // Supported conditions:
 //   - slow: marks a test as slow. Use [slow] skip to skip when COG_TEST_FAST=1 is set.
+//   - linux/linux_amd64/amd64: platform guards for specialized tests.
 func condition(cond string) (bool, error) {
+	negated := false
+	for strings.HasPrefix(cond, "!") {
+		negated = !negated
+		cond = cond[1:]
+	}
+
+	var value bool
 	switch cond {
 	case "slow":
-		// slow is true when we should skip slow tests (i.e., when COG_TEST_FAST=1)
-		// Usage: [slow] skip 'reason' to skip slow tests in fast mode
-		return os.Getenv("COG_TEST_FAST") == "1", nil
+		value = os.Getenv("COG_TEST_FAST") == "1"
+	case "linux":
+		value = runtime.GOOS == "linux"
+	case "amd64":
+		value = runtime.GOARCH == "amd64"
+	case "linux_amd64":
+		value = runtime.GOOS == "linux" && runtime.GOARCH == "amd64"
+	default:
+		return false, fmt.Errorf("unknown condition: %s", cond)
 	}
-	return false, fmt.Errorf("unknown condition: %s", cond)
+
+	if negated {
+		value = !value
+	}
+	return value, nil
 }
