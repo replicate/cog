@@ -1,0 +1,31 @@
+# Test list[Path] input type (multiple file inputs)
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict with multiple file inputs
+cog predict $TEST_IMAGE -i paths=@1.txt -i paths=@2.txt
+stdout 'test1'
+stdout 'test2'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def predict(self, paths: list[Path]) -> str:
+        output_parts = []
+        for path in paths:
+            with open(path) as f:
+                output_parts.append(f.read())
+        return "".join(output_parts)
+
+-- 1.txt --
+test1
+-- 2.txt --
+test2

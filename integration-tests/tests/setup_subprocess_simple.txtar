@@ -1,0 +1,107 @@
+[slow] skip 'slow test - skip in fast mode'
+
+# Test subprocess spawned during setup that writes to stdout
+# This ensures stream redirection works correctly when a background process
+# writes output during prediction serving.
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+cog serve
+
+# Make predictions with retry logic to handle subprocess initialization
+# The subprocess writes to stdout when it receives SIGUSR1
+# Use generous retries since setup spawns a background process
+retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 30 1s
+stdout '"output":"hello friendo1"'
+
+retry-curl POST /predictions '{"input":{"s":"friendo2"}}' 10 500ms
+stdout '"output":"hello friendo2"'
+
+retry-curl POST /predictions '{"input":{"s":"friendo3"}}' 10 500ms
+stdout '"output":"hello friendo3"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import signal
+import subprocess
+import sys
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    """
+    This predictor checks the case where a process is spawned during setup and then each
+    prediction causes that process to write to stdout. In the event that stream
+    redirection is not working correctly, the forked process will not be able to write to
+    stdout/stderr and will likely exit. Any state other than "running" is considered an
+    error condition and raises SystemExit to interrupt any more prediction serving.
+
+    This variant runs a simple subprocess to which SIGUSR1 is sent during each call to
+    `predict`.
+    """
+
+    def setup(self) -> None:
+        print("---> starting background process")
+
+        self.bg = subprocess.Popen(["bash", "child.sh"])
+
+        print(f"---> started background process pid={self.bg.pid}")
+
+    def predict(self, s: str) -> str:
+        status = self.bg.poll()
+
+        if status is None:
+            print(f"---> sending signal to background job pid={self.bg.pid}")
+
+            self.bg.send_signal(signal.SIGUSR1)
+
+            print(f"---> sent signal to background job pid={self.bg.pid}")
+        else:
+            print(f"---> background job died status={status}")
+
+            raise SystemExit
+
+        return "hello " + s
+
+-- child.sh --
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This _pong function and associated trap ensures that any SIGUSR1 sent during `predict`
+# will cause this process to write a decent amount of text to stdout. In the event that
+# stream redirection is not working correctly, this process will likely be in a defunct
+# state before the first SIGUSR1 can be sent.
+_pong() {
+  for i in $(seq 100); do
+    echo "${0} (${$}) PONG (${i}/100)"
+  done
+}
+
+trap _pong USR1
+
+# This loop simulates a setup period for filling up any stdout buffer.
+for i in $(seq 100); do
+  echo "${0} ($$) SETTING UP (${i}/100)"
+  sleep 0.01
+done
+
+# This loop simulates periodic writes to stdout while the background process is running
+# for the purpose of ensuring the file descriptor is still usable.
+while true; do
+  now="$(date +%s)"
+  now_mod=$((now % 10))
+
+  if [[ "${now_mod}" == 0 ]]; then
+    echo "${0} (${$}) STILL HERE"
+    sleep 1
+  fi
+
+  sleep 0.1
+done

@@ -137,11 +137,14 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 }
 
 func addBuildProgressOutputFlag(cmd *cobra.Command) {
-	defaultOutput := "auto"
-	if os.Getenv("TERM") == "dumb" {
-		defaultOutput = "plain"
+	defaultOutput := os.Getenv("BUILDKIT_PROGRESS")
+	if defaultOutput == "" {
+		defaultOutput = "auto"
+		if os.Getenv("TERM") == "dumb" {
+			defaultOutput = "plain"
+		}
 	}
-	cmd.Flags().StringVar(&buildProgressOutput, "progress", defaultOutput, "Set type of build progress output, 'auto' (default), 'tty' or 'plain'")
+	cmd.Flags().StringVar(&buildProgressOutput, "progress", defaultOutput, "Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet'")
 }
 
 func addSecretsFlag(cmd *cobra.Command) {

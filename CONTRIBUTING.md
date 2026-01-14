@@ -96,11 +96,10 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 We use the ["scripts to rule them all"](https://github.blog/engineering/engineering-principles/scripts-to-rule-them-all/) philosophy to manage common tasks across the project. These are mostly backed by a Makefile that contains the implementation.
 
 You'll need the following dependencies installed to build Cog locally:
-- [Go](https://golang.org/doc/install): We're targeting 1.24, but you can install the latest version since Go is backwards compatible. If you're using a newer Mac with an M1 chip, be sure to download the `darwin-arm64` installer package. Alternatively you can run `brew install go` which will automatically detect and use the appropriate installer for your system architecture.
-- [uv](https://docs.astral.sh/uv/): Python versions and dependencies are managed by uv.
+- [mise](https://mise.jdx.dev/getting-started.html): Manages Go and uv (which in turn manages Python)
 - [Docker](https://docs.docker.com/desktop) or [OrbStack](https://orbstack.dev)
 
-Install the Python dependencies:
+Set up your development environment:
 
     script/setup
 
@@ -145,7 +144,8 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/predict/` - Runs predictions on models.
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
 - `python/` - The Cog Python library.
-- `test-integration/` - High-level integration tests for Cog.
+- `integration-tests/` - Go-based integration tests using testscript (primary test suite).
+- `test-integration/` - Legacy Python integration tests (supplementary - CLI flags and tooling).
 - `tools/compatgen/` - Tool for generating CUDA/PyTorch/TensorFlow compatibility matrices.
 
 ## Updating compatibility matrices
@@ -189,7 +189,7 @@ There are a few concepts used throughout Cog that might be helpful to understand
 script/test # see also: make test
 ```
 
-**To run just the Golang tests:**
+**To run just the Go unit tests:**
 
 ```sh
 script/test-go # see also: make test-go
@@ -202,40 +202,116 @@ script/test-python # see also: make test-python
 ```
 
 > [!INFO]
-> Note that this will run the Python test suite using only the current version of Python defined in .python-version. To run a more comprehensive Python test suite then use `make test-python`.
+> This runs the Python test suite using the default Python version. To run a more comprehensive test across multiple Python versions, use `make test-python`.
 
-**To run just the integration tests:**
+### Integration Tests
+
+Cog has two integration test suites that are complementary:
+
+**Go integration tests (primary - 60 tests):**
+
+Tests core predictor functionality using [testscript](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript). Each test is a self-contained `.txtar` file in `integration-tests/tests/`.
 
 ```sh
+# Run all Go integration tests
+make test-integration-go
+
+# Run fast tests only (skip slow GPU/framework tests)
+COG_TEST_FAST=1 make test-integration-go
+
+# Run a specific test
+cd integration-tests && go test -v -run TestIntegration/string_predictor
+
+# Run with a custom cog binary
+COG_BINARY=/path/to/cog make test-integration-go
+```
+
+**Python integration tests (supplementary - 37 tests):**
+
+Tests CLI flags, `cog run`, and other tooling features using pytest.
+
+```sh
+# Run all Python integration tests
 make test-integration
+
+# Run a specific Python integration test
+cd test-integration && uv run tox -e integration -- test_integration/test_build.py::test_build_gpu_model_on_cpu
 ```
 
-**To run a specific Python test:**
+**Integration test coverage:**
+- **Go tests**: Core predictors, types, builds, training, subprocess behavior, HTTP server testing
+- **Python tests**: CLI flags (`--json`, `-o`), commands (`cog run`, `cog init`), edge cases
 
-```sh
-script/test-python python/tests/server/test_http.py::test_openapi_specification_with_yield
+### Writing Integration Tests
+
+When adding new functionality, prefer adding Go integration tests in `integration-tests/tests/`. They are:
+- Self-contained (embedded fixtures in `.txtar` files)
+- Faster to run (parallel execution with automatic cleanup)
+- Easier to read and write (simple command script format)
+
+Example test structure:
+
+```txtar
+# Test string predictor
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
 ```
 
-**To run a specific Python test under a specific environment**
+For testing `cog serve`, use `cog serve` and the `curl` command:
 
-```sh
-uv run tox -e py312-pydantic2-tests -- python/tests/server/test_http.py::test_openapi_specification_with_yield
+```txtar
+cog build -t $TEST_IMAGE
+cog serve
+curl POST /predictions '{"input":{"s":"test"}}'
+stdout '"output":"hello test"'
 ```
 
-_You can see all the available test environments under `env_list` in the tox.ini file_
+#### Advanced Test Commands
 
-**To stand up a server for one of the integration tests:**
+For tests that require subprocess initialization or async operations, use `retry-curl`:
 
-```sh
-make install
-pip install -r requirements-dev.txt
-make test
-cd test-integration/test_integration/fixtures/file-project
-cog build
-docker run -p 5001:5000 --init --platform=linux/amd64 cog-file-project
+**`retry-curl` - HTTP request with automatic retries:**
+
+```txtar
+# Make HTTP request with retry logic (useful for subprocess initialization delays)
+# retry-curl [method] [path] [body] [max-attempts] [retry-delay]
+retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
+stdout '"output":"hello test"'
 ```
 
-Then visit [localhost:5001](http://localhost:5001) in your browser.
+**Example: Testing predictor with subprocess in setup**
+
+```txtar
+cog build -t $TEST_IMAGE
+cog serve
+
+# Use generous retries since setup spawns a background process
+retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
+stdout '"output":"hello test"'
+
+-- predict.py --
+class Predictor(BasePredictor):
+    def setup(self):
+        self.process = subprocess.Popen(["./background.sh"])
+    
+    def predict(self, s: str) -> str:
+        return "hello " + s
+```
+
+See existing tests in `integration-tests/tests/`, especially `setup_subprocess_*.txtar`, for more examples.
 
 ## Running the docs server
 

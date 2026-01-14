@@ -1,0 +1,129 @@
+[slow] skip 'slow test - skip in fast mode'
+
+# Test double fork subprocess with HTTP server spawned during setup
+# This ensures stream redirection works correctly with daemonized HTTP servers
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+cog serve
+
+# Make predictions that communicate with forked HTTP server
+# Use generous retries since setup spawns a double-forked HTTP server
+retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 30 1s
+stdout '"output":"hello friendo1"'
+
+retry-curl POST /predictions '{"input":{"s":"friendo2"}}' 10 500ms
+stdout '"output":"hello friendo2"'
+
+retry-curl POST /predictions '{"input":{"s":"friendo3"}}' 10 500ms
+stdout '"output":"hello friendo3"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_packages:
+  - requests
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import signal
+import subprocess
+import sys
+
+import requests
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    """
+    This predictor checks the case where a process is spawned during setup and then each
+    prediction depends on being able to communicate with that process. In the event that
+    stream redirection is not working correctly, the forked process will not be able to
+    write to stdout/stderr and will likely exit. Any state other than "running" is
+    considered an error condition and raises SystemExit to interrupt any more prediction
+    serving.
+
+    This variant runs a forked python HTTP server via a shell wrapper to which a request
+    is made during each call to `predict`.
+    """
+
+    def setup(self) -> None:
+        print("---> starting background process")
+
+        self.bg = subprocess.Popen(["bash", "run-pong.sh"])
+
+        print(f"---> started background process pid={self.bg.pid}")
+
+        # Wait for HTTP server to be ready
+        import time
+        for i in range(30):
+            try:
+                requests.get("http://127.0.0.1:7777/ping", timeout=1)
+                print("---> background HTTP server is ready")
+                break
+            except Exception:
+                print(f"---> waiting for HTTP server ({i+1}/30)")
+                time.sleep(0.5)
+        else:
+            raise RuntimeError("Background HTTP server failed to start")
+
+    def predict(self, s: str) -> str:
+        status = self.bg.poll()
+
+        print(f"---> background job status={status}")
+
+        if status is None:
+            print(f"---> sending request to background job pid={self.bg.pid}")
+
+            print(requests.get("http://127.0.0.1:7777/ping"))
+
+            print(f"---> sent request to background job pid={self.bg.pid}")
+        else:
+            raise SystemExit
+
+        return "hello " + s
+
+-- run-pong.sh --
+#!/usr/bin/env bash
+python ./pong.py &
+wait
+
+-- pong.py --
+import os
+import signal
+import time
+from random import randint
+from wsgiref.simple_server import make_server
+
+
+def main():
+    child_pid = os.fork()
+    is_child = child_pid == 0
+
+    pid = os.getpid()
+
+    if is_child:
+        make_server("127.0.0.1", 7777, app).serve_forever()
+    else:
+        while True:
+            print(f"===> PARENT ({pid})")
+
+            time.sleep(10)
+
+
+def app(environ, start_response):
+    print(f"---> CHILD ({os.getpid()})")
+
+    if environ["PATH_INFO"] == "/ping":
+        start_response("200 OK", [("content-type", "text/plain")])
+        return [b"PONG\n" for n in range(100 + randint(2, 32))]
+
+    start_response("404 Not Found", [("content-type", "text/plain")])
+    return [b"NO\n"]
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,25 @@
+# Test GLB (3D model) file output
+
+# Create a minimal GLB placeholder file (GLB files start with "glTF" magic bytes)
+exec sh -c 'printf "glTF" > mesh.glb'
+
+# Build and predict - verifies GLB file output works
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE
+
+-- cog.yaml --
+build:
+  python_version: "3.13"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def setup(self) -> None:
+        if not Path("mesh.glb").exists():
+            raise ValueError("Example file mesh.glb does not exist")
+
+    def predict(self) -> Path:
+        return Path("mesh.glb")

@@ -27,10 +27,7 @@ jobs:
       - uses: hynek/build-and-inspect-python-package@v2
         id: baipp
       # Build coglet wheel with embedded Go binary
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: astral-sh/setup-uv@v7
+      - uses: jdx/mise-action@v2
       - name: Build coglet-server binary
         run: script/build-coglet-server
       - name: Build coglet wheel
@@ -55,15 +52,7 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-python@v6
-        with:
-          python-version: 3.12
-      - uses: hynek/setup-cached-uv@v2
-      - name: Prepare tox
-        run: uv pip install --system tox tox-uv
+      - uses: jdx/mise-action@v2
       - name: Lint
         run: make lint
 
@@ -73,6 +62,7 @@ jobs:
       - test-go
       - test-python
       - test-integration
+      - test-integration-go
       - test-coglet-go
       - test-coglet-python
     runs-on: ubuntu-latest
@@ -98,9 +88,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+      - uses: jdx/mise-action@v2
       - name: Build
         run: make cog
       - name: Test
@@ -115,6 +103,8 @@ jobs:
       matrix:
         pydantic: ["1", "2"]
         python-version: ${{ fromJson(needs.build-python.outputs.python-versions) }}
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - name: Download built wheels
         uses: actions/download-artifact@v6
@@ -123,19 +113,13 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-      - uses: hynek/setup-cached-uv@v2
-      - name: Prepare tox
-        run: |
-          echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
-          uv pip install --system tox
-      - run: uv pip install --system tox-uv
+      - uses: jdx/mise-action@v2
+      - name: Compute tox env name
+        run: echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test
-        run: python -Im tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
+        run: uvx --with tox-uv tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
 
   # ==========================================================================
   # Coglet tests (Go server + Python SDK for the coglet runtime)
@@ -147,10 +131,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: astral-sh/setup-uv@v6
+      - uses: jdx/mise-action@v2
       - name: Pre-create coglet venv
         run: uv sync --project coglet --no-dev --extra test
       - name: Test coglet Go
@@ -163,22 +144,54 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-      - uses: hynek/setup-cached-uv@v2
+      - uses: jdx/mise-action@v2
       - name: Install coglet test dependencies
-        run: |
-          cd coglet
-          uv pip install --system -e ".[test]"
+        run: uv sync --project coglet --extra test
       - name: Test coglet Python
-        run: |
-          cd coglet
-          python -m pytest python/tests -v
+        run: uv run --project coglet pytest coglet/python/tests -v
+
+  # Go-based integration tests using testscript framework
+  test-integration-go:
+    name: "Test integration Go (${{ matrix.runtime }})"
+    needs: build-python
+    runs-on: ubuntu-latest-16-cores
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [cog, coglet-alpha]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: index.docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Download built wheels
+        uses: actions/download-artifact@v6
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build cog binary
+        run: make cog
+      - name: Run Go integration tests
+        env:
+          COG_WHEEL: ${{ matrix.runtime }}
+          COG_BINARY: ./cog
+          TEST_PARALLEL: 8
+        run: make test-integration-go
 
   # TODO[md]: This is a gross hack, remove once this is sorted out: https://github.com/replicate/cog/pull/2353
   # cannot run this on mac due to licensing issues: https://github.com/actions/virtual-environments/issues/2150
@@ -215,15 +228,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-python@v6
-        with:
-          python-version: 3.12
-      - uses: hynek/setup-cached-uv@v2
-      - name: Prepare tox
-        run: uv pip install --system tox tox-uv
+      - uses: jdx/mise-action@v2
       - name: Test
         env:
           COG_WHEEL: ${{ matrix.runtime }}
@@ -263,9 +268,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+      - uses: jdx/mise-action@v2
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
