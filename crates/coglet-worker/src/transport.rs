@@ -67,6 +67,8 @@ pub struct NamedSocketTransport {
     dir: PathBuf,
     /// Connected sockets for each slot.
     sockets: Vec<UnixStream>,
+    /// Listeners for each slot (created at bind time, used at accept time).
+    listeners: Vec<tokio::net::UnixListener>,
     /// Whether this is the parent (owns cleanup) or child.
     is_parent: bool,
 }
@@ -77,14 +79,17 @@ impl NamedSocketTransport {
     /// Creates socket directory and binds listeners for each slot.
     /// Returns transport and info for child to connect.
     pub async fn create(num_slots: usize) -> io::Result<(Self, ChildTransportInfo)> {
+        use std::os::unix::net::UnixListener as StdUnixListener;
+        use tokio::net::UnixListener;
+
         // Create directory in platform temp location
         let dir = std::env::temp_dir().join(format!("coglet-{}", std::process::id()));
         std::fs::create_dir_all(&dir)?;
 
-        tracing::info!(transport_type = "named", dir = %dir.display(), num_slots, "Created slot transport");
+        tracing::info!(transport_type = "named", dir = %dir.display(), num_slots, "Creating slot transport");
 
-        // Create socket files so child knows they exist, but don't bind yet.
-        // Actual binding happens in accept_connections after child spawns.
+        // Bind all listeners now so child can connect to any slot
+        let mut listeners = Vec::with_capacity(num_slots);
         for i in 0..num_slots {
             let path = dir.join(format!("slot-{}.sock", i));
 
@@ -93,12 +98,18 @@ impl NamedSocketTransport {
                 std::fs::remove_file(&path)?;
             }
 
-            tracing::trace!(slot = i, path = %path.display(), "Will create socket");
+            let std_listener = StdUnixListener::bind(&path)?;
+            std_listener.set_nonblocking(true)?;
+            let listener = UnixListener::from_std(std_listener)?;
+
+            tracing::trace!(slot = i, path = %path.display(), "Bound socket");
+            listeners.push(listener);
         }
 
         let transport = Self {
             dir: dir.clone(),
             sockets: Vec::with_capacity(num_slots),
+            listeners,
             is_parent: true,
         };
 
@@ -112,32 +123,19 @@ impl NamedSocketTransport {
 
     /// Accept connections from child on all slots.
     ///
-    /// Call this after spawning the child process.
+    /// Listeners were already bound in `create()`, so child can connect at any time.
     pub async fn accept_connections(&mut self, num_slots: usize) -> io::Result<()> {
-        use std::os::unix::net::UnixListener as StdUnixListener;
-        use tokio::net::UnixListener;
-
+        // Accept on each pre-bound listener
         for i in 0..num_slots {
-            let path = self.dir.join(format!("slot-{}.sock", i));
-
-            // Rebind if needed (socket file should exist from create)
-            let std_listener = if path.exists() {
-                // Already bound, just open
-                // Actually UnixListener::bind creates new, we need to reuse...
-                // This is getting complicated. Let's use a simpler pattern.
-                std::fs::remove_file(&path)?;
-                StdUnixListener::bind(&path)?
-            } else {
-                StdUnixListener::bind(&path)?
-            };
-            std_listener.set_nonblocking(true)?;
-            let listener = UnixListener::from_std(std_listener)?;
-
+            let listener = &self.listeners[i];
             tracing::trace!(slot = i, "Waiting for child connection");
             let (stream, _) = listener.accept().await?;
             self.sockets.push(stream);
             tracing::trace!(slot = i, "Child connected");
         }
+
+        // Clear listeners (no longer needed after accept)
+        self.listeners.clear();
 
         Ok(())
     }
@@ -159,6 +157,7 @@ impl NamedSocketTransport {
         Ok(Self {
             dir,
             sockets,
+            listeners: Vec::new(), // Child doesn't use listeners
             is_parent: false,
         })
     }
@@ -214,20 +213,42 @@ pub struct AbstractSocketTransport {
     prefix: String,
     /// Connected sockets for each slot.
     sockets: Vec<UnixStream>,
+    /// Listeners for each slot (created at bind time, used at accept time).
+    listeners: Vec<tokio::net::UnixListener>,
 }
 
 #[cfg(target_os = "linux")]
 impl AbstractSocketTransport {
     /// Create transport on parent side.
+    ///
+    /// Binds all listeners immediately so child can connect to any slot.
     pub async fn create(num_slots: usize) -> io::Result<(Self, ChildTransportInfo)> {
+        use std::os::linux::net::SocketAddrExt;
+        use std::os::unix::net::{SocketAddr, UnixListener as StdUnixListener};
+        use tokio::net::UnixListener;
+
         let prefix = format!("coglet-{}", std::process::id());
 
-        tracing::info!(transport_type = "abstract", prefix = %prefix, num_slots, "Created slot transport");
+        tracing::info!(transport_type = "abstract", prefix = %prefix, num_slots, "Creating slot transport");
 
-        // We'll bind listeners here, accept after child spawns
+        // Bind all listeners now so child can connect to any slot
+        let mut listeners = Vec::with_capacity(num_slots);
+        for i in 0..num_slots {
+            let name = format!("{}-{}", prefix, i);
+            let addr = SocketAddr::from_abstract_name(name.as_bytes())?;
+
+            let std_listener = StdUnixListener::bind_addr(&addr)?;
+            std_listener.set_nonblocking(true)?;
+            let listener = UnixListener::from_std(std_listener)?;
+
+            tracing::trace!(slot = i, name = %name, "Bound abstract socket");
+            listeners.push(listener);
+        }
+
         let transport = Self {
             prefix: prefix.clone(),
             sockets: Vec::with_capacity(num_slots),
+            listeners,
         };
 
         let child_info = ChildTransportInfo::AbstractSockets { prefix, num_slots };
@@ -236,24 +257,20 @@ impl AbstractSocketTransport {
     }
 
     /// Accept connections from child on all slots.
+    ///
+    /// Listeners were already bound in `create()`, so child can connect at any time.
     pub async fn accept_connections(&mut self, num_slots: usize) -> io::Result<()> {
-        use std::os::linux::net::SocketAddrExt;
-        use std::os::unix::net::{SocketAddr, UnixListener as StdUnixListener};
-        use tokio::net::UnixListener;
-
+        // Accept on each pre-bound listener
         for i in 0..num_slots {
-            let name = format!("{}-{}", self.prefix, i);
-            let addr = SocketAddr::from_abstract_name(name.as_bytes())?;
-
-            let std_listener = StdUnixListener::bind_addr(&addr)?;
-            std_listener.set_nonblocking(true)?;
-            let listener = UnixListener::from_std(std_listener)?;
-
-            tracing::trace!(slot = i, name = %name, "Waiting for child connection");
+            let listener = &self.listeners[i];
+            tracing::trace!(slot = i, "Waiting for child connection");
             let (stream, _) = listener.accept().await?;
             self.sockets.push(stream);
             tracing::trace!(slot = i, "Child connected");
         }
+
+        // Clear listeners (no longer needed after accept)
+        self.listeners.clear();
 
         Ok(())
     }
@@ -280,7 +297,11 @@ impl AbstractSocketTransport {
             tracing::trace!(slot = i, "Connected");
         }
 
-        Ok(Self { prefix, sockets })
+        Ok(Self {
+            prefix,
+            sockets,
+            listeners: Vec::new(), // Child doesn't use listeners
+        })
     }
 
     /// Get mutable reference to slot socket.
