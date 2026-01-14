@@ -171,6 +171,18 @@ impl Worker {
                 }
                 Ok(Some(Ok(ControlResponse::Ready { slots, schema }))) => {
                     tracing::info!(num_slots, ?slots, "Worker ready");
+                    
+                    // Log schema info
+                    if schema.is_some() {
+                        tracing::info!(target: "coglet::schema", "Setting OpenAPI schema from worker");
+                        // Full schema dump - opt-in only (requires explicit RUST_LOG=coglet_worker::schema=trace)
+                        if let Some(ref s) = schema {
+                            if let Ok(json) = serde_json::to_string_pretty(s) {
+                                tracing::trace!(target: "coglet_worker::schema", schema = %json, "OpenAPI schema content");
+                            }
+                        }
+                    }
+                    
                     let poisoned: HashMap<SlotId, bool> = slots.iter().map(|id| (*id, false)).collect();
                     return Ok(Self {
                         child,
