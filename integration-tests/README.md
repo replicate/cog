@@ -181,12 +181,12 @@ Use conditions to control when tests run based on environment. Conditions are ev
 
 ### Available Conditions
 
-| Condition | Description | Negated | Example Use Case |
-|-----------|-------------|---------|------------------|
-| `[slow]` | True when `COG_TEST_FAST=1` is set | `[!slow]` | Skip GPU tests, long builds, or slow framework installs |
-| `[linux]` | True on Linux | `[!linux]` | Tests requiring Linux-specific features |
-| `[amd64]` | True on amd64/x86_64 architecture | `[!amd64]` | Tests requiring specific CPU architecture |
-| `[linux_amd64]` | True on Linux AND amd64 | `[!linux_amd64]` | Tests requiring both Linux and amd64 (e.g., monobase images) |
+| Condition | Evaluates to True When | Negated | Example Use Case |
+|-----------|------------------------|---------|------------------|
+| `[slow]` | `COG_TEST_FAST=1` is set (in fast mode) | `[!slow]` | Use `[slow] skip` to skip GPU tests, long builds, or slow framework installs when running in fast mode |
+| `[linux]` | Running on Linux | `[!linux]` | Tests requiring Linux-specific features |
+| `[amd64]` | Running on amd64/x86_64 architecture | `[!amd64]` | Tests requiring specific CPU architecture |
+| `[linux_amd64]` | Running on Linux AND amd64 | `[!linux_amd64]` | Tests requiring both Linux and amd64 (e.g., monobase images) |
 
 ### Usage Examples
 
@@ -231,10 +231,14 @@ cog build -t $TEST_IMAGE --use-cog-base-image
 ### Condition Logic
 
 Conditions can be negated with `!`:
-- `[slow]` - True when `COG_TEST_FAST=1` (used to skip slow tests in fast mode)
-- `[!slow]` - True when `COG_TEST_FAST` is NOT set (run only in full test mode)
-- `[!linux]` - True when NOT on Linux (skip Linux-specific tests)
+- `[slow]` - True when `COG_TEST_FAST=1` is set (in fast mode)
+  - Use `[slow] skip` to skip a slow test when running in fast mode
+- `[!slow]` - True when `COG_TEST_FAST` is NOT set (in full test mode)
+  - Use `[!slow] skip` to only run a test in fast mode (rare)
+- `[!linux]` - True when NOT on Linux
+  - Use `[!linux] skip` to skip non-Linux tests
 - `[linux_amd64]` - True when on Linux AND amd64
+  - Use `[!linux_amd64] skip` to skip tests that need this specific platform
 
 Multiple conditions can be used on separate lines:
 
