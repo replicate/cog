@@ -196,7 +196,7 @@ fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
         }
         Err(e) if e.is_instance_of::<pyo3::exceptions::PyLookupError>(py) => {
             // ContextVar not set - outside prediction context
-            tracing::trace!("No prediction context (sync static and ContextVar both empty)");
+            // Don't log here - caller will log the routing decision
             Ok(None)
         }
         Err(e) => Err(e),

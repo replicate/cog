@@ -3,7 +3,6 @@ module github.com/replicate/cog
 go 1.25
 
 require (
-	github.com/alecthomas/kong v1.12.1
 	github.com/anaskhan96/soup v1.2.5
 	github.com/aquasecurity/go-pep440-version v0.0.1
 	github.com/aws/aws-sdk-go-v2 v1.36.3
@@ -12,7 +11,6 @@ require (
 	github.com/docker/cli v28.3.0+incompatible
 	github.com/docker/docker v28.1.1+incompatible
 	github.com/docker/go-connections v0.5.0
-	github.com/gabriel-vasile/mimetype v1.4.10
 	github.com/getkin/kin-openapi v0.128.0
 	github.com/google/go-containerregistry v0.20.5
 	github.com/hashicorp/go-version v1.7.0
@@ -35,7 +33,6 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	github.com/xeipuuv/gojsonschema v1.2.0
 	github.com/xeonx/timeago v1.0.0-rc5
-	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.38.0
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
 	golang.org/x/sync v0.14.0
@@ -170,10 +167,8 @@ require (
 	github.com/gostaticanalysis/nilerr v0.1.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hexops/gotextdiff v1.0.3 // indirect
 	github.com/in-toto/in-toto-golang v0.5.0 // indirect
@@ -306,6 +301,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20250210185358-939b2ce775ac // indirect
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/net v0.40.0 // indirect

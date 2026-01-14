@@ -132,6 +132,8 @@ impl WorkerHandle {
         let worker = guard.as_mut().unwrap();
         let slot = 0; // Sync predictors use single slot
 
+        info!(prediction_id = %id, "Starting prediction");
+        
         // Send prediction request on slot socket
         if let Err(e) = worker.send_predict(slot, id.clone(), input).await {
             error!(error = %e, "Failed to send prediction");
@@ -163,6 +165,7 @@ impl WorkerHandle {
                     if let Some(o) = output {
                         final_output = Some(o);
                     }
+                    info!(prediction_id = %id, predict_time, "Prediction succeeded");
                     return Ok(PredictionResult {
                         output: PredictionOutput::Single(final_output.unwrap_or(serde_json::Value::Null)),
                         predict_time: Some(Duration::from_secs_f64(predict_time)),
@@ -170,9 +173,11 @@ impl WorkerHandle {
                     });
                 }
                 Ok(SlotResponse::Failed { error, .. }) => {
+                    warn!(prediction_id = %id, %error, "Prediction failed");
                     return Err(PredictionError::Failed(error));
                 }
                 Ok(SlotResponse::Cancelled { .. }) => {
+                    info!(prediction_id = %id, "Prediction cancelled");
                     return Err(PredictionError::Cancelled);
                 }
                 Err(e) => {
@@ -370,7 +375,6 @@ fn serve_async_inprocess(
         rt.block_on(async {
             // Set schema
             if let Some(s) = schema_clone {
-                info!("Setting OpenAPI schema");
                 service_for_schema.set_schema(s).await;
             }
             
@@ -458,7 +462,6 @@ fn serve_subprocess(
                     
                     // Set OpenAPI schema if available
                     if let Some(s) = schema {
-                        info!("Setting OpenAPI schema from worker");
                         service_clone.set_schema(s).await;
                     }
                 }

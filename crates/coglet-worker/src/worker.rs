@@ -252,7 +252,7 @@ pub async fn run_worker<H: PredictHandler>(handler: Arc<H>, config: WorkerConfig
 
     // Send Ready with slot IDs and schema
     let schema = handler.schema();
-    tracing::info!(num_slots, ?slot_ids, "Worker ready");
+    tracing::debug!(num_slots, ?slot_ids, "Sending Ready to parent");
     {
         let mut w = ctrl_writer.lock().await;
         w.send(ControlResponse::Ready { slots: slot_ids.clone(), schema }).await?;
