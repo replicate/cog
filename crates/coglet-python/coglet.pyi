@@ -9,8 +9,14 @@ from typing import Optional
 # Module version
 __version__: str
 
-# True when running inside the worker subprocess, False in parent
-active: bool
+def active() -> bool:
+    """Check if running inside a worker subprocess.
+
+    Returns:
+        True when running inside the worker subprocess (after coglet._run_worker()),
+        False in the parent process (when calling coglet.serve()).
+    """
+    ...
 
 def serve(
     predictor: Optional[str] = None,
@@ -47,12 +53,5 @@ def _is_cancelable() -> bool:
     """Internal: Check if we're in a cancelable section.
 
     Used by Python signal handlers for cancellation.
-    """
-    ...
-
-def _get_active() -> bool:
-    """Internal: Get the active flag value.
-
-    Use `coglet.active` instead.
     """
     ...

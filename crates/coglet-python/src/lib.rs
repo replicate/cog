@@ -28,10 +28,12 @@ fn set_active() {
     ACTIVE.store(true, Ordering::SeqCst);
 }
 
-/// Get the active flag (exposed as coglet.active property).
+/// Get the active flag.
+///
+/// Returns True when running inside a worker subprocess, False in the parent.
+/// Call as: `coglet.active()`
 #[pyfunction]
-#[pyo3(name = "_get_active")]
-fn get_active() -> bool {
+fn active() -> bool {
     ACTIVE.load(Ordering::SeqCst)
 }
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -410,9 +412,8 @@ fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Version from Cargo.toml
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
-    // Add `active` as a module-level property using __getattr__
-    // This requires setting up a custom __getattr__ that delegates to _get_active()
-    m.add_function(wrap_pyfunction!(get_active, m)?)?;
+    // active() function - returns True in worker subprocess, False in parent
+    m.add_function(wrap_pyfunction!(active, m)?)?;
 
     m.add_function(wrap_pyfunction!(serve, m)?)?;
     m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
@@ -425,35 +426,6 @@ fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Export classes (needed for isinstance checks in audit hook)
     m.add_class::<log_writer::SlotLogWriter>()?;
     m.add_class::<audit::TeeWriter>()?;
-
-    // Add module __getattr__ for `active` property
-    // This allows `coglet.active` to work as a property
-    let getattr_code = r#"
-def __getattr__(name):
-    if name == 'active':
-        return _get_active()
-    raise AttributeError(f"module 'coglet' has no attribute '{name}'")
-"#;
-    py_run_string(m.py(), getattr_code, m)?;
-
-    Ok(())
-}
-
-/// Run Python code and add the resulting __getattr__ to the module.
-fn py_run_string(py: Python<'_>, code: &str, module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Execute the code to get the __getattr__ function
-    let globals = pyo3::types::PyDict::new(py);
-    globals.set_item("_get_active", module.getattr("_get_active")?)?;
-
-    // Use py.eval with exec mode to run statements
-    let code_cstr = std::ffi::CString::new(code)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-    py.run(&code_cstr, Some(&globals), None)?;
-
-    // Get the __getattr__ function and add it to the module
-    if let Some(getattr) = globals.get_item("__getattr__")? {
-        module.setattr("__getattr__", getattr)?;
-    }
 
     Ok(())
 }
