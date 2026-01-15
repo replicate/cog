@@ -20,6 +20,7 @@ jobs:
   build-python:
     name: Build & verify python package
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -44,6 +45,7 @@ jobs:
     name: Lint
     needs: build-python
     runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 30
     steps:
       - name: Download built wheels
         uses: actions/download-artifact@v6
@@ -66,6 +68,7 @@ jobs:
       - test-coglet-go
       - test-coglet-python
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check test status
         run: echo "All tests passed successfully!"
@@ -73,6 +76,7 @@ jobs:
   test-go:
     name: "Test Go"
     needs: build-python
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +102,7 @@ jobs:
     name: "Test Python ${{ matrix.python-version }} + Pydantic v${{ matrix.pydantic }}"
     needs: build-python
     runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -127,6 +132,7 @@ jobs:
   test-coglet-go:
     name: "Test Coglet Go"
     runs-on: ubuntu-latest-4-cores
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -140,6 +146,7 @@ jobs:
   test-coglet-python:
     name: "Test Coglet Python ${{ matrix.python-version }}"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -201,6 +208,7 @@ jobs:
     name: "Test integration"
     needs: test-integration-matrix
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check test status
         run: echo "All tests passed successfully!"
