@@ -185,6 +185,11 @@ func (s *Service) Run(ctx context.Context) error {
 		<-s.shutdown
 		log.Info("initiating graceful shutdown")
 
+		// Signal handler to reject new predictions immediately
+		if s.handler != nil {
+			s.handler.BeginShutdown()
+		}
+
 		// Signal runners to shutdown gracefully and wait for them
 		if s.handler != nil {
 			log.Tracew("stopping runners gracefully")

@@ -1,0 +1,33 @@
+# Test --x-localimage build flag
+# Source: test_build.py::test_fast_build_with_local_image
+# Note: This test requires linux/amd64 architecture for monobase to work
+
+[!linux_amd64] skip 'requires linux/amd64 for monobase build'
+
+# Build with localimage flag
+cog build -t $TEST_IMAGE --x-localimage
+
+# Verify image was created
+exec docker image inspect $TEST_IMAGE
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_requirements: requirements.txt
+  system_packages:
+    - "git"
+  fast: true
+predict: "predict.py:Predictor"
+
+-- requirements.txt --
+torch==2.5.0
+beautifulsoup4==4.12.3
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    test_inputs = {"s": "world"}
+
+    def predict(self, s: str) -> str:
+        return "hello " + s

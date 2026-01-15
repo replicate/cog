@@ -1,6 +1,0 @@
-build:
-  python_version: "3.10"
-  python_packages:
-  - "pillow"
-
-predict: "predict.py:Predictor"

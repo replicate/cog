@@ -1,0 +1,34 @@
+# Test that pip freeze label is embedded in image
+# Source: test_build.py::test_pip_freeze
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Check the pip_freeze label exists and contains expected packages
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.pip_freeze"}}'
+stdout 'pydantic'
+stdout 'uvicorn'
+stdout 'structlog'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: predict.py:Predictor
+
+-- predict.py --
+import tempfile
+
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def setup(self):
+        self.foo = "foo"
+
+    def predict(self, text: str, path: Path) -> Path:
+        with open(path) as f:
+            output = self.foo + text + f.read()
+        tmpdir = Path(tempfile.mkdtemp())
+        with open(tmpdir / "output.txt", "w") as fh:
+            fh.write(output)
+        return tmpdir / "output.txt"

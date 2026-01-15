@@ -1,0 +1,20 @@
+# Test --x-pipeline flag for procedure predictors
+# Source: test_predict.py::test_predict_pipeline
+
+# Run prediction with pipeline flag
+cog predict --x-pipeline -i prompt=test
+stdout 'HELLO TEST'
+
+-- cog.yaml --
+build:
+  python_version: "3.13"
+predict: "predict.py:run"
+
+-- predict.py --
+from cog import Input
+
+
+def run(
+    prompt: str = Input(),
+) -> str:
+    return f"HELLO {prompt.upper()}"
