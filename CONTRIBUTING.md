@@ -148,6 +148,8 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `test-integration/` - Legacy Python integration tests (supplementary - CLI flags and tooling).
 - `tools/compatgen/` - Tool for generating CUDA/PyTorch/TensorFlow compatibility matrices.
 
+For deeper architectural understanding, see the [architecture documentation](./architecture/00-overview.md).
+
 ## Updating compatibility matrices
 
 The CUDA base images and framework compatibility matrices in `pkg/config/` are checked into source control and only need to be regenerated when adding support for new versions of CUDA, PyTorch, or TensorFlow.
