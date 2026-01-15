@@ -1,4 +1,4 @@
-[slow] skip 'slow test - skip in fast mode'
+[fast] skip 'slow test - skip in fast mode'
 
 # Test subprocess spawned during setup that writes to stdout
 # This ensures stream redirection works correctly when a background process

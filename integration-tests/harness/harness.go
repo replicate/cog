@@ -26,6 +26,8 @@ type Harness struct {
 	CogBinary string
 	// realHome is captured at creation time before testscript overrides HOME
 	realHome string
+	// repoRoot is the path to the cog repository root
+	repoRoot string
 	// serverProcs tracks background cog serve processes for cleanup, keyed by work directory
 	serverProcs   map[string]*exec.Cmd
 	serverProcsMu sync.Mutex
@@ -37,9 +39,14 @@ func New() (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return nil, err
+	}
 	return &Harness{
 		CogBinary:   cogBinary,
 		realHome:    os.Getenv("HOME"),
+		repoRoot:    repoRoot,
 		serverProcs: make(map[string]*exec.Cmd),
 	}, nil
 }
@@ -158,6 +165,7 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 		"curl":       h.cmdCurl,
 		"wait-for":   h.cmdWaitFor,
 		"retry-curl": h.cmdRetryCurl,
+		"docker-run": h.cmdDockerRun,
 	}
 }
 
@@ -179,7 +187,6 @@ func (h *Harness) cmdCog(ts *testscript.TestScript, neg bool, args []string) {
 	}
 
 	// Default: run cog command normally
-	// Note: BUILDKIT_PROGRESS=quiet is set in Setup() to suppress Docker build output
 	expandedArgs := make([]string, len(args))
 	for i, arg := range args {
 		expandedArgs[i] = os.Expand(arg, ts.Getenv)
@@ -205,12 +212,11 @@ func (h *Harness) Setup(env *testscript.Env) error {
 	// to access the macOS keychain.
 	env.Setenv("HOME", h.realHome)
 
+	// Export repo root for tests that need to reference files outside the work directory
+	env.Setenv("REPO_ROOT", h.repoRoot)
+
 	// Disable update checks during tests
 	env.Setenv("COG_NO_UPDATE_CHECK", "1")
-
-	// Use quiet Docker build progress to suppress build output noise in test logs
-	// This hides the step-by-step build progress, only showing errors
-	env.Setenv("BUILDKIT_PROGRESS", "quiet")
 
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
@@ -708,6 +714,51 @@ func (h *Harness) cmdRetryCurl(ts *testscript.TestScript, neg bool, args []strin
 			}
 			ts.Logf("retry-curl: full response body: %s", lastBody)
 			ts.Fatalf("retry-curl: all %d attempts failed with status %d: %s", maxAttempts, lastStatus, errorMsg)
+		}
+	}
+}
+
+// cmdDockerRun implements the 'docker-run' command for testscript.
+// It runs a command inside a Docker container.
+// Usage:
+//
+//	docker-run <image> <command> [args...]
+//
+// The container is run with:
+//   - --rm (auto-remove after exit)
+//   - --add-host=host.docker.internal:host-gateway (for Linux compatibility)
+//   - Working directory mounted if needed
+func (h *Harness) cmdDockerRun(ts *testscript.TestScript, neg bool, args []string) {
+	if len(args) < 2 {
+		ts.Fatalf("docker-run: usage: docker-run <image> <command> [args...]")
+	}
+
+	image := os.Expand(args[0], ts.Getenv)
+	containerArgs := make([]string, len(args)-1)
+	for i, arg := range args[1:] {
+		containerArgs[i] = os.Expand(arg, ts.Getenv)
+	}
+
+	// Build docker run command
+	dockerArgs := []string{
+		"run", "--rm",
+		"--add-host=host.docker.internal:host-gateway",
+		image,
+	}
+	dockerArgs = append(dockerArgs, containerArgs...)
+
+	cmd := exec.Command("docker", dockerArgs...)
+	cmd.Stdout = ts.Stdout()
+	cmd.Stderr = ts.Stderr()
+
+	err := cmd.Run()
+	if neg {
+		if err == nil {
+			ts.Fatalf("docker-run: command succeeded unexpectedly")
+		}
+	} else {
+		if err != nil {
+			ts.Fatalf("docker-run: command failed: %v", err)
 		}
 	}
 }

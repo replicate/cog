@@ -136,10 +136,12 @@ func (h *Handler) ForceKillAll() {
 	h.runnerManager.ForceKillAll()
 }
 
-func (h *Handler) Stop() error {
-	// Set graceful shutdown flag to reject new predictions
+// BeginShutdown sets the graceful shutdown flag to reject new predictions
+func (h *Handler) BeginShutdown() {
 	h.gracefulShutdown.Store(true)
+}
 
+func (h *Handler) Stop() error {
 	// Stop the runner manager synchronously
 	log := h.logger.Sugar()
 	if err := h.runnerManager.Stop(); err != nil {
