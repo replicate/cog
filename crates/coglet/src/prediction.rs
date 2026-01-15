@@ -84,6 +84,10 @@ pub struct Prediction {
 
     /// Notifies waiters when prediction completes.
     completion: Arc<Notify>,
+
+    /// Whether the slot is poisoned (permanently failed).
+    /// Set by orchestrator when receiving Failed control message.
+    slot_poisoned: bool,
 }
 
 impl Prediction {
@@ -102,6 +106,7 @@ impl Prediction {
             error: None,
             webhook,
             completion: Arc::new(Notify::new()),
+            slot_poisoned: false,
         }
     }
 
@@ -148,6 +153,19 @@ impl Prediction {
     pub fn set_canceled(&mut self) {
         self.status = PredictionStatus::Canceled;
         self.completion.notify_waiters();
+    }
+
+    /// Mark the slot as poisoned (permanently failed).
+    ///
+    /// Called by orchestrator when receiving Failed control message.
+    /// The HTTP handler should check this and mark the permit as poisoned.
+    pub fn set_slot_poisoned(&mut self) {
+        self.slot_poisoned = true;
+    }
+
+    /// Check if the slot is poisoned.
+    pub fn is_slot_poisoned(&self) -> bool {
+        self.slot_poisoned
     }
 
     /// Get elapsed time since prediction started.

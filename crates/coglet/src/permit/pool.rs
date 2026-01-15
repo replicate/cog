@@ -37,6 +37,9 @@ pub struct Permit {
     /// Idle flag - set by event loop when slot completes work.
     /// If false on drop, slot is poisoned and permit is orphaned.
     idle_flag: Arc<AtomicBool>,
+    /// Poisoned flag - set when slot fails permanently.
+    /// Used to distinguish intentional non-return from bugs.
+    poisoned_flag: Arc<AtomicBool>,
     /// Channel to return permit to pool.
     pool_tx: mpsc::Sender<PermitInner>,
     /// Pool's available count (incremented on return).
@@ -53,9 +56,18 @@ impl Permit {
             slot_id: inner.slot_id,
             writer: Some(inner.writer),
             idle_flag: inner.idle_flag,
+            poisoned_flag: Arc::new(AtomicBool::new(false)),
             pool_tx,
             pool_available,
         }
+    }
+
+    /// Mark this slot as poisoned (permanently failed).
+    ///
+    /// Called when the orchestrator receives a Failed control message.
+    /// The permit will not be returned to the pool on drop.
+    pub fn mark_poisoned(&self) {
+        self.poisoned_flag.store(true, Ordering::Release);
     }
 
     /// Get the slot ID.
@@ -99,9 +111,12 @@ impl Drop for Permit {
                     self.pool_available.fetch_add(1, Ordering::Release);
                 }
             }
+        } else if self.poisoned_flag.load(Ordering::Acquire) {
+            // Slot explicitly poisoned - expected, capacity reduced
+            tracing::warn!(slot = %self.slot_id, "Slot poisoned - capacity reduced");
         } else {
-            // Slot is poisoned - log and orphan
-            tracing::warn!(slot = %self.slot_id, "Permit dropped without idle flag - slot orphaned");
+            // Unexpected - permit dropped without idle or poisoned flag
+            tracing::error!(slot = %self.slot_id, "Permit leaked without idle or poisoned flag");
         }
     }
 }

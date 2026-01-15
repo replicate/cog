@@ -365,7 +365,7 @@ impl PredictionService {
         completion.notified().await;
 
         // Extract result from prediction
-        let (status, output, error, logs, predict_time) = {
+        let (status, output, error, logs, predict_time, slot_poisoned) = {
             let pred = prediction_arc.lock().await;
             (
                 pred.status(),
@@ -373,11 +373,16 @@ impl PredictionService {
                 pred.error().map(|s| s.to_string()),
                 pred.logs().to_string(),
                 pred.elapsed(),
+                pred.is_slot_poisoned(),
             )
         };
 
-        // Mark slot as idle so permit returns to pool on drop
-        slot.mark_idle();
+        // Mark slot as idle (returns to pool) or poisoned (never returns)
+        if slot_poisoned {
+            slot.mark_poisoned();
+        } else {
+            slot.mark_idle();
+        }
 
         match status {
             PredictionStatus::Succeeded => Ok(PredictionResult {

@@ -424,9 +424,10 @@ async fn run_event_loop(
                         // This is just a control signal
                     }
                     Some(Ok(ControlResponse::Failed { slot, error })) => {
-                        tracing::warn!(%slot, %error, "Slot failed (poisoned)");
+                        tracing::warn!(%slot, %error, "Slot poisoned");
                         if let Some(pred) = predictions.remove(&slot) {
                             let mut p = pred.lock().await;
+                            p.set_slot_poisoned();
                             p.set_failed(error);
                         }
                     }

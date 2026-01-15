@@ -59,6 +59,13 @@ impl PredictionSlot {
         self.permit.idle_flag().store(true, Ordering::Release);
     }
 
+    /// Mark the slot as poisoned (permanently failed).
+    ///
+    /// The permit will NOT be returned to the pool on drop.
+    pub fn mark_poisoned(&self) {
+        self.permit.mark_poisoned();
+    }
+
     /// Check if the slot is marked as idle.
     pub fn is_idle(&self) -> bool {
         self.permit.is_idle()
