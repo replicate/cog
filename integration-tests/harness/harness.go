@@ -187,7 +187,6 @@ func (h *Harness) cmdCog(ts *testscript.TestScript, neg bool, args []string) {
 	}
 
 	// Default: run cog command normally
-	// Note: BUILDKIT_PROGRESS=quiet is set in Setup() to suppress Docker build output
 	expandedArgs := make([]string, len(args))
 	for i, arg := range args {
 		expandedArgs[i] = os.Expand(arg, ts.Getenv)
@@ -218,10 +217,6 @@ func (h *Harness) Setup(env *testscript.Env) error {
 
 	// Disable update checks during tests
 	env.Setenv("COG_NO_UPDATE_CHECK", "1")
-
-	// Use quiet Docker build progress to suppress build output noise in test logs
-	// This hides the step-by-step build progress, only showing errors
-	env.Setenv("BUILDKIT_PROGRESS", "quiet")
 
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
