@@ -22,7 +22,7 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 
 use coglet_core::{
     Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, PredictionService,
-    SetupResult, VersionInfo,
+    SetupResult, VersionInfo, PermitPool,
 };
 use coglet_transport::{ServerConfig, serve as http_serve};
 use coglet_worker::{SlotResponse, SpawnConfig, Worker};
@@ -298,8 +298,9 @@ fn serve(
     // If no predictor, just serve health endpoints
     let Some(pred_ref) = predictor_ref else {
         info!("No predictor specified, serving health endpoints only");
+        let pool = Arc::new(PermitPool::new(1));
         let service = Arc::new(
-            PredictionService::new(1)
+            PredictionService::new(pool)
                 .with_health(Health::Unknown)
                 .with_version(version),
         );
@@ -355,7 +356,8 @@ fn serve_subprocess(
     let worker = Arc::new(WorkerHandle::new(pred_ref, spawn_config));
 
     // Start with Starting health - will become Ready after worker init
-    let service = PredictionService::new(max_concurrency)
+    let pool = Arc::new(PermitPool::new(max_concurrency));
+    let service = PredictionService::new(pool)
         .with_health(Health::Starting)
         .with_version(version);
 
