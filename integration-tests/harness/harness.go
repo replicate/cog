@@ -164,7 +164,6 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 		"cog":        h.cmdCog,
 		"curl":       h.cmdCurl,
 		"wait-for":   h.cmdWaitFor,
-		"retry-curl": h.cmdRetryCurl,
 		"docker-run": h.cmdDockerRun,
 	}
 }
@@ -338,6 +337,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 
 // cmdCurl implements the 'curl' command for testscript.
 // It makes HTTP requests to the server started with 'serve'.
+// Includes built-in retry logic (10 attempts, 500ms delay) for resilience.
 // Usage: curl [method] [path] [body]
 // Examples:
 //
@@ -350,7 +350,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 
 	serverURL := ts.Getenv("SERVER_URL")
 	if serverURL == "" {
-		ts.Fatalf("curl: SERVER_URL not set (did you call 'serve' first?)")
+		ts.Fatalf("curl: SERVER_URL not set (did you call 'cog serve' first?)")
 	}
 
 	method := args[0]
@@ -360,64 +360,94 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 		body = args[2]
 	}
 
-	// Make the HTTP request
+	// Retry settings
+	maxAttempts := 10
+	retryDelay := 500 * time.Millisecond
+
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(method, serverURL+path, strings.NewReader(body))
-	if err != nil {
-		ts.Fatalf("curl: failed to create request: %v", err)
-	}
 
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	var lastErr error
+	var lastStatus int
+	var lastBody string
 
-	resp, err := client.Do(req)
-	if err != nil {
-		if neg {
-			// Expected to fail
-			return
-		}
-		ts.Fatalf("curl: request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	var respBodyBuilder strings.Builder
-	buf := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			respBodyBuilder.Write(buf[:n])
-		}
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		req, err := http.NewRequest(method, serverURL+path, strings.NewReader(body))
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				ts.Fatalf("curl: failed to read response: %v", err)
+			lastErr = err
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		// Read response body
+		var respBodyBuilder strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				respBodyBuilder.Write(buf[:n])
 			}
-			break
+			if readErr != nil {
+				if !errors.Is(readErr, io.EOF) {
+					ts.Fatalf("curl: failed to read response: %v", readErr)
+				}
+				break
+			}
+		}
+		respBody := respBodyBuilder.String()
+		resp.Body.Close()
+
+		lastStatus = resp.StatusCode
+		lastBody = respBody
+		lastErr = nil
+
+		// Check if this is a successful response
+		statusOK := resp.StatusCode >= 200 && resp.StatusCode < 300
+
+		if neg {
+			if !statusOK {
+				// Expected to fail - success!
+				return
+			}
+		} else {
+			if statusOK {
+				// Success - write body to stdout
+				ts.Stdout().Write([]byte(respBody))
+				return
+			}
+		}
+
+		// If this isn't the last attempt, wait before retrying
+		if attempt < maxAttempts {
+			time.Sleep(retryDelay)
 		}
 	}
-	respBody := respBodyBuilder.String()
 
-	// Check status code expectations
-	statusOK := resp.StatusCode >= 200 && resp.StatusCode < 300
+	// All attempts failed
 	if neg {
-		if statusOK {
-			ts.Fatalf("curl: expected failure but got status %d", resp.StatusCode)
-		}
+		ts.Fatalf("curl: expected failure but got status %d after %d attempts", lastStatus, maxAttempts)
 	} else {
-		if !statusOK {
-			// For error responses, try to show detailed error from JSON
-			errorMsg := respBody
+		if lastErr != nil {
+			ts.Fatalf("curl: all %d attempts failed with error: %v", maxAttempts, lastErr)
+		} else {
+			errorMsg := lastBody
 			if len(errorMsg) > 500 {
 				errorMsg = errorMsg[:500] + "..."
 			}
-			ts.Logf("curl: full response body: %s", respBody)
-			ts.Fatalf("curl: request failed with status %d: %s", resp.StatusCode, errorMsg)
+			ts.Logf("curl: full response body: %s", lastBody)
+			ts.Fatalf("curl: all %d attempts failed with status %d: %s", maxAttempts, lastStatus, errorMsg)
 		}
 	}
-
-	// Write response body to stdout for assertions
-	ts.Stdout().Write([]byte(respBody))
 }
 
 // StopServer stops the background server process for a test script.
@@ -591,130 +621,6 @@ func (h *Harness) cmdWaitFor(ts *testscript.TestScript, neg bool, args []string)
 		ts.Fatalf("wait-for: condition became true (expected to remain false)")
 	} else {
 		ts.Fatalf("wait-for: timeout waiting for condition: %s %s", condition, target)
-	}
-}
-
-// cmdRetryCurl implements the 'retry-curl' command for testscript.
-// It's like curl but retries on failure, useful for waiting for subprocess initialization.
-// Usage: retry-curl [method] [path] [body] [max-attempts] [retry-delay]
-// Examples:
-//
-//	retry-curl POST /predictions '{"input":{"s":"hello"}}' 10 1s
-func (h *Harness) cmdRetryCurl(ts *testscript.TestScript, neg bool, args []string) {
-	if len(args) < 2 {
-		ts.Fatalf("retry-curl: usage: retry-curl [method] [path] [body] [max-attempts] [retry-delay]")
-	}
-
-	serverURL := ts.Getenv("SERVER_URL")
-	if serverURL == "" {
-		ts.Fatalf("retry-curl: SERVER_URL not set (did you call 'cog serve' first?)")
-	}
-
-	method := args[0]
-	path := args[1]
-	var body string
-	if len(args) > 2 && args[2] != "" && args[2][0] == '{' {
-		body = args[2]
-	}
-
-	// Parse max attempts (default: 10)
-	maxAttempts := 10
-	if len(args) > 3 {
-		if attempts, err := strconv.Atoi(args[3]); err == nil {
-			maxAttempts = attempts
-		}
-	}
-
-	// Parse retry delay (default: 1s)
-	retryDelay := 1 * time.Second
-	if len(args) > 4 {
-		if duration, err := time.ParseDuration(args[4]); err == nil {
-			retryDelay = duration
-		}
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	var lastErr error
-	var lastStatus int
-	var lastBody string
-
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		req, err := http.NewRequest(method, serverURL+path, strings.NewReader(body))
-		if err != nil {
-			lastErr = err
-			time.Sleep(retryDelay)
-			continue
-		}
-
-		if body != "" {
-			req.Header.Set("Content-Type", "application/json")
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = err
-			time.Sleep(retryDelay)
-			continue
-		}
-
-		// Read response body
-		var respBodyBuilder strings.Builder
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := resp.Body.Read(buf)
-			if n > 0 {
-				respBodyBuilder.Write(buf[:n])
-			}
-			if readErr != nil {
-				if !errors.Is(readErr, io.EOF) {
-					ts.Fatalf("retry-curl: failed to read response: %v", readErr)
-				}
-				break
-			}
-		}
-		respBody := respBodyBuilder.String()
-		resp.Body.Close()
-
-		lastStatus = resp.StatusCode
-		lastBody = respBody
-
-		// Check if this is a successful response
-		statusOK := resp.StatusCode >= 200 && resp.StatusCode < 300
-
-		if neg {
-			if !statusOK {
-				// Expected to fail - success!
-				return
-			}
-		} else {
-			if statusOK {
-				// Success - write body to stdout
-				ts.Stdout().Write([]byte(respBody))
-				return
-			}
-		}
-
-		// If this isn't the last attempt, wait before retrying
-		if attempt < maxAttempts {
-			time.Sleep(retryDelay)
-		}
-	}
-
-	// All attempts failed
-	if neg {
-		ts.Fatalf("retry-curl: expected failure but got status %d after %d attempts", lastStatus, maxAttempts)
-	} else {
-		if lastErr != nil {
-			ts.Fatalf("retry-curl: all %d attempts failed with error: %v", maxAttempts, lastErr)
-		} else {
-			errorMsg := lastBody
-			if len(errorMsg) > 500 {
-				errorMsg = errorMsg[:500] + "..."
-			}
-			ts.Logf("retry-curl: full response body: %s", lastBody)
-			ts.Fatalf("retry-curl: all %d attempts failed with status %d: %s", maxAttempts, lastStatus, errorMsg)
-		}
 	}
 }
 

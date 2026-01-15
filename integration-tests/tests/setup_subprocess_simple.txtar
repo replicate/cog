@@ -10,16 +10,14 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Make predictions with retry logic to handle subprocess initialization
-# The subprocess writes to stdout when it receives SIGUSR1
-# Use generous retries since setup spawns a background process
-retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 30 1s
+# Make predictions - the subprocess writes to stdout when it receives SIGUSR1
+curl POST /predictions '{"input":{"s":"friendo1"}}'
 stdout '"output":"hello friendo1"'
 
-retry-curl POST /predictions '{"input":{"s":"friendo2"}}' 10 500ms
+curl POST /predictions '{"input":{"s":"friendo2"}}'
 stdout '"output":"hello friendo2"'
 
-retry-curl POST /predictions '{"input":{"s":"friendo3"}}' 10 500ms
+curl POST /predictions '{"input":{"s":"friendo3"}}'
 stdout '"output":"hello friendo3"'
 
 -- cog.yaml --

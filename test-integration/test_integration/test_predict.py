@@ -1,59 +1,13 @@
-import asyncio
 import os
-import time
 from pathlib import Path
 
-import httpx
 import pytest
 from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
 
-from .util import cog_server_http_run
 
-
-@pytest.mark.asyncio
-async def test_concurrent_predictions(cog_binary: str) -> None:
-    """Test that concurrent async predictions complete properly with server shutdown.
-
-    This test verifies:
-    1. Multiple predictions can run concurrently
-    2. Server shutdown waits for running predictions to complete
-    3. All predictions return correct results
-
-    This test is kept in Python because it requires:
-    - Async HTTP client (httpx.AsyncClient)
-    - asyncio.TaskGroup for concurrent requests
-    - Precise timing verification
-    """
-
-    async def make_request(i: int) -> httpx.Response:
-        return await client.post(
-            f"{addr}/predictions",
-            json={
-                "id": f"id-{i}",
-                "input": {"s": f"sleepyhead{i}", "sleep": 1.0},
-            },
-        )
-
-    with cog_server_http_run(
-        str(Path(__file__).parent / "fixtures" / "async-sleep-project"),
-        cog_binary,
-    ) as addr:
-        async with httpx.AsyncClient() as client:
-            tasks = []
-            start = time.perf_counter()
-            async with asyncio.TaskGroup() as tg:
-                for i in range(5):
-                    tasks.append(tg.create_task(make_request(i)))
-                # give time for all of the predictions to be accepted, but not completed
-                await asyncio.sleep(0.2)
-                # we shut the server down, but expect all running predictions to complete
-                await client.post(f"{addr}/shutdown")
-            end = time.perf_counter()
-            assert (end - start) < 3.0  # ensure the predictions ran concurrently
-            for i, task in enumerate(tasks):
-                assert task.result().status_code == 200
-                assert task.result().json()["output"] == f"wake up sleepyhead{i}"
+# test_concurrent_predictions has been ported to Go
+# See integration-tests/concurrent/concurrent_test.go
 
 
 def test_predict_pipeline_downloaded_requirements(cog_binary: str) -> None:

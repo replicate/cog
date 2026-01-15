@@ -2,6 +2,17 @@
 
 This directory contains Go-based integration tests for the Cog CLI using the [testscript](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript) framework.
 
+## Test Formats
+
+Most integration tests use the txtar format (`.txtar` files in `tests/`), which provides a simple declarative way to define test scripts and fixtures.
+
+However, some tests require capabilities that don't fit txtar's sequential execution model and are written as standard Go test functions instead:
+
+| Test | Location | Why Go instead of txtar |
+|------|----------|-------------------------|
+| `TestConcurrentPredictions` | `concurrent/` | Requires parallel HTTP requests with precise timing coordination |
+| `TestInteractiveTTY` | `pty/` | Requires bidirectional PTY interaction (future) |
+
 ## Quick Start
 
 ```bash
@@ -23,11 +34,15 @@ COG_BINARY=/path/to/cog make test-integration-go
 ```
 integration-tests/
 ├── README.md           # This file
-├── suite_test.go       # Main test runner
+├── suite_test.go       # Main test runner (txtar tests)
 ├── harness/
 │   └── harness.go      # Test harness with custom commands
 ├── tests/
 │   └── *.txtar         # Test files (one per test case)
+├── concurrent/
+│   └── concurrent_test.go  # Concurrent request tests
+├── pty/
+│   └── pty_test.go     # Interactive TTY tests (future)
 └── .bin/
     └── cog             # Cached cog binary (auto-generated)
 ```
@@ -143,24 +158,11 @@ stdout '"output":"hello"'
 
 Usage: `curl METHOD PATH [BODY]`
 
-### `retry-curl` - HTTP request with retries
-
-Useful for tests where initialization may take time (e.g., subprocess tests).
-
-```txtar
-cog serve
-retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
-stdout '"output":"hello test"'
-```
-
-Usage: `retry-curl METHOD PATH [BODY] [MAX_ATTEMPTS] [RETRY_DELAY]`
-
-- `MAX_ATTEMPTS`: Number of retries (default: 10)
-- `RETRY_DELAY`: Delay between retries (default: 1s)
+The `curl` command includes built-in retry logic (10 attempts, 500ms delay) for resilience against timing issues in integration tests.
 
 ### `wait-for` - Wait for conditions
 
-**Note**: This command waits for conditions on the **host machine**, not inside Docker containers. For Docker-based tests, use `retry-curl` instead.
+**Note**: This command waits for conditions on the **host machine**, not inside Docker containers. For Docker-based tests, use `curl` instead (which has built-in retry logic).
 
 ```txtar
 # Wait for a file to exist (host filesystem only)
@@ -309,8 +311,8 @@ build:
 cog build -t $TEST_IMAGE
 cog serve
 
-# Use generous retries for subprocess startup
-retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
+# curl has built-in retry logic for timing resilience
+curl POST /predictions '{"input":{"s":"test"}}'
 stdout '"output":"hello test"'
 
 -- predict.py --
@@ -328,7 +330,7 @@ class Predictor(BasePredictor):
 ### Slow tests (GPU/frameworks)
 
 ```txtar
-[slow] skip 'requires long build time'
+[fast] skip 'requires long build time'
 
 cog build -t $TEST_IMAGE
 cog predict $TEST_IMAGE
@@ -401,7 +403,7 @@ The server health check has a 30-second timeout. If your model takes longer to l
 
 ### "SERVER_URL not set" error
 
-Make sure `cog serve` is called before `curl` or `retry-curl`.
+Make sure `cog serve` is called before `curl`.
 
 ### Docker build output cluttering logs
 
@@ -409,7 +411,7 @@ Build output is suppressed by default (`BUILDKIT_PROGRESS=quiet`). Errors are st
 
 ### Files created in container not visible
 
-The `wait-for file` command checks the **host** filesystem, not inside Docker containers. Use `retry-curl` for Docker-based synchronization.
+The `wait-for file` command checks the **host** filesystem, not inside Docker containers. Use `curl` for Docker-based synchronization (it has built-in retry logic).
 
 ### Test works locally but fails in CI
 

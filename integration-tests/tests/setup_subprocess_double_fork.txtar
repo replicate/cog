@@ -10,14 +10,13 @@ cog build -t $TEST_IMAGE
 cog serve
 
 # Make predictions that communicate via file system with forked process
-# Use generous retries since setup spawns a double-forked process
-retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 30 1s
+curl POST /predictions '{"input":{"s":"friendo1"}}'
 stdout '"output":"hello friendo1"'
 
-retry-curl POST /predictions '{"input":{"s":"friendo2"}}' 10 500ms
+curl POST /predictions '{"input":{"s":"friendo2"}}'
 stdout '"output":"hello friendo2"'
 
-retry-curl POST /predictions '{"input":{"s":"friendo3"}}' 10 500ms
+curl POST /predictions '{"input":{"s":"friendo3"}}'
 stdout '"output":"hello friendo3"'
 
 -- cog.yaml --
