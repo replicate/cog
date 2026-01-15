@@ -415,11 +415,13 @@ async fn run_event_loop(
                 match ctrl_msg {
                     Some(Ok(ControlResponse::Idle { slot })) => {
                         tracing::debug!(%slot, "Slot idle");
-                        predictions.remove(&slot);
+                        // Don't remove prediction here - Done message on slot socket handles that
+                        // This just signals the slot is ready for more work
                     }
                     Some(Ok(ControlResponse::Cancelled { slot })) => {
                         tracing::debug!(%slot, "Slot cancelled (control channel)");
-                        predictions.remove(&slot);
+                        // Cancellation is handled via slot socket Cancelled response
+                        // This is just a control signal
                     }
                     Some(Ok(ControlResponse::Failed { slot, error })) => {
                         tracing::warn!(%slot, %error, "Slot failed (poisoned)");
@@ -478,24 +480,27 @@ async fn run_event_loop(
                     }
                     Ok(SlotResponse::Done { id, output, predict_time }) => {
                         tracing::debug!(%slot_id, %id, predict_time, "Prediction done");
-                        if let Some(pred) = predictions.get(&slot_id) {
+                        // Remove prediction from registry and notify waiters
+                        if let Some(pred) = predictions.remove(&slot_id) {
                             let mut p = pred.lock().await;
                             let pred_output = output
                                 .map(PredictionOutput::Single)
                                 .unwrap_or(PredictionOutput::Single(serde_json::Value::Null));
                             p.set_succeeded(pred_output);
+                        } else {
+                            tracing::warn!(%slot_id, %id, "Prediction not found for Done message");
                         }
                     }
                     Ok(SlotResponse::Failed { id, error }) => {
                         tracing::warn!(%slot_id, %id, %error, "Prediction failed");
-                        if let Some(pred) = predictions.get(&slot_id) {
+                        if let Some(pred) = predictions.remove(&slot_id) {
                             let mut p = pred.lock().await;
                             p.set_failed(error);
                         }
                     }
                     Ok(SlotResponse::Cancelled { id }) => {
                         tracing::info!(%slot_id, %id, "Prediction cancelled");
-                        if let Some(pred) = predictions.get(&slot_id) {
+                        if let Some(pred) = predictions.remove(&slot_id) {
                             let mut p = pred.lock().await;
                             p.set_canceled();
                         }

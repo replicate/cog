@@ -13,12 +13,14 @@ use std::sync::Arc;
 
 use tokio::sync::{Mutex, RwLock, watch};
 
+use crate::bridge::protocol::SlotRequest;
 use crate::health::{Health, SetupResult};
 use crate::orchestrator::OrchestratorHandle;
 use crate::permit::{PermitPool, PredictionSlot};
-use crate::prediction::Prediction;
+use crate::prediction::{Prediction, PredictionStatus};
 use crate::predictor::{
-    AsyncPredictFn, CancellationToken, PredictFn, PredictionError, PredictionResult,
+    AsyncPredictFn, CancellationToken, PredictFn, PredictionError, PredictionOutput,
+    PredictionResult,
 };
 use crate::version::VersionInfo;
 use crate::webhook::WebhookSender;
@@ -292,10 +294,110 @@ impl PredictionService {
 
     /// Run a prediction to completion.
     ///
-    /// This runs the predictor function (sync or async) and updates the
-    /// prediction's status and output. The slot's Drop will handle
-    /// sending the terminal webhook and releasing the permit.
+    /// Routes the prediction through either:
+    /// - Orchestrator mode: Sends request via slot socket, waits for event loop to complete
+    /// - Legacy mode: Calls predict_fn/async_predict_fn directly
+    ///
+    /// The slot's Drop will handle sending the terminal webhook and releasing the permit.
     pub async fn predict(
+        &self,
+        slot: &mut PredictionSlot,
+        input: serde_json::Value,
+    ) -> Result<PredictionResult, PredictionError> {
+        // Check if we're in orchestrator mode
+        let orchestrator = self.orchestrator.read().await.clone();
+
+        if let Some(orch) = orchestrator {
+            // Orchestrator mode: route through slot socket
+            self.predict_via_orchestrator(slot, input, &orch).await
+        } else {
+            // Legacy mode: use predict functions directly
+            self.predict_via_function(slot, input).await
+        }
+    }
+
+    /// Run prediction via orchestrator (slot socket + event loop).
+    async fn predict_via_orchestrator(
+        &self,
+        slot: &mut PredictionSlot,
+        input: serde_json::Value,
+        orchestrator: &Arc<OrchestratorHandle>,
+    ) -> Result<PredictionResult, PredictionError> {
+        let prediction_id = slot.id();
+        let slot_id = slot.permit().slot_id();
+
+        // Set processing status
+        {
+            let prediction = slot.prediction();
+            let mut pred = prediction.lock().await;
+            pred.set_processing();
+        }
+
+        // Register prediction with orchestrator's event loop (for response routing)
+        let prediction_arc = slot.prediction();
+        orchestrator
+            .register_prediction(slot_id, Arc::clone(&prediction_arc))
+            .await;
+
+        // Send prediction request via slot socket
+        let request = SlotRequest::Predict {
+            id: prediction_id.clone(),
+            input,
+        };
+
+        if let Err(e) = slot.permit_mut().send(request).await {
+            tracing::error!(%slot_id, error = %e, "Failed to send prediction request");
+            let mut pred = prediction_arc.lock().await;
+            pred.set_failed(format!("Failed to send request: {}", e));
+            // Don't mark idle - slot is poisoned
+            return Err(PredictionError::Failed(format!(
+                "Failed to send request: {}",
+                e
+            )));
+        }
+
+        // Wait for prediction to complete (event loop will update prediction status)
+        // Get completion notifier before waiting
+        let completion = {
+            let pred = prediction_arc.lock().await;
+            pred.completion()
+        };
+        completion.notified().await;
+
+        // Extract result from prediction
+        let (status, output, error, logs, predict_time) = {
+            let pred = prediction_arc.lock().await;
+            (
+                pred.status(),
+                pred.output().cloned(),
+                pred.error().map(|s| s.to_string()),
+                pred.logs().to_string(),
+                pred.elapsed(),
+            )
+        };
+
+        // Mark slot as idle so permit returns to pool on drop
+        slot.mark_idle();
+
+        match status {
+            PredictionStatus::Succeeded => Ok(PredictionResult {
+                output: output.unwrap_or(PredictionOutput::Single(serde_json::Value::Null)),
+                predict_time: Some(predict_time),
+                logs,
+            }),
+            PredictionStatus::Failed => Err(PredictionError::Failed(
+                error.unwrap_or_else(|| "Unknown error".to_string()),
+            )),
+            PredictionStatus::Canceled => Err(PredictionError::Cancelled),
+            _ => Err(PredictionError::Failed(format!(
+                "Prediction ended in unexpected state: {:?}",
+                status
+            ))),
+        }
+    }
+
+    /// Run prediction via legacy predict functions.
+    async fn predict_via_function(
         &self,
         slot: &mut PredictionSlot,
         input: serde_json::Value,

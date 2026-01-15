@@ -109,7 +109,10 @@ fn get_setup_sender() -> Option<Arc<SetupLogSender>> {
 }
 
 /// Get or create the Rust-owned ContextVar.
-fn get_prediction_contextvar(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
+///
+/// This returns the same ContextVar instance used by SlotLogWriter for log routing.
+/// Public so predictor.rs can pass it to async coroutine wrappers.
+pub fn get_prediction_contextvar(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
     if let Some(cv) = PREDICTION_CONTEXTVAR.get() {
         return Ok(cv);
     }
@@ -387,7 +390,7 @@ impl SlotLogWriter {
         // Outside setup/prediction context - orphan log
         // This happens with orphan tasks or edge cases
         for line in data.lines() {
-            tracing::info!(target: "coglet_core::orphan", "{}", line);
+            tracing::info!(target: "coglet::user", "{}", line);
         }
         Ok(())
     }

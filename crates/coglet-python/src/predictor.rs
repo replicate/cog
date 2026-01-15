@@ -623,11 +623,13 @@ impl PythonPredictor {
     /// Returns the concurrent.futures.Future, is_async_gen flag, and PreparedInput for cleanup.
     /// Caller should block on future.result() to get the result, then drop PreparedInput.
     ///
+    /// The prediction_id is used to set up log routing in the event loop thread.
     /// Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
     pub fn predict_async_worker(
         &self,
         input: serde_json::Value,
         event_loop: &Py<PyAny>,
+        prediction_id: &str,
     ) -> Result<(Py<PyAny>, bool, PreparedInput), PredictionError> {
         // Returns (future, is_async_gen, prepared_input) - caller will block on future.result()
         // PreparedInput is returned for RAII cleanup after the future completes
@@ -698,9 +700,51 @@ async def _collect_async_gen(agen):
                 coro
             };
 
-            // Submit coroutine to shared event loop via run_coroutine_threadsafe
+            // Wrap coroutine to set up log routing in the event loop thread.
+            // run_coroutine_threadsafe runs the coroutine in a different thread,
+            // so we need to set up the ContextVar there for log routing to work.
+            //
+            // We use the prediction_id directly rather than copying the context,
+            // since ContextVars don't persist across Python::attach calls in PyO3.
+            let wrap_code = r#"
+async def _ctx_wrapper(coro, prediction_id, contextvar):
+    # Set the prediction_id ContextVar in this task's context
+    # This enables SlotLogWriter to route logs to the correct slot
+    contextvar.set(prediction_id)
+    return await coro
+"#;
+            let builtins = py.import("builtins").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import builtins: {}", e))
+            })?;
+            let exec_fn = builtins.getattr("exec").map_err(|e| {
+                PredictionError::Failed(format!("Failed to get exec: {}", e))
+            })?;
+            let globals = PyDict::new(py);
+            exec_fn.call1((wrap_code, &globals)).map_err(|e| {
+                PredictionError::Failed(format!("Failed to define context wrapper: {}", e))
+            })?;
+            let ctx_wrapper = globals
+                .get_item("_ctx_wrapper")
+                .map_err(|e| {
+                    PredictionError::Failed(format!("Failed to get context wrapper: {}", e))
+                })?
+                .ok_or_else(|| PredictionError::Failed("_ctx_wrapper not found".to_string()))?;
+
+            // Get the same ContextVar instance used by SlotLogWriter for log routing
+            let contextvar = crate::log_writer::get_prediction_contextvar(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get prediction ContextVar: {}", e))
+            })?;
+
+            // Wrap the coroutine with context setup
+            let wrapped_coro = ctx_wrapper
+                .call1((&coro, prediction_id, contextvar.bind(py)))
+                .map_err(|e| {
+                    PredictionError::Failed(format!("Failed to wrap coroutine with context: {}", e))
+                })?;
+
+            // Submit wrapped coroutine to shared event loop via run_coroutine_threadsafe
             let future = asyncio
-                .call_method1("run_coroutine_threadsafe", (&coro, event_loop.bind(py)))
+                .call_method1("run_coroutine_threadsafe", (&wrapped_coro, event_loop.bind(py)))
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to submit coroutine: {}", e))
                 })?;
@@ -950,11 +994,13 @@ async def _collect_async_gen(agen):
     /// Returns the concurrent.futures.Future, is_async_gen flag, and PreparedInput for cleanup.
     /// Caller should block on future.result() to get the result, then drop PreparedInput.
     ///
+    /// The prediction_id is used to set up log routing in the event loop thread.
     /// Logs flow through SlotLogWriter - streamed via slot socket, accumulated by parent.
     pub fn train_async_worker(
         &self,
         input: serde_json::Value,
         event_loop: &Py<PyAny>,
+        prediction_id: &str,
     ) -> Result<(Py<PyAny>, bool, PreparedInput), PredictionError> {
         // Returns (future, is_async_gen, prepared_input) - caller will block on future.result()
         // PreparedInput is returned for RAII cleanup after the future completes
@@ -995,9 +1041,44 @@ async def _collect_async_gen(agen):
             }
             .map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
 
-            // Submit coroutine to shared event loop via run_coroutine_threadsafe
+            // Wrap coroutine to set up log routing in the event loop thread
+            let wrap_code = r#"
+async def _ctx_wrapper(coro, prediction_id, contextvar):
+    contextvar.set(prediction_id)
+    return await coro
+"#;
+            let builtins = py.import("builtins").map_err(|e| {
+                PredictionError::Failed(format!("Failed to import builtins: {}", e))
+            })?;
+            let exec_fn = builtins.getattr("exec").map_err(|e| {
+                PredictionError::Failed(format!("Failed to get exec: {}", e))
+            })?;
+            let globals = PyDict::new(py);
+            exec_fn.call1((wrap_code, &globals)).map_err(|e| {
+                PredictionError::Failed(format!("Failed to define context wrapper: {}", e))
+            })?;
+            let ctx_wrapper = globals
+                .get_item("_ctx_wrapper")
+                .map_err(|e| {
+                    PredictionError::Failed(format!("Failed to get context wrapper: {}", e))
+                })?
+                .ok_or_else(|| PredictionError::Failed("_ctx_wrapper not found".to_string()))?;
+
+            // Get the same ContextVar instance used by SlotLogWriter
+            let contextvar = crate::log_writer::get_prediction_contextvar(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get prediction ContextVar: {}", e))
+            })?;
+
+            // Wrap the coroutine with context setup
+            let wrapped_coro = ctx_wrapper
+                .call1((&coro, prediction_id, contextvar.bind(py)))
+                .map_err(|e| {
+                    PredictionError::Failed(format!("Failed to wrap coroutine with context: {}", e))
+                })?;
+
+            // Submit wrapped coroutine to shared event loop
             let future = asyncio
-                .call_method1("run_coroutine_threadsafe", (&coro, event_loop.bind(py)))
+                .call_method1("run_coroutine_threadsafe", (&wrapped_coro, event_loop.bind(py)))
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to submit coroutine: {}", e))
                 })?;
