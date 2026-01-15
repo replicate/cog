@@ -144,8 +144,7 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/predict/` - Runs predictions on models.
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
 - `python/` - The Cog Python library.
-- `integration-tests/` - Go-based integration tests using testscript (primary test suite).
-- `test-integration/` - Legacy Python integration tests (supplementary - CLI flags and tooling).
+- `integration-tests/` - Go-based integration tests using testscript.
 - `tools/compatgen/` - Tool for generating CUDA/PyTorch/TensorFlow compatibility matrices.
 
 ## Updating compatibility matrices
@@ -206,45 +205,25 @@ script/test-python # see also: make test-python
 
 ### Integration Tests
 
-Cog has two integration test suites that are complementary:
-
-**Go integration tests (primary - 60 tests):**
-
-Tests core predictor functionality using [testscript](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript). Each test is a self-contained `.txtar` file in `integration-tests/tests/`.
+Integration tests are in `integration-tests/` using [testscript](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript). Each test is a self-contained `.txtar` file in `integration-tests/tests/`, with some specialized tests as Go test functions in subpackages.
 
 ```sh
-# Run all Go integration tests
-make test-integration-go
+# Run all integration tests
+make test-integration
 
 # Run fast tests only (skip slow GPU/framework tests)
-COG_TEST_FAST=1 make test-integration-go
+COG_TEST_FAST=1 make test-integration
 
 # Run a specific test
 cd integration-tests && go test -v -run TestIntegration/string_predictor
 
 # Run with a custom cog binary
-COG_BINARY=/path/to/cog make test-integration-go
+COG_BINARY=/path/to/cog make test-integration
 ```
-
-**Python integration tests (supplementary - 37 tests):**
-
-Tests CLI flags, `cog run`, and other tooling features using pytest.
-
-```sh
-# Run all Python integration tests
-make test-integration
-
-# Run a specific Python integration test
-cd test-integration && uv run tox -e integration -- test_integration/test_build.py::test_build_gpu_model_on_cpu
-```
-
-**Integration test coverage:**
-- **Go tests**: Core predictors, types, builds, training, subprocess behavior, HTTP server testing
-- **Python tests**: CLI flags (`--json`, `-o`), commands (`cog run`, `cog init`), edge cases
 
 ### Writing Integration Tests
 
-When adding new functionality, prefer adding Go integration tests in `integration-tests/tests/`. They are:
+When adding new functionality, add integration tests in `integration-tests/tests/`. They are:
 - Self-contained (embedded fixtures in `.txtar` files)
 - Faster to run (parallel execution with automatic cleanup)
 - Easier to read and write (simple command script format)
