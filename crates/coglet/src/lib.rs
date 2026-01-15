@@ -24,6 +24,9 @@ pub mod transport;
 // Worker subprocess (was coglet-worker)
 pub mod worker;
 
+// Orchestrator (spawns worker, runs event loop)
+pub mod orchestrator;
+
 // Re-exports from core
 pub use health::{Health, SetupResult, SetupStatus};
 pub use permit::{Permit, PermitError, PermitPool, PredictionSlot};
@@ -50,4 +53,9 @@ pub use bridge::{
 pub use worker::{
     PredictHandler, PredictResult, SetupLogHook, SlotSender, WorkerConfig, run_worker,
     SpawnConfig, Worker, WorkerError,
+};
+
+// Re-exports from orchestrator
+pub use orchestrator::{
+    OrchestratorConfig, OrchestratorError, OrchestratorHandle, OrchestratorReady, spawn_worker,
 };

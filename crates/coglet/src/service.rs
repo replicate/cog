@@ -14,6 +14,7 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock, watch};
 
 use crate::health::{Health, SetupResult};
+use crate::orchestrator::OrchestratorHandle;
 use crate::permit::{PermitPool, PredictionSlot};
 use crate::prediction::Prediction;
 use crate::predictor::{
@@ -65,14 +66,21 @@ impl HealthSnapshot {
 /// Manages the prediction lifecycle independently of the transport layer.
 /// Transports create predictions via `create_prediction()`, run them via
 /// `predict()`, and the service handles slot management, health, and cleanup.
+///
+/// The service can be created in two modes:
+/// - `new(pool)`: With a pre-created permit pool (for testing, legacy mode)
+/// - `new_no_pool()`: Without a pool, to be set later via `set_pool()` (for orchestrator mode)
 pub struct PredictionService {
     /// Sync predict function.
     predict_fn: Option<Arc<PredictFn>>,
     /// Async predict function.
     async_predict_fn: Option<Arc<AsyncPredictFn>>,
 
-    /// Permit pool for slot management.
-    pool: Arc<PermitPool>,
+    /// Permit pool for slot management (None until worker ready in orchestrator mode).
+    pool: RwLock<Option<Arc<PermitPool>>>,
+
+    /// Orchestrator handle (for routing predictions to worker).
+    orchestrator: RwLock<Option<Arc<OrchestratorHandle>>>,
 
     /// Current health state.
     health: RwLock<Health>,
@@ -96,12 +104,15 @@ pub struct PredictionService {
 
 impl PredictionService {
     /// Create a new prediction service with a permit pool.
+    ///
+    /// Use this for testing or legacy mode where the pool is pre-created.
     pub fn new(pool: Arc<PermitPool>) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
             predict_fn: None,
             async_predict_fn: None,
-            pool,
+            pool: RwLock::new(Some(pool)),
+            orchestrator: RwLock::new(None),
             health: RwLock::new(Health::Unknown),
             setup_result: RwLock::new(None),
             predictions: Mutex::new(HashMap::new()),
@@ -110,6 +121,49 @@ impl PredictionService {
             version: VersionInfo::new(),
             schema: RwLock::new(None),
         }
+    }
+
+    /// Create a new prediction service without a permit pool.
+    ///
+    /// Use this for orchestrator mode where the pool is set after worker ready.
+    /// The service starts in Unknown health and won't accept predictions until
+    /// `set_pool()` and `set_orchestrator()` are called.
+    pub fn new_no_pool() -> Self {
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        Self {
+            predict_fn: None,
+            async_predict_fn: None,
+            pool: RwLock::new(None),
+            orchestrator: RwLock::new(None),
+            health: RwLock::new(Health::Unknown),
+            setup_result: RwLock::new(None),
+            predictions: Mutex::new(HashMap::new()),
+            shutdown_tx,
+            shutdown_rx,
+            version: VersionInfo::new(),
+            schema: RwLock::new(None),
+        }
+    }
+
+    /// Set the permit pool (orchestrator mode).
+    ///
+    /// Called when worker is ready and pool is populated with slot sockets.
+    /// **CRITICAL ORDER**: Call this BEFORE `set_orchestrator()` to avoid race conditions.
+    pub async fn set_pool(&self, pool: Arc<PermitPool>) {
+        *self.pool.write().await = Some(pool);
+    }
+
+    /// Set the orchestrator handle (orchestrator mode).
+    ///
+    /// Called when worker is ready. Predictions will be routed via orchestrator.
+    /// **CRITICAL ORDER**: Call `set_pool()` BEFORE this method.
+    pub async fn set_orchestrator(&self, handle: Arc<OrchestratorHandle>) {
+        *self.orchestrator.write().await = Some(handle);
+    }
+
+    /// Check if this service has an orchestrator.
+    pub async fn has_orchestrator(&self) -> bool {
+        self.orchestrator.read().await.is_some()
     }
 
     /// Set the sync predict function.
@@ -141,21 +195,27 @@ impl PredictionService {
         self.async_predict_fn.is_some()
     }
 
-    /// Get the permit pool.
-    pub fn pool(&self) -> &Arc<PermitPool> {
-        &self.pool
+    /// Get the permit pool (if available).
+    ///
+    /// Returns None if service was created with `new_no_pool()` and pool hasn't been set yet.
+    pub async fn pool(&self) -> Option<Arc<PermitPool>> {
+        self.pool.read().await.clone()
     }
 
     /// Get the current health snapshot.
     pub async fn health(&self) -> HealthSnapshot {
         let state = *self.health.read().await;
         let setup_result = self.setup_result.read().await.clone();
-        let available_slots = self.pool.available();
+        let pool = self.pool.read().await;
+        let (available_slots, total_slots) = match pool.as_ref() {
+            Some(p) => (p.available(), p.num_slots()),
+            None => (0, 0),
+        };
 
         HealthSnapshot {
             state,
             available_slots,
-            total_slots: self.pool.num_slots(),
+            total_slots,
             setup_result,
             version: self.version.clone(),
         }
@@ -204,9 +264,12 @@ impl PredictionService {
             }
         }
 
+        // Get pool (must exist if health is Ready)
+        let pool = self.pool.read().await;
+        let pool = pool.as_ref().ok_or(CreatePredictionError::NotReady)?;
+
         // Try to acquire permit
-        let permit = self
-            .pool
+        let permit = pool
             .try_acquire()
             .ok_or(CreatePredictionError::AtCapacity)?;
 
@@ -565,7 +628,8 @@ mod tests {
     #[tokio::test]
     async fn slot_returns_permit_after_predict() {
         let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(Arc::clone(&pool))
+        let pool_ref = Arc::clone(&pool);
+        let svc = PredictionService::new(pool)
             .with_health(Health::Ready)
             .with_predict_fn(Arc::new(|_| {
                 Ok(PredictionResult {
@@ -580,17 +644,45 @@ mod tests {
                 .create_prediction("test".to_string(), None)
                 .await
                 .unwrap();
-            
+
             // Permit is held
-            assert!(pool.try_acquire().is_none());
-            
+            assert!(pool_ref.try_acquire().is_none());
+
             // Run prediction (marks slot idle)
             let _ = svc.predict(&mut slot, json!({})).await;
-            
+
             // Slot drops here, permit returns to pool
         }
 
         // Permit should be back
-        assert!(pool.try_acquire().is_some());
+        assert!(pool_ref.try_acquire().is_some());
+    }
+
+    #[tokio::test]
+    async fn service_new_no_pool_works() {
+        let svc = PredictionService::new_no_pool();
+        let health = svc.health().await;
+
+        assert_eq!(health.state, Health::Unknown);
+        assert_eq!(health.total_slots, 0);
+        assert_eq!(health.available_slots, 0);
+        assert!(svc.pool().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn service_set_pool_works() {
+        let svc = PredictionService::new_no_pool();
+
+        // Initially no pool
+        assert!(svc.pool().await.is_none());
+
+        // Set pool
+        let pool = make_test_pool(2).await;
+        svc.set_pool(pool).await;
+
+        // Now has pool
+        let p = svc.pool().await;
+        assert!(p.is_some());
+        assert_eq!(p.unwrap().num_slots(), 2);
     }
 }
