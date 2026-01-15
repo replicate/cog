@@ -199,7 +199,7 @@ jobs:
         env:
           COG_WHEEL: ${{ matrix.runtime }}
           COG_BINARY: ./cog
-          TEST_PARALLEL: 8
+          TEST_PARALLEL: 4
         run: make test-integration-go
 
   # TODO[md]: This is a gross hack, remove once this is sorted out: https://github.com/replicate/cog/pull/2353

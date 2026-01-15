@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -283,44 +282,81 @@ func TestPredictionPathUploadIterator(t *testing.T) {
 	_, _ = io.Copy(io.Discard, resp.Body)
 	require.NoError(t, err)
 
-	// Process and validate the webhook data
+	// Collect all webhooks until we receive the final "succeeded" webhook
+	// We cannot assume webhooks arrive in strict chronological order due to async delivery
+	var webhooks []testHarnessResponse
 	timer := time.After(10 * time.Second)
-	for count := 0; count < 5; count++ {
+	for {
 		select {
 		case wh := <-receiverServer.webhookReceiverChan:
-			switch count {
-			case 0:
-				assert.Equal(t, runner.PredictionProcessing, wh.Response.Status)
-				assert.Nil(t, wh.Response.Output)
-			case 1, 2, 3:
-				assert.Equal(t, runner.PredictionProcessing, wh.Response.Status)
-				output, ok := wh.Response.Output.([]any)
-				require.True(t, ok)
-				assert.Len(t, output, count)
-			case 4:
-				assert.Equal(t, runner.PredictionSucceeded, wh.Response.Status)
-				ValidateTerminalResponse(t, &wh.Response)
-				output, ok := wh.Response.Output.([]any)
-				require.True(t, ok)
-				assert.Len(t, output, 3)
+			webhooks = append(webhooks, wh.Response)
+			if wh.Response.Status == runner.PredictionSucceeded {
+				goto webhooksDone
 			}
 		case <-timer:
-			t.Fatalf("timeout waiting for webhooks")
+			t.Fatalf("timeout waiting for webhooks, received %d webhooks", len(webhooks))
 		}
 	}
+webhooksDone:
+
+	// Validate that we received the expected webhooks
+	// We expect: 1 initial processing + 3 output processing + 1 succeeded = 5 total
+	assert.Len(t, webhooks, 5, "expected 5 webhooks total")
 	assert.Len(t, receiverServer.webhookRequests, 5)
 
-	// Process and validate the uploads
-	timer = time.After(10 * time.Second)
-	for count := 0; count < 3; count++ {
-		select {
-		case upload := <-receiverServer.uploadReceiverChan:
-			assert.Equal(t, "out"+strconv.Itoa(count), string(upload.Body))
-		case <-timer:
-			t.Fatalf("timeout waiting for uploads")
+	// All but the last should be processing status
+	for i := 0; i < len(webhooks)-1; i++ {
+		assert.Equal(t, runner.PredictionProcessing, webhooks[i].Status,
+			"webhook %d should have processing status", i)
+	}
+
+	// The last webhook should be succeeded
+	finalWebhook := webhooks[len(webhooks)-1]
+	assert.Equal(t, runner.PredictionSucceeded, finalWebhook.Status)
+	ValidateTerminalResponse(t, &finalWebhook)
+	output, ok := finalWebhook.Output.([]any)
+	require.True(t, ok, "final output should be an array")
+	assert.Len(t, output, 3, "final output should contain 3 items")
+
+	// Verify that we eventually saw all intermediate outputs
+	// The first processing webhook should have nil output (initial state)
+	// Subsequent processing webhooks should have incrementally growing outputs
+	hasInitialProcessing := false
+	outputLengthsSeen := make(map[int]bool)
+	for i := 0; i < len(webhooks)-1; i++ {
+		if webhooks[i].Output == nil {
+			hasInitialProcessing = true
+		} else if outputArray, ok := webhooks[i].Output.([]any); ok {
+			outputLengthsSeen[len(outputArray)] = true
 		}
 	}
-	assert.Len(t, receiverServer.webhookRequests, 5)
+	assert.True(t, hasInitialProcessing, "should have seen initial processing webhook with nil output")
+	assert.True(t, outputLengthsSeen[1], "should have seen output with 1 item")
+	assert.True(t, outputLengthsSeen[2], "should have seen output with 2 items")
+	assert.True(t, outputLengthsSeen[3], "should have seen output with 3 items")
+
+	// Collect and validate the uploads
+	// Uploads can arrive in any order, so we collect them all first
+	var uploads []uploadData
+	timer = time.After(10 * time.Second)
+	for len(uploads) < 3 {
+		select {
+		case upload := <-receiverServer.uploadReceiverChan:
+			uploads = append(uploads, upload)
+		case <-timer:
+			t.Fatalf("timeout waiting for uploads, received %d uploads", len(uploads))
+		}
+	}
+
+	// Verify we received all 3 uploads with the expected content
+	uploadBodies := make(map[string]bool)
+	for _, upload := range uploads {
+		uploadBodies[string(upload.Body)] = true
+	}
+	assert.True(t, uploadBodies["out0"], "should have received upload with 'out0'")
+	assert.True(t, uploadBodies["out1"], "should have received upload with 'out1'")
+	assert.True(t, uploadBodies["out2"], "should have received upload with 'out2'")
+	assert.Len(t, receiverServer.uploadRequests, 3)
 }
 
 func TestPredictionPathMimeTypes(t *testing.T) {
