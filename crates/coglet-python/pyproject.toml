@@ -21,7 +21,7 @@ test = [
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-module-name = "coglet"
+# Pure Rust module - lib name in Cargo.toml determines Python module name
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
