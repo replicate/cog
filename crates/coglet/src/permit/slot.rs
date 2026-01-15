@@ -6,7 +6,6 @@
 //! - Clean RAII: dropping PredictionSlot sends webhook, then returns permit to pool
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use tokio::sync::Mutex;
 
@@ -52,23 +51,40 @@ impl PredictionSlot {
         &self.permit
     }
 
-    /// Mark the slot as idle (called by event loop when prediction completes).
+    /// Mark the slot as idle, allowing permit to return to pool on drop.
     ///
-    /// This allows the permit to be returned to the pool on drop.
-    pub fn mark_idle(&self) {
-        self.permit.idle_flag().store(true, Ordering::Release);
+    /// Returns an `IdleToken` as proof. Panics if slot is poisoned.
+    pub fn into_idle(&mut self) -> super::IdleToken {
+        self.permit.into_idle()
     }
 
     /// Mark the slot as poisoned (permanently failed).
     ///
-    /// The permit will NOT be returned to the pool on drop.
-    pub fn mark_poisoned(&self) {
-        self.permit.mark_poisoned();
+    /// The permit will NOT return to the pool on drop.
+    /// Also fails the prediction if it's not already terminal.
+    pub fn into_poisoned(&mut self) {
+        // Fail the prediction if not already terminal
+        if let Ok(mut prediction) = self.prediction.try_lock() {
+            if !prediction.is_terminal() {
+                tracing::warn!(
+                    slot = %self.permit.slot_id(),
+                    prediction_id = %prediction.id(),
+                    "Slot poisoned - failing non-terminal prediction"
+                );
+                prediction.set_failed("Slot poisoned".to_string());
+            }
+        }
+        self.permit.into_poisoned()
     }
 
     /// Check if the slot is marked as idle.
     pub fn is_idle(&self) -> bool {
         self.permit.is_idle()
+    }
+
+    /// Check if the slot is poisoned.
+    pub fn is_poisoned(&self) -> bool {
+        self.permit.is_poisoned()
     }
 
     /// Get elapsed time since prediction started.
@@ -96,6 +112,21 @@ impl PredictionSlot {
 
 impl Drop for PredictionSlot {
     fn drop(&mut self) {
+        // If permit is still InUse (not idle or poisoned), something went wrong.
+        // Fail the prediction if it's not already terminal.
+        if !self.permit.is_idle() && !self.permit.is_poisoned() {
+            if let Ok(mut prediction) = self.prediction.try_lock() {
+                if !prediction.is_terminal() {
+                    tracing::error!(
+                        slot = %self.permit.slot_id(),
+                        prediction_id = %prediction.id(),
+                        "Slot dropped while InUse with non-terminal prediction - failing"
+                    );
+                    prediction.set_failed("Slot dropped unexpectedly".to_string());
+                }
+            }
+        }
+
         // Try to send terminal webhook synchronously
         // We need to block to get the lock, but this is in Drop so we can't be async
         if let Ok(mut prediction) = self.prediction.try_lock() {
@@ -155,10 +186,10 @@ mod tests {
         {
             let permit = pool.try_acquire().unwrap();
             let prediction = Prediction::new("test_123".to_string(), None);
-            let slot = PredictionSlot::new(prediction, permit);
+            let mut slot = PredictionSlot::new(prediction, permit);
 
             // Mark idle before drop
-            slot.mark_idle();
+            let _token = slot.into_idle();
         }
 
         // Permit should be back in pool

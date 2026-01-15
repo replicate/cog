@@ -428,7 +428,10 @@ async fn run_event_loop(
                         if let Some(pred) = predictions.remove(&slot) {
                             let mut p = pred.lock().await;
                             p.set_slot_poisoned();
-                            p.set_failed(error);
+                            // Fail the prediction if not already terminal
+                            if !p.is_terminal() {
+                                p.set_failed(error);
+                            }
                         }
                     }
                     Some(Ok(ControlResponse::Ready { .. })) => {

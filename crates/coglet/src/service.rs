@@ -379,9 +379,9 @@ impl PredictionService {
 
         // Mark slot as idle (returns to pool) or poisoned (never returns)
         if slot_poisoned {
-            slot.mark_poisoned();
+            slot.into_poisoned();
         } else {
-            slot.mark_idle();
+            let _idle_token = slot.into_idle();
         }
 
         match status {
@@ -438,7 +438,7 @@ impl PredictionService {
         }
 
         // Mark slot as idle so permit returns to pool on drop
-        slot.mark_idle();
+        let _idle_token = slot.into_idle();
 
         result
     }

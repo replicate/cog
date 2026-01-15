@@ -130,6 +130,11 @@ impl Prediction {
         self.status
     }
 
+    /// Check if the prediction is in a terminal state (succeeded, failed, or canceled).
+    pub fn is_terminal(&self) -> bool {
+        self.status.is_terminal()
+    }
+
     /// Mark the prediction as processing.
     pub fn set_processing(&mut self) {
         self.status = PredictionStatus::Processing;
