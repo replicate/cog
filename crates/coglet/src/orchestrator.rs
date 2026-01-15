@@ -24,8 +24,74 @@ use crate::permit::PermitPool;
 use crate::prediction::Prediction;
 use crate::PredictionOutput;
 
-/// Configuration for the orchestrator.
+// ============================================================================
+// WorkerSpawner trait - extension point for different spawn strategies
+// ============================================================================
+
+/// Configuration for spawning a worker subprocess.
 #[derive(Debug, Clone)]
+pub struct WorkerSpawnConfig {
+    /// Number of concurrent prediction slots
+    pub num_slots: usize,
+}
+
+/// Error from spawning a worker.
+#[derive(Debug, thiserror::Error)]
+pub enum SpawnError {
+    #[error("failed to spawn process: {0}")]
+    Spawn(#[from] std::io::Error),
+    #[error("spawn failed: {0}")]
+    Other(String),
+}
+
+/// Trait for worker subprocess spawning strategies.
+///
+/// Implementations can customize how worker subprocesses are created:
+/// - `SimpleSpawner`: Basic subprocess via `python -c "import coglet; coglet._run_worker()"`
+/// - Future: `SandboxedSpawner`: Fork + seccomp + privilege drop
+/// - Future: `SnapshotSpawner`: CRIU restore + NVIDIA attach for fast cold starts
+pub trait WorkerSpawner: Send + Sync {
+    /// Spawn a worker subprocess.
+    ///
+    /// Returns a Child with stdin/stdout captured for protocol communication.
+    /// The child should be ready to receive an Init message on stdin.
+    fn spawn(&self, config: &WorkerSpawnConfig) -> Result<Child, SpawnError>;
+}
+
+/// Simple spawner using Python subprocess.
+///
+/// Spawns: `python -c "import coglet; coglet._run_worker()"`
+pub struct SimpleSpawner;
+
+impl WorkerSpawner for SimpleSpawner {
+    fn spawn(&self, _config: &WorkerSpawnConfig) -> Result<Child, SpawnError> {
+        let child = Command::new("python")
+            .args(["-c", "import coglet; coglet._run_worker()"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit()) // Worker logs go to our stderr
+            .spawn()?;
+        Ok(child)
+    }
+}
+
+// Future spawner variants (stubs for documentation):
+//
+// pub struct SandboxedSpawner {
+//     /// Seccomp filter to apply after fork
+//     pub seccomp_filter: Option<SeccompFilter>,
+//     /// User/group to drop privileges to
+//     pub drop_privileges: Option<(uid_t, gid_t)>,
+// }
+//
+// pub struct SnapshotSpawner {
+//     /// Path to CRIU checkpoint directory
+//     pub checkpoint_dir: PathBuf,
+//     /// NVIDIA GPU UUIDs to attach
+//     pub gpu_uuids: Vec<String>,
+// }
+
+/// Configuration for the orchestrator.
 pub struct OrchestratorConfig {
     /// Predictor reference (e.g., "predict.py:Predictor")
     pub predictor_ref: String,
@@ -37,6 +103,8 @@ pub struct OrchestratorConfig {
     pub is_async: bool,
     /// Timeout for worker setup
     pub setup_timeout: Duration,
+    /// Custom spawner (defaults to SimpleSpawner)
+    pub spawner: Arc<dyn WorkerSpawner>,
 }
 
 impl OrchestratorConfig {
@@ -47,6 +115,7 @@ impl OrchestratorConfig {
             is_train: false,
             is_async: false,
             setup_timeout: Duration::from_secs(300), // 5 min default
+            spawner: Arc::new(SimpleSpawner),
         }
     }
 
@@ -67,6 +136,15 @@ impl OrchestratorConfig {
 
     pub fn with_setup_timeout(mut self, timeout: Duration) -> Self {
         self.setup_timeout = timeout;
+        self
+    }
+
+    /// Set a custom worker spawner.
+    ///
+    /// By default uses `SimpleSpawner` which spawns Python directly.
+    /// Use this to customize how workers are created (e.g., sandboxed, from snapshot).
+    pub fn with_spawner(mut self, spawner: Arc<dyn WorkerSpawner>) -> Self {
+        self.spawner = spawner;
         self
     }
 }
@@ -161,17 +239,14 @@ pub async fn spawn_worker(config: OrchestratorConfig) -> Result<OrchestratorRead
         .await
         .map_err(|e| OrchestratorError::Spawn(format!("failed to create transport: {}", e)))?;
 
-    tracing::info!("Spawning Python worker");
+    tracing::info!("Spawning worker subprocess");
 
-    // Spawn Python worker via `python -c "import coglet; coglet._run_worker()"`
-    // This is the key change from the original binary-based approach
-    let mut child = Command::new("python")
-        .args(["-c", "import coglet; coglet._run_worker()"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit()) // Worker logs go to our stderr
-        .spawn()
-        .map_err(|e| OrchestratorError::Spawn(format!("failed to spawn python: {}", e)))?;
+    // Use configured spawner (defaults to SimpleSpawner)
+    let spawn_config = WorkerSpawnConfig { num_slots };
+    let mut child = config
+        .spawner
+        .spawn(&spawn_config)
+        .map_err(|e| OrchestratorError::Spawn(format!("spawner failed: {}", e)))?;
 
     let stdin = child.stdin.take().expect("stdin not captured");
     let stdout = child.stdout.take().expect("stdout not captured");

@@ -58,4 +58,6 @@ pub use worker::{
 // Re-exports from orchestrator
 pub use orchestrator::{
     OrchestratorConfig, OrchestratorError, OrchestratorHandle, OrchestratorReady, spawn_worker,
+    // Extension point for custom spawners
+    WorkerSpawner, SimpleSpawner, WorkerSpawnConfig, SpawnError,
 };
