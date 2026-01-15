@@ -6,7 +6,8 @@ use std::thread::JoinHandle;
 
 use pyo3::prelude::*;
 
-use coglet_worker::{PredictHandler, PredictResult, SlotId, SlotSender};
+use coglet_core::worker::{PredictHandler, PredictResult, SlotSender};
+use coglet_core::SlotId;
 
 use crate::predictor::PythonPredictor;
 

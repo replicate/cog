@@ -181,41 +181,24 @@ dependencies = [
 name = "coglet"
 version = "0.1.1"
 dependencies = [
- "coglet-core",
- "coglet-transport",
-]
-
-[[package]]
-name = "coglet-bridge"
-version = "0.1.1"
-dependencies = [
- "bytes",
- "insta",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "coglet-core"
-version = "0.1.1"
-dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
  "chrono",
- "coglet-bridge",
  "futures",
+ "http-body-util",
  "insta",
+ "nix",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "tokio-util",
+ "tower",
  "tracing",
  "ureq",
+ "uuid",
  "wiremock",
 ]
 
@@ -224,9 +207,7 @@ name = "coglet-python"
 version = "0.1.1"
 dependencies = [
  "async-trait",
- "coglet-core",
- "coglet-transport",
- "coglet-worker",
+ "coglet",
  "libc",
  "pyo3",
  "pyo3-async-runtimes",
@@ -234,41 +215,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "coglet-transport"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "axum",
- "coglet-bridge",
- "coglet-core",
- "http-body-util",
- "insta",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "coglet-worker"
-version = "0.1.1"
-dependencies = [
- "async-trait",
- "coglet-bridge",
- "futures",
- "insta",
- "nix",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]

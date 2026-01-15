@@ -22,10 +22,10 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 
 use coglet_core::{
     Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, PredictionService,
-    SetupResult, VersionInfo, PermitPool,
+    SetupResult, VersionInfo, PermitPool, ServerConfig, serve as http_serve,
+    SpawnConfig, Worker,
 };
-use coglet_transport::{ServerConfig, serve as http_serve};
-use coglet_worker::{SlotResponse, SpawnConfig, Worker};
+use coglet_core::bridge::protocol::SlotResponse;
 
 /// Initialize tracing with COG_LOG and LOG_FORMAT support.
 ///
@@ -154,7 +154,7 @@ impl WorkerHandle {
                 Ok(SlotResponse::Log { data, .. }) => {
                     // Emit logs via tracing with prediction target
                     for line in data.lines() {
-                        tracing::info!(target: "coglet::prediction", prediction_id = %id, "{}", line);
+                        tracing::info!(target: "coglet_core::prediction", prediction_id = %id, "{}", line);
                     }
                     // Accumulate for response
                     logs.push_str(&data);
@@ -467,13 +467,13 @@ fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyRes
     });
 
     // Setup log hook: registers a global sender so SlotLogWriter can route setup logs
-    let setup_log_hook: coglet_worker::SetupLogHook = Box::new(|tx| {
+    let setup_log_hook: coglet_core::SetupLogHook = Box::new(|tx| {
         let sender = Arc::new(SetupLogSender::new(tx));
         log_writer::register_setup_sender(sender);
         Box::new(log_writer::unregister_setup_sender)
     });
 
-    let config = coglet_worker::WorkerConfig {
+    let config = coglet_core::WorkerConfig {
         num_slots,
         setup_log_hook: Some(setup_log_hook),
     };
@@ -485,7 +485,7 @@ fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyRes
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         rt.block_on(async {
-            coglet_worker::run_worker(handler, config)
+            coglet_core::run_worker(handler, config)
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
         })

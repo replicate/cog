@@ -1,0 +1,8 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "cancelled",
+  "id": "pred_123"
+}

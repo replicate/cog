@@ -1,0 +1,10 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "done",
+  "id": "pred_123",
+  "output": "final result",
+  "predict_time": 1.234
+}

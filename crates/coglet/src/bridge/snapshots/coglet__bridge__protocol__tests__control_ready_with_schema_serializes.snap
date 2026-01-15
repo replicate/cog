@@ -1,0 +1,17 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "ready",
+  "slots": [
+    "550e8400-e29b-41d4-a716-446655440000"
+  ],
+  "schema": {
+    "info": {
+      "title": "Cog",
+      "version": "0.1.0"
+    },
+    "openapi": "3.0.2"
+  }
+}

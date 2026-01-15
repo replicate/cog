@@ -20,7 +20,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use pyo3::prelude::*;
 
-use coglet_worker::{LogSource, SlotSender};
+use coglet_core::bridge::protocol::LogSource;
+use coglet_core::worker::SlotSender;
 
 // ============================================================================
 // Rust-owned ContextVar for prediction routing
@@ -61,7 +62,7 @@ fn get_setup_sender_slot() -> &'static Mutex<Option<Arc<SetupLogSender>>> {
 // SetupLogSender - sends logs via control channel during setup
 // ============================================================================
 
-use coglet_worker::ControlResponse;
+use coglet_core::ControlResponse;
 use tokio::sync::mpsc::UnboundedSender;
 
 /// Sender for logs during setup (before slots are active).
@@ -386,7 +387,7 @@ impl SlotLogWriter {
         // Outside setup/prediction context - orphan log
         // This happens with orphan tasks or edge cases
         for line in data.lines() {
-            tracing::info!(target: "coglet::orphan", "{}", line);
+            tracing::info!(target: "coglet_core::orphan", "{}", line);
         }
         Ok(())
     }
@@ -480,7 +481,7 @@ impl Drop for PredictionLogGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use coglet_worker::SlotResponse;
+    use coglet_core::SlotResponse;
     use tokio::sync::mpsc;
 
     #[test]

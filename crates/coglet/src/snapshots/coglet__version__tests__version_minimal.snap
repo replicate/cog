@@ -1,0 +1,7 @@
+---
+source: coglet/src/version.rs
+expression: info
+---
+{
+  "coglet": "0.1.0"
+}

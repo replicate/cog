@@ -1,0 +1,17 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: req
+---
+{
+  "type": "init",
+  "predictor_ref": "predict.py:Predictor",
+  "num_slots": 2,
+  "transport_info": {
+    "NamedSockets": {
+      "dir": "/tmp/coglet-123",
+      "num_slots": 2
+    }
+  },
+  "is_train": false,
+  "is_async": true
+}

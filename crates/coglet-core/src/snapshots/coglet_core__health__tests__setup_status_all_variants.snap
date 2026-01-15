@@ -1,9 +1,0 @@
----
-source: coglet-core/src/health.rs
-expression: "[SetupStatus::Starting, SetupStatus::Succeeded, SetupStatus::Failed,]"
----
-[
-  "starting",
-  "succeeded",
-  "failed"
-]
