@@ -11,21 +11,35 @@ mod worker_bridge;
 pub use audit::TeeWriter;
 pub use log_writer::{PredictionLogGuard, SetupLogSender, SlotLogWriter};
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 use pyo3::prelude::*;
-use tokio::sync::Mutex;
 
 use tracing::{error, info, warn};
+
+/// Global flag indicating whether we're running inside a worker subprocess.
+/// - `false` in the parent process (serve() spawns worker)
+/// - `true` in the worker subprocess (_run_worker() sets this)
+static ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Set the active flag (called at start of _run_worker).
+fn set_active() {
+    ACTIVE.store(true, Ordering::SeqCst);
+}
+
+/// Get the active flag (exposed as coglet.active property).
+#[pyfunction]
+#[pyo3(name = "_get_active")]
+fn get_active() -> bool {
+    ACTIVE.load(Ordering::SeqCst)
+}
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use coglet_core::{
-    Health, PredictFuture, PredictionError, PredictionOutput, PredictionResult, PredictionService,
-    SetupResult, VersionInfo, PermitPool, ServerConfig, serve as http_serve,
-    SpawnConfig, Worker,
+    Health, PredictionService,
+    SetupResult, VersionInfo, ServerConfig, serve as http_serve,
 };
-use coglet_core::bridge::protocol::SlotResponse;
 
 /// Initialize tracing with COG_LOG and LOG_FORMAT support.
 ///
@@ -74,130 +88,6 @@ fn init_tracing(_to_stderr: bool) {
             .with(filter)
             .with(fmt::layer().with_writer(std::io::stderr));
         let _ = subscriber.try_init();
-    }
-}
-
-/// Wrapper around Worker that handles respawning on crash.
-struct WorkerHandle {
-    worker: Mutex<Option<Worker>>,
-    predictor_ref: String,
-    spawn_config: SpawnConfig,
-    ready_timeout: Duration,
-}
-
-impl WorkerHandle {
-    fn new(predictor_ref: String, spawn_config: SpawnConfig) -> Self {
-        Self {
-            worker: Mutex::new(None),
-            predictor_ref,
-            spawn_config,
-            ready_timeout: Duration::from_secs(300), // 5 min for setup
-        }
-    }
-
-    /// Initialize the worker (spawn subprocess, wait for ready).
-    /// Returns the OpenAPI schema if available.
-    async fn init(&self) -> Result<Option<serde_json::Value>, String> {
-        let mut guard = self.worker.lock().await;
-        if guard.is_some() {
-            // Already initialized, return cached schema
-            return Ok(guard.as_ref().and_then(|w| w.schema().cloned()));
-        }
-
-        info!(predictor_ref = %self.predictor_ref, "Spawning worker subprocess");
-        let worker = Worker::spawn(&self.predictor_ref, self.ready_timeout, &self.spawn_config)
-            .await
-            .map_err(|e| format!("Failed to spawn worker: {}", e))?;
-
-        let schema = worker.schema().cloned();
-        *guard = Some(worker);
-        Ok(schema)
-    }
-
-    /// Run a prediction, respawning worker if needed.
-    ///
-    /// Uses slot 0 since sync predictors only have one slot.
-    async fn predict(
-        &self,
-        id: String,
-        input: serde_json::Value,
-    ) -> Result<PredictionResult, PredictionError> {
-        let mut guard = self.worker.lock().await;
-
-        // If no worker, try to spawn one
-        if guard.is_none() {
-            warn!("Worker not initialized, spawning...");
-            let worker = Worker::spawn(&self.predictor_ref, self.ready_timeout, &self.spawn_config)
-                .await
-                .map_err(|e| PredictionError::Failed(format!("Failed to spawn worker: {}", e)))?;
-            *guard = Some(worker);
-        }
-
-        let worker = guard.as_mut().unwrap();
-        let slot = 0; // Sync predictors use single slot
-
-        info!(prediction_id = %id, "Starting prediction");
-
-        // Send prediction request on slot socket
-        if let Err(e) = worker.send_predict(slot, id.clone(), input).await {
-            error!(error = %e, "Failed to send prediction");
-            *guard = None;
-            return Err(PredictionError::Failed(format!("Worker error: {}", e)));
-        }
-
-        // Collect logs and wait for completion
-        let mut logs = String::new();
-        let mut final_output = None;
-
-        loop {
-            match worker.recv_slot(slot).await {
-                Ok(SlotResponse::Log { data, .. }) => {
-                    // Emit logs via tracing with prediction target
-                    for line in data.lines() {
-                        tracing::info!(target: "coglet_core::prediction", prediction_id = %id, "{}", line);
-                    }
-                    // Accumulate for response
-                    logs.push_str(&data);
-                }
-                Ok(SlotResponse::Output { output }) => {
-                    // Streaming output (for generators)
-                    // For now, just keep the last one
-                    final_output = Some(output);
-                }
-                Ok(SlotResponse::Done {
-                    output,
-                    predict_time,
-                    ..
-                }) => {
-                    // Prediction completed successfully
-                    if let Some(o) = output {
-                        final_output = Some(o);
-                    }
-                    info!(prediction_id = %id, predict_time, "Prediction succeeded");
-                    return Ok(PredictionResult {
-                        output: PredictionOutput::Single(
-                            final_output.unwrap_or(serde_json::Value::Null),
-                        ),
-                        predict_time: Some(Duration::from_secs_f64(predict_time)),
-                        logs,
-                    });
-                }
-                Ok(SlotResponse::Failed { error, .. }) => {
-                    warn!(prediction_id = %id, %error, "Prediction failed");
-                    return Err(PredictionError::Failed(error));
-                }
-                Ok(SlotResponse::Cancelled { .. }) => {
-                    info!(prediction_id = %id, "Prediction cancelled");
-                    return Err(PredictionError::Cancelled);
-                }
-                Err(e) => {
-                    // Worker might have crashed - mark for respawn
-                    error!(error = %e, "Worker error, will respawn on next request");
-                    *guard = None;
-                    return Err(PredictionError::Failed(format!("Worker error: {}", e)));
-                }
-            }
-        }
     }
 }
 
@@ -298,9 +188,8 @@ fn serve(
     // If no predictor, just serve health endpoints
     let Some(pred_ref) = predictor_ref else {
         info!("No predictor specified, serving health endpoints only");
-        let pool = Arc::new(PermitPool::new(1));
         let service = Arc::new(
-            PredictionService::new(pool)
+            PredictionService::new_no_pool()
                 .with_health(Health::Unknown)
                 .with_version(version),
         );
@@ -319,7 +208,7 @@ fn serve(
     serve_subprocess(py, pred_ref, config, version, is_train)
 }
 
-/// Serve with subprocess worker.
+/// Serve with subprocess worker using the orchestrator.
 fn serve_subprocess(
     py: Python<'_>,
     pred_ref: String,
@@ -329,51 +218,19 @@ fn serve_subprocess(
 ) -> PyResult<()> {
     // Read max concurrency from cog.yaml
     let max_concurrency = read_max_concurrency(py);
-    info!(max_concurrency, "Configuring subprocess worker");
+    info!(max_concurrency, "Configuring subprocess worker via orchestrator");
 
-    // Get Python executable for worker subprocess
-    let python_exe = std::env::var("COG_PYTHON_EXE")
-        .or_else(|_| {
-            Python::attach(|py| {
-                py.import("sys")
-                    .and_then(|sys| sys.getattr("executable"))
-                    .and_then(|exe| exe.extract::<String>())
-            })
-        })
-        .unwrap_or_else(|_| "python3".to_string());
+    // Create orchestrator config
+    let orch_config = coglet_core::OrchestratorConfig::new(pred_ref)
+        .with_num_slots(max_concurrency)
+        .with_train(is_train);
 
-    let mut env = vec![];
-    if is_train {
-        env.push(("COGLET_IS_TRAIN".to_string(), "true".to_string()));
-    }
-    let spawn_config = SpawnConfig {
-        python_exe,
-        max_concurrency,
-        env,
-    };
-
-    // Create worker handle
-    let worker = Arc::new(WorkerHandle::new(pred_ref, spawn_config));
-
-    // Start with Starting health - will become Ready after worker init
-    let pool = Arc::new(PermitPool::new(max_concurrency));
-    let service = PredictionService::new(pool)
-        .with_health(Health::Starting)
-        .with_version(version);
-
-    // Create async predict function that routes to worker
-    let worker_clone = Arc::clone(&worker);
-    let predict_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let async_predict_fn = Arc::new(move |input: serde_json::Value| -> PredictFuture {
-        let worker = Arc::clone(&worker_clone);
-        let id = format!(
-            "pred_{}",
-            predict_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        );
-        Box::pin(async move { worker.predict(id, input).await })
-    }) as Arc<coglet_core::AsyncPredictFn>;
-
-    let service = Arc::new(service.with_async_predict_fn(async_predict_fn));
+    // Create service without pool (will be set when worker is ready)
+    let service = Arc::new(
+        PredictionService::new_no_pool()
+            .with_health(Health::Starting)
+            .with_version(version),
+    );
 
     // Release GIL and run server
     let service_clone = Arc::clone(&service);
@@ -386,25 +243,33 @@ fn serve_subprocess(
             let setup_result = SetupResult::starting();
             service_clone.set_setup_result(setup_result.clone()).await;
 
-            // Initialize worker (spawns subprocess, runs setup)
-            match worker.init().await {
-                Ok(schema) => {
-                    info!("Worker initialized, server ready");
+            // Spawn worker via orchestrator
+            info!("Spawning worker subprocess");
+            match coglet_core::spawn_worker(orch_config).await {
+                Ok(ready) => {
+                    info!("Worker ready, configuring service");
+
+                    // CRITICAL ORDER: pool → orchestrator → health=Ready
+                    // This prevents race conditions where predictions arrive before routing is set up
+                    service_clone.set_pool(ready.pool).await;
+                    service_clone.set_orchestrator(Arc::new(ready.handle)).await;
                     service_clone.set_health(Health::Ready).await;
                     service_clone
                         .set_setup_result(setup_result.succeeded())
                         .await;
 
                     // Set OpenAPI schema if available
-                    if let Some(s) = schema {
+                    if let Some(s) = ready.schema {
                         service_clone.set_schema(s).await;
                     }
+
+                    info!("Server ready to accept predictions");
                 }
                 Err(e) => {
                     error!(error = %e, "Worker initialization failed");
                     service_clone.set_health(Health::SetupFailed).await;
                     service_clone
-                        .set_setup_result(setup_result.failed(e.clone()))
+                        .set_setup_result(setup_result.failed(e.to_string()))
                         .await;
                 }
             }
@@ -424,14 +289,19 @@ fn _is_cancelable() -> bool {
 
 /// Run as a worker subprocess.
 ///
-/// This function is called when coglet is spawned as a worker.
-/// It reads requests from stdin, runs predictions, writes responses to stdout.
+/// This function is called when coglet is spawned as a worker subprocess by the orchestrator.
+/// It reads the Init message from stdin, runs setup, then processes predictions.
 /// Exits when stdin closes (parent died) or shutdown requested.
 ///
-/// Environment variables:
-/// - COGLET_IS_TRAIN: If "true", call train() instead of predict()
+/// Called via: `python -c "import coglet; coglet._run_worker()"`
+///
+/// The Init message contains: predictor_ref, num_slots, transport_info, is_train, is_async
 #[pyfunction]
-fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyResult<()> {
+#[pyo3(signature = ())]
+fn _run_worker(py: Python<'_>) -> PyResult<()> {
+    // Mark that we're running in worker mode
+    set_active();
+
     // Initialize tracing with COG_LOG and LOG_FORMAT support
     // Always writes to stderr since stdout is the protocol pipe
     init_tracing(true);
@@ -452,12 +322,62 @@ fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyRes
         warn!(error = %e, "Failed to install signal handler, cancellation may not work");
     }
 
-    // Check if we're in training mode
-    let is_train = std::env::var("COGLET_IS_TRAIN")
-        .map(|v| v == "true" || v == "1")
-        .unwrap_or(false);
+    info!("Worker subprocess starting, waiting for Init message");
 
-    info!(predictor_ref = %predictor_ref, is_train, num_slots, "Worker starting");
+    // Run worker event loop - reads Init from stdin, connects to transport, runs setup
+    // IMPORTANT: Release the GIL before blocking, so spawned tasks can acquire it
+    py.detach(|| {
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
+        rt.block_on(async {
+            run_worker_with_init().await
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+        })
+    })
+}
+
+/// Internal worker entry point that reads Init from stdin and runs the worker loop.
+async fn run_worker_with_init() -> Result<(), String> {
+    use futures::StreamExt;
+    use tokio::io::stdin;
+    use tokio_util::codec::FramedRead;
+    use coglet_core::bridge::codec::JsonCodec;
+    use coglet_core::bridge::protocol::ControlRequest;
+
+    // Read Init message from stdin
+    let mut ctrl_reader = FramedRead::new(stdin(), JsonCodec::<ControlRequest>::new());
+
+    let init_msg = ctrl_reader
+        .next()
+        .await
+        .ok_or_else(|| "stdin closed before Init received".to_string())?
+        .map_err(|e| format!("Failed to read Init: {}", e))?;
+
+    let (predictor_ref, num_slots, transport_info, is_train, _is_async) = match init_msg {
+        ControlRequest::Init {
+            predictor_ref,
+            num_slots,
+            transport_info,
+            is_train,
+            is_async,
+        } => (predictor_ref, num_slots, transport_info, is_train, is_async),
+        other => {
+            return Err(format!("Expected Init message, got: {:?}", other));
+        }
+    };
+
+    info!(predictor_ref = %predictor_ref, num_slots, is_train, "Init received, connecting to transport");
+
+    // Set transport info in environment for legacy run_worker compatibility
+    // (run_worker reads from COGLET_TRANSPORT_INFO)
+    let transport_json = serde_json::to_string(&transport_info)
+        .map_err(|e| format!("Failed to serialize transport info: {}", e))?;
+    // SAFETY: We're single-threaded at this point (before spawning any tasks)
+    // and this env var is only read by our own code in the same process.
+    unsafe {
+        std::env::set_var(coglet_core::bridge::transport::TRANSPORT_INFO_ENV, &transport_json);
+    }
 
     // Create handler in appropriate mode
     let handler = Arc::new(if is_train {
@@ -479,17 +399,9 @@ fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyRes
     };
 
     // Run worker event loop
-    // IMPORTANT: Release the GIL before blocking, so spawned tasks can acquire it
-    py.detach(|| {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-
-        rt.block_on(async {
-            coglet_core::run_worker(handler, config)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    })
+    coglet_core::run_worker(handler, config)
+        .await
+        .map_err(|e| format!("Worker error: {}", e))
 }
 
 /// coglet Python module.
@@ -497,6 +409,10 @@ fn _run_worker(py: Python<'_>, predictor_ref: String, num_slots: usize) -> PyRes
 fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Version from Cargo.toml
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+
+    // Add `active` as a module-level property using __getattr__
+    // This requires setting up a custom __getattr__ that delegates to _get_active()
+    m.add_function(wrap_pyfunction!(get_active, m)?)?;
 
     m.add_function(wrap_pyfunction!(serve, m)?)?;
     m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
@@ -509,5 +425,35 @@ fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Export classes (needed for isinstance checks in audit hook)
     m.add_class::<log_writer::SlotLogWriter>()?;
     m.add_class::<audit::TeeWriter>()?;
+
+    // Add module __getattr__ for `active` property
+    // This allows `coglet.active` to work as a property
+    let getattr_code = r#"
+def __getattr__(name):
+    if name == 'active':
+        return _get_active()
+    raise AttributeError(f"module 'coglet' has no attribute '{name}'")
+"#;
+    py_run_string(m.py(), getattr_code, m)?;
+
+    Ok(())
+}
+
+/// Run Python code and add the resulting __getattr__ to the module.
+fn py_run_string(py: Python<'_>, code: &str, module: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Execute the code to get the __getattr__ function
+    let globals = pyo3::types::PyDict::new(py);
+    globals.set_item("_get_active", module.getattr("_get_active")?)?;
+
+    // Use py.eval with exec mode to run statements
+    let code_cstr = std::ffi::CString::new(code)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    py.run(&code_cstr, Some(&globals), None)?;
+
+    // Get the __getattr__ function and add it to the module
+    if let Some(getattr) = globals.get_item("__getattr__")? {
+        module.setattr("__getattr__", getattr)?;
+    }
+
     Ok(())
 }

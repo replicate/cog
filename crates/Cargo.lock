@@ -208,11 +208,13 @@ version = "0.1.1"
 dependencies = [
  "async-trait",
  "coglet",
+ "futures",
  "libc",
  "pyo3",
  "pyo3-async-runtimes",
  "serde_json",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
