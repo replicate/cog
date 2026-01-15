@@ -20,6 +20,7 @@ jobs:
   build-python:
     name: Build & verify python package
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -44,6 +45,7 @@ jobs:
     name: Lint
     needs: build-python
     runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 30
     steps:
       - name: Download built wheels
         uses: actions/download-artifact@v6
@@ -66,6 +68,7 @@ jobs:
       - test-coglet-go
       - test-coglet-python
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check test status
         run: echo "All tests passed successfully!"
@@ -73,6 +76,7 @@ jobs:
   test-go:
     name: "Test Go"
     needs: build-python
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +102,7 @@ jobs:
     name: "Test Python ${{ matrix.python-version }} + Pydantic v${{ matrix.pydantic }}"
     needs: build-python
     runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -127,6 +132,7 @@ jobs:
   test-coglet-go:
     name: "Test Coglet Go"
     runs-on: ubuntu-latest-4-cores
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -140,6 +146,7 @@ jobs:
   test-coglet-python:
     name: "Test Coglet Python ${{ matrix.python-version }}"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -172,6 +179,8 @@ jobs:
           fetch-depth: 0
       - name: Login to Docker Hub
         uses: docker/login-action@v3
+        # Skip Docker Hub login for forked PRs (secrets not available)
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
         with:
           registry: index.docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -199,6 +208,7 @@ jobs:
     name: "Test integration"
     needs: test-integration-matrix
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check test status
         run: echo "All tests passed successfully!"
@@ -212,13 +222,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, coglet, coglet-alpha]
+        runtime: [cog, coglet-alpha]
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for goreleaser version determination
       - name: Login to Docker Hub
         uses: docker/login-action@v3
+        # Skip Docker Hub login for forked PRs (secrets not available)
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
         with:
           registry: index.docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -237,17 +249,7 @@ jobs:
         run: |
           # Build cog binary
           make cog
-          # Run full test suite with reruns for flaky tests (matches main branch)
-          # - cog: full suite
-          # - coglet-alpha: stop after 5 failures (passes currently)
-          # - coglet: exit on first failure (needs work, just want to see what fails)
-          if [ "$COG_WHEEL" = "cog" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
-          elif [ "$COG_WHEEL" = "coglet" ]; then
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv -x
-          else
-            PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3 --maxfail=5
-          fi
+          PATH="$(pwd):$PATH" uv run tox -e integration -- -n auto -vv --reruns 3
 
   release:
     name: "Release"

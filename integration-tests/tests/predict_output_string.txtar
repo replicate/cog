@@ -1,0 +1,25 @@
+# Test -o flag writes string output to file
+# Source: test_predict.py::test_predict_writes_strings_to_files
+
+# Build image
+cog build -t $TEST_IMAGE
+
+# Run prediction with -o to write output to file
+cog predict $TEST_IMAGE -i s=world -o out.txt
+
+# Verify file contents
+exec cat out.txt
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

@@ -1,0 +1,13 @@
+# Test stdin handling when piped but not consumed by the command
+# Source: test_run.py::test_run_with_unconsumed_piped_stdin
+
+stdin input.txt
+cog run echo hello-from-echo
+stdout 'hello-from-echo'
+
+-- cog.yaml --
+build:
+  python_version: "3.13"
+
+-- input.txt --
+hello-from-stdin

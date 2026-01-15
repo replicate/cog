@@ -1,4 +1,4 @@
-[slow] skip 'slow test - skip in fast mode'
+[fast] skip 'slow test - skip in fast mode'
 
 # Test multiprocessing.Process spawned during setup
 # This ensures stream redirection works correctly with Python multiprocessing

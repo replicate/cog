@@ -1,0 +1,32 @@
+# Test that base image SHA is recorded in labels with --use-cog-base-image
+# Source: test_build.py::test_build_base_image_sha
+
+# Build with --use-cog-base-image flag
+cog build -t $TEST_IMAGE --use-cog-base-image
+
+# Verify the base image layer label matches one of the actual layers
+exec python3 -c 'import json,os,subprocess; image=os.environ["TEST_IMAGE"]; base_layer=subprocess.check_output(["docker","inspect",image,"--format={{index .Config.Labels \"run.cog.cog-base-image-last-layer-sha\"}}"], text=True).strip(); assert base_layer.startswith("sha256:"), f"Base layer label missing sha256 digest: {base_layer}"; layers=json.loads(subprocess.check_output(["docker","inspect",image,"--format={{json .RootFS.Layers}}"], text=True)); assert base_layer in layers, f"Base layer {base_layer} not found in RootFS layers"; print(base_layer)'
+stdout 'sha256:'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: predict.py:Predictor
+
+-- predict.py --
+import tempfile
+
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def setup(self):
+        self.foo = "foo"
+
+    def predict(self, text: str, path: Path) -> Path:
+        with open(path) as f:
+            output = self.foo + text + f.read()
+        tmpdir = Path(tempfile.mkdtemp())
+        with open(tmpdir / "output.txt", "w") as fh:
+            fh.write(output)
+        return tmpdir / "output.txt"

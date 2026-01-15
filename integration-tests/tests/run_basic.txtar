@@ -1,0 +1,9 @@
+# Test basic cog run functionality
+# Source: test_run.py::test_run
+
+cog run echo hello world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"

@@ -166,11 +166,16 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 	if err != nil {
 		return "", err
 	}
+	installCACert, err := g.installCACert()
+	if err != nil {
+		return "", err
+	}
 
 	if g.IsUsingCogBaseImage() {
 		steps := []string{
 			"#syntax=docker/dockerfile:1.4",
 			"FROM " + baseImage,
+			installCACert, // First! Before any network requests (apt, pip, etc.)
 			envs,
 			aptInstalls,
 		}
@@ -190,6 +195,7 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 		"#syntax=docker/dockerfile:1.4",
 		"FROM " + baseImage,
 		g.preamble(),
+		installCACert, // Early! Before tini (uses curl), apt, pip, etc.
 		g.installTini(),
 		envs,
 		aptInstalls,
@@ -687,6 +693,19 @@ This is the offending line: %s`, command)
 
 func (g *StandardGenerator) envVars() (string, error) {
 	return envLineFromConfig(g.Config)
+}
+
+// installCACert generates Dockerfile lines to install a custom CA certificate.
+// If COG_CA_CERT is not set, returns empty string (no-op).
+func (g *StandardGenerator) installCACert() (string, error) {
+	certData, err := ReadCACert()
+	if err != nil {
+		return "", err
+	}
+	if certData == nil {
+		return "", nil
+	}
+	return GenerateCACertInstall(certData, g.writeTemp)
 }
 
 // writeTemp writes a temporary file that can be used as part of the build process

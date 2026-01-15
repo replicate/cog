@@ -9,3 +9,15 @@ _.file = [".env"]
 [settings]
 lockfile = true
 experimental = true
+
+[tasks.test-integration]
+description = "Run Go integration tests with optional filter"
+dir = "integration-tests"
+run = """
+#!/usr/bin/env bash
+if [ -n "$1" ]; then
+  go test -v -run "TestIntegration/$1" -timeout 10m
+else
+  go test -v -timeout 10m
+fi
+"""
