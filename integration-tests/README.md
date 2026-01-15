@@ -11,7 +11,7 @@ However, some tests require capabilities that don't fit txtar's sequential execu
 | Test | Location | Why Go instead of txtar |
 |------|----------|-------------------------|
 | `TestConcurrentPredictions` | `concurrent/` | Requires parallel HTTP requests with precise timing coordination |
-| `TestInteractiveTTY` | `pty/` | Requires bidirectional PTY interaction (future) |
+| `TestInteractiveTTY` | `pty/` | Requires bidirectional PTY interaction |
 
 ## Quick Start
 
@@ -42,7 +42,7 @@ integration-tests/
 ├── concurrent/
 │   └── concurrent_test.go  # Concurrent request tests
 ├── pty/
-│   └── pty_test.go     # Interactive TTY tests (future)
+│   └── pty_test.go     # Interactive TTY tests
 └── .bin/
     └── cog             # Cached cog binary (auto-generated)
 ```
