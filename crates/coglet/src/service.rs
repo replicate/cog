@@ -70,19 +70,21 @@ impl HealthSnapshot {
 /// `predict()`, and the service handles slot management, health, and cleanup.
 ///
 /// The service can be created in two modes:
-/// - `new(pool)`: With a pre-created permit pool (for testing, legacy mode)
-/// - `new_no_pool()`: Without a pool, to be set later via `set_pool()` (for orchestrator mode)
+/// - `new(pool)`: Legacy mode with pre-created pool (for testing)
+/// - `new_no_pool()` + `set_orchestrator()`: Late configuration for early HTTP start
 pub struct PredictionService {
-    /// Sync predict function.
+    /// Sync predict function (legacy mode).
     predict_fn: Option<Arc<PredictFn>>,
-    /// Async predict function.
+    /// Async predict function (legacy mode).
     async_predict_fn: Option<Arc<AsyncPredictFn>>,
 
-    /// Permit pool for slot management (None until worker ready in orchestrator mode).
-    pool: RwLock<Option<Arc<PermitPool>>>,
+    /// Orchestrator state (pool + handle together).
+    /// None until worker ready in orchestrator mode.
+    /// Using a single field makes invalid states (pool without handle) impossible.
+    orchestrator: RwLock<Option<OrchestratorState>>,
 
-    /// Orchestrator handle (for routing predictions to worker).
-    orchestrator: RwLock<Option<Arc<OrchestratorHandle>>>,
+    /// Legacy pool (non-orchestrator mode, for testing).
+    legacy_pool: RwLock<Option<Arc<PermitPool>>>,
 
     /// Current health state.
     health: RwLock<Health>,
@@ -104,17 +106,27 @@ pub struct PredictionService {
     schema: RwLock<Option<serde_json::Value>>,
 }
 
+/// Orchestrator runtime state - pool and handle together.
+///
+/// This ensures pool and orchestrator are always set atomically,
+/// making "pool without handle" or vice versa impossible.
+#[derive(Clone)]
+pub struct OrchestratorState {
+    pub pool: Arc<PermitPool>,
+    pub handle: Arc<OrchestratorHandle>,
+}
+
 impl PredictionService {
-    /// Create a new prediction service with a permit pool.
+    /// Create a new prediction service with a permit pool (legacy/test mode).
     ///
-    /// Use this for testing or legacy mode where the pool is pre-created.
+    /// Use this for testing where the pool is pre-created without an orchestrator.
     pub fn new(pool: Arc<PermitPool>) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
             predict_fn: None,
             async_predict_fn: None,
-            pool: RwLock::new(Some(pool)),
             orchestrator: RwLock::new(None),
+            legacy_pool: RwLock::new(Some(pool)),
             health: RwLock::new(Health::Unknown),
             setup_result: RwLock::new(None),
             predictions: Mutex::new(HashMap::new()),
@@ -125,18 +137,18 @@ impl PredictionService {
         }
     }
 
-    /// Create a new prediction service without a permit pool.
+    /// Create a new prediction service without configuration.
     ///
-    /// Use this for orchestrator mode where the pool is set after worker ready.
-    /// The service starts in Unknown health and won't accept predictions until
-    /// `set_pool()` and `set_orchestrator()` are called.
+    /// Use this for "early HTTP start" where the server needs to start before
+    /// the worker is ready (serves 503 until configured). Call `set_orchestrator()`
+    /// once the worker is ready to enable predictions.
     pub fn new_no_pool() -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
             predict_fn: None,
             async_predict_fn: None,
-            pool: RwLock::new(None),
             orchestrator: RwLock::new(None),
+            legacy_pool: RwLock::new(None),
             health: RwLock::new(Health::Unknown),
             setup_result: RwLock::new(None),
             predictions: Mutex::new(HashMap::new()),
@@ -147,20 +159,12 @@ impl PredictionService {
         }
     }
 
-    /// Set the permit pool (orchestrator mode).
+    /// Configure orchestrator mode atomically.
     ///
-    /// Called when worker is ready and pool is populated with slot sockets.
-    /// **CRITICAL ORDER**: Call this BEFORE `set_orchestrator()` to avoid race conditions.
-    pub async fn set_pool(&self, pool: Arc<PermitPool>) {
-        *self.pool.write().await = Some(pool);
-    }
-
-    /// Set the orchestrator handle (orchestrator mode).
-    ///
-    /// Called when worker is ready. Predictions will be routed via orchestrator.
-    /// **CRITICAL ORDER**: Call `set_pool()` BEFORE this method.
-    pub async fn set_orchestrator(&self, handle: Arc<OrchestratorHandle>) {
-        *self.orchestrator.write().await = Some(handle);
+    /// Sets pool and handle together as a single OrchestratorState, making it
+    /// impossible to have pool without handle or vice versa.
+    pub async fn set_orchestrator(&self, pool: Arc<PermitPool>, handle: Arc<OrchestratorHandle>) {
+        *self.orchestrator.write().await = Some(OrchestratorState { pool, handle });
     }
 
     /// Check if this service has an orchestrator.
@@ -199,16 +203,20 @@ impl PredictionService {
 
     /// Get the permit pool (if available).
     ///
-    /// Returns None if service was created with `new_no_pool()` and pool hasn't been set yet.
+    /// Returns the pool from orchestrator config, or legacy pool for test mode.
     pub async fn pool(&self) -> Option<Arc<PermitPool>> {
-        self.pool.read().await.clone()
+        if let Some(ref config) = *self.orchestrator.read().await {
+            Some(Arc::clone(&config.pool))
+        } else {
+            self.legacy_pool.read().await.clone()
+        }
     }
 
     /// Get the current health snapshot.
     pub async fn health(&self) -> HealthSnapshot {
         let state = *self.health.read().await;
         let setup_result = self.setup_result.read().await.clone();
-        let pool = self.pool.read().await;
+        let pool = self.pool().await;
         let (available_slots, total_slots) = match pool.as_ref() {
             Some(p) => (p.available(), p.num_slots()),
             None => (0, 0),
@@ -267,7 +275,7 @@ impl PredictionService {
         }
 
         // Get pool (must exist if health is Ready)
-        let pool = self.pool.read().await;
+        let pool = self.pool().await;
         let pool = pool.as_ref().ok_or(CreatePredictionError::NotReady)?;
 
         // Try to acquire permit
@@ -305,11 +313,11 @@ impl PredictionService {
         input: serde_json::Value,
     ) -> Result<PredictionResult, PredictionError> {
         // Check if we're in orchestrator mode
-        let orchestrator = self.orchestrator.read().await.clone();
+        let config = self.orchestrator.read().await.clone();
 
-        if let Some(orch) = orchestrator {
+        if let Some(config) = config {
             // Orchestrator mode: route through slot socket
-            self.predict_via_orchestrator(slot, input, &orch).await
+            self.predict_via_orchestrator(slot, input, &config.handle).await
         } else {
             // Legacy mode: use predict functions directly
             self.predict_via_function(slot, input).await
@@ -777,19 +785,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn service_set_pool_works() {
+    async fn service_no_pool_initially() {
         let svc = PredictionService::new_no_pool();
 
-        // Initially no pool
+        // Initially no pool or orchestrator
         assert!(svc.pool().await.is_none());
+        assert!(!svc.has_orchestrator().await);
+    }
 
-        // Set pool
+    #[tokio::test]
+    async fn service_legacy_pool_works() {
         let pool = make_test_pool(2).await;
-        svc.set_pool(pool).await;
+        let svc = PredictionService::new(pool);
 
-        // Now has pool
+        // Legacy pool is available
         let p = svc.pool().await;
         assert!(p.is_some());
         assert_eq!(p.unwrap().num_slots(), 2);
+
+        // No orchestrator in legacy mode
+        assert!(!svc.has_orchestrator().await);
     }
 }

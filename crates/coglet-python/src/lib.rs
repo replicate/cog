@@ -257,10 +257,8 @@ fn serve_subprocess(
                         // Capture info before moving handle
                         let num_slots = ready.handle.slot_ids().len();
 
-                        // CRITICAL ORDER: pool → orchestrator → health=Ready
-                        // This prevents race conditions where predictions arrive before routing is set up
-                        setup_service.set_pool(ready.pool).await;
-                        setup_service.set_orchestrator(Arc::new(ready.handle)).await;
+                        // Configure orchestrator mode atomically, then mark ready
+                        setup_service.set_orchestrator(ready.pool, Arc::new(ready.handle)).await;
                         setup_service.set_health(Health::Ready).await;
                         setup_service
                             .set_setup_result(setup_result.succeeded())
