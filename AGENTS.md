@@ -118,6 +118,8 @@ The CLI follows a command pattern with subcommands. The main components are:
 3. **Type Safety**: Pydantic for Python type validation, strongly typed Go interfaces
 4. **Compatibility Matrix**: Automated CUDA/PyTorch/TensorFlow compatibility management
 
+For comprehensive architecture documentation, see [`architecture/`](./architecture/00-overview.md).
+
 ## Common Tasks
 
 ### Adding a new CLI command
