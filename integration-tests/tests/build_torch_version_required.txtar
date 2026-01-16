@@ -1,0 +1,22 @@
+# Test that build fails with proper error when torch is specified without version and GPU is enabled
+# This validates the error message from cudasFromTorch when torch version is empty
+
+! cog build -t $TEST_IMAGE
+stderr 'torch version must be specified when using CUDA'
+
+-- cog.yaml --
+build:
+  gpu: true
+  python_version: "3.12"
+  python_requirements: requirements.txt
+predict: predict.py:Predictor
+
+-- requirements.txt --
+torch
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
