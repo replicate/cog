@@ -1,13 +1,13 @@
 package concurrent_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -68,7 +68,8 @@ func TestConcurrentPredictions(t *testing.T) {
 
 	// Start the server
 	t.Log("Starting server...")
-	port := 5555 // Use a fixed port for simplicity
+	const port = 5555 // Use a fixed port for simplicity
+
 	serveCmd := exec.Command(cogBinary, "serve", "-p", fmt.Sprintf("%d", port))
 	serveCmd.Dir = tmpDir
 	serveCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
@@ -97,7 +98,7 @@ func TestConcurrentPredictions(t *testing.T) {
 
 	start := time.Now()
 
-	for i := 0; i < numPredictions; i++ {
+	for i := range numPredictions {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -134,8 +135,8 @@ func TestConcurrentPredictions(t *testing.T) {
 			t.Errorf("prediction %d failed: %v", i, result.err)
 			continue
 		}
-		if result.statusCode != 200 {
-			t.Errorf("prediction %d returned status %d, want 200", i, result.statusCode)
+		if result.statusCode != http.StatusOK {
+			t.Errorf("prediction %d returned status %d, want %d", i, result.statusCode, http.StatusOK)
 			continue
 		}
 		expectedOutput := fmt.Sprintf("wake up sleepyhead%d", i)
@@ -157,7 +158,7 @@ func makePrediction(serverURL string, idx int) predictionResult {
 	resp, err := http.Post(
 		serverURL+"/predictions",
 		"application/json",
-		bytes.NewBufferString(reqBody),
+		strings.NewReader(reqBody),
 	)
 	if err != nil {
 		return predictionResult{err: err}

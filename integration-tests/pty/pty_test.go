@@ -26,8 +26,8 @@ import (
 // This test is written in Go (not txtar) because it requires bidirectional PTY
 // interaction that doesn't fit txtar's sequential execution model.
 func TestInteractiveTTY(t *testing.T) {
-	if os.Getenv("COG_TEST_FAST") == "1" {
-		t.Skip("skipping slow test in fast mode")
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
 	}
 
 	// PTY tests only work reliably on Unix-like systems
@@ -164,8 +164,8 @@ func TestInteractiveTTY(t *testing.T) {
 
 // TestInteractiveTTYEchoCommand is a simpler variant that just tests echo works
 func TestInteractiveTTYEchoCommand(t *testing.T) {
-	if os.Getenv("COG_TEST_FAST") == "1" {
-		t.Skip("skipping slow test in fast mode")
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
 	}
 
 	if runtime.GOOS == "windows" {

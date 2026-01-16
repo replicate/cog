@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -92,9 +91,11 @@ func buildCogBinary() (string, error) {
 	}
 
 	// Check if wheels exist, build if not
-	wheelsDir := filepath.Join(repoRoot, "pkg", "wheels")
-	cogWheelExists, _ := filepath.Glob(filepath.Join(wheelsDir, "cog-*.whl"))
-	cogletWheelExists, _ := filepath.Glob(filepath.Join(wheelsDir, "coglet-*.whl"))
+	var (
+		wheelsDir            = filepath.Join(repoRoot, "pkg", "wheels")
+		cogWheelExists, _    = filepath.Glob(filepath.Join(wheelsDir, "cog-*.whl"))
+		cogletWheelExists, _ = filepath.Glob(filepath.Join(wheelsDir, "coglet-*.whl"))
+	)
 
 	if len(cogWheelExists) == 0 || len(cogletWheelExists) == 0 {
 		fmt.Println("Building Python wheels...")
@@ -109,7 +110,7 @@ func buildCogBinary() (string, error) {
 	}
 
 	// Build the cog binary
-	if err := os.MkdirAll(filepath.Dir(binPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil {
 		return "", fmt.Errorf("failed to create bin directory: %w", err)
 	}
 
@@ -196,10 +197,11 @@ func (h *Harness) cmdCog(ts *testscript.TestScript, neg bool, args []string) {
 		if err == nil {
 			ts.Fatalf("cog command succeeded unexpectedly")
 		}
-	} else {
-		if err != nil {
-			ts.Fatalf("cog command failed: %v", err)
-		}
+		return
+	}
+
+	if err != nil {
+		ts.Fatalf("cog command failed: %v", err)
 	}
 }
 
@@ -366,9 +368,11 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	var lastErr error
-	var lastStatus int
-	var lastBody string
+	var (
+		lastErr    error
+		lastStatus int
+		lastBody   string
+	)
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		req, err := http.NewRequest(method, serverURL+path, strings.NewReader(body))
@@ -390,21 +394,11 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 		}
 
 		// Read response body
-		var respBodyBuilder strings.Builder
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := resp.Body.Read(buf)
-			if n > 0 {
-				respBodyBuilder.Write(buf[:n])
-			}
-			if readErr != nil {
-				if !errors.Is(readErr, io.EOF) {
-					ts.Fatalf("curl: failed to read response: %v", readErr)
-				}
-				break
-			}
+		respBodyBytes, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			ts.Fatalf("curl: failed to read response: %v", readErr)
 		}
-		respBody := respBodyBuilder.String()
+		respBody := string(respBodyBytes)
 		resp.Body.Close()
 
 		lastStatus = resp.StatusCode
@@ -436,18 +430,20 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	// All attempts failed
 	if neg {
 		ts.Fatalf("curl: expected failure but got status %d after %d attempts", lastStatus, maxAttempts)
-	} else {
-		if lastErr != nil {
-			ts.Fatalf("curl: all %d attempts failed with error: %v", maxAttempts, lastErr)
-		} else {
-			errorMsg := lastBody
-			if len(errorMsg) > 500 {
-				errorMsg = errorMsg[:500] + "..."
-			}
-			ts.Logf("curl: full response body: %s", lastBody)
-			ts.Fatalf("curl: all %d attempts failed with status %d: %s", maxAttempts, lastStatus, errorMsg)
-		}
+		return
 	}
+
+	if lastErr != nil {
+		ts.Fatalf("curl: all %d attempts failed with error: %v", maxAttempts, lastErr)
+		return
+	}
+
+	errorMsg := lastBody
+	if len(errorMsg) > 500 {
+		errorMsg = errorMsg[:500] + "..."
+	}
+	ts.Logf("curl: full response body: %s", lastBody)
+	ts.Fatalf("curl: all %d attempts failed with status %d: %s", maxAttempts, lastStatus, errorMsg)
 }
 
 // StopServer stops the background server process for a test script.
@@ -507,7 +503,7 @@ func waitForServer(serverURL string, timeout time.Duration) bool {
 			continue
 		}
 
-		if resp.StatusCode == 200 {
+		if resp.StatusCode == http.StatusOK {
 			body, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if err != nil {
@@ -553,11 +549,14 @@ func (h *Harness) cmdWaitFor(ts *testscript.TestScript, neg bool, args []string)
 		ts.Fatalf("wait-for: usage: wait-for [file|http|not-empty] <arg> [timeout]")
 	}
 
-	condition := args[0]
-	target := args[1]
+	var (
+		condition = args[0]
+		target    = args[1]
 
-	// Default timeout of 30 seconds, can be overridden
-	timeout := 30 * time.Second
+		// Default timeout of 30 seconds, can be overridden
+		timeout = 30 * time.Second
+	)
+
 	if len(args) > 2 {
 		if duration, err := time.ParseDuration(args[len(args)-1]); err == nil {
 			timeout = duration
@@ -584,7 +583,7 @@ func (h *Harness) cmdWaitFor(ts *testscript.TestScript, neg bool, args []string)
 
 		case "http":
 			// Wait for HTTP endpoint to return expected status
-			expectedStatus := 200
+			expectedStatus := http.StatusOK
 			if len(args) > 2 {
 				if status, err := strconv.Atoi(args[2]); err == nil {
 					expectedStatus = status
@@ -619,9 +618,10 @@ func (h *Harness) cmdWaitFor(ts *testscript.TestScript, neg bool, args []string)
 
 	if neg {
 		ts.Fatalf("wait-for: condition became true (expected to remain false)")
-	} else {
-		ts.Fatalf("wait-for: timeout waiting for condition: %s %s", condition, target)
+		return
 	}
+
+	ts.Fatalf("wait-for: timeout waiting for condition: %s %s", condition, target)
 }
 
 // cmdDockerRun implements the 'docker-run' command for testscript.
@@ -639,8 +639,11 @@ func (h *Harness) cmdDockerRun(ts *testscript.TestScript, neg bool, args []strin
 		ts.Fatalf("docker-run: usage: docker-run <image> <command> [args...]")
 	}
 
-	image := os.Expand(args[0], ts.Getenv)
-	containerArgs := make([]string, len(args)-1)
+	var (
+		image         = os.Expand(args[0], ts.Getenv)
+		containerArgs = make([]string, len(args)-1)
+	)
+
 	for i, arg := range args[1:] {
 		containerArgs[i] = os.Expand(arg, ts.Getenv)
 	}
@@ -662,9 +665,10 @@ func (h *Harness) cmdDockerRun(ts *testscript.TestScript, neg bool, args []strin
 		if err == nil {
 			ts.Fatalf("docker-run: command succeeded unexpectedly")
 		}
-	} else {
-		if err != nil {
-			ts.Fatalf("docker-run: command failed: %v", err)
-		}
+		return
+	}
+
+	if err != nil {
+		ts.Fatalf("docker-run: command failed: %v", err)
 	}
 }
