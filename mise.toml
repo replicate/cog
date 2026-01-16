@@ -61,8 +61,9 @@ description = "Check licenses and advisories with cargo-deny"
 run = "cargo deny --manifest-path crates/Cargo.toml check"
 
 [tasks."test:coglet-python"]
-description = "Run coglet-python Python tests"
-run = "cd crates/coglet-python && python -m pytest tests/ -v"
+description = "Run coglet-python Python tests (builds coglet first)"
+depends = ["build:coglet"]
+run = "uv run --active pytest crates/coglet-python/tests/ -v"
 
 [tools]
 cargo-binstall = "1.16.6"

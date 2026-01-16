@@ -37,8 +37,10 @@ pub use predictor::{
     PredictionMetrics, PredictionOutput, PredictionResult,
 };
 pub use service::{CreatePredictionError, HealthSnapshot, PredictionService};
-pub use supervisor::{PredictionHandle, PredictionState, PredictionSupervisor, SyncPredictionGuard};
 pub use supervisor::PredictionStatus as SupervisorPredictionStatus;
+pub use supervisor::{
+    PredictionHandle, PredictionState, PredictionSupervisor, SyncPredictionGuard,
+};
 pub use version::{COGLET_VERSION, VersionInfo};
 pub use webhook::{TraceContext, WebhookConfig, WebhookEventType, WebhookSender};
 
@@ -54,13 +56,20 @@ pub use bridge::{
 
 // Re-exports from worker
 pub use worker::{
-    PredictHandler, PredictResult, SetupLogHook, SlotSender, WorkerConfig, run_worker,
-    SpawnConfig, Worker, WorkerError,
+    PredictHandler, PredictResult, SetupLogHook, SlotSender, SpawnConfig, Worker, WorkerConfig,
+    WorkerError, run_worker,
 };
 
 // Re-exports from orchestrator
 pub use orchestrator::{
-    OrchestratorConfig, OrchestratorError, OrchestratorHandle, OrchestratorReady, spawn_worker,
+    OrchestratorConfig,
+    OrchestratorError,
+    OrchestratorHandle,
+    OrchestratorReady,
+    SimpleSpawner,
+    SpawnError,
+    WorkerSpawnConfig,
     // Extension point for custom spawners
-    WorkerSpawner, SimpleSpawner, WorkerSpawnConfig, SpawnError,
+    WorkerSpawner,
+    spawn_worker,
 };

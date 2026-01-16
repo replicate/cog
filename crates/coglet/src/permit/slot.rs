@@ -64,15 +64,15 @@ impl PredictionSlot {
     /// Also fails the prediction if it's not already terminal.
     pub fn into_poisoned(&mut self) {
         // Fail the prediction if not already terminal
-        if let Ok(mut prediction) = self.prediction.try_lock() {
-            if !prediction.is_terminal() {
-                tracing::warn!(
-                    slot = %self.permit.slot_id(),
-                    prediction_id = %prediction.id(),
-                    "Slot poisoned - failing non-terminal prediction"
-                );
-                prediction.set_failed("Slot poisoned".to_string());
-            }
+        if let Ok(mut prediction) = self.prediction.try_lock()
+            && !prediction.is_terminal()
+        {
+            tracing::warn!(
+                slot = %self.permit.slot_id(),
+                prediction_id = %prediction.id(),
+                "Slot poisoned - failing non-terminal prediction"
+            );
+            prediction.set_failed("Slot poisoned".to_string());
         }
         self.permit.into_poisoned()
     }
@@ -114,21 +114,22 @@ impl Drop for PredictionSlot {
     fn drop(&mut self) {
         // If permit is still InUse (not idle or poisoned), something went wrong.
         // Fail the prediction if it's not already terminal.
-        if !self.permit.is_idle() && !self.permit.is_poisoned() {
-            if let Ok(mut prediction) = self.prediction.try_lock() {
-                if !prediction.is_terminal() {
-                    tracing::error!(
-                        slot = %self.permit.slot_id(),
-                        prediction_id = %prediction.id(),
-                        "Slot dropped while InUse with non-terminal prediction - failing"
-                    );
-                    prediction.set_failed("Slot dropped unexpectedly".to_string());
-                }
-            }
+        if !self.permit.is_idle()
+            && !self.permit.is_poisoned()
+            && let Ok(mut prediction) = self.prediction.try_lock()
+            && !prediction.is_terminal()
+        {
+            tracing::error!(
+                slot = %self.permit.slot_id(),
+                prediction_id = %prediction.id(),
+                "Slot dropped while InUse with non-terminal prediction - failing"
+            );
+            prediction.set_failed("Slot dropped unexpectedly".to_string());
         }
 
-        // Try to send terminal webhook synchronously
-        // We need to block to get the lock, but this is in Drop so we can't be async
+        // Legacy webhook sending for non-supervisor mode.
+        // When using supervisor, webhook is owned by supervisor and sent there.
+        // TODO: Remove this once supervisor is fully integrated.
         if let Ok(mut prediction) = self.prediction.try_lock() {
             if let Some(webhook) = prediction.take_webhook() {
                 let response = prediction.build_terminal_response();
@@ -150,9 +151,9 @@ impl Drop for PredictionSlot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::permit::PermitPool;
     use crate::bridge::codec::JsonCodec;
     use crate::bridge::protocol::SlotId;
+    use crate::permit::PermitPool;
     use tokio::net::UnixStream;
     use tokio_util::codec::FramedWrite;
 

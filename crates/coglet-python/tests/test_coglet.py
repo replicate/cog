@@ -123,10 +123,11 @@ class CogletServer:
                 resp = requests.get(
                     f"http://localhost:{self.port}/health-check", timeout=1
                 )
-                if resp.status_code == 200:
+                if resp.status_code == 200 and resp.json().get("status") == "READY":
                     return
             except requests.exceptions.ConnectionError:
-                time.sleep(0.1)
+                pass
+            time.sleep(0.1)
         raise TimeoutError(f"Server did not become ready within {timeout}s")
 
     @property
@@ -435,9 +436,9 @@ class TestCancellation:
         with CogletServer(sync_predictor, port=5621) as server:
             resp = requests.post(f"{server.base_url}/predictions/unknown-id/cancel")
             assert resp.status_code == 404
+            # Python cog returns empty {} for cancel 404 (not an error body)
             result = resp.json()
-            assert result["status"] == "failed"
-            assert "not found" in result["error"]
+            assert result == {}
 
     def test_prediction_response_includes_id(self, sync_predictor: Path):
         """Test that prediction responses include an ID."""

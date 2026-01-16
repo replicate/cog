@@ -6,8 +6,8 @@
 use std::io;
 use std::marker::PhantomData;
 
-use tokio_util::bytes::{Bytes, BytesMut};
 use serde::{Serialize, de::DeserializeOwned};
+use tokio_util::bytes::{Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 /// Codec that frames messages with length prefix and serializes with JSON.
@@ -64,7 +64,9 @@ impl<T: Serialize> Encoder<T> for JsonCodec<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bridge::protocol::{ControlRequest, ControlResponse, SlotId, SlotRequest, SlotResponse};
+    use crate::bridge::protocol::{
+        ControlRequest, ControlResponse, SlotId, SlotRequest, SlotResponse,
+    };
 
     #[test]
     fn codec_roundtrip_control_request() {

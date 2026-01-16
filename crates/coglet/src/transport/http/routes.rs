@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     CreatePredictionError, Health, HealthSnapshot, PredictionError, PredictionService, SetupResult,
     TraceContext, VersionInfo, WebhookConfig, WebhookEventType, WebhookSender,
+    supervisor::PredictionStatus as SupervisorStatus,
 };
 
 /// Health check response.
@@ -49,7 +50,10 @@ pub struct PredictionRequest {
     pub id: Option<String>,
     /// Input to the predictor.
     /// Defaults to {} for compatibility with clients that omit input or send null.
-    #[serde(default = "default_empty_input", deserialize_with = "deserialize_input")]
+    #[serde(
+        default = "default_empty_input",
+        deserialize_with = "deserialize_input"
+    )]
     pub input: serde_json::Value,
     /// Webhook URL to send prediction updates to.
     pub webhook: Option<String>,
@@ -212,15 +216,11 @@ async fn create_prediction_idempotent(
         );
     }
 
-    // Check if prediction with this ID is already in-flight
-    if service.prediction_exists(&prediction_id).await {
-        return (
-            StatusCode::ACCEPTED,
-            Json(serde_json::json!({
-                "id": prediction_id,
-                "status": "processing"
-            })),
-        );
+    // Check if prediction with this ID is already in-flight (supervisor owns state)
+    let supervisor = service.supervisor();
+    if let Some(state) = supervisor.get_state(&prediction_id) {
+        // Return full response with current state (parity with Python)
+        return (StatusCode::ACCEPTED, Json(state.to_response()));
     }
 
     // Not running, create new prediction with the specified ID
@@ -267,23 +267,29 @@ async fn create_prediction_with_id(
     respond_async: bool,
     trace_context: TraceContext,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    // Build webhook sender for async start notification
-    let start_webhook_sender = build_webhook_sender(
+    // Build webhook sender for the supervisor (owns lifecycle + terminal webhook)
+    let webhook_sender = build_webhook_sender(
         webhook.clone(),
         webhook_events_filter.clone(),
         trace_context.clone(),
     );
 
-    // Build webhook sender for the prediction (will be used in Drop)
-    let prediction_webhook = build_webhook_sender(webhook, webhook_events_filter, trace_context);
+    // Submit to supervisor first (tracks lifecycle, owns webhook)
+    let supervisor = service.supervisor();
+    let handle = supervisor.submit(prediction_id.clone(), input.clone(), webhook_sender);
 
-    // Try to create prediction (acquires slot, checks health)
-    let mut prediction = match service
-        .create_prediction(prediction_id.clone(), prediction_webhook)
-        .await
-    {
+    // Try to create prediction slot (acquires permit, checks health)
+    // Note: webhook is None - supervisor owns it now
+    let mut slot = match service.create_prediction(prediction_id.clone(), None).await {
         Ok(p) => p,
         Err(CreatePredictionError::NotReady) => {
+            // Clean up supervisor entry
+            supervisor.update_status(
+                &prediction_id,
+                SupervisorStatus::Failed,
+                None,
+                Some("Predictor not ready".to_string()),
+            );
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
@@ -293,8 +299,14 @@ async fn create_prediction_with_id(
             );
         }
         Err(CreatePredictionError::AtCapacity) => {
+            // Clean up supervisor entry
+            supervisor.update_status(
+                &prediction_id,
+                SupervisorStatus::Failed,
+                None,
+                Some("At capacity".to_string()),
+            );
             // 409 for parity with Python
-            // Python response: {"detail": "Already running a prediction"}
             return (
                 StatusCode::CONFLICT,
                 Json(serde_json::json!({
@@ -304,6 +316,13 @@ async fn create_prediction_with_id(
             );
         }
         Err(CreatePredictionError::AlreadyExists(id)) => {
+            // Clean up supervisor entry
+            supervisor.update_status(
+                &prediction_id,
+                SupervisorStatus::Failed,
+                None,
+                Some(format!("Prediction {} already exists", id)),
+            );
             return (
                 StatusCode::CONFLICT,
                 Json(serde_json::json!({
@@ -314,26 +333,50 @@ async fn create_prediction_with_id(
         }
     };
 
+    // Update supervisor: prediction is now processing
+    supervisor.update_status(&prediction_id, SupervisorStatus::Processing, None, None);
+
     // If respond_async, spawn background task and return immediately
+    // Note: No SyncPredictionGuard here - async predictions continue even if client disconnects.
+    // This is intentional: client gets 202 and polls/receives webhook for result.
     if respond_async {
-        // Send start webhook
-        if let Some(ref ws) = start_webhook_sender {
-            ws.send(
-                WebhookEventType::Start,
-                &serde_json::json!({
-                    "id": prediction_id,
-                    "status": "starting",
-                    "input": input,
-                }),
-            );
-        }
 
         let service_clone = Arc::clone(&service);
-        let id_for_unregister = prediction_id.clone();
+        let supervisor_clone = Arc::clone(supervisor);
+        let id_for_cleanup = prediction_id.clone();
         tokio::spawn(async move {
-            let _ = service_clone.predict(&mut prediction, input).await;
-            service_clone.unregister_prediction(&id_for_unregister).await;
-            // prediction drops here, sending terminal webhook
+            let result = service_clone.predict(&mut slot, input).await;
+
+            // Update supervisor with result (triggers terminal webhook)
+            match result {
+                Ok(r) => {
+                    supervisor_clone.update_status(
+                        &id_for_cleanup,
+                        SupervisorStatus::Succeeded,
+                        Some(serde_json::json!(r.output)),
+                        None,
+                    );
+                }
+                Err(PredictionError::Cancelled) => {
+                    supervisor_clone.update_status(
+                        &id_for_cleanup,
+                        SupervisorStatus::Canceled,
+                        None,
+                        None,
+                    );
+                }
+                Err(e) => {
+                    supervisor_clone.update_status(
+                        &id_for_cleanup,
+                        SupervisorStatus::Failed,
+                        None,
+                        Some(e.to_string()),
+                    );
+                }
+            }
+
+            service_clone.unregister_prediction(&id_for_cleanup).await;
+            // slot drops here, permit returns to pool
         });
 
         return (
@@ -345,9 +388,39 @@ async fn create_prediction_with_id(
         );
     }
 
-    // Synchronous mode - run and wait for result
-    let result = service.predict(&mut prediction, input).await;
-    let predict_time = prediction.elapsed().as_secs_f64();
+    // Synchronous mode - use sync guard for connection-drop cancellation
+    let mut sync_guard = handle.sync_guard();
+
+    // Run prediction
+    let result = service.predict(&mut slot, input).await;
+    let predict_time = slot.elapsed().as_secs_f64();
+
+    // Disarm guard - prediction completed normally
+    sync_guard.disarm();
+
+    // Update supervisor with result (triggers terminal webhook)
+    match &result {
+        Ok(r) => {
+            supervisor.update_status(
+                &prediction_id,
+                SupervisorStatus::Succeeded,
+                Some(serde_json::json!(r.output)),
+                None,
+            );
+        }
+        Err(PredictionError::Cancelled) => {
+            supervisor.update_status(&prediction_id, SupervisorStatus::Canceled, None, None);
+        }
+        Err(e) => {
+            supervisor.update_status(
+                &prediction_id,
+                SupervisorStatus::Failed,
+                None,
+                Some(e.to_string()),
+            );
+        }
+    }
+
     service.unregister_prediction(&prediction_id).await;
 
     match result {
@@ -382,7 +455,6 @@ async fn create_prediction_with_id(
         ),
         Err(PredictionError::Failed(msg)) => (
             // 200 for parity with Python - prediction failure is data, not HTTP error
-            // Python only returns 500 for schema/serialization validation failures
             StatusCode::OK,
             Json(serde_json::json!({
                 "id": prediction_id,
@@ -409,8 +481,12 @@ async fn cancel_prediction(
     State(service): State<Arc<PredictionService>>,
     Path(prediction_id): Path<String>,
 ) -> impl IntoResponse {
+    // Try supervisor first (preferred), fall back to legacy service cancel
+    let supervisor = service.supervisor();
+    let cancelled = supervisor.cancel(&prediction_id) || service.cancel(&prediction_id).await;
+
     // Python returns empty {} body for both success and not-found
-    if service.cancel(&prediction_id).await {
+    if cancelled {
         (StatusCode::OK, Json(serde_json::json!({})))
     } else {
         (StatusCode::NOT_FOUND, Json(serde_json::json!({})))

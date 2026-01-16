@@ -1,3 +1,4 @@
+#![allow(clippy::module_inception)]
 //! Worker subprocess protocol and management.
 //!
 //! This module defines the protocol between the parent coglet process and

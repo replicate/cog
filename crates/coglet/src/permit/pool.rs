@@ -7,12 +7,12 @@
 //!
 //! Permits are returned to the pool on drop if idle, or orphaned if poisoned.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use futures::SinkExt;
 use tokio::net::unix::OwnedWriteHalf;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tokio_util::codec::FramedWrite;
 
 use crate::bridge::codec::JsonCodec;
@@ -79,7 +79,11 @@ impl IdleToken {
 
 impl Permit {
     /// Create a new permit from inner data.
-    pub(crate) fn new(inner: PermitInner, pool_tx: mpsc::Sender<PermitInner>, pool_available: Arc<AtomicUsize>) -> Self {
+    pub(crate) fn new(
+        inner: PermitInner,
+        pool_tx: mpsc::Sender<PermitInner>,
+        pool_available: Arc<AtomicUsize>,
+    ) -> Self {
         // Clear idle flag - slot is now in use
         inner.idle_flag.store(false, Ordering::Release);
 
@@ -111,7 +115,7 @@ impl Permit {
     /// Mark this permit as idle, allowing it to return to pool on drop.
     ///
     /// Returns an `IdleToken` as proof that the permit is idle.
-    /// 
+    ///
     /// # Panics
     /// Panics if the permit is already poisoned. A poisoned permit
     /// can NEVER become idle - this is enforced at the type level.
@@ -120,14 +124,21 @@ impl Permit {
             PermitState::InUse => {
                 self.state = PermitState::Idle;
                 self.idle_flag.store(true, Ordering::Release);
-                IdleToken { slot_id: self.slot_id }
+                IdleToken {
+                    slot_id: self.slot_id,
+                }
             }
             PermitState::Idle => {
                 // Already idle, return token
-                IdleToken { slot_id: self.slot_id }
+                IdleToken {
+                    slot_id: self.slot_id,
+                }
             }
             PermitState::Poisoned => {
-                panic!("Cannot mark poisoned permit as idle - slot_id={}", self.slot_id);
+                panic!(
+                    "Cannot mark poisoned permit as idle - slot_id={}",
+                    self.slot_id
+                );
             }
         }
     }
@@ -227,7 +238,11 @@ impl PermitPool {
     /// Add a permit to the pool.
     ///
     /// Called during initialization to populate pool with slot sockets.
-    pub fn add_permit(&self, slot_id: SlotId, writer: FramedWrite<OwnedWriteHalf, JsonCodec<SlotRequest>>) {
+    pub fn add_permit(
+        &self,
+        slot_id: SlotId,
+        writer: FramedWrite<OwnedWriteHalf, JsonCodec<SlotRequest>>,
+    ) {
         let inner = PermitInner {
             slot_id,
             writer,
@@ -249,7 +264,11 @@ impl PermitPool {
         let mut rx = self.available_rx.try_lock().ok()?;
         let inner = rx.try_recv().ok()?;
         self.available_count.fetch_sub(1, Ordering::Release);
-        Some(Permit::new(inner, self.available_tx.clone(), Arc::clone(&self.available_count)))
+        Some(Permit::new(
+            inner,
+            self.available_tx.clone(),
+            Arc::clone(&self.available_count),
+        ))
     }
 
     /// Acquire a permit, waiting if none available.
@@ -257,7 +276,11 @@ impl PermitPool {
         let mut rx = self.available_rx.lock().await;
         let inner = rx.recv().await?;
         self.available_count.fetch_sub(1, Ordering::Release);
-        Some(Permit::new(inner, self.available_tx.clone(), Arc::clone(&self.available_count)))
+        Some(Permit::new(
+            inner,
+            self.available_tx.clone(),
+            Arc::clone(&self.available_count),
+        ))
     }
 
     /// Get the total number of slots.
@@ -288,23 +311,23 @@ mod tests {
     #[tokio::test]
     async fn permit_pool_add_and_acquire() {
         let pool = PermitPool::new(2);
-        
+
         let (write1, _read1) = make_socket_pair().await;
         let (write2, _read2) = make_socket_pair().await;
-        
+
         let slot1 = SlotId::new();
         let slot2 = SlotId::new();
-        
+
         pool.add_permit(slot1, FramedWrite::new(write1, JsonCodec::new()));
         pool.add_permit(slot2, FramedWrite::new(write2, JsonCodec::new()));
-        
+
         // Should be able to acquire both
         let p1 = pool.try_acquire();
         assert!(p1.is_some());
-        
+
         let p2 = pool.try_acquire();
         assert!(p2.is_some());
-        
+
         // No more available
         let p3 = pool.try_acquire();
         assert!(p3.is_none());
@@ -313,19 +336,19 @@ mod tests {
     #[tokio::test]
     async fn permit_returns_to_pool_when_idle() {
         let pool = PermitPool::new(1);
-        
+
         let (write, _read) = make_socket_pair().await;
         let slot = SlotId::new();
-        
+
         pool.add_permit(slot, FramedWrite::new(write, JsonCodec::new()));
-        
+
         {
             let mut permit = pool.try_acquire().unwrap();
             // Mark idle via into_idle()
             let _token = permit.into_idle();
             // Drop permit
         }
-        
+
         // Should be available again
         let permit = pool.try_acquire();
         assert!(permit.is_some());
@@ -334,19 +357,19 @@ mod tests {
     #[tokio::test]
     async fn permit_orphaned_when_not_idle() {
         let pool = PermitPool::new(1);
-        
+
         let (write, _read) = make_socket_pair().await;
         let slot = SlotId::new();
-        
+
         pool.add_permit(slot, FramedWrite::new(write, JsonCodec::new()));
-        
+
         {
             let permit = pool.try_acquire().unwrap();
             // Don't mark idle - simulates poisoned slot
             assert!(!permit.is_idle());
             // Drop permit
         }
-        
+
         // Should NOT be available (orphaned)
         let permit = pool.try_acquire();
         assert!(permit.is_none());

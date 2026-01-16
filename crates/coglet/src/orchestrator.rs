@@ -14,15 +14,15 @@ use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use tokio::process::{Child, Command};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tokio_util::codec::{FramedRead, FramedWrite};
 
+use crate::PredictionOutput;
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{ControlRequest, ControlResponse, SlotId, SlotRequest, SlotResponse};
 use crate::bridge::transport::create_transport;
 use crate::permit::PermitPool;
 use crate::prediction::Prediction;
-use crate::PredictionOutput;
 
 // ============================================================================
 // WorkerSpawner trait - extension point for different spawn strategies
@@ -204,10 +204,9 @@ impl OrchestratorHandle {
 
     /// Wait for worker process to exit.
     pub async fn wait(&mut self) -> Result<(), OrchestratorError> {
-        self.child
-            .wait()
-            .await
-            .map_err(|e| OrchestratorError::Protocol(format!("failed to wait for worker: {}", e)))?;
+        self.child.wait().await.map_err(|e| {
+            OrchestratorError::Protocol(format!("failed to wait for worker: {}", e))
+        })?;
         Ok(())
     }
 }
@@ -230,7 +229,9 @@ pub enum OrchestratorError {
 /// Spawn worker and initialize orchestrator.
 ///
 /// Returns when worker is ready (setup complete).
-pub async fn spawn_worker(config: OrchestratorConfig) -> Result<OrchestratorReady, OrchestratorError> {
+pub async fn spawn_worker(
+    config: OrchestratorConfig,
+) -> Result<OrchestratorReady, OrchestratorError> {
     let num_slots = config.num_slots;
 
     // Create slot transport (Unix sockets)
@@ -321,10 +322,10 @@ pub async fn spawn_worker(config: OrchestratorConfig) -> Result<OrchestratorRead
     tracing::debug!(num_slots = slot_ids.len(), "Worker ready");
 
     // Log schema at TRACE level
-    if let Some(ref s) = schema {
-        if let Ok(json) = serde_json::to_string_pretty(s) {
-            tracing::trace!(target: "coglet::schema", schema = %json, "OpenAPI schema");
-        }
+    if let Some(ref s) = schema
+        && let Ok(json) = serde_json::to_string_pretty(s)
+    {
+        tracing::trace!(target: "coglet::schema", schema = %json, "OpenAPI schema");
     }
 
     // Create permit pool and populate with slot sockets
@@ -375,7 +376,10 @@ pub async fn spawn_worker(config: OrchestratorConfig) -> Result<OrchestratorRead
 /// Runs until control channel closes (worker exit/crash).
 async fn run_event_loop(
     mut ctrl_reader: FramedRead<tokio::process::ChildStdout, JsonCodec<ControlResponse>>,
-    slot_readers: Vec<(SlotId, FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotResponse>>)>,
+    slot_readers: Vec<(
+        SlotId,
+        FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotResponse>>,
+    )>,
     mut register_rx: mpsc::Receiver<(SlotId, Arc<Mutex<Prediction>>)>,
     _pool: Arc<PermitPool>, // Kept for future use (permit return coordination)
 ) {
@@ -399,7 +403,7 @@ async fn run_event_loop(
                         }
                     }
                     Some(Err(e)) => {
-                        let _ = tx.send((slot_id, Err(e.into()))).await;
+                        let _ = tx.send((slot_id, Err(e))).await;
                         break;
                     }
                     None => {

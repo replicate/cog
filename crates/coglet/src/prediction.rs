@@ -359,7 +359,7 @@ mod tests {
     async fn prediction_wait_returns_immediately_if_terminal() {
         let mut pred = Prediction::new("test".to_string(), None);
         pred.set_succeeded(PredictionOutput::Single(serde_json::json!("done")));
-        
+
         // Should return immediately, not block
         pred.wait().await;
         assert_eq!(pred.status(), PredictionStatus::Succeeded);

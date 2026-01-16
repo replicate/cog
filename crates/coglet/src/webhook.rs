@@ -101,7 +101,11 @@ impl WebhookSender {
     }
 
     /// Create a new webhook sender with trace context.
-    pub fn with_trace_context(url: String, config: WebhookConfig, trace_context: TraceContext) -> Self {
+    pub fn with_trace_context(
+        url: String,
+        config: WebhookConfig,
+        trace_context: TraceContext,
+    ) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
 
         // Add bearer auth if WEBHOOK_AUTH_TOKEN is set

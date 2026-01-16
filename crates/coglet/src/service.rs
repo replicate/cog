@@ -329,7 +329,8 @@ impl PredictionService {
 
         if let Some(config) = config {
             // Orchestrator mode: route through slot socket
-            self.predict_via_orchestrator(slot, input, &config.handle).await
+            self.predict_via_orchestrator(slot, input, &config.handle)
+                .await
         } else {
             // Legacy mode: use predict functions directly
             self.predict_via_function(slot, input).await
@@ -500,10 +501,10 @@ impl PredictionService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prediction::PredictionStatus;
-    use crate::predictor::PredictionOutput;
     use crate::bridge::codec::JsonCodec;
     use crate::bridge::protocol::SlotId;
+    use crate::prediction::PredictionStatus;
+    use crate::predictor::PredictionOutput;
     use serde_json::json;
     use tokio::net::UnixStream;
     use tokio_util::codec::FramedWrite;
