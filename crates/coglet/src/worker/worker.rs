@@ -351,7 +351,7 @@ pub async fn run_worker<H: PredictHandler>(
                         break;
                     }
                     None => {
-                        tracing::warn!("Control channel closed (parent died?), exiting");
+                        tracing::error!("Control channel closed (parent died?), exiting");
                         break;
                     }
                 }

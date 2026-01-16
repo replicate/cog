@@ -117,10 +117,15 @@ impl PythonPredictor {
         } else {
             Self::detect_async(py, &instance, "predict")?
         };
-        if is_async_gen {
-            tracing::info!("Detected async generator predict()");
-        } else if is_async {
-            tracing::info!("Detected async predict()");
+        // Only log predict() detection for Predictor classes (not standalone train functions)
+        if !is_function {
+            if is_async_gen {
+                tracing::info!("Detected async generator predict()");
+            } else if is_async {
+                tracing::info!("Detected async predict()");
+            } else {
+                tracing::info!("Detected sync predict()");
+            }
         }
 
         // Check if train() method exists and if it's async.
@@ -133,6 +138,12 @@ impl PythonPredictor {
         };
         let is_train_async = if is_function {
             // For standalone functions, async status was already detected above
+            // Log the train function detection here
+            if is_async {
+                tracing::info!("Detected async train()");
+            } else {
+                tracing::info!("Detected sync train()");
+            }
             is_async
         } else if has_train {
             let (train_async, _) = Self::detect_async(py, &instance, "train")?;

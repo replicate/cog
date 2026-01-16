@@ -129,7 +129,7 @@ sys.addaudithook(_coglet_audit_hook)
     let exec_fn = builtins.getattr("exec")?;
     exec_fn.call1((hook_code, &globals))?;
 
-    tracing::info!("Installed audit hook for runtime protection");
+    tracing::debug!("Installed audit hook for runtime protection");
     Ok(())
 }
 

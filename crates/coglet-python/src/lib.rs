@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use pyo3::prelude::*;
 
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Global flag indicating whether we're running inside a worker subprocess.
 /// - `false` in the parent process (serve() spawns worker)
@@ -252,7 +252,10 @@ fn serve_subprocess(
                 info!("Spawning worker subprocess");
                 match coglet_core::spawn_worker(orch_config).await {
                     Ok(ready) => {
-                        info!("Worker ready, configuring service");
+                        debug!("Worker ready, configuring service");
+
+                        // Capture info before moving handle
+                        let num_slots = ready.handle.slot_ids().len();
 
                         // CRITICAL ORDER: pool → orchestrator → health=Ready
                         // This prevents race conditions where predictions arrive before routing is set up
@@ -268,7 +271,8 @@ fn serve_subprocess(
                             setup_service.set_schema(s).await;
                         }
 
-                        info!("Server ready to accept predictions");
+                        let mode = if is_train { "train" } else { "predict" };
+                        info!(num_slots, mode, "Server ready");
                     }
                     Err(e) => {
                         error!(error = %e, "Worker initialization failed");
@@ -329,7 +333,7 @@ fn _run_worker(py: Python<'_>) -> PyResult<()> {
         warn!(error = %e, "Failed to install signal handler, cancellation may not work");
     }
 
-    info!("Worker subprocess starting, waiting for Init message");
+    info!(target: "coglet::worker", "Worker subprocess starting, waiting for Init message");
 
     // Run worker event loop - reads Init from stdin, connects to transport, runs setup
     // IMPORTANT: Release the GIL before blocking, so spawned tasks can acquire it

@@ -318,7 +318,7 @@ pub async fn spawn_worker(config: OrchestratorConfig) -> Result<OrchestratorRead
         Err(_) => return Err(OrchestratorError::SetupTimeout),
     };
 
-    tracing::info!(num_slots = slot_ids.len(), "Worker ready");
+    tracing::debug!(num_slots = slot_ids.len(), "Worker ready");
 
     // Log schema at TRACE level
     if let Some(ref s) = schema {
@@ -481,6 +481,17 @@ async fn run_event_loop(
 
             // Slot socket messages
             Some((slot_id, result)) = slot_msg_rx.recv() => {
+                // Extract prediction_id for terminal states (Done/Failed/Cancelled)
+                let terminal_prediction_id = match &result {
+                    Ok(SlotResponse::Done { id, .. }) |
+                    Ok(SlotResponse::Failed { id, .. }) |
+                    Ok(SlotResponse::Cancelled { id }) => Some(id.clone()),
+                    _ => None,
+                };
+                if let Some(ref pred_id) = terminal_prediction_id {
+                    tracing::debug!(%slot_id, prediction_id = %pred_id, "Prediction terminal");
+                }
+
                 match result {
                     Ok(SlotResponse::Log { source, data }) => {
                         let prediction_id = if let Some(pred) = predictions.get(&slot_id) {
@@ -528,7 +539,6 @@ async fn run_event_loop(
                             predict_time,
                             "Prediction succeeded"
                         );
-                        tracing::debug!(%slot_id, %id, predict_time, "Prediction done");
                         // Remove prediction from registry and notify waiters
                         if let Some(pred) = predictions.remove(&slot_id) {
                             let mut p = pred.lock().await;
@@ -547,7 +557,6 @@ async fn run_event_loop(
                             %error,
                             "Prediction failed"
                         );
-                        tracing::debug!(%slot_id, %id, %error, "Prediction failed (debug)");
                         if let Some(pred) = predictions.remove(&slot_id) {
                             let mut p = pred.lock().await;
                             p.set_failed(error);
@@ -559,7 +568,6 @@ async fn run_event_loop(
                             prediction_id = %id,
                             "Prediction cancelled"
                         );
-                        tracing::debug!(%slot_id, %id, "Prediction cancelled (debug)");
                         if let Some(pred) = predictions.remove(&slot_id) {
                             let mut p = pred.lock().await;
                             p.set_canceled();

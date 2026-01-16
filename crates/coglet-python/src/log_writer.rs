@@ -211,6 +211,10 @@ fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
 ///
 /// If no prediction_id is set, or the prediction has completed (orphan task),
 /// writes go to tracing (logged as orphan).
+///
+/// Uses line buffering: accumulates writes until a newline is received, then
+/// emits complete lines. This coalesces Python's print() which does separate
+/// writes for content and newline.
 #[pyclass]
 pub struct SlotLogWriter {
     /// Which stream this captures (stdout or stderr).
@@ -220,19 +224,59 @@ pub struct SlotLogWriter {
     /// Whether writes should be ignored (used after errors).
     #[pyo3(get)]
     closed: bool,
+    /// Line buffer for coalescing writes into complete lines.
+    line_buffer: Mutex<String>,
 }
 
 #[pymethods]
 impl SlotLogWriter {
     /// Write data, routing to the appropriate destination.
     ///
-    /// Priority:
+    /// Uses line buffering: accumulates data until a newline is received, then
+    /// emits complete lines. This coalesces Python's print() which does separate
+    /// writes for content and the trailing newline.
+    ///
+    /// Priority for routing:
     /// 1. If inside a prediction (ContextVar set), route to slot sender
     /// 2. If setup sender registered, route to control channel  
     /// 3. Fall back to stderr (for orphan tasks or unexpected cases)
     fn write(&self, py: Python<'_>, data: &str) -> PyResult<usize> {
         if self.closed || data.is_empty() {
             return Ok(data.len());
+        }
+
+        let len = data.len();
+
+        // Append to line buffer and extract complete lines
+        let complete = {
+            let mut buffer = self.line_buffer.lock().unwrap();
+            buffer.push_str(data);
+
+            // Check if we have complete lines to emit
+            if let Some(last_newline) = buffer.rfind('\n') {
+                // Extract complete lines (including the newline)
+                let complete = buffer[..=last_newline].to_string();
+                // Keep remainder in buffer
+                let remainder = buffer[last_newline + 1..].to_string();
+                *buffer = remainder;
+                Some(complete)
+            } else {
+                None
+            }
+        };
+
+        // Emit complete lines (outside lock)
+        if let Some(complete) = complete {
+            self.emit_data(py, &complete)?;
+        }
+
+        Ok(len)
+    }
+
+    /// Emit data to the appropriate destination.
+    fn emit_data(&self, py: Python<'_>, data: &str) -> PyResult<()> {
+        if data.is_empty() {
+            return Ok(());
         }
 
         // Try to get current prediction from ContextVar
@@ -267,11 +311,22 @@ impl SlotLogWriter {
             }
         }
 
-        Ok(data.len())
+        Ok(())
     }
 
     /// Flush the stream.
+    ///
+    /// Emits any buffered content that hasn't been terminated with a newline.
     fn flush(&self, py: Python<'_>) -> PyResult<()> {
+        // Emit any buffered content
+        let buffered = {
+            let mut buffer = self.line_buffer.lock().unwrap();
+            std::mem::take(&mut *buffer)
+        };
+        if !buffered.is_empty() {
+            self.emit_data(py, &buffered)?;
+        }
+
         // Flush the original stream
         self.original.call_method0(py, "flush")?;
         Ok(())
@@ -359,6 +414,7 @@ impl SlotLogWriter {
             source: LogSource::Stdout,
             original,
             closed: false,
+            line_buffer: Mutex::new(String::new()),
         }
     }
 
@@ -368,6 +424,7 @@ impl SlotLogWriter {
             source: LogSource::Stderr,
             original,
             closed: false,
+            line_buffer: Mutex::new(String::new()),
         }
     }
 

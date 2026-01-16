@@ -86,7 +86,7 @@ impl NamedSocketTransport {
         let dir = std::env::temp_dir().join(format!("coglet-{}", std::process::id()));
         std::fs::create_dir_all(&dir)?;
 
-        tracing::info!(transport_type = "named", dir = %dir.display(), num_slots, "Creating slot transport");
+        tracing::debug!(transport_type = "named", dir = %dir.display(), num_slots, "Creating slot transport");
 
         // Bind all listeners now so child can connect to any slot
         let mut listeners = Vec::with_capacity(num_slots);
@@ -229,7 +229,7 @@ impl AbstractSocketTransport {
 
         let prefix = format!("coglet-{}", std::process::id());
 
-        tracing::info!(transport_type = "abstract", prefix = %prefix, num_slots, "Creating slot transport");
+        tracing::debug!(transport_type = "abstract", prefix = %prefix, num_slots, "Creating slot transport");
 
         // Bind all listeners now so child can connect to any slot
         let mut listeners = Vec::with_capacity(num_slots);
