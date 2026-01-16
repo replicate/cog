@@ -11,22 +11,22 @@ However, some tests require capabilities that don't fit txtar's sequential execu
 | Test | Location | Why Go instead of txtar |
 |------|----------|-------------------------|
 | `TestConcurrentPredictions` | `concurrent/` | Requires parallel HTTP requests with precise timing coordination |
-| `TestInteractiveTTY` | `pty/` | Requires bidirectional PTY interaction (future) |
+| `TestInteractiveTTY` | `pty/` | Requires bidirectional PTY interaction |
 
 ## Quick Start
 
 ```bash
 # Run all tests
-make test-integration-go
+make test-integration
 
 # Run fast tests only (skip slow GPU/framework tests)
-COG_TEST_FAST=1 make test-integration-go
+COG_TEST_FAST=1 make test-integration
 
 # Run a specific test
 cd integration-tests && go test -v -run TestIntegration/string_predictor
 
 # Run with a custom cog binary
-COG_BINARY=/path/to/cog make test-integration-go
+COG_BINARY=/path/to/cog make test-integration
 ```
 
 ## Directory Structure
@@ -42,7 +42,7 @@ integration-tests/
 ├── concurrent/
 │   └── concurrent_test.go  # Concurrent request tests
 ├── pty/
-│   └── pty_test.go     # Interactive TTY tests (future)
+│   └── pty_test.go     # Interactive TTY tests
 └── .bin/
     └── cog             # Cached cog binary (auto-generated)
 ```
@@ -201,7 +201,7 @@ cog build -t $TEST_IMAGE
 # ... rest of test
 ```
 
-Skip slow tests with: `COG_TEST_FAST=1 make test-integration-go`
+Skip slow tests with: `COG_TEST_FAST=1 make test-integration`
 
 **Platform-specific tests:**
 
