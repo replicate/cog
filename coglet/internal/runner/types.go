@@ -421,7 +421,7 @@ func PredictionID() (string, error) {
 		return "", err
 	}
 	shuffle := make([]byte, uuid.Size)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		shuffle[i], shuffle[i+4], shuffle[i+8], shuffle[i+12] = u[i+12], u[i+4], u[i], u[i+8]
 	}
 	encoding := base32.NewEncoding("0123456789abcdefghjkmnpqrstvwxyz").WithPadding(base32.NoPadding)

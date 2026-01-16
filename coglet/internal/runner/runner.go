@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -1004,7 +1005,7 @@ func (r *Runner) updateSetupResult() {
 	// Convert logs string to slice of strings by splitting on newlines
 	logLines := make([]string, 0)
 	if logs != "" {
-		for _, line := range strings.Split(logs, "\n") {
+		for line := range strings.SplitSeq(logs, "\n") {
 			if strings.TrimSpace(line) != "" {
 				logLines = append(logLines, line)
 			}
@@ -1125,9 +1126,7 @@ func mergeEnv(env []string, envSet map[string]string, envUnset []string) []strin
 			environment[parts[0]] = parts[1]
 		}
 	}
-	for k, v := range envSet {
-		environment[k] = v
-	}
+	maps.Copy(environment, envSet)
 	for _, k := range envUnset {
 		delete(environment, k)
 	}

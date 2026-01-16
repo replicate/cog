@@ -222,7 +222,7 @@ func parsePreviousTorchVersionsCode(code string, compats []config.TorchCompatibi
 	var cuda *string
 	skipSection := false
 
-	for _, line := range strings.Split(code, "\n") {
+	for line := range strings.SplitSeq(code, "\n") {
 		// Set section
 		if strings.HasPrefix(line, "#") {
 			skipSection = false

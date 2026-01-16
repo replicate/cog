@@ -30,14 +30,14 @@ type RequestContext struct {
 
 type Request struct {
 	// TODO: could this be Inputs?
-	Input   map[string]interface{} `json:"input"`
-	Context RequestContext         `json:"context"`
+	Input   map[string]any `json:"input"`
+	Context RequestContext `json:"context"`
 }
 
 type Response struct {
-	Status status       `json:"status"`
-	Output *interface{} `json:"output"`
-	Error  string       `json:"error"`
+	Status status `json:"status"`
+	Output *any   `json:"output"`
+	Error  string `json:"error"`
 }
 
 type ValidationErrorResponse struct {

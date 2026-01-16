@@ -347,7 +347,7 @@ func (mfi mockFileInfo) ModTime() time.Time {
 func (mfi mockFileInfo) IsDir() bool {
 	return false
 }
-func (mfi mockFileInfo) Sys() interface{} {
+func (mfi mockFileInfo) Sys() any {
 	return nil
 }
 

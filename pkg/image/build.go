@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"strings"
@@ -307,9 +308,7 @@ func Build(
 		console.Info("Unable to determine Git tag")
 	}
 
-	for key, val := range annotations {
-		labels[key] = val
-	}
+	maps.Copy(labels, annotations)
 
 	if err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, imageName, labels, bundledSchemaFile, progressOutput); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)

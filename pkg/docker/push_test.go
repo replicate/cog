@@ -134,7 +134,7 @@ func TestPushWithWeight(t *testing.T) {
 
 	// Create mock weight
 	data := make([]byte, 1024)
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		data[i] = byte(i % 256)
 	}
 	file, err := os.Create(filepath.Join(dir, "test_weight"))

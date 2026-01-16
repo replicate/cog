@@ -48,7 +48,7 @@ func TestGenerateRunnerId(t *testing.T) {
 		ids := make(map[string]bool)
 		const numIDs = 1000
 
-		for i := 0; i < numIDs; i++ {
+		for range numIDs {
 			id := GenerateRunnerID()
 			idStr := id.String()
 
@@ -81,7 +81,7 @@ func TestGenerateRunnerId(t *testing.T) {
 		t.Parallel()
 
 		// Generate multiple IDs and check they all follow the same format
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			id := GenerateRunnerID()
 			idStr := id.String()
 
@@ -434,7 +434,7 @@ func TestPendingPrediction(t *testing.T) {
 		const numGoroutines = 10
 
 		// Start multiple goroutines sending
-		for i := 0; i < numGoroutines; i++ {
+		for range numGoroutines {
 			wg.Go(func() {
 				resp := PredictionResponse{ID: "test", Status: PredictionProcessing}
 				p.safeSend(resp)

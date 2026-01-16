@@ -141,14 +141,14 @@ func TestManagerSlots(t *testing.T) {
 		wd, err := os.Getwd()
 		require.NoError(t, err)
 		testProcedureURL := "file://" + filepath.Join(wd, "../../python/tests/procedures/foo")
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			_, err := m.allocateRunnerSlot(testProcedureURL)
 			require.NoError(t, err)
 		}
 
 		// Generate more names and ensure they're all unique
 		generatedNames := make(map[string]bool)
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			r, err := m.allocateRunnerSlot(testProcedureURL)
 			name := r.runnerCtx.id
 			require.NoError(t, err)
@@ -172,7 +172,7 @@ func TestManagerSlots(t *testing.T) {
 		require.NoError(t, err)
 		testProcedureURL := "file://" + filepath.Join(wd, "../../python/tests/procedures/foo")
 		runners := []*Runner{}
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			r, err := m.allocateRunnerSlot(testProcedureURL)
 			runners = append(runners, r)
 			require.NoError(t, err)

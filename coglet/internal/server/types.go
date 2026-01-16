@@ -13,7 +13,7 @@ type PredictConfig struct {
 type HealthCheck struct {
 	Status      string             `json:"status"`
 	Setup       *SetupResult       `json:"setup,omitempty"`
-	Concurrency runner.Concurrency `json:"concurrency,omitempty"`
+	Concurrency runner.Concurrency `json:"concurrency"`
 }
 
 type SetupResult struct {

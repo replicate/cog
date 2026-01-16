@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -264,9 +265,7 @@ func setupCogRuntimeServer(t *testing.T, cfg cogRuntimeServerConfig) (*httptest.
 	t.Cleanup(s.Close)
 
 	envSet := make(map[string]string)
-	for k, v := range cfg.envSet {
-		envSet[k] = v
-	}
+	maps.Copy(envSet, cfg.envSet)
 
 	serverCfg := config.Config{
 		UseProcedureMode:          cfg.procedureMode,
@@ -466,7 +465,7 @@ type cogConfig struct {
 	Predict     string `json:"predict"`
 	Concurrency struct {
 		Max int `json:"max"`
-	} `json:"concurrency,omitempty"`
+	} `json:"concurrency"`
 }
 
 // writeCogConfig creates a cog.yaml file that contains json-ified version of the config.
@@ -707,8 +706,8 @@ func findCogletWithPgrep() []int {
 		return pids
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(strings.TrimSpace(string(output)), "\n")
+	for line := range lines {
 		if line == "" {
 			continue
 		}

@@ -399,12 +399,13 @@ func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]
 
 	// Copy over source / without weights
 	if !g.localImage {
-		copyCommand := "COPY --link --exclude='.cog' "
+		var copyCommand strings.Builder
+		copyCommand.WriteString("COPY --link --exclude='.cog' ")
 		for _, weight := range weights {
-			copyCommand += "--exclude='" + weight.Path + "' "
+			copyCommand.WriteString("--exclude='" + weight.Path + "' ")
 		}
-		copyCommand += ". /src"
-		lines = append(lines, copyCommand)
+		copyCommand.WriteString(". /src")
+		lines = append(lines, copyCommand.String())
 	} else {
 		buildDir, err := g.BuildDir()
 		if err != nil {

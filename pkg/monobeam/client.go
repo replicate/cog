@@ -119,7 +119,7 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 		return err
 	}
 
-	_, err = p.Write([]byte(fmt.Sprintf("Waiting to verify %s was received by the server...\n", desc)))
+	_, err = p.Write(fmt.Appendf(nil, "Waiting to verify %s was received by the server...\n", desc))
 	if err != nil {
 		console.Debugf("failed to write to progress bar: %v", err)
 	}
@@ -144,7 +144,7 @@ func (c *Client) UploadFile(ctx context.Context, objectType string, digest strin
 	if err != nil {
 		return err
 	}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		// Clone request so we use a fresh copy every loop
 		final, err := c.checkVerificationStatus(req.Clone(ctx), data.Uuid)
 		if final {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -242,10 +243,8 @@ func checkError(err error, codes ...transport.ErrorCode) bool {
 	var e *transport.Error
 	if errors.As(err, &e) {
 		for _, diagnosticErr := range e.Errors {
-			for _, code := range codes {
-				if diagnosticErr.Code == code {
-					return true
-				}
+			if slices.Contains(codes, diagnosticErr.Code) {
+				return true
 			}
 		}
 	}

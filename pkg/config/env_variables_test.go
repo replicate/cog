@@ -124,9 +124,9 @@ func TestEnvironmentConfig(t *testing.T) {
 			})
 
 			// test that prefix matches are rejected
-			if strings.HasSuffix(pattern, "*") {
+			if before, ok := strings.CutSuffix(pattern, "*"); ok {
 				t.Run(fmt.Sprintf("Rejects %q prefix", pattern), func(t *testing.T) {
-					name := strings.TrimSuffix(pattern, "*") + "SUFFIX"
+					name := before + "SUFFIX"
 					input := fmt.Sprintf("%s=VALUE", name)
 					_, err := parseAndValidateEnvironment([]string{input})
 					require.Error(t, err)

@@ -69,6 +69,7 @@ test: test-go test-python
 .PHONY: fmt
 fmt:
 	$(GOIMPORTS) -w -d .
+	go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix ./...
 	uv run ruff format
 
 .PHONY: generate

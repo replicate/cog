@@ -43,7 +43,7 @@ func TestProcedureSchemaLoadingSequential(t *testing.T) {
 	procedureURL := fmt.Sprintf("file://%s/python/tests/procedures/path_test", basePath)
 
 	// Run 3 sequential predictions to test schema loading robustness
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		prediction := runner.PredictionRequest{
 			Input: map[string]any{
 				"img": fmt.Sprintf("%s/image-%d.jpg", testServer.URL, i),
