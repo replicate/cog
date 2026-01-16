@@ -199,6 +199,7 @@ jobs:
           COG_WHEEL: ${{ matrix.runtime }}
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
+          BUILDKIT_PROGRESS: 'quiet'
         run: make test-integration
 
   release:
