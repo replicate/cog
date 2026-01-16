@@ -315,22 +315,6 @@ async fn create_prediction_with_id(
                 })),
             );
         }
-        Err(CreatePredictionError::AlreadyExists(id)) => {
-            // Clean up supervisor entry
-            supervisor.update_status(
-                &prediction_id,
-                SupervisorStatus::Failed,
-                None,
-                Some(format!("Prediction {} already exists", id)),
-            );
-            return (
-                StatusCode::CONFLICT,
-                Json(serde_json::json!({
-                    "error": format!("Prediction {} already exists", id),
-                    "status": "failed"
-                })),
-            );
-        }
     };
 
     // Update supervisor: prediction is now processing
@@ -375,7 +359,7 @@ async fn create_prediction_with_id(
                 }
             }
 
-            service_clone.unregister_prediction(&id_for_cleanup).await;
+            service_clone.unregister_prediction(&id_for_cleanup);
             // slot drops here, permit returns to pool
         });
 
@@ -421,7 +405,7 @@ async fn create_prediction_with_id(
         }
     }
 
-    service.unregister_prediction(&prediction_id).await;
+    service.unregister_prediction(&prediction_id);
 
     match result {
         Ok(r) => (
@@ -481,9 +465,8 @@ async fn cancel_prediction(
     State(service): State<Arc<PredictionService>>,
     Path(prediction_id): Path<String>,
 ) -> impl IntoResponse {
-    // Try supervisor first (preferred), fall back to legacy service cancel
-    let supervisor = service.supervisor();
-    let cancelled = supervisor.cancel(&prediction_id) || service.cancel(&prediction_id).await;
+    // Supervisor owns cancellation (service.cancel delegates to supervisor)
+    let cancelled = service.cancel(&prediction_id);
 
     // Python returns empty {} body for both success and not-found
     if cancelled {
