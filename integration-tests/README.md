@@ -202,13 +202,7 @@ cog build -t $TEST_IMAGE
 # ... rest of test
 ```
 
-<<<<<<< HEAD
 Skip slow tests with: `go test -short ./...`
-||||||| f5f77b89
-Skip slow tests with: `COG_TEST_FAST=1 make test-integration-go`
-=======
-Skip slow tests with: `COG_TEST_FAST=1 make test-integration`
->>>>>>> c8b70ed414b0424306050d89c8b3fe7d24af6b36
 
 **Platform-specific tests:**
 
