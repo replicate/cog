@@ -48,6 +48,8 @@ pub struct PredictionRequest {
     /// Optional prediction ID (generated if not provided).
     pub id: Option<String>,
     /// Input to the predictor.
+    /// Defaults to {} for compatibility with clients that omit input or send null.
+    #[serde(default = "default_empty_input", deserialize_with = "deserialize_input")]
     pub input: serde_json::Value,
     /// Webhook URL to send prediction updates to.
     pub webhook: Option<String>,
@@ -55,6 +57,23 @@ pub struct PredictionRequest {
     /// Defaults to all events: ["start", "output", "logs", "completed"]
     #[serde(default = "default_webhook_events_filter")]
     pub webhook_events_filter: Vec<WebhookEventType>,
+}
+
+fn default_empty_input() -> serde_json::Value {
+    serde_json::json!({})
+}
+
+/// Deserialize input, treating null as {}.
+fn deserialize_input<'de, D>(deserializer: D) -> Result<serde_json::Value, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(if value.is_null() {
+        serde_json::json!({})
+    } else {
+        value
+    })
 }
 
 fn default_webhook_events_filter() -> Vec<WebhookEventType> {
@@ -125,8 +144,15 @@ fn should_respond_async(headers: &HeaderMap) -> bool {
 async fn create_prediction(
     State(service): State<Arc<PredictionService>>,
     headers: HeaderMap,
-    Json(request): Json<PredictionRequest>,
+    body: Option<Json<PredictionRequest>>,
 ) -> impl IntoResponse {
+    // Handle missing body for compatibility (treat as empty input)
+    let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
+        id: None,
+        input: serde_json::json!({}),
+        webhook: None,
+        webhook_events_filter: default_webhook_events_filter(),
+    });
     let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
     let respond_async = should_respond_async(&headers);
     create_prediction_with_id(
@@ -145,8 +171,15 @@ async fn create_prediction_idempotent(
     State(service): State<Arc<PredictionService>>,
     Path(prediction_id): Path<String>,
     headers: HeaderMap,
-    Json(request): Json<PredictionRequest>,
+    body: Option<Json<PredictionRequest>>,
 ) -> impl IntoResponse {
+    // Handle missing body for compatibility (treat as empty input)
+    let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
+        id: None,
+        input: serde_json::json!({}),
+        webhook: None,
+        webhook_events_filter: default_webhook_events_filter(),
+    });
     // If request has ID, it must match URL
     if let Some(ref req_id) = request.id
         && req_id != &prediction_id
@@ -392,10 +425,10 @@ async fn openapi_schema(State(service): State<Arc<PredictionService>>) -> impl I
 async fn create_training(
     State(service): State<Arc<PredictionService>>,
     headers: HeaderMap,
-    Json(request): Json<PredictionRequest>,
+    body: Option<Json<PredictionRequest>>,
 ) -> impl IntoResponse {
     // BUG: This calls predict(), not train(), matching cog mainline behavior
-    create_prediction(State(service), headers, Json(request)).await
+    create_prediction(State(service), headers, body).await
 }
 
 /// PUT /trainings/{id} - same as PUT /predictions/{id} (bug-for-bug)
@@ -403,10 +436,10 @@ async fn create_training_idempotent(
     State(service): State<Arc<PredictionService>>,
     Path(training_id): Path<String>,
     headers: HeaderMap,
-    Json(request): Json<PredictionRequest>,
+    body: Option<Json<PredictionRequest>>,
 ) -> impl IntoResponse {
     // BUG: This calls predict(), not train(), matching cog mainline behavior
-    create_prediction_idempotent(State(service), Path(training_id), headers, Json(request)).await
+    create_prediction_idempotent(State(service), Path(training_id), headers, body).await
 }
 
 /// POST /trainings/{id}/cancel - same as POST /predictions/{id}/cancel
