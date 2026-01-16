@@ -2,6 +2,7 @@ package pty_test
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -108,11 +109,37 @@ func TestInteractiveTTY(t *testing.T) {
 		return buf.String(), nil
 	}
 
+	// Helper to wait for specific output pattern with timeout
+	// Polls the PTY output and returns early when the pattern is found
+	waitForOutput := func(pattern string, timeout time.Duration) (string, error) {
+		deadline := time.Now().Add(timeout)
+		var buf bytes.Buffer
+		tmp := make([]byte, 1024)
+
+		for time.Now().Before(deadline) {
+			ptmx.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+			n, err := ptmx.Read(tmp)
+			if n > 0 {
+				buf.Write(tmp[:n])
+				// Check if we've received the pattern
+				if strings.Contains(buf.String(), pattern) {
+					return buf.String(), nil
+				}
+			}
+			if err != nil && !os.IsTimeout(err) && err != io.EOF {
+				return buf.String(), fmt.Errorf("read error: %w", err)
+			}
+		}
+		return buf.String(), fmt.Errorf("timeout waiting for pattern %q", pattern)
+	}
+
 	// Wait for bash to start and show a prompt
+	// In CI, the Docker image build can take a while, so we need a longer timeout
+	// Use waitForOutput which polls and returns early when the prompt appears
 	t.Log("Waiting for bash prompt...")
-	output, err := readWithTimeout(5 * time.Second)
+	output, err := waitForOutput(":/src#", 60*time.Second)
 	if err != nil {
-		t.Fatalf("failed to read initial output: %v", err)
+		t.Fatalf("failed waiting for bash prompt: %v", err)
 	}
 	t.Logf("Initial output: %q", output)
 
