@@ -470,6 +470,11 @@ async fn run_event_loop(
             // New prediction registrations
             Some((slot_id, prediction)) = register_rx.recv() => {
                 let prediction_id = prediction.lock().await.id().to_string();
+                tracing::info!(
+                    target: "coglet::prediction",
+                    %prediction_id,
+                    "Starting prediction"
+                );
                 tracing::debug!(%slot_id, %prediction_id, "Registered prediction");
                 predictions.insert(slot_id, prediction);
             }
@@ -517,6 +522,12 @@ async fn run_event_loop(
                         }
                     }
                     Ok(SlotResponse::Done { id, output, predict_time }) => {
+                        tracing::info!(
+                            target: "coglet::prediction",
+                            prediction_id = %id,
+                            predict_time,
+                            "Prediction succeeded"
+                        );
                         tracing::debug!(%slot_id, %id, predict_time, "Prediction done");
                         // Remove prediction from registry and notify waiters
                         if let Some(pred) = predictions.remove(&slot_id) {
@@ -530,14 +541,25 @@ async fn run_event_loop(
                         }
                     }
                     Ok(SlotResponse::Failed { id, error }) => {
-                        tracing::warn!(%slot_id, %id, %error, "Prediction failed");
+                        tracing::info!(
+                            target: "coglet::prediction",
+                            prediction_id = %id,
+                            %error,
+                            "Prediction failed"
+                        );
+                        tracing::debug!(%slot_id, %id, %error, "Prediction failed (debug)");
                         if let Some(pred) = predictions.remove(&slot_id) {
                             let mut p = pred.lock().await;
                             p.set_failed(error);
                         }
                     }
                     Ok(SlotResponse::Cancelled { id }) => {
-                        tracing::info!(%slot_id, %id, "Prediction cancelled");
+                        tracing::info!(
+                            target: "coglet::prediction",
+                            prediction_id = %id,
+                            "Prediction cancelled"
+                        );
+                        tracing::debug!(%slot_id, %id, "Prediction cancelled (debug)");
                         if let Some(pred) = predictions.remove(&slot_id) {
                             let mut p = pred.lock().await;
                             p.set_canceled();
