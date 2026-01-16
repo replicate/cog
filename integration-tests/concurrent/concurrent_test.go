@@ -3,6 +3,7 @@ package concurrent_test
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -68,7 +69,10 @@ func TestConcurrentPredictions(t *testing.T) {
 
 	// Start the server
 	t.Log("Starting server...")
-	const port = 5555 // Use a fixed port for simplicity
+	port, err := allocatePort()
+	if err != nil {
+		t.Fatalf("failed to allocate port: %v", err)
+	}
 
 	serveCmd := exec.Command(cogBinary, "serve", "-p", fmt.Sprintf("%d", port))
 	serveCmd.Dir = tmpDir
@@ -211,6 +215,16 @@ func waitForServerReady(serverURL string, timeout time.Duration) bool {
 	}
 
 	return false
+}
+
+// allocatePort finds an available TCP port by letting the OS assign one.
+func allocatePort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port, nil
 }
 
 // Embedded fixture files
