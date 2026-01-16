@@ -245,37 +245,42 @@ fn serve_subprocess(
             let setup_result = SetupResult::starting();
             service_clone.set_setup_result(setup_result.clone()).await;
 
-            // Spawn worker via orchestrator
-            info!("Spawning worker subprocess");
-            match coglet_core::spawn_worker(orch_config).await {
-                Ok(ready) => {
-                    info!("Worker ready, configuring service");
+            // Spawn worker setup as background task
+            // HTTP starts immediately, returns 503 until worker is ready
+            let setup_service = Arc::clone(&service_clone);
+            tokio::spawn(async move {
+                info!("Spawning worker subprocess");
+                match coglet_core::spawn_worker(orch_config).await {
+                    Ok(ready) => {
+                        info!("Worker ready, configuring service");
 
-                    // CRITICAL ORDER: pool → orchestrator → health=Ready
-                    // This prevents race conditions where predictions arrive before routing is set up
-                    service_clone.set_pool(ready.pool).await;
-                    service_clone.set_orchestrator(Arc::new(ready.handle)).await;
-                    service_clone.set_health(Health::Ready).await;
-                    service_clone
-                        .set_setup_result(setup_result.succeeded())
-                        .await;
+                        // CRITICAL ORDER: pool → orchestrator → health=Ready
+                        // This prevents race conditions where predictions arrive before routing is set up
+                        setup_service.set_pool(ready.pool).await;
+                        setup_service.set_orchestrator(Arc::new(ready.handle)).await;
+                        setup_service.set_health(Health::Ready).await;
+                        setup_service
+                            .set_setup_result(setup_result.succeeded())
+                            .await;
 
-                    // Set OpenAPI schema if available
-                    if let Some(s) = ready.schema {
-                        service_clone.set_schema(s).await;
+                        // Set OpenAPI schema if available
+                        if let Some(s) = ready.schema {
+                            setup_service.set_schema(s).await;
+                        }
+
+                        info!("Server ready to accept predictions");
                     }
-
-                    info!("Server ready to accept predictions");
+                    Err(e) => {
+                        error!(error = %e, "Worker initialization failed");
+                        setup_service.set_health(Health::SetupFailed).await;
+                        setup_service
+                            .set_setup_result(setup_result.failed(e.to_string()))
+                            .await;
+                    }
                 }
-                Err(e) => {
-                    error!(error = %e, "Worker initialization failed");
-                    service_clone.set_health(Health::SetupFailed).await;
-                    service_clone
-                        .set_setup_result(setup_result.failed(e.to_string()))
-                        .await;
-                }
-            }
+            });
 
+            // Start HTTP immediately - returns 503 for predictions until worker is ready
             http_serve(config, service_clone)
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
