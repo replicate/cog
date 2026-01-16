@@ -12,6 +12,7 @@ pub mod permit;
 mod prediction;
 mod predictor;
 mod service;
+mod supervisor;
 mod version;
 pub mod webhook;
 
@@ -36,6 +37,8 @@ pub use predictor::{
     PredictionMetrics, PredictionOutput, PredictionResult,
 };
 pub use service::{CreatePredictionError, HealthSnapshot, PredictionService};
+pub use supervisor::{PredictionHandle, PredictionState, PredictionSupervisor};
+pub use supervisor::PredictionStatus as SupervisorPredictionStatus;
 pub use version::{COGLET_VERSION, VersionInfo};
 pub use webhook::{TraceContext, WebhookConfig, WebhookEventType, WebhookSender};
 
