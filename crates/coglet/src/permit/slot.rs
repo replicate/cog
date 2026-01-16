@@ -5,9 +5,7 @@
 //! - Permit's idle_flag to be set without holding the prediction lock
 //! - Clean RAII: dropping PredictionSlot sends webhook, then returns permit to pool
 
-use std::sync::Arc;
-
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use super::Permit;
 use crate::prediction::Prediction;

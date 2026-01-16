@@ -350,7 +350,7 @@ impl PredictionService {
         // Set processing status
         {
             let prediction = slot.prediction();
-            let mut pred = prediction.lock().await;
+            let mut pred = prediction.lock().unwrap();
             pred.set_processing();
         }
 
@@ -368,7 +368,7 @@ impl PredictionService {
 
         if let Err(e) = slot.permit_mut().send(request).await {
             tracing::error!(%slot_id, error = %e, "Failed to send prediction request");
-            let mut pred = prediction_arc.lock().await;
+            let mut pred = prediction_arc.lock().unwrap();
             pred.set_failed(format!("Failed to send request: {}", e));
             // Don't mark idle - slot is poisoned
             return Err(PredictionError::Failed(format!(
@@ -380,14 +380,14 @@ impl PredictionService {
         // Wait for prediction to complete (event loop will update prediction status)
         // Get completion notifier before waiting
         let completion = {
-            let pred = prediction_arc.lock().await;
+            let pred = prediction_arc.lock().unwrap();
             pred.completion()
         };
         completion.notified().await;
 
         // Extract result from prediction
         let (status, output, error, logs, predict_time, slot_poisoned) = {
-            let pred = prediction_arc.lock().await;
+            let pred = prediction_arc.lock().unwrap();
             (
                 pred.status(),
                 pred.output().cloned(),
@@ -431,7 +431,7 @@ impl PredictionService {
         // Set processing status
         {
             let prediction = slot.prediction();
-            let mut pred = prediction.lock().await;
+            let mut pred = prediction.lock().unwrap();
             pred.set_processing();
         }
 
@@ -450,7 +450,7 @@ impl PredictionService {
         // Update prediction status based on result
         {
             let prediction = slot.prediction();
-            let mut pred = prediction.lock().await;
+            let mut pred = prediction.lock().unwrap();
             match &result {
                 Ok(r) => pred.set_succeeded(r.output.clone()),
                 Err(PredictionError::Cancelled) => pred.set_canceled(),
@@ -585,7 +585,7 @@ mod tests {
 
         let slot = result.unwrap();
         let prediction = slot.prediction();
-        let pred = prediction.lock().await;
+        let pred = prediction.lock().unwrap();
         assert_eq!(pred.id(), "test");
         assert_eq!(pred.status(), PredictionStatus::Starting);
     }
@@ -646,7 +646,7 @@ mod tests {
 
         {
             let prediction = slot.prediction();
-            let pred = prediction.lock().await;
+            let pred = prediction.lock().unwrap();
             assert!(!pred.is_canceled());
         }
 
@@ -654,7 +654,7 @@ mod tests {
 
         {
             let prediction = slot.prediction();
-            let pred = prediction.lock().await;
+            let pred = prediction.lock().unwrap();
             assert!(pred.is_canceled());
         }
 
@@ -687,7 +687,7 @@ mod tests {
         assert_eq!(r.output.final_value(), &json!("Hello, Rust!"));
 
         let prediction = slot.prediction();
-        let pred = prediction.lock().await;
+        let pred = prediction.lock().unwrap();
         assert_eq!(pred.status(), PredictionStatus::Succeeded);
     }
 
@@ -735,7 +735,7 @@ mod tests {
         assert!(result.is_err());
 
         let prediction = slot.prediction();
-        let pred = prediction.lock().await;
+        let pred = prediction.lock().unwrap();
         assert_eq!(pred.status(), PredictionStatus::Failed);
     }
 

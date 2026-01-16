@@ -14,8 +14,12 @@ use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use tokio::process::{Child, Command};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
+
+// Use std::sync::Mutex for Prediction (no await across lock)
+// Use tokio::sync::Mutex for ctrl_writer (async I/O)
+use std::sync::Mutex as StdMutex;
 
 use crate::PredictionOutput;
 use crate::bridge::codec::JsonCodec;
@@ -163,10 +167,10 @@ pub struct OrchestratorReady {
 pub struct OrchestratorHandle {
     /// Worker child process
     child: Child,
-    /// Control channel writer (for Cancel, Shutdown)
-    ctrl_writer: Arc<Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>>,
+    /// Control channel writer (for Cancel, Shutdown) - needs tokio Mutex for async I/O
+    ctrl_writer: Arc<tokio::sync::Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>>,
     /// Channel to register predictions with event loop
-    register_tx: mpsc::Sender<(SlotId, Arc<Mutex<Prediction>>)>,
+    register_tx: mpsc::Sender<(SlotId, Arc<StdMutex<Prediction>>)>,
     /// Slot IDs from worker
     slot_ids: Vec<SlotId>,
 }
@@ -175,7 +179,7 @@ impl OrchestratorHandle {
     /// Register a prediction with the event loop.
     ///
     /// Called after acquiring a permit and creating a prediction.
-    pub async fn register_prediction(&self, slot_id: SlotId, prediction: Arc<Mutex<Prediction>>) {
+    pub async fn register_prediction(&self, slot_id: SlotId, prediction: Arc<StdMutex<Prediction>>) {
         let _ = self.register_tx.send((slot_id, prediction)).await;
     }
 
@@ -349,7 +353,7 @@ pub async fn spawn_worker(
     // Create registration channel for event loop
     let (register_tx, register_rx) = mpsc::channel(num_slots);
 
-    let ctrl_writer = Arc::new(Mutex::new(ctrl_writer));
+    let ctrl_writer = Arc::new(tokio::sync::Mutex::new(ctrl_writer));
 
     let handle = OrchestratorHandle {
         child,
@@ -380,11 +384,11 @@ async fn run_event_loop(
         SlotId,
         FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotResponse>>,
     )>,
-    mut register_rx: mpsc::Receiver<(SlotId, Arc<Mutex<Prediction>>)>,
+    mut register_rx: mpsc::Receiver<(SlotId, Arc<StdMutex<Prediction>>)>,
     _pool: Arc<PermitPool>, // Kept for future use (permit return coordination)
 ) {
     // Active predictions by slot
-    let mut predictions: HashMap<SlotId, Arc<Mutex<Prediction>>> = HashMap::new();
+    let mut predictions: HashMap<SlotId, Arc<StdMutex<Prediction>>> = HashMap::new();
 
     // Channel for slot reader messages (aggregated from all slots)
     let (slot_msg_tx, mut slot_msg_rx) =
@@ -437,7 +441,7 @@ async fn run_event_loop(
                     Some(Ok(ControlResponse::Failed { slot, error })) => {
                         tracing::warn!(%slot, %error, "Slot poisoned");
                         if let Some(pred) = predictions.remove(&slot) {
-                            let mut p = pred.lock().await;
+                            let mut p = pred.lock().unwrap();
                             p.set_slot_poisoned();
                             // Fail the prediction if not already terminal
                             if !p.is_terminal() {
@@ -463,7 +467,7 @@ async fn run_event_loop(
                         tracing::warn!("Control channel closed (worker crashed?)");
                         for (slot, pred) in predictions.drain() {
                             tracing::warn!(%slot, "Failing prediction due to worker crash");
-                            let mut p = pred.lock().await;
+                            let mut p = pred.lock().unwrap();
                             p.set_failed("Worker crashed".to_string());
                         }
                         break;
@@ -473,7 +477,7 @@ async fn run_event_loop(
 
             // New prediction registrations
             Some((slot_id, prediction)) = register_rx.recv() => {
-                let prediction_id = prediction.lock().await.id().to_string();
+                let prediction_id = prediction.lock().unwrap().id().to_string();
                 tracing::info!(
                     target: "coglet::prediction",
                     %prediction_id,
@@ -499,7 +503,7 @@ async fn run_event_loop(
                 match result {
                     Ok(SlotResponse::Log { source, data }) => {
                         let prediction_id = if let Some(pred) = predictions.get(&slot_id) {
-                            let mut p = pred.lock().await;
+                            let mut p = pred.lock().unwrap();
                             p.append_log(&data);
                             Some(p.id().to_string())
                         } else {
@@ -532,7 +536,7 @@ async fn run_event_loop(
                     }
                     Ok(SlotResponse::Output { output }) => {
                         if let Some(pred) = predictions.get(&slot_id) {
-                            let mut p = pred.lock().await;
+                            let mut p = pred.lock().unwrap();
                             p.append_output(output);
                         }
                     }
@@ -545,7 +549,7 @@ async fn run_event_loop(
                         );
                         // Remove prediction from registry and notify waiters
                         if let Some(pred) = predictions.remove(&slot_id) {
-                            let mut p = pred.lock().await;
+                            let mut p = pred.lock().unwrap();
                             let pred_output = output
                                 .map(PredictionOutput::Single)
                                 .unwrap_or(PredictionOutput::Single(serde_json::Value::Null));
@@ -562,7 +566,7 @@ async fn run_event_loop(
                             "Prediction failed"
                         );
                         if let Some(pred) = predictions.remove(&slot_id) {
-                            let mut p = pred.lock().await;
+                            let mut p = pred.lock().unwrap();
                             p.set_failed(error);
                         }
                     }
@@ -573,14 +577,14 @@ async fn run_event_loop(
                             "Prediction cancelled"
                         );
                         if let Some(pred) = predictions.remove(&slot_id) {
-                            let mut p = pred.lock().await;
+                            let mut p = pred.lock().unwrap();
                             p.set_canceled();
                         }
                     }
                     Err(e) => {
                         tracing::error!(%slot_id, error = %e, "Slot socket error");
                         if let Some(pred) = predictions.remove(&slot_id) {
-                            let mut p = pred.lock().await;
+                            let mut p = pred.lock().unwrap();
                             p.set_failed(format!("Slot socket error: {}", e));
                         }
                     }
