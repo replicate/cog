@@ -351,22 +351,11 @@ async fn cancel_prediction(
     State(service): State<Arc<PredictionService>>,
     Path(prediction_id): Path<String>,
 ) -> impl IntoResponse {
+    // Python returns empty {} body for both success and not-found
     if service.cancel(&prediction_id).await {
-        (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": prediction_id,
-                "status": "canceling"
-            })),
-        )
+        (StatusCode::OK, Json(serde_json::json!({})))
     } else {
-        (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({
-                "error": format!("Prediction {} not found or already completed", prediction_id),
-                "status": "failed"
-            })),
-        )
+        (StatusCode::NOT_FOUND, Json(serde_json::json!({})))
     }
 }
 
