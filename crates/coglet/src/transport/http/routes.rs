@@ -323,7 +323,9 @@ async fn create_prediction_with_id(
             })),
         ),
         Err(PredictionError::Failed(msg)) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            // 200 for parity with Python - prediction failure is data, not HTTP error
+            // Python only returns 500 for schema/serialization validation failures
+            StatusCode::OK,
             Json(serde_json::json!({
                 "id": prediction_id,
                 "error": msg,
