@@ -202,7 +202,7 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Connect to slot sockets (transport info from env, set by parent)
     let child_info = get_transport_info_from_env()?;
-    tracing::debug!(?child_info, "Connecting to slot transport");
+    tracing::trace!(?child_info, "Connecting to slot transport");
     let mut transport = connect_transport(child_info).await?;
     tracing::info!(num_slots, "Connected to slot transport");
 
@@ -238,20 +238,19 @@ pub async fn run_worker<H: PredictHandler>(
     // Run setup
     tracing::info!("Worker starting setup");
     let setup_result = handler.setup().await;
-    tracing::debug!("Setup handler returned");
+    tracing::trace!("Setup handler returned");
 
     // Clean up setup log forwarding
     // IMPORTANT: Must unregister the sender BEFORE waiting for forwarder,
     // because the sender holds a channel clone that keeps forwarder alive
     if let Some(cleanup) = setup_cleanup {
-        tracing::debug!("Running cleanup (unregistering setup sender)");
+        tracing::trace!("Running cleanup (unregistering setup sender)");
         cleanup(); // Unregister the global sender, drops channel clone
-        tracing::debug!("Cleanup done");
     }
     drop(setup_log_tx); // Drop our copy too
-    tracing::debug!("Waiting for log forwarder to finish");
+    tracing::trace!("Waiting for log forwarder to finish");
     let _ = log_forwarder.await; // Now forwarder can exit
-    tracing::debug!("Log forwarder finished");
+    tracing::trace!("Log forwarder finished");
 
     // Handle setup failure
     if let Err(e) = setup_result {
@@ -270,7 +269,7 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Send Ready with slot IDs and schema
     let schema = handler.schema();
-    tracing::debug!(num_slots, ?slot_ids, "Sending Ready to parent");
+    tracing::trace!(num_slots, ?slot_ids, "Sending Ready to parent");
     {
         let mut w = ctrl_writer.lock().await;
         w.send(ControlResponse::Ready {
@@ -338,7 +337,7 @@ pub async fn run_worker<H: PredictHandler>(
                         tracing::warn!("Received Init in event loop (should be at startup)");
                     }
                     Some(Ok(ControlRequest::Cancel { slot })) => {
-                        tracing::debug!(%slot, "Cancel requested");
+                        tracing::trace!(%slot, "Cancel requested");
                         handler.cancel(slot);
                     }
                     Some(Ok(ControlRequest::Shutdown)) => {
@@ -393,7 +392,7 @@ pub async fn run_worker<H: PredictHandler>(
 
                 match request {
                     SlotRequest::Predict { id, input } => {
-                        tracing::debug!(%slot_id, %id, "Prediction request received");
+                        tracing::trace!(%slot_id, %id, "Prediction request received");
                         slot_busy.insert(slot_id, true);
 
                         // Get writer for this slot
@@ -447,7 +446,7 @@ async fn slot_reader_task(
                 break;
             }
             None => {
-                tracing::debug!(%slot_id, "Slot socket closed");
+                tracing::trace!(%slot_id, "Slot socket closed");
                 break;
             }
         }
@@ -464,7 +463,7 @@ async fn run_prediction<H: PredictHandler>(
         tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>,
     >,
 ) -> SlotCompletion {
-    tracing::debug!(%slot_id, %prediction_id, "run_prediction starting");
+    tracing::trace!(%slot_id, %prediction_id, "run_prediction starting");
 
     // Create channel for log streaming
     let (log_tx, mut log_rx) = mpsc::unbounded_channel::<SlotResponse>();
@@ -480,20 +479,19 @@ async fn run_prediction<H: PredictHandler>(
                 break;
             }
         }
-        tracing::debug!("Prediction log forwarder exiting");
+        tracing::trace!("Prediction log forwarder exiting");
     });
 
     // Run prediction
-    tracing::debug!(%slot_id, %prediction_id, "About to call handler.predict");
     let result = handler
         .predict(slot_id, prediction_id.clone(), input, slot_sender)
         .await;
-    tracing::debug!(%slot_id, %prediction_id, success = result.success, "handler.predict returned");
+    tracing::trace!(%slot_id, %prediction_id, success = result.success, "handler.predict returned");
 
     // Wait for log forwarder to finish (channel closes when SlotSender dropped)
-    tracing::debug!(%slot_id, %prediction_id, "Waiting for log forwarder");
+    tracing::trace!(%slot_id, %prediction_id, "Waiting for log forwarder");
     let _ = log_forwarder.await;
-    tracing::debug!(%slot_id, %prediction_id, "Log forwarder done");
+    tracing::trace!(%slot_id, %prediction_id, "Log forwarder done");
 
     // Send result on slot socket
     let response = if result.success {

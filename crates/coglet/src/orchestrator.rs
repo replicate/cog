@@ -320,6 +320,13 @@ pub async fn spawn_worker(config: OrchestratorConfig) -> Result<OrchestratorRead
 
     tracing::info!(num_slots = slot_ids.len(), "Worker ready");
 
+    // Log schema at TRACE level
+    if let Some(ref s) = schema {
+        if let Ok(json) = serde_json::to_string_pretty(s) {
+            tracing::trace!(target: "coglet::schema", schema = %json, "OpenAPI schema");
+        }
+    }
+
     // Create permit pool and populate with slot sockets
     let pool = Arc::new(PermitPool::new(num_slots));
     let sockets = transport.drain_sockets();

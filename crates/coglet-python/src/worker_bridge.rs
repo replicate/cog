@@ -101,11 +101,11 @@ impl PythonPredictHandler {
                     asyncio
                         .call_method1("set_event_loop", (loop_ref,))
                         .expect("Failed to set event loop");
-                    tracing::debug!("Asyncio event loop thread starting");
+                    tracing::trace!("Asyncio event loop thread starting");
                     if let Err(e) = loop_ref.call_method0("run_forever") {
                         tracing::error!(error = %e, "Asyncio event loop error");
                     }
-                    tracing::debug!("Asyncio event loop thread exiting");
+                    tracing::trace!("Asyncio event loop thread exiting");
                 });
             });
 
@@ -163,7 +163,7 @@ impl PythonPredictHandler {
             if let Some(future) = future {
                 match future.call_method0(py, "cancel") {
                     Ok(_) => {
-                        tracing::debug!(%slot, "Cancelled async future");
+                        tracing::trace!(%slot, "Cancelled async future");
                         true
                     }
                     Err(e) => {
@@ -172,7 +172,7 @@ impl PythonPredictHandler {
                     }
                 }
             } else {
-                tracing::debug!(%slot, "No async future to cancel");
+                tracing::trace!(%slot, "No async future to cancel");
                 false
             }
         })
@@ -220,7 +220,7 @@ impl PredictHandler for PythonPredictHandler {
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
     ) -> PredictResult {
-        tracing::debug!(%slot, %id, "PythonPredictHandler::predict starting");
+        tracing::trace!(%slot, %id, "PythonPredictHandler::predict starting");
 
         // Get predictor and determine if async
         let (pred, is_async) = {
@@ -232,7 +232,7 @@ impl PredictHandler for PythonPredictHandler {
                 }
             }
         };
-        tracing::debug!(%slot, %id, is_async, "Got predictor");
+        tracing::trace!(%slot, %id, is_async, "Got predictor");
 
         // Track that we're starting a prediction on this slot
         self.start_prediction(slot, is_async);
@@ -244,11 +244,9 @@ impl PredictHandler for PythonPredictHandler {
         }
 
         // Enter prediction context - sets cog_prediction_id ContextVar for log routing
-        tracing::debug!(%slot, %id, "Entering prediction context");
         let prediction_id = id.clone();
         let slot_sender_clone = slot_sender.clone();
         let log_guard = Python::attach(|py| {
-            tracing::debug!(%slot, %id, "Got GIL, calling PredictionLogGuard::enter");
             crate::log_writer::PredictionLogGuard::enter(
                 py,
                 prediction_id.clone(),
@@ -262,7 +260,7 @@ impl PredictHandler for PythonPredictHandler {
                 None
             }
         };
-        tracing::debug!(%slot, %id, "Prediction context entered");
+        tracing::trace!(%slot, %id, "Prediction context entered");
 
         // Run prediction or training based on is_train mode.
         //
@@ -352,7 +350,7 @@ impl PredictHandler for PythonPredictHandler {
             }
         } else {
             // Prediction mode
-            tracing::debug!(%slot, %id, is_async = pred.is_async(), "Running prediction");
+            tracing::trace!(%slot, %id, is_async = pred.is_async(), "Running prediction");
             if pred.is_async() {
                 // Async predict - submit to shared event loop
                 let loop_obj = match self.get_async_loop() {
@@ -416,15 +414,15 @@ impl PredictHandler for PythonPredictHandler {
                 crate::log_writer::set_sync_prediction_id(Some(&id));
                 // Wrap in cancelable guard for SIGUSR1 handling
                 let _cancelable = crate::cancel::enter_cancelable();
-                tracing::debug!(%slot, %id, "Calling predict_worker");
+                tracing::trace!(%slot, %id, "Calling predict_worker");
                 let r = pred.predict_worker(input);
-                tracing::debug!(%slot, %id, "predict_worker returned");
+                tracing::trace!(%slot, %id, "predict_worker returned");
                 // Clear sync prediction ID
                 crate::log_writer::set_sync_prediction_id(None);
                 r
             }
         };
-        tracing::debug!(%slot, %id, "Prediction completed");
+        tracing::trace!(%slot, %id, "Prediction completed");
 
         self.finish_prediction(slot);
 
@@ -459,7 +457,7 @@ impl PredictHandler for PythonPredictHandler {
         if is_async {
             // Async: cancel via future.cancel() - thread-safe, interrupts the asyncio task
             if !self.cancel_async_future(slot) {
-                tracing::debug!(%slot, "No async future to cancel (prediction may have completed)");
+                tracing::trace!(%slot, "No async future to cancel (prediction may have completed)");
             }
         } else {
             // Sync: send SIGUSR1 to interrupt Python code

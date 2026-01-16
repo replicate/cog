@@ -444,15 +444,13 @@ impl PredictionLogGuard {
     ///
     /// Registers the sender and sets the ContextVar.
     pub fn enter(py: Python<'_>, prediction_id: String, sender: Arc<SlotSender>) -> PyResult<Self> {
-        tracing::debug!(%prediction_id, "PredictionLogGuard::enter - registering sender");
         // Register sender in global registry
         register_prediction(prediction_id.clone(), sender);
 
-        tracing::debug!(%prediction_id, "PredictionLogGuard::enter - setting ContextVar");
         // Set ContextVar
         let token = set_current_prediction(py, &prediction_id)?;
 
-        tracing::debug!(%prediction_id, "PredictionLogGuard::enter - done");
+        tracing::trace!(%prediction_id, "Entered prediction log context");
         Ok(Self {
             prediction_id,
             token,
