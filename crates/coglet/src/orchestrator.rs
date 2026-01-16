@@ -469,7 +469,8 @@ async fn run_event_loop(
 
             // New prediction registrations
             Some((slot_id, prediction)) = register_rx.recv() => {
-                tracing::debug!(%slot_id, "Registered prediction");
+                let prediction_id = prediction.lock().await.id().to_string();
+                tracing::debug!(%slot_id, %prediction_id, "Registered prediction");
                 predictions.insert(slot_id, prediction);
             }
 
@@ -477,11 +478,37 @@ async fn run_event_loop(
             Some((slot_id, result)) = slot_msg_rx.recv() => {
                 match result {
                     Ok(SlotResponse::Log { source, data }) => {
-                        if let Some(pred) = predictions.get(&slot_id) {
+                        let prediction_id = if let Some(pred) = predictions.get(&slot_id) {
                             let mut p = pred.lock().await;
                             p.append_log(&data);
+                            Some(p.id().to_string())
+                        } else {
+                            None
+                        };
+
+                        // Skip empty lines
+                        let trimmed = data.trim();
+                        if !trimmed.is_empty() {
+                            if let Some(id) = prediction_id {
+                                tracing::info!(
+                                    target: "coglet::prediction",
+                                    prediction_id = %id,
+                                    source = ?source,
+                                    "{}",
+                                    trimmed
+                                );
+                            } else {
+                                // Log arrived for slot with no active prediction
+                                // (prediction completed but async task still running)
+                                tracing::warn!(
+                                    target: "coglet::prediction",
+                                    prediction_id = "NO_ACTIVE_PREDICTION",
+                                    source = ?source,
+                                    "{}",
+                                    trimmed
+                                );
+                            }
                         }
-                        tracing::debug!(target: "coglet::prediction", %slot_id, ?source, "{}", data.trim());
                     }
                     Ok(SlotResponse::Output { output }) => {
                         if let Some(pred) = predictions.get(&slot_id) {
