@@ -105,6 +105,37 @@ pub struct PredictionHandle {
     supervisor: Arc<PredictionSupervisor>,
 }
 
+/// Guard for sync predictions that cancels on drop.
+///
+/// For sync predictions, if the HTTP connection drops before completion,
+/// we should cancel the prediction. This guard ensures that behavior
+/// by cancelling on drop unless explicitly disarmed.
+pub struct SyncPredictionGuard {
+    cancel_token: Option<CancellationToken>,
+}
+
+impl SyncPredictionGuard {
+    /// Create a new guard that will cancel on drop.
+    pub fn new(cancel_token: CancellationToken) -> Self {
+        Self {
+            cancel_token: Some(cancel_token),
+        }
+    }
+
+    /// Disarm the guard (prediction completed normally).
+    pub fn disarm(&mut self) {
+        self.cancel_token = None;
+    }
+}
+
+impl Drop for SyncPredictionGuard {
+    fn drop(&mut self) {
+        if let Some(ref token) = self.cancel_token {
+            token.cancel();
+        }
+    }
+}
+
 impl PredictionHandle {
     /// Get the prediction ID.
     pub fn id(&self) -> &str {
@@ -133,6 +164,20 @@ impl PredictionHandle {
             .await
             .map(|s| s.status.is_terminal())
             .unwrap_or(true) // Not found = complete (cleaned up)
+    }
+
+    /// Create a sync guard that cancels on drop.
+    ///
+    /// For sync predictions, the handler should hold this guard.
+    /// If the connection drops (handler returns early), the guard
+    /// will cancel the prediction, matching cog mainline behavior.
+    pub fn sync_guard(&self) -> SyncPredictionGuard {
+        SyncPredictionGuard::new(self.cancel_token.clone())
+    }
+
+    /// Get the cancellation token (for advanced use).
+    pub fn cancel_token(&self) -> CancellationToken {
+        self.cancel_token.clone()
     }
 }
 
@@ -499,5 +544,47 @@ mod tests {
             .await;
 
         assert!(supervisor.exists("exists-test").await);
+    }
+
+    #[tokio::test]
+    async fn sync_guard_cancels_on_drop() {
+        let supervisor = PredictionSupervisor::new();
+
+        let handle = supervisor
+            .submit("test-sync-guard".to_string(), serde_json::json!({}), None)
+            .await;
+
+        let cancel_token = handle.cancel_token();
+
+        // Create guard and drop it (simulates connection drop)
+        {
+            let _guard = handle.sync_guard();
+            assert!(!cancel_token.is_cancelled());
+            // guard drops here
+        }
+
+        // Token should be cancelled
+        assert!(cancel_token.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn sync_guard_disarm_prevents_cancel() {
+        let supervisor = PredictionSupervisor::new();
+
+        let handle = supervisor
+            .submit("test-disarm".to_string(), serde_json::json!({}), None)
+            .await;
+
+        let cancel_token = handle.cancel_token();
+
+        // Create guard, disarm it, then drop
+        {
+            let mut guard = handle.sync_guard();
+            guard.disarm();
+            // guard drops here
+        }
+
+        // Token should NOT be cancelled
+        assert!(!cancel_token.is_cancelled());
     }
 }
