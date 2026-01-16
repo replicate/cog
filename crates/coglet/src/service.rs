@@ -22,6 +22,7 @@ use crate::predictor::{
     AsyncPredictFn, CancellationToken, PredictFn, PredictionError, PredictionOutput,
     PredictionResult,
 };
+use crate::supervisor::PredictionSupervisor;
 use crate::version::VersionInfo;
 use crate::webhook::WebhookSender;
 
@@ -91,7 +92,11 @@ pub struct PredictionService {
     /// Setup result.
     setup_result: RwLock<Option<SetupResult>>,
 
-    /// In-flight predictions (ID -> CancellationToken).
+    /// Prediction supervisor - manages lifecycle, state, webhooks.
+    supervisor: Arc<PredictionSupervisor>,
+
+    /// Legacy in-flight predictions (ID -> CancellationToken).
+    /// TODO: Remove once supervisor is fully integrated.
     predictions: Mutex<HashMap<String, CancellationToken>>,
 
     /// Shutdown signal sender.
@@ -129,6 +134,7 @@ impl PredictionService {
             legacy_pool: RwLock::new(Some(pool)),
             health: RwLock::new(Health::Unknown),
             setup_result: RwLock::new(None),
+            supervisor: PredictionSupervisor::new(),
             predictions: Mutex::new(HashMap::new()),
             shutdown_tx,
             shutdown_rx,
@@ -151,6 +157,7 @@ impl PredictionService {
             legacy_pool: RwLock::new(None),
             health: RwLock::new(Health::Unknown),
             setup_result: RwLock::new(None),
+            supervisor: PredictionSupervisor::new(),
             predictions: Mutex::new(HashMap::new()),
             shutdown_tx,
             shutdown_rx,
@@ -170,6 +177,11 @@ impl PredictionService {
     /// Check if this service has an orchestrator.
     pub async fn has_orchestrator(&self) -> bool {
         self.orchestrator.read().await.is_some()
+    }
+
+    /// Get the prediction supervisor.
+    pub fn supervisor(&self) -> &Arc<PredictionSupervisor> {
+        &self.supervisor
     }
 
     /// Set the sync predict function.
