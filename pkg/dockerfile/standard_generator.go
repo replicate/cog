@@ -47,7 +47,6 @@ const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -nam
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
-const PinnedCogletURL = "https://github.com/replicate/cog-runtime/releases/download/v0.1.0-beta10/coglet-0.1.0b10-py3-none-any.whl" // Pinned coglet URL to avoid API dependency
 
 type StandardGenerator struct {
 	Config *config.Config
@@ -465,17 +464,14 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", nil
 	}
 
-	// Determine which wheel to install based on COG_WHEEL env var and cog_runtime flag
-	cogRuntimeEnabled := g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime
-	wheelConfig := wheels.GetWheelConfig(cogRuntimeEnabled)
+	// Determine which wheel to install based on COG_WHEEL env var
+	wheelConfig := wheels.GetWheelConfig()
 
 	switch wheelConfig.Source {
 	case wheels.WheelSourceCog:
 		return g.installEmbeddedCogWheel()
-	case wheels.WheelSourceCogletEmbedded:
+	case wheels.WheelSourceCoglet:
 		return g.installEmbeddedCogletWheel()
-	case wheels.WheelSourceCogletAlpha:
-		return g.installCogletAlpha()
 	case wheels.WheelSourceURL:
 		return g.installWheelFromURL(wheelConfig.URL)
 	case wheels.WheelSourceFile:
@@ -502,80 +498,68 @@ func (g *StandardGenerator) installEmbeddedCogWheel() (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// installEmbeddedCogletWheel installs the embedded coglet wheel (when COG_WHEEL=coglet)
+// installEmbeddedCogletWheel installs the embedded Rust coglet wheel + cog wheel (when COG_WHEEL=coglet)
+// The Python entry point (http.py) will detect coglet is installed and use the Rust server.
 func (g *StandardGenerator) installEmbeddedCogletWheel() (string, error) {
 	// Coglet requires major.minor Python version format
 	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
 		return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
 	}
 
-	filename, data := wheels.ReadCogletWheel()
-	lines, containerPath, err := g.writeTemp(filename, data)
+	// Get wheels - include both x86_64 and aarch64 manylinux wheels
+	cogletX86Filename, cogletX86Data := wheels.ReadCogletWheelForPlatform("manylinux_2_17_x86_64")
+	cogletArmFilename, cogletArmData := wheels.ReadCogletWheelForPlatform("manylinux_2_17_aarch64")
+	cogFilename, cogData := wheels.ReadCogWheel()
+
+	// Write coglet x86_64 wheel to temp
+	lines, cogletX86Path, err := g.writeTemp(cogletX86Filename, cogletX86Data)
 	if err != nil {
 		return "", err
 	}
 
-	cmds := []string{
-		"ENV R8_COG_VERSION=coglet",
-		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
+	// Write coglet aarch64 wheel to temp
+	armLines, cogletArmPath, err := g.writeTemp(cogletArmFilename, cogletArmData)
+	if err != nil {
+		return "", err
 	}
-	// Uninstall cog first to avoid conflicts with coglet's cog shim package.
-	// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
-	// with coglet's cog compatibility shim that provides the same module paths.
-	pipInstallLine := "RUN pip uninstall -y cog 2>/dev/null || true && pip install --no-cache-dir " + containerPath
+	lines = append(lines, armLines...)
+
+	// Write cog wheel to temp
+	cogLines, cogPath, err := g.writeTemp(cogFilename, cogData)
+	if err != nil {
+		return "", err
+	}
+	lines = append(lines, cogLines...)
+
+	// Install cog and coglet wheels - detect architecture and install the right coglet wheel
+	// Python http.py will try to import coglet and use Rust server if available
+	pipInstallLine := fmt.Sprintf(`RUN --mount=type=cache,target=/root/.cache/pip \
+    ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        COGLET_WHEEL=%s; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        COGLET_WHEEL=%s; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi && \
+    pip install --no-cache-dir %s $COGLET_WHEEL 'pydantic>=1.9,<3'`,
+		cogletX86Path, cogletArmPath, cogPath)
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
-	lines = append(lines, cmds...)
 	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
 }
 
-// installCogletAlpha installs coglet from the pinned URL (default for cog_runtime: true)
-func (g *StandardGenerator) installCogletAlpha() (string, error) {
-	// We need fast-* compliant Python version to reconstruct coglet venv PYTHONPATH
-	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
-		return "", fmt.Errorf("Python version must be <major>.<minor>")
-	}
-	cmds := []string{
-		"ENV R8_COG_VERSION=coglet",
-		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-		// Uninstall cog first to avoid conflicts with coglet's cog shim package.
-		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
-		// with coglet's cog compatibility shim that provides the same module paths.
-		"RUN pip uninstall -y cog 2>/dev/null || true && pip install " + PinnedCogletURL,
-	}
-	return strings.Join(cmds, "\n"), nil
-}
-
 // installWheelFromURL installs a wheel from a URL (when COG_WHEEL=https://...)
 func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
-	// Set coglet env vars if this looks like a coglet wheel
-	var envLines []string
-	if strings.Contains(url, "coglet") {
-		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
-			return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
-		}
-		envLines = []string{
-			"ENV R8_COG_VERSION=coglet",
-			"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-		}
-	}
-
-	// For coglet URLs, uninstall cog first to avoid conflicts with coglet's cog shim package.
-	// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
-	// with coglet's cog compatibility shim that provides the same module paths.
-	var pipPrefix string
-	if strings.Contains(url, "coglet") {
-		pipPrefix = "pip uninstall -y cog 2>/dev/null || true && "
-	}
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + url
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + url
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
 
-	envLines = append(envLines, CFlags, pipInstallLine, "ENV CFLAGS=")
-	return strings.Join(envLines, "\n"), nil
+	lines := []string{CFlags, pipInstallLine, "ENV CFLAGS="}
+	return strings.Join(lines, "\n"), nil
 }
 
 // installWheelFromFile installs a wheel from a local file (when COG_WHEEL=/path/to/file.whl)
@@ -592,23 +576,7 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 		return "", err
 	}
 
-	// Set coglet env vars if this looks like a coglet wheel
-	var pipPrefix string
-	if strings.Contains(filename, "coglet") {
-		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
-			return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
-		}
-		lines = append(lines,
-			"ENV R8_COG_VERSION=coglet",
-			"ENV R8_PYTHON_VERSION="+g.Config.Build.PythonVersion,
-		)
-		// Uninstall cog first to avoid conflicts with coglet's cog shim package.
-		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
-		// with coglet's cog compatibility shim that provides the same module paths.
-		pipPrefix = "pip uninstall -y cog 2>/dev/null || true && "
-	}
-
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + containerPath
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}

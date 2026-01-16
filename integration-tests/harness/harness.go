@@ -4,10 +4,7 @@ package harness
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -15,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/rogpeppe/go-internal/testscript"
@@ -26,11 +22,8 @@ type Harness struct {
 	CogBinary string
 	// realHome is captured at creation time before testscript overrides HOME
 	realHome string
-	// repoRoot is the path to the cog repository root
-	repoRoot string
-	// serverProcs tracks background cog serve processes for cleanup, keyed by work directory
-	serverProcs   map[string]*exec.Cmd
-	serverProcsMu sync.Mutex
+	// serverProcs tracks background cog serve processes for cleanup
+	serverProcs map[*testscript.TestScript]*exec.Cmd
 }
 
 // New creates a new Harness, resolving the cog binary location.
@@ -39,15 +32,10 @@ func New() (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		return nil, err
-	}
 	return &Harness{
 		CogBinary:   cogBinary,
 		realHome:    os.Getenv("HOME"),
-		repoRoot:    repoRoot,
-		serverProcs: make(map[string]*exec.Cmd),
+		serverProcs: make(map[*testscript.TestScript]*exec.Cmd),
 	}, nil
 }
 
@@ -161,11 +149,8 @@ func runCommand(dir string, name string, args ...string) error {
 // Commands returns the custom testscript commands provided by this harness.
 func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool, args []string) {
 	return map[string]func(ts *testscript.TestScript, neg bool, args []string){
-		"cog":        h.cmdCog,
-		"curl":       h.cmdCurl,
-		"wait-for":   h.cmdWaitFor,
-		"retry-curl": h.cmdRetryCurl,
-		"docker-run": h.cmdDockerRun,
+		"cog":  h.cmdCog,
+		"curl": h.cmdCurl,
 	}
 }
 
@@ -212,23 +197,27 @@ func (h *Harness) Setup(env *testscript.Env) error {
 	// to access the macOS keychain.
 	env.Setenv("HOME", h.realHome)
 
-	// Export repo root for tests that need to reference files outside the work directory
-	env.Setenv("REPO_ROOT", h.repoRoot)
-
 	// Disable update checks during tests
 	env.Setenv("COG_NO_UPDATE_CHECK", "1")
+
+	// Use plain Docker build progress to reduce output noise in test logs
+	env.Setenv("BUILDKIT_PROGRESS", "plain")
+
+	// Pass through COG_WHEEL if set (for testing coglet runtime)
+	if cogWheel := os.Getenv("COG_WHEEL"); cogWheel != "" {
+		env.Setenv("COG_WHEEL", cogWheel)
+	}
 
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)
 
-	// Capture the work directory for this test (used as key for server tracking)
-	workDir := env.WorkDir
-
 	// Register cleanup to remove the Docker image and stop any servers after the test
 	env.Defer(func() {
-		// Stop the server for this specific test (if any)
-		h.stopServerByWorkDir(workDir)
+		// Stop any running servers
+		for ts := range h.serverProcs {
+			h.StopServer(ts)
+		}
 		removeDockerImage(imageName)
 	})
 
@@ -273,15 +262,10 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 		ts.Fatalf("serve command does not support negation")
 	}
 
-	workDir := ts.Getenv("WORK")
-
 	// Check if server is already running
-	h.serverProcsMu.Lock()
-	if _, exists := h.serverProcs[workDir]; exists {
-		h.serverProcsMu.Unlock()
+	if _, exists := h.serverProcs[ts]; exists {
 		ts.Fatalf("server already running")
 	}
-	h.serverProcsMu.Unlock()
 
 	// Allocate a random available port
 	port, err := allocatePort()
@@ -301,7 +285,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 
 	// Start the server process
 	cmd := exec.Command(h.CogBinary, expandedArgs...)
-	cmd.Dir = workDir
+	cmd.Dir = ts.Getenv("WORK")
 
 	// Build environment from testscript
 	var env []string
@@ -312,24 +296,18 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	}
 	cmd.Env = env
 
-	// Capture server output for debugging
-	cmd.Stdout = ts.Stdout()
-	cmd.Stderr = ts.Stderr()
-
 	if err := cmd.Start(); err != nil {
 		ts.Fatalf("failed to start server: %v", err)
 	}
 
-	// Store the process for cleanup (keyed by work directory)
-	h.serverProcsMu.Lock()
-	h.serverProcs[workDir] = cmd
-	h.serverProcsMu.Unlock()
+	// Store the process for cleanup
+	h.serverProcs[ts] = cmd
 
 	// Wait for server to be healthy
 	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	ts.Setenv("SERVER_URL", serverURL)
 
-	if !waitForServer(serverURL, 60*time.Second) {
+	if !waitForServer(serverURL, 30*time.Second) {
 		// Try to get server output for debugging
 		cmd.Process.Kill()
 		ts.Fatalf("server did not become healthy within timeout")
@@ -390,7 +368,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 			respBodyBuilder.Write(buf[:n])
 		}
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
+			if err.Error() != "EOF" {
 				ts.Fatalf("curl: failed to read response: %v", err)
 			}
 			break
@@ -422,30 +400,22 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 
 // StopServer stops the background server process for a test script.
 func (h *Harness) StopServer(ts *testscript.TestScript) {
-	workDir := ts.Getenv("WORK")
-	h.stopServerByWorkDir(workDir)
-}
+	if cmd, exists := h.serverProcs[ts]; exists {
+		// Try graceful shutdown first
+		serverURL := ts.Getenv("SERVER_URL")
+		if serverURL != "" {
+			client := &http.Client{Timeout: 5 * time.Second}
+			client.Post(serverURL+"/shutdown", "application/json", nil) //nolint:errcheck
+			time.Sleep(100 * time.Millisecond)
+		}
 
-// stopServerByWorkDir stops the server process associated with a work directory.
-func (h *Harness) stopServerByWorkDir(workDir string) {
-	h.serverProcsMu.Lock()
-	cmd, exists := h.serverProcs[workDir]
-	if !exists {
-		h.serverProcsMu.Unlock()
-		return
+		// Force kill if still running
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+		cmd.Wait()
+		delete(h.serverProcs, ts)
 	}
-	delete(h.serverProcs, workDir)
-	h.serverProcsMu.Unlock()
-
-	// Try graceful shutdown first via /shutdown endpoint
-	// Note: We don't have SERVER_URL here, so just force kill
-	// The graceful shutdown is attempted in stopServerWithURL when called from tests
-
-	// Force kill if still running
-	if cmd.Process != nil {
-		cmd.Process.Kill()
-	}
-	cmd.Wait()
 }
 
 // allocatePort finds an available TCP port.
@@ -458,307 +428,22 @@ func allocatePort() (int, error) {
 	return listener.Addr().(*net.TCPAddr).Port, nil
 }
 
-// healthCheckResponse represents the JSON response from /health-check
-type healthCheckResponse struct {
-	Status string `json:"status"`
-}
-
-// waitForServer polls the server's health-check endpoint until it returns READY status.
-// The server may return HTTP 200 while still in STARTING state (during setup),
-// so we must check the actual status field in the response.
+// waitForServer polls the server's health-check endpoint until it returns 200.
 func waitForServer(serverURL string, timeout time.Duration) bool {
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 1 * time.Second}
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(serverURL + "/health-check")
-		if err != nil {
-			time.Sleep(200 * time.Millisecond)
-			continue
-		}
-
-		if resp.StatusCode == 200 {
-			body, err := io.ReadAll(resp.Body)
+		if err == nil && resp.StatusCode == 200 {
 			resp.Body.Close()
-			if err != nil {
-				time.Sleep(200 * time.Millisecond)
-				continue
-			}
-
-			var health healthCheckResponse
-			if err := json.Unmarshal(body, &health); err != nil {
-				time.Sleep(200 * time.Millisecond)
-				continue
-			}
-
-			// Only return success when the server is actually READY
-			// (setup has completed successfully)
-			if health.Status == "READY" {
-				return true
-			}
-
-			// If setup failed, no point waiting
-			if health.Status == "SETUP_FAILED" || health.Status == "DEFUNCT" {
-				return false
-			}
-		} else {
+			return true
+		}
+		if resp != nil {
 			resp.Body.Close()
 		}
-
 		time.Sleep(200 * time.Millisecond)
 	}
 
 	return false
-}
-
-// cmdWaitFor implements the 'wait-for' command for testscript.
-// It waits for a specific condition to become true with retries.
-// Usage:
-//
-//	wait-for file <path> [timeout]           - Wait for file to exist
-//	wait-for http <url> [status] [timeout]   - Wait for HTTP endpoint
-//	wait-for not-empty <file> [timeout]      - Wait for file with content
-func (h *Harness) cmdWaitFor(ts *testscript.TestScript, neg bool, args []string) {
-	if len(args) < 2 {
-		ts.Fatalf("wait-for: usage: wait-for [file|http|not-empty] <arg> [timeout]")
-	}
-
-	condition := args[0]
-	target := args[1]
-
-	// Default timeout of 30 seconds, can be overridden
-	timeout := 30 * time.Second
-	if len(args) > 2 {
-		if duration, err := time.ParseDuration(args[len(args)-1]); err == nil {
-			timeout = duration
-		}
-	}
-
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		var conditionMet bool
-
-		switch condition {
-		case "file":
-			// Wait for file to exist
-			targetPath := filepath.Join(ts.Getenv("WORK"), target)
-			_, err := os.Stat(targetPath)
-			conditionMet = err == nil
-
-		case "not-empty":
-			// Wait for file to exist with non-empty content
-			targetPath := filepath.Join(ts.Getenv("WORK"), target)
-			data, err := os.ReadFile(targetPath)
-			conditionMet = err == nil && len(data) > 0
-
-		case "http":
-			// Wait for HTTP endpoint to return expected status
-			expectedStatus := 200
-			if len(args) > 2 {
-				if status, err := strconv.Atoi(args[2]); err == nil {
-					expectedStatus = status
-				}
-			}
-
-			client := &http.Client{Timeout: 2 * time.Second}
-			resp, err := client.Get(target)
-			if err == nil {
-				conditionMet = resp.StatusCode == expectedStatus
-				resp.Body.Close()
-			}
-
-		default:
-			ts.Fatalf("wait-for: unknown condition: %s", condition)
-		}
-
-		if neg {
-			// For negation, we want the condition to remain false
-			if !conditionMet {
-				return
-			}
-		} else {
-			// Normal case: condition should become true
-			if conditionMet {
-				return
-			}
-		}
-
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	if neg {
-		ts.Fatalf("wait-for: condition became true (expected to remain false)")
-	} else {
-		ts.Fatalf("wait-for: timeout waiting for condition: %s %s", condition, target)
-	}
-}
-
-// cmdRetryCurl implements the 'retry-curl' command for testscript.
-// It's like curl but retries on failure, useful for waiting for subprocess initialization.
-// Usage: retry-curl [method] [path] [body] [max-attempts] [retry-delay]
-// Examples:
-//
-//	retry-curl POST /predictions '{"input":{"s":"hello"}}' 10 1s
-func (h *Harness) cmdRetryCurl(ts *testscript.TestScript, neg bool, args []string) {
-	if len(args) < 2 {
-		ts.Fatalf("retry-curl: usage: retry-curl [method] [path] [body] [max-attempts] [retry-delay]")
-	}
-
-	serverURL := ts.Getenv("SERVER_URL")
-	if serverURL == "" {
-		ts.Fatalf("retry-curl: SERVER_URL not set (did you call 'cog serve' first?)")
-	}
-
-	method := args[0]
-	path := args[1]
-	var body string
-	if len(args) > 2 && args[2] != "" && args[2][0] == '{' {
-		body = args[2]
-	}
-
-	// Parse max attempts (default: 10)
-	maxAttempts := 10
-	if len(args) > 3 {
-		if attempts, err := strconv.Atoi(args[3]); err == nil {
-			maxAttempts = attempts
-		}
-	}
-
-	// Parse retry delay (default: 1s)
-	retryDelay := 1 * time.Second
-	if len(args) > 4 {
-		if duration, err := time.ParseDuration(args[4]); err == nil {
-			retryDelay = duration
-		}
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	var lastErr error
-	var lastStatus int
-	var lastBody string
-
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		req, err := http.NewRequest(method, serverURL+path, strings.NewReader(body))
-		if err != nil {
-			lastErr = err
-			time.Sleep(retryDelay)
-			continue
-		}
-
-		if body != "" {
-			req.Header.Set("Content-Type", "application/json")
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = err
-			time.Sleep(retryDelay)
-			continue
-		}
-
-		// Read response body
-		var respBodyBuilder strings.Builder
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := resp.Body.Read(buf)
-			if n > 0 {
-				respBodyBuilder.Write(buf[:n])
-			}
-			if readErr != nil {
-				if !errors.Is(readErr, io.EOF) {
-					ts.Fatalf("retry-curl: failed to read response: %v", readErr)
-				}
-				break
-			}
-		}
-		respBody := respBodyBuilder.String()
-		resp.Body.Close()
-
-		lastStatus = resp.StatusCode
-		lastBody = respBody
-
-		// Check if this is a successful response
-		statusOK := resp.StatusCode >= 200 && resp.StatusCode < 300
-
-		if neg {
-			if !statusOK {
-				// Expected to fail - success!
-				return
-			}
-		} else {
-			if statusOK {
-				// Success - write body to stdout
-				ts.Stdout().Write([]byte(respBody))
-				return
-			}
-		}
-
-		// If this isn't the last attempt, wait before retrying
-		if attempt < maxAttempts {
-			time.Sleep(retryDelay)
-		}
-	}
-
-	// All attempts failed
-	if neg {
-		ts.Fatalf("retry-curl: expected failure but got status %d after %d attempts", lastStatus, maxAttempts)
-	} else {
-		if lastErr != nil {
-			ts.Fatalf("retry-curl: all %d attempts failed with error: %v", maxAttempts, lastErr)
-		} else {
-			errorMsg := lastBody
-			if len(errorMsg) > 500 {
-				errorMsg = errorMsg[:500] + "..."
-			}
-			ts.Logf("retry-curl: full response body: %s", lastBody)
-			ts.Fatalf("retry-curl: all %d attempts failed with status %d: %s", maxAttempts, lastStatus, errorMsg)
-		}
-	}
-}
-
-// cmdDockerRun implements the 'docker-run' command for testscript.
-// It runs a command inside a Docker container.
-// Usage:
-//
-//	docker-run <image> <command> [args...]
-//
-// The container is run with:
-//   - --rm (auto-remove after exit)
-//   - --add-host=host.docker.internal:host-gateway (for Linux compatibility)
-//   - Working directory mounted if needed
-func (h *Harness) cmdDockerRun(ts *testscript.TestScript, neg bool, args []string) {
-	if len(args) < 2 {
-		ts.Fatalf("docker-run: usage: docker-run <image> <command> [args...]")
-	}
-
-	image := os.Expand(args[0], ts.Getenv)
-	containerArgs := make([]string, len(args)-1)
-	for i, arg := range args[1:] {
-		containerArgs[i] = os.Expand(arg, ts.Getenv)
-	}
-
-	// Build docker run command
-	dockerArgs := []string{
-		"run", "--rm",
-		"--add-host=host.docker.internal:host-gateway",
-		image,
-	}
-	dockerArgs = append(dockerArgs, containerArgs...)
-
-	cmd := exec.Command("docker", dockerArgs...)
-	cmd.Stdout = ts.Stdout()
-	cmd.Stderr = ts.Stderr()
-
-	err := cmd.Run()
-	if neg {
-		if err == nil {
-			ts.Fatalf("docker-run: command succeeded unexpectedly")
-		}
-	} else {
-		if err != nil {
-			ts.Fatalf("docker-run: command failed: %v", err)
-		}
-	}
 }

@@ -10,10 +10,11 @@ rm -f "${ROOT_DIR}/dist/cog-"*.whl "${ROOT_DIR}/dist/coglet-"*.whl
 mkdir -p "${ROOT_DIR}/dist"
 
 # Build cog wheel
+echo "Building cog wheel..."
 uv build --wheel --out-dir="${ROOT_DIR}/dist" "${ROOT_DIR}"
 
-# Build coglet-server binary (required for coglet wheel)
-"${SCRIPT_DIR}/build-coglet-server"
-
-# Build coglet wheel
-uv build --wheel --out-dir="${ROOT_DIR}/dist" "${ROOT_DIR}/coglet"
+# Build coglet (Rust) wheels for all platforms
+# - Linux x86_64/aarch64 for Docker containers
+# - macOS for local cog predict
+echo "Building coglet wheels for all platforms..."
+mise run build:coglet:wheel:all

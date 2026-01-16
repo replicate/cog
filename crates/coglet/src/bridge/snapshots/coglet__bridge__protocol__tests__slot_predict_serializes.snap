@@ -1,0 +1,11 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: req
+---
+{
+  "type": "predict",
+  "id": "pred_123",
+  "input": {
+    "text": "hello"
+  }
+}

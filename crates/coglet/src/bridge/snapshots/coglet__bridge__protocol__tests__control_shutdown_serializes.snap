@@ -1,0 +1,7 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: req
+---
+{
+  "type": "shutdown"
+}
