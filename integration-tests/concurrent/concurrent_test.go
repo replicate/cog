@@ -26,8 +26,8 @@ import (
 // This test is written in Go (not txtar) because it requires parallel HTTP requests
 // with precise timing coordination that doesn't fit txtar's sequential execution model.
 func TestConcurrentPredictions(t *testing.T) {
-	if os.Getenv("COG_TEST_FAST") == "1" {
-		t.Skip("skipping slow test in fast mode")
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
 	}
 
 	// Create a temp directory for our test project

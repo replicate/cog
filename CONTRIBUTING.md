@@ -217,7 +217,7 @@ Tests core predictor functionality using [testscript](https://pkg.go.dev/github.
 make test-integration-go
 
 # Run fast tests only (skip slow GPU/framework tests)
-COG_TEST_FAST=1 make test-integration-go
+cd integration-tests && go test -short -v
 
 # Run a specific test
 cd integration-tests && go test -v -run TestIntegration/string_predictor
@@ -315,16 +315,16 @@ class Predictor(BasePredictor):
 
 Use conditions to control when tests run based on environment:
 
-**`[fast]` - Skip slow tests in fast mode:**
+**`[short]` - Skip slow tests in short mode:**
 
 ```txtar
-[fast] skip 'requires GPU or long build time'
+[short] skip 'requires GPU or long build time'
 
 cog build -t $TEST_IMAGE
 # ... rest of test
 ```
 
-Run with `COG_TEST_FAST=1` to skip these tests.
+Run with `go test -short` to skip these tests.
 
 **`[linux]` / `[!linux]` - Platform-specific tests:**
 
@@ -356,8 +356,8 @@ cog build -t $TEST_IMAGE
 **Combining conditions:**
 
 Conditions can be negated with `!`. Examples:
-- `[fast]` - True when `COG_TEST_FAST=1` is set (skip this test in fast mode)
-- `[!fast]` - True when `COG_TEST_FAST` is NOT set (only run this in full test mode)
+- `[short]` - True when `go test -short` is used (skip this test in short mode)
+- `[!short]` - True when NOT running with `-short` flag (only run this in full test mode)
 - `[!linux]` - True when NOT on Linux
 - `[linux_amd64]` - True when on Linux AND amd64
 

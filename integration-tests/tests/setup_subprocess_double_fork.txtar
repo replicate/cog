@@ -1,4 +1,4 @@
-[fast] skip 'slow test - skip in fast mode'
+[short] skip 'slow test - skip in short mode'
 
 # Test double fork subprocess spawned during setup
 # This ensures stream redirection works correctly with daemonized processes
