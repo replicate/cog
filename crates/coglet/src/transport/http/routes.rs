@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     CreatePredictionError, Health, HealthSnapshot, PredictionError, PredictionService, SetupResult,
-    VersionInfo, WebhookConfig, WebhookEventType, WebhookSender,
+    TraceContext, VersionInfo, WebhookConfig, WebhookEventType, WebhookSender,
 };
 
 /// Health check response.
@@ -140,6 +140,20 @@ fn should_respond_async(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
+/// Extract W3C Trace Context from HTTP headers.
+fn extract_trace_context(headers: &HeaderMap) -> TraceContext {
+    TraceContext {
+        traceparent: headers
+            .get("traceparent")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()),
+        tracestate: headers
+            .get("tracestate")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()),
+    }
+}
+
 /// POST /predictions
 async fn create_prediction(
     State(service): State<Arc<PredictionService>>,
@@ -155,6 +169,7 @@ async fn create_prediction(
     });
     let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
     let respond_async = should_respond_async(&headers);
+    let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
         service,
         prediction_id,
@@ -162,6 +177,7 @@ async fn create_prediction(
         request.webhook,
         request.webhook_events_filter,
         respond_async,
+        trace_context,
     )
     .await
 }
@@ -209,6 +225,7 @@ async fn create_prediction_idempotent(
 
     // Not running, create new prediction with the specified ID
     let respond_async = should_respond_async(&headers);
+    let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
         service,
         prediction_id,
@@ -216,6 +233,7 @@ async fn create_prediction_idempotent(
         request.webhook,
         request.webhook_events_filter,
         respond_async,
+        trace_context,
     )
     .await
 }
@@ -224,16 +242,18 @@ async fn create_prediction_idempotent(
 fn build_webhook_sender(
     webhook: Option<String>,
     events_filter: Vec<WebhookEventType>,
+    trace_context: TraceContext,
 ) -> Option<WebhookSender> {
     let webhook_url = webhook?;
     let events: std::collections::HashSet<_> = events_filter.into_iter().collect();
 
-    Some(WebhookSender::new(
+    Some(WebhookSender::with_trace_context(
         webhook_url,
         WebhookConfig {
             events_filter: events,
             ..Default::default()
         },
+        trace_context,
     ))
 }
 
@@ -245,12 +265,17 @@ async fn create_prediction_with_id(
     webhook: Option<String>,
     webhook_events_filter: Vec<WebhookEventType>,
     respond_async: bool,
+    trace_context: TraceContext,
 ) -> (StatusCode, Json<serde_json::Value>) {
     // Build webhook sender for async start notification
-    let start_webhook_sender = build_webhook_sender(webhook.clone(), webhook_events_filter.clone());
+    let start_webhook_sender = build_webhook_sender(
+        webhook.clone(),
+        webhook_events_filter.clone(),
+        trace_context.clone(),
+    );
 
     // Build webhook sender for the prediction (will be used in Drop)
-    let prediction_webhook = build_webhook_sender(webhook, webhook_events_filter);
+    let prediction_webhook = build_webhook_sender(webhook, webhook_events_filter, trace_context);
 
     // Try to create prediction (acquires slot, checks health)
     let mut prediction = match service

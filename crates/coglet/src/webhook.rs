@@ -77,17 +77,31 @@ impl Default for WebhookConfig {
     }
 }
 
+/// W3C Trace Context for distributed tracing.
+#[derive(Debug, Clone, Default)]
+pub struct TraceContext {
+    pub traceparent: Option<String>,
+    pub tracestate: Option<String>,
+}
+
 /// Webhook sender with throttling and retry logic.
 pub struct WebhookSender {
     url: String,
     config: WebhookConfig,
     client: reqwest::Client,
     last_sent: Mutex<Instant>,
+    /// Trace context for distributed tracing (W3C Trace Context headers).
+    trace_context: TraceContext,
 }
 
 impl WebhookSender {
     /// Create a new webhook sender.
     pub fn new(url: String, config: WebhookConfig) -> Self {
+        Self::with_trace_context(url, config, TraceContext::default())
+    }
+
+    /// Create a new webhook sender with trace context.
+    pub fn with_trace_context(url: String, config: WebhookConfig, trace_context: TraceContext) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
 
         // Add bearer auth if WEBHOOK_AUTH_TOKEN is set
@@ -114,6 +128,7 @@ impl WebhookSender {
             config,
             client,
             last_sent: Mutex::new(Instant::now() - Duration::from_secs(10)), // Allow immediate first send
+            trace_context,
         }
     }
 
@@ -145,21 +160,33 @@ impl WebhookSender {
         *last = Instant::now();
     }
 
+    /// Build a request with trace context headers.
+    fn build_request(&self, payload: &serde_json::Value) -> reqwest::RequestBuilder {
+        let mut request = self.client.post(&self.url).json(payload);
+
+        // Add W3C Trace Context headers if present
+        if let Some(ref traceparent) = self.trace_context.traceparent {
+            request = request.header("traceparent", traceparent);
+        }
+        if let Some(ref tracestate) = self.trace_context.tracestate {
+            request = request.header("tracestate", tracestate);
+        }
+
+        request
+    }
+
     /// Send a non-terminal webhook (no retry, errors ignored).
     pub fn send(&self, event: WebhookEventType, payload: &serde_json::Value) {
         if !self.should_send(event) {
             return;
         }
 
-        let url = self.url.clone();
-        let client = self.client.clone();
-        let payload = payload.clone();
-
+        let request = self.build_request(payload);
         self.update_last_sent();
 
         // Fire and forget - spawn a task but don't wait
         tokio::spawn(async move {
-            if let Err(e) = client.post(&url).json(&payload).send().await {
+            if let Err(e) = request.send().await {
                 tracing::warn!(error = %e, "Failed to send webhook (non-terminal)");
             }
         });
@@ -173,7 +200,7 @@ impl WebhookSender {
 
         let mut attempt = 0;
         loop {
-            match self.client.post(&self.url).json(payload).send().await {
+            match self.build_request(payload).send().await {
                 Ok(response) => {
                     let status = response.status().as_u16();
                     if response.status().is_success() {
@@ -271,6 +298,14 @@ impl WebhookSender {
 
             if let Some(ref auth) = auth_header {
                 request = request.header("Authorization", auth);
+            }
+
+            // Add W3C Trace Context headers if present
+            if let Some(ref traceparent) = self.trace_context.traceparent {
+                request = request.header("traceparent", traceparent);
+            }
+            if let Some(ref tracestate) = self.trace_context.tracestate {
+                request = request.header("tracestate", tracestate);
             }
 
             let result = request.send_json(payload);

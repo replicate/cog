@@ -37,7 +37,7 @@ pub use predictor::{
 };
 pub use service::{CreatePredictionError, HealthSnapshot, PredictionService};
 pub use version::{COGLET_VERSION, VersionInfo};
-pub use webhook::{WebhookConfig, WebhookEventType, WebhookSender};
+pub use webhook::{TraceContext, WebhookConfig, WebhookEventType, WebhookSender};
 
 // Re-exports from transport
 pub use transport::{ServerConfig, serve};
