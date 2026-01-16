@@ -235,8 +235,10 @@ async fn create_prediction_with_id(
             );
         }
         Err(CreatePredictionError::AtCapacity) => {
+            // 409 for parity with Python
+            // Python response: {"detail": "Already running a prediction"}
             return (
-                StatusCode::SERVICE_UNAVAILABLE,
+                StatusCode::CONFLICT,
                 Json(serde_json::json!({
                     "error": "At capacity - all prediction slots busy",
                     "status": "failed"
