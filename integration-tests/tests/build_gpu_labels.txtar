@@ -2,7 +2,7 @@
 # Source: test_build.py::test_build_gpu_model_on_cpu
 # Requires git init/tag for version labels
 
-[fast] skip 'requires long GPU build time'
+[short] skip 'requires long GPU build time'
 
 # Setup git repo for version labels
 exec git init

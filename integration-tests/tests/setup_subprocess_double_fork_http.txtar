@@ -1,4 +1,4 @@
-[fast] skip 'slow test - skip in fast mode'
+[short] skip 'slow test - skip in short mode'
 
 # Test double fork subprocess with HTTP server spawned during setup
 # This ensures stream redirection works correctly with daemonized HTTP servers
@@ -10,14 +10,13 @@ cog build -t $TEST_IMAGE
 cog serve
 
 # Make predictions that communicate with forked HTTP server
-# Use generous retries since setup spawns a double-forked HTTP server
-retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 30 1s
+curl POST /predictions '{"input":{"s":"friendo1"}}'
 stdout '"output":"hello friendo1"'
 
-retry-curl POST /predictions '{"input":{"s":"friendo2"}}' 10 500ms
+curl POST /predictions '{"input":{"s":"friendo2"}}'
 stdout '"output":"hello friendo2"'
 
-retry-curl POST /predictions '{"input":{"s":"friendo3"}}' 10 500ms
+curl POST /predictions '{"input":{"s":"friendo3"}}'
 stdout '"output":"hello friendo3"'
 
 -- cog.yaml --
