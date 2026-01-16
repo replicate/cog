@@ -318,7 +318,7 @@ impl PredictionService {
     /// - Orchestrator mode: Sends request via slot socket, waits for event loop to complete
     /// - Legacy mode: Calls predict_fn/async_predict_fn directly
     ///
-    /// The slot's Drop will handle sending the terminal webhook and releasing the permit.
+    /// Webhook sending is handled by PredictionSupervisor, not by the slot.
     pub async fn predict(
         &self,
         slot: &mut PredictionSlot,

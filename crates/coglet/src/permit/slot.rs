@@ -3,7 +3,7 @@
 //! This separation allows:
 //! - Prediction to be behind Mutex for concurrent updates (logs, outputs, status)
 //! - Permit's idle_flag to be set without holding the prediction lock
-//! - Clean RAII: dropping PredictionSlot sends webhook, then returns permit to pool
+//! - Clean RAII: dropping PredictionSlot returns permit to pool
 
 use std::sync::{Arc, Mutex};
 
@@ -15,9 +15,8 @@ use crate::prediction::Prediction;
 /// The prediction is behind a Mutex for concurrent updates by the event loop.
 /// The permit is separate so its idle_flag can be set without locking.
 ///
-/// On drop:
-/// 1. Sends terminal webhook (if configured)
-/// 2. Permit drops → returns to pool (if idle) or orphaned (if poisoned)
+/// On drop: Permit returns to pool (if idle) or is orphaned (if poisoned).
+/// Webhook sending is handled by PredictionSupervisor, not here.
 pub struct PredictionSlot {
     /// The prediction being processed.
     prediction: Arc<Mutex<Prediction>>,
@@ -125,24 +124,8 @@ impl Drop for PredictionSlot {
             prediction.set_failed("Slot dropped unexpectedly".to_string());
         }
 
-        // Legacy webhook sending for non-supervisor mode.
-        // When using supervisor, webhook is owned by supervisor and sent there.
-        // TODO: Remove this once supervisor is fully integrated.
-        if let Ok(mut prediction) = self.prediction.try_lock() {
-            if let Some(webhook) = prediction.take_webhook() {
-                let response = prediction.build_terminal_response();
-
-                // Spawn thread to send webhook - don't block Drop on network
-                std::thread::spawn(move || {
-                    webhook.send_terminal_sync(&response);
-                });
-            }
-        } else {
-            // Lock held elsewhere - this shouldn't happen in normal flow
-            tracing::warn!("PredictionSlot dropped while prediction lock held");
-        }
-
-        // Permit drops after this, returning to pool if idle
+        // Permit drops after this, returning to pool if idle.
+        // Webhook sending is handled by PredictionSupervisor.
     }
 }
 
