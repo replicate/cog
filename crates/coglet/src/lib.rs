@@ -12,6 +12,7 @@ pub mod permit;
 pub mod service;
 pub mod transport;
 pub mod webhook;
+pub mod worker;
 
 pub use supervisor::{PredictionHandle, PredictionState, PredictionSupervisor, SyncPredictionGuard};
 
@@ -22,3 +23,4 @@ pub use predictor::{
     PredictionResult,
 };
 pub use version::{VersionInfo, COGLET_VERSION};
+pub use worker::{PredictHandler, PredictResult, SetupLogHook, SlotSender, WorkerConfig, run_worker};
