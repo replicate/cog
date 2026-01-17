@@ -41,7 +41,7 @@ type PyObject = Py<PyAny>;
 /// the Python runtime:
 ///
 /// ## GIL Python (default, 3.8-3.12, 3.13 default)
-/// - `Python::with_gil()` acquires the GIL before calling into Python
+/// - `Python::attach()` acquires the GIL before calling into Python
 /// - Only one thread can execute Python bytecode at a time
 /// - However, native extensions (torch, numpy) release the GIL during compute
 /// - CUDA operations in torch run without holding GIL, allowing I/O concurrency
@@ -49,7 +49,7 @@ type PyObject = Py<PyAny>;
 ///
 /// ## Free-threaded Python (3.13t+)
 /// - No GIL, multiple threads can run Python simultaneously  
-/// - `Python::with_gil()` still works but doesn't serialize execution
+/// - `Python::attach()` still works but doesn't serialize execution
 /// - Most ML models are NOT thread-safe (shared weights, CUDA contexts)
 /// - Still need max_concurrency=1 for sync predictors unless model is thread-safe
 ///
@@ -85,7 +85,7 @@ pub struct PythonPredictor {
 }
 
 // PyObject is Send in PyO3 0.23+
-// Safety: We only access the instance through Python::with_gil()
+// Safety: We only access the instance through Python::attach()
 unsafe impl Send for PythonPredictor {}
 unsafe impl Sync for PythonPredictor {}
 
@@ -223,7 +223,7 @@ impl PythonPredictor {
     ///
     /// Returns None if schema generation fails (best-effort).
     pub fn schema(&self) -> Option<serde_json::Value> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Try coglet schema generation first (works for both runtimes)
             let result: PyResult<serde_json::Value> = (|| {
                 let json_module = py.import("json")?;
@@ -415,7 +415,7 @@ impl PythonPredictor {
         &self,
         input: serde_json::Value,
     ) -> Result<PredictionResult, PredictionError> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;
@@ -487,7 +487,7 @@ impl PythonPredictor {
         &self,
         input: serde_json::Value,
     ) -> Result<PredictionResult, PredictionError> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;
@@ -633,7 +633,7 @@ impl PythonPredictor {
         event_loop: &Py<PyAny>,
         prediction_id: &str,
     ) -> Result<(Py<PyAny>, bool, PreparedInput), PredictionError> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;
@@ -815,7 +815,7 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
         event_loop: &Py<PyAny>,
         prediction_id: &str,
     ) -> Result<(Py<PyAny>, bool, PreparedInput), PredictionError> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;

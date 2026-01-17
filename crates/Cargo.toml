@@ -36,8 +36,8 @@ thiserror = "2"
 anyhow = "1"
 
 # Python bindings
-pyo3 = { version = "0.24", features = ["extension-module"] }
-pyo3-async-runtimes = { version = "0.24", features = ["tokio-runtime"] }
+pyo3 = { version = "0.27", features = ["auto-initialize", "abi3-py38"] }
+pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
 
 # Testing
 insta = { version = "1", features = ["json"] }

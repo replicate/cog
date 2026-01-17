@@ -49,7 +49,7 @@ impl Drop for PreparedInput {
             return;
         }
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             for path in &self.cleanup_paths {
                 let path_bound = path.bind(py);
                 let kwargs = PyDict::new(py);
@@ -392,10 +392,10 @@ pub fn create_input_processor(runtime: &Runtime) -> Box<dyn InputProcessor> {
     match runtime {
         Runtime::Pydantic { input_type } => {
             // Clone PyObject using Python GIL
-            Python::with_gil(|py| Box::new(PydanticInputProcessor::new(input_type.clone_ref(py))))
+            Python::attach(|py| Box::new(PydanticInputProcessor::new(input_type.clone_ref(py))))
         }
         Runtime::Coglet { adt_predictor } => {
-            Python::with_gil(|py| Box::new(CogletInputProcessor::new(adt_predictor.clone_ref(py))))
+            Python::attach(|py| Box::new(CogletInputProcessor::new(adt_predictor.clone_ref(py))))
         }
     }
 }

@@ -81,7 +81,7 @@ impl PythonPredictHandler {
 
     /// Initialize the shared asyncio event loop in a dedicated thread.
     fn init_async_loop() -> (Py<PyAny>, JoinHandle<()>) {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let asyncio = py.import("asyncio").expect("Failed to import asyncio");
             let loop_obj = asyncio
                 .call_method0("new_event_loop")
@@ -93,7 +93,7 @@ impl PythonPredictHandler {
 
             // Spawn thread running loop.run_forever()
             let thread = std::thread::spawn(move || {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let loop_ref = loop_for_thread.bind(py);
                     let asyncio = py
                         .import("asyncio")
@@ -152,7 +152,7 @@ impl PythonPredictHandler {
     /// Cancel an async prediction using future.cancel().
     /// Returns true if cancellation was requested, false if no future found.
     fn cancel_async_future(&self, slot: SlotId) -> bool {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let future = {
                 let slots = self.slots.lock().unwrap();
                 slots
@@ -180,7 +180,7 @@ impl PythonPredictHandler {
 
     /// Get a reference to the shared asyncio event loop.
     fn get_async_loop(&self) -> Option<Py<PyAny>> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.async_loop
                 .lock()
                 .unwrap()
@@ -195,7 +195,7 @@ impl PredictHandler for PythonPredictHandler {
     async fn setup(&self) -> Result<(), String> {
         // Load and setup predictor
         // This runs in the worker subprocess, so we own Python
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             tracing::info!(predictor_ref = %self.predictor_ref, "Loading predictor");
 
             let pred = PythonPredictor::load(py, &self.predictor_ref)
@@ -246,7 +246,7 @@ impl PredictHandler for PythonPredictHandler {
         // Enter prediction context - sets cog_prediction_id ContextVar for log routing
         let prediction_id = id.clone();
         let slot_sender_clone = slot_sender.clone();
-        let log_guard = Python::with_gil(|py| {
+        let log_guard = Python::attach(|py| {
             crate::log_writer::PredictionLogGuard::enter(
                 py,
                 prediction_id.clone(),
@@ -303,12 +303,12 @@ impl PredictHandler for PythonPredictHandler {
                     };
 
                 // Store future for cancellation
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     self.set_async_future(slot, future.clone_ref(py));
                 });
 
                 // Block on future.result()
-                let result = Python::with_gil(|py| {
+                let result = Python::attach(|py| {
                     match future.call_method0(py, "result") {
                         Ok(result) => {
                             pred.process_async_result(py, result.bind(py), is_async_gen)
@@ -370,12 +370,12 @@ impl PredictHandler for PythonPredictHandler {
                     };
 
                 // Store future for cancellation
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     self.set_async_future(slot, future.clone_ref(py));
                 });
 
                 // Block on future.result()
-                let result = Python::with_gil(|py| {
+                let result = Python::attach(|py| {
                     match future.call_method0(py, "result") {
                         Ok(result) => {
                             pred.process_async_result(py, result.bind(py), is_async_gen)
@@ -463,7 +463,7 @@ impl Drop for PythonPredictHandler {
     fn drop(&mut self) {
         // Stop the event loop
         if let Some(loop_obj) = self.async_loop.lock().unwrap().take() {
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let loop_ref = loop_obj.bind(py);
                 // Get the stop method and schedule it via call_soon_threadsafe
                 match loop_ref.getattr("stop") {
