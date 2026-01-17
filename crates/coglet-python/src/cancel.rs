@@ -10,8 +10,6 @@
 //! - Call task.cancel() when cancel requested
 //! - Python raises asyncio.CancelledError
 
-#![allow(dead_code)] // Building blocks - used by predictor.rs/worker_bridge.rs
-
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::prelude::*;
@@ -76,12 +74,6 @@ pub fn enter_cancelable() -> CancelableGuard {
 /// Called from Python signal handler.
 pub fn is_cancelable() -> bool {
     CANCELABLE.load(Ordering::SeqCst)
-}
-
-/// Set the cancelable flag directly.
-/// Prefer `enter_cancelable()` for RAII-style management.
-pub fn set_cancelable(cancelable: bool) {
-    CANCELABLE.store(cancelable, Ordering::SeqCst);
 }
 
 /// RAII guard that clears cancelable flag on drop.

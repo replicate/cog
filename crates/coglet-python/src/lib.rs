@@ -237,6 +237,14 @@ fn _run_worker(py: Python<'_>) -> PyResult<()> {
     set_active();
     init_tracing(true);
 
+    // Install SlotLogWriters for ContextVar-based log routing
+    log_writer::install_slot_log_writers(py)?;
+
+    // Install audit hook to protect stdout/stderr from user replacement
+    if let Err(e) = audit::install_audit_hook(py) {
+        warn!(error = %e, "Failed to install audit hook, stdout/stderr protection disabled");
+    }
+
     // Install signal handler for cancellation
     if let Err(e) = cancel::install_signal_handler(py) {
         warn!(error = %e, "Failed to install signal handler, cancellation may not work");

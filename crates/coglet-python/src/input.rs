@@ -7,8 +7,6 @@
 //! This module provides a trait-based abstraction to handle input processing
 //! for each runtime correctly.
 
-#![allow(dead_code)] // Building block - integrated after worker_bridge expansion
-
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
