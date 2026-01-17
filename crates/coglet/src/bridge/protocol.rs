@@ -1,37 +1,29 @@
 //! Wire protocol types for parent-worker communication.
 //!
 //! Two channels:
-//! - **Control channel** (stdin/stdout): ControlRequest/ControlResponse
-//!   - Cancel, Shutdown, Ready, Idle signals
-//! - **Slot sockets**: SlotRequest/SlotResponse
-//!   - Prediction data, streaming logs (per-slot, avoids HOL blocking)
+//! - **Control channel** (stdin/stdout): Init, Cancel, Shutdown, Ready, Idle
+//! - **Slot sockets**: Prediction data, streaming logs (per-slot to avoid HOL blocking)
 
 use serde::{Deserialize, Serialize};
 
-// ============================================================================
-// SlotId - unique identifier for prediction slots
-// ============================================================================
+use super::transport::ChildTransportInfo;
 
 /// Unique identifier for a prediction slot.
 ///
-/// Uses UUID v4 for guaranteed uniqueness. Impossible to confuse with array
-/// indices or accidentally reuse. Generated once per slot at worker startup.
+/// UUID v4 avoids confusion with array indices and prevents accidental reuse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SlotId(uuid::Uuid);
 
 impl SlotId {
-    /// Generate a new unique slot ID.
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4())
     }
 
-    /// Get the underlying UUID.
     pub fn as_uuid(&self) -> &uuid::Uuid {
         &self.0
     }
 
-    /// Parse a SlotId from string (UUID format).
     pub fn parse(s: &str) -> Result<Self, uuid::Error> {
         let uuid = uuid::Uuid::parse_str(s)?;
         Ok(Self(uuid))
@@ -50,21 +42,21 @@ impl std::fmt::Display for SlotId {
     }
 }
 
-// ============================================================================
-// Control channel protocol (stdin/stdout)
-// ============================================================================
-
 /// Control messages from parent to worker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ControlRequest {
-    /// Cancel prediction on a slot.
-    Cancel {
-        /// Unique slot ID to cancel.
-        slot: SlotId,
+    /// Initial configuration sent immediately after spawn (must be first message).
+    Init {
+        predictor_ref: String,
+        num_slots: usize,
+        transport_info: ChildTransportInfo,
+        is_train: bool,
+        is_async: bool,
     },
 
-    /// Graceful shutdown - finish current work and exit.
+    Cancel { slot: SlotId },
+
     Shutdown,
 }
 
@@ -72,71 +64,39 @@ pub enum ControlRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ControlResponse {
-    /// Worker is ready to accept predictions.
     Ready {
-        /// Slot IDs for each socket (index 0 = first socket, etc).
-        /// Parent uses these IDs for all subsequent slot communication.
+        /// Slot IDs in socket order - parent uses these for all subsequent communication.
         slots: Vec<SlotId>,
-        /// OpenAPI schema for the predictor.
         #[serde(skip_serializing_if = "Option::is_none")]
         schema: Option<serde_json::Value>,
     },
 
-    /// Log message (used during setup before slots are active).
-    Log {
-        /// Log source (stdout or stderr).
-        source: LogSource,
-        /// Log data.
-        data: String,
-    },
+    /// Setup-phase logs (before slots are active).
+    Log { source: LogSource, data: String },
 
-    /// Slot is now idle (prediction completed, ready for next).
-    Idle {
-        /// Unique slot ID that became idle.
-        slot: SlotId,
-    },
+    /// Slot completed and is ready for next prediction.
+    Idle { slot: SlotId },
 
-    /// Slot prediction was cancelled.
-    Cancelled {
-        /// Unique slot ID that was cancelled.
-        slot: SlotId,
-    },
+    Cancelled { slot: SlotId },
 
-    /// Slot failed (poisoned, will not accept more predictions).
-    Failed {
-        /// Unique slot ID that failed.
-        slot: SlotId,
-        /// Error message.
-        error: String,
-    },
+    /// Slot is poisoned and will not accept more predictions.
+    Failed { slot: SlotId, error: String },
 
-    /// Worker is shutting down.
     ShuttingDown,
 }
 
-// ============================================================================
-// SlotOutcome - type-safe completion status (prevents Idle if poisoned)
-// ============================================================================
-
-/// Outcome of a slot operation - enforces that poisoned slots produce Failed.
-///
-/// This type makes it impossible to accidentally send `Idle` for a poisoned slot.
-/// Use `into_control_response()` to get the appropriate `ControlResponse`.
+/// Type-safe slot completion - ensures poisoned slots produce Failed, not Idle.
 #[derive(Debug)]
 pub enum SlotOutcome {
-    /// Slot completed normally, ready for more work.
     Idle(SlotId),
-    /// Slot is poisoned, will not accept more predictions.
     Poisoned { slot: SlotId, error: String },
 }
 
 impl SlotOutcome {
-    /// Create an idle outcome (slot ready for more work).
     pub fn idle(slot: SlotId) -> Self {
         Self::Idle(slot)
     }
 
-    /// Create a poisoned outcome (slot permanently failed).
     pub fn poisoned(slot: SlotId, error: impl Into<String>) -> Self {
         Self::Poisoned {
             slot,
@@ -144,7 +104,6 @@ impl SlotOutcome {
         }
     }
 
-    /// Get the slot ID.
     pub fn slot_id(&self) -> SlotId {
         match self {
             Self::Idle(slot) => *slot,
@@ -152,15 +111,10 @@ impl SlotOutcome {
         }
     }
 
-    /// Check if this outcome indicates the slot is poisoned.
     pub fn is_poisoned(&self) -> bool {
         matches!(self, Self::Poisoned { .. })
     }
 
-    /// Convert to the appropriate ControlResponse.
-    ///
-    /// This is the ONLY way to create Idle/Failed responses from a completion,
-    /// ensuring poisoned slots always produce Failed.
     pub fn into_control_response(self) -> ControlResponse {
         match self {
             Self::Idle(slot) => ControlResponse::Idle { slot },
@@ -169,19 +123,12 @@ impl SlotOutcome {
     }
 }
 
-// ============================================================================
-// Slot socket protocol (per-slot data channel)
-// ============================================================================
-
 /// Messages from parent to worker on slot socket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SlotRequest {
-    /// Run a prediction.
     Predict {
-        /// Unique prediction ID.
         id: String,
-        /// Input to the predictor (JSON object).
         input: serde_json::Value,
     },
 }
@@ -190,47 +137,23 @@ pub enum SlotRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SlotResponse {
-    /// Log output during prediction (streaming).
-    Log {
-        /// Log source.
-        source: LogSource,
-        /// Log data.
-        data: String,
-    },
+    Log { source: LogSource, data: String },
 
-    /// Streaming output (for generators).
-    Output {
-        /// The output value.
-        output: serde_json::Value,
-    },
+    /// Streaming output chunk (for generators).
+    Output { output: serde_json::Value },
 
-    /// Prediction completed successfully.
     Done {
-        /// Prediction ID.
         id: String,
-        /// Final output (for non-generators, or None if already streamed).
         #[serde(skip_serializing_if = "Option::is_none")]
         output: Option<serde_json::Value>,
-        /// Prediction time in seconds.
         predict_time: f64,
     },
 
-    /// Prediction failed.
-    Failed {
-        /// Prediction ID.
-        id: String,
-        /// Error message.
-        error: String,
-    },
+    Failed { id: String, error: String },
 
-    /// Prediction was cancelled.
-    Cancelled {
-        /// Prediction ID.
-        id: String,
-    },
+    Cancelled { id: String },
 }
 
-/// Log source for streaming logs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LogSource {
@@ -242,13 +165,27 @@ pub enum LogSource {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::PathBuf;
 
-    // Fixed slot ID for deterministic tests
     fn test_slot_id() -> SlotId {
         SlotId(uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap())
     }
 
-    // Control channel tests
+    #[test]
+    fn control_init_serializes() {
+        let req = ControlRequest::Init {
+            predictor_ref: "predict.py:Predictor".to_string(),
+            num_slots: 2,
+            transport_info: ChildTransportInfo::NamedSockets {
+                dir: PathBuf::from("/tmp/coglet-123"),
+                num_slots: 2,
+            },
+            is_train: false,
+            is_async: true,
+        };
+        insta::assert_json_snapshot!(req);
+    }
+
     #[test]
     fn control_cancel_serializes() {
         let req = ControlRequest::Cancel {
@@ -309,7 +246,6 @@ mod tests {
         insta::assert_json_snapshot!(resp);
     }
 
-    // Slot socket tests
     #[test]
     fn slot_predict_serializes() {
         let req = SlotRequest::Predict {
