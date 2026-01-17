@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["coglet"]
+members = ["coglet", "coglet-python"]
 
 [workspace.package]
 version = "0.1.1"
@@ -34,6 +34,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Error handling
 thiserror = "2"
 anyhow = "1"
+
+# Python bindings
+pyo3 = { version = "0.24", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.24", features = ["tokio-runtime"] }
 
 # Testing
 insta = { version = "1", features = ["json"] }

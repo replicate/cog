@@ -24,3 +24,4 @@ pub use predictor::{
 };
 pub use version::{VersionInfo, COGLET_VERSION};
 pub use worker::{PredictHandler, PredictResult, SetupLogHook, SlotSender, WorkerConfig, run_worker};
+pub use service::{CreatePredictionError, HealthSnapshot, PredictionService};
