@@ -6,6 +6,8 @@ use std::time::Instant;
 use tokio::sync::Notify;
 pub use tokio_util::sync::CancellationToken;
 
+use crate::webhook::WebhookSender;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredictionStatus {
     Starting,
@@ -44,14 +46,15 @@ impl PredictionOutput {
         matches!(self, PredictionOutput::Stream(_))
     }
 
-    pub fn into_vec(self) -> Vec<serde_json::Value> {
+    pub fn into_values(self) -> Vec<serde_json::Value> {
         match self {
             PredictionOutput::Single(v) => vec![v],
             PredictionOutput::Stream(v) => v,
         }
     }
 
-    pub fn last_value(&self) -> &serde_json::Value {
+    /// Get the final/only output value (last for stream, the value for single).
+    pub fn final_value(&self) -> &serde_json::Value {
         match self {
             PredictionOutput::Single(v) => v,
             PredictionOutput::Stream(v) => v.last().unwrap_or(&serde_json::Value::Null),
@@ -69,12 +72,13 @@ pub struct Prediction {
     outputs: Vec<serde_json::Value>,
     output: Option<PredictionOutput>,
     error: Option<String>,
+    webhook: Option<WebhookSender>,
     completion: Arc<Notify>,
     slot_poisoned: bool,
 }
 
 impl Prediction {
-    pub fn new(id: String) -> Self {
+    pub fn new(id: String, webhook: Option<WebhookSender>) -> Self {
         Self {
             id,
             cancel_token: CancellationToken::new(),
@@ -84,6 +88,7 @@ impl Prediction {
             outputs: Vec::new(),
             output: None,
             error: None,
+            webhook,
             completion: Arc::new(Notify::new()),
             slot_poisoned: false,
         }
@@ -177,6 +182,11 @@ impl Prediction {
         Arc::clone(&self.completion)
     }
 
+    /// Take the webhook sender (for sending on drop).
+    pub fn take_webhook(&mut self) -> Option<WebhookSender> {
+        self.webhook.take()
+    }
+
     pub fn build_terminal_response(&self) -> serde_json::Value {
         let predict_time = self.elapsed().as_secs_f64();
 
@@ -231,35 +241,35 @@ mod tests {
 
     #[test]
     fn new_starts_in_starting_status() {
-        let pred = Prediction::new("test".to_string());
+        let pred = Prediction::new("test".to_string(), None);
         assert_eq!(pred.status(), PredictionStatus::Starting);
         assert_eq!(pred.id(), "test");
     }
 
     #[test]
     fn set_succeeded() {
-        let mut pred = Prediction::new("test".to_string());
+        let mut pred = Prediction::new("test".to_string(), None);
         pred.set_succeeded(PredictionOutput::Single(serde_json::json!("hello")));
         assert_eq!(pred.status(), PredictionStatus::Succeeded);
     }
 
     #[test]
     fn set_failed() {
-        let mut pred = Prediction::new("test".to_string());
+        let mut pred = Prediction::new("test".to_string(), None);
         pred.set_failed("something went wrong".to_string());
         assert_eq!(pred.status(), PredictionStatus::Failed);
     }
 
     #[test]
     fn set_canceled() {
-        let mut pred = Prediction::new("test".to_string());
+        let mut pred = Prediction::new("test".to_string(), None);
         pred.set_canceled();
         assert_eq!(pred.status(), PredictionStatus::Canceled);
     }
 
     #[test]
     fn cancel_token_works() {
-        let pred = Prediction::new("test".to_string());
+        let pred = Prediction::new("test".to_string(), None);
         let token = pred.cancel_token();
 
         assert!(!pred.is_canceled());
@@ -269,7 +279,7 @@ mod tests {
 
     #[test]
     fn elapsed_time_increases() {
-        let pred = Prediction::new("test".to_string());
+        let pred = Prediction::new("test".to_string(), None);
         let t1 = pred.elapsed();
         std::thread::sleep(std::time::Duration::from_millis(10));
         let t2 = pred.elapsed();
@@ -278,7 +288,7 @@ mod tests {
 
     #[test]
     fn append_log() {
-        let mut pred = Prediction::new("test".to_string());
+        let mut pred = Prediction::new("test".to_string(), None);
         pred.append_log("line 1\n");
         pred.append_log("line 2\n");
         assert_eq!(pred.logs(), "line 1\nline 2\n");
@@ -286,7 +296,7 @@ mod tests {
 
     #[test]
     fn append_output() {
-        let mut pred = Prediction::new("test".to_string());
+        let mut pred = Prediction::new("test".to_string(), None);
         pred.append_output(serde_json::json!("chunk1"));
         pred.append_output(serde_json::json!("chunk2"));
         assert_eq!(pred.outputs().len(), 2);
@@ -294,7 +304,7 @@ mod tests {
 
     #[tokio::test]
     async fn wait_returns_immediately_if_terminal() {
-        let mut pred = Prediction::new("test".to_string());
+        let mut pred = Prediction::new("test".to_string(), None);
         pred.set_succeeded(PredictionOutput::Single(serde_json::json!("done")));
 
         pred.wait().await;
@@ -305,7 +315,7 @@ mod tests {
     fn prediction_output_single() {
         let output = PredictionOutput::Single(serde_json::json!("hello"));
         assert!(!output.is_stream());
-        assert_eq!(output.into_vec(), vec![serde_json::json!("hello")]);
+        assert_eq!(output.into_values(), vec![serde_json::json!("hello")]);
     }
 
     #[test]

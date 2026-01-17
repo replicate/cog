@@ -160,7 +160,7 @@ mod tests {
         pool.add_permit(slot_id, FramedWrite::new(write, JsonCodec::new()));
 
         let permit = pool.try_acquire().unwrap();
-        let prediction = Prediction::new("test_123".to_string());
+        let prediction = Prediction::new("test_123".to_string(), None);
 
         let slot = PredictionSlot::new(prediction, permit);
         assert_eq!(slot.slot_id(), slot_id);
@@ -178,7 +178,7 @@ mod tests {
 
         {
             let permit = pool.try_acquire().unwrap();
-            let prediction = Prediction::new("test_123".to_string());
+            let prediction = Prediction::new("test_123".to_string(), None);
             let mut slot = PredictionSlot::new(prediction, permit);
 
             let _token = slot.into_idle();
@@ -199,7 +199,7 @@ mod tests {
 
         {
             let permit = pool.try_acquire().unwrap();
-            let prediction = Prediction::new("test_123".to_string());
+            let prediction = Prediction::new("test_123".to_string(), None);
             let _slot = PredictionSlot::new(prediction, permit);
         }
 
