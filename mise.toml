@@ -1,15 +1,26 @@
+experimental_monorepo_root = true
+
 [tools]
 go = "latest"
 uv = "latest"
+cargo-binstall = "1.16.6"
+"cargo:cargo-deny" = "0.19.0"
+"cargo:cargo-insta" = "1.46.0"
+"cargo:cargo-nextest" = "0.9.120"
+"cargo:maturin" = "1.11.5"
+ruff = "0.14.11"
+ty = "0.0.10"
 
 [env]
 _.path = './bin'
 _.file = [".env"]
+_.python.venv = ".venv"
 
 [settings]
 lockfile = true
 experimental = true
 
+# Go integration tests
 [tasks.test-integration]
 description = "Run Go integration tests with optional filter"
 dir = "integration-tests"
@@ -21,3 +32,67 @@ else
   go test -v -timeout 10m
 fi
 """
+
+# Rust build tasks
+[tasks."build:rust"]
+description = "Build Rust crates (excludes coglet-python, use build:coglet for that)"
+run = "cargo build --manifest-path crates/Cargo.toml"
+
+[tasks."build:rust:release"]
+description = "Build Rust crates release (excludes coglet-python)"
+run = "cargo build --manifest-path crates/Cargo.toml --release"
+
+[tasks."build:coglet"]
+description = "Build coglet Python wheel (development, requires maturin)"
+run = "cd crates/coglet-python && maturin develop"
+
+[tasks."build:coglet:wheel"]
+description = "Build coglet Python wheel for development (native platform only)"
+run = "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml"
+
+[tasks."build:coglet:wheel:linux"]
+description = "Build coglet Python wheel for Linux x86_64 (uses zig for cross-compilation)"
+run = "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig"
+
+[tasks."build:coglet:wheel:all"]
+description = "Build coglet Python wheels for all platforms (Linux x86_64 + macOS)"
+run = """
+maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig
+maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml
+"""
+
+# To build aarch64-linux, first run: rustup target add aarch64-unknown-linux-gnu
+[tasks."build:coglet:wheel:all-arch"]
+description = "Build coglet wheels for all platforms including aarch64-linux (requires rustup target)"
+run = """
+maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig
+maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-unknown-linux-gnu --zig
+maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml
+"""
+
+# Rust test tasks
+[tasks."test:rust"]
+description = "Run Rust tests with nextest (excludes coglet-python)"
+run = "cargo nextest run --manifest-path crates/Cargo.toml --no-tests=pass"
+
+[tasks."test:coglet-python"]
+description = "Run coglet-python Python tests (builds coglet first)"
+depends = ["build:coglet"]
+run = "uv run --active pytest crates/coglet-python/tests/ -v"
+
+# Rust formatting and linting
+[tasks."fmt:rust"]
+description = "Format Rust code"
+run = "cargo fmt --manifest-path crates/Cargo.toml --all"
+
+[tasks."fmt:rust:check"]
+description = "Check Rust formatting"
+run = "cargo fmt --manifest-path crates/Cargo.toml --all -- --check"
+
+[tasks.clippy]
+description = "Run clippy lints on all crates"
+run = "cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings"
+
+[tasks.deny]
+description = "Check licenses and advisories with cargo-deny"
+run = "cargo deny --manifest-path crates/Cargo.toml check"
