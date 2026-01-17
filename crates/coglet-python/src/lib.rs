@@ -299,9 +299,16 @@ async fn run_worker_with_init() -> Result<(), String> {
         worker_bridge::PythonPredictHandler::new(predictor_ref)
     });
 
+    // Setup log hook: registers a global sender so SlotLogWriter can route setup logs
+    let setup_log_hook: coglet_core::SetupLogHook = Box::new(|tx| {
+        let sender = Arc::new(log_writer::SetupLogSender::new(tx));
+        log_writer::register_setup_sender(sender);
+        Box::new(log_writer::unregister_setup_sender)
+    });
+
     let config = coglet_core::WorkerConfig {
         num_slots,
-        setup_log_hook: None, // TODO: Add log routing
+        setup_log_hook: Some(setup_log_hook),
     };
 
     coglet_core::run_worker(handler, config)
@@ -311,10 +318,24 @@ async fn run_worker_with_init() -> Result<(), String> {
 
 #[pymodule]
 fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Version from Cargo.toml
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+
+    // Core functions
     m.add_function(wrap_pyfunction!(active, m)?)?;
     m.add_function(wrap_pyfunction!(serve, m)?)?;
     m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
     m.add_function(wrap_pyfunction!(_run_worker, m)?)?;
+
+    // Audit hook helpers for stdout/stderr protection (internal use by audit hook)
+    m.add_function(wrap_pyfunction!(audit::_is_slot_log_writer, m)?)?;
+    m.add_function(wrap_pyfunction!(audit::_is_tee_writer, m)?)?;
+    m.add_function(wrap_pyfunction!(audit::_get_inner_writer, m)?)?;
+    m.add_function(wrap_pyfunction!(audit::_create_tee_writer, m)?)?;
+
+    // Export classes (needed for isinstance checks in audit hook)
+    m.add_class::<log_writer::SlotLogWriter>()?;
+    m.add_class::<audit::TeeWriter>()?;
+
     Ok(())
 }
