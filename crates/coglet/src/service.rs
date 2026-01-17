@@ -324,7 +324,7 @@ impl PredictionService {
         orchestrator: &Arc<OrchestratorHandle>,
     ) -> Result<PredictionResult, PredictionError> {
         let prediction_id = slot.id();
-        let slot_id = slot.permit().slot_id();
+        let slot_id = slot.slot_id();
 
         // Set processing status
         {
@@ -345,7 +345,12 @@ impl PredictionService {
             input,
         };
 
-        if let Err(e) = slot.permit_mut().send(request).await {
+        // permit_mut returns None if permit isn't InUse (shouldn't happen here)
+        let permit = slot
+            .permit_mut()
+            .ok_or_else(|| PredictionError::Failed("Permit not in use".to_string()))?;
+
+        if let Err(e) = permit.send(request).await {
             tracing::error!(%slot_id, error = %e, "Failed to send prediction request");
             let mut pred = prediction_arc.lock().unwrap();
             pred.set_failed(format!("Failed to send request: {}", e));

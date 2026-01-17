@@ -5,7 +5,10 @@
 //! - A socket writer for sending requests to that slot
 //! - An idle flag (set by event loop when slot becomes available)
 //!
-//! Permits are returned to the pool on drop if idle, or orphaned if poisoned.
+//! Uses separate types to enforce valid state transitions at compile time:
+//! - `PermitInUse` → `PermitIdle` (via `into_idle()`)
+//! - `PermitInUse` → `PermitPoisoned` (via `into_poisoned()`)
+//! - `PermitPoisoned` → `PermitIdle`: NOT POSSIBLE (no method exists)
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -18,6 +21,10 @@ use tokio_util::codec::FramedWrite;
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{SlotId, SlotRequest};
 
+// =============================================================================
+// Permit internals (shared between states)
+// =============================================================================
+
 /// Internal permit data that gets recycled through the pool.
 pub(crate) struct PermitInner {
     pub slot_id: SlotId,
@@ -25,59 +32,38 @@ pub(crate) struct PermitInner {
     pub idle_flag: Arc<AtomicBool>,
 }
 
-/// Permit state - enforces that poisoned permits cannot become idle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PermitState {
-    /// Permit is in use, running a prediction.
-    InUse,
-    /// Prediction complete, permit will return to pool on drop.
-    Idle,
-    /// Slot permanently failed, permit will NOT return to pool.
-    Poisoned,
-}
-
-/// A permit granting exclusive access to a prediction slot.
-///
-/// Owns the socket writer for sending requests to the worker subprocess.
-/// On drop, returns to pool if idle, or is orphaned if poisoned.
-///
-/// State transitions (enforced):
-/// - InUse → Idle (via `into_idle()`)
-/// - InUse → Poisoned (via `into_poisoned()`)
-/// - Poisoned → Idle: NOT ALLOWED (panics)
-pub struct Permit {
-    /// Slot ID this permit is for.
-    slot_id: SlotId,
-    /// Socket writer (taken on drop to return to pool).
-    writer: Option<FramedWrite<OwnedWriteHalf, JsonCodec<SlotRequest>>>,
-    /// Current state - determines drop behavior.
-    state: PermitState,
-    /// Idle flag shared with pool (for recycling).
-    idle_flag: Arc<AtomicBool>,
-    /// Channel to return permit to pool.
+/// Shared pool connection data.
+struct PoolConnection {
     pool_tx: mpsc::Sender<PermitInner>,
-    /// Pool's available count (incremented on return).
     pool_available: Arc<AtomicUsize>,
 }
 
-/// Token proving a permit has been marked idle.
-///
-/// This is returned by `Permit::into_idle()` and proves the permit
-/// will return to the pool. The token itself does nothing - the actual
-/// pool return happens when the Permit drops.
-#[must_use = "IdleToken should be held until the permit is ready to return to pool"]
-pub struct IdleToken {
-    slot_id: SlotId,
-}
-
-impl IdleToken {
-    /// Get the slot ID this token is for.
-    pub fn slot_id(&self) -> SlotId {
-        self.slot_id
+impl Clone for PoolConnection {
+    fn clone(&self) -> Self {
+        Self {
+            pool_tx: self.pool_tx.clone(),
+            pool_available: Arc::clone(&self.pool_available),
+        }
     }
 }
 
-impl Permit {
+// =============================================================================
+// PermitInUse - active permit running a prediction
+// =============================================================================
+
+/// A permit in the InUse state - running a prediction.
+///
+/// Can transition to:
+/// - `PermitIdle` via `into_idle()` (returns to pool on drop)
+/// - `PermitPoisoned` via `into_poisoned()` (orphaned on drop)
+pub struct PermitInUse {
+    slot_id: SlotId,
+    writer: Option<FramedWrite<OwnedWriteHalf, JsonCodec<SlotRequest>>>,
+    idle_flag: Arc<AtomicBool>,
+    pool: PoolConnection,
+}
+
+impl PermitInUse {
     /// Create a new permit from inner data.
     pub(crate) fn new(
         inner: PermitInner,
@@ -90,10 +76,11 @@ impl Permit {
         Self {
             slot_id: inner.slot_id,
             writer: Some(inner.writer),
-            state: PermitState::InUse,
             idle_flag: inner.idle_flag,
-            pool_tx,
-            pool_available,
+            pool: PoolConnection {
+                pool_tx,
+                pool_available,
+            },
         }
     }
 
@@ -102,57 +89,28 @@ impl Permit {
         self.slot_id
     }
 
-    /// Check if this permit is marked as idle.
-    pub fn is_idle(&self) -> bool {
-        self.state == PermitState::Idle
-    }
-
-    /// Check if this permit is poisoned.
-    pub fn is_poisoned(&self) -> bool {
-        self.state == PermitState::Poisoned
-    }
-
     /// Mark this permit as idle, allowing it to return to pool on drop.
     ///
-    /// Returns an `IdleToken` as proof that the permit is idle.
-    ///
-    /// # Panics
-    /// Panics if the permit is already poisoned. A poisoned permit
-    /// can NEVER become idle - this is enforced at the type level.
-    pub fn into_idle(&mut self) -> IdleToken {
-        match self.state {
-            PermitState::InUse => {
-                self.state = PermitState::Idle;
-                self.idle_flag.store(true, Ordering::Release);
-                IdleToken {
-                    slot_id: self.slot_id,
-                }
-            }
-            PermitState::Idle => {
-                // Already idle, return token
-                IdleToken {
-                    slot_id: self.slot_id,
-                }
-            }
-            PermitState::Poisoned => {
-                panic!(
-                    "Cannot mark poisoned permit as idle - slot_id={}",
-                    self.slot_id
-                );
-            }
+    /// Consumes self and returns a `PermitIdle`.
+    pub fn into_idle(mut self) -> PermitIdle {
+        self.idle_flag.store(true, Ordering::Release);
+        PermitIdle {
+            slot_id: self.slot_id,
+            writer: self.writer.take(),
+            idle_flag: Arc::clone(&self.idle_flag),
+            pool: self.pool.clone(),
         }
     }
 
     /// Mark this permit as poisoned (permanently failed).
     ///
+    /// Consumes self and returns a `PermitPoisoned`.
     /// The permit will NOT return to the pool on drop.
-    /// Called when orchestrator receives Failed control message.
-    pub fn into_poisoned(&mut self) {
-        if self.state == PermitState::Idle {
-            // This shouldn't happen, but if it does, warn and proceed
-            tracing::warn!(slot = %self.slot_id, "Marking idle permit as poisoned");
+    pub fn into_poisoned(mut self) -> PermitPoisoned {
+        PermitPoisoned {
+            slot_id: self.slot_id,
+            _writer: self.writer.take(),
         }
-        self.state = PermitState::Poisoned;
     }
 
     /// Send a request on this slot's socket.
@@ -165,35 +123,142 @@ impl Permit {
     }
 }
 
-impl Drop for Permit {
+impl Drop for PermitInUse {
     fn drop(&mut self) {
-        match self.state {
-            PermitState::Idle => {
-                // Return to pool
-                if let Some(writer) = self.writer.take() {
-                    let inner = PermitInner {
-                        slot_id: self.slot_id,
-                        writer,
-                        idle_flag: Arc::clone(&self.idle_flag),
-                    };
+        // Bug - permit dropped without into_idle() or into_poisoned()
+        if self.writer.is_some() {
+            tracing::error!(slot = %self.slot_id, "PermitInUse leaked - dropped without state transition");
+        }
+        // Don't return to pool - treat as poisoned
+    }
+}
 
-                    // Try to return to pool (ignore error if pool is closed)
-                    if self.pool_tx.try_send(inner).is_ok() {
-                        self.pool_available.fetch_add(1, Ordering::Release);
-                    }
-                }
-            }
-            PermitState::Poisoned => {
-                // Expected - slot is dead, capacity reduced
-                tracing::warn!(slot = %self.slot_id, "Slot poisoned - capacity reduced");
-            }
-            PermitState::InUse => {
-                // Bug - permit dropped without into_idle() or into_poisoned()
-                tracing::error!(slot = %self.slot_id, "Permit leaked - dropped while still InUse");
+// =============================================================================
+// PermitIdle - completed permit, returns to pool on drop
+// =============================================================================
+
+/// A permit in the Idle state - will return to pool on drop.
+pub struct PermitIdle {
+    slot_id: SlotId,
+    writer: Option<FramedWrite<OwnedWriteHalf, JsonCodec<SlotRequest>>>,
+    idle_flag: Arc<AtomicBool>,
+    pool: PoolConnection,
+}
+
+impl PermitIdle {
+    /// Get the slot ID.
+    pub fn slot_id(&self) -> SlotId {
+        self.slot_id
+    }
+}
+
+impl Drop for PermitIdle {
+    fn drop(&mut self) {
+        // Return to pool
+        if let Some(writer) = self.writer.take() {
+            let inner = PermitInner {
+                slot_id: self.slot_id,
+                writer,
+                idle_flag: Arc::clone(&self.idle_flag),
+            };
+
+            // Try to return to pool (ignore error if pool is closed)
+            if self.pool.pool_tx.try_send(inner).is_ok() {
+                self.pool.pool_available.fetch_add(1, Ordering::Release);
             }
         }
     }
 }
+
+// =============================================================================
+// PermitPoisoned - failed permit, orphaned on drop
+// =============================================================================
+
+/// A permit in the Poisoned state - will be orphaned on drop.
+///
+/// Notably: there is NO `into_idle()` method - a poisoned permit can NEVER
+/// become idle. This is enforced at compile time.
+pub struct PermitPoisoned {
+    slot_id: SlotId,
+    _writer: Option<FramedWrite<OwnedWriteHalf, JsonCodec<SlotRequest>>>,
+}
+
+impl PermitPoisoned {
+    /// Get the slot ID.
+    pub fn slot_id(&self) -> SlotId {
+        self.slot_id
+    }
+}
+
+impl Drop for PermitPoisoned {
+    fn drop(&mut self) {
+        // Expected - slot is dead, capacity reduced
+        tracing::warn!(slot = %self.slot_id, "Slot poisoned - capacity reduced");
+    }
+}
+
+// =============================================================================
+// AnyPermit - for holding permits of unknown state
+// =============================================================================
+
+/// A permit in any state (for containers that need to hold permits dynamically).
+///
+/// Used by `PredictionSlot` which needs to transition the permit through states.
+pub enum AnyPermit {
+    InUse(PermitInUse),
+    Idle(PermitIdle),
+    Poisoned(PermitPoisoned),
+}
+
+impl AnyPermit {
+    /// Get the slot ID.
+    pub fn slot_id(&self) -> SlotId {
+        match self {
+            AnyPermit::InUse(p) => p.slot_id(),
+            AnyPermit::Idle(p) => p.slot_id(),
+            AnyPermit::Poisoned(p) => p.slot_id(),
+        }
+    }
+
+    /// Check if this permit is idle.
+    pub fn is_idle(&self) -> bool {
+        matches!(self, AnyPermit::Idle(_))
+    }
+
+    /// Check if this permit is poisoned.
+    pub fn is_poisoned(&self) -> bool {
+        matches!(self, AnyPermit::Poisoned(_))
+    }
+
+    /// Check if this permit is in use.
+    pub fn is_in_use(&self) -> bool {
+        matches!(self, AnyPermit::InUse(_))
+    }
+}
+
+// =============================================================================
+// IdleToken
+// =============================================================================
+
+/// Token proving a permit has been marked idle.
+///
+/// This is returned when transitioning to idle and proves the permit
+/// will return to the pool on drop.
+#[must_use = "IdleToken should be held until the permit is ready to return to pool"]
+pub struct IdleToken {
+    pub(crate) slot_id: SlotId,
+}
+
+impl IdleToken {
+    /// Get the slot ID this token is for.
+    pub fn slot_id(&self) -> SlotId {
+        self.slot_id
+    }
+}
+
+// =============================================================================
+// PermitError
+// =============================================================================
 
 /// Errors from permit operations.
 #[derive(Debug, Clone, thiserror::Error)]
@@ -203,6 +268,10 @@ pub enum PermitError {
     #[error("Failed to send on slot socket: {0}")]
     Send(String),
 }
+
+// =============================================================================
+// PermitPool
+// =============================================================================
 
 /// Pool of prediction slot permits.
 ///
@@ -260,11 +329,11 @@ impl PermitPool {
     /// Try to acquire a permit without blocking.
     ///
     /// Returns `None` if no permits available.
-    pub fn try_acquire(&self) -> Option<Permit> {
+    pub fn try_acquire(&self) -> Option<PermitInUse> {
         let mut rx = self.available_rx.try_lock().ok()?;
         let inner = rx.try_recv().ok()?;
         self.available_count.fetch_sub(1, Ordering::Release);
-        Some(Permit::new(
+        Some(PermitInUse::new(
             inner,
             self.available_tx.clone(),
             Arc::clone(&self.available_count),
@@ -272,11 +341,11 @@ impl PermitPool {
     }
 
     /// Acquire a permit, waiting if none available.
-    pub async fn acquire(&self) -> Option<Permit> {
+    pub async fn acquire(&self) -> Option<PermitInUse> {
         let mut rx = self.available_rx.lock().await;
         let inner = rx.recv().await?;
         self.available_count.fetch_sub(1, Ordering::Release);
-        Some(Permit::new(
+        Some(PermitInUse::new(
             inner,
             self.available_tx.clone(),
             Arc::clone(&self.available_count),
@@ -343,10 +412,10 @@ mod tests {
         pool.add_permit(slot, FramedWrite::new(write, JsonCodec::new()));
 
         {
-            let mut permit = pool.try_acquire().unwrap();
-            // Mark idle via into_idle()
-            let _token = permit.into_idle();
-            // Drop permit
+            let permit = pool.try_acquire().unwrap();
+            // Transition to idle (consumes permit, returns PermitIdle)
+            let _idle_permit = permit.into_idle();
+            // Drop idle permit - returns to pool
         }
 
         // Should be available again
@@ -355,7 +424,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn permit_orphaned_when_not_idle() {
+    async fn permit_orphaned_when_poisoned() {
         let pool = PermitPool::new(1);
 
         let (write, _read) = make_socket_pair().await;
@@ -365,9 +434,9 @@ mod tests {
 
         {
             let permit = pool.try_acquire().unwrap();
-            // Don't mark idle - simulates poisoned slot
-            assert!(!permit.is_idle());
-            // Drop permit
+            // Transition to poisoned (consumes permit, returns PermitPoisoned)
+            let _poisoned_permit = permit.into_poisoned();
+            // Drop poisoned permit - orphaned, NOT returned to pool
         }
 
         // Should NOT be available (orphaned)
