@@ -5,3 +5,44 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# Async runtime
+tokio.workspace = true
+tokio-util = { workspace = true, features = ["codec"] }
+futures.workspace = true
+async-trait = "0.1"
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Identifiers
+uuid.workspace = true
+
+# HTTP server
+axum.workspace = true
+
+# HTTP client (webhooks)
+reqwest.workspace = true
+ureq = { version = "3", features = ["json"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Concurrent collections
+dashmap = "6"
+
+# Observability
+tracing.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", features = ["signal"] }
+
+[dev-dependencies]
+insta.workspace = true
+wiremock = "0.6"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
