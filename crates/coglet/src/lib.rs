@@ -7,6 +7,7 @@ mod supervisor;
 mod version;
 
 pub mod bridge;
+pub mod orchestrator;
 pub mod permit;
 pub mod webhook;
 
