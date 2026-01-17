@@ -143,7 +143,7 @@ fn serve(
                 .with_health(Health::Unknown)
                 .with_version(version),
         );
-        return py.allow_threads(|| {
+        return py.detach(|| {
             let rt = tokio::runtime::Runtime::new()
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
             rt.block_on(async {
@@ -179,7 +179,7 @@ fn serve_subprocess(
     );
 
     let service_clone = Arc::clone(&service);
-    py.allow_threads(|| {
+    py.detach(|| {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
@@ -244,7 +244,7 @@ fn _run_worker(py: Python<'_>) -> PyResult<()> {
 
     info!(target: "coglet::worker", "Worker subprocess starting, waiting for Init message");
 
-    py.allow_threads(|| {
+    py.detach(|| {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 

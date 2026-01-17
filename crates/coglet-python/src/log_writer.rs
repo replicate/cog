@@ -41,7 +41,7 @@ static PREDICTION_REGISTRY: OnceLock<Mutex<HashMap<String, Arc<SlotSender>>>> = 
 
 /// Current sync prediction ID.
 /// For sync predictions (single slot, blocking), there's exactly one active prediction.
-/// ContextVars don't work across separate Python::with_gil calls, so we use this.
+/// ContextVars don't work across separate Python::attach calls, so we use this.
 /// Protected by mutex since it's accessed from Python callbacks.
 static SYNC_PREDICTION_ID: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
