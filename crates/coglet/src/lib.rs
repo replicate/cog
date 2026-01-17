@@ -10,6 +10,7 @@ pub mod bridge;
 pub mod orchestrator;
 pub mod permit;
 pub mod service;
+pub mod transport;
 pub mod webhook;
 
 pub use supervisor::{PredictionHandle, PredictionState, PredictionSupervisor, SyncPredictionGuard};
