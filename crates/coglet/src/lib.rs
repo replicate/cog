@@ -3,11 +3,14 @@
 mod health;
 mod prediction;
 mod predictor;
+mod supervisor;
 mod version;
 
 pub mod bridge;
 pub mod permit;
 pub mod webhook;
+
+pub use supervisor::{PredictionHandle, PredictionState, PredictionSupervisor, SyncPredictionGuard};
 
 pub use health::{Health, SetupResult, SetupStatus};
 pub use prediction::{CancellationToken, Prediction, PredictionOutput, PredictionStatus};
