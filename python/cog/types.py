@@ -380,7 +380,14 @@ class URLFile(io.IOBase):
         except AttributeError:
             pass
         url = object.__getattribute__(self, "__url__")
-        resp = requests.get(url, stream=True, timeout=10)
+
+        headers = {}
+        ua = os.getenv("COG_USER_AGENT")
+        if ua:
+            headers["User-Agent"] = ua
+
+        resp = requests.get(url, stream=True, timeout=10,headers=headers)
+        
         resp.raise_for_status()
         resp.raw.decode_content = True
         object.__setattr__(self, "__target__", resp.raw)
