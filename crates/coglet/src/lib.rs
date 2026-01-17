@@ -7,6 +7,7 @@ mod version;
 
 pub mod bridge;
 pub mod permit;
+pub mod webhook;
 
 pub use health::{Health, SetupResult, SetupStatus};
 pub use prediction::{CancellationToken, Prediction, PredictionOutput, PredictionStatus};
