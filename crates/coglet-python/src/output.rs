@@ -10,8 +10,6 @@
 //! - `make_encodeable()` normalizes output for JSON serialization
 //! - `upload_files()` converts Path/file objects to URLs
 
-#![allow(dead_code)] // Building block - integrated after worker_bridge expansion
-
 use pyo3::prelude::*;
 
 /// Process prediction output for JSON serialization.

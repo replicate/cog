@@ -15,8 +15,6 @@
 //! should use the public API (e.g., `cog.current_prediction_id()`) which we'll
 //! inject onto the cog namespace later.
 
-#![allow(dead_code)] // Building block - integrated when worker_bridge uses it
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -514,6 +512,7 @@ impl PredictionLogGuard {
     }
 
     /// Get the prediction ID.
+    #[allow(dead_code)]
     pub fn prediction_id(&self) -> &str {
         &self.prediction_id
     }
