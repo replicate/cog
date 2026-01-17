@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = ["coglet"]
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/replicate/cog"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+futures = "0.3"
+
+# HTTP server
+axum = "0.8"
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Identifiers
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Testing
+insta = { version = "1", features = ["json"] }
