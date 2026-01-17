@@ -33,6 +33,7 @@ impl PredictionStatus {
 
 /// Prediction output - single value or streamed chunks.
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(untagged)]
 pub enum PredictionOutput {
     Single(serde_json::Value),
     Stream(Vec<serde_json::Value>),
