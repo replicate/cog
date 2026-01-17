@@ -8,6 +8,7 @@
 use std::sync::{Arc, Mutex};
 
 use super::{AnyPermit, IdleToken, PermitInUse};
+use crate::bridge::protocol::SlotId;
 use crate::prediction::Prediction;
 
 /// Holds a prediction and its permit side-by-side.
@@ -20,6 +21,8 @@ use crate::prediction::Prediction;
 pub struct PredictionSlot {
     /// The prediction being processed.
     prediction: Arc<Mutex<Prediction>>,
+    /// Slot ID - stored separately so it's always available even during permit transitions.
+    slot_id: SlotId,
     /// The permit granting access to the slot (in any state).
     permit: Option<AnyPermit>,
 }
@@ -27,8 +30,10 @@ pub struct PredictionSlot {
 impl PredictionSlot {
     /// Create a new prediction slot.
     pub fn new(prediction: Prediction, permit: PermitInUse) -> Self {
+        let slot_id = permit.slot_id();
         Self {
             prediction: Arc::new(Mutex::new(prediction)),
+            slot_id,
             permit: Some(AnyPermit::InUse(permit)),
         }
     }
@@ -49,11 +54,8 @@ impl PredictionSlot {
     }
 
     /// Get the slot ID.
-    pub fn slot_id(&self) -> crate::bridge::protocol::SlotId {
-        self.permit
-            .as_ref()
-            .map(|p| p.slot_id())
-            .unwrap_or_default()
+    pub fn slot_id(&self) -> SlotId {
+        self.slot_id
     }
 
     /// Mark the slot as idle, allowing permit to return to pool on drop.
@@ -88,14 +90,18 @@ impl PredictionSlot {
     ///
     /// The permit will NOT return to the pool on drop.
     /// Also fails the prediction if it's not already terminal.
+    ///
+    /// # Panics
+    /// Panics if the permit is Idle. Idle permits have already completed their
+    /// prediction successfully - they should not be poisoned. This indicates
+    /// a logic error in the caller.
     pub fn into_poisoned(&mut self) {
         // Fail the prediction if not already terminal
         if let Ok(mut prediction) = self.prediction.try_lock()
             && !prediction.is_terminal()
         {
-            let slot_id = self.slot_id();
             tracing::warn!(
-                slot = %slot_id,
+                slot = %self.slot_id,
                 prediction_id = %prediction.id(),
                 "Slot poisoned - failing non-terminal prediction"
             );
@@ -107,17 +113,16 @@ impl PredictionSlot {
             AnyPermit::InUse(p) => {
                 self.permit = Some(AnyPermit::Poisoned(p.into_poisoned()));
             }
-            AnyPermit::Idle(p) => {
-                // Unusual but handle it - warn and transition
-                tracing::warn!(slot = %p.slot_id(), "Marking idle slot as poisoned");
-                // We need to handle Idle -> Poisoned, which requires extracting the inner
-                // For now, just drop the idle permit (it will return to pool) and mark as poisoned
-                // Actually, Idle permit doesn't have into_poisoned... we'll just leave it
-                // This case shouldn't happen in practice
-                self.permit = Some(AnyPermit::Idle(p));
+            AnyPermit::Idle(_) => {
+                // Idle permits have completed successfully - poisoning them is a logic error.
+                // The slot would return to pool on drop, but we're trying to poison it.
+                panic!(
+                    "Cannot poison idle slot {} - prediction already completed successfully",
+                    self.slot_id
+                );
             }
             AnyPermit::Poisoned(p) => {
-                // Already poisoned
+                // Already poisoned - idempotent
                 self.permit = Some(AnyPermit::Poisoned(p));
             }
         }
