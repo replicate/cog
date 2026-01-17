@@ -1,7 +1,10 @@
 //! coglet-python: PyO3 bindings for coglet.
 
+mod audit;
 mod cancel;
+mod input;
 mod log_writer;
+mod output;
 mod predictor;
 mod worker_bridge;
 
