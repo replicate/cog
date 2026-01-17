@@ -1,0 +1,9 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "log",
+  "source": "stdout",
+  "data": "Processing..."
+}
