@@ -4,6 +4,7 @@ import (
 	// blank import for embeds
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -152,7 +153,7 @@ func cudaVersionFromTorchPlusVersion(ver string) (string, string) {
 
 func cudasFromTorch(ver string) ([]string, error) {
 	if ver == "" {
-		return nil, fmt.Errorf(
+		return nil, errors.New(
 			"torch version must be specified when using CUDA",
 		)
 	}
@@ -263,7 +264,7 @@ func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 		}
 	}
 	if len(images) == 0 {
-		return "", fmt.Errorf("No matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
+		return "", fmt.Errorf("no matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
 	}
 
 	sort.Slice(images, func(i, j int) bool {
