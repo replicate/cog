@@ -224,7 +224,12 @@ fn download_url_paths_into_dict(
     let mut all_futures: Vec<Bound<'_, PyAny>> = Vec::new();
 
     for (key, is_list) in &url_path_keys {
-        let value = payload.get_item(key)?.unwrap();
+        let value = payload.get_item(key)?.ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!(
+                "Input key '{}' disappeared during processing",
+                key
+            ))
+        })?;
 
         if *is_list {
             let list = value.extract::<Bound<'_, pyo3::types::PyList>>()?;
