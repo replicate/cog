@@ -7,7 +7,7 @@ use std::thread::JoinHandle;
 use pyo3::prelude::*;
 
 use coglet_core::bridge::protocol::SlotId;
-use coglet_core::worker::{PredictHandler, PredictResult, SlotSender};
+use coglet_core::worker::{PredictHandler, PredictResult, SetupError, SlotSender};
 
 use crate::predictor::PythonPredictor;
 
@@ -192,19 +192,16 @@ impl PythonPredictHandler {
 
 #[async_trait::async_trait]
 impl PredictHandler for PythonPredictHandler {
-    async fn setup(&self) -> Result<(), String> {
-        // Load and setup predictor
-        // This runs in the worker subprocess, so we own Python
+    async fn setup(&self) -> Result<(), SetupError> {
         Python::attach(|py| {
             tracing::info!(predictor_ref = %self.predictor_ref, "Loading predictor");
 
             let pred = PythonPredictor::load(py, &self.predictor_ref)
-                .map_err(|e| format!("Failed to load predictor: {}", e))?;
+                .map_err(|e| SetupError::load(e.to_string()))?;
 
             tracing::info!("Running setup");
-            pred.setup(py).map_err(|e| format!("Setup failed: {}", e))?;
+            pred.setup(py).map_err(|e| SetupError::setup(e.to_string()))?;
 
-            // Store predictor for later use
             let mut guard = self.predictor.lock().unwrap();
             *guard = Some(Arc::new(pred));
 
