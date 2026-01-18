@@ -125,9 +125,20 @@ pub fn get_prediction_contextvar(py: Python<'_>) -> PyResult<&'static Py<PyAny>>
     let contextvars = py.import("contextvars")?;
     let cv = contextvars.call_method1("ContextVar", ("_coglet_prediction_id",))?;
 
-    // Try to store it. Race is fine - worst case we create an extra that gets dropped.
-    let _ = PREDICTION_CONTEXTVAR.set(cv.unbind());
-    Ok(PREDICTION_CONTEXTVAR.get().unwrap())
+    // Try to store it. Race is fine - if another thread won, use their value.
+    match PREDICTION_CONTEXTVAR.set(cv.unbind()) {
+        Ok(()) => {}
+        Err(_already_set) => {
+            // Another thread initialized it first - that's fine
+        }
+    }
+
+    // This should always succeed now - either we set it or another thread did.
+    PREDICTION_CONTEXTVAR.get().ok_or_else(|| {
+        pyo3::exceptions::PyRuntimeError::new_err(
+            "Failed to initialize prediction context variable"
+        )
+    })
 }
 
 /// Register a SlotSender for a prediction ID.
