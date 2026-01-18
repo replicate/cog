@@ -53,14 +53,11 @@ jobs:
         run: mise run test:rust
 
   # coglet-python checks (requires Python + maturin build)
+  # Builds once with ABI3 (works across Python 3.8+)
   coglet-python:
-    name: coglet-python (${{ matrix.python-version }})
+    name: coglet-python
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
@@ -73,10 +70,7 @@ jobs:
 
       - uses: jdx/mise-action@v2
 
-      - name: Set Python version
-        run: echo "UV_PYTHON=${{ matrix.python-version }}" >> $GITHUB_ENV
-
-      - name: Build coglet wheel
+      - name: Build coglet wheel (ABI3)
         run: mise run build:coglet
 
       - name: Check stubs are up to date
@@ -94,8 +88,12 @@ jobs:
     steps:
       - name: Check job results
         run: |
-          if [[ "${{ needs.rust.result }}" != "success" ]] || [[ "${{ needs.coglet-python.result }}" != "success" ]]; then
-            echo "One or more jobs failed"
+          if [[ "${{ needs.rust.result }}" != "success" ]]; then
+            echo "Rust checks failed"
+            exit 1
+          fi
+          if [[ "${{ needs.coglet-python.result }}" != "success" ]]; then
+            echo "coglet-python checks failed"
             exit 1
           fi
           echo "All Rust CI checks passed!"

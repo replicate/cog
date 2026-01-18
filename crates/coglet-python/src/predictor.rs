@@ -153,9 +153,8 @@ impl PythonPredictor {
         };
 
         // Detect runtime and create input processor
-        let runtime = input::detect_runtime(py, predictor_ref, &instance).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
-        })?;
+        let runtime = input::detect_runtime(py, predictor_ref, &instance)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         let input_processor = input::create_input_processor(&runtime);
 
         Ok(Self {
@@ -339,11 +338,7 @@ impl PythonPredictor {
     /// Call predict() with the given input dict, returning raw Python output.
     ///
     /// For standalone functions (is_standalone_function=true), calls the function directly.
-    pub fn predict_raw(
-        &self,
-        py: Python<'_>,
-        input: &Bound<'_, PyDict>,
-    ) -> PyResult<PyObject> {
+    pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PyObject> {
         // For standalone functions, use empty method_name to call directly
         let method_name = if self.is_standalone_function {
             ""
@@ -357,11 +352,7 @@ impl PythonPredictor {
     ///
     /// For standalone train functions (is_standalone_function=true), calls the function directly.
     /// For Predictor classes with a train() method, calls instance.train().
-    pub fn train_raw(
-        &self,
-        py: Python<'_>,
-        input: &Bound<'_, PyDict>,
-    ) -> PyResult<PyObject> {
+    pub fn train_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PyObject> {
         // For standalone functions, use empty method_name to call directly
         // and use is_async (the function's async status) instead of is_train_async
         let (method_name, is_async) = if self.is_standalone_function {
@@ -563,9 +554,9 @@ impl PythonPredictor {
         json_module: &Bound<'_, PyAny>,
     ) -> Result<PredictionOutput, PredictionError> {
         let mut outputs = Vec::new();
-        let iter = result.try_iter().map_err(|e| {
-            PredictionError::Failed(format!("Failed to iterate generator: {}", e))
-        })?;
+        let iter = result
+            .try_iter()
+            .map_err(|e| PredictionError::Failed(format!("Failed to iterate generator: {}", e)))?;
 
         for item in iter {
             let item = item.map_err(|e| {
@@ -606,15 +597,16 @@ impl PythonPredictor {
         result: &Bound<'_, PyAny>,
         json_module: &Bound<'_, PyAny>,
     ) -> Result<PredictionOutput, PredictionError> {
-        let processed = output::process_output(py, result, None).map_err(|e| {
-            PredictionError::Failed(format!("Failed to process output: {}", e))
-        })?;
+        let processed = output::process_output(py, result, None)
+            .map_err(|e| PredictionError::Failed(format!("Failed to process output: {}", e)))?;
 
         let result_str: String = json_module
             .call_method1("dumps", (&processed,))
             .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
             .extract()
-            .map_err(|e| PredictionError::Failed(format!("Failed to extract output string: {}", e)))?;
+            .map_err(|e| {
+                PredictionError::Failed(format!("Failed to extract output string: {}", e))
+            })?;
 
         let output_json: serde_json::Value = serde_json::from_str(&result_str)
             .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
@@ -711,9 +703,9 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
             let builtins = py.import("builtins").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import builtins: {}", e))
             })?;
-            let exec_fn = builtins.getattr("exec").map_err(|e| {
-                PredictionError::Failed(format!("Failed to get exec: {}", e))
-            })?;
+            let exec_fn = builtins
+                .getattr("exec")
+                .map_err(|e| PredictionError::Failed(format!("Failed to get exec: {}", e)))?;
             let globals = PyDict::new(py);
             exec_fn.call1((wrap_code, &globals)).map_err(|e| {
                 PredictionError::Failed(format!("Failed to define context wrapper: {}", e))
@@ -739,7 +731,10 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
 
             // Submit wrapped coroutine to shared event loop via run_coroutine_threadsafe
             let future = asyncio
-                .call_method1("run_coroutine_threadsafe", (&wrapped_coro, event_loop.bind(py)))
+                .call_method1(
+                    "run_coroutine_threadsafe",
+                    (&wrapped_coro, event_loop.bind(py)),
+                )
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to submit coroutine: {}", e))
                 })?;
@@ -862,9 +857,9 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
             let builtins = py.import("builtins").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import builtins: {}", e))
             })?;
-            let exec_fn = builtins.getattr("exec").map_err(|e| {
-                PredictionError::Failed(format!("Failed to get exec: {}", e))
-            })?;
+            let exec_fn = builtins
+                .getattr("exec")
+                .map_err(|e| PredictionError::Failed(format!("Failed to get exec: {}", e)))?;
             let globals = PyDict::new(py);
             exec_fn.call1((wrap_code, &globals)).map_err(|e| {
                 PredictionError::Failed(format!("Failed to define context wrapper: {}", e))
@@ -890,7 +885,10 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
 
             // Submit wrapped coroutine to shared event loop
             let future = asyncio
-                .call_method1("run_coroutine_threadsafe", (&wrapped_coro, event_loop.bind(py)))
+                .call_method1(
+                    "run_coroutine_threadsafe",
+                    (&wrapped_coro, event_loop.bind(py)),
+                )
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to submit coroutine: {}", e))
                 })?;

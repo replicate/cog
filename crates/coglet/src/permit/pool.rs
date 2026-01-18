@@ -1,11 +1,11 @@
 //! Permit pool implementation with typestate for compile-time state transition safety.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use futures::SinkExt;
 use tokio::net::unix::OwnedWriteHalf;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tokio_util::codec::FramedWrite;
 
 use crate::bridge::codec::JsonCodec;

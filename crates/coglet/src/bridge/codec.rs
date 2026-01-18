@@ -6,7 +6,7 @@
 use std::io;
 use std::marker::PhantomData;
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::bytes::{Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 

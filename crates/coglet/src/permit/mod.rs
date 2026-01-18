@@ -8,5 +8,7 @@
 mod pool;
 mod slot;
 
-pub use pool::{AnyPermit, IdleToken, PermitError, PermitIdle, PermitInUse, PermitPoisoned, PermitPool};
+pub use pool::{
+    AnyPermit, IdleToken, PermitError, PermitIdle, PermitInUse, PermitPoisoned, PermitPool,
+};
 pub use slot::PredictionSlot;
