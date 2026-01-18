@@ -14,6 +14,8 @@ pub mod transport;
 pub mod webhook;
 pub mod worker;
 
+pub use orchestrator::Orchestrator;
+
 pub use supervisor::{PredictionHandle, PredictionState, PredictionSupervisor, SyncPredictionGuard};
 
 pub use health::{Health, SetupResult, SetupStatus};
