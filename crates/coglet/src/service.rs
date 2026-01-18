@@ -263,12 +263,15 @@ impl PredictionService {
             )));
         }
 
-        // Get notifier before waiting so we don't miss completion
-        let completion = {
+        // Wait for prediction to complete
+        // Check if already terminal first to avoid race with fast completions
+        let (already_terminal, completion) = {
             let pred = prediction_arc.lock().unwrap();
-            pred.completion()
+            (pred.is_terminal(), pred.completion())
         };
-        completion.notified().await;
+        if !already_terminal {
+            completion.notified().await;
+        }
 
         let (status, output, error, logs, predict_time, slot_poisoned) = {
             let pred = prediction_arc.lock().unwrap();
@@ -327,6 +330,69 @@ impl PredictionService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use crate::bridge::protocol::SlotId;
+
+    /// Mock orchestrator that immediately completes predictions.
+    struct MockOrchestrator {
+        register_count: AtomicUsize,
+        complete_immediately: bool,
+    }
+
+    impl MockOrchestrator {
+        fn new() -> Self {
+            Self {
+                register_count: AtomicUsize::new(0),
+                complete_immediately: true,
+            }
+        }
+
+        fn register_count(&self) -> usize {
+            self.register_count.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Orchestrator for MockOrchestrator {
+        async fn register_prediction(
+            &self,
+            _slot_id: SlotId,
+            prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
+        ) {
+            self.register_count.fetch_add(1, Ordering::SeqCst);
+            if self.complete_immediately {
+                let mut pred = prediction.lock().unwrap();
+                pred.set_succeeded(crate::PredictionOutput::Single(serde_json::json!("mock result")));
+            }
+        }
+    }
+
+    async fn create_test_pool(num_slots: usize) -> Arc<PermitPool> {
+        use futures::StreamExt;
+        use tokio::net::UnixStream;
+        use crate::bridge::codec::JsonCodec;
+        use crate::bridge::protocol::SlotRequest;
+
+        let pool = Arc::new(PermitPool::new(num_slots));
+        for _ in 0..num_slots {
+            let (a, b) = UnixStream::pair().unwrap();
+            let (_read_a, write_a) = a.into_split();
+            let (read_b, _write_b) = b.into_split();
+
+            // Spawn a task to consume messages from the socket (prevents broken pipe)
+            let mut reader = tokio_util::codec::FramedRead::new(
+                read_b,
+                JsonCodec::<SlotRequest>::new(),
+            );
+            tokio::spawn(async move {
+                while reader.next().await.is_some() {}
+            });
+
+            let writer = tokio_util::codec::FramedWrite::new(write_a, JsonCodec::<SlotRequest>::new());
+            pool.add_permit(SlotId::new(), writer);
+        }
+        pool
+    }
 
     #[tokio::test]
     async fn service_new_no_pool_works() {
@@ -379,5 +445,96 @@ mod tests {
         // set_health also ignores READY without orchestrator
         svc.set_health(Health::Ready).await;
         assert_eq!(svc.health().await.state, Health::Unknown);
+    }
+
+    #[tokio::test]
+    async fn set_orchestrator_enables_ready_health() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(2).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        assert!(svc.has_orchestrator().await);
+
+        // Now we can set READY
+        svc.set_health(Health::Ready).await;
+        let health = svc.health().await;
+        assert_eq!(health.state, Health::Ready);
+        assert_eq!(health.total_slots, 2);
+        assert_eq!(health.available_slots, 2);
+    }
+
+    #[tokio::test]
+    async fn create_prediction_succeeds_when_ready() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let slot = svc.create_prediction("test-1".to_string(), None).await;
+        assert!(slot.is_ok());
+
+        let slot = slot.unwrap();
+        assert_eq!(slot.id(), "test-1");
+    }
+
+    #[tokio::test]
+    async fn create_prediction_returns_at_capacity_when_no_slots() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        // First prediction takes the only slot
+        let _slot1 = svc.create_prediction("test-1".to_string(), None).await.unwrap();
+
+        // Second should fail with AtCapacity
+        let result = svc.create_prediction("test-2".to_string(), None).await;
+        assert!(matches!(result, Err(CreatePredictionError::AtCapacity)));
+    }
+
+    #[tokio::test]
+    async fn predict_calls_orchestrator_register() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+        let orch_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let mut slot = svc.create_prediction("test-1".to_string(), None).await.unwrap();
+        let input = serde_json::json!({"prompt": "hello"});
+
+        let result = svc.predict(&mut slot, input).await;
+
+        // MockOrchestrator completes immediately with success
+        assert!(result.is_ok(), "predict failed: {:?}", result.err());
+        assert_eq!(orch_ref.register_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn health_shows_busy_when_all_slots_used() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        // Before acquiring slot
+        let health = svc.health().await;
+        assert!(!health.is_busy());
+        assert_eq!(health.available_slots, 1);
+
+        // After acquiring slot
+        let _slot = svc.create_prediction("test-1".to_string(), None).await.unwrap();
+        let health = svc.health().await;
+        assert!(health.is_busy());
+        assert_eq!(health.available_slots, 0);
     }
 }

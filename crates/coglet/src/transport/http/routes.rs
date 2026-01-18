@@ -604,4 +604,326 @@ mod tests {
         assert_eq!(json["openapi"], "3.0.2");
         assert_eq!(json["info"]["title"], "Cog");
     }
+
+    // --- Tests with MockOrchestrator for full prediction flow ---
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex as StdMutex;
+    use crate::bridge::protocol::SlotId;
+    use crate::orchestrator::Orchestrator;
+    use crate::permit::PermitPool;
+    use crate::PredictionOutput;
+
+    /// Mock orchestrator that immediately completes predictions.
+    struct MockOrchestrator {
+        register_count: AtomicUsize,
+        complete_immediately: bool,
+    }
+
+    impl MockOrchestrator {
+        fn new() -> Self {
+            Self {
+                register_count: AtomicUsize::new(0),
+                complete_immediately: true,
+            }
+        }
+
+        /// Create a mock that never completes predictions (for capacity tests).
+        fn never_complete() -> Self {
+            Self {
+                register_count: AtomicUsize::new(0),
+                complete_immediately: false,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Orchestrator for MockOrchestrator {
+        async fn register_prediction(
+            &self,
+            _slot_id: SlotId,
+            prediction: Arc<StdMutex<crate::prediction::Prediction>>,
+        ) {
+            self.register_count.fetch_add(1, Ordering::SeqCst);
+            if self.complete_immediately {
+                let mut pred = prediction.lock().unwrap();
+                pred.set_succeeded(PredictionOutput::Single(serde_json::json!("mock output")));
+            }
+        }
+    }
+
+    async fn create_test_pool(num_slots: usize) -> Arc<PermitPool> {
+        use futures::StreamExt;
+        use tokio::net::UnixStream;
+        use crate::bridge::codec::JsonCodec;
+        use crate::bridge::protocol::SlotRequest;
+
+        let pool = Arc::new(PermitPool::new(num_slots));
+        for _ in 0..num_slots {
+            let (a, b) = UnixStream::pair().unwrap();
+            let (_read_a, write_a) = a.into_split();
+            let (read_b, _write_b) = b.into_split();
+
+            // Spawn a task to consume messages from the socket (prevents broken pipe)
+            let mut reader = tokio_util::codec::FramedRead::new(
+                read_b,
+                JsonCodec::<SlotRequest>::new(),
+            );
+            tokio::spawn(async move {
+                while reader.next().await.is_some() {}
+            });
+
+            let writer = tokio_util::codec::FramedWrite::new(write_a, JsonCodec::<SlotRequest>::new());
+            pool.add_permit(SlotId::new(), writer);
+        }
+        pool
+    }
+
+    async fn create_ready_service() -> Arc<PredictionService> {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(2).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+        service
+    }
+
+    #[tokio::test]
+    async fn health_check_ready_with_orchestrator() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(Request::get("/health-check").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "READY");
+    }
+
+    #[tokio::test]
+    async fn prediction_sync_success() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{"prompt":"hello"}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "succeeded");
+        assert_eq!(json["output"], "mock output");
+        assert!(json["id"].is_string());
+    }
+
+    #[tokio::test]
+    async fn prediction_async_returns_accepted() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .header("prefer", "respond-async")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "starting");
+    }
+
+    #[tokio::test]
+    async fn prediction_with_custom_id() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"id":"my-pred-123","input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = response_json(response).await;
+        assert_eq!(json["id"], "my-pred-123");
+        assert_eq!(json["status"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn prediction_idempotent_put() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/predictions/idempotent-123")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = response_json(response).await;
+        assert_eq!(json["id"], "idempotent-123");
+        assert_eq!(json["status"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn prediction_idempotent_id_mismatch() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/predictions/url-id")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"id":"body-id","input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let json = response_json(response).await;
+        assert!(json["detail"][0]["msg"].as_str().unwrap().contains("must match"));
+    }
+
+    #[tokio::test]
+    async fn prediction_at_capacity() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await; // Only 1 slot
+        // Use never_complete so the first prediction holds the slot
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        // Use async mode so first request doesn't block
+        let app = routes(Arc::clone(&service));
+        let _resp1 = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .header("prefer", "respond-async")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Small delay to let async task acquire the slot
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        // Second request should get 409 Conflict (at capacity)
+        let app2 = routes(service);
+        let response = app2
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let json = response_json(response).await;
+        assert!(json["error"].as_str().unwrap().contains("capacity"));
+    }
+
+    #[tokio::test]
+    async fn health_check_busy_when_at_capacity() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        // Use never_complete so the prediction holds the slot
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        // Use async to hold the slot
+        let app = routes(Arc::clone(&service));
+        let _resp = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .header("prefer", "respond-async")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        // Health should show BUSY
+        let app2 = routes(service);
+        let response = app2
+            .oneshot(Request::get("/health-check").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "BUSY");
+    }
+
+    #[tokio::test]
+    async fn training_routes_work() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/trainings")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn shutdown_triggers_service_shutdown() {
+        let service = create_ready_service().await;
+        let mut rx = service.shutdown_rx();
+        let app = routes(service);
+
+        assert!(!*rx.borrow());
+
+        let response = app
+            .oneshot(
+                Request::post("/shutdown")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        rx.changed().await.unwrap();
+        assert!(*rx.borrow());
+    }
 }
