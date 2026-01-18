@@ -1,0 +1,101 @@
+name: Rust
+
+on:
+  merge_group:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust.yaml"
+  pull_request:
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust.yaml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+permissions: {}
+
+jobs:
+  # Pure Rust checks (no Python needed)
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+
+      - uses: jdx/mise-action@v2
+
+      - name: Check formatting
+        run: mise run fmt:rust:check
+
+      - name: Clippy
+        run: mise run clippy
+
+      - name: Run tests
+        run: mise run test:rust
+
+  # coglet-python checks (requires Python + maturin build)
+  coglet-python:
+    name: coglet-python (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+
+      - uses: jdx/mise-action@v2
+
+      - name: Set Python version
+        run: echo "UV_PYTHON=${{ matrix.python-version }}" >> $GITHUB_ENV
+
+      - name: Build coglet wheel
+        run: mise run build:coglet
+
+      - name: Check stubs are up to date
+        run: mise run stubs:check
+
+      - name: Type-check stubs
+        run: mise run stubs:typecheck
+
+  # Summary job for branch protection
+  rust-ci:
+    name: Rust CI
+    needs: [rust, coglet-python]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check job results
+        run: |
+          if [[ "${{ needs.rust.result }}" != "success" ]] || [[ "${{ needs.coglet-python.result }}" != "success" ]]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
+          echo "All Rust CI checks passed!"
