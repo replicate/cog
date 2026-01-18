@@ -14,7 +14,7 @@ use tokio::sync::{RwLock, watch};
 
 use crate::bridge::protocol::SlotRequest;
 use crate::health::{Health, SetupResult};
-use crate::orchestrator::OrchestratorHandle;
+use crate::orchestrator::Orchestrator;
 use crate::permit::{PermitPool, PredictionSlot};
 use crate::prediction::{Prediction, PredictionStatus};
 use crate::predictor::{PredictionError, PredictionOutput, PredictionResult};
@@ -72,13 +72,21 @@ pub struct PredictionService {
     schema: RwLock<Option<serde_json::Value>>,
 }
 
-/// Orchestrator runtime state - pool and handle together.
+/// Orchestrator runtime state - pool and orchestrator together.
 ///
 /// Ensures pool and orchestrator are always set atomically.
-#[derive(Clone)]
 pub struct OrchestratorState {
     pub pool: Arc<PermitPool>,
-    pub handle: Arc<OrchestratorHandle>,
+    pub orchestrator: Arc<dyn Orchestrator>,
+}
+
+impl Clone for OrchestratorState {
+    fn clone(&self) -> Self {
+        Self {
+            pool: Arc::clone(&self.pool),
+            orchestrator: Arc::clone(&self.orchestrator),
+        }
+    }
 }
 
 impl PredictionService {
@@ -100,8 +108,8 @@ impl PredictionService {
     }
 
     /// Configure orchestrator mode atomically.
-    pub async fn set_orchestrator(&self, pool: Arc<PermitPool>, handle: Arc<OrchestratorHandle>) {
-        *self.orchestrator.write().await = Some(OrchestratorState { pool, handle });
+    pub async fn set_orchestrator(&self, pool: Arc<PermitPool>, orchestrator: Arc<dyn Orchestrator>) {
+        *self.orchestrator.write().await = Some(OrchestratorState { pool, orchestrator });
     }
 
     pub async fn has_orchestrator(&self) -> bool {
@@ -230,7 +238,7 @@ impl PredictionService {
         // Register for response routing in event loop
         let prediction_arc = slot.prediction();
         state
-            .handle
+            .orchestrator
             .register_prediction(slot_id, Arc::clone(&prediction_arc))
             .await;
 

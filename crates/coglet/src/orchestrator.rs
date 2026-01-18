@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use futures::{SinkExt, StreamExt};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
@@ -24,6 +25,17 @@ use crate::bridge::transport::create_transport;
 use crate::permit::PermitPool;
 use crate::prediction::Prediction;
 use crate::PredictionOutput;
+
+/// Trait for prediction registration with the orchestrator.
+///
+/// This abstraction enables testing the service layer without a real worker subprocess.
+/// The service only needs to register predictions for response routing - all other
+/// orchestrator operations happen outside the predict path.
+#[async_trait]
+pub trait Orchestrator: Send + Sync {
+    /// Register a prediction for response routing in the event loop.
+    async fn register_prediction(&self, slot_id: SlotId, prediction: Arc<StdMutex<Prediction>>);
+}
 
 #[derive(Debug, Clone)]
 pub struct WorkerSpawnConfig {
@@ -119,15 +131,14 @@ pub struct OrchestratorHandle {
     slot_ids: Vec<SlotId>,
 }
 
-impl OrchestratorHandle {
-    pub async fn register_prediction(
-        &self,
-        slot_id: SlotId,
-        prediction: Arc<StdMutex<Prediction>>,
-    ) {
+#[async_trait]
+impl Orchestrator for OrchestratorHandle {
+    async fn register_prediction(&self, slot_id: SlotId, prediction: Arc<StdMutex<Prediction>>) {
         let _ = self.register_tx.send((slot_id, prediction)).await;
     }
+}
 
+impl OrchestratorHandle {
     pub async fn cancel(&self, slot_id: SlotId) -> Result<(), OrchestratorError> {
         let mut writer = self.ctrl_writer.lock().await;
         writer
