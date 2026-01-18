@@ -26,6 +26,25 @@ use crate::permit::PermitPool;
 use crate::prediction::Prediction;
 use crate::PredictionOutput;
 
+/// Try to lock a prediction mutex.
+/// On poison: logs error, recovers to fail the prediction, returns None.
+/// Caller should remove the prediction from tracking if None is returned.
+fn try_lock_prediction(
+    pred: &Arc<StdMutex<Prediction>>,
+) -> Option<std::sync::MutexGuard<'_, Prediction>> {
+    match pred.lock() {
+        Ok(guard) => Some(guard),
+        Err(poisoned) => {
+            tracing::error!("Prediction mutex poisoned - failing prediction");
+            let mut guard = poisoned.into_inner();
+            if !guard.is_terminal() {
+                guard.set_failed("Internal error: mutex poisoned".to_string());
+            }
+            None
+        }
+    }
+}
+
 /// Trait for prediction registration with the orchestrator.
 ///
 /// This abstraction enables testing the service layer without a real worker subprocess.
@@ -199,8 +218,14 @@ pub async fn spawn_worker(config: OrchestratorConfig) -> Result<OrchestratorRead
         .spawn(&spawn_config)
         .map_err(|e| OrchestratorError::Spawn(format!("spawner failed: {}", e)))?;
 
-    let stdin = child.stdin.take().expect("stdin not captured");
-    let stdout = child.stdout.take().expect("stdout not captured");
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| OrchestratorError::Spawn("stdin not captured".to_string()))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| OrchestratorError::Spawn("stdout not captured".to_string()))?;
 
     let mut ctrl_writer = FramedWrite::new(stdin, JsonCodec::<ControlRequest>::new());
     let mut ctrl_reader = FramedRead::new(stdout, JsonCodec::<ControlResponse>::new());
@@ -362,8 +387,9 @@ async fn run_event_loop(
                     }
                     Some(Ok(ControlResponse::Failed { slot, error })) => {
                         tracing::warn!(%slot, %error, "Slot poisoned");
-                        if let Some(pred) = predictions.remove(&slot) {
-                            let mut p = pred.lock().unwrap();
+                        if let Some(pred) = predictions.remove(&slot)
+                            && let Some(mut p) = try_lock_prediction(&pred)
+                        {
                             p.set_slot_poisoned();
                             if !p.is_terminal() {
                                 p.set_failed(error);
@@ -388,8 +414,9 @@ async fn run_event_loop(
                         tracing::warn!("Control channel closed (worker crashed?)");
                         for (slot, pred) in predictions.drain() {
                             tracing::warn!(%slot, "Failing prediction due to worker crash");
-                            let mut p = pred.lock().unwrap();
-                            p.set_failed("Worker crashed".to_string());
+                            if let Some(mut p) = try_lock_prediction(&pred) {
+                                p.set_failed("Worker crashed".to_string());
+                            }
                         }
                         break;
                     }
@@ -397,7 +424,14 @@ async fn run_event_loop(
             }
 
             Some((slot_id, prediction)) = register_rx.recv() => {
-                let prediction_id = prediction.lock().unwrap().id().to_string();
+                let prediction_id = match try_lock_prediction(&prediction) {
+                    Some(p) => p.id().to_string(),
+                    None => {
+                        // Mutex poisoned during registration - prediction already failed
+                        tracing::error!(%slot_id, "Prediction mutex poisoned during registration");
+                        continue;
+                    }
+                };
                 tracing::info!(
                     target: "coglet::prediction",
                     %prediction_id,
@@ -410,13 +444,20 @@ async fn run_event_loop(
             Some((slot_id, result)) = slot_msg_rx.recv() => {
                 match result {
                     Ok(SlotResponse::Log { source, data }) => {
-                        let prediction_id = if let Some(pred) = predictions.get(&slot_id) {
-                            let mut p = pred.lock().unwrap();
-                            p.append_log(&data);
-                            Some(p.id().to_string())
+                        let (prediction_id, poisoned) = if let Some(pred) = predictions.get(&slot_id) {
+                            if let Some(mut p) = try_lock_prediction(pred) {
+                                p.append_log(&data);
+                                (Some(p.id().to_string()), false)
+                            } else {
+                                (None, true)
+                            }
                         } else {
-                            None
+                            (None, false)
                         };
+                        // Remove poisoned predictions outside the borrow
+                        if poisoned {
+                            predictions.remove(&slot_id);
+                        }
 
                         let trimmed = data.trim();
                         if !trimmed.is_empty() {
@@ -440,9 +481,19 @@ async fn run_event_loop(
                         }
                     }
                     Ok(SlotResponse::Output { output }) => {
-                        if let Some(pred) = predictions.get(&slot_id) {
-                            let mut p = pred.lock().unwrap();
-                            p.append_output(output);
+                        let poisoned = if let Some(pred) = predictions.get(&slot_id) {
+                            if let Some(mut p) = try_lock_prediction(pred) {
+                                p.append_output(output);
+                                false
+                            } else {
+                                true
+                            }
+                        } else {
+                            false
+                        };
+                        // Remove poisoned predictions outside the borrow
+                        if poisoned {
+                            predictions.remove(&slot_id);
                         }
                     }
                     Ok(SlotResponse::Done { id, output, predict_time }) => {
@@ -453,11 +504,13 @@ async fn run_event_loop(
                             "Prediction succeeded"
                         );
                         if let Some(pred) = predictions.remove(&slot_id) {
-                            let mut p = pred.lock().unwrap();
-                            let pred_output = output
-                                .map(PredictionOutput::Single)
-                                .unwrap_or(PredictionOutput::Single(serde_json::Value::Null));
-                            p.set_succeeded(pred_output);
+                            if let Some(mut p) = try_lock_prediction(&pred) {
+                                let pred_output = output
+                                    .map(PredictionOutput::Single)
+                                    .unwrap_or(PredictionOutput::Single(serde_json::Value::Null));
+                                p.set_succeeded(pred_output);
+                            }
+                            // On mutex poison, prediction already failed - nothing more to do
                         } else {
                             tracing::warn!(%slot_id, %id, "Prediction not found for Done message");
                         }
@@ -469,8 +522,9 @@ async fn run_event_loop(
                             %error,
                             "Prediction failed"
                         );
-                        if let Some(pred) = predictions.remove(&slot_id) {
-                            let mut p = pred.lock().unwrap();
+                        if let Some(pred) = predictions.remove(&slot_id)
+                            && let Some(mut p) = try_lock_prediction(&pred)
+                        {
                             p.set_failed(error);
                         }
                     }
@@ -480,15 +534,17 @@ async fn run_event_loop(
                             prediction_id = %id,
                             "Prediction cancelled"
                         );
-                        if let Some(pred) = predictions.remove(&slot_id) {
-                            let mut p = pred.lock().unwrap();
+                        if let Some(pred) = predictions.remove(&slot_id)
+                            && let Some(mut p) = try_lock_prediction(&pred)
+                        {
                             p.set_canceled();
                         }
                     }
                     Err(e) => {
                         tracing::error!(%slot_id, error = %e, "Slot socket error");
-                        if let Some(pred) = predictions.remove(&slot_id) {
-                            let mut p = pred.lock().unwrap();
+                        if let Some(pred) = predictions.remove(&slot_id)
+                            && let Some(mut p) = try_lock_prediction(&pred)
+                        {
                             p.set_failed(format!("Slot socket error: {}", e));
                         }
                     }
