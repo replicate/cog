@@ -505,23 +505,6 @@ mod tests {
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
-    use crate::bridge::codec::JsonCodec;
-    use crate::bridge::protocol::SlotId;
-    use crate::permit::PermitPool;
-    use crate::predictor::{PredictionOutput, PredictionResult};
-    use tokio::net::UnixStream;
-    use tokio_util::codec::FramedWrite;
-
-    async fn make_test_pool(n: usize) -> Arc<PermitPool> {
-        let pool = Arc::new(PermitPool::new(n));
-        for _ in 0..n {
-            let (a, _b) = UnixStream::pair().unwrap();
-            let (_, write) = a.into_split();
-            pool.add_permit(SlotId::new(), FramedWrite::new(write, JsonCodec::new()));
-        }
-        pool
-    }
-
     async fn response_json(response: axum::response::Response) -> serde_json::Value {
         let body = response.into_body();
         let bytes = body.collect().await.unwrap().to_bytes();
@@ -530,8 +513,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_check_returns_status_and_version() {
-        let pool = make_test_pool(1).await;
-        let service = Arc::new(PredictionService::new(pool).with_health(Health::Ready));
+        let service = Arc::new(PredictionService::new_no_pool().with_health(Health::Starting));
         let app = routes(service);
 
         let response = app
@@ -542,14 +524,13 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
 
         let json = response_json(response).await;
-        assert_eq!(json["status"], "READY");
+        assert_eq!(json["status"], "STARTING");
         assert!(json["version"]["coglet"].is_string());
     }
 
     #[tokio::test]
     async fn health_check_unknown_when_no_predictor() {
-        let pool = make_test_pool(1).await;
-        let service = Arc::new(PredictionService::new(pool));
+        let service = Arc::new(PredictionService::new_no_pool());
         let app = routes(service);
 
         let response = app
@@ -562,30 +543,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn health_check_returns_busy_when_at_capacity() {
-        let pool = make_test_pool(1).await;
-        let service = Arc::new(PredictionService::new(pool).with_health(Health::Ready));
-
-        let _pred = service
-            .create_prediction("busy".to_string(), None)
-            .await
-            .unwrap();
-
-        let app = routes(Arc::clone(&service));
-
-        let response = app
-            .oneshot(Request::get("/health-check").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        let json = response_json(response).await;
-        assert_eq!(json["status"], "BUSY");
-    }
-
-    #[tokio::test]
     async fn predictions_returns_503_when_not_ready() {
-        let pool = make_test_pool(1).await;
-        let service = Arc::new(PredictionService::new(pool));
+        let service = Arc::new(PredictionService::new_no_pool());
         let app = routes(service);
 
         let response = app
@@ -605,102 +564,11 @@ mod tests {
         assert!(json["error"].as_str().unwrap().contains("not ready"));
     }
 
-    #[tokio::test]
-    async fn predictions_returns_503_when_no_predictor_loaded() {
-        let pool = make_test_pool(1).await;
-        let service = Arc::new(PredictionService::new(pool).with_health(Health::Ready));
-        let app = routes(service);
 
-        let response = app
-            .oneshot(
-                Request::post("/predictions")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"input":{}}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-
-        let json = response_json(response).await;
-        assert_eq!(json["status"], "failed");
-        assert!(json["error"].as_str().unwrap().contains("not ready"));
-    }
-
-    #[tokio::test]
-    async fn predictions_success_with_sync_predictor() {
-        let pool = make_test_pool(1).await;
-        let service = Arc::new(
-            PredictionService::new(pool)
-                .with_health(Health::Ready)
-                .with_predict_fn(Arc::new(|input| {
-                    let name = input["name"].as_str().unwrap_or("world");
-                    Ok(PredictionResult {
-                        output: PredictionOutput::Single(serde_json::json!(format!(
-                            "Hello, {}!",
-                            name
-                        ))),
-                        predict_time: None,
-                        logs: String::new(),
-                    })
-                })),
-        );
-        let app = routes(service);
-
-        let response = app
-            .oneshot(
-                Request::post("/predictions")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"input":{"name":"test"}}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let json = response_json(response).await;
-        assert_eq!(json["status"], "succeeded");
-        assert_eq!(json["output"], "Hello, test!");
-        assert!(json["metrics"]["predict_time"].is_number());
-    }
-
-    #[tokio::test]
-    async fn predictions_returns_error_on_invalid_input() {
-        let pool = make_test_pool(1).await;
-        let service = Arc::new(
-            PredictionService::new(pool)
-                .with_health(Health::Ready)
-                .with_predict_fn(Arc::new(|_| {
-                    Err(PredictionError::InvalidInput(
-                        "missing required field".to_string(),
-                    ))
-                })),
-        );
-        let app = routes(service);
-
-        let response = app
-            .oneshot(
-                Request::post("/predictions")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"input":{}}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-
-        let json = response_json(response).await;
-        assert_eq!(json["status"], "failed");
-        assert!(json["error"].as_str().unwrap().contains("missing required"));
-    }
 
     #[tokio::test]
     async fn openapi_returns_503_when_schema_not_available() {
-        let pool = make_test_pool(1).await;
-        let service = Arc::new(PredictionService::new(pool));
+        let service = Arc::new(PredictionService::new_no_pool());
         let app = routes(service);
 
         let response = app
@@ -716,8 +584,7 @@ mod tests {
 
     #[tokio::test]
     async fn openapi_returns_schema_when_available() {
-        let pool = make_test_pool(1).await;
-        let service = Arc::new(PredictionService::new(pool));
+        let service = Arc::new(PredictionService::new_no_pool());
         service
             .set_schema(serde_json::json!({
                 "openapi": "3.0.2",

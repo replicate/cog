@@ -17,9 +17,7 @@ use crate::health::{Health, SetupResult};
 use crate::orchestrator::OrchestratorHandle;
 use crate::permit::{PermitPool, PredictionSlot};
 use crate::prediction::{Prediction, PredictionStatus};
-use crate::predictor::{
-    AsyncPredictFn, PredictFn, PredictionError, PredictionOutput, PredictionResult,
-};
+use crate::predictor::{PredictionError, PredictionOutput, PredictionResult};
 use crate::supervisor::PredictionSupervisor;
 use crate::version::VersionInfo;
 use crate::webhook::WebhookSender;
@@ -47,7 +45,7 @@ impl HealthSnapshot {
         self.state == Health::Ready
     }
 
-    /// BUSY state: ready but no slots available.
+    /// BUSY state: ready but all slots in use.
     pub fn is_busy(&self) -> bool {
         self.state == Health::Ready && self.available_slots == 0
     }
@@ -55,19 +53,11 @@ impl HealthSnapshot {
 
 /// Transport-agnostic prediction service.
 ///
-/// Two creation modes:
-/// - `new(pool)`: Legacy mode with pre-created pool (for testing)
-/// - `new_no_pool()` + `set_orchestrator()`: Late configuration for early HTTP start
+/// Created with `new_no_pool()`, then configured with `set_orchestrator()` once
+/// the worker subprocess is ready.
 pub struct PredictionService {
-    predict_fn: Option<Arc<PredictFn>>,
-    async_predict_fn: Option<Arc<AsyncPredictFn>>,
-
     /// Orchestrator state (pool + handle together).
-    /// Using a single field makes invalid states (pool without handle) impossible.
     orchestrator: RwLock<Option<OrchestratorState>>,
-
-    /// Legacy pool (non-orchestrator mode, for testing).
-    legacy_pool: RwLock<Option<Arc<PermitPool>>>,
 
     health: RwLock<Health>,
     setup_result: RwLock<Option<SetupResult>>,
@@ -92,34 +82,13 @@ pub struct OrchestratorState {
 }
 
 impl PredictionService {
-    /// Create with a permit pool (legacy/test mode).
-    pub fn new(pool: Arc<PermitPool>) -> Self {
-        let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        Self {
-            predict_fn: None,
-            async_predict_fn: None,
-            orchestrator: RwLock::new(None),
-            legacy_pool: RwLock::new(Some(pool)),
-            health: RwLock::new(Health::Unknown),
-            setup_result: RwLock::new(None),
-            supervisor: PredictionSupervisor::new(),
-            shutdown_tx,
-            shutdown_rx,
-            version: VersionInfo::new(),
-            schema: RwLock::new(None),
-        }
-    }
-
     /// Create without configuration (for early HTTP start).
     ///
-    /// Serves 503 until `set_orchestrator()` is called.
+    /// Health check returns STARTING until `set_orchestrator()` is called.
     pub fn new_no_pool() -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
-            predict_fn: None,
-            async_predict_fn: None,
             orchestrator: RwLock::new(None),
-            legacy_pool: RwLock::new(None),
             health: RwLock::new(Health::Unknown),
             setup_result: RwLock::new(None),
             supervisor: PredictionSupervisor::new(),
@@ -143,18 +112,14 @@ impl PredictionService {
         &self.supervisor
     }
 
-    pub fn with_predict_fn(mut self, f: Arc<PredictFn>) -> Self {
-        self.predict_fn = Some(f);
-        self
-    }
-
-    pub fn with_async_predict_fn(mut self, f: Arc<AsyncPredictFn>) -> Self {
-        self.async_predict_fn = Some(f);
-        self
-    }
-
+    /// Set initial health state (for non-Ready states only).
+    ///
+    /// READY requires an orchestrator, so use `set_health()` after `set_orchestrator()`.
+    /// Silently ignores attempts to set READY here.
     pub fn with_health(mut self, health: Health) -> Self {
-        self.health = RwLock::new(health);
+        if health != Health::Ready {
+            self.health = RwLock::new(health);
+        }
         self
     }
 
@@ -163,16 +128,12 @@ impl PredictionService {
         self
     }
 
-    pub fn is_async(&self) -> bool {
-        self.async_predict_fn.is_some()
-    }
-
-    /// Get the permit pool (from orchestrator or legacy mode).
+    /// Get the permit pool from orchestrator.
     pub async fn pool(&self) -> Option<Arc<PermitPool>> {
-        if let Some(ref config) = *self.orchestrator.read().await {
-            Some(Arc::clone(&config.pool))
+        if let Some(ref state) = *self.orchestrator.read().await {
+            Some(Arc::clone(&state.pool))
         } else {
-            self.legacy_pool.read().await.clone()
+            None
         }
     }
 
@@ -194,7 +155,14 @@ impl PredictionService {
         }
     }
 
+    /// Set health state. Setting READY requires orchestrator to be configured.
+    ///
+    /// Silently ignores attempts to set READY without orchestrator.
     pub async fn set_health(&self, health: Health) {
+        if health == Health::Ready && self.orchestrator.read().await.is_none() {
+            tracing::warn!("Attempted to set READY without orchestrator, ignoring");
+            return;
+        }
         *self.health.write().await = health;
     }
 
@@ -239,30 +207,17 @@ impl PredictionService {
         self.supervisor.exists(id)
     }
 
-    /// Run a prediction to completion.
-    ///
-    /// Routes through orchestrator (slot socket) or legacy predict functions.
+    /// Run a prediction to completion via orchestrator.
     pub async fn predict(
         &self,
         slot: &mut PredictionSlot,
         input: serde_json::Value,
     ) -> Result<PredictionResult, PredictionError> {
-        let config = self.orchestrator.read().await.clone();
+        let state = self.orchestrator.read().await.clone();
+        let state = state.ok_or_else(|| {
+            PredictionError::Failed("No orchestrator configured".to_string())
+        })?;
 
-        if let Some(config) = config {
-            self.predict_via_orchestrator(slot, input, &config.handle)
-                .await
-        } else {
-            self.predict_via_function(slot, input).await
-        }
-    }
-
-    async fn predict_via_orchestrator(
-        &self,
-        slot: &mut PredictionSlot,
-        input: serde_json::Value,
-        orchestrator: &Arc<OrchestratorHandle>,
-    ) -> Result<PredictionResult, PredictionError> {
         let prediction_id = slot.id();
         let slot_id = slot.slot_id();
 
@@ -274,7 +229,8 @@ impl PredictionService {
 
         // Register for response routing in event loop
         let prediction_arc = slot.prediction();
-        orchestrator
+        state
+            .handle
             .register_prediction(slot_id, Arc::clone(&prediction_arc))
             .await;
 
@@ -341,45 +297,6 @@ impl PredictionService {
         }
     }
 
-    async fn predict_via_function(
-        &self,
-        slot: &mut PredictionSlot,
-        input: serde_json::Value,
-    ) -> Result<PredictionResult, PredictionError> {
-        {
-            let prediction = slot.prediction();
-            let mut pred = prediction.lock().unwrap();
-            pred.set_processing();
-        }
-
-        let result = if let Some(ref async_fn) = self.async_predict_fn {
-            let f = Arc::clone(async_fn);
-            f(input).await
-        } else if let Some(ref sync_fn) = self.predict_fn {
-            let f = Arc::clone(sync_fn);
-            tokio::task::spawn_blocking(move || f(input))
-                .await
-                .map_err(|e| PredictionError::Failed(format!("Task panicked: {}", e)))?
-        } else {
-            return Err(PredictionError::NotReady);
-        };
-
-        {
-            let prediction = slot.prediction();
-            let mut pred = prediction.lock().unwrap();
-            match &result {
-                Ok(r) => pred.set_succeeded(r.output.clone()),
-                Err(PredictionError::Cancelled) => pred.set_canceled(),
-                Err(e) => pred.set_failed(e.to_string()),
-            }
-        }
-
-        // Return permit to pool
-        let _idle_token = slot.into_idle();
-
-        result
-    }
-
     /// Cancel a prediction by ID. Returns true if found and cancelled.
     pub fn cancel(&self, id: &str) -> bool {
         self.supervisor.cancel(id)
@@ -402,282 +319,6 @@ impl PredictionService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bridge::codec::JsonCodec;
-    use crate::bridge::protocol::SlotId;
-    use crate::prediction::PredictionStatus;
-    use crate::predictor::PredictionOutput;
-    use serde_json::json;
-    use tokio::net::UnixStream;
-    use tokio_util::codec::FramedWrite;
-
-    async fn make_test_pool(n: usize) -> Arc<PermitPool> {
-        let pool = Arc::new(PermitPool::new(n));
-        for _ in 0..n {
-            let (a, _b) = UnixStream::pair().unwrap();
-            let (_, write) = a.into_split();
-            pool.add_permit(SlotId::new(), FramedWrite::new(write, JsonCodec::new()));
-        }
-        pool
-    }
-
-    #[tokio::test]
-    async fn service_new_defaults() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool);
-        let health = svc.health().await;
-
-        assert_eq!(health.state, Health::Unknown);
-        assert_eq!(health.total_slots, 1);
-        assert!(!svc.is_async());
-    }
-
-    #[tokio::test]
-    async fn service_with_builders() {
-        let pool = make_test_pool(4).await;
-        let svc = PredictionService::new(pool)
-            .with_health(Health::Ready)
-            .with_predict_fn(Arc::new(|_| {
-                Ok(PredictionResult {
-                    output: PredictionOutput::Single(json!("test")),
-                    predict_time: None,
-                    logs: String::new(),
-                })
-            }));
-
-        let health = svc.health().await;
-        assert_eq!(health.state, Health::Ready);
-        assert_eq!(health.total_slots, 4);
-        assert!(!svc.is_async());
-    }
-
-    #[tokio::test]
-    async fn service_is_async_with_async_fn() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool).with_async_predict_fn(Arc::new(|_| {
-            Box::pin(async {
-                Ok(PredictionResult {
-                    output: PredictionOutput::Single(json!("test")),
-                    predict_time: None,
-                    logs: String::new(),
-                })
-            })
-        }));
-
-        assert!(svc.is_async());
-    }
-
-    #[tokio::test]
-    async fn create_prediction_fails_when_not_ready() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool);
-
-        let result = svc.create_prediction("test".to_string(), None).await;
-        assert!(matches!(result, Err(CreatePredictionError::NotReady)));
-    }
-
-    #[tokio::test]
-    async fn create_prediction_succeeds_when_ready() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool).with_health(Health::Ready);
-
-        let result = svc.create_prediction("test".to_string(), None).await;
-        assert!(result.is_ok());
-
-        let slot = result.unwrap();
-        let prediction = slot.prediction();
-        let pred = prediction.lock().unwrap();
-        assert_eq!(pred.id(), "test");
-        assert_eq!(pred.status(), PredictionStatus::Starting);
-    }
-
-    #[tokio::test]
-    async fn create_prediction_fails_at_capacity() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool).with_health(Health::Ready);
-
-        let _slot1 = svc.create_prediction("p1".to_string(), None).await.unwrap();
-
-        let result = svc.create_prediction("p2".to_string(), None).await;
-        assert!(matches!(result, Err(CreatePredictionError::AtCapacity)));
-    }
-
-    #[tokio::test]
-    async fn supervisor_detects_duplicate_id() {
-        let pool = make_test_pool(2).await;
-        let svc = PredictionService::new(pool).with_health(Health::Ready);
-
-        let _handle = svc.supervisor().submit("same_id".to_string(), json!({}), None);
-        assert!(svc.supervisor().exists("same_id"));
-
-        // Service doesn't block duplicate - caller (routes) should check supervisor first
-        let _slot1 = svc
-            .create_prediction("same_id".to_string(), None)
-            .await
-            .unwrap();
-
-        // Real duplicate detection happens at route level via supervisor.get_state()
-        let _slot2 = svc
-            .create_prediction("same_id".to_string(), None)
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn prediction_exists_works() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool).with_health(Health::Ready);
-
-        assert!(!svc.prediction_exists("test"));
-
-        let _handle = svc.supervisor().submit("test".to_string(), json!({}), None);
-
-        let _slot = svc
-            .create_prediction("test".to_string(), None)
-            .await
-            .unwrap();
-        assert!(svc.prediction_exists("test"));
-    }
-
-    #[tokio::test]
-    async fn cancel_prediction_works() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool).with_health(Health::Ready);
-
-        let _handle = svc.supervisor().submit("test".to_string(), json!({}), None);
-
-        let _slot = svc
-            .create_prediction("test".to_string(), None)
-            .await
-            .unwrap();
-
-        assert!(svc.cancel("test"));
-
-        let state = svc.supervisor().get_state("test");
-        assert!(state.is_some());
-        // cancel() triggers the token but doesn't update supervisor status directly;
-        // the actual status update happens when the prediction flow detects cancellation
-
-        assert!(!svc.cancel("nonexistent"));
-    }
-
-    #[tokio::test]
-    async fn predict_with_sync_fn() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool)
-            .with_health(Health::Ready)
-            .with_predict_fn(Arc::new(|input| {
-                let name = input["name"].as_str().unwrap_or("world");
-                Ok(PredictionResult {
-                    output: PredictionOutput::Single(json!(format!("Hello, {}!", name))),
-                    predict_time: None,
-                    logs: String::new(),
-                })
-            }));
-
-        let mut slot = svc
-            .create_prediction("test".to_string(), None)
-            .await
-            .unwrap();
-        let result = svc.predict(&mut slot, json!({"name": "Rust"})).await;
-
-        assert!(result.is_ok());
-        let r = result.unwrap();
-        assert_eq!(r.output.final_value(), &json!("Hello, Rust!"));
-
-        let prediction = slot.prediction();
-        let pred = prediction.lock().unwrap();
-        assert_eq!(pred.status(), PredictionStatus::Succeeded);
-    }
-
-    #[tokio::test]
-    async fn predict_with_async_fn() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool)
-            .with_health(Health::Ready)
-            .with_async_predict_fn(Arc::new(|input| {
-                Box::pin(async move {
-                    let x = input["x"].as_i64().unwrap_or(0);
-                    Ok(PredictionResult {
-                        output: PredictionOutput::Single(json!(x * 2)),
-                        predict_time: None,
-                        logs: String::new(),
-                    })
-                })
-            }));
-
-        let mut slot = svc
-            .create_prediction("test".to_string(), None)
-            .await
-            .unwrap();
-        let result = svc.predict(&mut slot, json!({"x": 21})).await;
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().output.final_value(), &json!(42));
-    }
-
-    #[tokio::test]
-    async fn predict_sets_failed_status_on_error() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool)
-            .with_health(Health::Ready)
-            .with_predict_fn(Arc::new(|_| {
-                Err(PredictionError::Failed("oops".to_string()))
-            }));
-
-        let mut slot = svc
-            .create_prediction("test".to_string(), None)
-            .await
-            .unwrap();
-        let result = svc.predict(&mut slot, json!({})).await;
-
-        assert!(result.is_err());
-
-        let prediction = slot.prediction();
-        let pred = prediction.lock().unwrap();
-        assert_eq!(pred.status(), PredictionStatus::Failed);
-    }
-
-    #[tokio::test]
-    async fn shutdown_signal_works() {
-        let pool = make_test_pool(1).await;
-        let svc = PredictionService::new(pool);
-        let mut rx = svc.shutdown_rx();
-
-        assert!(!*rx.borrow());
-
-        svc.trigger_shutdown();
-        rx.changed().await.unwrap();
-
-        assert!(*rx.borrow());
-    }
-
-    #[tokio::test]
-    async fn slot_returns_permit_after_predict() {
-        let pool = make_test_pool(1).await;
-        let pool_ref = Arc::clone(&pool);
-        let svc = PredictionService::new(pool)
-            .with_health(Health::Ready)
-            .with_predict_fn(Arc::new(|_| {
-                Ok(PredictionResult {
-                    output: PredictionOutput::Single(json!("done")),
-                    predict_time: None,
-                    logs: String::new(),
-                })
-            }));
-
-        {
-            let mut slot = svc
-                .create_prediction("test".to_string(), None)
-                .await
-                .unwrap();
-
-            assert!(pool_ref.try_acquire().is_none());
-
-            let _ = svc.predict(&mut slot, json!({})).await;
-        }
-
-        assert!(pool_ref.try_acquire().is_some());
-    }
 
     #[tokio::test]
     async fn service_new_no_pool_works() {
@@ -699,14 +340,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn service_legacy_pool_works() {
-        let pool = make_test_pool(2).await;
-        let svc = PredictionService::new(pool);
+    async fn shutdown_signal_works() {
+        let svc = PredictionService::new_no_pool();
+        let mut rx = svc.shutdown_rx();
 
-        let p = svc.pool().await;
-        assert!(p.is_some());
-        assert_eq!(p.unwrap().num_slots(), 2);
+        assert!(!*rx.borrow());
 
-        assert!(!svc.has_orchestrator().await);
+        svc.trigger_shutdown();
+        rx.changed().await.unwrap();
+
+        assert!(*rx.borrow());
+    }
+
+    #[tokio::test]
+    async fn create_prediction_fails_when_not_ready() {
+        let svc = PredictionService::new_no_pool();
+
+        let result = svc.create_prediction("test".to_string(), None).await;
+        assert!(matches!(result, Err(CreatePredictionError::NotReady)));
+    }
+
+    #[tokio::test]
+    async fn cannot_set_ready_without_orchestrator() {
+        let svc = PredictionService::new_no_pool();
+
+        // with_health silently ignores READY
+        let svc2 = PredictionService::new_no_pool().with_health(Health::Ready);
+        assert_eq!(svc2.health().await.state, Health::Unknown);
+
+        // set_health also ignores READY without orchestrator
+        svc.set_health(Health::Ready).await;
+        assert_eq!(svc.health().await.state, Health::Unknown);
     }
 }

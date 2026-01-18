@@ -102,10 +102,6 @@ Central coordination point. Owns:
 - PermitPool or Orchestrator reference
 - PredictionSupervisor for state tracking
 
-Two modes:
-- **Legacy mode**: Direct predict functions (testing)
-- **Orchestrator mode**: Routes through worker subprocess
-
 ```rust
 let service = PredictionService::new_no_pool()
     .with_health(Health::Starting)

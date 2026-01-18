@@ -18,10 +18,7 @@ pub use supervisor::{PredictionHandle, PredictionState, PredictionSupervisor, Sy
 
 pub use health::{Health, SetupResult, SetupStatus};
 pub use prediction::{CancellationToken, Prediction, PredictionOutput, PredictionStatus};
-pub use predictor::{
-    AsyncPredictFn, PredictFn, PredictFuture, PredictionError, PredictionGuard, PredictionMetrics,
-    PredictionResult,
-};
+pub use predictor::{PredictionError, PredictionGuard, PredictionMetrics, PredictionResult};
 pub use version::{VersionInfo, COGLET_VERSION};
 pub use worker::{PredictHandler, PredictResult, SetupError, SetupLogHook, SlotSender, WorkerConfig, run_worker};
 pub use service::{CreatePredictionError, HealthSnapshot, PredictionService};
