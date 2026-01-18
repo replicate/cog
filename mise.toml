@@ -73,7 +73,7 @@ maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.to
 # Rust test tasks
 [tasks."test:rust"]
 description = "Run Rust tests with nextest (excludes coglet-python)"
-run = "cargo nextest run --manifest-path crates/Cargo.toml --no-tests=pass"
+run = "cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude coglet-python --no-tests=pass"
 
 [tasks."test:coglet-python"]
 description = "Run coglet-python Python tests (builds coglet first)"
@@ -96,3 +96,46 @@ run = "cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
 [tasks.deny]
 description = "Check licenses and advisories with cargo-deny"
 run = "cargo deny --manifest-path crates/Cargo.toml check"
+
+# Stub generation for coglet-python
+[tasks."stubs:generate"]
+description = "Generate type stubs for coglet-python (requires build:coglet first)"
+depends = ["build:coglet"]
+run = "python crates/coglet-python/scripts/generate_stubs.py -o crates/coglet-python/coglet.pyi"
+
+[tasks."stubs:check"]
+description = "Check that coglet-python stubs are up to date"
+depends = ["build:coglet"]
+run = "python crates/coglet-python/scripts/generate_stubs.py --check"
+
+[tasks."stubs:typecheck"]
+description = "Type-check coglet stubs with ty"
+run = "ty check crates/coglet-python/coglet.pyi"
+
+# CI-oriented tasks
+[tasks."ci:rust"]
+description = "Run all Rust CI checks (fmt, clippy, test)"
+run = """
+#!/usr/bin/env bash
+set -e
+echo "==> Checking Rust formatting..."
+cargo fmt --manifest-path crates/Cargo.toml --all -- --check
+echo "==> Running clippy..."
+cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
+echo "==> Running tests (excluding coglet-python which requires Python)..."
+cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude coglet-python --no-tests=pass
+echo "==> All Rust CI checks passed!"
+"""
+
+[tasks."ci:coglet"]
+description = "Run all coglet CI checks (build, stubs, typecheck)"
+depends = ["build:coglet"]
+run = """
+#!/usr/bin/env bash
+set -e
+echo "==> Checking stubs are up to date..."
+python crates/coglet-python/scripts/generate_stubs.py --check
+echo "==> Type-checking stubs..."
+ty check crates/coglet-python/coglet.pyi
+echo "==> All coglet CI checks passed!"
+"""
