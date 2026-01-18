@@ -286,9 +286,9 @@ impl PredictionService {
         };
 
         if slot_poisoned {
-            slot.into_poisoned();
+            let _ = slot.into_poisoned();
         } else {
-            let _idle_token = slot.into_idle();
+            let _ = slot.into_idle();
         }
 
         match status {

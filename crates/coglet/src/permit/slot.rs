@@ -45,24 +45,27 @@ impl PredictionSlot {
 
     /// Mark the slot as idle - permit will return to pool on drop.
     ///
-    /// # Panics
-    /// Panics if permit is poisoned.
-    pub fn into_idle(&mut self) -> IdleToken {
-        let permit = self.permit.take().expect("permit already consumed");
+    /// Returns `None` if the slot is poisoned or permit was already consumed (bug).
+    pub fn into_idle(&mut self) -> Option<IdleToken> {
+        let permit = self.permit.take()?;
         match permit {
             AnyPermit::InUse(p) => {
                 let slot_id = p.slot_id();
                 let idle = p.into_idle();
                 self.permit = Some(AnyPermit::Idle(idle));
-                IdleToken { slot_id }
+                Some(IdleToken { slot_id })
             }
             AnyPermit::Idle(p) => {
                 let slot_id = p.slot_id();
                 self.permit = Some(AnyPermit::Idle(p));
-                IdleToken { slot_id }
+                Some(IdleToken { slot_id })
             }
-            AnyPermit::Poisoned(_) => {
-                panic!("Cannot mark poisoned slot as idle");
+            AnyPermit::Poisoned(p) => {
+                // Bug: caller tried to mark poisoned slot as idle
+                debug_assert!(false, "Cannot mark poisoned slot as idle");
+                tracing::error!(slot = %p.slot_id(), "Bug: attempted to mark poisoned slot as idle");
+                self.permit = Some(AnyPermit::Poisoned(p));
+                None
             }
         }
     }
@@ -71,9 +74,9 @@ impl PredictionSlot {
     ///
     /// Also fails the prediction if not already terminal.
     ///
-    /// # Panics
-    /// Panics if permit is idle (completed successfully, should not be poisoned).
-    pub fn into_poisoned(&mut self) {
+    /// Returns `false` if the slot is idle (completed successfully) or permit was already consumed.
+    /// These are bugs in the caller that should be fixed.
+    pub fn into_poisoned(&mut self) -> bool {
         if let Ok(mut prediction) = self.prediction.try_lock()
             && !prediction.is_terminal()
         {
@@ -85,19 +88,32 @@ impl PredictionSlot {
             prediction.set_failed("Slot poisoned".to_string());
         }
 
-        let permit = self.permit.take().expect("permit already consumed");
+        let Some(permit) = self.permit.take() else {
+            // Bug: permit already consumed
+            debug_assert!(false, "permit already consumed");
+            tracing::error!(slot = %self.slot_id, "Bug: into_poisoned called with consumed permit");
+            return false;
+        };
+
         match permit {
             AnyPermit::InUse(p) => {
                 self.permit = Some(AnyPermit::Poisoned(p.into_poisoned()));
+                true
             }
-            AnyPermit::Idle(_) => {
-                panic!(
-                    "Cannot poison idle slot {} - prediction already completed",
-                    self.slot_id
+            AnyPermit::Idle(p) => {
+                // Bug: caller tried to poison an already-completed slot
+                debug_assert!(false, "Cannot poison idle slot - prediction already completed");
+                tracing::error!(
+                    slot = %p.slot_id(),
+                    "Bug: attempted to poison idle slot (prediction already completed)"
                 );
+                self.permit = Some(AnyPermit::Idle(p));
+                false
             }
             AnyPermit::Poisoned(p) => {
+                // Already poisoned, no-op
                 self.permit = Some(AnyPermit::Poisoned(p));
+                true
             }
         }
     }
@@ -181,7 +197,7 @@ mod tests {
             let prediction = Prediction::new("test_123".to_string(), None);
             let mut slot = PredictionSlot::new(prediction, permit);
 
-            let _token = slot.into_idle();
+            let _token = slot.into_idle().expect("slot should transition to idle");
         }
 
         assert!(pool.try_acquire().is_some());
