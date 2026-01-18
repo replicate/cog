@@ -64,11 +64,44 @@ impl SlotSender {
     }
 }
 
+/// Setup phase errors.
+///
+/// These errors occur during predictor loading and setup, before predictions
+/// can run. They affect health status (SETUP_FAILED) rather than HTTP status.
+#[derive(Debug, thiserror::Error)]
+pub enum SetupError {
+    /// Failed to import or instantiate the predictor class.
+    #[error("failed to load predictor: {message}")]
+    Load { message: String },
+
+    /// The setup() method raised an exception.
+    #[error("setup failed: {message}")]
+    Setup { message: String },
+
+    /// Internal error (e.g., GIL acquisition failed).
+    #[error("internal error: {message}")]
+    Internal { message: String },
+}
+
+impl SetupError {
+    pub fn load(message: impl Into<String>) -> Self {
+        Self::Load { message: message.into() }
+    }
+
+    pub fn setup(message: impl Into<String>) -> Self {
+        Self::Setup { message: message.into() }
+    }
+
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::Internal { message: message.into() }
+    }
+}
+
 /// Trait for the prediction handler - abstracts the Python integration.
 #[async_trait::async_trait]
 pub trait PredictHandler: Send + Sync + 'static {
     /// Initialize the predictor (load model, run setup).
-    async fn setup(&self) -> Result<(), String>;
+    async fn setup(&self) -> Result<(), SetupError>;
 
     /// Run a prediction.
     async fn predict(
