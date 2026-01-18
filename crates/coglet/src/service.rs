@@ -8,7 +8,7 @@
 //! Prediction lifecycle (state, cancellation, webhooks) is managed by PredictionSupervisor.
 //! Transports (HTTP, gRPC, etc.) delegate to this service for prediction handling.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio::sync::{RwLock, watch};
 
@@ -21,6 +21,23 @@ use crate::predictor::{PredictionError, PredictionOutput, PredictionResult};
 use crate::supervisor::PredictionSupervisor;
 use crate::version::VersionInfo;
 use crate::webhook::WebhookSender;
+
+/// Try to lock a prediction mutex. On poison, fail the prediction and return None.
+fn try_lock_prediction(
+    pred: &Arc<StdMutex<Prediction>>,
+) -> Option<std::sync::MutexGuard<'_, Prediction>> {
+    match pred.lock() {
+        Ok(guard) => Some(guard),
+        Err(poisoned) => {
+            tracing::error!("Prediction mutex poisoned - failing prediction");
+            let mut guard = poisoned.into_inner();
+            if !guard.is_terminal() {
+                guard.set_failed("Internal error: mutex poisoned".to_string());
+            }
+            None
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum CreatePredictionError {
@@ -231,7 +248,9 @@ impl PredictionService {
 
         {
             let prediction = slot.prediction();
-            let mut pred = prediction.lock().unwrap();
+            let Some(mut pred) = try_lock_prediction(&prediction) else {
+                return Err(PredictionError::Failed("Prediction mutex poisoned".to_string()));
+            };
             pred.set_processing();
         }
 
@@ -254,8 +273,9 @@ impl PredictionService {
 
         if let Err(e) = permit.send(request).await {
             tracing::error!(%slot_id, error = %e, "Failed to send prediction request");
-            let mut pred = prediction_arc.lock().unwrap();
-            pred.set_failed(format!("Failed to send request: {}", e));
+            if let Some(mut pred) = try_lock_prediction(&prediction_arc) {
+                pred.set_failed(format!("Failed to send request: {}", e));
+            }
             // Slot is poisoned - don't mark idle
             return Err(PredictionError::Failed(format!(
                 "Failed to send request: {}",
@@ -266,7 +286,9 @@ impl PredictionService {
         // Wait for prediction to complete
         // Check if already terminal first to avoid race with fast completions
         let (already_terminal, completion) = {
-            let pred = prediction_arc.lock().unwrap();
+            let Some(pred) = try_lock_prediction(&prediction_arc) else {
+                return Err(PredictionError::Failed("Prediction mutex poisoned".to_string()));
+            };
             (pred.is_terminal(), pred.completion())
         };
         if !already_terminal {
@@ -274,7 +296,9 @@ impl PredictionService {
         }
 
         let (status, output, error, logs, predict_time, slot_poisoned) = {
-            let pred = prediction_arc.lock().unwrap();
+            let Some(pred) = try_lock_prediction(&prediction_arc) else {
+                return Err(PredictionError::Failed("Prediction mutex poisoned".to_string()));
+            };
             (
                 pred.status(),
                 pred.output().cloned(),
