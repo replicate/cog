@@ -50,11 +50,19 @@ pub async fn serve(config: ServerConfig, service: Arc<PredictionService>) -> any
 }
 
 /// Wait for shutdown signal (SIGTERM, SIGINT, or /shutdown endpoint).
+///
+/// # Panics
+///
+/// Panics if signal handlers cannot be installed. This can only happen if:
+/// - Called from a non-main thread without the runtime being properly configured
+/// - The tokio runtime is not properly initialized
+///
+/// These are unrecoverable configuration errors that should fail fast at startup.
 async fn shutdown_signal(await_explicit_shutdown: bool, mut shutdown_rx: watch::Receiver<bool>) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
-            .expect("failed to install Ctrl+C handler");
+            .expect("failed to install Ctrl+C handler - is tokio runtime configured correctly?");
     };
 
     #[cfg(unix)]
@@ -65,7 +73,7 @@ async fn shutdown_signal(await_explicit_shutdown: bool, mut shutdown_rx: watch::
             std::future::pending::<()>().await
         } else {
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("failed to install SIGTERM handler")
+                .expect("failed to install SIGTERM handler - is tokio runtime configured correctly?")
                 .recv()
                 .await;
         }

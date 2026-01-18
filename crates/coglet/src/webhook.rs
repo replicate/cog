@@ -5,10 +5,19 @@
 //! - Terminal webhooks retried with exponential backoff
 //! - WEBHOOK_AUTH_TOKEN bearer authentication
 //! - Events filtering (start, output, logs, completed)
+//!
+//! # Panic Safety
+//!
+//! This module avoids panics:
+//! - `WebhookSender::new()` returns `Result` for HTTP client creation
+//! - Mutex locks use `lock().unwrap_or_else(|e| e.into_inner())` to recover from
+//!   poison - worst case is we lose throttle tracking, which is acceptable.
 
 use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use thiserror::Error;
 
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +43,13 @@ impl WebhookEventType {
             .into_iter()
             .collect()
     }
+}
+
+/// Error creating a WebhookSender.
+#[derive(Debug, Error)]
+pub enum WebhookSenderError {
+    #[error("failed to create HTTP client: {0}")]
+    HttpClient(#[from] reqwest::Error),
 }
 
 #[derive(Debug, Clone)]
@@ -79,7 +95,7 @@ pub struct WebhookSender {
 }
 
 impl WebhookSender {
-    pub fn new(url: String, config: WebhookConfig) -> Self {
+    pub fn new(url: String, config: WebhookConfig) -> Result<Self, WebhookSenderError> {
         Self::with_trace_context(url, config, TraceContext::default())
     }
 
@@ -87,7 +103,7 @@ impl WebhookSender {
         url: String,
         config: WebhookConfig,
         trace_context: TraceContext,
-    ) -> Self {
+    ) -> Result<Self, WebhookSenderError> {
         let mut headers = reqwest::header::HeaderMap::new();
 
         if let Ok(token) = std::env::var("WEBHOOK_AUTH_TOKEN")
@@ -104,17 +120,16 @@ impl WebhookSender {
         let client = reqwest::Client::builder()
             .default_headers(headers)
             .timeout(Duration::from_secs(30))
-            .build()
-            .expect("Failed to create HTTP client");
+            .build()?;
 
-        Self {
+        Ok(Self {
             url,
             config,
             client,
             // Allow immediate first send
             last_sent: Mutex::new(Instant::now() - Duration::from_secs(10)),
             trace_context,
-        }
+        })
     }
 
     pub fn url(&self) -> &str {
@@ -130,12 +145,14 @@ impl WebhookSender {
             return true;
         }
 
-        let last = self.last_sent.lock().unwrap();
+        // Recover from poison - losing throttle state is acceptable
+        let last = self.last_sent.lock().unwrap_or_else(|e| e.into_inner());
         last.elapsed() >= self.config.response_interval
     }
 
     fn update_last_sent(&self) {
-        let mut last = self.last_sent.lock().unwrap();
+        // Recover from poison - losing throttle state is acceptable
+        let mut last = self.last_sent.lock().unwrap_or_else(|e| e.into_inner());
         *last = Instant::now();
     }
 
@@ -384,7 +401,7 @@ mod tests {
             .await;
 
         let url = format!("{}/webhook", server.uri());
-        let sender = WebhookSender::new(url, test_config());
+        let sender = WebhookSender::new(url, test_config()).unwrap();
 
         sender
             .send_terminal(
@@ -413,7 +430,7 @@ mod tests {
             .await;
 
         let url = format!("{}/webhook", server.uri());
-        let sender = WebhookSender::new(url, test_config());
+        let sender = WebhookSender::new(url, test_config()).unwrap();
 
         sender
             .send_terminal(
@@ -435,7 +452,7 @@ mod tests {
             .await;
 
         let url = format!("{}/webhook", server.uri());
-        let sender = WebhookSender::new(url, test_config());
+        let sender = WebhookSender::new(url, test_config()).unwrap();
 
         sender
             .send_terminal(
@@ -461,7 +478,7 @@ mod tests {
             events_filter: [WebhookEventType::Start].into_iter().collect(),
             ..test_config()
         };
-        let sender = WebhookSender::new(url, config);
+        let sender = WebhookSender::new(url, config).unwrap();
 
         sender
             .send_terminal(
@@ -483,7 +500,7 @@ mod tests {
             .await;
 
         let url = format!("{}/webhook", server.uri());
-        let sender = WebhookSender::new(url, test_config());
+        let sender = WebhookSender::new(url, test_config()).unwrap();
 
         sender.send(
             WebhookEventType::Start,
@@ -509,7 +526,7 @@ mod tests {
             response_interval: Duration::from_secs(10),
             ..test_config()
         };
-        let sender = WebhookSender::new(url, config);
+        let sender = WebhookSender::new(url, config).unwrap();
 
         sender.send(
             WebhookEventType::Output,
@@ -536,7 +553,7 @@ mod tests {
             .await;
 
         let url = format!("{}/webhook", server.uri());
-        let sender = WebhookSender::new(url, test_config());
+        let sender = WebhookSender::new(url, test_config()).unwrap();
 
         sender.send_terminal_sync(&serde_json::json!({"id": "pred_123", "status": "succeeded"}));
     }
@@ -560,7 +577,7 @@ mod tests {
             .await;
 
         let url = format!("{}/webhook", server.uri());
-        let sender = WebhookSender::new(url, test_config());
+        let sender = WebhookSender::new(url, test_config()).unwrap();
 
         sender.send_terminal_sync(&serde_json::json!({"status": "succeeded"}));
     }
