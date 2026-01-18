@@ -8,8 +8,8 @@ mod output;
 mod predictor;
 mod worker_bridge;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::prelude::*;
 use tracing::{debug, error, info, warn};
@@ -166,7 +166,10 @@ fn serve_subprocess(
     is_train: bool,
 ) -> PyResult<()> {
     let max_concurrency = read_max_concurrency(py);
-    info!(max_concurrency, "Configuring subprocess worker via orchestrator");
+    info!(
+        max_concurrency,
+        "Configuring subprocess worker via orchestrator"
+    );
 
     let orch_config = coglet_core::orchestrator::OrchestratorConfig::new(pred_ref)
         .with_num_slots(max_concurrency)
@@ -196,7 +199,9 @@ fn serve_subprocess(
 
                         let num_slots = ready.handle.slot_ids().len();
 
-                        setup_service.set_orchestrator(ready.pool, Arc::new(ready.handle)).await;
+                        setup_service
+                            .set_orchestrator(ready.pool, Arc::new(ready.handle))
+                            .await;
                         setup_service.set_health(Health::Ready).await;
                         setup_service
                             .set_setup_result(setup_result.succeeded())
@@ -257,18 +262,19 @@ fn _run_worker(py: Python<'_>) -> PyResult<()> {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         rt.block_on(async {
-            run_worker_with_init().await
+            run_worker_with_init()
+                .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
         })
     })
 }
 
 async fn run_worker_with_init() -> Result<(), String> {
+    use coglet_core::bridge::codec::JsonCodec;
+    use coglet_core::bridge::protocol::ControlRequest;
     use futures::StreamExt;
     use tokio::io::stdin;
     use tokio_util::codec::FramedRead;
-    use coglet_core::bridge::codec::JsonCodec;
-    use coglet_core::bridge::protocol::ControlRequest;
 
     let mut ctrl_reader = FramedRead::new(stdin(), JsonCodec::<ControlRequest>::new());
 
@@ -298,7 +304,10 @@ async fn run_worker_with_init() -> Result<(), String> {
         .map_err(|e| format!("Failed to serialize transport info: {}", e))?;
     // SAFETY: Single-threaded at this point, only read by our own code
     unsafe {
-        std::env::set_var(coglet_core::bridge::transport::TRANSPORT_INFO_ENV, &transport_json);
+        std::env::set_var(
+            coglet_core::bridge::transport::TRANSPORT_INFO_ENV,
+            &transport_json,
+        );
     }
 
     let handler = Arc::new(if is_train {

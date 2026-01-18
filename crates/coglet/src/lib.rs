@@ -16,11 +16,15 @@ pub mod worker;
 
 pub use orchestrator::Orchestrator;
 
-pub use supervisor::{PredictionHandle, PredictionState, PredictionSupervisor, SyncPredictionGuard};
+pub use supervisor::{
+    PredictionHandle, PredictionState, PredictionSupervisor, SyncPredictionGuard,
+};
 
 pub use health::{Health, SetupResult, SetupStatus};
 pub use prediction::{CancellationToken, Prediction, PredictionOutput, PredictionStatus};
 pub use predictor::{PredictionError, PredictionGuard, PredictionMetrics, PredictionResult};
-pub use version::{VersionInfo, COGLET_VERSION};
-pub use worker::{PredictHandler, PredictResult, SetupError, SetupLogHook, SlotSender, WorkerConfig, run_worker};
 pub use service::{CreatePredictionError, HealthSnapshot, PredictionService};
+pub use version::{COGLET_VERSION, VersionInfo};
+pub use worker::{
+    PredictHandler, PredictResult, SetupError, SetupLogHook, SlotSender, WorkerConfig, run_worker,
+};

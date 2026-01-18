@@ -102,7 +102,10 @@ impl PredictionSlot {
             }
             AnyPermit::Idle(p) => {
                 // Bug: caller tried to poison an already-completed slot
-                debug_assert!(false, "Cannot poison idle slot - prediction already completed");
+                debug_assert!(
+                    false,
+                    "Cannot poison idle slot - prediction already completed"
+                );
                 tracing::error!(
                     slot = %p.slot_id(),
                     "Bug: attempted to poison idle slot (prediction already completed)"

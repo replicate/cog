@@ -73,7 +73,9 @@ async fn shutdown_signal(await_explicit_shutdown: bool, mut shutdown_rx: watch::
             std::future::pending::<()>().await
         } else {
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("failed to install SIGTERM handler - is tokio runtime configured correctly?")
+                .expect(
+                    "failed to install SIGTERM handler - is tokio runtime configured correctly?",
+                )
                 .recv()
                 .await;
         }

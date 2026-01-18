@@ -125,7 +125,11 @@ impl PredictionService {
     }
 
     /// Configure orchestrator mode atomically.
-    pub async fn set_orchestrator(&self, pool: Arc<PermitPool>, orchestrator: Arc<dyn Orchestrator>) {
+    pub async fn set_orchestrator(
+        &self,
+        pool: Arc<PermitPool>,
+        orchestrator: Arc<dyn Orchestrator>,
+    ) {
         *self.orchestrator.write().await = Some(OrchestratorState { pool, orchestrator });
     }
 
@@ -239,9 +243,8 @@ impl PredictionService {
         input: serde_json::Value,
     ) -> Result<PredictionResult, PredictionError> {
         let state = self.orchestrator.read().await.clone();
-        let state = state.ok_or_else(|| {
-            PredictionError::Failed("No orchestrator configured".to_string())
-        })?;
+        let state = state
+            .ok_or_else(|| PredictionError::Failed("No orchestrator configured".to_string()))?;
 
         let prediction_id = slot.id();
         let slot_id = slot.slot_id();
@@ -249,7 +252,9 @@ impl PredictionService {
         {
             let prediction = slot.prediction();
             let Some(mut pred) = try_lock_prediction(&prediction) else {
-                return Err(PredictionError::Failed("Prediction mutex poisoned".to_string()));
+                return Err(PredictionError::Failed(
+                    "Prediction mutex poisoned".to_string(),
+                ));
             };
             pred.set_processing();
         }
@@ -287,7 +292,9 @@ impl PredictionService {
         // Check if already terminal first to avoid race with fast completions
         let (already_terminal, completion) = {
             let Some(pred) = try_lock_prediction(&prediction_arc) else {
-                return Err(PredictionError::Failed("Prediction mutex poisoned".to_string()));
+                return Err(PredictionError::Failed(
+                    "Prediction mutex poisoned".to_string(),
+                ));
             };
             (pred.is_terminal(), pred.completion())
         };
@@ -297,7 +304,9 @@ impl PredictionService {
 
         let (status, output, error, logs, predict_time, slot_poisoned) = {
             let Some(pred) = try_lock_prediction(&prediction_arc) else {
-                return Err(PredictionError::Failed("Prediction mutex poisoned".to_string()));
+                return Err(PredictionError::Failed(
+                    "Prediction mutex poisoned".to_string(),
+                ));
             };
             (
                 pred.status(),
@@ -354,8 +363,8 @@ impl PredictionService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use crate::bridge::protocol::SlotId;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Mock orchestrator that immediately completes predictions.
     struct MockOrchestrator {
@@ -386,16 +395,18 @@ mod tests {
             self.register_count.fetch_add(1, Ordering::SeqCst);
             if self.complete_immediately {
                 let mut pred = prediction.lock().unwrap();
-                pred.set_succeeded(crate::PredictionOutput::Single(serde_json::json!("mock result")));
+                pred.set_succeeded(crate::PredictionOutput::Single(serde_json::json!(
+                    "mock result"
+                )));
             }
         }
     }
 
     async fn create_test_pool(num_slots: usize) -> Arc<PermitPool> {
-        use futures::StreamExt;
-        use tokio::net::UnixStream;
         use crate::bridge::codec::JsonCodec;
         use crate::bridge::protocol::SlotRequest;
+        use futures::StreamExt;
+        use tokio::net::UnixStream;
 
         let pool = Arc::new(PermitPool::new(num_slots));
         for _ in 0..num_slots {
@@ -404,15 +415,12 @@ mod tests {
             let (read_b, _write_b) = b.into_split();
 
             // Spawn a task to consume messages from the socket (prevents broken pipe)
-            let mut reader = tokio_util::codec::FramedRead::new(
-                read_b,
-                JsonCodec::<SlotRequest>::new(),
-            );
-            tokio::spawn(async move {
-                while reader.next().await.is_some() {}
-            });
+            let mut reader =
+                tokio_util::codec::FramedRead::new(read_b, JsonCodec::<SlotRequest>::new());
+            tokio::spawn(async move { while reader.next().await.is_some() {} });
 
-            let writer = tokio_util::codec::FramedWrite::new(write_a, JsonCodec::<SlotRequest>::new());
+            let writer =
+                tokio_util::codec::FramedWrite::new(write_a, JsonCodec::<SlotRequest>::new());
             pool.add_permit(SlotId::new(), writer);
         }
         pool
@@ -514,7 +522,10 @@ mod tests {
         svc.set_health(Health::Ready).await;
 
         // First prediction takes the only slot
-        let _slot1 = svc.create_prediction("test-1".to_string(), None).await.unwrap();
+        let _slot1 = svc
+            .create_prediction("test-1".to_string(), None)
+            .await
+            .unwrap();
 
         // Second should fail with AtCapacity
         let result = svc.create_prediction("test-2".to_string(), None).await;
@@ -531,7 +542,10 @@ mod tests {
         svc.set_orchestrator(pool, orchestrator).await;
         svc.set_health(Health::Ready).await;
 
-        let mut slot = svc.create_prediction("test-1".to_string(), None).await.unwrap();
+        let mut slot = svc
+            .create_prediction("test-1".to_string(), None)
+            .await
+            .unwrap();
         let input = serde_json::json!({"prompt": "hello"});
 
         let result = svc.predict(&mut slot, input).await;
@@ -556,7 +570,10 @@ mod tests {
         assert_eq!(health.available_slots, 1);
 
         // After acquiring slot
-        let _slot = svc.create_prediction("test-1".to_string(), None).await.unwrap();
+        let _slot = svc
+            .create_prediction("test-1".to_string(), None)
+            .await
+            .unwrap();
         let health = svc.health().await;
         assert!(health.is_busy());
         assert_eq!(health.available_slots, 0);

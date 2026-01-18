@@ -19,12 +19,12 @@ use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
+use crate::PredictionOutput;
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{ControlRequest, ControlResponse, SlotId, SlotRequest, SlotResponse};
 use crate::bridge::transport::create_transport;
 use crate::permit::PermitPool;
 use crate::prediction::Prediction;
-use crate::PredictionOutput;
 
 /// Try to lock a prediction mutex.
 /// On poison: logs error, recovers to fail the prediction, returns None.
@@ -179,10 +179,9 @@ impl OrchestratorHandle {
     }
 
     pub async fn wait(&mut self) -> Result<(), OrchestratorError> {
-        self.child
-            .wait()
-            .await
-            .map_err(|e| OrchestratorError::Protocol(format!("failed to wait for worker: {}", e)))?;
+        self.child.wait().await.map_err(|e| {
+            OrchestratorError::Protocol(format!("failed to wait for worker: {}", e))
+        })?;
         Ok(())
     }
 }
@@ -201,8 +200,9 @@ pub enum OrchestratorError {
     WorkerCrashed,
 }
 
-pub async fn spawn_worker(config: OrchestratorConfig) -> Result<OrchestratorReady, OrchestratorError>
-{
+pub async fn spawn_worker(
+    config: OrchestratorConfig,
+) -> Result<OrchestratorReady, OrchestratorError> {
     let num_slots = config.num_slots;
 
     tracing::info!(num_slots, "Creating slot transport");

@@ -572,8 +572,6 @@ mod tests {
         assert!(json["error"].as_str().unwrap().contains("not ready"));
     }
 
-
-
     #[tokio::test]
     async fn openapi_returns_503_when_schema_not_available() {
         let service = Arc::new(PredictionService::new_no_pool());
@@ -615,12 +613,12 @@ mod tests {
 
     // --- Tests with MockOrchestrator for full prediction flow ---
 
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Mutex as StdMutex;
+    use crate::PredictionOutput;
     use crate::bridge::protocol::SlotId;
     use crate::orchestrator::Orchestrator;
     use crate::permit::PermitPool;
-    use crate::PredictionOutput;
+    use std::sync::Mutex as StdMutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Mock orchestrator that immediately completes predictions.
     struct MockOrchestrator {
@@ -661,10 +659,10 @@ mod tests {
     }
 
     async fn create_test_pool(num_slots: usize) -> Arc<PermitPool> {
-        use futures::StreamExt;
-        use tokio::net::UnixStream;
         use crate::bridge::codec::JsonCodec;
         use crate::bridge::protocol::SlotRequest;
+        use futures::StreamExt;
+        use tokio::net::UnixStream;
 
         let pool = Arc::new(PermitPool::new(num_slots));
         for _ in 0..num_slots {
@@ -673,15 +671,12 @@ mod tests {
             let (read_b, _write_b) = b.into_split();
 
             // Spawn a task to consume messages from the socket (prevents broken pipe)
-            let mut reader = tokio_util::codec::FramedRead::new(
-                read_b,
-                JsonCodec::<SlotRequest>::new(),
-            );
-            tokio::spawn(async move {
-                while reader.next().await.is_some() {}
-            });
+            let mut reader =
+                tokio_util::codec::FramedRead::new(read_b, JsonCodec::<SlotRequest>::new());
+            tokio::spawn(async move { while reader.next().await.is_some() {} });
 
-            let writer = tokio_util::codec::FramedWrite::new(write_a, JsonCodec::<SlotRequest>::new());
+            let writer =
+                tokio_util::codec::FramedWrite::new(write_a, JsonCodec::<SlotRequest>::new());
             pool.add_permit(SlotId::new(), writer);
         }
         pool
@@ -813,7 +808,12 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let json = response_json(response).await;
-        assert!(json["detail"][0]["msg"].as_str().unwrap().contains("must match"));
+        assert!(
+            json["detail"][0]["msg"]
+                .as_str()
+                .unwrap()
+                .contains("must match")
+        );
     }
 
     #[tokio::test]
@@ -922,11 +922,7 @@ mod tests {
         assert!(!*rx.borrow());
 
         let response = app
-            .oneshot(
-                Request::post("/shutdown")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::post("/shutdown").body(Body::empty()).unwrap())
             .await
             .unwrap();
 

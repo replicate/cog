@@ -17,8 +17,8 @@
 //! Our slot routing ContextVar is critical infrastructure. If user code tries
 //! to access or modify it, we raise an exception. No tampering allowed.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;

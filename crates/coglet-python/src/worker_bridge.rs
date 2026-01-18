@@ -82,12 +82,12 @@ impl PythonPredictHandler {
     /// Initialize the shared asyncio event loop in a dedicated thread.
     fn init_async_loop() -> Result<(Py<PyAny>, JoinHandle<()>), SetupError> {
         Python::attach(|py| {
-            let asyncio = py.import("asyncio").map_err(|e| {
-                SetupError::internal(format!("Failed to import asyncio: {}", e))
-            })?;
-            let loop_obj = asyncio.call_method0("new_event_loop").map_err(|e| {
-                SetupError::internal(format!("Failed to create event loop: {}", e))
-            })?;
+            let asyncio = py
+                .import("asyncio")
+                .map_err(|e| SetupError::internal(format!("Failed to import asyncio: {}", e)))?;
+            let loop_obj = asyncio
+                .call_method0("new_event_loop")
+                .map_err(|e| SetupError::internal(format!("Failed to create event loop: {}", e)))?;
 
             // Clone for the thread
             let loop_for_thread = loop_obj.clone().unbind();
@@ -127,7 +127,9 @@ impl PythonPredictHandler {
 
     /// Check and clear the cancelled flag for a slot.
     fn take_cancelled(&self, slot: SlotId) -> bool {
-        let mut slots = self.slots.lock()
+        let mut slots = self
+            .slots
+            .lock()
             .expect("Worker internal error: slots mutex poisoned");
         let state = slots.entry(slot).or_default();
         let was_cancelled = state.cancelled;
@@ -137,7 +139,9 @@ impl PythonPredictHandler {
 
     /// Mark a slot as having a prediction in progress.
     fn start_prediction(&self, slot: SlotId, is_async: bool) {
-        let mut slots = self.slots.lock()
+        let mut slots = self
+            .slots
+            .lock()
             .expect("Worker internal error: slots mutex poisoned");
         let state = slots.entry(slot).or_default();
         state.cancelled = false;
@@ -147,7 +151,9 @@ impl PythonPredictHandler {
 
     /// Clear prediction state for a slot.
     fn finish_prediction(&self, slot: SlotId) {
-        let mut slots = self.slots.lock()
+        let mut slots = self
+            .slots
+            .lock()
             .expect("Worker internal error: slots mutex poisoned");
         if let Some(state) = slots.get_mut(&slot) {
             state.in_progress = false;
@@ -158,7 +164,9 @@ impl PythonPredictHandler {
 
     /// Store the async future for a slot (for cancellation).
     fn set_async_future(&self, slot: SlotId, future: Py<PyAny>) {
-        let mut slots = self.slots.lock()
+        let mut slots = self
+            .slots
+            .lock()
             .expect("Worker internal error: slots mutex poisoned");
         if let Some(state) = slots.get_mut(&slot) {
             state.async_future = Some(future);
@@ -170,7 +178,9 @@ impl PythonPredictHandler {
     fn cancel_async_future(&self, slot: SlotId) -> bool {
         Python::attach(|py| {
             let future = {
-                let slots = self.slots.lock()
+                let slots = self
+                    .slots
+                    .lock()
                     .expect("Worker internal error: slots mutex poisoned");
                 slots
                     .get(&slot)
@@ -198,7 +208,8 @@ impl PythonPredictHandler {
     /// Get a reference to the shared asyncio event loop.
     fn get_async_loop(&self) -> Option<Py<PyAny>> {
         Python::attach(|py| {
-            self.async_loop.lock()
+            self.async_loop
+                .lock()
                 .expect("Worker internal error: async_loop mutex poisoned")
                 .as_ref()
                 .map(|l| l.clone_ref(py))
@@ -216,9 +227,12 @@ impl PredictHandler for PythonPredictHandler {
                 .map_err(|e| SetupError::load(e.to_string()))?;
 
             tracing::info!("Running setup");
-            pred.setup(py).map_err(|e| SetupError::setup(e.to_string()))?;
+            pred.setup(py)
+                .map_err(|e| SetupError::setup(e.to_string()))?;
 
-            let mut guard = self.predictor.lock()
+            let mut guard = self
+                .predictor
+                .lock()
                 .expect("Worker internal error: predictor mutex poisoned");
             *guard = Some(Arc::new(pred));
 
@@ -238,7 +252,9 @@ impl PredictHandler for PythonPredictHandler {
 
         // Get predictor and determine if async
         let (pred, is_async) = {
-            let guard = self.predictor.lock()
+            let guard = self
+                .predictor
+                .lock()
                 .expect("Worker internal error: predictor mutex poisoned");
             match guard.as_ref() {
                 Some(p) => (Arc::clone(p), p.is_async()),
@@ -323,21 +339,17 @@ impl PredictHandler for PythonPredictHandler {
                 });
 
                 // Block on future.result()
-                let result = Python::attach(|py| {
-                    match future.call_method0(py, "result") {
-                        Ok(result) => {
-                            pred.process_async_result(py, result.bind(py), is_async_gen)
-                        }
-                        Err(e) => {
-                            let err_str = e.to_string();
-                            if err_str.contains("CancelledError") || err_str.contains("cancelled") {
-                                Err(coglet_core::PredictionError::Cancelled)
-                            } else {
-                                Err(coglet_core::PredictionError::Failed(format!(
-                                    "Async training failed: {}",
-                                    e
-                                )))
-                            }
+                let result = Python::attach(|py| match future.call_method0(py, "result") {
+                    Ok(result) => pred.process_async_result(py, result.bind(py), is_async_gen),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        if err_str.contains("CancelledError") || err_str.contains("cancelled") {
+                            Err(coglet_core::PredictionError::Cancelled)
+                        } else {
+                            Err(coglet_core::PredictionError::Failed(format!(
+                                "Async training failed: {}",
+                                e
+                            )))
                         }
                     }
                 });
@@ -390,21 +402,17 @@ impl PredictHandler for PythonPredictHandler {
                 });
 
                 // Block on future.result()
-                let result = Python::attach(|py| {
-                    match future.call_method0(py, "result") {
-                        Ok(result) => {
-                            pred.process_async_result(py, result.bind(py), is_async_gen)
-                        }
-                        Err(e) => {
-                            let err_str = e.to_string();
-                            if err_str.contains("CancelledError") || err_str.contains("cancelled") {
-                                Err(coglet_core::PredictionError::Cancelled)
-                            } else {
-                                Err(coglet_core::PredictionError::Failed(format!(
-                                    "Async prediction failed: {}",
-                                    e
-                                )))
-                            }
+                let result = Python::attach(|py| match future.call_method0(py, "result") {
+                    Ok(result) => pred.process_async_result(py, result.bind(py), is_async_gen),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        if err_str.contains("CancelledError") || err_str.contains("cancelled") {
+                            Err(coglet_core::PredictionError::Cancelled)
+                        } else {
+                            Err(coglet_core::PredictionError::Failed(format!(
+                                "Async prediction failed: {}",
+                                e
+                            )))
                         }
                     }
                 });
@@ -448,7 +456,9 @@ impl PredictHandler for PythonPredictHandler {
     fn cancel(&self, slot: SlotId) {
         // Set cancelled flag (checked by sync predictors between operations)
         let is_async = {
-            let mut slots = self.slots.lock()
+            let mut slots = self
+                .slots
+                .lock()
                 .expect("Worker internal error: slots mutex poisoned");
             let state = slots.entry(slot).or_default();
             state.cancelled = true;
@@ -469,7 +479,9 @@ impl PredictHandler for PythonPredictHandler {
     }
 
     fn schema(&self) -> Option<serde_json::Value> {
-        let guard = self.predictor.lock()
+        let guard = self
+            .predictor
+            .lock()
             .expect("Worker internal error: predictor mutex poisoned");
         guard.as_ref().and_then(|pred| pred.schema())
     }
@@ -479,7 +491,9 @@ impl PredictHandler for PythonPredictHandler {
 impl Drop for PythonPredictHandler {
     fn drop(&mut self) {
         // Stop the event loop
-        if let Some(loop_obj) = self.async_loop.lock()
+        if let Some(loop_obj) = self
+            .async_loop
+            .lock()
             .expect("Worker internal error: async_loop mutex poisoned during drop")
             .take()
         {
@@ -502,7 +516,9 @@ impl Drop for PythonPredictHandler {
         }
 
         // Join the thread
-        if let Some(thread) = self.async_thread.lock()
+        if let Some(thread) = self
+            .async_thread
+            .lock()
             .expect("Worker internal error: async_thread mutex poisoned during drop")
             .take()
             && let Err(e) = thread.join()

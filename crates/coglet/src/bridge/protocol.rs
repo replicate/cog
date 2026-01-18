@@ -55,7 +55,9 @@ pub enum ControlRequest {
         is_async: bool,
     },
 
-    Cancel { slot: SlotId },
+    Cancel {
+        slot: SlotId,
+    },
 
     Shutdown,
 }
@@ -72,15 +74,25 @@ pub enum ControlResponse {
     },
 
     /// Setup-phase logs (before slots are active).
-    Log { source: LogSource, data: String },
+    Log {
+        source: LogSource,
+        data: String,
+    },
 
     /// Slot completed and is ready for next prediction.
-    Idle { slot: SlotId },
+    Idle {
+        slot: SlotId,
+    },
 
-    Cancelled { slot: SlotId },
+    Cancelled {
+        slot: SlotId,
+    },
 
     /// Slot is poisoned and will not accept more predictions.
-    Failed { slot: SlotId, error: String },
+    Failed {
+        slot: SlotId,
+        error: String,
+    },
 
     ShuttingDown,
 }
@@ -137,10 +149,15 @@ pub enum SlotRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SlotResponse {
-    Log { source: LogSource, data: String },
+    Log {
+        source: LogSource,
+        data: String,
+    },
 
     /// Streaming output chunk (for generators).
-    Output { output: serde_json::Value },
+    Output {
+        output: serde_json::Value,
+    },
 
     Done {
         id: String,
@@ -149,9 +166,14 @@ pub enum SlotResponse {
         predict_time: f64,
     },
 
-    Failed { id: String, error: String },
+    Failed {
+        id: String,
+        error: String,
+    },
 
-    Cancelled { id: String },
+    Cancelled {
+        id: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

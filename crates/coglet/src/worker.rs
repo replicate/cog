@@ -85,15 +85,21 @@ pub enum SetupError {
 
 impl SetupError {
     pub fn load(message: impl Into<String>) -> Self {
-        Self::Load { message: message.into() }
+        Self::Load {
+            message: message.into(),
+        }
     }
 
     pub fn setup(message: impl Into<String>) -> Self {
-        Self::Setup { message: message.into() }
+        Self::Setup {
+            message: message.into(),
+        }
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
-        Self::Internal { message: message.into() }
+        Self::Internal {
+            message: message.into(),
+        }
     }
 }
 
@@ -162,9 +168,8 @@ impl PredictResult {
 ///
 /// Called before setup() with a sender for routing logs to the control channel.
 /// Returns a cleanup function that unregisters the sender.
-pub type SetupLogHook = Box<
-    dyn FnOnce(mpsc::UnboundedSender<ControlResponse>) -> Box<dyn FnOnce() + Send> + Send,
->;
+pub type SetupLogHook =
+    Box<dyn FnOnce(mpsc::UnboundedSender<ControlResponse>) -> Box<dyn FnOnce() + Send> + Send>;
 
 pub struct WorkerConfig {
     pub num_slots: usize,
