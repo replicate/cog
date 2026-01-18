@@ -73,18 +73,6 @@ pub enum PredictionError {
     Cancelled,
 }
 
-/// Sync predict function - takes JSON input, returns result or error.
-pub type PredictFn =
-    dyn Fn(serde_json::Value) -> Result<PredictionResult, PredictionError> + Send + Sync;
-
-/// Future type for async predictions.
-pub type PredictFuture = std::pin::Pin<
-    Box<dyn std::future::Future<Output = Result<PredictionResult, PredictionError>> + Send>,
->;
-
-/// Async predict function - takes JSON input, returns future resolving to result.
-pub type AsyncPredictFn = dyn Fn(serde_json::Value) -> PredictFuture + Send + Sync;
-
 #[cfg(test)]
 mod tests {
     use super::*;
