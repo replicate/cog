@@ -153,7 +153,9 @@ impl PythonPredictor {
         };
 
         // Detect runtime and create input processor
-        let runtime = input::detect_runtime(py, predictor_ref, &instance);
+        let runtime = input::detect_runtime(py, predictor_ref, &instance).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
+        })?;
         let input_processor = input::create_input_processor(&runtime);
 
         Ok(Self {

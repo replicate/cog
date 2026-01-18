@@ -20,14 +20,14 @@ type PyObject = Py<PyAny>;
 /// failure, or cancellation).
 pub struct PreparedInput {
     /// The prepared input dict (ready for predict(**kwargs))
-    dict: PyObject,
+    dict: Py<PyDict>,
     /// Paths to cleanup on drop (downloaded temp files)
     cleanup_paths: Vec<PyObject>,
 }
 
 impl PreparedInput {
     /// Create a new PreparedInput with the given dict and paths to cleanup.
-    pub fn new(dict: PyObject, cleanup_paths: Vec<PyObject>) -> Self {
+    pub fn new(dict: Py<PyDict>, cleanup_paths: Vec<PyObject>) -> Self {
         Self {
             dict,
             cleanup_paths,
@@ -35,9 +35,8 @@ impl PreparedInput {
     }
 
     /// Get the input dict bound to the given Python context.
-    #[allow(deprecated)] // downcast -> cast in PyO3 0.28, but we're on 0.27
     pub fn dict<'py>(&self, py: Python<'py>) -> Bound<'py, PyDict> {
-        self.dict.bind(py).downcast::<PyDict>().unwrap().clone()
+        self.dict.bind(py).clone()
     }
 }
 
@@ -133,7 +132,7 @@ impl InputProcessor for PydanticInputProcessor {
         let cleanup_paths = download_url_paths_into_dict(py, payload_dict)?;
 
         Ok(PreparedInput::new(
-            payload_dict.clone().unbind().into(),
+            payload_dict.clone().unbind(),
             cleanup_paths,
         ))
     }
@@ -166,7 +165,7 @@ impl InputProcessor for CogletInputProcessor {
         let result_dict = result.extract::<Bound<'_, PyDict>>()?;
 
         // Coglet doesn't download URLs, so no cleanup needed
-        Ok(PreparedInput::new(result_dict.unbind().into(), Vec::new()))
+        Ok(PreparedInput::new(result_dict.unbind(), Vec::new()))
     }
 }
 
@@ -301,30 +300,51 @@ fn download_url_paths_into_dict(
     Ok(cleanup_paths)
 }
 
+/// Error returned when runtime detection fails.
+#[derive(Debug)]
+pub struct RuntimeDetectionError {
+    pub predictor_ref: String,
+}
+
+impl std::fmt::Display for RuntimeDetectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Unable to detect predictor runtime for '{}'. \
+             Expected either Pydantic (cog) or Coglet type system. \
+             This predictor may be incompatible with coglet.",
+            self.predictor_ref
+        )
+    }
+}
+
+impl std::error::Error for RuntimeDetectionError {}
+
 /// Detect the runtime type for a loaded predictor.
 ///
 /// Returns the appropriate Runtime variant based on the predictor's type system.
-/// Panics if the runtime cannot be determined.
-pub fn detect_runtime(py: Python<'_>, predictor_ref: &str, instance: &PyObject) -> Runtime {
+/// Returns an error if the runtime cannot be determined.
+pub fn detect_runtime(
+    py: Python<'_>,
+    predictor_ref: &str,
+    instance: &PyObject,
+) -> Result<Runtime, RuntimeDetectionError> {
     // Try Pydantic first
     if let Some(runtime) = try_pydantic_runtime(py, instance) {
         tracing::info!("Detected Pydantic runtime");
-        return runtime;
+        return Ok(runtime);
     }
 
     // Try Coglet
     if let Some(runtime) = try_coglet_runtime(py, predictor_ref) {
         tracing::info!("Detected Coglet runtime");
-        return runtime;
+        return Ok(runtime);
     }
 
-    // Cannot determine runtime - panic
-    panic!(
-        "Unable to detect predictor runtime for '{}'. \
-         Expected either Pydantic (cog) or Coglet type system. \
-         This predictor may be incompatible with coglet.",
-        predictor_ref
-    );
+    // Cannot determine runtime
+    Err(RuntimeDetectionError {
+        predictor_ref: predictor_ref.to_string(),
+    })
 }
 
 /// Try to detect Pydantic runtime.

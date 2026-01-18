@@ -303,8 +303,10 @@ async fn run_worker_with_init() -> Result<(), String> {
 
     let handler = Arc::new(if is_train {
         worker_bridge::PythonPredictHandler::new_train(predictor_ref)
+            .map_err(|e| format!("Failed to create handler: {}", e))?
     } else {
         worker_bridge::PythonPredictHandler::new(predictor_ref)
+            .map_err(|e| format!("Failed to create handler: {}", e))?
     });
 
     // Setup log hook: registers a global sender so SlotLogWriter can route setup logs

@@ -50,16 +50,16 @@ pub struct PythonPredictHandler {
 
 impl PythonPredictHandler {
     /// Create a handler in prediction mode.
-    pub fn new(predictor_ref: String) -> Self {
-        let (loop_obj, thread) = Self::init_async_loop();
-        Self {
+    pub fn new(predictor_ref: String) -> Result<Self, SetupError> {
+        let (loop_obj, thread) = Self::init_async_loop()?;
+        Ok(Self {
             predictor_ref,
             predictor: Mutex::new(None),
             slots: Mutex::new(HashMap::new()),
             is_train: false,
             async_loop: Mutex::new(Some(loop_obj)),
             async_thread: Mutex::new(Some(thread)),
-        }
+        })
     }
 
     /// Create a handler in training mode.
@@ -67,25 +67,27 @@ impl PythonPredictHandler {
     /// NOTE: For bug-for-bug compatibility with cog mainline, use new() instead.
     /// Cog mainline's training routes incorrectly use a predict-mode worker.
     #[allow(dead_code)]
-    pub fn new_train(predictor_ref: String) -> Self {
-        let (loop_obj, thread) = Self::init_async_loop();
-        Self {
+    pub fn new_train(predictor_ref: String) -> Result<Self, SetupError> {
+        let (loop_obj, thread) = Self::init_async_loop()?;
+        Ok(Self {
             predictor_ref,
             predictor: Mutex::new(None),
             slots: Mutex::new(HashMap::new()),
             is_train: true,
             async_loop: Mutex::new(Some(loop_obj)),
             async_thread: Mutex::new(Some(thread)),
-        }
+        })
     }
 
     /// Initialize the shared asyncio event loop in a dedicated thread.
-    fn init_async_loop() -> (Py<PyAny>, JoinHandle<()>) {
+    fn init_async_loop() -> Result<(Py<PyAny>, JoinHandle<()>), SetupError> {
         Python::attach(|py| {
-            let asyncio = py.import("asyncio").expect("Failed to import asyncio");
-            let loop_obj = asyncio
-                .call_method0("new_event_loop")
-                .expect("Failed to create event loop");
+            let asyncio = py.import("asyncio").map_err(|e| {
+                SetupError::internal(format!("Failed to import asyncio: {}", e))
+            })?;
+            let loop_obj = asyncio.call_method0("new_event_loop").map_err(|e| {
+                SetupError::internal(format!("Failed to create event loop: {}", e))
+            })?;
 
             // Clone for the thread
             let loop_for_thread = loop_obj.clone().unbind();
@@ -95,12 +97,16 @@ impl PythonPredictHandler {
             let thread = std::thread::spawn(move || {
                 Python::attach(|py| {
                     let loop_ref = loop_for_thread.bind(py);
-                    let asyncio = py
-                        .import("asyncio")
-                        .expect("Failed to import asyncio in loop thread");
-                    asyncio
-                        .call_method1("set_event_loop", (loop_ref,))
-                        .expect("Failed to set event loop");
+                    // These errors in the thread are logged but can't be propagated
+                    // The thread dying will cause async predictions to fail
+                    let Ok(asyncio) = py.import("asyncio") else {
+                        tracing::error!("Failed to import asyncio in loop thread");
+                        return;
+                    };
+                    if let Err(e) = asyncio.call_method1("set_event_loop", (loop_ref,)) {
+                        tracing::error!(error = %e, "Failed to set event loop");
+                        return;
+                    }
                     tracing::trace!("Asyncio event loop thread starting");
                     if let Err(e) = loop_ref.call_method0("run_forever") {
                         tracing::error!(error = %e, "Asyncio event loop error");
@@ -109,13 +115,20 @@ impl PythonPredictHandler {
                 });
             });
 
-            (loop_result, thread)
+            Ok((loop_result, thread))
         })
     }
 
+    // NOTE: All mutex locks in this file use expect() with clear messages.
+    // If a mutex is poisoned (another thread panicked while holding it), the worker
+    // is in an unrecoverable state. We panic with a clear message - the orchestrator
+    // will see the worker exit and fail all in-flight predictions.
+    // Future: Could add a "last gasp" control message to signal why we're dying.
+
     /// Check and clear the cancelled flag for a slot.
     fn take_cancelled(&self, slot: SlotId) -> bool {
-        let mut slots = self.slots.lock().unwrap();
+        let mut slots = self.slots.lock()
+            .expect("Worker internal error: slots mutex poisoned");
         let state = slots.entry(slot).or_default();
         let was_cancelled = state.cancelled;
         state.cancelled = false;
@@ -124,7 +137,8 @@ impl PythonPredictHandler {
 
     /// Mark a slot as having a prediction in progress.
     fn start_prediction(&self, slot: SlotId, is_async: bool) {
-        let mut slots = self.slots.lock().unwrap();
+        let mut slots = self.slots.lock()
+            .expect("Worker internal error: slots mutex poisoned");
         let state = slots.entry(slot).or_default();
         state.cancelled = false;
         state.in_progress = true;
@@ -133,7 +147,8 @@ impl PythonPredictHandler {
 
     /// Clear prediction state for a slot.
     fn finish_prediction(&self, slot: SlotId) {
-        let mut slots = self.slots.lock().unwrap();
+        let mut slots = self.slots.lock()
+            .expect("Worker internal error: slots mutex poisoned");
         if let Some(state) = slots.get_mut(&slot) {
             state.in_progress = false;
             state.is_async = false;
@@ -143,7 +158,8 @@ impl PythonPredictHandler {
 
     /// Store the async future for a slot (for cancellation).
     fn set_async_future(&self, slot: SlotId, future: Py<PyAny>) {
-        let mut slots = self.slots.lock().unwrap();
+        let mut slots = self.slots.lock()
+            .expect("Worker internal error: slots mutex poisoned");
         if let Some(state) = slots.get_mut(&slot) {
             state.async_future = Some(future);
         }
@@ -154,7 +170,8 @@ impl PythonPredictHandler {
     fn cancel_async_future(&self, slot: SlotId) -> bool {
         Python::attach(|py| {
             let future = {
-                let slots = self.slots.lock().unwrap();
+                let slots = self.slots.lock()
+                    .expect("Worker internal error: slots mutex poisoned");
                 slots
                     .get(&slot)
                     .and_then(|s| s.async_future.as_ref().map(|f| f.clone_ref(py)))
@@ -181,9 +198,8 @@ impl PythonPredictHandler {
     /// Get a reference to the shared asyncio event loop.
     fn get_async_loop(&self) -> Option<Py<PyAny>> {
         Python::attach(|py| {
-            self.async_loop
-                .lock()
-                .unwrap()
+            self.async_loop.lock()
+                .expect("Worker internal error: async_loop mutex poisoned")
                 .as_ref()
                 .map(|l| l.clone_ref(py))
         })
@@ -202,7 +218,8 @@ impl PredictHandler for PythonPredictHandler {
             tracing::info!("Running setup");
             pred.setup(py).map_err(|e| SetupError::setup(e.to_string()))?;
 
-            let mut guard = self.predictor.lock().unwrap();
+            let mut guard = self.predictor.lock()
+                .expect("Worker internal error: predictor mutex poisoned");
             *guard = Some(Arc::new(pred));
 
             tracing::info!("Setup complete");
@@ -221,7 +238,8 @@ impl PredictHandler for PythonPredictHandler {
 
         // Get predictor and determine if async
         let (pred, is_async) = {
-            let guard = self.predictor.lock().unwrap();
+            let guard = self.predictor.lock()
+                .expect("Worker internal error: predictor mutex poisoned");
             match guard.as_ref() {
                 Some(p) => (Arc::clone(p), p.is_async()),
                 None => {
@@ -430,7 +448,8 @@ impl PredictHandler for PythonPredictHandler {
     fn cancel(&self, slot: SlotId) {
         // Set cancelled flag (checked by sync predictors between operations)
         let is_async = {
-            let mut slots = self.slots.lock().unwrap();
+            let mut slots = self.slots.lock()
+                .expect("Worker internal error: slots mutex poisoned");
             let state = slots.entry(slot).or_default();
             state.cancelled = true;
             state.is_async
@@ -450,7 +469,8 @@ impl PredictHandler for PythonPredictHandler {
     }
 
     fn schema(&self) -> Option<serde_json::Value> {
-        let guard = self.predictor.lock().unwrap();
+        let guard = self.predictor.lock()
+            .expect("Worker internal error: predictor mutex poisoned");
         guard.as_ref().and_then(|pred| pred.schema())
     }
 }
@@ -459,7 +479,10 @@ impl PredictHandler for PythonPredictHandler {
 impl Drop for PythonPredictHandler {
     fn drop(&mut self) {
         // Stop the event loop
-        if let Some(loop_obj) = self.async_loop.lock().unwrap().take() {
+        if let Some(loop_obj) = self.async_loop.lock()
+            .expect("Worker internal error: async_loop mutex poisoned during drop")
+            .take()
+        {
             Python::attach(|py| {
                 let loop_ref = loop_obj.bind(py);
                 // Get the stop method and schedule it via call_soon_threadsafe
@@ -479,7 +502,9 @@ impl Drop for PythonPredictHandler {
         }
 
         // Join the thread
-        if let Some(thread) = self.async_thread.lock().unwrap().take()
+        if let Some(thread) = self.async_thread.lock()
+            .expect("Worker internal error: async_thread mutex poisoned during drop")
+            .take()
             && let Err(e) = thread.join()
         {
             tracing::warn!("Failed to join asyncio loop thread: {:?}", e);
