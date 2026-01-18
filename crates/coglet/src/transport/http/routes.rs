@@ -83,9 +83,11 @@ fn default_webhook_events_filter() -> Vec<WebhookEventType> {
 
 fn generate_prediction_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
+    // SAFETY: SystemTime::now() is always after UNIX_EPOCH on any reasonable system.
+    // This cannot fail unless the system clock is set before 1970.
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("system clock is before 1970")
         .as_nanos();
     format!("pred_{:x}", timestamp)
 }
@@ -226,14 +228,20 @@ fn build_webhook_sender(
     let webhook_url = webhook?;
     let events: std::collections::HashSet<_> = events_filter.into_iter().collect();
 
-    Some(WebhookSender::with_trace_context(
-        webhook_url,
+    match WebhookSender::with_trace_context(
+        webhook_url.clone(),
         WebhookConfig {
             events_filter: events,
             ..Default::default()
         },
         trace_context,
-    ))
+    ) {
+        Ok(sender) => Some(sender),
+        Err(e) => {
+            tracing::error!(url = %webhook_url, error = %e, "Failed to create webhook sender");
+            None
+        }
+    }
 }
 
 async fn create_prediction_with_id(
