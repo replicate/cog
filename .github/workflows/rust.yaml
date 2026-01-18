@@ -32,10 +32,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Order matters: Rust -> cargo-binstall -> mise (so mise uses binstall for cargo tools)
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -61,14 +65,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Order matters: Rust -> cargo-binstall -> mise (so mise uses binstall for cargo tools)
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
 
       - uses: jdx/mise-action@v2
+
+      # Setup Python with uv
+      - name: Setup Python with uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.12"
 
       - name: Build coglet wheel (ABI3)
         run: mise run build:coglet
