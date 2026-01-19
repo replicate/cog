@@ -85,14 +85,29 @@ jobs:
           enable-cache: true
           python-version: "3.12"
 
+      - name: Create virtualenv
+        run: uv venv .venv
+
       - name: Build coglet wheel (ABI3)
-        run: mise run build:coglet
+        env:
+          VIRTUAL_ENV: ${{ github.workspace }}/.venv
+        run: |
+          export PATH="${VIRTUAL_ENV}/bin:${PATH}"
+          mise run build:coglet
 
       - name: Check stubs are up to date
-        run: mise run stubs:check
+        env:
+          VIRTUAL_ENV: ${{ github.workspace }}/.venv
+        run: |
+          export PATH="${VIRTUAL_ENV}/bin:${PATH}"
+          mise run stubs:check
 
       - name: Type-check stubs
-        run: mise run stubs:typecheck
+        env:
+          VIRTUAL_ENV: ${{ github.workspace }}/.venv
+        run: |
+          export PATH="${VIRTUAL_ENV}/bin:${PATH}"
+          mise run stubs:typecheck
 
   # Summary job for branch protection
   rust-ci:

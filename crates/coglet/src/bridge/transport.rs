@@ -153,6 +153,7 @@ impl Drop for NamedSocketTransport {
 /// No filesystem entries, auto-cleanup when all references close.
 #[cfg(target_os = "linux")]
 pub struct AbstractSocketTransport {
+    #[allow(dead_code)] // Kept for debugging/identification
     prefix: String,
     sockets: Vec<UnixStream>,
     listeners: Vec<tokio::net::UnixListener>,
