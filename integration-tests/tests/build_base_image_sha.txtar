@@ -1,3 +1,6 @@
+# Skip for cog-dataclass (uses monobase/r8.im infrastructure)
+[cog_dataclass] skip
+
 # Test that base image SHA is recorded in labels with --use-cog-base-image
 # Source: test_build.py::test_build_base_image_sha
 

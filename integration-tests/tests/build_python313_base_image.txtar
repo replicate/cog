@@ -1,3 +1,6 @@
+# Skip for cog-dataclass (uses monobase/r8.im infrastructure)
+[cog_dataclass] skip
+
 # Test Python 3.13 works with cog base images
 # Source: test_build.py::test_python_313_base_images
 

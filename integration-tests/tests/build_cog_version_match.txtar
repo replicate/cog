@@ -1,3 +1,6 @@
+# Skip for cog-dataclass (uses monobase/r8.im infrastructure)
+[cog_dataclass] skip
+
 # Test that cog version in base image contains a version number
 # Source: test_build.py::test_cog_install_base_image
 #

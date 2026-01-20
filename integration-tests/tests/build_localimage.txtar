@@ -1,3 +1,6 @@
+# Skip for cog-dataclass (uses monobase/r8.im infrastructure)
+[cog_dataclass] skip
+
 # Test --x-localimage build flag
 # Source: test_build.py::test_fast_build_with_local_image
 # Note: This test requires linux/amd64 architecture for monobase to work
