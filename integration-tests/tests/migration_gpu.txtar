@@ -1,4 +1,5 @@
 # Test that cog migrate works for GPU projects
+[cog_dataclass] skip
 cog migrate --y
 
 -- cog.yaml --

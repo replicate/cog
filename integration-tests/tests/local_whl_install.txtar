@@ -1,4 +1,5 @@
 # Test that local wheel files can be installed via requirements.txt
+[cog_dataclass] skip
 
 # Create a minimal wheel package with proper structure
 exec mkdir -p my_package
