@@ -52,11 +52,6 @@ impl SlotState {
             SlotState::Idle => { /* no-op */ }
         }
     }
-
-    #[allow(dead_code)]
-    pub fn is_in_progress(&self) -> bool {
-        !matches!(self, SlotState::Idle)
-    }
 }
 
 /// Wraps PythonPredictor to implement the PredictHandler trait.
@@ -304,12 +299,8 @@ impl PredictHandler for PythonPredictHandler {
         tracing::trace!(%slot, %id, is_async, "Got predictor");
 
         // Track that we're starting a prediction on this slot
-        if is_async {
-            // Note: we'll update with the actual future later
-            self.start_sync_prediction(slot); // Temporary - will be replaced when we get the future
-        } else {
-            self.start_sync_prediction(slot);
-        }
+        // Note: we'll update with the actual future later if async
+        self.start_sync_prediction(slot);
 
         // Check cancellation first (in case cancel was called before we started)
         if self.take_cancelled(slot) {
