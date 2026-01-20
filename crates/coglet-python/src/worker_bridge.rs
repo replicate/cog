@@ -22,8 +22,10 @@ pub enum HandlerMode {
 
 /// Current state of a prediction slot
 #[derive(Debug)]
+#[derive(Default)]
 pub enum SlotState {
     /// No prediction running
+    #[default]
     Idle,
     /// Sync prediction in progress
     SyncPrediction { cancelled: bool },
@@ -35,11 +37,6 @@ pub enum SlotState {
     },
 }
 
-impl Default for SlotState {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
 
 impl SlotState {
     pub fn is_cancelled(&self) -> bool {
