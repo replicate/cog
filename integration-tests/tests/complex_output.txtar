@@ -1,4 +1,5 @@
 # Test complex output type using Pydantic BaseModel
+[cog_dataclass] skip
 
 # Build the image
 cog build -t $TEST_IMAGE
