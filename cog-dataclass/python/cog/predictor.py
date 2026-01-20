@@ -5,7 +5,11 @@ This module provides the BasePredictor class that users subclass to define
 their model's prediction interface.
 """
 
-from typing import Any, Optional, Union
+import importlib
+import inspect
+import os
+import types
+from typing import Any, Callable, Optional, Union
 
 from .types import Path
 
@@ -62,3 +66,42 @@ class BasePredictor:
             NotImplementedError: If predict is not implemented.
         """
         raise NotImplementedError("predict has not been implemented by parent class.")
+
+
+def load_predictor_from_ref(ref: str) -> BasePredictor:
+    """Load a predictor from a module:class reference."""
+    module_name, class_name = ref.rsplit(":", 1) if ":" in ref else (ref, "Predictor")
+    module = importlib.import_module(module_name)
+    predictor_class = getattr(module, class_name)
+    return predictor_class()
+
+
+def get_predict(predictor: Any) -> Callable[..., Any]:
+    """Get the predict method from a predictor."""
+    return predictor.predict
+
+
+def get_train(predictor: Any) -> Callable[..., Any]:
+    """Get the train method from a predictor."""
+    return predictor.train
+
+
+def has_setup_weights(predictor: BasePredictor) -> bool:
+    """Check if predictor's setup accepts a weights parameter."""
+    if not hasattr(predictor, "setup"):
+        return False
+    sig = inspect.signature(predictor.setup)
+    return "weights" in sig.parameters
+
+
+def extract_setup_weights(predictor: BasePredictor) -> Optional[Union[Path, str]]:
+    """Extract weights from environment for setup."""
+    weights = os.environ.get("COG_WEIGHTS")
+    if weights:
+        return weights
+    return None
+
+
+def wait_for_env() -> None:
+    """Wait for environment to be ready (noop in dataclass version)."""
+    pass

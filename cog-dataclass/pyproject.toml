@@ -25,6 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "typing_extensions>=4.0",
+    "pyyaml>=6.0",
     # Server deps (temporary until Rust FFI)
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
@@ -32,6 +33,7 @@ dependencies = [
     "structlog>=21.0.0",
     "httpx>=0.21.0",
     "requests>=2.25.0",
+    "urllib3>=1.26.0",
 ]
 
 [project.optional-dependencies]
