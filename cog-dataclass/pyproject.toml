@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cog"
+name = "cog-dataclass"
 dynamic = ["version"]
-description = "Cog SDK: Define machine learning models with standard Python"
+description = "Cog SDK (dataclass-based, no pydantic): Define machine learning models with standard Python"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
