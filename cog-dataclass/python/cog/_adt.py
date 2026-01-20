@@ -113,8 +113,12 @@ class PrimitiveType(Enum):
         elif self is PrimitiveType.ANY:
             return value
         elif self in {PrimitiveType.PATH, PrimitiveType.SECRET}:
-            # Only upcast strings to Path/Secret
-            return value if tpe is pt else pt(value)
+            # Keep Path/Secret values as-is - the worker handles URLPath conversion
+            # Strings (URLs/data URIs) stay as strings until the worker processes them
+            if isinstance(value, Path):
+                return value
+            # Keep strings as-is for later URLPath conversion in worker
+            return value
         else:
             # Handle enums by extracting their value
             if issubclass(tpe, Enum):
@@ -125,7 +129,15 @@ class PrimitiveType(Enum):
                     )
                 value = value.value
             v = pt(value)
+            # For numeric types, allow string coercion (e.g., "3" -> 3)
+            # but verify the conversion is valid (not lossy for floats)
             if v != value:
+                # Allow string to numeric conversion
+                if isinstance(value, str) and pt in (int, float):
+                    return v
+                # Allow int to float conversion
+                if isinstance(value, int) and pt is float:
+                    return v
                 raise ValueError(
                     f"failed to normalize value {value} as {_type_name(pt)}"
                 )

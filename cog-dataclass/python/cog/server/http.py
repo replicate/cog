@@ -520,12 +520,18 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 )
             except ValueError as e:
                 # Format error as FastAPI/Pydantic validation error format
+                # Error messages are formatted as "{field}: {message}"
+                error_str = str(e)
+                if ": " in error_str:
+                    field_name, msg = error_str.split(": ", 1)
+                else:
+                    field_name, msg = "unknown", error_str
                 return JSONResponse(
                     {
                         "detail": [
                             {
-                                "loc": ["body", "input"],
-                                "msg": str(e),
+                                "loc": ["body", "input", field_name],
+                                "msg": msg,
                                 "type": "value_error",
                             }
                         ]

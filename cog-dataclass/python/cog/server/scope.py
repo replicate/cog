@@ -48,6 +48,9 @@ def scope(sc: Scope) -> Generator[None, None, None]:
 
 @contextmanager
 def evolve_scope(**kwargs: Any) -> Generator[None, None, None]:
+    # attrs allows passing 'tag' for field '_tag', emulate that behavior
+    if "tag" in kwargs:
+        kwargs["_tag"] = kwargs.pop("tag")
     new_scope = replace(_get_current_scope(), **kwargs)
     s = _current_scope.set(new_scope)
     try:

@@ -1,3 +1,6 @@
+# Skip for cog-dataclass which requires Python 3.10+
+[cog_dataclass] skip
+
 # Test that build fails with proper error when .cog is in .dockerignore
 ! cog build -t $TEST_IMAGE
 stderr 'The .cog tmp path cannot be ignored by docker in .dockerignore'

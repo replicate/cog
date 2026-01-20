@@ -21,6 +21,12 @@ import (
 )
 
 // Harness provides utilities for running cog integration tests.
+// serverInfo tracks a running cog serve process and its port
+type serverInfo struct {
+	cmd  *exec.Cmd
+	port int
+}
+
 type Harness struct {
 	CogBinary string
 	// realHome is captured at creation time before testscript overrides HOME
@@ -28,7 +34,7 @@ type Harness struct {
 	// repoRoot is the path to the cog repository root
 	repoRoot string
 	// serverProcs tracks background cog serve processes for cleanup, keyed by work directory
-	serverProcs   map[string]*exec.Cmd
+	serverProcs   map[string]*serverInfo
 	serverProcsMu sync.Mutex
 }
 
@@ -46,7 +52,7 @@ func New() (*Harness, error) {
 		CogBinary:   cogBinary,
 		realHome:    os.Getenv("HOME"),
 		repoRoot:    repoRoot,
-		serverProcs: make(map[string]*exec.Cmd),
+		serverProcs: make(map[string]*serverInfo),
 	}, nil
 }
 
@@ -219,6 +225,11 @@ func (h *Harness) Setup(env *testscript.Env) error {
 	// Disable update checks during tests
 	env.Setenv("COG_NO_UPDATE_CHECK", "1")
 
+	// Propagate COG_WHEEL environment variable for runtime selection
+	if cogWheel := os.Getenv("COG_WHEEL"); cogWheel != "" {
+		env.Setenv("COG_WHEEL", cogWheel)
+	}
+
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)
@@ -306,7 +317,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 
 	// Build environment from testscript
 	var env []string
-	for _, key := range []string{"HOME", "PATH", "COG_NO_UPDATE_CHECK", "BUILDKIT_PROGRESS", "TEST_IMAGE"} {
+	for _, key := range []string{"HOME", "PATH", "COG_NO_UPDATE_CHECK", "COG_WHEEL", "BUILDKIT_PROGRESS", "TEST_IMAGE"} {
 		if val := ts.Getenv(key); val != "" {
 			env = append(env, fmt.Sprintf("%s=%s", key, val))
 		}
@@ -323,7 +334,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 
 	// Store the process for cleanup (keyed by work directory)
 	h.serverProcsMu.Lock()
-	h.serverProcs[workDir] = cmd
+	h.serverProcs[workDir] = &serverInfo{cmd: cmd, port: port}
 	h.serverProcsMu.Unlock()
 
 	// Wait for server to be healthy
@@ -455,7 +466,7 @@ func (h *Harness) StopServer(ts *testscript.TestScript) {
 // stopServerByWorkDir stops the server process associated with a work directory.
 func (h *Harness) stopServerByWorkDir(workDir string) {
 	h.serverProcsMu.Lock()
-	cmd, exists := h.serverProcs[workDir]
+	info, exists := h.serverProcs[workDir]
 	if !exists {
 		h.serverProcsMu.Unlock()
 		return
@@ -464,14 +475,28 @@ func (h *Harness) stopServerByWorkDir(workDir string) {
 	h.serverProcsMu.Unlock()
 
 	// Try graceful shutdown first via /shutdown endpoint
-	// Note: We don't have SERVER_URL here, so just force kill
-	// The graceful shutdown is attempted in stopServerWithURL when called from tests
-
-	// Force kill if still running
-	if cmd.Process != nil {
-		cmd.Process.Kill()
+	serverURL := fmt.Sprintf("http://127.0.0.1:%d", info.port)
+	shutdownURL := serverURL + "/shutdown"
+	resp, err := http.Post(shutdownURL, "application/json", nil) //nolint:gosec,noctx
+	if err == nil {
+		resp.Body.Close()
 	}
-	cmd.Wait()
+
+	// Force kill the cog process if still running
+	if info.cmd.Process != nil {
+		info.cmd.Process.Kill()
+	}
+	info.cmd.Wait()
+
+	// Also kill any Docker container that may still be running on this port
+	// Find container by port and kill it
+	output, err := exec.Command("docker", "ps", "-q", "--filter", fmt.Sprintf("publish=%d", info.port)).Output()
+	if err == nil && len(output) > 0 {
+		containerID := strings.TrimSpace(string(output))
+		if containerID != "" {
+			exec.Command("docker", "kill", containerID).Run() //nolint:errcheck
+		}
+	}
 }
 
 // allocatePort finds an available TCP port.

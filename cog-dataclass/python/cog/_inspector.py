@@ -476,13 +476,13 @@ def check_input(
                     kwargs[name] = input_field.default.default
                 else:
                     if input_field.type.repetition is not adt.Repetition.OPTIONAL:
-                        raise ValueError(f"missing required input field: {name}")
+                        raise ValueError(f"{name}: Field required")
                     kwargs[name] = None
             elif input_field.default is not None:
                 kwargs[name] = input_field.default
             else:
                 if input_field.type.repetition is not adt.Repetition.OPTIONAL:
-                    raise ValueError(f"missing required input field: {name}")
+                    raise ValueError(f"{name}: Field required")
                 kwargs[name] = None
 
         # Validate constraints

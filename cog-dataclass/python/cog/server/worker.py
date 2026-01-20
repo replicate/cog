@@ -176,18 +176,51 @@ class Worker:
                 futs = {}
                 # Prepare payload asynchronously (download URLPath objects)
                 for k, v in payload.items():
+                    # Convert string URLs/data URIs to URLPath for downloading
+                    if isinstance(v, str) and (
+                        v.startswith("http://")
+                        or v.startswith("https://")
+                        or v.startswith("data:")
+                    ):
+                        from ..types import File, get_filename
+
+                        urlpath = URLPath(
+                            source=v,
+                            filename=get_filename(v),
+                            fileobj=File.validate(v),
+                        )
+                        futs[k] = self._input_download_pool.submit(urlpath.convert)
+                        to_await.append(futs[k])
                     # Check if v is an instance of URLPath
-                    if isinstance(v, URLPath):
+                    elif isinstance(v, URLPath):
                         futs[k] = self._input_download_pool.submit(v.convert)
                         to_await.append(futs[k])
-                    # Check if v is a list of URLPath instances
-                    elif isinstance(v, list) and all(
-                        isinstance(item, URLPath) for item in v
-                    ):
-                        futs[k] = [
-                            self._input_download_pool.submit(item.convert) for item in v
-                        ]
-                        to_await += futs[k]
+                    # Check if v is a list of URLPath instances or strings
+                    elif isinstance(v, list):
+                        url_items = []
+                        for item in v:
+                            if isinstance(item, str) and (
+                                item.startswith("http://")
+                                or item.startswith("https://")
+                                or item.startswith("data:")
+                            ):
+                                from ..types import File, get_filename
+
+                                url_items.append(
+                                    URLPath(
+                                        source=item,
+                                        filename=get_filename(item),
+                                        fileobj=File.validate(item),
+                                    )
+                                )
+                            elif isinstance(item, URLPath):
+                                url_items.append(item)
+                        if url_items:
+                            futs[k] = [
+                                self._input_download_pool.submit(item.convert)
+                                for item in url_items
+                            ]
+                            to_await += futs[k]
                 done, not_done = futures.wait(
                     to_await, return_when=futures.FIRST_EXCEPTION
                 )
