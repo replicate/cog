@@ -178,6 +178,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         else (predictor_ref, "Predictor")
     )
     module_name = os.path.basename(module_path).replace(".py", "")
+    predictor_info = None
     try:
         predictor_info = _inspector.create_predictor(module_name, class_name)
         input_schema = _schemas.to_json_input(predictor_info)
@@ -510,6 +511,27 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         # dictionary so that later code can be simpler.
         if request.input is None:
             request.input = {}  # pylint: disable=attribute-defined-outside-init
+
+        # Validate and normalize input using predictor_info
+        if predictor_info is not None:
+            try:
+                request.input = _inspector.check_input(
+                    predictor_info.inputs, request.input
+                )
+            except ValueError as e:
+                # Format error as FastAPI/Pydantic validation error format
+                return JSONResponse(
+                    {
+                        "detail": [
+                            {
+                                "loc": ["body", "input"],
+                                "msg": str(e),
+                                "type": "value_error",
+                            }
+                        ]
+                    },
+                    status_code=422,
+                )
 
         task_kwargs = {}
         if respond_async:
