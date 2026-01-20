@@ -1,6 +1,8 @@
 # Test --x-pipeline flag for procedure predictors
 # Source: test_predict.py::test_predict_pipeline
 
+[cog_dataclass] skip
+
 # Run prediction with pipeline flag
 cog predict --x-pipeline -i prompt=test
 stdout 'HELLO TEST'

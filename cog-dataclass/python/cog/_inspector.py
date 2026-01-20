@@ -124,13 +124,13 @@ def _validate_input_constraints(
                 x >= field_info.ge for x in defaults
             ):
                 raise ValueError(
-                    f"default conflicts with ge={field_info.ge} for input: {in_repr}"
+                    f"invalid default for {in_repr}: must be at minimum {field_info.ge}"
                 )
             if field_info.le is not None and not all(
                 x <= field_info.le for x in defaults
             ):
                 raise ValueError(
-                    f"default conflicts with le={field_info.le} for input: {in_repr}"
+                    f"invalid default for {in_repr}: must be at maximum {field_info.le}"
                 )
 
     # Validate min_length/max_length constraints

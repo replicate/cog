@@ -15,7 +15,7 @@ from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from .coder import Coder
-from .types import Path, Secret
+from .types import File, Path, Secret
 
 
 def _type_name(tpe: Any) -> str:
@@ -46,6 +46,7 @@ class PrimitiveType(Enum):
     INTEGER = auto()
     STRING = auto()
     PATH = auto()
+    FILE = auto()  # Deprecated, use PATH
     SECRET = auto()
     ANY = auto()
     CUSTOM = auto()
@@ -58,6 +59,7 @@ class PrimitiveType(Enum):
             PrimitiveType.INTEGER: int,
             PrimitiveType.STRING: str,
             PrimitiveType.PATH: Path,
+            PrimitiveType.FILE: File,
             PrimitiveType.SECRET: Secret,
             PrimitiveType.ANY: Any,
             PrimitiveType.CUSTOM: Any,
@@ -71,6 +73,7 @@ class PrimitiveType(Enum):
             PrimitiveType.INTEGER: "integer",
             PrimitiveType.STRING: "string",
             PrimitiveType.PATH: "string",
+            PrimitiveType.FILE: "string",
             PrimitiveType.SECRET: "string",
             PrimitiveType.ANY: "object",
             PrimitiveType.CUSTOM: "object",
@@ -84,6 +87,7 @@ class PrimitiveType(Enum):
             int: PrimitiveType.INTEGER,
             str: PrimitiveType.STRING,
             Path: PrimitiveType.PATH,
+            File: PrimitiveType.FILE,
             Secret: PrimitiveType.SECRET,
             Any: PrimitiveType.ANY,
         }
@@ -112,6 +116,15 @@ class PrimitiveType(Enum):
             return value
         elif self is PrimitiveType.ANY:
             return value
+        elif self is PrimitiveType.FILE:
+            # For File inputs, convert URL strings to file-like objects immediately
+            # using File.validate() - the worker won't need to do any conversion
+            import io
+
+            if isinstance(value, io.IOBase):
+                return value
+            # URL string or data URI - validate to file-like object
+            return File.validate(value)
         elif self in {PrimitiveType.PATH, PrimitiveType.SECRET}:
             # Keep Path/Secret values as-is - the worker handles URLPath conversion
             # Strings (URLs/data URIs) stay as strings until the worker processes them
@@ -150,7 +163,7 @@ class PrimitiveType(Enum):
     def json_type(self) -> Dict[str, Any]:
         """Get the JSON Schema type for this primitive."""
         jt: Dict[str, Any] = {"type": self._json_type()[self]}
-        if self is PrimitiveType.PATH:
+        if self in {PrimitiveType.PATH, PrimitiveType.FILE}:
             jt["format"] = "uri"
         elif self is PrimitiveType.SECRET:
             jt["format"] = "password"
@@ -162,7 +175,7 @@ class PrimitiveType(Enum):
         """Encode a value for JSON serialization."""
         if self is PrimitiveType.FLOAT:
             return float(value)
-        elif self in {PrimitiveType.PATH, PrimitiveType.SECRET}:
+        elif self in {PrimitiveType.PATH, PrimitiveType.FILE, PrimitiveType.SECRET}:
             return value
         elif self is PrimitiveType.ANY:
             return value

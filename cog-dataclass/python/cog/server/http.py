@@ -185,6 +185,9 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         output_schema = _schemas.to_json_output(predictor_info)
         enum_schemas = _schemas.to_json_enums(predictor_info)
     except Exception:  # pylint: disable=broad-exception-caught
+        # Re-raise during build so validation errors are reported
+        if is_build:
+            raise
         log.warning("Failed to generate input/output schemas", exc_info=True)
         input_schema = {"type": "object", "title": "Input"}
         output_schema = {"title": "Output"}

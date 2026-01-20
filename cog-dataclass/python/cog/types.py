@@ -25,6 +25,7 @@ from typing import (
     Dict,
     Iterator,
     Optional,
+    Type,
     TypeVar,
 )
 
@@ -325,6 +326,30 @@ class Path(pathlib.PosixPath):
             filename=get_filename(value),
             fileobj=File.validate(value),
         )
+
+    # Pydantic v2 support - allows using cog.Path in pydantic.BaseModel
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        source: Type[Any],
+        handler: Any,
+    ) -> Any:
+        from pydantic_core import core_schema  # pylint: disable=import-outside-toplevel
+
+        return core_schema.union_schema(
+            [
+                core_schema.is_instance_schema(pathlib.Path),
+                core_schema.no_info_plain_validator_function(cls.validate),
+            ]
+        )
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: Any, handler: Any
+    ) -> Dict[str, Any]:
+        json_schema = handler(core_schema)
+        json_schema.update(type="string", format="uri")
+        return json_schema
 
 
 ########################################
