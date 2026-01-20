@@ -210,6 +210,65 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 openapi_schema["components"]["schemas"]["PredictionRequest"][
                     "properties"
                 ]["input"] = {"$ref": "#/components/schemas/Input"}
+            # Add Status enum schema
+            openapi_schema["components"]["schemas"]["Status"] = {
+                "title": "Status",
+                "description": "An enumeration.",
+                "type": "string",
+                "enum": ["starting", "processing", "succeeded", "canceled", "failed"],
+            }
+            # Add PredictionResponse schema
+            openapi_schema["components"]["schemas"]["PredictionResponse"] = {
+                "title": "PredictionResponse",
+                "type": "object",
+                "properties": {
+                    "input": {"$ref": "#/components/schemas/Input", "nullable": True},
+                    "output": {"$ref": "#/components/schemas/Output"},
+                    "id": {"title": "Id", "type": "string", "nullable": True},
+                    "version": {"title": "Version", "type": "string", "nullable": True},
+                    "created_at": {
+                        "title": "Created At",
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": True,
+                    },
+                    "started_at": {
+                        "title": "Started At",
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": True,
+                    },
+                    "completed_at": {
+                        "title": "Completed At",
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": True,
+                    },
+                    "status": {"$ref": "#/components/schemas/Status", "nullable": True},
+                    "error": {"title": "Error", "type": "string", "nullable": True},
+                    "logs": {"title": "Logs", "type": "string", "default": ""},
+                    "metrics": {
+                        "title": "Metrics",
+                        "type": "object",
+                        "additionalProperties": True,
+                        "nullable": True,
+                    },
+                },
+            }
+            # Update /predictions response to reference PredictionResponse
+            predictions_path = openapi_schema.get("paths", {}).get("/predictions", {})
+            if predictions_path.get("post", {}).get("responses", {}).get("200"):
+                predictions_path["post"]["responses"]["200"]["content"][
+                    "application/json"
+                ]["schema"] = {"$ref": "#/components/schemas/PredictionResponse"}
+            # Update /predictions/{prediction_id} response too
+            predictions_id_path = openapi_schema.get("paths", {}).get(
+                "/predictions/{prediction_id}", {}
+            )
+            if predictions_id_path.get("put", {}).get("responses", {}).get("200"):
+                predictions_id_path["put"]["responses"]["200"]["content"][
+                    "application/json"
+                ]["schema"] = {"$ref": "#/components/schemas/PredictionResponse"}
             app.openapi_schema = openapi_schema
 
         return app.openapi_schema
