@@ -186,9 +186,9 @@ def _validate_input_constraints(
 
 
 def _create_input_field(
-    order: int, name: str, tpe: type, field_info: Optional[FieldInfo]
+    order: int, name: str, tpe: type, field_info: Any
 ) -> adt.InputField:
-    """Create an InputField from type annotation and optional FieldInfo."""
+    """Create an InputField from type annotation and optional FieldInfo or raw default."""
     try:
         ft = adt.FieldType.from_type(tpe)
     except (ValueError, AssertionError) as e:
@@ -196,6 +196,12 @@ def _create_input_field(
 
     if field_info is None:
         return adt.InputField(name=name, order=order, type=ft)
+
+    # Handle raw default values (not FieldInfo)
+    if not isinstance(field_info, FieldInfo):
+        # It's a raw default value like "world" or 42
+        default = ft.normalize(field_info) if field_info is not None else None
+        return adt.InputField(name=name, order=order, type=ft, default=default)
 
     _validate_input_constraints(name, ft, field_info)
 

@@ -154,7 +154,7 @@ wheels = [
 ]
 
 [[package]]
-name = "cog"
+name = "cog-dataclass"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

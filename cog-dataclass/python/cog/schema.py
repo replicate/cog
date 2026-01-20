@@ -85,6 +85,11 @@ class PredictionResponse:
     error: Optional[str] = None
     status: Optional[Status] = None
     metrics: Optional[Dict[str, Any]] = None
+    # Fields from request (copied but not always serialized)
+    context: Optional[Dict[str, str]] = None
+    output_file_prefix: Optional[str] = None
+    webhook: Optional[str] = None
+    webhook_events_filter: Optional[List[WebhookEvent]] = None
     # Internal: track fatal exceptions (not serialized)
     _fatal_exception: Optional[BaseException] = field(default=None, repr=False)
 

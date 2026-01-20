@@ -32,6 +32,8 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from .. import schema
+from .. import _inspector
+from .. import _schemas
 from ..config import Config
 from ..errors import PredictorNotSet
 from ..files import upload_file
@@ -148,21 +150,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         lifespan=lifespan,
     )
 
-    def custom_openapi() -> Dict[str, Any]:
-        if not app.openapi_schema:
-            openapi_schema = get_openapi(
-                title="Cog",
-                openapi_version="3.0.2",
-                version="0.1.0",
-                routes=app.routes,
-            )
-
-            app.openapi_schema = openapi_schema
-
-        return app.openapi_schema
-
-    app.openapi = custom_openapi
-
     app.state.health = Health.STARTING
     app.state.setup_result = None
 
@@ -182,6 +169,52 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         msg = "Error while loading predictor:\n\n" + traceback.format_exc()
         add_setup_failed_routes(app, started_at, msg)
         return app
+
+    # Generate Input/Output schemas from predictor
+    predictor_ref = cog_config.get_predictor_ref(mode=mode)
+    module_path, class_name = (
+        predictor_ref.split(":", 1)
+        if ":" in predictor_ref
+        else (predictor_ref, "Predictor")
+    )
+    module_name = os.path.basename(module_path).replace(".py", "")
+    try:
+        predictor_info = _inspector.create_predictor(module_name, class_name)
+        input_schema = _schemas.to_json_input(predictor_info)
+        output_schema = _schemas.to_json_output(predictor_info)
+        enum_schemas = _schemas.to_json_enums(predictor_info)
+    except Exception:  # pylint: disable=broad-exception-caught
+        log.warning("Failed to generate input/output schemas", exc_info=True)
+        input_schema = {"type": "object", "title": "Input"}
+        output_schema = {"title": "Output"}
+        enum_schemas = {}
+
+    def custom_openapi() -> Dict[str, Any]:
+        if not app.openapi_schema:
+            openapi_schema = get_openapi(
+                title="Cog",
+                openapi_version="3.0.2",
+                version="0.1.0",
+                routes=app.routes,
+            )
+            # Inject Input/Output schemas
+            if "components" not in openapi_schema:
+                openapi_schema["components"] = {"schemas": {}}
+            if "schemas" not in openapi_schema["components"]:
+                openapi_schema["components"]["schemas"] = {}
+            openapi_schema["components"]["schemas"]["Input"] = input_schema
+            openapi_schema["components"]["schemas"]["Output"] = output_schema
+            openapi_schema["components"]["schemas"].update(enum_schemas)
+            # Update PredictionRequest.input to reference Input schema
+            if "PredictionRequest" in openapi_schema["components"]["schemas"]:
+                openapi_schema["components"]["schemas"]["PredictionRequest"][
+                    "properties"
+                ]["input"] = {"$ref": "#/components/schemas/Input"}
+            app.openapi_schema = openapi_schema
+
+        return app.openapi_schema
+
+    app.openapi = custom_openapi
 
     worker = make_worker(
         predictor_ref=cog_config.get_predictor_ref(mode=mode),
@@ -229,8 +262,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
             @app.post(
                 "/trainings",
-                response_model=TrainingResponse,
-                response_model_exclude_unset=True,
             )
             async def train(
                 request: TrainingRequest = Body(default=None),
@@ -254,8 +285,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
             @app.put(
                 "/trainings/{training_id}",
-                response_model=TrainingResponse,
-                response_model_exclude_unset=True,
             )
             async def train_idempotent(
                 training_id: str = Path(..., title="Training ID"),
@@ -340,8 +369,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     @limited
     @app.post(
         "/predictions",
-        response_model=PredictionResponse,
-        response_model_exclude_unset=True,
     )
     async def predict(
         request: PredictionRequest = Body(default=None),
@@ -365,8 +392,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     @limited
     @app.put(
         "/predictions/{prediction_id}",
-        response_model=PredictionResponse,
-        response_model_exclude_unset=True,
     )
     async def predict_idempotent(
         prediction_id: str = Path(..., title="Prediction ID"),

@@ -6,6 +6,7 @@ their model's prediction interface.
 """
 
 import importlib
+import importlib.util
 import inspect
 import os
 import types
@@ -69,9 +70,17 @@ class BasePredictor:
 
 
 def load_predictor_from_ref(ref: str) -> BasePredictor:
-    """Load a predictor from a module:class reference."""
-    module_name, class_name = ref.rsplit(":", 1) if ":" in ref else (ref, "Predictor")
-    module = importlib.import_module(module_name)
+    """Load a predictor from a module:class reference (e.g. 'predict.py:Predictor')."""
+    module_path, class_name = ref.split(":", 1) if ":" in ref else (ref, "Predictor")
+    module_name = os.path.basename(module_path).replace(".py", "")
+
+    # Use spec_from_file_location to load from file path
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
     predictor_class = getattr(module, class_name)
     return predictor_class()
 
