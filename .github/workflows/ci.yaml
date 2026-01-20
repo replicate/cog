@@ -41,6 +41,30 @@ jobs:
     outputs:
       python-versions: ${{ steps.baipp.outputs.supported_python_classifiers_json_array }}
 
+  build-coglet-rust:
+    name: Build Rust coglet wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+      - uses: jdx/mise-action@v2
+      - name: Build Rust coglet wheel (native platform)
+        run: mise run build:coglet:wheel
+      - name: Upload Rust coglet wheel
+        uses: actions/upload-artifact@v6
+        with:
+          name: CogletRustWheel
+          path: dist/coglet-*.whl
+
   lint:
     name: Lint
     needs: build-python
@@ -165,13 +189,15 @@ jobs:
   # Go-based integration tests using testscript framework
   test-integration:
     name: "Test integration (${{ matrix.runtime }})"
-    needs: build-python
+    needs: 
+      - build-python
+      - build-coglet-rust
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, coglet-alpha]
+        runtime: [cog, coglet-alpha, coglet-rust]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -197,9 +223,19 @@ jobs:
             integration-tests/go.sum
       - name: Build cog binary
         run: make cog
+      - name: Determine COG_WHEEL value
+        id: wheel
+        run: |
+          if [ "${{ matrix.runtime }}" = "coglet-rust" ]; then
+            # Find the Rust coglet wheel in dist/ (matches abi3 pattern)
+            RUST_WHEEL=$(ls dist/coglet-*-cp38-abi3-*.whl | head -1)
+            echo "value=${PWD}/${RUST_WHEEL}" >> $GITHUB_OUTPUT
+          else
+            echo "value=${{ matrix.runtime }}" >> $GITHUB_OUTPUT
+          fi
       - name: Run integration tests
         env:
-          COG_WHEEL: ${{ matrix.runtime }}
+          COG_WHEEL: ${{ steps.wheel.outputs.value }}
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
