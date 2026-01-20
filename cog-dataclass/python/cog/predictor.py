@@ -9,6 +9,7 @@ import importlib
 import importlib.util
 import inspect
 import os
+import sys
 import types
 from typing import Any, Callable, Optional, Union
 
@@ -79,19 +80,38 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load module from {module_path}")
     module = importlib.util.module_from_spec(spec)
+    # Add module to sys.modules so pickle can find it
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
 
-    predictor_class = getattr(module, class_name)
-    return predictor_class()
+    predictor = getattr(module, class_name)
+    # It could be a class or a function (for training)
+    if inspect.isclass(predictor):
+        return predictor()
+    return predictor
 
 
 def get_predict(predictor: Any) -> Callable[..., Any]:
     """Get the predict method from a predictor."""
+    # If predictor is a function, return it directly
+    if (
+        callable(predictor)
+        and not inspect.isclass(predictor)
+        and not hasattr(predictor, "predict")
+    ):
+        return predictor
     return predictor.predict
 
 
 def get_train(predictor: Any) -> Callable[..., Any]:
     """Get the train method from a predictor."""
+    # If predictor is a function (not a class instance), return it directly
+    if (
+        callable(predictor)
+        and not inspect.isclass(predictor)
+        and not hasattr(predictor, "train")
+    ):
+        return predictor
     return predictor.train
 
 

@@ -270,6 +270,20 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 predictions_id_path["put"]["responses"]["200"]["content"][
                     "application/json"
                 ]["schema"] = {"$ref": "#/components/schemas/PredictionResponse"}
+            # Update /trainings response to reference PredictionResponse (same schema)
+            trainings_path = openapi_schema.get("paths", {}).get("/trainings", {})
+            if trainings_path.get("post", {}).get("responses", {}).get("200"):
+                trainings_path["post"]["responses"]["200"]["content"][
+                    "application/json"
+                ]["schema"] = {"$ref": "#/components/schemas/PredictionResponse"}
+            # Update /trainings/{training_id} response too
+            trainings_id_path = openapi_schema.get("paths", {}).get(
+                "/trainings/{training_id}", {}
+            )
+            if trainings_id_path.get("put", {}).get("responses", {}).get("200"):
+                trainings_id_path["put"]["responses"]["200"]["content"][
+                    "application/json"
+                ]["schema"] = {"$ref": "#/components/schemas/PredictionResponse"}
             app.openapi_schema = openapi_schema
 
         return app.openapi_schema
