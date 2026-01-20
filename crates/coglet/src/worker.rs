@@ -529,21 +529,22 @@ mod tests {
     #[test]
     fn predict_result_success() {
         let r = PredictResult::success(serde_json::json!("hello"), 0.5);
-        assert!(r.success);
-        assert!(r.error.is_none());
+        assert!(matches!(r.outcome, PredictionOutcome::Success { .. }));
     }
 
     #[test]
     fn predict_result_failed() {
         let r = PredictResult::failed("oops".into(), 0.5);
-        assert!(!r.success);
-        assert_eq!(r.error, Some("oops".to_string()));
+        assert!(matches!(
+            r.outcome,
+            PredictionOutcome::Failed { ref error, .. } if error == "oops"
+        ));
     }
 
     #[test]
     fn predict_result_cancelled() {
         let r = PredictResult::cancelled(0.5);
-        assert!(!r.success);
+        assert!(matches!(r.outcome, PredictionOutcome::Cancelled { .. }));
     }
 
     #[test]
