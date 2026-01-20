@@ -127,39 +127,47 @@ pub trait PredictHandler: Send + Sync + 'static {
     }
 }
 
+/// The outcome of a prediction
+#[derive(Debug, Clone, PartialEq)]
+pub enum PredictionOutcome {
+    /// Prediction completed successfully
+    Success {
+        output: serde_json::Value,
+        predict_time: f64,
+    },
+    /// Prediction failed with an error
+    Failed { error: String, predict_time: f64 },
+    /// Prediction was cancelled
+    Cancelled { predict_time: f64 },
+}
+
 #[derive(Debug)]
 pub struct PredictResult {
-    pub output: serde_json::Value,
-    pub success: bool,
-    pub error: Option<String>,
-    pub predict_time: f64,
+    pub outcome: PredictionOutcome,
 }
 
 impl PredictResult {
     pub fn success(output: serde_json::Value, predict_time: f64) -> Self {
         Self {
-            output,
-            success: true,
-            error: None,
-            predict_time,
+            outcome: PredictionOutcome::Success {
+                output,
+                predict_time,
+            },
         }
     }
 
     pub fn failed(error: String, predict_time: f64) -> Self {
         Self {
-            output: serde_json::Value::Null,
-            success: false,
-            error: Some(error),
-            predict_time,
+            outcome: PredictionOutcome::Failed {
+                error,
+                predict_time,
+            },
         }
     }
 
     pub fn cancelled(predict_time: f64) -> Self {
         Self {
-            output: serde_json::Value::Null,
-            success: false,
-            error: Some("Cancelled".to_string()),
-            predict_time,
+            outcome: PredictionOutcome::Cancelled { predict_time },
         }
     }
 }
@@ -479,7 +487,7 @@ async fn run_prediction<H: PredictHandler>(
     let result = handler
         .predict(slot_id, prediction_id.clone(), input, slot_sender)
         .await;
-    tracing::trace!(%slot_id, %prediction_id, success = result.success, "handler.predict returned");
+    tracing::trace!(%slot_id, %prediction_id, "handler.predict returned");
 
     // Wait for log forwarder
     tracing::trace!(%slot_id, %prediction_id, "Waiting for log forwarder");
@@ -487,24 +495,22 @@ async fn run_prediction<H: PredictHandler>(
     tracing::trace!(%slot_id, %prediction_id, "Log forwarder done");
 
     // Send result on slot socket
-    let response = if result.success {
-        SlotResponse::Done {
+    let response = match result.outcome {
+        PredictionOutcome::Success {
+            output,
+            predict_time,
+        } => SlotResponse::Done {
             id: prediction_id.clone(),
-            output: Some(result.output),
-            predict_time: result.predict_time,
-        }
-    } else if result.error.as_deref() == Some("Cancelled") {
-        SlotResponse::Cancelled {
+            output: Some(output),
+            predict_time,
+        },
+        PredictionOutcome::Cancelled { .. } => SlotResponse::Cancelled {
             id: prediction_id.clone(),
-        }
-    } else {
-        SlotResponse::Failed {
+        },
+        PredictionOutcome::Failed { error, .. } => SlotResponse::Failed {
             id: prediction_id.clone(),
-            error: result
-                .error
-                .clone()
-                .unwrap_or_else(|| "Unknown error".to_string()),
-        }
+            error,
+        },
     };
 
     let mut w = writer.lock().await;
@@ -523,21 +529,22 @@ mod tests {
     #[test]
     fn predict_result_success() {
         let r = PredictResult::success(serde_json::json!("hello"), 0.5);
-        assert!(r.success);
-        assert!(r.error.is_none());
+        assert!(matches!(r.outcome, PredictionOutcome::Success { .. }));
     }
 
     #[test]
     fn predict_result_failed() {
         let r = PredictResult::failed("oops".into(), 0.5);
-        assert!(!r.success);
-        assert_eq!(r.error, Some("oops".to_string()));
+        assert!(matches!(
+            r.outcome,
+            PredictionOutcome::Failed { ref error, .. } if error == "oops"
+        ));
     }
 
     #[test]
     fn predict_result_cancelled() {
         let r = PredictResult::cancelled(0.5);
-        assert!(!r.success);
+        assert!(matches!(r.outcome, PredictionOutcome::Cancelled { .. }));
     }
 
     #[test]

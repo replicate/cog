@@ -33,6 +33,41 @@ fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
 /// Type alias for Python object (Py<PyAny>).
 type PyObject = Py<PyAny>;
 
+/// How a predict() method executes
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PredictKind {
+    /// Synchronous function: def predict(self, **input) -> Output
+    Sync,
+    /// Async coroutine: async def predict(self, **input) -> Output
+    Async,
+    /// Async generator: async def predict(self, **input) -> AsyncIterator[Output]
+    AsyncGen,
+}
+
+/// Whether and how train() exists
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrainKind {
+    /// No train() method
+    None,
+    /// Synchronous: def train(self, **input) -> Output
+    Sync,
+    /// Async: async def train(self, **input) -> Output
+    Async,
+}
+
+/// The predictor's structure and invocation target
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PredictorKind {
+    /// Class instance with predict() method, optionally train()
+    Class {
+        predict: PredictKind,
+        train: TrainKind,
+    },
+    /// Standalone function (e.g., train.py:train)
+    /// The PredictKind describes how the function executes (sync/async/async_gen)
+    StandaloneFunction(PredictKind),
+}
+
 /// A loaded Python predictor instance.
 ///
 /// # GIL and Concurrency
@@ -67,17 +102,8 @@ type PyObject = Py<PyAny>;
 /// We detect the runtime on load and use the appropriate input processor.
 pub struct PythonPredictor {
     instance: PyObject,
-    /// Whether predict() is an async function (coroutine or async generator).
-    is_async: bool,
-    /// Whether predict() is an async generator function specifically.
-    is_async_gen: bool,
-    /// Whether this predictor has a train() method.
-    has_train: bool,
-    /// Whether train() is an async function (if has_train is true).
-    is_train_async: bool,
-    /// Whether the instance is a standalone function (not a class instance).
-    /// Used for standalone train functions like `train.py:train`.
-    is_standalone_function: bool,
+    /// The predictor's kind (class or standalone function) and method execution types
+    kind: PredictorKind,
     /// The detected runtime type.
     runtime: Runtime,
     /// Input processor for this runtime.
@@ -105,51 +131,52 @@ impl PythonPredictor {
             .call_method1("isfunction", (instance.bind(py),))?
             .extract()?;
 
-        // For standalone functions (like train functions), detect async on the function itself
-        // For Predictor instances, detect async on the predict() method
-        let (is_async, is_async_gen) = if is_function {
-            Self::detect_async(py, &instance, "")? // Empty string means check the function itself
+        let kind = if is_function {
+            // Standalone function - detect its async nature
+            let (is_async, is_async_gen) = Self::detect_async(py, &instance, "")?;
+            let predict_kind = if is_async_gen {
+                tracing::info!("Detected async generator train()");
+                PredictKind::AsyncGen
+            } else if is_async {
+                tracing::info!("Detected async train()");
+                PredictKind::Async
+            } else {
+                tracing::info!("Detected sync train()");
+                PredictKind::Sync
+            };
+            PredictorKind::StandaloneFunction(predict_kind)
         } else {
-            Self::detect_async(py, &instance, "predict")?
-        };
-        // Only log predict() detection for Predictor classes (not standalone train functions)
-        if !is_function {
-            if is_async_gen {
+            // Class instance - detect predict() and train() methods
+            let (is_async, is_async_gen) = Self::detect_async(py, &instance, "predict")?;
+            let predict_kind = if is_async_gen {
                 tracing::info!("Detected async generator predict()");
+                PredictKind::AsyncGen
             } else if is_async {
                 tracing::info!("Detected async predict()");
+                PredictKind::Async
             } else {
                 tracing::info!("Detected sync predict()");
-            }
-        }
+                PredictKind::Sync
+            };
 
-        // Check if train() method exists and if it's async.
-        // For standalone functions (is_function=true), the function itself IS the train
-        // function, so we consider has_train=true and use is_async for train_async.
-        let has_train = if is_function {
-            true // Standalone function is the train function
-        } else {
-            instance.bind(py).hasattr("train")?
-        };
-        let is_train_async = if is_function {
-            // For standalone functions, async status was already detected above
-            // Log the train function detection here
-            if is_async {
-                tracing::info!("Detected async train()");
+            // Check if train() method exists and if it's async
+            let train_kind = if instance.bind(py).hasattr("train")? {
+                let (train_async, _) = Self::detect_async(py, &instance, "train")?;
+                if train_async {
+                    tracing::info!("Detected async train()");
+                    TrainKind::Async
+                } else {
+                    tracing::info!("Detected sync train()");
+                    TrainKind::Sync
+                }
             } else {
-                tracing::info!("Detected sync train()");
+                TrainKind::None
+            };
+
+            PredictorKind::Class {
+                predict: predict_kind,
+                train: train_kind,
             }
-            is_async
-        } else if has_train {
-            let (train_async, _) = Self::detect_async(py, &instance, "train")?;
-            if train_async {
-                tracing::info!("Detected async train()");
-            } else {
-                tracing::info!("Detected sync train()");
-            }
-            train_async
-        } else {
-            false
         };
 
         // Detect runtime and create input processor
@@ -159,11 +186,7 @@ impl PythonPredictor {
 
         Ok(Self {
             instance,
-            is_async,
-            is_async_gen,
-            has_train,
-            is_train_async,
-            is_standalone_function: is_function,
+            kind,
             runtime,
             input_processor,
         })
@@ -204,17 +227,32 @@ impl PythonPredictor {
 
     /// Returns true if this predictor has an async predict() method.
     pub fn is_async(&self) -> bool {
-        self.is_async
+        match &self.kind {
+            PredictorKind::Class { predict, .. } => {
+                matches!(predict, PredictKind::Async | PredictKind::AsyncGen)
+            }
+            PredictorKind::StandaloneFunction(predict_kind) => {
+                matches!(predict_kind, PredictKind::Async | PredictKind::AsyncGen)
+            }
+        }
     }
 
     /// Returns true if this predictor has a train() method.
     pub fn has_train(&self) -> bool {
-        self.has_train
+        match &self.kind {
+            PredictorKind::Class { train, .. } => !matches!(train, TrainKind::None),
+            PredictorKind::StandaloneFunction(_) => true,
+        }
     }
 
     /// Returns true if the train() method is async.
     pub fn is_train_async(&self) -> bool {
-        self.is_train_async
+        match &self.kind {
+            PredictorKind::Class { train, .. } => matches!(train, TrainKind::Async),
+            PredictorKind::StandaloneFunction(predict_kind) => {
+                matches!(predict_kind, PredictKind::Async | PredictKind::AsyncGen)
+            }
+        }
     }
 
     /// Generate OpenAPI schema for this predictor.
@@ -337,28 +375,32 @@ impl PythonPredictor {
 
     /// Call predict() with the given input dict, returning raw Python output.
     ///
-    /// For standalone functions (is_standalone_function=true), calls the function directly.
+    /// For standalone functions, calls the function directly.
     pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PyObject> {
-        // For standalone functions, use empty method_name to call directly
-        let method_name = if self.is_standalone_function {
-            ""
-        } else {
-            "predict"
+        let (method_name, is_async) = match &self.kind {
+            PredictorKind::Class { predict, .. } => (
+                "predict",
+                matches!(predict, PredictKind::Async | PredictKind::AsyncGen),
+            ),
+            PredictorKind::StandaloneFunction(predict_kind) => (
+                "",
+                matches!(predict_kind, PredictKind::Async | PredictKind::AsyncGen),
+            ),
         };
-        self.call_method_raw(py, method_name, self.is_async, input)
+        self.call_method_raw(py, method_name, is_async, input)
     }
 
     /// Call train() with the given input dict, returning raw Python output.
     ///
-    /// For standalone train functions (is_standalone_function=true), calls the function directly.
+    /// For standalone train functions, calls the function directly.
     /// For Predictor classes with a train() method, calls instance.train().
     pub fn train_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PyObject> {
-        // For standalone functions, use empty method_name to call directly
-        // and use is_async (the function's async status) instead of is_train_async
-        let (method_name, is_async) = if self.is_standalone_function {
-            ("", self.is_async)
-        } else {
-            ("train", self.is_train_async)
+        let (method_name, is_async) = match &self.kind {
+            PredictorKind::Class { train, .. } => ("train", matches!(train, TrainKind::Async)),
+            PredictorKind::StandaloneFunction(predict_kind) => (
+                "",
+                matches!(predict_kind, PredictKind::Async | PredictKind::AsyncGen),
+            ),
         };
         self.call_method_raw(py, method_name, is_async, input)
     }
@@ -661,7 +703,14 @@ impl PythonPredictor {
                 .map_err(|e| PredictionError::Failed(format!("Failed to call predict: {}", e)))?;
 
             // For async generators, wrap to collect all values
-            let coro = if self.is_async_gen {
+            let is_async_gen = matches!(
+                &self.kind,
+                PredictorKind::Class {
+                    predict: PredictKind::AsyncGen,
+                    ..
+                } | PredictorKind::StandaloneFunction(PredictKind::AsyncGen)
+            );
+            let coro = if is_async_gen {
                 let collect_code = "
 async def _collect_async_gen(agen):
     results = []
@@ -739,7 +788,7 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
                     PredictionError::Failed(format!("Failed to submit coroutine: {}", e))
                 })?;
 
-            Ok((future.unbind(), self.is_async_gen, prepared))
+            Ok((future.unbind(), is_async_gen, prepared))
         })
     }
 
@@ -841,10 +890,9 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
 
             // Call train - returns coroutine
             let instance = self.instance.bind(py);
-            let coro = if self.is_standalone_function {
-                instance.call((), Some(&input_dict))
-            } else {
-                instance.call_method("train", (), Some(&input_dict))
+            let coro = match &self.kind {
+                PredictorKind::StandaloneFunction(_) => instance.call((), Some(&input_dict)),
+                PredictorKind::Class { .. } => instance.call_method("train", (), Some(&input_dict)),
             }
             .map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
 
