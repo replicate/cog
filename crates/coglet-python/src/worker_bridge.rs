@@ -21,8 +21,7 @@ pub enum HandlerMode {
 }
 
 /// Current state of a prediction slot
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub enum SlotState {
     /// No prediction running
     #[default]
@@ -36,7 +35,6 @@ pub enum SlotState {
         cancelled: bool,
     },
 }
-
 
 impl SlotState {
     pub fn is_cancelled(&self) -> bool {
