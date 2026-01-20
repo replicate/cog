@@ -8,6 +8,7 @@ extract input/output type information, and validate inputs.
 import importlib
 import inspect
 import re
+import sys
 import typing
 import warnings
 from dataclasses import MISSING, Field
@@ -323,6 +324,13 @@ def _create_predictor_info(
     _validate_predict(f, f_name, is_class_fn)
     spec = inspect.getfullargspec(f)
 
+    # Use get_type_hints to resolve string annotations (from __future__ import annotations)
+    try:
+        type_hints = typing.get_type_hints(f)
+    except Exception:
+        # Fall back to raw annotations if get_type_hints fails
+        type_hints = spec.annotations
+
     # Skip 'self' for class methods
     names = spec.args[1:] if is_class_fn else spec.args
     defaults = list(spec.defaults) if spec.defaults else []
@@ -330,12 +338,14 @@ def _create_predictor_info(
 
     inputs: Dict[str, adt.InputField] = {}
     for i, (name, field_info) in enumerate(zip(names, field_infos)):
-        tpe = spec.annotations.get(name)
+        tpe = type_hints.get(name)
         if tpe is None:
             raise ValueError(f"missing type annotation for input: {name}")
         inputs[name] = _create_input_field(i, name, tpe, field_info)
 
-    output = _create_output_type(spec.annotations["return"])
+    output = _create_output_type(
+        type_hints.get("return", spec.annotations.get("return"))
+    )
     return adt.PredictorInfo(module_name, predictor_name, inputs, output)
 
 
@@ -395,21 +405,19 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
     Returns:
         PredictorInfo with input/output type information
     """
-    module = importlib.import_module(module_name)
-
-    # Check for "from __future__ import annotations" which breaks inspection
-    import __future__
-
-    if (
-        hasattr(module, "annotations")
-        and getattr(module, "annotations") == __future__.annotations
-    ):
-        raise ValueError(
-            'predictor with "from __future__ import annotations" is not supported'
-        )
+    try:
+        module = importlib.import_module(module_name)
+    except (ImportError, ModuleNotFoundError) as e:
+        raise ImportError(f"failed to import predictor module: {e}") from e
 
     fullname = f"{module_name}.{predictor_name}"
     if not hasattr(module, predictor_name):
+        # Check if module is partially loaded (common with import errors)
+        if module_name in sys.modules:
+            raise ImportError(
+                f"predictor {predictor_name} not found in {module_name} "
+                "(module may have import errors)"
+            )
         raise ValueError(f"predictor not found: {fullname}")
 
     p = getattr(module, predictor_name)

@@ -166,9 +166,17 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             mode=Mode.PREDICT
         )
     except Exception:  # pylint: disable=broad-exception-caught
-        msg = "Error while loading predictor:\n\n" + traceback.format_exc()
-        add_setup_failed_routes(app, started_at, msg)
-        return app
+        if is_build:
+            # During build, continue with placeholder types to allow schema generation
+            # This handles cases where the predictor imports unavailable modules
+            log.warning(
+                "Failed to load predictor types, using placeholders", exc_info=True
+            )
+            InputType, OutputType, is_async = dict, Any, False
+        else:
+            msg = "Error while loading predictor:\n\n" + traceback.format_exc()
+            add_setup_failed_routes(app, started_at, msg)
+            return app
 
     # Generate Input/Output schemas from predictor
     predictor_ref = cog_config.get_predictor_ref(mode=mode)
@@ -184,10 +192,20 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         input_schema = _schemas.to_json_input(predictor_info)
         output_schema = _schemas.to_json_output(predictor_info)
         enum_schemas = _schemas.to_json_enums(predictor_info)
-    except Exception:  # pylint: disable=broad-exception-caught
-        # Re-raise during build so validation errors are reported
-        if is_build:
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # Check if the root cause is an import error (missing dependency)
+        is_import_error = isinstance(e, (ImportError, ModuleNotFoundError))
+        if not is_import_error and e.__cause__:
+            is_import_error = isinstance(
+                e.__cause__, (ImportError, ModuleNotFoundError)
+            )
+
+        # During build, re-raise validation errors but not import errors
+        # This allows builds to succeed when predictor has missing dependencies
+        # but fails on actual validation issues (like invalid defaults)
+        if is_build and not is_import_error:
             raise
+
         log.warning("Failed to generate input/output schemas", exc_info=True)
         input_schema = {"type": "object", "title": "Input"}
         output_schema = {"title": "Output"}
