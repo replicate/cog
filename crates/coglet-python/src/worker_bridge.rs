@@ -280,6 +280,8 @@ impl PredictHandler for PythonPredictHandler {
                 .map_err(|e| SetupError::load(e.to_string()))?;
 
             // Detect SDK implementation (pydantic-based or dataclass-based)
+            // PYDANTIC_V2 attribute exists in both pydantic v1 (False) and v2 (True)
+            // but does not exist in dataclass-based cog
             let sdk_impl = match py.import("cog.types") {
                 Ok(cog_types) => {
                     if cog_types.hasattr("PYDANTIC_V2").unwrap_or(false) {
