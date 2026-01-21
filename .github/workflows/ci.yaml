@@ -167,13 +167,15 @@ jobs:
   # Go-based integration tests using testscript framework
   test-integration:
     name: "Test integration (${{ matrix.runtime }})"
-    needs: build-python
+    needs: 
+      - build-python
+      - build-coglet-rust
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, coglet-alpha, cog-dataclass]
+        runtime: [cog, coglet-alpha, cog-dataclass, coglet-rust]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -199,9 +201,17 @@ jobs:
             integration-tests/go.sum
       - name: Build cog binary
         run: make cog
+      - name: Set COGLET_RUST_WHEEL for Rust testing
+        if: matrix.runtime == 'coglet-rust'
+        run: |
+          # Find the Rust coglet wheel
+          RUST_WHEEL=$(ls dist/coglet-*-cp38-abi3-*.whl | head -1)
+          echo "Found Rust coglet wheel: $RUST_WHEEL"
+          echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
       - name: Run integration tests
         env:
-          COG_WHEEL: ${{ matrix.runtime }}
+          COG_WHEEL: ${{ matrix.runtime != 'coglet-rust' && matrix.runtime || '' }}
+          COGLET_RUST_WHEEL: ${{ matrix.runtime == 'coglet-rust' && env.COGLET_RUST_WHEEL || '' }}
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
