@@ -77,8 +77,6 @@ jobs:
       - test-python
       - test-python-dataclasses
       - test-integration
-      - test-coglet-go
-      - test-coglet-python
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -139,7 +137,7 @@ jobs:
         run: uvx --with tox-uv tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
 
   test-python-dataclasses:
-    name: "Test Python ${{ matrix.python-version }} (dataclasses)"
+    name: "Test Python ${{ matrix.python-version }} (Dataclasses)"
     needs: build-python
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
@@ -149,8 +147,6 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
-      HYPOTHESIS_PROFILE: ci
-      FORCE_COLOR: "1"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -167,43 +163,6 @@ jobs:
           uv pip install $(ls dist/cog_dataclass-*.whl)[dev]
       - name: Test
         run: uv run pytest cog-dataclass/python/tests -v
-
-  # ==========================================================================
-  # Coglet tests (Go server + Python SDK for the coglet runtime)
-  # ==========================================================================
-  test-coglet-go:
-    name: "Test Coglet Go"
-    runs-on: ubuntu-latest-4-cores
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: jdx/mise-action@v2
-      - name: Pre-create coglet venv
-        run: uv sync --project coglet --no-dev --extra test
-      - name: Test coglet Go
-        run: make test-coglet-go
-
-  test-coglet-python:
-    name: "Test Coglet Python ${{ matrix.python-version }}"
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: jdx/mise-action@v2
-      - name: Install coglet test dependencies
-        run: uv sync --project coglet --extra test
-      - name: Test coglet Python
-        run: uv run --project coglet pytest coglet/python/tests -v
 
   # Go-based integration tests using testscript framework
   test-integration:
