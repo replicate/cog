@@ -8,7 +8,7 @@ import json
 from typing import Any, Dict, List, Union
 
 from ..config import Config
-from ..errors import ConfigDoesNotExist, PredictorNotSet
+from ..errors import ConfigDoesNotExist
 from ..schema import Status
 from ..server.http import create_app
 from ..suppress_output import suppress_output

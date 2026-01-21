@@ -7,7 +7,7 @@ predictor input parameters with constraints and metadata.
 
 import copy
 import sys
-from dataclasses import MISSING, Field, dataclass, field
+from dataclasses import MISSING, dataclass, field
 from enum import Enum
 from typing import Any, Callable, List, Optional, Union
 

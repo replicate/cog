@@ -13,7 +13,6 @@ import threading
 import uuid
 from types import TracebackType
 from typing import (
-    Any,
     BinaryIO,
     Callable,
     Dict,

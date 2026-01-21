@@ -65,6 +65,7 @@ def get_filename(url: str) -> str:
     parsed_url = urllib.parse.urlparse(url)
 
     if parsed_url.scheme == "data":
+        # Safe: scheme is validated to be 'data:' before urlopen
         with urllib.request.urlopen(url) as resp:  # noqa: S310
             mime_type = resp.headers.get_content_type()
             extension = mimetypes.guess_extension(mime_type)
@@ -233,6 +234,7 @@ class File(io.IOBase):
 
         parsed_url = urllib.parse.urlparse(value)
         if parsed_url.scheme == "data":
+            # Safe: scheme is validated to be 'data:' before urlopen
             with urllib.request.urlopen(value) as res:  # noqa: S310
                 return io.BytesIO(res.read())
         if parsed_url.scheme in ("http", "https"):

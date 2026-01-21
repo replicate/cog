@@ -4,14 +4,14 @@ Configuration from cog.yaml.
 
 import inspect
 import os
-from typing import Any, Callable, Optional, Tuple, Type
+from typing import Any, Callable, Optional, Tuple
 
 import structlog
 import yaml
 
 from .errors import ConfigDoesNotExist
 from .mode import Mode
-from .predictor import BasePredictor, get_predict, get_train, load_predictor_from_ref
+from .predictor import get_predict, get_train, load_predictor_from_ref
 
 COG_YAML_FILE = "cog.yaml"
 COG_PREDICT_TYPE_STUB_ENV_VAR = "COG_PREDICT_TYPE_STUB"

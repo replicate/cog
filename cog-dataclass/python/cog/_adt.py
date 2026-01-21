@@ -8,7 +8,6 @@ input values.
 
 import dataclasses
 import os
-import sys
 import typing
 from dataclasses import dataclass
 from enum import Enum, auto
