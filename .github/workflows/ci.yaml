@@ -164,7 +164,7 @@ jobs:
       - name: Create virtual environment and install cog-dataclass wheel with dev dependencies
         run: |
           uv venv
-          uv pip install "dist/cog_dataclass-*.whl[dev]"
+          uv pip install $(ls dist/cog_dataclass-*.whl)[dev]
       - name: Test
         run: uv run pytest cog-dataclass/python/tests -v
 
