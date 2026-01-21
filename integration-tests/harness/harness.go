@@ -230,6 +230,11 @@ func (h *Harness) Setup(env *testscript.Env) error {
 		env.Setenv("COG_WHEEL", cogWheel)
 	}
 
+	// Propagate COGLET_RUST_WHEEL for Rust coglet server testing
+	if rustWheel := os.Getenv("COGLET_RUST_WHEEL"); rustWheel != "" {
+		env.Setenv("COGLET_RUST_WHEEL", rustWheel)
+	}
+
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)
@@ -317,7 +322,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 
 	// Build environment from testscript
 	var env []string
-	for _, key := range []string{"HOME", "PATH", "COG_NO_UPDATE_CHECK", "COG_WHEEL", "BUILDKIT_PROGRESS", "TEST_IMAGE"} {
+	for _, key := range []string{"HOME", "PATH", "COG_NO_UPDATE_CHECK", "COG_WHEEL", "COGLET_RUST_WHEEL", "BUILDKIT_PROGRESS", "TEST_IMAGE"} {
 		if val := ts.Getenv(key); val != "" {
 			env = append(env, fmt.Sprintf("%s=%s", key, val))
 		}

@@ -495,13 +495,18 @@ func (g *StandardGenerator) installCog() (string, error) {
 
 	// Optionally install Rust coglet wheel alongside cog
 	// This allows testing the Rust HTTP server implementation
+	// WARNING: Cannot install Rust coglet when using coglet-alpha
 	if rustWheelPath := os.Getenv("COGLET_RUST_WHEEL"); rustWheelPath != "" {
-		rustInstall, err := g.installRustCogletWheel(rustWheelPath)
-		if err != nil {
-			return "", fmt.Errorf("failed to install Rust coglet wheel: %w", err)
-		}
-		if rustInstall != "" {
-			installLines += "\n" + rustInstall
+		if wheelConfig != nil && wheelConfig.Source == wheels.WheelSourceCogletAlpha {
+			fmt.Fprintf(os.Stderr, "WARNING: COGLET_RUST_WHEEL is set but COG_WHEEL=coglet-alpha. Rust coglet cannot be installed alongside coglet-alpha (Go implementation). Skipping Rust coglet installation.\n")
+		} else {
+			rustInstall, err := g.installRustCogletWheel(rustWheelPath)
+			if err != nil {
+				return "", fmt.Errorf("failed to install Rust coglet wheel: %w", err)
+			}
+			if rustInstall != "" {
+				installLines += "\n" + rustInstall
+			}
 		}
 	}
 

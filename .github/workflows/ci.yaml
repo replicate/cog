@@ -52,6 +52,25 @@ jobs:
         with:
           name: CogDataclassWheel
           path: dist/cog_dataclass-*.whl
+      # Build Rust coglet wheel
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
+      - name: Run clippy
+        run: cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
+      - name: Build Rust coglet wheel (ABI3)
+        run: mise run build:coglet:wheel
+      - name: Upload Rust coglet wheel
+        uses: actions/upload-artifact@v6
+        with:
+          name: CogletRustWheel
+          path: dist/coglet-*-cp38-abi3-*.whl
 
   lint:
     name: Lint
@@ -167,15 +186,14 @@ jobs:
   # Go-based integration tests using testscript framework
   test-integration:
     name: "Test integration (${{ matrix.runtime }})"
-    needs: 
+    needs:
       - build-python
-      - build-coglet-rust
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, coglet-alpha, cog-dataclass, coglet-rust]
+        runtime: [cog, cog-dataclass, coglet-alpha, cog-rust, cog-dataclass-rust]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -201,17 +219,34 @@ jobs:
             integration-tests/go.sum
       - name: Build cog binary
         run: make cog
-      - name: Set COGLET_RUST_WHEEL for Rust testing
-        if: matrix.runtime == 'coglet-rust'
+      - name: Set wheels for runtime
         run: |
-          # Find the Rust coglet wheel
-          RUST_WHEEL=$(ls dist/coglet-*-cp38-abi3-*.whl | head -1)
-          echo "Found Rust coglet wheel: $RUST_WHEEL"
-          echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+          # Set COG_WHEEL and COGLET_RUST_WHEEL based on runtime matrix value
+          case "${{ matrix.runtime }}" in
+            cog)
+              echo "COG_WHEEL=cog" >> $GITHUB_ENV
+              ;;
+            cog-dataclass)
+              echo "COG_WHEEL=cog-dataclass" >> $GITHUB_ENV
+              ;;
+            coglet-alpha)
+              echo "COG_WHEEL=coglet-alpha" >> $GITHUB_ENV
+              ;;
+            cog-rust)
+              RUST_WHEEL=$(ls dist/coglet-*-cp38-abi3-*.whl | head -1)
+              echo "Found Rust coglet wheel: $RUST_WHEEL"
+              echo "COG_WHEEL=cog" >> $GITHUB_ENV
+              echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+              ;;
+            cog-dataclass-rust)
+              RUST_WHEEL=$(ls dist/coglet-*-cp38-abi3-*.whl | head -1)
+              echo "Found Rust coglet wheel: $RUST_WHEEL"
+              echo "COG_WHEEL=cog-dataclass" >> $GITHUB_ENV
+              echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+              ;;
+          esac
       - name: Run integration tests
         env:
-          COG_WHEEL: ${{ matrix.runtime != 'coglet-rust' && matrix.runtime || '' }}
-          COGLET_RUST_WHEEL: ${{ matrix.runtime == 'coglet-rust' && env.COGLET_RUST_WHEEL || '' }}
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'

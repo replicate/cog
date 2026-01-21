@@ -20,6 +20,27 @@ pub enum HandlerMode {
     Train,
 }
 
+/// SDK implementation type detected from the Python predictor
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SdkImplementation {
+    /// Pydantic-based cog SDK
+    Pydantic,
+    /// Dataclass-based cog SDK
+    Dataclass,
+    /// Unable to detect SDK type
+    Unknown,
+}
+
+impl std::fmt::Display for SdkImplementation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pydantic => write!(f, "pydantic"),
+            Self::Dataclass => write!(f, "dataclass"),
+            Self::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 /// Current state of a prediction slot
 #[derive(Debug, Default)]
 pub enum SlotState {
@@ -257,6 +278,19 @@ impl PredictHandler for PythonPredictHandler {
 
             let pred = PythonPredictor::load(py, &self.predictor_ref)
                 .map_err(|e| SetupError::load(e.to_string()))?;
+
+            // Detect SDK implementation (pydantic-based or dataclass-based)
+            let sdk_impl = match py.import("cog.types") {
+                Ok(cog_types) => {
+                    if cog_types.hasattr("PYDANTIC_V2").unwrap_or(false) {
+                        SdkImplementation::Pydantic
+                    } else {
+                        SdkImplementation::Dataclass
+                    }
+                }
+                Err(_) => SdkImplementation::Unknown,
+            };
+            tracing::info!(sdk_implementation = %sdk_impl, "Detected Cog SDK implementation");
 
             tracing::info!("Running setup");
             pred.setup(py)
