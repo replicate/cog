@@ -25,8 +25,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for setuptools_scm version determination
-      - uses: hynek/build-and-inspect-python-package@v2
-        id: baipp
       # Build coglet wheel with embedded Go binary
       - uses: jdx/mise-action@v2
       - name: Build coglet-server binary
@@ -46,8 +44,6 @@ jobs:
         with:
           name: CogDataclassWheel
           path: dist/cog_dataclass-*.whl
-    outputs:
-      python-versions: ${{ steps.baipp.outputs.supported_python_classifiers_json_array }}
 
   lint:
     name: Lint
@@ -71,6 +67,7 @@ jobs:
     needs:
       - test-go
       - test-python
+      - test-python-dataclasses
       - test-integration
       - test-coglet-go
       - test-coglet-python
@@ -114,7 +111,7 @@ jobs:
       fail-fast: false
       matrix:
         pydantic: ["1", "2"]
-        python-version: ${{ fromJson(needs.build-python.outputs.python-versions) }}
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
@@ -132,6 +129,33 @@ jobs:
         run: rm -rf python/cog
       - name: Test
         run: uvx --with tox-uv tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
+
+  test-python-dataclasses:
+    name: "Test Python ${{ matrix.python-version }} (dataclasses)"
+    needs: build-python
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+      HYPOTHESIS_PROFILE: ci
+      FORCE_COLOR: "1"
+    steps:
+      - name: Download built wheels
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Extract source distribution
+        run: tar xf dist/*.tar.gz --strip-components=1
+      - uses: jdx/mise-action@v2
+      - name: Install cog-dataclass wheel with dev dependencies
+        run: uv pip install --system "dist/cog_dataclass-*.whl[dev]"
+      - name: Test
+        run: pytest cog-dataclass/python/tests -v
 
   # ==========================================================================
   # Coglet tests (Go server + Python SDK for the coglet runtime)
@@ -218,6 +242,7 @@ jobs:
     needs:
       - test-go
       - test-python
+      - test-python-dataclasses
       - test-integration
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
