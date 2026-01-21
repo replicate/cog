@@ -646,7 +646,7 @@ if __name__ == "__main__":
         args = parser.parse_args()
 
         if args.version:
-            print(f"coglet (Rust) {coglet.__version__}")
+            print(f"coglet (Rust) {coglet.__version__}")  # type: ignore[attr-defined]
             sys.exit(0)
 
         port = int(os.getenv("PORT", "5000"))
@@ -654,12 +654,18 @@ if __name__ == "__main__":
 
         # Get predictor ref from config
         config = Config()
-        predictor_ref = None
-        if config.predictor:
-            predictor_ref = f"{config.predictor}:Predictor"
+        try:
+            predictor_ref = config.get_predictor_ref(args.mode)
+        except ValueError as e:
+            log.error(f"Configuration error: {e}")
+            log.error(
+                f"Please add '{args.mode}' to your cog.yaml file. "
+                f"Example: {args.mode}: predict.py:Predictor"
+            )
+            sys.exit(1)
 
         log.info("Using Rust coglet server")
-        coglet.serve(
+        coglet.serve(  # type: ignore[attr-defined]
             predictor_ref=predictor_ref,
             host=args.host,
             port=port,
