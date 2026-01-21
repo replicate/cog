@@ -34,16 +34,6 @@ jobs:
         with:
           name: CogPackage
           path: dist/cog-*
-      # Build coglet wheel with embedded Go binary
-      - name: Build coglet-server binary
-        run: script/build-coglet-server
-      - name: Build coglet wheel
-        run: uv build --wheel --out-dir=dist ./coglet
-      - name: Upload coglet wheel
-        uses: actions/upload-artifact@v6
-        with:
-          name: CogletWheel
-          path: dist/coglet-*.whl
       # Build cog-dataclass wheel
       - name: Build cog-dataclass wheel
         run: uv build --wheel --out-dir=dist ./cog-dataclass

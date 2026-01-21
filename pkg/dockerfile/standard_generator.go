@@ -475,8 +475,6 @@ func (g *StandardGenerator) installCog() (string, error) {
 	switch wheelConfig.Source {
 	case wheels.WheelSourceCog:
 		installLines, err = g.installEmbeddedCogWheel()
-	case wheels.WheelSourceCogletEmbedded:
-		installLines, err = g.installEmbeddedCogletWheel()
 	case wheels.WheelSourceCogletAlpha:
 		installLines, err = g.installCogletAlpha()
 	case wheels.WheelSourceCogDataclass:
@@ -543,35 +541,6 @@ func (g *StandardGenerator) installEmbeddedCogDataclassWheel() (string, error) {
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
-	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
-	return strings.Join(lines, "\n"), nil
-}
-
-// installEmbeddedCogletWheel installs the embedded coglet wheel (when COG_WHEEL=coglet)
-func (g *StandardGenerator) installEmbeddedCogletWheel() (string, error) {
-	// Coglet requires major.minor Python version format
-	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
-		return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
-	}
-
-	filename, data := wheels.ReadCogletWheel()
-	lines, containerPath, err := g.writeTemp(filename, data)
-	if err != nil {
-		return "", err
-	}
-
-	cmds := []string{
-		"ENV R8_COG_VERSION=coglet",
-		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-	}
-	// Uninstall cog first to avoid conflicts with coglet's cog shim package.
-	// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
-	// with coglet's cog compatibility shim that provides the same module paths.
-	pipInstallLine := "RUN pip uninstall -y cog 2>/dev/null || true && pip install --no-cache-dir " + containerPath
-	if g.strip {
-		pipInstallLine += " && " + StripDebugSymbolsCommand
-	}
-	lines = append(lines, cmds...)
 	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
 }
