@@ -2,20 +2,31 @@
 
 This directory contains Go-based integration tests for the Cog CLI using the [testscript](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript) framework.
 
+## Test Formats
+
+Most integration tests use the txtar format (`.txtar` files in `tests/`), which provides a simple declarative way to define test scripts and fixtures.
+
+However, some tests require capabilities that don't fit txtar's sequential execution model and are written as standard Go test functions instead:
+
+| Test | Location | Why Go instead of txtar |
+|------|----------|-------------------------|
+| `TestConcurrentPredictions` | `concurrent/` | Requires parallel HTTP requests with precise timing coordination |
+| `TestInteractiveTTY` | `pty/` | Requires bidirectional PTY interaction |
+
 ## Quick Start
 
 ```bash
 # Run all tests
-make test-integration-go
+make test-integration
 
 # Run fast tests only (skip slow GPU/framework tests)
-COG_TEST_FAST=1 make test-integration-go
+cd integration-tests && go test -short -v
 
 # Run a specific test
 cd integration-tests && go test -v -run TestIntegration/string_predictor
 
 # Run with a custom cog binary
-COG_BINARY=/path/to/cog make test-integration-go
+COG_BINARY=/path/to/cog make test-integration
 ```
 
 ## Directory Structure
@@ -23,11 +34,15 @@ COG_BINARY=/path/to/cog make test-integration-go
 ```
 integration-tests/
 ├── README.md           # This file
-├── suite_test.go       # Main test runner
+├── suite_test.go       # Main test runner (txtar tests)
 ├── harness/
 │   └── harness.go      # Test harness with custom commands
 ├── tests/
 │   └── *.txtar         # Test files (one per test case)
+├── concurrent/
+│   └── concurrent_test.go  # Concurrent request tests
+├── pty/
+│   └── pty_test.go     # Interactive TTY tests
 └── .bin/
     └── cog             # Cached cog binary (auto-generated)
 ```
@@ -112,8 +127,9 @@ You can also use:
 | Variable | Description |
 |----------|-------------|
 | `COG_BINARY` | Path to cog binary (defaults to auto-build) |
-| `COG_TEST_FAST` | Set to `1` to skip slow tests |
 | `TEST_PARALLEL` | Number of parallel tests (default: 4) |
+
+Use `go test -short` to skip slow tests.
 
 ## Custom Commands
 
@@ -143,24 +159,11 @@ stdout '"output":"hello"'
 
 Usage: `curl METHOD PATH [BODY]`
 
-### `retry-curl` - HTTP request with retries
-
-Useful for tests where initialization may take time (e.g., subprocess tests).
-
-```txtar
-cog serve
-retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
-stdout '"output":"hello test"'
-```
-
-Usage: `retry-curl METHOD PATH [BODY] [MAX_ATTEMPTS] [RETRY_DELAY]`
-
-- `MAX_ATTEMPTS`: Number of retries (default: 10)
-- `RETRY_DELAY`: Delay between retries (default: 1s)
+The `curl` command includes built-in retry logic (10 attempts, 500ms delay) for resilience against timing issues in integration tests.
 
 ### `wait-for` - Wait for conditions
 
-**Note**: This command waits for conditions on the **host machine**, not inside Docker containers. For Docker-based tests, use `retry-curl` instead.
+**Note**: This command waits for conditions on the **host machine**, not inside Docker containers. For Docker-based tests, use `curl` instead (which has built-in retry logic).
 
 ```txtar
 # Wait for a file to exist (host filesystem only)
@@ -183,7 +186,7 @@ Use conditions to control when tests run based on environment. Conditions are ev
 
 | Condition | Evaluates to True When | Negated | Example Use Case |
 |-----------|------------------------|---------|------------------|
-| `[fast]` | `COG_TEST_FAST=1` is set (in fast mode) | `[!fast]` | Use `[fast] skip` to skip GPU tests, long builds, or slow framework installs when running in fast mode |
+| `[short]` | `go test -short` is used | `[!short]` | Use `[short] skip` to skip GPU tests, long builds, or slow framework installs when running in short mode |
 | `[linux]` | Running on Linux | `[!linux]` | Tests requiring Linux-specific features |
 | `[amd64]` | Running on amd64/x86_64 architecture | `[!amd64]` | Tests requiring specific CPU architecture |
 | `[linux_amd64]` | Running on Linux AND amd64 | `[!linux_amd64]` | Tests requiring both Linux and amd64 (e.g., monobase images) |
@@ -193,13 +196,13 @@ Use conditions to control when tests run based on environment. Conditions are ev
 **Skip slow tests:**
 
 ```txtar
-[fast] skip 'requires GPU or long build time'
+[short] skip 'requires GPU or long build time'
 
 cog build -t $TEST_IMAGE
 # ... rest of test
 ```
 
-Skip slow tests with: `COG_TEST_FAST=1 make test-integration-go`
+Skip slow tests with: `go test -short ./...`
 
 **Platform-specific tests:**
 
@@ -231,10 +234,10 @@ cog build -t $TEST_IMAGE --use-cog-base-image
 ### Condition Logic
 
 Conditions can be negated with `!`:
-- `[fast]` - True when `COG_TEST_FAST=1` is set (in fast mode)
-  - Use `[fast] skip` to skip a slow test when running in fast mode
-- `[!fast]` - True when `COG_TEST_FAST` is NOT set (in full test mode)
-  - Use `[!fast] skip` to only run a test in fast mode (rare)
+- `[short]` - True when `go test -short` is used
+  - Use `[short] skip` to skip a slow test when running in short mode
+- `[!short]` - True when NOT running with `-short` flag
+  - Use `[!short] skip` to only run a test in short mode (rare)
 - `[!linux]` - True when NOT on Linux
   - Use `[!linux] skip` to skip non-Linux tests
 - `[linux_amd64]` - True when on Linux AND amd64
@@ -243,10 +246,10 @@ Conditions can be negated with `!`:
 Multiple conditions can be used on separate lines:
 
 ```txtar
-[fast] skip 'requires long build time'
+[short] skip 'requires long build time'
 [!linux] skip 'requires Linux'
 
-# Only runs on Linux when COG_TEST_FAST is not set
+# Only runs on Linux when not using -short flag
 cog build -t $TEST_IMAGE
 ```
 
@@ -309,8 +312,8 @@ build:
 cog build -t $TEST_IMAGE
 cog serve
 
-# Use generous retries for subprocess startup
-retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
+# curl has built-in retry logic for timing resilience
+curl POST /predictions '{"input":{"s":"test"}}'
 stdout '"output":"hello test"'
 
 -- predict.py --
@@ -328,7 +331,7 @@ class Predictor(BasePredictor):
 ### Slow tests (GPU/frameworks)
 
 ```txtar
-[slow] skip 'requires long build time'
+[fast] skip 'requires long build time'
 
 cog build -t $TEST_IMAGE
 cog predict $TEST_IMAGE
@@ -401,7 +404,7 @@ The server health check has a 30-second timeout. If your model takes longer to l
 
 ### "SERVER_URL not set" error
 
-Make sure `cog serve` is called before `curl` or `retry-curl`.
+Make sure `cog serve` is called before `curl`.
 
 ### Docker build output cluttering logs
 
@@ -409,7 +412,7 @@ Build output is suppressed by default (`BUILDKIT_PROGRESS=quiet`). Errors are st
 
 ### Files created in container not visible
 
-The `wait-for file` command checks the **host** filesystem, not inside Docker containers. Use `retry-curl` for Docker-based synchronization.
+The `wait-for file` command checks the **host** filesystem, not inside Docker containers. Use `curl` for Docker-based synchronization (it has built-in retry logic).
 
 ### Test works locally but fails in CI
 
