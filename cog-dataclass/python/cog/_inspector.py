@@ -472,7 +472,20 @@ def check_input(
         if input_field is None:
             print(f"WARNING unknown input field ignored: {name}")
         else:
-            kwargs[name] = input_field.type.normalize(value)
+            try:
+                kwargs[name] = input_field.type.normalize(value)
+            except ValueError as e:
+                # Reformat normalize errors to use "field: message" format
+                # and avoid leaking user input values
+                msg = str(e)
+                if "failed to normalize value" in msg:
+                    # Extract just the type name without the value
+                    if " as " in msg:
+                        type_name = msg.split(" as ", 1)[1]
+                        raise ValueError(f"{name}: Invalid value for type {type_name}")
+                    raise ValueError(f"{name}: Invalid value")
+                # For other normalize errors, prepend field name
+                raise ValueError(f"{name}: {msg}")
 
     # Apply defaults for missing values
     for name, input_field in inputs.items():
@@ -505,39 +518,35 @@ def check_input(
 
         if input_field.ge is not None:
             if not all(x >= input_field.ge for x in values_to_check):
-                raise ValueError(
-                    f"invalid input value: {name}={v!r} fails constraint >= {input_field.ge}"
-                )
+                raise ValueError(f"{name}: Value must be >= {input_field.ge}")
 
         if input_field.le is not None:
             if not all(x <= input_field.le for x in values_to_check):
-                raise ValueError(
-                    f"invalid input value: {name}={v!r} fails constraint <= {input_field.le}"
-                )
+                raise ValueError(f"{name}: Value must be <= {input_field.le}")
 
         if input_field.min_length is not None:
             if not all(len(x) >= input_field.min_length for x in values_to_check):
                 raise ValueError(
-                    f"invalid input value: {name}={v!r} fails constraint len() >= {input_field.min_length}"
+                    f"{name}: Length must be >= {input_field.min_length}"
                 )
 
         if input_field.max_length is not None:
             if not all(len(x) <= input_field.max_length for x in values_to_check):
                 raise ValueError(
-                    f"invalid input value: {name}={v!r} fails constraint len() <= {input_field.max_length}"
+                    f"{name}: Length must be <= {input_field.max_length}"
                 )
 
         if input_field.regex is not None:
             p = re.compile(input_field.regex)
             if not all(p.match(x) is not None for x in values_to_check):
                 raise ValueError(
-                    f"invalid input value: {name}={v!r} does not match regex {input_field.regex!r}"
+                    f"{name}: Value must match pattern {input_field.regex!r}"
                 )
 
         if input_field.choices is not None:
             if not all(x in input_field.choices for x in values_to_check):
                 raise ValueError(
-                    f"invalid input value: {name}={v!r} does not match choices {input_field.choices!r}"
+                    f"{name}: Value must be one of {input_field.choices!r}"
                 )
 
     return kwargs

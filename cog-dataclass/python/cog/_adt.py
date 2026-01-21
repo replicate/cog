@@ -150,9 +150,7 @@ class PrimitiveType(Enum):
                 # Allow int to float conversion
                 if isinstance(value, int) and pt is float:
                     return v
-                raise ValueError(
-                    f"failed to normalize value {value} as {_type_name(pt)}"
-                )
+                raise ValueError(f"failed to normalize value as {_type_name(pt)}")
             return v
 
     def python_type_name(self) -> str:
