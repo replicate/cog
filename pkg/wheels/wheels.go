@@ -9,7 +9,7 @@ import (
 
 //go:generate sh -c "rm -f cog-*.whl coglet-*.whl cog_dataclass-*.whl"
 //go:generate sh -c "cp ../../dist/cog-*.whl ."
-//go:generate sh -c "cp ../../dist/coglet-*.whl ."
+//go:generate sh -c "cp ../../dist/coglet-*-py3-none-any.whl ."
 //go:generate sh -c "cp ../../dist/cog_dataclass-*.whl ."
 
 //go:embed cog-*.whl coglet-*.whl cog_dataclass-*.whl
