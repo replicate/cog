@@ -127,7 +127,6 @@ lint.ignore = [
 ]
 extend-exclude = [
   "python/tests/server/fixtures/*",
-  "test-integration/test_integration/fixtures/*",
 ]
 src = ["python"]
 
@@ -139,12 +138,5 @@ src = ["python"]
   "S101", # Use of assert
   "S104", # Possible binding to all interfaces
   "S301", # pickle can be unsafe when used to deserialize untrusted data
-  "ANN",
-]
-"test-integration/*" = [
-  "S101", # Use of assert
-  "S311", # Standard pseudo-random generators are not suitable for cryptographic purposes
-  "S603", # subprocess call - check for execution of untrusted input
-  "S607", # Starting a process with a partial executable path"
   "ANN",
 ]

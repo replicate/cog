@@ -78,9 +78,9 @@ These commands are used to run Python tests:
 - `script/test-python` - Runs all Python unit tests
 - `uv run tox -e py312-pydantic2-tests -- python/tests/server/test_http.py::test_openapi_specification_with_yield` - Runs a specific Python test with a specific Pydantic version
 
-The integration test suite in `test-integration/` tests the end-to-end functionality of the Cog CLI and Python SDK. It uses Python scripts to automate a pre-built Cog binary.
-- `make test-integration` - Runs the integration tests, which require the Cog CLI binary to be built first. 
-- `uv run tox -e integration -- --setup-show  test_integration/test_run.py::test_run_with_unattached_stdin` - Runs a specific integration test.
+The integration test suite in `integration-tests/` tests the end-to-end functionality of the Cog CLI and Python SDK using Go's testscript framework.
+- `make test-integration` - Runs the integration tests, which require the Cog CLI binary to be built first.
+- `cd integration-tests && go test -v -run TestIntegration/string_predictor` - Runs a specific integration test.
 
 The integration tests require a built Cog binary, which defaults to the first `cog` in `PATH`. Run tests against a specific binary with the `COG_BINARY` environment variable. For example, to build cog and run integration tests:
 ```bash
@@ -117,6 +117,8 @@ The CLI follows a command pattern with subcommands. The main components are:
 2. **Docker SDK Integration**: Uses Docker Go SDK for container operations
 3. **Type Safety**: Pydantic for Python type validation, strongly typed Go interfaces
 4. **Compatibility Matrix**: Automated CUDA/PyTorch/TensorFlow compatibility management
+
+For comprehensive architecture documentation, see [`architecture/`](./architecture/00-overview.md).
 
 ## Common Tasks
 

@@ -1,4 +1,4 @@
-[fast] skip 'slow test - skip in fast mode'
+[short] skip 'slow test - skip in short mode'
 
 # Test multiprocessing.Process spawned during setup
 # This ensures stream redirection works correctly with Python multiprocessing
@@ -12,8 +12,7 @@ cog serve
 # Make a prediction that communicates via multiprocessing.Pipe
 # Note: The background process closes the connection after first use,
 # so we only test one prediction
-# Use generous retries since setup spawns a multiprocessing.Process
-retry-curl POST /predictions '{"input":{"s":"friendo1"}}' 30 1s
+curl POST /predictions '{"input":{"s":"friendo1"}}'
 stdout '"output":'
 stdout '"status":"succeeded"'
 # Check the logs show the background process communication worked

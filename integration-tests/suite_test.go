@@ -2,7 +2,6 @@ package integration_test
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -28,8 +27,9 @@ func TestIntegration(t *testing.T) {
 
 // condition provides custom conditions for testscript.
 // Supported conditions:
-//   - fast: true when COG_TEST_FAST=1 is set. Use [fast] skip to skip slow tests in fast mode.
 //   - linux/linux_amd64/amd64: platform guards for specialized tests.
+//
+// Note: testscript has built-in support for [short] which checks testing.Short().
 func condition(cond string) (bool, error) {
 	negated := false
 	for strings.HasPrefix(cond, "!") {
@@ -39,8 +39,6 @@ func condition(cond string) (bool, error) {
 
 	var value bool
 	switch cond {
-	case "fast":
-		value = os.Getenv("COG_TEST_FAST") == "1"
 	case "linux":
 		value = runtime.GOOS == "linux"
 	case "amd64":
