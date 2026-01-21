@@ -161,10 +161,12 @@ jobs:
           path: dist
           merge-multiple: true
       - uses: jdx/mise-action@v2
-      - name: Install cog-dataclass wheel with dev dependencies
-        run: uv pip install --system "dist/cog_dataclass-*.whl[dev]"
+      - name: Create virtual environment and install cog-dataclass wheel with dev dependencies
+        run: |
+          uv venv
+          uv pip install "dist/cog_dataclass-*.whl[dev]"
       - name: Test
-        run: pytest cog-dataclass/python/tests -v
+        run: uv run pytest cog-dataclass/python/tests -v
 
   # ==========================================================================
   # Coglet tests (Go server + Python SDK for the coglet runtime)
