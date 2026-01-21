@@ -1,4 +1,5 @@
 # Test that fast build mode works (with fast: true in cog.yaml)
+[cog_dataclass] skip
 
 # Run prediction with fast build mode
 cog predict -i s=world

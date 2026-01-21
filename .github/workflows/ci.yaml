@@ -38,6 +38,14 @@ jobs:
         with:
           name: CogletWheel
           path: dist/coglet-*.whl
+      # Build cog-dataclass wheel
+      - name: Build cog-dataclass wheel
+        run: uv build --wheel --out-dir=dist ./cog-dataclass
+      - name: Upload cog-dataclass wheel
+        uses: actions/upload-artifact@v6
+        with:
+          name: CogDataclassWheel
+          path: dist/cog_dataclass-*.whl
     outputs:
       python-versions: ${{ steps.baipp.outputs.supported_python_classifiers_json_array }}
 
@@ -171,7 +179,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, coglet-alpha]
+        runtime: [cog, coglet-alpha, cog-dataclass]
     steps:
       - uses: actions/checkout@v6
         with:

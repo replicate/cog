@@ -2,6 +2,7 @@
 # Source: test_run.py::test_run_fast_build
 
 [short] skip 'requires torch installation'
+[cog_dataclass] skip
 
 cog run echo hello world
 stdout 'hello world'

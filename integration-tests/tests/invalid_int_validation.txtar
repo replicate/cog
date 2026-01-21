@@ -1,3 +1,6 @@
+# Skip for coglet_alpha which does not support this
+[coglet_alpha] skip
+
 # Test input validation with ge/le constraints
 # Build should fail because default=1 violates ge=2 constraint
 

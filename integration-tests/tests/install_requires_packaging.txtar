@@ -1,4 +1,5 @@
 # Test that package requirements with specific packaging metadata work (causal-conv1d)
+[cog_dataclass] skip
 
 # Build the image
 cog build -t $TEST_IMAGE

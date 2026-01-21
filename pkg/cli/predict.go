@@ -418,7 +418,25 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 	if err != nil {
 		return err
 	}
-	outputSchema := schema.Paths.Value(url).Post.Responses.Value("200").Value.Content["application/json"].Schema.Value.Properties["output"].Value
+
+	// Safely extract output schema with nil checks to avoid panics on malformed schemas
+	var outputSchema *openapi3.Schema
+	if pathItem := schema.Paths.Value(url); pathItem != nil {
+		if pathItem.Post != nil {
+			if resp := pathItem.Post.Responses.Value("200"); resp != nil && resp.Value != nil {
+				if content, ok := resp.Value.Content["application/json"]; ok && content.Schema != nil {
+					if content.Schema.Value != nil {
+						if outputProp, ok := content.Schema.Value.Properties["output"]; ok && outputProp != nil {
+							outputSchema = outputProp.Value
+						}
+					}
+				}
+			}
+		}
+	}
+	if outputSchema == nil {
+		return fmt.Errorf("invalid OpenAPI schema: missing output definition for %s", url)
+	}
 
 	fileOutputPath := outputPath
 	if needsJSON {
