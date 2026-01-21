@@ -10,7 +10,7 @@ import (
 //go:generate sh -c "rm -f cog-*.whl coglet-*.whl cog_dataclass-*.whl"
 //go:generate sh -c "cp ../../dist/cog-*.whl ."
 //go:generate sh -c "cp ../../dist/coglet-*.whl ."
-//go:generate sh -c "if ls ../../cog-dataclass/dist/cog_dataclass-*.whl 1>/dev/null 2>&1; then cp ../../cog-dataclass/dist/cog_dataclass-*.whl .; else touch cog_dataclass-0.0.0-placeholder.whl; fi"
+//go:generate sh -c "cp ../../dist/cog_dataclass-*.whl ."
 
 //go:embed cog-*.whl coglet-*.whl cog_dataclass-*.whl
 var wheelsFS embed.FS
@@ -58,27 +58,8 @@ func ReadCogletWheel() (string, []byte) {
 }
 
 // ReadCogDataclassWheel returns the embedded cog-dataclass wheel.
-// Returns empty name and nil data if only a placeholder is embedded.
-func ReadCogDataclassWheel() (string, []byte, bool) {
-	files, err := wheelsFS.ReadDir(".")
-	if err != nil {
-		return "", nil, false
-	}
-	for _, f := range files {
-		name := f.Name()
-		if strings.HasPrefix(name, "cog_dataclass-") && strings.HasSuffix(name, ".whl") {
-			// Check if it's a placeholder (empty file)
-			if strings.Contains(name, "placeholder") {
-				return "", nil, false
-			}
-			data, err := wheelsFS.ReadFile(name)
-			if err != nil || len(data) == 0 {
-				return "", nil, false
-			}
-			return name, data, true
-		}
-	}
-	return "", nil, false
+func ReadCogDataclassWheel() (string, []byte) {
+	return readWheelFromFS("cog_dataclass-")
 }
 
 func readWheelFromFS(prefix string) (string, []byte) {

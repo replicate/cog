@@ -506,10 +506,7 @@ func (g *StandardGenerator) installEmbeddedCogWheel() (string, error) {
 
 // installEmbeddedCogDataclassWheel installs the embedded cog-dataclass wheel (pydantic-less)
 func (g *StandardGenerator) installEmbeddedCogDataclassWheel() (string, error) {
-	filename, data, ok := wheels.ReadCogDataclassWheel()
-	if !ok {
-		return "", fmt.Errorf("cog-dataclass wheel not available - build cog with 'make wheel' after building cog-dataclass")
-	}
+	filename, data := wheels.ReadCogDataclassWheel()
 	lines, containerPath, err := g.writeTemp(filename, data)
 	if err != nil {
 		return "", err
