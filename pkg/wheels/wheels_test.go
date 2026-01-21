@@ -14,12 +14,6 @@ func TestReadCogWheel(t *testing.T) {
 	require.Greater(t, len(data), 10000)
 }
 
-func TestReadCogletWheel(t *testing.T) {
-	filename, data := ReadCogletWheel()
-	require.True(t, strings.HasPrefix(filename, "coglet-"), "filename should start with 'coglet-', got: %s", filename)
-	require.True(t, strings.HasSuffix(filename, ".whl"), "filename should end with '.whl', got: %s", filename)
-	require.Greater(t, len(data), 1000000)
-}
 
 func TestWheelSourceString(t *testing.T) {
 	tests := []struct {
@@ -27,8 +21,8 @@ func TestWheelSourceString(t *testing.T) {
 		expected string
 	}{
 		{WheelSourceCog, "cog"},
-		{WheelSourceCogletEmbedded, "coglet"},
 		{WheelSourceCogletAlpha, "coglet-alpha"},
+		{WheelSourceCogDataclass, "cog-dataclass"},
 		{WheelSourceURL, "url"},
 		{WheelSourceFile, "file"},
 		{WheelSource(99), "unknown"},
@@ -74,16 +68,6 @@ func TestParseCogWheel(t *testing.T) {
 			name:     "cog mixed case",
 			input:    "Cog",
 			expected: &WheelConfig{Source: WheelSourceCog},
-		},
-		{
-			name:     "coglet keyword",
-			input:    "coglet",
-			expected: &WheelConfig{Source: WheelSourceCogletEmbedded},
-		},
-		{
-			name:     "coglet uppercase",
-			input:    "COGLET",
-			expected: &WheelConfig{Source: WheelSourceCogletEmbedded},
 		},
 		{
 			name:     "coglet-alpha keyword",
@@ -212,12 +196,6 @@ func TestGetWheelConfig(t *testing.T) {
 			envValue:          "cog",
 			cogRuntimeEnabled: true,
 			expected:          &WheelConfig{Source: WheelSourceCog},
-		},
-		{
-			name:              "env coglet overrides cog_runtime false",
-			envValue:          "coglet",
-			cogRuntimeEnabled: false,
-			expected:          &WheelConfig{Source: WheelSourceCogletEmbedded},
 		},
 		{
 			name:              "env coglet-alpha overrides cog_runtime false",

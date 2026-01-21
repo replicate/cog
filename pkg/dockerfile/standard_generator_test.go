@@ -986,36 +986,6 @@ predict: predict.py:Predictor
 	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
 
-func TestCOGWheelEnvCoglet(t *testing.T) {
-	// COG_WHEEL=coglet should use embedded coglet wheel
-	t.Setenv("COG_WHEEL", "coglet")
-
-	tmpDir := t.TempDir()
-
-	yaml := `
-build:
-  gpu: false
-  python_version: "3.11"
-predict: predict.py:Predictor
-`
-	conf, err := config.FromYAML([]byte(yaml))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
-
-	command := dockertest.NewMockCommand()
-	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
-	require.NoError(t, err)
-
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
-	require.NoError(t, err)
-
-	// Should contain the embedded coglet wheel install (versioned filename like coglet-0.x.x-py3-none-any.whl)
-	require.Contains(t, actual, "/tmp/coglet-")
-	require.Contains(t, actual, ".whl")
-	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
-	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
-}
 
 func TestCOGWheelEnvCogletAlpha(t *testing.T) {
 	// COG_WHEEL=coglet-alpha should use PinnedCogletURL even without cog_runtime: true
@@ -1110,30 +1080,6 @@ predict: predict.py:Predictor
 	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
 
-func TestCOGWheelCogletWithPython39Succeeds(t *testing.T) {
-	// COG_WHEEL=coglet with Python 3.9 should succeed
-	tmpDir := t.TempDir()
-	t.Setenv("COG_WHEEL", "coglet")
-
-	yaml := `
-build:
-  gpu: false
-  python_version: "3.9"
-predict: predict.py:Predictor
-`
-	conf, err := config.FromYAML([]byte(yaml))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
-
-	command := dockertest.NewMockCommand()
-	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
-	require.NoError(t, err)
-
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
-	require.NoError(t, err)
-	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
-}
 
 func TestCOGWheelEnvFile(t *testing.T) {
 	// COG_WHEEL=/path/to/file.whl should install from local file
