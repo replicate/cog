@@ -1,6 +1,9 @@
 # Test complex output type using Pydantic BaseModel
 [cog_dataclass] skip
 
+# Skip for coglet_alpha which does not support pydantic types
+[coglet_alpha] skip
+
 # Build the image
 cog build -t $TEST_IMAGE
 

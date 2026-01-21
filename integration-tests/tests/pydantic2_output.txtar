@@ -1,3 +1,6 @@
+# Skip for coglet_alpha which does not support this
+[coglet_alpha] skip
+
 # Test Pydantic 2 output types work correctly with train command
 
 # Train with input

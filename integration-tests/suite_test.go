@@ -47,6 +47,8 @@ func condition(cond string) (bool, error) {
 		value = runtime.GOARCH == "amd64"
 	case "linux_amd64":
 		value = runtime.GOOS == "linux" && runtime.GOARCH == "amd64"
+	case "coglet_alpha":
+		value = os.Getenv("COG_WHEEL") == "coglet-alpha"
 	case "cog_dataclass":
 		value = os.Getenv("COG_WHEEL") == "cog-dataclass"
 	default:

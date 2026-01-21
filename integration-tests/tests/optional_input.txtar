@@ -2,6 +2,9 @@
 # Skip for cog-dataclass which requires Python 3.10+
 [cog_dataclass] skip
 
+# Skip for coglet_alpha requires python 3.9+
+[coglet_alpha] skip
+
 # Build the image
 cog build -t $TEST_IMAGE
 
