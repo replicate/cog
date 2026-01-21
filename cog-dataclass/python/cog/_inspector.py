@@ -497,13 +497,13 @@ def check_input(
                     kwargs[name] = input_field.default.default
                 else:
                     if input_field.type.repetition is not adt.Repetition.OPTIONAL:
-                        raise ValueError(f"{name}: Field required")
+                        raise ValueError(f"{name}: missing required input field")
                     kwargs[name] = None
             elif input_field.default is not None:
                 kwargs[name] = input_field.default
             else:
                 if input_field.type.repetition is not adt.Repetition.OPTIONAL:
-                    raise ValueError(f"{name}: Field required")
+                    raise ValueError(f"{name}: missing required input field")
                 kwargs[name] = None
 
         # Validate constraints
@@ -518,35 +518,37 @@ def check_input(
 
         if input_field.ge is not None:
             if not all(x >= input_field.ge for x in values_to_check):
-                raise ValueError(f"{name}: Value must be >= {input_field.ge}")
+                raise ValueError(
+                    f"{name} fails constraint >= {int(input_field.ge) if input_field.ge == int(input_field.ge) else input_field.ge}"
+                )
 
         if input_field.le is not None:
             if not all(x <= input_field.le for x in values_to_check):
-                raise ValueError(f"{name}: Value must be <= {input_field.le}")
+                raise ValueError(
+                    f"{name} fails constraint <= {int(input_field.le) if input_field.le == int(input_field.le) else input_field.le}"
+                )
 
         if input_field.min_length is not None:
             if not all(len(x) >= input_field.min_length for x in values_to_check):
                 raise ValueError(
-                    f"{name}: Length must be >= {input_field.min_length}"
+                    f"{name} fails constraint len() >= {input_field.min_length}"
                 )
 
         if input_field.max_length is not None:
             if not all(len(x) <= input_field.max_length for x in values_to_check):
                 raise ValueError(
-                    f"{name}: Length must be <= {input_field.max_length}"
+                    f"{name} fails constraint len() <= {input_field.max_length}"
                 )
 
         if input_field.regex is not None:
             p = re.compile(input_field.regex)
             if not all(p.match(x) is not None for x in values_to_check):
-                raise ValueError(
-                    f"{name}: Value must match pattern {input_field.regex!r}"
-                )
+                raise ValueError(f"{name} does not match regex {input_field.regex!r}")
 
         if input_field.choices is not None:
             if not all(x in input_field.choices for x in values_to_check):
                 raise ValueError(
-                    f"{name}: Value must be one of {input_field.choices!r}"
+                    f"{name} does not match choices {input_field.choices!r}"
                 )
 
     return kwargs

@@ -124,13 +124,16 @@ class PrimitiveType(Enum):
                 return value
             # URL string or data URI - validate to file-like object
             return File.validate(value)
-        elif self in {PrimitiveType.PATH, PrimitiveType.SECRET}:
-            # Keep Path/Secret values as-is - the worker handles URLPath conversion
-            # Strings (URLs/data URIs) stay as strings until the worker processes them
+        elif self is PrimitiveType.PATH:
+            # Convert strings to Path objects
             if isinstance(value, Path):
                 return value
-            # Keep strings as-is for later URLPath conversion in worker
-            return value
+            return Path(value)
+        elif self is PrimitiveType.SECRET:
+            # Convert strings to Secret objects
+            if isinstance(value, Secret):
+                return value
+            return Secret(value)
         else:
             # Handle enums by extracting their value
             if issubclass(tpe, Enum):
