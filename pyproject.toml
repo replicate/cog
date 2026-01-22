@@ -127,6 +127,7 @@ lint.ignore = [
 ]
 extend-exclude = [
   "python/tests/server/fixtures/*",
+  "crates/coglet-python/*.pyi",
 ]
 src = ["python"]
 

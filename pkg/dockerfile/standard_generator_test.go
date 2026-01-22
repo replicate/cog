@@ -986,7 +986,6 @@ predict: predict.py:Predictor
 	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
 
-
 func TestCOGWheelEnvCogletAlpha(t *testing.T) {
 	// COG_WHEEL=coglet-alpha should use PinnedCogletURL even without cog_runtime: true
 	t.Setenv("COG_WHEEL", "coglet-alpha")
@@ -1079,7 +1078,6 @@ predict: predict.py:Predictor
 	// Should NOT contain coglet-specific env vars
 	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
-
 
 func TestCOGWheelEnvFile(t *testing.T) {
 	// COG_WHEEL=/path/to/file.whl should install from local file

@@ -14,7 +14,6 @@ func TestReadCogWheel(t *testing.T) {
 	require.Greater(t, len(data), 10000)
 }
 
-
 func TestWheelSourceString(t *testing.T) {
 	tests := []struct {
 		source   WheelSource

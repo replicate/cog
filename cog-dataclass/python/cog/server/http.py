@@ -719,10 +719,7 @@ def _cpu_count() -> int:
         return os.cpu_count() or 1
 
 
-
-
 if __name__ == "__main__":
-
     # Try to use Rust coglet server if available
     try:
         import coglet  # type: ignore
@@ -791,7 +788,7 @@ if __name__ == "__main__":
         # Fall back to Python HTTP server
         log.info("Rust coglet not available, using Python HTTP server")
         pass
-    
+
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
         "-v", "--version", action="store_true", help="Show version and exit"

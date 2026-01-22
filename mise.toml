@@ -8,7 +8,7 @@ cargo-binstall = "1.16.6"
 "cargo:cargo-insta" = "1.46.0"
 "cargo:cargo-nextest" = "0.9.120"
 "cargo:maturin" = "1.11.5"
-ruff = "0.14.11"
+ruff = "0.14.13"
 ty = "0.0.10"
 
 [env]

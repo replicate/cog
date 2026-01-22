@@ -12,9 +12,10 @@ def suppress_output() -> Iterator[None]:
     err_dup_fd = os.dup(err_fd)
 
     try:
-        with open(os.devnull, "w", encoding="utf-8") as null_out, open(
-            os.devnull, "w", encoding="utf-8"
-        ) as null_err:
+        with (
+            open(os.devnull, "w", encoding="utf-8") as null_out,
+            open(os.devnull, "w", encoding="utf-8") as null_err,
+        ):
             os.dup2(null_out.fileno(), out_fd)
             os.dup2(null_err.fileno(), err_fd)
             try:
