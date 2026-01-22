@@ -26,6 +26,7 @@ allow = [
     "Unicode-DFS-2016",
     "CC0-1.0",
     "MPL-2.0",  # Weak copyleft, Apache compatible for our use
+    "CDLA-Permissive-2.0",  # Community Data License, for Mozilla CA certificate data
 ]
 confidence-threshold = 0.8
 exceptions = []
