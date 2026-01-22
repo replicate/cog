@@ -2,7 +2,9 @@
 # Source: test_run.py::test_run_fast_build
 
 [short] skip 'requires torch installation'
+# Skip for cog-dataclass and coglet (Rust) which do not support monobase
 [cog_dataclass] skip
+[coglet_rust] skip
 
 cog run echo hello world
 stdout 'hello world'

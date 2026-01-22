@@ -1,5 +1,7 @@
 # Test that fast build mode works (with fast: true in cog.yaml)
+# Skip for cog-dataclass and coglet (Rust) which do not support monobase
 [cog_dataclass] skip
+[coglet_rust] skip
 
 # Run prediction with fast build mode
 cog predict -i s=world

@@ -1,5 +1,6 @@
-# Skip for cog-dataclass (uses monobase/r8.im infrastructure)
+# Skip for cog-dataclass and coglet (Rust) which do not support monobase
 [cog_dataclass] skip
+[coglet_rust] skip
 # Skip for coglet_alpha which does not support this
 [coglet_alpha] skip
 
