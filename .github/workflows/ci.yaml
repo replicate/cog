@@ -25,6 +25,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for setuptools_scm version determination
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       # Build main cog package (wheel + sdist)
       - name: Build cog package
@@ -43,10 +47,6 @@ jobs:
           name: CogDataclassWheel
           path: dist/cog_dataclass-*.whl
       # Build Rust coglet wheel
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
@@ -75,6 +75,10 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Lint
         run: make lint
@@ -85,6 +89,7 @@ jobs:
       - test-go
       - test-python
       - test-python-dataclasses
+      - test-coglet-python
       - test-integration
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -111,6 +116,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Build
         run: make cog
@@ -137,6 +146,10 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Compute tox env name
         run: echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
@@ -165,6 +178,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Create virtual environment and install cog-dataclass wheel with dev dependencies
         run: |
@@ -172,6 +189,33 @@ jobs:
           uv pip install $(ls dist/cog_dataclass-*.whl)[dev]
       - name: Test
         run: uv run pytest cog-dataclass/python/tests -v
+
+  test-coglet-python:
+    name: "Test Coglet Python bindings"
+    needs: build-python
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Download built wheels
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
+      - uses: jdx/mise-action@v2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+      - name: Create virtual environment
+        run: uv venv
+      - name: Test coglet Python bindings
+        run: mise test:coglet-python
 
   # Go-based integration tests using testscript framework
   test-integration:
@@ -262,6 +306,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - uses: goreleaser/goreleaser-action@v6
         with:
