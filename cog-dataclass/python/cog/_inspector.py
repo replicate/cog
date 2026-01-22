@@ -423,14 +423,12 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
     p = getattr(module, predictor_name)
 
     if inspect.isclass(p):
-        if not _check_parent(p, BasePredictor):
-            raise ValueError(f"predictor {fullname} does not inherit cog.BasePredictor")
-        if not hasattr(p, "setup"):
-            raise ValueError(f"setup method not found: {fullname}")
         if not hasattr(p, "predict"):
             raise ValueError(f"predict method not found: {fullname}")
 
-        _validate_setup(_unwrap(getattr(p, "setup")))
+        if hasattr(p, "setup"):
+            _validate_setup(_unwrap(getattr(p, "setup")))
+
         predict_fn_name = "predict"
         predict_fn = _unwrap(getattr(p, predict_fn_name))
         is_class_fn = True
