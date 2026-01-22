@@ -2,7 +2,7 @@
 //!
 //! Cog predictors can come from different runtimes with different type systems:
 //! - **Pydantic (cog)**: Uses Pydantic BaseModel for input validation, URLPath for file downloads
-//! - **Coglet**: Uses dataclasses and ADT types, different file handling
+//! - **Non-pydantic (cog-dataclass)**: Uses ADT types, different file handling
 //!
 //! This module provides a trait-based abstraction to handle input processing
 //! for each runtime correctly.
@@ -72,10 +72,10 @@ pub enum Runtime {
         /// The Pydantic input model class (BaseInput subclass)
         input_type: PyObject,
     },
-    /// Coglet runtime (alpha/beta).
-    /// Uses dataclasses and ADT types.
-    Coglet {
-        /// The adt.Predictor object with inputs dict
+    /// Non-pydantic runtime (cog-dataclass).
+    /// Uses cog-dataclass ADT types.
+    NonPydantic {
+        /// The adt.PredictorInfo object with inputs dict
         adt_predictor: PyObject,
     },
 }
@@ -138,22 +138,22 @@ impl InputProcessor for PydanticInputProcessor {
     }
 }
 
-/// Coglet input processor for coglet alpha/beta runtimes.
-pub struct CogletInputProcessor {
-    /// The adt.Predictor object
+/// Input processor for non-pydantic runtime (cog-dataclass).
+pub struct NonPydanticInputProcessor {
+    /// The adt.PredictorInfo object
     adt_predictor: PyObject,
 }
 
-impl CogletInputProcessor {
+impl NonPydanticInputProcessor {
     pub fn new(adt_predictor: PyObject) -> Self {
         Self { adt_predictor }
     }
 }
 
-impl InputProcessor for CogletInputProcessor {
+impl InputProcessor for NonPydanticInputProcessor {
     fn prepare(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput> {
-        // Use coglet's inspector.check_input() for validation
-        let inspector = py.import("coglet.inspector")?;
+        // Use cog-dataclass inspector.check_input() for validation
+        let inspector = py.import("cog._inspector")?;
         let check_input = inspector.getattr("check_input")?;
 
         // Get inputs dict from adt_predictor
@@ -164,8 +164,10 @@ impl InputProcessor for CogletInputProcessor {
         let result = check_input.call1((&adt_inputs, input))?;
         let result_dict = result.extract::<Bound<'_, PyDict>>()?;
 
-        // Coglet doesn't download URLs, so no cleanup needed
-        Ok(PreparedInput::new(result_dict.unbind(), Vec::new()))
+        // Download URLPath inputs in parallel and replace in payload
+        let cleanup_paths = download_url_paths_into_dict(py, &result_dict)?;
+
+        Ok(PreparedInput::new(result_dict.unbind(), cleanup_paths))
     }
 }
 
@@ -316,8 +318,8 @@ impl std::fmt::Display for RuntimeDetectionError {
         write!(
             f,
             "Unable to detect predictor runtime for '{}'. \
-             Expected either Pydantic (cog) or Coglet type system. \
-             This predictor may be incompatible with coglet.",
+             Expected either Pydantic (cog) or non-pydantic (cog-dataclass) type system. \
+             This predictor may be incompatible with the runtime.",
             self.predictor_ref
         )
     }
@@ -340,9 +342,9 @@ pub fn detect_runtime(
         return Ok(runtime);
     }
 
-    // Try Coglet
-    if let Some(runtime) = try_coglet_runtime(py, predictor_ref) {
-        tracing::info!("Detected Coglet runtime");
+    // Try non-pydantic runtime (cog-dataclass)
+    if let Some(runtime) = try_non_pydantic_runtime(py, predictor_ref) {
+        tracing::info!("Detected non-pydantic runtime");
         return Ok(runtime);
     }
 
@@ -381,31 +383,42 @@ fn try_pydantic_runtime(py: Python<'_>, instance: &PyObject) -> Option<Runtime> 
     }
 }
 
-/// Try to detect Coglet runtime.
-fn try_coglet_runtime(py: Python<'_>, predictor_ref: &str) -> Option<Runtime> {
-    // Parse predictor_ref to get module and class name
+fn parse_predictor_ref(predictor_ref: &str) -> Option<(String, String)> {
     let parts: Vec<&str> = predictor_ref.rsplitn(2, ':').collect();
     if parts.len() != 2 {
         return None;
     }
-    let predictor_name = parts[0];
+    let predictor_name = parts[0].to_string();
     let module_path = parts[1];
 
-    // Convert file path to module name
     let module_name = module_path
         .trim_end_matches(".py")
         .replace(['/', '\\'], ".");
 
-    let inspector = py.import("coglet.inspector").ok()?;
+    Some((module_name, predictor_name))
+}
+
+/// Try to detect non-pydantic runtime (cog-dataclass).
+fn try_non_pydantic_runtime(py: Python<'_>, predictor_ref: &str) -> Option<Runtime> {
+    let (module_name, predictor_name) = parse_predictor_ref(predictor_ref)?;
+
+    let inspector = py.import("cog._inspector").ok()?;
     let create_predictor = inspector.getattr("create_predictor").ok()?;
 
-    // create_predictor returns adt.Predictor
-    // Pass inspect_ast=False to skip AST validation (for older models)
-    let adt_predictor = create_predictor
-        .call1((&module_name, predictor_name, false))
-        .ok()?;
+    let adt_predictor = create_predictor.call1((module_name, predictor_name)).ok()?;
 
-    Some(Runtime::Coglet {
+    let adt_module = py.import("cog._adt").ok()?;
+    let predictor_info_class = adt_module.getattr("PredictorInfo").ok()?;
+    let is_predictor_info = adt_predictor
+        .is_instance(&predictor_info_class)
+        .ok()
+        .unwrap_or(false);
+
+    if !is_predictor_info {
+        return None;
+    }
+
+    Some(Runtime::NonPydantic {
         adt_predictor: adt_predictor.unbind(),
     })
 }
@@ -417,8 +430,61 @@ pub fn create_input_processor(runtime: &Runtime) -> Box<dyn InputProcessor> {
             // Clone PyObject using Python GIL
             Python::attach(|py| Box::new(PydanticInputProcessor::new(input_type.clone_ref(py))))
         }
-        Runtime::Coglet { adt_predictor } => {
-            Python::attach(|py| Box::new(CogletInputProcessor::new(adt_predictor.clone_ref(py))))
-        }
+        Runtime::NonPydantic { adt_predictor } => Python::attach(|py| {
+            Box::new(NonPydanticInputProcessor::new(adt_predictor.clone_ref(py)))
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_predictor_ref_valid() {
+        let (module, predictor) = parse_predictor_ref("predict.py:Predictor").unwrap();
+        assert_eq!(module, "predict");
+        assert_eq!(predictor, "Predictor");
+    }
+
+    #[test]
+    fn test_parse_predictor_ref_nested_path() {
+        let (module, predictor) = parse_predictor_ref("path/to/predict.py:Predictor").unwrap();
+        assert_eq!(module, "path.to.predict");
+        assert_eq!(predictor, "Predictor");
+    }
+
+    #[test]
+    fn test_parse_predictor_ref_function() {
+        let (module, predictor) = parse_predictor_ref("predict.py:predict").unwrap();
+        assert_eq!(module, "predict");
+        assert_eq!(predictor, "predict");
+    }
+
+    #[test]
+    fn test_parse_predictor_ref_non_standard_name() {
+        let (module, predictor) = parse_predictor_ref("model.py:run").unwrap();
+        assert_eq!(module, "model");
+        assert_eq!(predictor, "run");
+    }
+
+    #[test]
+    fn test_parse_predictor_ref_windows_path() {
+        let (module, predictor) = parse_predictor_ref("path\\to\\predict.py:Predictor").unwrap();
+        assert_eq!(module, "path.to.predict");
+        assert_eq!(predictor, "Predictor");
+    }
+
+    #[test]
+    fn test_parse_predictor_ref_invalid_no_colon() {
+        assert!(parse_predictor_ref("predict.py").is_none());
+    }
+
+    #[test]
+    fn test_parse_predictor_ref_invalid_multiple_colons() {
+        // Should take the last colon as the separator
+        let (module, predictor) = parse_predictor_ref("path:to:predict.py:Predictor").unwrap();
+        assert_eq!(module, "path:to:predict");
+        assert_eq!(predictor, "Predictor");
     }
 }

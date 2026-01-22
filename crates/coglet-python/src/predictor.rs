@@ -97,7 +97,7 @@ pub enum PredictorKind {
 ///
 /// Predictors can come from different runtimes:
 /// - **Pydantic (cog)**: Uses Pydantic BaseModel, URLPath for file downloads
-/// - **Coglet**: Uses dataclasses and ADT types
+/// - **Non-pydantic (cog-dataclass)**: Uses ADT types
 ///
 /// We detect the runtime on load and use the appropriate input processor.
 pub struct PythonPredictor {
@@ -257,30 +257,27 @@ impl PythonPredictor {
 
     /// Generate OpenAPI schema for this predictor.
     ///
-    /// Uses coglet.schemas.to_json_schema() which returns the full OpenAPI spec
-    /// with Input/Output schemas populated from the predictor's type annotations.
+    /// Uses cog-dataclass schema generation for non-pydantic runtimes and
+    /// FastAPI schema generation for pydantic runtimes.
     ///
     /// Returns None if schema generation fails (best-effort).
     pub fn schema(&self) -> Option<serde_json::Value> {
         Python::attach(|py| {
-            // Try coglet schema generation first (works for both runtimes)
+            // Generate schema for the active runtime
             let result: PyResult<serde_json::Value> = (|| {
                 let json_module = py.import("json")?;
 
-                // For Coglet runtime, we have the ADT predictor directly
-                // For Pydantic runtime, we need to create the ADT predictor from the class
+                // For non-pydantic runtime, we have the ADT predictor directly
+                // For Pydantic runtime, use FastAPI schema generation
                 let adt_predictor = match &self.runtime {
-                    Runtime::Coglet { adt_predictor } => adt_predictor.bind(py).clone(),
+                    Runtime::NonPydantic { adt_predictor } => adt_predictor.bind(py).clone(),
                     Runtime::Pydantic { input_type: _ } => {
-                        // For Pydantic, we need to introspect the predictor class
-                        // Use coglet.inspector.create_predictor equivalent
-                        // This is complex, so for now just use cog's FastAPI schema
                         return self.schema_via_fastapi(py, json_module.as_any());
                     }
                 };
 
-                // Use coglet.schemas.to_json_schema(adt_predictor)
-                let schemas_module = py.import("coglet.schemas")?;
+                // Use cog-dataclass schema generation
+                let schemas_module = py.import("cog._schemas")?;
                 let to_json_schema = schemas_module.getattr("to_json_schema")?;
                 let schema = to_json_schema.call1((&adt_predictor,))?;
 
