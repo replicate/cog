@@ -5,10 +5,14 @@ build-backend = "maturin"
 [project]
 name = "coglet"
 description = "Rust execution engine for cog models"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dynamic = ["version"]
 dependencies = []
@@ -21,7 +25,7 @@ test = [
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-# Use manylinux2014 (glibc 2.17) for compatibility with Python 3.8+ base images
+# Use manylinux2014 (glibc 2.17) for compatibility with Python 3.10+ base images
 compatibility = "manylinux2014"
 
 [tool.pytest.ini_options]

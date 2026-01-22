@@ -60,7 +60,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: CogletRustWheel
-          path: dist/coglet-*-cp38-abi3-*.whl
+          path: dist/coglet-*-cp310-abi3-*.whl
 
   lint:
     name: Lint
@@ -267,13 +267,13 @@ jobs:
               echo "COG_WHEEL=coglet-alpha" >> $GITHUB_ENV
               ;;
             cog-rust)
-              RUST_WHEEL=$(ls dist/coglet-*-cp38-abi3-*.whl | head -1)
+              RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl | head -1)
               echo "Found Rust coglet wheel: $RUST_WHEEL"
               echo "COG_WHEEL=cog" >> $GITHUB_ENV
               echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
               ;;
             cog-dataclass-rust)
-              RUST_WHEEL=$(ls dist/coglet-*-cp38-abi3-*.whl | head -1)
+              RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl | head -1)
               echo "Found Rust coglet wheel: $RUST_WHEEL"
               echo "COG_WHEEL=cog-dataclass" >> $GITHUB_ENV
               echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
