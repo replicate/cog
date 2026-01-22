@@ -55,7 +55,7 @@ jobs:
       - name: Run clippy
         run: cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
       - name: Build Rust coglet wheel (ABI3)
-        run: mise run build:coglet:wheel
+        run: mise run build:coglet:wheel:linux
       - name: Upload Rust coglet wheel
         uses: actions/upload-artifact@v6
         with:
