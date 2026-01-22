@@ -204,6 +204,12 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      - name: Create virtual environment
+        run: uv venv
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-binstall
@@ -212,8 +218,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
-      - name: Create virtual environment
-        run: uv venv
       - name: Test coglet Python bindings
         run: mise test:coglet-python
 

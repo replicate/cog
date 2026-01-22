@@ -85,8 +85,7 @@ run = """
 #!/usr/bin/env bash
 set -e
 uv pip install -e . -e ../../cog-dataclass pytest requests
-source ../../.venv/bin/activate
-python -m pytest tests/ -v
+pytest tests/ -v
 """
 
 # Rust formatting and linting
