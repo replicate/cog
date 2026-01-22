@@ -23,7 +23,7 @@ axum.workspace = true
 
 # HTTP client (webhooks)
 reqwest.workspace = true
-ureq = { version = "3", features = ["json"] }
+ureq = { version = "3", default-features = false, features = ["json", "rustls", "platform-verifier"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
