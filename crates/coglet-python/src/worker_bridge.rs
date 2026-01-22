@@ -568,7 +568,7 @@ impl PredictHandler for PythonPredictHandler {
             .predictor
             .lock()
             .expect("Worker internal error: predictor mutex poisoned");
-        guard.as_ref().and_then(|pred| pred.schema())
+        guard.as_ref().and_then(|pred| pred.schema(self.mode))
     }
 }
 

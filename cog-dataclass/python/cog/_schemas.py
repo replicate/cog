@@ -9,6 +9,7 @@ from dataclasses import MISSING, Field
 from typing import Any, Dict
 
 from . import _adt as adt
+from .mode import Mode
 
 
 def to_json_input(predictor: adt.PredictorInfo) -> Dict[str, Any]:
@@ -111,13 +112,41 @@ def to_json_output(predictor: adt.PredictorInfo) -> Dict[str, Any]:
     return predictor.output.json_type()
 
 
-def to_json_schema(predictor: adt.PredictorInfo) -> Dict[str, Any]:
+def to_json_schema(predictor: adt.PredictorInfo, mode: Mode = Mode.PREDICT) -> Dict[str, Any]:
     """
     Generate a complete OpenAPI schema for a predictor.
 
     This creates the full OpenAPI specification with Input, Output,
     and enum schemas populated from the predictor info.
+
+    Args:
+        predictor: The predictor info to generate schema from
+        mode: The prediction mode (Mode.PREDICT or Mode.TRAIN)
     """
+    # Determine routes and schema names based on mode
+    if mode == Mode.TRAIN:
+        main_route = "/trainings"
+        cancel_route = "/trainings/{training_id}/cancel"
+        request_schema = "TrainingRequest"
+        response_schema = "TrainingResponse"
+        id_param_name = "training_id"
+        id_param_title = "Training Id"
+        summary = "Train"
+        description = "Run a training session"
+        operation_id = "train_trainings_post"
+        cancel_operation_id = "cancel_trainings__training_id__cancel_post"
+    else:
+        main_route = "/predictions"
+        cancel_route = "/predictions/{prediction_id}/cancel"
+        request_schema = "PredictionRequest"
+        response_schema = "PredictionResponse"
+        id_param_name = "prediction_id"
+        id_param_title = "Prediction Id"
+        summary = "Predict"
+        description = "Run a single prediction on the model"
+        operation_id = "predict_predictions_post"
+        cancel_operation_id = "cancel_predictions__prediction_id__cancel_post"
+
     # Base OpenAPI schema structure
     schema: Dict[str, Any] = {
         "openapi": "3.0.2",
@@ -147,16 +176,16 @@ def to_json_schema(predictor: adt.PredictorInfo) -> Dict[str, Any]:
                     },
                 }
             },
-            "/predictions": {
+            main_route: {
                 "post": {
-                    "summary": "Predict",
-                    "description": "Run a single prediction on the model",
-                    "operationId": "predict_predictions_post",
+                    "summary": summary,
+                    "description": description,
+                    "operationId": operation_id,
                     "requestBody": {
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/PredictionRequest"
+                                    "$ref": f"#/components/schemas/{request_schema}"
                                 }
                             }
                         }
@@ -167,7 +196,7 @@ def to_json_schema(predictor: adt.PredictorInfo) -> Dict[str, Any]:
                             "content": {
                                 "application/json": {
                                     "schema": {
-                                        "$ref": "#/components/schemas/PredictionResponse"
+                                        "$ref": f"#/components/schemas/{response_schema}"
                                     }
                                 }
                             },
@@ -185,15 +214,15 @@ def to_json_schema(predictor: adt.PredictorInfo) -> Dict[str, Any]:
                     },
                 }
             },
-            "/predictions/{prediction_id}/cancel": {
+            cancel_route: {
                 "post": {
                     "summary": "Cancel",
-                    "operationId": "cancel_predictions__prediction_id__cancel_post",
+                    "operationId": cancel_operation_id,
                     "parameters": [
                         {
                             "required": True,
-                            "schema": {"title": "Prediction Id", "type": "string"},
-                            "name": "prediction_id",
+                            "schema": {"title": id_param_title, "type": "string"},
+                            "name": id_param_name,
                             "in": "path",
                         }
                     ],
@@ -229,16 +258,16 @@ def to_json_schema(predictor: adt.PredictorInfo) -> Dict[str, Any]:
                         }
                     },
                 },
-                "PredictionRequest": {
-                    "title": "PredictionRequest",
+                request_schema: {
+                    "title": request_schema,
                     "type": "object",
                     "properties": {
                         "id": {"title": "Id", "type": "string"},
                         "input": {"$ref": "#/components/schemas/Input"},
                     },
                 },
-                "PredictionResponse": {
-                    "title": "PredictionResponse",
+                response_schema: {
+                    "title": response_schema,
                     "type": "object",
                     "properties": {
                         "input": {"$ref": "#/components/schemas/Input"},

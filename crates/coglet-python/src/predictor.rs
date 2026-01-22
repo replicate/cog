@@ -261,7 +261,7 @@ impl PythonPredictor {
     /// FastAPI schema generation for pydantic runtimes.
     ///
     /// Returns None if schema generation fails (best-effort).
-    pub fn schema(&self) -> Option<serde_json::Value> {
+    pub fn schema(&self, mode: crate::worker_bridge::HandlerMode) -> Option<serde_json::Value> {
         Python::attach(|py| {
             // Generate schema for the active runtime
             let result: PyResult<serde_json::Value> = (|| {
@@ -272,14 +272,22 @@ impl PythonPredictor {
                 let adt_predictor = match &self.runtime {
                     Runtime::NonPydantic { adt_predictor } => adt_predictor.bind(py).clone(),
                     Runtime::Pydantic { input_type: _ } => {
-                        return self.schema_via_fastapi(py, json_module.as_any());
+                        return self.schema_via_fastapi(py, json_module.as_any(), mode);
                     }
+                };
+
+                // Get Python Mode enum value (Mode.TRAIN or Mode.PREDICT)
+                let mode_module = py.import("cog.mode")?;
+                let mode_enum = mode_module.getattr("Mode")?;
+                let py_mode = match mode {
+                    crate::worker_bridge::HandlerMode::Train => mode_enum.getattr("TRAIN")?,
+                    crate::worker_bridge::HandlerMode::Predict => mode_enum.getattr("PREDICT")?,
                 };
 
                 // Use cog-dataclass schema generation
                 let schemas_module = py.import("cog._schemas")?;
                 let to_json_schema = schemas_module.getattr("to_json_schema")?;
-                let schema = to_json_schema.call1((&adt_predictor,))?;
+                let schema = to_json_schema.call1((&adt_predictor, py_mode))?;
 
                 // Convert to JSON string then parse to serde_json::Value
                 let schema_str: String =
@@ -306,7 +314,10 @@ impl PythonPredictor {
         &self,
         py: Python<'_>,
         json_module: &Bound<'_, PyAny>,
+        mode: crate::worker_bridge::HandlerMode,
     ) -> PyResult<serde_json::Value> {
+        use crate::worker_bridge::HandlerMode;
+
         // For Pydantic runtime, use cog's FastAPI app to generate schema
         // This is what cog.command.openapi_schema does
         let cog_server_http = py.import("cog.server.http")?;
@@ -317,11 +328,20 @@ impl PythonPredictor {
         let config_class = cog_config_module.getattr("Config")?;
         let config = config_class.call0()?;
 
-        // Create app with is_build=True to skip actual setup
+        // Get Python Mode enum value (Mode.TRAIN or Mode.PREDICT)
+        let mode_module = py.import("cog.mode")?;
+        let mode_enum = mode_module.getattr("Mode")?;
+        let py_mode = match mode {
+            HandlerMode::Train => mode_enum.getattr("TRAIN")?,
+            HandlerMode::Predict => mode_enum.getattr("PREDICT")?,
+        };
+
+        // Create app with is_build=True to skip actual setup, and correct mode
         let kwargs = pyo3::types::PyDict::new(py);
         kwargs.set_item("cog_config", &config)?;
         kwargs.set_item("shutdown_event", py.None())?;
         kwargs.set_item("is_build", true)?;
+        kwargs.set_item("mode", py_mode)?;
 
         let app = create_app.call((), Some(&kwargs))?;
 
