@@ -33,7 +33,7 @@ impl Default for ServerConfig {
 /// Start the HTTP server with provided service.
 pub async fn serve(config: ServerConfig, service: Arc<PredictionService>) -> anyhow::Result<()> {
     let shutdown_rx = service.shutdown_rx();
-    let app = routes(service);
+    let app = routes(service.clone());
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
 
@@ -46,6 +46,10 @@ pub async fn serve(config: ServerConfig, service: Arc<PredictionService>) -> any
         .await?;
 
     info!("Server shutdown complete");
+
+    // Gracefully shutdown the orchestrator worker
+    service.shutdown().await;
+
     Ok(())
 }
 

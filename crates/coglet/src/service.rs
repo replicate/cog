@@ -137,6 +137,18 @@ impl PredictionService {
         self.orchestrator.read().await.is_some()
     }
 
+    /// Shutdown the orchestrator gracefully.
+    ///
+    /// Sends a shutdown message to the worker process and waits for it to exit.
+    /// If no orchestrator is configured, this is a no-op.
+    pub async fn shutdown(&self) {
+        if let Some(ref state) = *self.orchestrator.read().await
+            && let Err(e) = state.orchestrator.shutdown().await
+        {
+            tracing::warn!(error = %e, "Error during orchestrator shutdown");
+        }
+    }
+
     pub fn supervisor(&self) -> &Arc<PredictionSupervisor> {
         &self.supervisor
     }
@@ -399,6 +411,10 @@ mod tests {
                     "mock result"
                 )));
             }
+        }
+
+        async fn shutdown(&self) -> Result<(), crate::orchestrator::OrchestratorError> {
+            Ok(())
         }
     }
 

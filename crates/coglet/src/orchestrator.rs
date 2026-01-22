@@ -54,6 +54,9 @@ fn try_lock_prediction(
 pub trait Orchestrator: Send + Sync {
     /// Register a prediction for response routing in the event loop.
     async fn register_prediction(&self, slot_id: SlotId, prediction: Arc<StdMutex<Prediction>>);
+
+    /// Shutdown the orchestrator and worker gracefully.
+    async fn shutdown(&self) -> Result<(), OrchestratorError>;
 }
 
 #[derive(Debug, Clone)]
@@ -155,6 +158,14 @@ impl Orchestrator for OrchestratorHandle {
     async fn register_prediction(&self, slot_id: SlotId, prediction: Arc<StdMutex<Prediction>>) {
         let _ = self.register_tx.send((slot_id, prediction)).await;
     }
+
+    async fn shutdown(&self) -> Result<(), OrchestratorError> {
+        let mut writer = self.ctrl_writer.lock().await;
+        writer
+            .send(ControlRequest::Shutdown)
+            .await
+            .map_err(|e| OrchestratorError::Protocol(format!("failed to send shutdown: {}", e)))
+    }
 }
 
 impl OrchestratorHandle {
@@ -164,14 +175,6 @@ impl OrchestratorHandle {
             .send(ControlRequest::Cancel { slot: slot_id })
             .await
             .map_err(|e| OrchestratorError::Protocol(format!("failed to send cancel: {}", e)))
-    }
-
-    pub async fn shutdown(&self) -> Result<(), OrchestratorError> {
-        let mut writer = self.ctrl_writer.lock().await;
-        writer
-            .send(ControlRequest::Shutdown)
-            .await
-            .map_err(|e| OrchestratorError::Protocol(format!("failed to send shutdown: {}", e)))
     }
 
     pub fn slot_ids(&self) -> &[SlotId] {

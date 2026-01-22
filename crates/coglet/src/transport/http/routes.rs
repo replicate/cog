@@ -656,6 +656,10 @@ mod tests {
                 pred.set_succeeded(PredictionOutput::Single(serde_json::json!("mock output")));
             }
         }
+
+        async fn shutdown(&self) -> Result<(), crate::orchestrator::OrchestratorError> {
+            Ok(())
+        }
     }
 
     async fn create_test_pool(num_slots: usize) -> Arc<PermitPool> {
