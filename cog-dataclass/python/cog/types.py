@@ -323,11 +323,15 @@ class Path(pathlib.PosixPath):
         if isinstance(value, pathlib.Path):
             return value
 
-        return URLPath(
-            source=value,
-            filename=get_filename(value),
-            fileobj=File.validate(value),
-        )
+        parsed_url = urllib.parse.urlparse(value)
+        if parsed_url.scheme in ("data", "http", "https"):
+            return URLPath(
+                source=value,
+                filename=get_filename(value),
+                fileobj=File.validate(value),
+            )
+
+        return Path(value)
 
     # Pydantic v2 support - allows using cog.Path in pydantic.BaseModel
     @classmethod
