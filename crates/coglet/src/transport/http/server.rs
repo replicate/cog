@@ -37,9 +37,10 @@ pub async fn serve(config: ServerConfig, service: Arc<PredictionService>) -> any
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
 
-    info!("Starting coglet server on {}", addr);
-
     let listener = TcpListener::bind(addr).await?;
+    let actual_addr = listener.local_addr()?;
+
+    info!("Starting coglet server on {}", actual_addr);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(config.await_explicit_shutdown, shutdown_rx))
