@@ -21,6 +21,8 @@ test = [
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+# Use manylinux2014 (glibc 2.17) for compatibility with Python 3.8+ base images
+compatibility = "manylinux2014"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
