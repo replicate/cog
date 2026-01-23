@@ -450,6 +450,13 @@ def get_train(predictor: Any) -> Callable[..., Any]:
     return predictor
 
 
+def get_healthcheck(predictor: Any) -> Optional[Callable[..., Any]]:
+    """Get the healthcheck method if it exists."""
+    if hasattr(predictor, "healthcheck"):
+        return predictor.healthcheck
+    return None
+
+
 def get_training_input_type(predictor: BasePredictor) -> Type[BaseInput]:
     """
     Creates a Pydantic Input model from the arguments of a Predictor's train() method.

@@ -154,6 +154,15 @@ class PredictionRunner:
                 raise UnknownPredictionError("unknown prediction id")
         self._worker.cancel(tag=prediction_id)
 
+    async def healthcheck(self) -> Done:
+        """Run the user's healthcheck method."""
+        # Don't run healthcheck if the setup task is not completed
+        if self._setup_task is None or not self._setup_task.done():
+            return Done()
+
+        result = await asyncio.wrap_future(self._worker.healthcheck())
+        return result
+
     def _raise_if_busy(self) -> None:
         if self._setup_task is None:
             # Setup hasn't been called yet.

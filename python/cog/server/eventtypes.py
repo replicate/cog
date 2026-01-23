@@ -21,6 +21,11 @@ class Shutdown:
     pass
 
 
+@define
+class Healthcheck:
+    pass
+
+
 # From predictor child process
 #
 @define
@@ -63,6 +68,7 @@ class Envelope:
         Cancel,
         PredictionInput,
         Shutdown,
+        Healthcheck,
         Log,
         PredictionMetric,
         PredictionOutput,
