@@ -43,11 +43,46 @@ fn report_dropped_logs(tx: &mpsc::Sender<ControlResponse>, interval_millis: u64)
     }
 }
 
+// ============================================================================
+// Tracing initialization
+// ============================================================================
+
+fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+    let filter = if std::env::var("RUST_LOG").is_ok() {
+        EnvFilter::from_default_env()
+    } else {
+        let base_level = match std::env::var("COG_LOG").as_deref() {
+            Ok("debug") => "debug",
+            Ok("warn") | Ok("warning") => "warn",
+            Ok("error") => "error",
+            _ => "info",
+        };
+
+        let filter_str = format!(
+            "coglet={level},coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
+            level = base_level
+        );
+
+        EnvFilter::new(filter_str)
+    };
+
+    let worker_layer = WorkerTracingLayer::new(tx);
+
+    let subscriber = tracing_subscriber::registry()
+        .with(filter)
+        .with(worker_layer);
+
+    let _ = subscriber.try_init();
+}
+
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
     ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
 use crate::bridge::transport::{connect_transport, get_transport_info_from_env};
+use crate::worker_tracing_layer::WorkerTracingLayer;
 
 type SlotWriter =
     Arc<tokio::sync::Mutex<FramedWrite<tokio::net::unix::OwnedWriteHalf, JsonCodec<SlotResponse>>>>;
@@ -247,11 +282,9 @@ pub async fn run_worker<H: PredictHandler>(
 ) -> io::Result<()> {
     let num_slots = config.num_slots;
 
-    // Set up log forwarding for setup phase
-    // This channel is used both for setup logs from Python and for captured subprocess output
-    // Bounded at 500 messages (~25-100KB) to prevent unbounded memory growth if subprocess
-    // spams output. Backpressure will slow the capture threads, which is fine.
-    let (setup_log_tx, mut setup_log_rx) = mpsc::channel::<ControlResponse>(500);
+    let (setup_log_tx, mut setup_log_rx) = mpsc::channel::<ControlResponse>(5000);
+
+    init_worker_tracing(setup_log_tx.clone());
 
     // CRITICAL: Redirect fds BEFORE any FFI initialization to prevent subprocesses
     // from polluting the control channel

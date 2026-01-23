@@ -14,6 +14,7 @@ pub mod service;
 pub mod transport;
 pub mod webhook;
 pub mod worker;
+mod worker_tracing_layer;
 
 pub use orchestrator::Orchestrator;
 

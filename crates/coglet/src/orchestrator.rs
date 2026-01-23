@@ -45,6 +45,73 @@ fn try_lock_prediction(
     }
 }
 
+fn emit_worker_log(target: &str, level: &str, msg: &str) {
+    use std::sync::OnceLock;
+    use std::collections::HashMap;
+    use tracing::{Level, Metadata, callsite::{Callsite, Identifier}, field::FieldSet};
+
+    struct DummyCallsite;
+    impl Callsite for DummyCallsite {
+        fn set_interest(&self, _: tracing::subscriber::Interest) {}
+        fn metadata(&self) -> &Metadata<'static> {
+            unreachable!()
+        }
+    }
+
+    static DUMMY: DummyCallsite = DummyCallsite;
+    static CALLSITES: OnceLock<std::sync::Mutex<HashMap<(&'static str, Level), Metadata<'static>>>> = OnceLock::new();
+    static FIELDS: &[&str] = &["message"];
+
+    let lvl = match level {
+        "error" => Level::ERROR,
+        "warn" => Level::WARN,
+        "info" => Level::INFO,
+        "debug" => Level::DEBUG,
+        "trace" => Level::TRACE,
+        _ => Level::INFO,
+    };
+
+    let target_static: &'static str = Box::leak(target.to_string().into_boxed_str());
+
+    let callsites = CALLSITES.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
+    let mut map = match callsites.lock() {
+        Ok(guard) => guard,
+        Err(_poisoned) => {
+            tracing::error!("Worker log callsite cache poisoned");
+            return;
+        }
+    };
+
+    let meta = map.entry((target_static, lvl)).or_insert_with(|| {
+        Metadata::new(
+            "worker_log",
+            target_static,
+            lvl,
+            Some(file!()),
+            Some(line!()),
+            Some(module_path!()),
+            FieldSet::new(FIELDS, Identifier(&DUMMY)),
+            tracing::metadata::Kind::EVENT,
+        )
+    });
+
+    let meta_ref = meta as *const Metadata<'static>;
+    drop(map);
+
+    let meta = unsafe { &*meta_ref };
+
+    tracing::dispatcher::get_default(|dispatch| {
+        if dispatch.enabled(meta) {
+            let fields = meta.fields();
+            if let Some(field) = fields.field("message") {
+                let value_array = [(&field, Some(&msg as &dyn tracing::Value))];
+                let values = fields.value_set(&value_array);
+                dispatch.event(&tracing::Event::new(meta, &values));
+            }
+        }
+    });
+}
+
 /// Trait for prediction registration with the orchestrator.
 ///
 /// This abstraction enables testing the service layer without a real worker subprocess.
@@ -263,6 +330,9 @@ pub async fn spawn_worker(
                         tracing::info!(target: "coglet::setup", source = ?source, "{}", line);
                     }
                 }
+                Some(Ok(ControlResponse::WorkerLog { target, level, message })) => {
+                    emit_worker_log(&target, &level, &message);
+                }
                 Some(Ok(ControlResponse::DroppedLogs { count, interval_millis })) => {
                     tracing::trace!(count, interval_millis, "Received DroppedLogs during setup");
                     let interval_secs = interval_millis as f64 / 1000.0;
@@ -411,10 +481,12 @@ async fn run_event_loop(
                         tracing::warn!("Unexpected Ready in event loop");
                     }
                     Some(Ok(ControlResponse::Log { source: _, data })) => {
-                        // Subprocess output not tied to a prediction (orphan logs)
                         for line in data.lines() {
                             tracing::info!(target: "coglet::user", "{}", line);
                         }
+                    }
+                    Some(Ok(ControlResponse::WorkerLog { target, level, message })) => {
+                        emit_worker_log(&target, &level, &message);
                     }
                     Some(Ok(ControlResponse::DroppedLogs { count, interval_millis })) => {
                         tracing::trace!(count, interval_millis, "Received DroppedLogs message");

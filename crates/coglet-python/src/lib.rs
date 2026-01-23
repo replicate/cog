@@ -240,7 +240,6 @@ fn _is_cancelable() -> bool {
 #[pyo3(signature = ())]
 fn _run_worker(py: Python<'_>) -> PyResult<()> {
     set_active();
-    init_tracing(true);
 
     // Install SlotLogWriters for ContextVar-based log routing
     log_writer::install_slot_log_writers(py)?;

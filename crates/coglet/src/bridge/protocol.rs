@@ -79,6 +79,13 @@ pub enum ControlResponse {
         data: String,
     },
 
+    /// Worker tracing log (Rust structured logging).
+    WorkerLog {
+        target: String,
+        level: String,
+        message: String,
+    },
+
     /// Slot completed and is ready for next prediction.
     Idle {
         slot: SlotId,
