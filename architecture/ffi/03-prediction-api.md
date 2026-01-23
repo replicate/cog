@@ -101,19 +101,41 @@ tokio::spawn(async move {
 
 **Legacy**: Sends `SIGUSR1` signal to child process
 
-**FFI**: Uses structured cancel tokens + IPC message:
+**FFI**: Uses IPC message + different strategies for sync vs async predictors:
 
-```rust
-// In parent (Rust)
-cancel_token.cancel();  // Sets atomic flag
-control_tx.send(Cancel).await;  // Explicit IPC message
-
-// In worker (Python)
-if cancel_token.is_cancelled():
-    raise CancelledError()
+```
+Parent: ControlRequest::Cancel { slot }
+    │
+    └─▶ Worker: handler.cancel(slot)
 ```
 
-This provides more reliable cancellation without signal handling complexity.
+**Sync Predictors:**
+```
+handler.cancel(slot)
+    │
+    ├─▶ Set CANCEL_REQUESTED flag for slot
+    │
+    ├─▶ Send SIGUSR1 to self
+    │
+    └─▶ Signal handler: raise KeyboardInterrupt (if in cancelable region)
+
+Prediction code:
+    with CancelableGuard():  # Sets CANCELABLE=true
+        predictor.predict()  # Can be interrupted
+    # CANCELABLE=false on exit
+```
+
+**Async Predictors:**
+```
+handler.cancel(slot)
+    │
+    ├─▶ Get future from slot state
+    └─▶ future.cancel()
+            │
+            └─▶ Python raises asyncio.CancelledError
+```
+
+This provides more reliable cancellation with proper handling for both sync and async execution models.
 
 ## Concurrency Model
 

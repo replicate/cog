@@ -78,7 +78,6 @@ The FFI runtime uses clear ownership patterns to manage prediction lifecycle:
   PredictionSupervisor (DashMap - lock-free concurrent access)
   ├── owns: prediction state (id, status, input, output, logs, error, timestamps)
   ├── owns: webhook sender (sends terminal webhook, then cleans up entry)
-  ├── owns: cancel_token (propagates cancellation to worker)
   └── owns: completion notifier (for waiting on result)
 
   PredictionSlot (RAII container)
@@ -88,9 +87,12 @@ The FFI runtime uses clear ownership patterns to manage prediction lifecycle:
 
   PredictionHandle (returned to route handler)
   ├── has: reference to supervisor (for state queries)
-  ├── has: cancel_token clone (for cancellation)
   ├── has: completion notifier clone (for waiting)
   └── method: sync_guard() → SyncPredictionGuard (cancels on drop)
+
+  Cancellation (via OrchestratorHandle)
+  ├── Sync predictors: ControlRequest::Cancel → SIGUSR1 → KeyboardInterrupt
+  └── Async predictors: ControlRequest::Cancel → future.cancel() → CancelledError
 ═══════════════════════════════════════════════════════════════════════════════════
 ```
 
@@ -102,10 +104,11 @@ Communication between the Rust server and Python worker uses two channels:
 
 | Parent → Child | Child → Parent |
 |----------------|----------------|
-| `Init { predictor_ref, slots }` | `Ready { schema }` |
-| `Cancel` | `Cancelled` |
-| `Shutdown` | `Failed { error }` |
-| | `Idle` |
+| `Init { predictor_ref, num_slots, ... }` | `Ready { slots, schema }` |
+| `Cancel { slot }` | `Log { source, data }` |
+| `Shutdown` | `Idle { slot }` |
+| | `Failed { slot, error }` |
+| | `ShuttingDown` |
 
 ### Slot Channel (Unix socket per slot - JSON framed)
 
@@ -275,10 +278,7 @@ crates/coglet/src/
 │       ├── server.rs         # Axum server setup
 │       └── routes.rs         # HTTP handlers (uses supervisor)
 ├── webhook.rs                # WebhookSender (retry logic, trace context)
-├── worker/
-│   ├── mod.rs
-│   ├── manager.rs            # Worker spawn/lifecycle
-│   └── worker.rs             # Worker main loop (child process side)
+├── worker.rs                 # run_worker, PredictHandler trait, SetupError
 └── version.rs                # VersionInfo
 
 crates/coglet-python/src/
@@ -376,7 +376,7 @@ How coglet gets invoked when running a Cog container:
 | Language | Pure Python | Rust + PyO3 |
 | IPC | multiprocessing.Pipe (pickled) | Unix socket + pipes (JSON) |
 | Concurrency | async tasks | Slot-based permits |
-| Cancellation | SIGUSR1 signal | Cancel token + RAII guard |
+| Cancellation | SIGUSR1 signal | IPC message + SIGUSR1 (sync) / future.cancel() (async) |
 | Connection drop | No effect on prediction | Cancels sync predictions |
 | Worker crash | Server unstable | Server stays up, marks DEFUNCT |
 | Performance | Baseline | ~2x faster HTTP layer |
