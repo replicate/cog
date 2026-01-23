@@ -11,8 +11,8 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
@@ -48,7 +48,7 @@ fn report_dropped_logs(tx: &mpsc::Sender<ControlResponse>, interval_millis: u64)
 // ============================================================================
 
 fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+    use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
     let filter = if std::env::var("RUST_LOG").is_ok() {
         EnvFilter::from_default_env()

@@ -24,7 +24,6 @@ use coglet_core::bridge::protocol::{ControlResponse, LogSource};
 use coglet_core::worker::SlotSender;
 use tokio::sync::mpsc::Sender;
 
-
 // ============================================================================
 // Rust-owned ContextVar for prediction routing
 // ============================================================================
@@ -50,7 +49,8 @@ fn get_sync_prediction_id_slot() -> &'static Mutex<Option<String>> {
 
 /// Control channel log sender - used when outside prediction context.
 /// Set by worker before setup(), lives for entire worker lifetime.
-static CONTROL_CHANNEL_LOG_SENDER: OnceLock<Mutex<Option<Arc<ControlChannelLogSender>>>> = OnceLock::new();
+static CONTROL_CHANNEL_LOG_SENDER: OnceLock<Mutex<Option<Arc<ControlChannelLogSender>>>> =
+    OnceLock::new();
 
 fn get_registry() -> &'static Mutex<HashMap<String, Arc<SlotSender>>> {
     PREDICTION_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))

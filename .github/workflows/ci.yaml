@@ -191,10 +191,14 @@ jobs:
         run: uv run pytest cog-dataclass/python/tests -v
 
   test-coglet-python:
-    name: "Test Coglet Python bindings"
+    name: "Test Coglet Python bindings (${{ matrix.runtime }})"
     needs: build-python
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [dataclass, cog]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -219,7 +223,7 @@ jobs:
         with:
           workspaces: crates -> target
       - name: Test coglet Python bindings
-        run: mise test:coglet-python
+        run: mise test:coglet-python:${{ matrix.runtime }}
 
   # Go-based integration tests using testscript framework
   test-integration:

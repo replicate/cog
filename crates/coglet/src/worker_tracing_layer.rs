@@ -45,11 +45,7 @@ impl<S> Layer<S> for WorkerTracingLayer
 where
     S: Subscriber,
 {
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: Context<'_, S>,
-    ) {
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         let metadata = event.metadata();
         let target = metadata.target();
         let level = Self::level_to_string(metadata.level());

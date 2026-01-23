@@ -7,6 +7,8 @@
 //! This module provides a trait-based abstraction to handle input processing
 //! for each runtime correctly.
 
+use std::path::Path;
+
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -391,9 +393,19 @@ fn parse_predictor_ref(predictor_ref: &str) -> Option<(String, String)> {
     let predictor_name = parts[0].to_string();
     let module_path = parts[1];
 
-    let module_name = module_path
-        .trim_end_matches(".py")
-        .replace(['/', '\\'], ".");
+    let module_name = if module_path.contains('/')
+        || module_path.contains('\\')
+        || module_path.ends_with(".py")
+    {
+        let normalized_path = module_path.replace('\\', "/");
+        Path::new(&normalized_path)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or(module_path)
+            .to_string()
+    } else {
+        module_path.to_string()
+    };
 
     Some((module_name, predictor_name))
 }
@@ -450,7 +462,7 @@ mod tests {
     #[test]
     fn test_parse_predictor_ref_nested_path() {
         let (module, predictor) = parse_predictor_ref("path/to/predict.py:Predictor").unwrap();
-        assert_eq!(module, "path.to.predict");
+        assert_eq!(module, "predict");
         assert_eq!(predictor, "Predictor");
     }
 
@@ -471,7 +483,14 @@ mod tests {
     #[test]
     fn test_parse_predictor_ref_windows_path() {
         let (module, predictor) = parse_predictor_ref("path\\to\\predict.py:Predictor").unwrap();
-        assert_eq!(module, "path.to.predict");
+        assert_eq!(module, "predict");
+        assert_eq!(predictor, "Predictor");
+    }
+
+    #[test]
+    fn test_parse_predictor_ref_absolute_path() {
+        let (module, predictor) = parse_predictor_ref("/tmp/scratch/predict.py:Predictor").unwrap();
+        assert_eq!(module, "predict");
         assert_eq!(predictor, "Predictor");
     }
 
