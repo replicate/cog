@@ -11,11 +11,37 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use futures::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
+
+// ============================================================================
+// Dropped log tracking
+// ============================================================================
+
+/// Counter for logs dropped due to channel backpressure during setup.
+static DROPPED_SETUP_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// Increment the dropped log counter.
+/// Called by ControlChannelLogSender in coglet-python when try_send fails.
+pub fn increment_dropped_log_count() {
+    DROPPED_SETUP_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Report and reset dropped log count.
+/// Returns the number of logs dropped since last call.
+fn report_dropped_logs(tx: &mpsc::Sender<ControlResponse>, interval_millis: u64) {
+    let dropped = DROPPED_SETUP_LOG_COUNT.swap(0, Ordering::Relaxed);
+    if dropped > 0 {
+        let _ = tx.try_send(ControlResponse::DroppedLogs {
+            count: dropped,
+            interval_millis,
+        });
+    }
+}
 
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
@@ -288,6 +314,16 @@ pub async fn run_worker<H: PredictHandler>(
             total_kb = total_bytes / 1024,
             "Log forwarder exiting"
         );
+    });
+
+    // Periodic reporter for dropped logs (runs for entire worker lifetime)
+    let dropped_log_tx = setup_log_tx.clone();
+    let _dropped_log_reporter = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(5000));
+        loop {
+            interval.tick().await;
+            report_dropped_logs(&dropped_log_tx, 5000);
+        }
     });
 
     // Run setup

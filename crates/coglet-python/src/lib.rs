@@ -318,11 +318,13 @@ async fn run_worker_with_init() -> Result<(), String> {
             .map_err(|e| format!("Failed to create handler: {}", e))?
     });
 
-    // Setup log hook: registers a global sender so SlotLogWriter can route setup logs
+    // Setup log hook: registers a global sender for control channel logs
+    // This lives for the entire worker lifetime (setup + subprocess output)
     let setup_log_hook: coglet_core::SetupLogHook = Box::new(|tx| {
-        let sender = Arc::new(log_writer::SetupLogSender::new(tx));
-        log_writer::register_setup_sender(sender);
-        Box::new(log_writer::unregister_setup_sender)
+        let sender = Arc::new(log_writer::ControlChannelLogSender::new(tx));
+        log_writer::register_control_channel_sender(sender);
+        // Cleanup is a no-op: sender stays registered for worker lifetime
+        Box::new(|| {})
     });
 
     let config = coglet_core::WorkerConfig {

@@ -94,6 +94,12 @@ pub enum ControlResponse {
         error: String,
     },
 
+    /// System diagnostic: logs dropped due to backpressure.
+    DroppedLogs {
+        count: usize,
+        interval_millis: u64,
+    },
+
     ShuttingDown,
 }
 

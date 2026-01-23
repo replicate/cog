@@ -263,6 +263,14 @@ pub async fn spawn_worker(
                         tracing::info!(target: "coglet::setup", source = ?source, "{}", line);
                     }
                 }
+                Some(Ok(ControlResponse::DroppedLogs { count, interval_millis })) => {
+                    tracing::trace!(count, interval_millis, "Received DroppedLogs during setup");
+                    let interval_secs = interval_millis as f64 / 1000.0;
+                    tracing::warn!(
+                        "Log production exceeds consumption rate during setup. {} logs dropped in last {:.1}s",
+                        count, interval_secs
+                    );
+                }
                 Some(Ok(ControlResponse::Failed { slot, error })) => {
                     return Err(OrchestratorError::Setup(format!(
                         "worker setup failed (slot {}): {}",
@@ -407,6 +415,14 @@ async fn run_event_loop(
                         for line in data.lines() {
                             tracing::info!(target: "coglet::user", "{}", line);
                         }
+                    }
+                    Some(Ok(ControlResponse::DroppedLogs { count, interval_millis })) => {
+                        tracing::trace!(count, interval_millis, "Received DroppedLogs message");
+                        let interval_secs = interval_millis as f64 / 1000.0;
+                        tracing::warn!(
+                            "Log production exceeds consumption rate. {} logs dropped in last {:.1}s",
+                            count, interval_secs
+                        );
                     }
                     Some(Ok(ControlResponse::ShuttingDown)) => {
                         tracing::info!("Worker shutting down");

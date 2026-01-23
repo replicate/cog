@@ -24,6 +24,7 @@ use coglet_core::bridge::protocol::{ControlResponse, LogSource};
 use coglet_core::worker::SlotSender;
 use tokio::sync::mpsc::Sender;
 
+
 // ============================================================================
 // Rust-owned ContextVar for prediction routing
 // ============================================================================
@@ -47,42 +48,49 @@ fn get_sync_prediction_id_slot() -> &'static Mutex<Option<String>> {
     SYNC_PREDICTION_ID.get_or_init(|| Mutex::new(None))
 }
 
-/// Setup log sender - used when outside prediction context during setup.
-/// Set by worker before setup(), cleared after setup completes.
-static SETUP_LOG_SENDER: OnceLock<Mutex<Option<Arc<SetupLogSender>>>> = OnceLock::new();
+/// Control channel log sender - used when outside prediction context.
+/// Set by worker before setup(), lives for entire worker lifetime.
+static CONTROL_CHANNEL_LOG_SENDER: OnceLock<Mutex<Option<Arc<ControlChannelLogSender>>>> = OnceLock::new();
 
 fn get_registry() -> &'static Mutex<HashMap<String, Arc<SlotSender>>> {
     PREDICTION_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn get_setup_sender_slot() -> &'static Mutex<Option<Arc<SetupLogSender>>> {
-    SETUP_LOG_SENDER.get_or_init(|| Mutex::new(None))
+fn get_control_channel_sender_slot() -> &'static Mutex<Option<Arc<ControlChannelLogSender>>> {
+    CONTROL_CHANNEL_LOG_SENDER.get_or_init(|| Mutex::new(None))
 }
 
 // ============================================================================
-// SetupLogSender - sends logs via control channel during setup
+// ControlChannelLogSender - sends logs via control channel
 // ============================================================================
 
-/// Sender for logs during setup (before slots are active).
-/// Sends through the control channel.
-pub struct SetupLogSender {
+/// Sender for logs that go through the control channel.
+/// Used for Python logs during setup and subprocess output throughout worker lifetime.
+pub struct ControlChannelLogSender {
     tx: Sender<ControlResponse>,
 }
 
-impl SetupLogSender {
-    /// Create a new setup log sender.
+impl ControlChannelLogSender {
+    /// Create a new control channel log sender.
     pub fn new(tx: Sender<ControlResponse>) -> Self {
         Self { tx }
     }
 
-    /// Send a log message.
-    pub fn send_log(&self, source: LogSource, data: &str) -> Result<(), String> {
-        self.tx
-            .blocking_send(ControlResponse::Log {
+    /// Try to send a log message.
+    ///
+    /// Uses try_send() to avoid blocking (called from Python code on tokio runtime threads).
+    /// If the channel is full, the log is dropped and counted for periodic reporting.
+    pub fn try_send_log(&self, source: LogSource, data: &str) {
+        if self
+            .tx
+            .try_send(ControlResponse::Log {
                 source,
                 data: data.to_string(),
             })
-            .map_err(|e| e.to_string())
+            .is_err()
+        {
+            coglet_core::worker::increment_dropped_log_count();
+        }
     }
 }
 
@@ -90,29 +98,30 @@ impl SetupLogSender {
 // If a mutex is poisoned (another thread panicked while holding it), the worker
 // is in an unrecoverable state. We panic with a clear message.
 
-/// Register the setup log sender.
+/// Register the control channel log sender.
 /// Called by worker before setup().
-pub fn register_setup_sender(sender: Arc<SetupLogSender>) {
-    let mut slot = get_setup_sender_slot()
+pub fn register_control_channel_sender(sender: Arc<ControlChannelLogSender>) {
+    let mut slot = get_control_channel_sender_slot()
         .lock()
-        .expect("Worker internal error: setup_sender mutex poisoned");
+        .expect("Worker internal error: control_channel_sender mutex poisoned");
     *slot = Some(sender);
 }
 
-/// Unregister the setup log sender.
-/// Called by worker after setup() completes.
-pub fn unregister_setup_sender() {
-    let mut slot = get_setup_sender_slot()
+/// Unregister the control channel log sender.
+/// Called by worker when shutting down (not after setup).
+#[allow(dead_code)]
+pub fn unregister_control_channel_sender() {
+    let mut slot = get_control_channel_sender_slot()
         .lock()
-        .expect("Worker internal error: setup_sender mutex poisoned");
+        .expect("Worker internal error: control_channel_sender mutex poisoned");
     *slot = None;
 }
 
-/// Get the setup log sender if registered.
-fn get_setup_sender() -> Option<Arc<SetupLogSender>> {
-    let slot = get_setup_sender_slot()
+/// Get the control channel log sender if registered.
+fn get_control_channel_sender() -> Option<Arc<ControlChannelLogSender>> {
+    let slot = get_control_channel_sender_slot()
         .lock()
-        .expect("Worker internal error: setup_sender mutex poisoned");
+        .expect("Worker internal error: control_channel_sender mutex poisoned");
     slot.clone()
 }
 
@@ -469,14 +478,13 @@ impl SlotLogWriter {
     /// During setup: routes to control channel (for health-check).
     /// Otherwise: emits via tracing to stderr locally (not shipped).
     fn write_outside_prediction(&self, _py: Python<'_>, data: &str) -> PyResult<()> {
-        // Try setup sender (registered during setup phase)
-        if let Some(sender) = get_setup_sender()
-            && sender.send_log(self.source, data).is_ok()
-        {
+        // Try control channel sender (registered for worker lifetime)
+        if let Some(sender) = get_control_channel_sender() {
+            sender.try_send_log(self.source, data);
             tracing::trace!(
                 source = ?self.source,
                 bytes = data.len(),
-                "Log routed via control channel (setup)"
+                "Log routed via control channel"
             );
             return Ok(());
         }
