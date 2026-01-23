@@ -75,15 +75,26 @@ type MockCommand2_ContainerInspect_Call struct {
 }
 
 // ContainerInspect is a helper method to define mock.On call
-//   - ctx
-//   - id
+//   - ctx context.Context
+//   - id string
 func (_e *MockCommand2_Expecter) ContainerInspect(ctx interface{}, id interface{}) *MockCommand2_ContainerInspect_Call {
 	return &MockCommand2_ContainerInspect_Call{Call: _e.mock.On("ContainerInspect", ctx, id)}
 }
 
 func (_c *MockCommand2_ContainerInspect_Call) Run(run func(ctx context.Context, id string)) *MockCommand2_ContainerInspect_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -121,16 +132,32 @@ type MockCommand2_ContainerLogs_Call struct {
 }
 
 // ContainerLogs is a helper method to define mock.On call
-//   - ctx
-//   - containerID
-//   - w
+//   - ctx context.Context
+//   - containerID string
+//   - w io.Writer
 func (_e *MockCommand2_Expecter) ContainerLogs(ctx interface{}, containerID interface{}, w interface{}) *MockCommand2_ContainerLogs_Call {
 	return &MockCommand2_ContainerLogs_Call{Call: _e.mock.On("ContainerLogs", ctx, containerID, w)}
 }
 
 func (_c *MockCommand2_ContainerLogs_Call) Run(run func(ctx context.Context, containerID string, w io.Writer)) *MockCommand2_ContainerLogs_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(io.Writer))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 io.Writer
+		if args[2] != nil {
+			arg2 = args[2].(io.Writer)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -177,15 +204,26 @@ type MockCommand2_ContainerStart_Call struct {
 }
 
 // ContainerStart is a helper method to define mock.On call
-//   - ctx
-//   - options
+//   - ctx context.Context
+//   - options command.RunOptions
 func (_e *MockCommand2_Expecter) ContainerStart(ctx interface{}, options interface{}) *MockCommand2_ContainerStart_Call {
 	return &MockCommand2_ContainerStart_Call{Call: _e.mock.On("ContainerStart", ctx, options)}
 }
 
 func (_c *MockCommand2_ContainerStart_Call) Run(run func(ctx context.Context, options command.RunOptions)) *MockCommand2_ContainerStart_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(command.RunOptions))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 command.RunOptions
+		if args[1] != nil {
+			arg1 = args[1].(command.RunOptions)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -223,15 +261,26 @@ type MockCommand2_ContainerStop_Call struct {
 }
 
 // ContainerStop is a helper method to define mock.On call
-//   - ctx
-//   - containerID
+//   - ctx context.Context
+//   - containerID string
 func (_e *MockCommand2_Expecter) ContainerStop(ctx interface{}, containerID interface{}) *MockCommand2_ContainerStop_Call {
 	return &MockCommand2_ContainerStop_Call{Call: _e.mock.On("ContainerStop", ctx, containerID)}
 }
 
 func (_c *MockCommand2_ContainerStop_Call) Run(run func(ctx context.Context, containerID string)) *MockCommand2_ContainerStop_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -242,129 +291,6 @@ func (_c *MockCommand2_ContainerStop_Call) Return(err error) *MockCommand2_Conta
 }
 
 func (_c *MockCommand2_ContainerStop_Call) RunAndReturn(run func(ctx context.Context, containerID string) error) *MockCommand2_ContainerStop_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// CreateAptTarFile provides a mock function for the type MockCommand2
-func (_mock *MockCommand2) CreateAptTarFile(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error) {
-	var tmpRet mock.Arguments
-	if len(packages) > 0 {
-		tmpRet = _mock.Called(ctx, tmpDir, aptTarFile, packages)
-	} else {
-		tmpRet = _mock.Called(ctx, tmpDir, aptTarFile)
-	}
-	ret := tmpRet
-
-	if len(ret) == 0 {
-		panic("no return value specified for CreateAptTarFile")
-	}
-
-	var r0 string
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, ...string) (string, error)); ok {
-		return returnFunc(ctx, tmpDir, aptTarFile, packages...)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, ...string) string); ok {
-		r0 = returnFunc(ctx, tmpDir, aptTarFile, packages...)
-	} else {
-		r0 = ret.Get(0).(string)
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, ...string) error); ok {
-		r1 = returnFunc(ctx, tmpDir, aptTarFile, packages...)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockCommand2_CreateAptTarFile_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateAptTarFile'
-type MockCommand2_CreateAptTarFile_Call struct {
-	*mock.Call
-}
-
-// CreateAptTarFile is a helper method to define mock.On call
-//   - ctx
-//   - tmpDir
-//   - aptTarFile
-//   - packages
-func (_e *MockCommand2_Expecter) CreateAptTarFile(ctx interface{}, tmpDir interface{}, aptTarFile interface{}, packages ...interface{}) *MockCommand2_CreateAptTarFile_Call {
-	return &MockCommand2_CreateAptTarFile_Call{Call: _e.mock.On("CreateAptTarFile",
-		append([]interface{}{ctx, tmpDir, aptTarFile}, packages...)...)}
-}
-
-func (_c *MockCommand2_CreateAptTarFile_Call) Run(run func(ctx context.Context, tmpDir string, aptTarFile string, packages ...string)) *MockCommand2_CreateAptTarFile_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		variadicArgs := args[3].([]string)
-		run(args[0].(context.Context), args[1].(string), args[2].(string), variadicArgs...)
-	})
-	return _c
-}
-
-func (_c *MockCommand2_CreateAptTarFile_Call) Return(s string, err error) *MockCommand2_CreateAptTarFile_Call {
-	_c.Call.Return(s, err)
-	return _c
-}
-
-func (_c *MockCommand2_CreateAptTarFile_Call) RunAndReturn(run func(ctx context.Context, tmpDir string, aptTarFile string, packages ...string) (string, error)) *MockCommand2_CreateAptTarFile_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// CreateTarFile provides a mock function for the type MockCommand2
-func (_mock *MockCommand2) CreateTarFile(ctx context.Context, ref string, tmpDir string, tarFile string, folder string) (string, error) {
-	ret := _mock.Called(ctx, ref, tmpDir, tarFile, folder)
-
-	if len(ret) == 0 {
-		panic("no return value specified for CreateTarFile")
-	}
-
-	var r0 string
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) (string, error)); ok {
-		return returnFunc(ctx, ref, tmpDir, tarFile, folder)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) string); ok {
-		r0 = returnFunc(ctx, ref, tmpDir, tarFile, folder)
-	} else {
-		r0 = ret.Get(0).(string)
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, string) error); ok {
-		r1 = returnFunc(ctx, ref, tmpDir, tarFile, folder)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockCommand2_CreateTarFile_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateTarFile'
-type MockCommand2_CreateTarFile_Call struct {
-	*mock.Call
-}
-
-// CreateTarFile is a helper method to define mock.On call
-//   - ctx
-//   - ref
-//   - tmpDir
-//   - tarFile
-//   - folder
-func (_e *MockCommand2_Expecter) CreateTarFile(ctx interface{}, ref interface{}, tmpDir interface{}, tarFile interface{}, folder interface{}) *MockCommand2_CreateTarFile_Call {
-	return &MockCommand2_CreateTarFile_Call{Call: _e.mock.On("CreateTarFile", ctx, ref, tmpDir, tarFile, folder)}
-}
-
-func (_c *MockCommand2_CreateTarFile_Call) Run(run func(ctx context.Context, ref string, tmpDir string, tarFile string, folder string)) *MockCommand2_CreateTarFile_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string), args[3].(string), args[4].(string))
-	})
-	return _c
-}
-
-func (_c *MockCommand2_CreateTarFile_Call) Return(s string, err error) *MockCommand2_CreateTarFile_Call {
-	_c.Call.Return(s, err)
-	return _c
-}
-
-func (_c *MockCommand2_CreateTarFile_Call) RunAndReturn(run func(ctx context.Context, ref string, tmpDir string, tarFile string, folder string) (string, error)) *MockCommand2_CreateTarFile_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -392,15 +318,26 @@ type MockCommand2_ImageBuild_Call struct {
 }
 
 // ImageBuild is a helper method to define mock.On call
-//   - ctx
-//   - options
+//   - ctx context.Context
+//   - options command.ImageBuildOptions
 func (_e *MockCommand2_Expecter) ImageBuild(ctx interface{}, options interface{}) *MockCommand2_ImageBuild_Call {
 	return &MockCommand2_ImageBuild_Call{Call: _e.mock.On("ImageBuild", ctx, options)}
 }
 
 func (_c *MockCommand2_ImageBuild_Call) Run(run func(ctx context.Context, options command.ImageBuildOptions)) *MockCommand2_ImageBuild_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(command.ImageBuildOptions))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 command.ImageBuildOptions
+		if args[1] != nil {
+			arg1 = args[1].(command.ImageBuildOptions)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -447,15 +384,26 @@ type MockCommand2_ImageExists_Call struct {
 }
 
 // ImageExists is a helper method to define mock.On call
-//   - ctx
-//   - ref
+//   - ctx context.Context
+//   - ref string
 func (_e *MockCommand2_Expecter) ImageExists(ctx interface{}, ref interface{}) *MockCommand2_ImageExists_Call {
 	return &MockCommand2_ImageExists_Call{Call: _e.mock.On("ImageExists", ctx, ref)}
 }
 
 func (_c *MockCommand2_ImageExists_Call) Run(run func(ctx context.Context, ref string)) *MockCommand2_ImageExists_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -504,15 +452,26 @@ type MockCommand2_Inspect_Call struct {
 }
 
 // Inspect is a helper method to define mock.On call
-//   - ctx
-//   - ref
+//   - ctx context.Context
+//   - ref string
 func (_e *MockCommand2_Expecter) Inspect(ctx interface{}, ref interface{}) *MockCommand2_Inspect_Call {
 	return &MockCommand2_Inspect_Call{Call: _e.mock.On("Inspect", ctx, ref)}
 }
 
 func (_c *MockCommand2_Inspect_Call) Run(run func(ctx context.Context, ref string)) *MockCommand2_Inspect_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -561,15 +520,26 @@ type MockCommand2_LoadUserInformation_Call struct {
 }
 
 // LoadUserInformation is a helper method to define mock.On call
-//   - ctx
-//   - registryHost
+//   - ctx context.Context
+//   - registryHost string
 func (_e *MockCommand2_Expecter) LoadUserInformation(ctx interface{}, registryHost interface{}) *MockCommand2_LoadUserInformation_Call {
 	return &MockCommand2_LoadUserInformation_Call{Call: _e.mock.On("LoadUserInformation", ctx, registryHost)}
 }
 
 func (_c *MockCommand2_LoadUserInformation_Call) Run(run func(ctx context.Context, registryHost string)) *MockCommand2_LoadUserInformation_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -580,6 +550,72 @@ func (_c *MockCommand2_LoadUserInformation_Call) Return(userInfo *command.UserIn
 }
 
 func (_c *MockCommand2_LoadUserInformation_Call) RunAndReturn(run func(ctx context.Context, registryHost string) (*command.UserInfo, error)) *MockCommand2_LoadUserInformation_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// LocalImageID provides a mock function for the type MockCommand2
+func (_mock *MockCommand2) LocalImageID(ctx context.Context, ref string) (string, error) {
+	ret := _mock.Called(ctx, ref)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LocalImageID")
+	}
+
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (string, error)); ok {
+		return returnFunc(ctx, ref)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) string); ok {
+		r0 = returnFunc(ctx, ref)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, ref)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockCommand2_LocalImageID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LocalImageID'
+type MockCommand2_LocalImageID_Call struct {
+	*mock.Call
+}
+
+// LocalImageID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - ref string
+func (_e *MockCommand2_Expecter) LocalImageID(ctx interface{}, ref interface{}) *MockCommand2_LocalImageID_Call {
+	return &MockCommand2_LocalImageID_Call{Call: _e.mock.On("LocalImageID", ctx, ref)}
+}
+
+func (_c *MockCommand2_LocalImageID_Call) Run(run func(ctx context.Context, ref string)) *MockCommand2_LocalImageID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockCommand2_LocalImageID_Call) Return(s string, err error) *MockCommand2_LocalImageID_Call {
+	_c.Call.Return(s, err)
+	return _c
+}
+
+func (_c *MockCommand2_LocalImageID_Call) RunAndReturn(run func(ctx context.Context, ref string) (string, error)) *MockCommand2_LocalImageID_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -618,16 +654,32 @@ type MockCommand2_Pull_Call struct {
 }
 
 // Pull is a helper method to define mock.On call
-//   - ctx
-//   - ref
-//   - force
+//   - ctx context.Context
+//   - ref string
+//   - force bool
 func (_e *MockCommand2_Expecter) Pull(ctx interface{}, ref interface{}, force interface{}) *MockCommand2_Pull_Call {
 	return &MockCommand2_Pull_Call{Call: _e.mock.On("Pull", ctx, ref, force)}
 }
 
 func (_c *MockCommand2_Pull_Call) Run(run func(ctx context.Context, ref string, force bool)) *MockCommand2_Pull_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(bool))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 bool
+		if args[2] != nil {
+			arg2 = args[2].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -665,15 +717,26 @@ type MockCommand2_Push_Call struct {
 }
 
 // Push is a helper method to define mock.On call
-//   - ctx
-//   - ref
+//   - ctx context.Context
+//   - ref string
 func (_e *MockCommand2_Expecter) Push(ctx interface{}, ref interface{}) *MockCommand2_Push_Call {
 	return &MockCommand2_Push_Call{Call: _e.mock.On("Push", ctx, ref)}
 }
 
 func (_c *MockCommand2_Push_Call) Run(run func(ctx context.Context, ref string)) *MockCommand2_Push_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -711,15 +774,26 @@ type MockCommand2_Run_Call struct {
 }
 
 // Run is a helper method to define mock.On call
-//   - ctx
-//   - options
+//   - ctx context.Context
+//   - options command.RunOptions
 func (_e *MockCommand2_Expecter) Run(ctx interface{}, options interface{}) *MockCommand2_Run_Call {
 	return &MockCommand2_Run_Call{Call: _e.mock.On("Run", ctx, options)}
 }
 
 func (_c *MockCommand2_Run_Call) Run(run func(ctx context.Context, options command.RunOptions)) *MockCommand2_Run_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(command.RunOptions))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 command.RunOptions
+		if args[1] != nil {
+			arg1 = args[1].(command.RunOptions)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
