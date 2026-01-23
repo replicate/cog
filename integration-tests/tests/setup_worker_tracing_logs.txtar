@@ -16,6 +16,10 @@ stdout '"status":"READY"'
 stdout 'Spawning worker subprocess'
 stdout 'File descriptor redirection complete'
 stdout 'Connected to slot transport'
+stdout 'Server ready'
+
+# Verify logs after accumulation stopped are NOT included
+! stdout 'Setup complete, now accepting requests'
 
 # Make a prediction to verify it works
 curl POST /predictions '{"input":{"s":"test"}}'

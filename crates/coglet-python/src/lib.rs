@@ -222,7 +222,6 @@ fn serve_subprocess(
                 match coglet_core::orchestrator::spawn_worker(orch_config, &mut setup_log_rx).await
                 {
                     Ok(ready) => {
-                        drop(setup_log_rx);
                         debug!("Worker ready, configuring service");
 
                         let num_slots = ready.handle.slot_ids().len();
@@ -231,9 +230,6 @@ fn serve_subprocess(
                             .set_orchestrator(ready.pool, Arc::new(ready.handle))
                             .await;
                         setup_service.set_health(Health::Ready).await;
-                        setup_service
-                            .set_setup_result(setup_result.succeeded(ready.setup_logs))
-                            .await;
 
                         if let Some(s) = ready.schema {
                             setup_service.set_schema(s).await;
@@ -241,6 +237,18 @@ fn serve_subprocess(
 
                         let mode = if is_train { "train" } else { "predict" };
                         info!(num_slots, mode, "Server ready");
+
+                        // Drain final logs (includes "Server ready" above)
+                        let final_logs = coglet_core::drain_accumulated_logs(&mut setup_log_rx);
+                        drop(setup_log_rx);
+
+                        // Combine initial + final logs
+                        let complete_logs = ready.setup_logs + &final_logs;
+                        setup_service
+                            .set_setup_result(setup_result.succeeded(complete_logs))
+                            .await;
+
+                        info!("Setup complete, now accepting requests");
                     }
                     Err(e) => {
                         error!(error = %e, "Worker initialization failed");
