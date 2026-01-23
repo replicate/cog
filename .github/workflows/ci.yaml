@@ -25,6 +25,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for setuptools_scm version determination
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       # Build main cog package (wheel + sdist)
       - name: Build cog package
@@ -34,16 +38,6 @@ jobs:
         with:
           name: CogPackage
           path: dist/cog-*
-      # Build coglet wheel with embedded Go binary
-      - name: Build coglet-server binary
-        run: script/build-coglet-server
-      - name: Build coglet wheel
-        run: uv build --wheel --out-dir=dist ./coglet
-      - name: Upload coglet wheel
-        uses: actions/upload-artifact@v6
-        with:
-          name: CogletWheel
-          path: dist/coglet-*.whl
       # Build cog-dataclass wheel
       - name: Build cog-dataclass wheel
         run: uv build --wheel --out-dir=dist ./cog-dataclass
@@ -52,6 +46,21 @@ jobs:
         with:
           name: CogDataclassWheel
           path: dist/cog_dataclass-*.whl
+      # Build Rust coglet wheel
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
+      - name: Run clippy
+        run: cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
+      - name: Build Rust coglet wheel (ABI3)
+        run: mise run build:coglet:wheel:linux
+      - name: Upload Rust coglet wheel
+        uses: actions/upload-artifact@v6
+        with:
+          name: CogletRustWheel
+          path: dist/coglet-*-cp310-abi3-*.whl
 
   lint:
     name: Lint
@@ -66,6 +75,10 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Lint
         run: make lint
@@ -76,6 +89,7 @@ jobs:
       - test-go
       - test-python
       - test-python-dataclasses
+      - test-coglet-python
       - test-integration
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -102,6 +116,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Build
         run: make cog
@@ -128,6 +146,10 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Compute tox env name
         run: echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
@@ -156,6 +178,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Create virtual environment and install cog-dataclass wheel with dev dependencies
         run: |
@@ -164,16 +190,52 @@ jobs:
       - name: Test
         run: uv run pytest cog-dataclass/python/tests -v
 
+  test-coglet-python:
+    name: "Test Coglet Python bindings (${{ matrix.runtime }})"
+    needs: build-python
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [dataclass, cog]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Download built wheels
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      - name: Create virtual environment
+        run: uv venv
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
+      - uses: jdx/mise-action@v2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+      - name: Test coglet Python bindings
+        run: mise test:coglet-python:${{ matrix.runtime }}
+
   # Go-based integration tests using testscript framework
   test-integration:
     name: "Test integration (${{ matrix.runtime }})"
-    needs: build-python
+    needs:
+      - build-python
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, coglet-alpha, cog-dataclass]
+        runtime: [cog, cog-dataclass, coglet-alpha, cog-rust, cog-dataclass-rust]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -199,9 +261,34 @@ jobs:
             integration-tests/go.sum
       - name: Build cog binary
         run: make cog
+      - name: Set wheels for runtime
+        run: |
+          # Set COG_WHEEL and COGLET_RUST_WHEEL based on runtime matrix value
+          case "${{ matrix.runtime }}" in
+            cog)
+              echo "COG_WHEEL=cog" >> $GITHUB_ENV
+              ;;
+            cog-dataclass)
+              echo "COG_WHEEL=cog-dataclass" >> $GITHUB_ENV
+              ;;
+            coglet-alpha)
+              echo "COG_WHEEL=coglet-alpha" >> $GITHUB_ENV
+              ;;
+            cog-rust)
+              RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl | head -1)
+              echo "Found Rust coglet wheel: $RUST_WHEEL"
+              echo "COG_WHEEL=cog" >> $GITHUB_ENV
+              echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+              ;;
+            cog-dataclass-rust)
+              RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl | head -1)
+              echo "Found Rust coglet wheel: $RUST_WHEEL"
+              echo "COG_WHEEL=cog-dataclass" >> $GITHUB_ENV
+              echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+              ;;
+          esac
       - name: Run integration tests
         env:
-          COG_WHEEL: ${{ matrix.runtime }}
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
@@ -227,6 +314,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - uses: goreleaser/goreleaser-action@v6
         with:

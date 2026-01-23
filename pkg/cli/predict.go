@@ -258,11 +258,17 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Infof("Starting Docker image %s and running setup()...", imageName)
 
+	// Automatically propagate RUST_LOG for Rust coglet debugging
+	env := envFlags
+	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
+		env = append(env, "RUST_LOG="+rustLog)
+	}
+
 	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
-		Env:     envFlags,
+		Env:     env,
 	}, false, buildFast, dockerClient)
 	if err != nil {
 		return err
@@ -291,7 +297,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			predictor, err = predict.NewPredictor(ctx, command.RunOptions{
 				Image:   imageName,
 				Volumes: volumes,
-				Env:     envFlags,
+				Env:     env,
 			}, false, buildFast, dockerClient)
 			if err != nil {
 				return err

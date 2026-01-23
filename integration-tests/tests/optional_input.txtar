@@ -1,6 +1,7 @@
 # Test optional input parameters with default None
-# Skip for cog-dataclass which requires Python 3.10+
+# Skip for cog-dataclass and coglet (Rust) which require Python 3.10+
 [cog_dataclass] skip
+[coglet_rust] skip
 
 # Skip for coglet_alpha requires python 3.9+
 [coglet_alpha] skip

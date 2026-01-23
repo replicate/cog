@@ -7,19 +7,18 @@ import (
 	"strings"
 )
 
-//go:generate sh -c "rm -f cog-*.whl coglet-*.whl cog_dataclass-*.whl"
+//go:generate sh -c "rm -f cog-*.whl cog_dataclass-*.whl"
 //go:generate sh -c "cp ../../dist/cog-*.whl ."
-//go:generate sh -c "cp ../../dist/coglet-*.whl ."
 //go:generate sh -c "cp ../../dist/cog_dataclass-*.whl ."
 
-//go:embed cog-*.whl coglet-*.whl cog_dataclass-*.whl
+//go:embed cog-*.whl cog_dataclass-*.whl
 var wheelsFS embed.FS
 
 func init() {
 	assertExactlyOneWheelPerRuntime()
 }
 
-// assertExactlyOneWheelPerRuntime ensures exactly 2 wheels are embedded (one cog, one coglet).
+// assertExactlyOneWheelPerRuntime ensures exactly 2 wheels are embedded (cog and cog-dataclass).
 // If there are more or fewer, the build is broken - likely stale wheels left in pkg/wheels/
 // or dist/, or the wheels weren't built at all. Panics on failure since this is a build-time
 // invariant that must hold for the binary to function correctly.
@@ -29,12 +28,12 @@ func assertExactlyOneWheelPerRuntime() {
 		panic(fmt.Sprintf("failed to read embedded wheels directory: %v", err))
 	}
 
-	var cogCount, cogletCount int
+	var cogCount, cogDataclassCount int
 	for _, f := range files {
 		name := f.Name()
 		if strings.HasSuffix(name, ".whl") {
-			if strings.HasPrefix(name, "coglet-") {
-				cogletCount++
+			if strings.HasPrefix(name, "cog_dataclass-") {
+				cogDataclassCount++
 			} else if strings.HasPrefix(name, "cog-") {
 				cogCount++
 			}
@@ -44,17 +43,13 @@ func assertExactlyOneWheelPerRuntime() {
 	if cogCount != 1 {
 		panic(fmt.Sprintf("expected exactly 1 cog wheel embedded, found %d - run 'make wheel' to fix", cogCount))
 	}
-	if cogletCount != 1 {
-		panic(fmt.Sprintf("expected exactly 1 coglet wheel embedded, found %d - run 'make wheel' to fix", cogletCount))
+	if cogDataclassCount != 1 {
+		panic(fmt.Sprintf("expected exactly 1 cog-dataclass wheel embedded, found %d - run 'make wheel' to fix", cogDataclassCount))
 	}
 }
 
 func ReadCogWheel() (string, []byte) {
 	return readWheelFromFS("cog-")
-}
-
-func ReadCogletWheel() (string, []byte) {
-	return readWheelFromFS("coglet-")
 }
 
 // ReadCogDataclassWheel returns the embedded cog-dataclass wheel.

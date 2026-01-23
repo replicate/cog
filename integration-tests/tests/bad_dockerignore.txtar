@@ -1,5 +1,6 @@
-# Skip for cog-dataclass which requires Python 3.10+
+# Skip for cog-dataclass and coglet (Rust) which require Python 3.10+
 [cog_dataclass] skip
+[coglet_rust] skip
 
 # Test that build fails with proper error when .cog is in .dockerignore
 ! cog build -t $TEST_IMAGE

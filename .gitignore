@@ -32,3 +32,11 @@ coglet/python/cog/bin/
 
 # Local planning files
 docs/plans/**
+
+# Local agent files
+AGENTS.local.md
+CLAUDE.local.md
+
+# Local mise files
+mise.local.toml
+mise.local.lock

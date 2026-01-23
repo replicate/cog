@@ -1,10 +1,19 @@
 """Tests for cog._inspector module."""
 
+import sys
+from pathlib import Path
 from typing import List, Optional
+
+import pytest
 
 from cog import BaseModel, BasePredictor, Input
 from cog._adt import OutputKind, PrimitiveType, Repetition
-from cog._inspector import check_input, _create_input_field, _create_output_type
+from cog._inspector import (
+    check_input,
+    _create_input_field,
+    _create_output_type,
+    create_predictor,
+)
 from cog.input import FieldInfo
 
 
@@ -201,7 +210,7 @@ class TestCheckInput:
             check_input(inputs, {})
             assert False, "Should have raised ValueError"
         except ValueError as e:
-            assert "missing required input field" in str(e)
+            assert "Field required" in str(e)
 
     def test_check_input_unknown_field_warning(self, capsys) -> None:
         field = _create_input_field(0, "text", str, None)
@@ -212,3 +221,48 @@ class TestCheckInput:
 
         captured = capsys.readouterr()
         assert "WARNING unknown input field ignored: unknown" in captured.out
+
+
+class TestCreatePredictor:
+    """Tests for create_predictor permissiveness."""
+
+    def test_non_base_predictor_class(self, tmp_path: Path) -> None:
+        module_path = tmp_path / "predictor_mod.py"
+        module_path.write_text(
+            """
+from cog import Input
+
+
+class Predictor:
+    def predict(self, text: str = Input(default="hello")) -> str:
+        return text
+"""
+        )
+        sys.path.insert(0, str(tmp_path))
+        try:
+            predictor = create_predictor("predictor_mod", "Predictor")
+            assert "text" in predictor.inputs
+            assert predictor.output.type is PrimitiveType.STRING
+        finally:
+            sys.path.remove(str(tmp_path))
+            sys.modules.pop("predictor_mod", None)
+
+    def test_standalone_predictor_function(self, tmp_path: Path) -> None:
+        module_path = tmp_path / "predictor_fn.py"
+        module_path.write_text(
+            """
+from cog import Input
+
+
+def infer(text: str = Input(default="hello")) -> str:
+    return text
+"""
+        )
+        sys.path.insert(0, str(tmp_path))
+        try:
+            predictor = create_predictor("predictor_fn", "infer")
+            assert "text" in predictor.inputs
+            assert predictor.output.type is PrimitiveType.STRING
+        finally:
+            sys.path.remove(str(tmp_path))
+            sys.modules.pop("predictor_fn", None)
