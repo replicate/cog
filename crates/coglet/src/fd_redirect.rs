@@ -57,9 +57,9 @@ pub struct ControlChannelFds {
 pub fn redirect_fds_for_subprocess_isolation(
     setup_log_tx: mpsc::Sender<ControlResponse>,
 ) -> io::Result<ControlChannelFds> {
-    // Safety: Called early in worker startup before threads exist. dup/dup2 are atomic.
-    // BorrowedFd::borrow_raw is safe because we're borrowing standard fds (0, 1, 2) which
-    // are guaranteed to be open.
+    // Safety: Called early in worker startup before FFI initialization (tokio runtime threads
+    // exist but aren't accessing fds 0/1/2). dup/dup2 are atomic. BorrowedFd::borrow_raw is
+    // safe because we're borrowing standard fds (0, 1, 2) which are guaranteed to be open.
 
     tracing::debug!("Preserving control channel to high fds");
 
@@ -150,24 +150,21 @@ pub fn redirect_fds_for_subprocess_isolation(
 
     // Capture both stdout and stderr from subprocesses. Rust tracing was initialized before
     // redirection, so its output also flows through the stderr pipe. All captured output
-    // routes to coglet::user target. Unbounded channel means subprocess spam could grow
-    // memory - this matches existing behavior for Python setup logs.
+    // routes to coglet::user target. Bounded channel (500 messages) provides backpressure
+    // if subprocess output exceeds processing rate.
 
     let stdout_tx = setup_log_tx.clone();
     let stdout_read_raw = stdout_read.as_raw_fd();
     std::thread::spawn(move || {
-        tracing::trace!("Stdout capture thread started");
+        // NOTE: No tracing in capture threads - would create feedback loop (stderr is captured)
         // Safety: We own stdout_read (moved into this thread)
         let mut file = unsafe { std::fs::File::from_raw_fd(stdout_read_raw) };
         let mut buf = [0u8; 4096];
-        let mut total_bytes = 0;
 
         loop {
             match std::io::Read::read(&mut file, &mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    total_bytes += n;
-                    tracing::trace!(bytes = n, total_bytes, "Captured stdout");
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
                     if stdout_tx
                         .blocking_send(ControlResponse::Log {
@@ -180,31 +177,24 @@ pub fn redirect_fds_for_subprocess_isolation(
                     }
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to read from stdout capture pipe");
-                    break;
-                }
+                Err(_) => break,
             }
         }
-        tracing::debug!(total_bytes, "Stdout capture thread exiting");
     });
     std::mem::forget(stdout_read); // Ownership transferred to thread
 
     let stderr_tx = setup_log_tx;
     let stderr_read_raw = stderr_read.as_raw_fd();
     std::thread::spawn(move || {
-        tracing::trace!("Stderr capture thread started");
+        // NOTE: No tracing in capture threads - would create feedback loop (stderr is captured)
         // Safety: We own stderr_read (moved into this thread)
         let mut file = unsafe { std::fs::File::from_raw_fd(stderr_read_raw) };
         let mut buf = [0u8; 4096];
-        let mut total_bytes = 0;
 
         loop {
             match std::io::Read::read(&mut file, &mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    total_bytes += n;
-                    tracing::trace!(bytes = n, total_bytes, "Captured stderr");
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
                     if stderr_tx
                         .blocking_send(ControlResponse::Log {
@@ -217,13 +207,9 @@ pub fn redirect_fds_for_subprocess_isolation(
                     }
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to read from stderr capture pipe");
-                    break;
-                }
+                Err(_) => break,
             }
         }
-        tracing::debug!(total_bytes, "Stderr capture thread exiting");
     });
     std::mem::forget(stderr_read); // Ownership transferred to thread
 

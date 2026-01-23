@@ -22,7 +22,7 @@ use pyo3::prelude::*;
 
 use coglet_core::bridge::protocol::{ControlResponse, LogSource};
 use coglet_core::worker::SlotSender;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 
 // ============================================================================
 // Rust-owned ContextVar for prediction routing
@@ -66,23 +66,23 @@ fn get_setup_sender_slot() -> &'static Mutex<Option<Arc<SetupLogSender>>> {
 /// Sender for logs during setup (before slots are active).
 /// Sends through the control channel.
 pub struct SetupLogSender {
-    tx: UnboundedSender<ControlResponse>,
+    tx: Sender<ControlResponse>,
 }
 
 impl SetupLogSender {
     /// Create a new setup log sender.
-    pub fn new(tx: UnboundedSender<ControlResponse>) -> Self {
+    pub fn new(tx: Sender<ControlResponse>) -> Self {
         Self { tx }
     }
 
     /// Send a log message.
     pub fn send_log(&self, source: LogSource, data: &str) -> Result<(), String> {
         self.tx
-            .send(ControlResponse::Log {
+            .blocking_send(ControlResponse::Log {
                 source,
                 data: data.to_string(),
             })
-            .map_err(|e: tokio::sync::mpsc::error::SendError<_>| e.to_string())
+            .map_err(|e| e.to_string())
     }
 }
 
