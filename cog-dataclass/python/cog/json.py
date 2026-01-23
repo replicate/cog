@@ -1,6 +1,7 @@
 import io
 import os
 import pathlib
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from enum import Enum
 from types import GeneratorType
@@ -23,6 +24,8 @@ def make_encodeable(obj: Any) -> Any:
         return make_encodeable(obj.model_dump())
     if hasattr(obj, "dict") and callable(obj.dict):
         return make_encodeable(obj.dict())
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return make_encodeable(asdict(obj))
     if isinstance(obj, dict):
         return {key: make_encodeable(value) for key, value in obj.items()}
     if isinstance(obj, (list, set, frozenset, GeneratorType, tuple)):
@@ -33,7 +36,7 @@ def make_encodeable(obj: Any) -> Any:
         return obj.isoformat()
     if isinstance(obj, os.PathLike):
         return pathlib.Path(obj)
-    if np:
+    if np and not isinstance(obj, type):
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, np.floating):

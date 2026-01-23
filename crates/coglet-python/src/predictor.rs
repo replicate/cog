@@ -72,6 +72,21 @@ fn format_validation_error(py: Python<'_>, err: &PyErr) -> String {
     err.value(py).to_string()
 }
 
+fn unwrap_pydantic_serialization_iterators<'py>(
+    py: Python<'py>,
+    value: &Bound<'py, PyAny>,
+) -> Result<Bound<'py, PyAny>, PredictionError> {
+    if let Ok(helpers) = py.import("cog.server.helpers")
+        && let Ok(unwrap) = helpers.getattr("unwrap_pydantic_serialization_iterators")
+    {
+        return unwrap
+            .call1((value,))
+            .map_err(|e| PredictionError::Failed(format!("Failed to unwrap output: {}", e)));
+    }
+
+    Ok(value.clone())
+}
+
 /// Type alias for Python object (Py<PyAny>).
 type PyObject = Py<PyAny>;
 
@@ -667,8 +682,9 @@ impl PythonPredictor {
                 PredictionError::Failed(format!("Failed to process output item: {}", e))
             })?;
 
+            let normalized = unwrap_pydantic_serialization_iterators(py, &processed)?;
             let item_str: String = json_module
-                .call_method1("dumps", (&processed,))
+                .call_method1("dumps", (&normalized,))
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to serialize output item: {}", e))
                 })?
@@ -697,8 +713,9 @@ impl PythonPredictor {
         let processed = output::process_output(py, result, None)
             .map_err(|e| PredictionError::Failed(format!("Failed to process output: {}", e)))?;
 
+        let normalized = unwrap_pydantic_serialization_iterators(py, &processed)?;
         let result_str: String = json_module
-            .call_method1("dumps", (&processed,))
+            .call_method1("dumps", (&normalized,))
             .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
             .extract()
             .map_err(|e| {

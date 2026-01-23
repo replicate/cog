@@ -3,7 +3,8 @@
 from dataclasses import is_dataclass
 from typing import Optional
 
-from cog import BaseModel
+from cog import BaseModel, Path
+from cog.json import make_encodeable
 
 
 class TestBaseModel:
@@ -123,3 +124,10 @@ class TestBaseModel:
         except ValueError as e:
             assert "auto_dataclass=True" in str(e)
             assert "auto_dataclass=False" in str(e)
+
+    def test_make_encodeable_on_basemodel(self) -> None:
+        class Output(BaseModel):
+            weights: Path
+
+        output = Output(weights=Path("weights.bin"))
+        assert make_encodeable(output) == {"weights": Path("weights.bin")}

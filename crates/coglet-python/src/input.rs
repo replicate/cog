@@ -119,8 +119,11 @@ impl InputProcessor for PydanticInputProcessor {
         let pydantic_v2: bool = cog_types.getattr("PYDANTIC_V2")?.extract()?;
 
         let payload = if pydantic_v2 {
-            // Pydantic v2: model_dump()
-            validated.call_method0("model_dump")?
+            // Pydantic v2: model_dump(), then unwrap serialization iterators
+            let dumped = validated.call_method0("model_dump")?;
+            let helpers = py.import("cog.server.helpers")?;
+            let unwrap = helpers.getattr("unwrap_pydantic_serialization_iterators")?;
+            unwrap.call1((&dumped,))?
         } else {
             // Pydantic v1: dict()
             validated.call_method0("dict")?
