@@ -58,6 +58,9 @@ impl<T: Serialize> Encoder<T> for JsonCodec<T> {
         let json =
             serde_json::to_vec(&item).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         let json_len = json.len();
+        // SAFETY: These logs must NOT be shipped over IPC (would create feedback loop).
+        // WorkerTracingLayer filters out coglet::bridge::codec target to prevent encoding
+        // a WorkerLog message from triggering another log that creates another WorkerLog, etc.
         tracing::trace!(json_size_bytes = json_len, "Encoding frame");
         if json_len > 100_000 {
             tracing::warn!(

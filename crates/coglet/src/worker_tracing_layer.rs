@@ -58,11 +58,14 @@ where
         event.record(&mut visitor);
         let message = visitor.message;
 
-        let _ = self.tx.try_send(ControlResponse::WorkerLog {
-            target: target.to_string(),
-            level: level.to_string(),
-            message: message.clone(),
-        });
+        // Never ship codec logs over IPC - creates feedback loop when encoding WorkerLog messages
+        if !target.starts_with("coglet::bridge::codec") {
+            let _ = self.tx.try_send(ControlResponse::WorkerLog {
+                target: target.to_string(),
+                level: level.to_string(),
+                message: message.clone(),
+            });
+        }
 
         if let Some(ref fd) = self.direct_log_fd
             && let Ok(mut file) = fd.lock()
