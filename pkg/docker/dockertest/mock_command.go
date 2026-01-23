@@ -95,7 +95,7 @@ func (c *MockCommand) ContainerStop(ctx context.Context, containerID string) err
 	panic("not implemented")
 }
 
-func (c *MockCommand) LocalImageID(ctx context.Context, ref string) error {
+func (c *MockCommand) LocalImageID(ctx context.Context, ref string) (string, error) {
 	panic("not implemented")
 }
 
