@@ -321,8 +321,13 @@ func Build(
 //
 // The new image is based on the provided image with the labels and schema file appended to it.
 func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, image string, labels map[string]string, bundledSchemaFile string, progressOutput string) error {
-	dockerfile := "FROM " + image + "\n"
-	dockerfile += "COPY " + bundledSchemaFile + " .cog\n"
+	// Find the docker image on the local machine matching the image name - this disambiguates pulling the latest version from the upstream repository
+	localID, err := dockerClient.LocalImageID(ctx, image)
+	if err != nil {
+		return err
+	}
+
+	dockerfile := fmt.Sprintf("FROM %s@%s\nCOPY %s .cog\n", image, localID, bundledSchemaFile)
 
 	buildOpts := command.ImageBuildOptions{
 		DockerfileContents: dockerfile,

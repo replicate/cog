@@ -1,0 +1,4 @@
+build:
+  python_version: "3.11"
+predict: "predict.py:Predictor"
+image: "r8.im/replicate/hello-image"

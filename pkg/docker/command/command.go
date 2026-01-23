@@ -14,6 +14,7 @@ type Command interface {
 	// When force is true, it will always attempt to pull the image.
 	Pull(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
 	Push(ctx context.Context, ref string) error
+	LocalImageID(ctx context.Context, ref string) (string, error)
 	LoadUserInformation(ctx context.Context, registryHost string) (*UserInfo, error)
 	Inspect(ctx context.Context, ref string) (*image.InspectResponse, error)
 	ImageExists(ctx context.Context, ref string) (bool, error)
