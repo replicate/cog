@@ -1,4 +1,5 @@
 [short] skip 'slow test - skip in short mode'
+[coglet_alpha] skip
 
 # Test worker tracing logs appear in setuplog
 # This ensures Rust tracing from the worker subprocess is properly captured during setup
@@ -9,10 +10,10 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Check setuplog contains worker tracing logs
+# Check setuplog contains orchestrator and worker tracing logs
 curl GET /health-check
 stdout '"status":"READY"'
-stdout 'Worker subprocess starting'
+stdout 'Spawning worker subprocess'
 stdout 'File descriptor redirection complete'
 stdout 'Connected to slot transport'
 

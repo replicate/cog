@@ -33,7 +33,11 @@ fn active() -> bool {
 }
 
 /// Initialize tracing with COG_LOG and LOG_FORMAT support.
-fn init_tracing(_to_stderr: bool) {
+/// Returns optional receiver for draining setup logs.
+fn init_tracing(
+    _to_stderr: bool,
+    setup_log_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+) -> Option<tokio::sync::mpsc::UnboundedReceiver<String>> {
     let filter = if std::env::var("RUST_LOG").is_ok() {
         EnvFilter::from_default_env()
     } else {
@@ -54,16 +58,36 @@ fn init_tracing(_to_stderr: bool) {
 
     let use_json = std::env::var("LOG_FORMAT").as_deref() == Ok("json");
 
-    if use_json {
-        let subscriber = tracing_subscriber::registry()
-            .with(filter)
-            .with(fmt::layer().json().with_writer(std::io::stderr));
-        let _ = subscriber.try_init();
+    if let Some(tx) = setup_log_tx {
+        let accumulator = coglet_core::SetupLogAccumulator::new(tx);
+
+        if use_json {
+            let subscriber = tracing_subscriber::registry()
+                .with(filter)
+                .with(accumulator)
+                .with(fmt::layer().json().with_writer(std::io::stderr));
+            let _ = subscriber.try_init();
+        } else {
+            let subscriber = tracing_subscriber::registry()
+                .with(filter)
+                .with(accumulator)
+                .with(fmt::layer().with_writer(std::io::stderr));
+            let _ = subscriber.try_init();
+        }
+        None
     } else {
-        let subscriber = tracing_subscriber::registry()
-            .with(filter)
-            .with(fmt::layer().with_writer(std::io::stderr));
-        let _ = subscriber.try_init();
+        if use_json {
+            let subscriber = tracing_subscriber::registry()
+                .with(filter)
+                .with(fmt::layer().json().with_writer(std::io::stderr));
+            let _ = subscriber.try_init();
+        } else {
+            let subscriber = tracing_subscriber::registry()
+                .with(filter)
+                .with(fmt::layer().with_writer(std::io::stderr));
+            let _ = subscriber.try_init();
+        }
+        None
     }
 }
 
@@ -115,7 +139,8 @@ fn serve(
     await_explicit_shutdown: bool,
     is_train: bool,
 ) -> PyResult<()> {
-    init_tracing(false);
+    let (setup_log_tx, setup_log_rx) = tokio::sync::mpsc::unbounded_channel();
+    init_tracing(false, Some(setup_log_tx));
 
     info!("coglet {}", env!("CARGO_PKG_VERSION"));
 
@@ -155,7 +180,7 @@ fn serve(
     };
 
     info!(predictor_ref = %pred_ref, is_train, "Using subprocess isolation");
-    serve_subprocess(py, pred_ref, config, version, is_train)
+    serve_subprocess(py, pred_ref, config, version, is_train, setup_log_rx)
 }
 
 fn serve_subprocess(
@@ -164,6 +189,7 @@ fn serve_subprocess(
     config: ServerConfig,
     version: VersionInfo,
     is_train: bool,
+    mut setup_log_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
 ) -> PyResult<()> {
     let max_concurrency = read_max_concurrency(py);
     info!(
@@ -193,8 +219,10 @@ fn serve_subprocess(
             let setup_service = Arc::clone(&service_clone);
             tokio::spawn(async move {
                 info!("Spawning worker subprocess");
-                match coglet_core::orchestrator::spawn_worker(orch_config).await {
+                match coglet_core::orchestrator::spawn_worker(orch_config, &mut setup_log_rx).await
+                {
                     Ok(ready) => {
+                        drop(setup_log_rx);
                         debug!("Worker ready, configuring service");
 
                         let num_slots = ready.handle.slot_ids().len();
@@ -204,7 +232,7 @@ fn serve_subprocess(
                             .await;
                         setup_service.set_health(Health::Ready).await;
                         setup_service
-                            .set_setup_result(setup_result.succeeded())
+                            .set_setup_result(setup_result.succeeded(ready.setup_logs))
                             .await;
 
                         if let Some(s) = ready.schema {

@@ -46,9 +46,13 @@ fn try_lock_prediction(
 }
 
 fn emit_worker_log(target: &str, level: &str, msg: &str) {
-    use std::sync::OnceLock;
     use std::collections::HashMap;
-    use tracing::{Level, Metadata, callsite::{Callsite, Identifier}, field::FieldSet};
+    use std::sync::OnceLock;
+    use tracing::{
+        Level, Metadata,
+        callsite::{Callsite, Identifier},
+        field::FieldSet,
+    };
 
     struct DummyCallsite;
     impl Callsite for DummyCallsite {
@@ -59,7 +63,9 @@ fn emit_worker_log(target: &str, level: &str, msg: &str) {
     }
 
     static DUMMY: DummyCallsite = DummyCallsite;
-    static CALLSITES: OnceLock<std::sync::Mutex<HashMap<(&'static str, Level), Metadata<'static>>>> = OnceLock::new();
+    static CALLSITES: OnceLock<
+        std::sync::Mutex<HashMap<(&'static str, Level), Metadata<'static>>>,
+    > = OnceLock::new();
     static FIELDS: &[&str] = &["message"];
 
     let lvl = match level {
@@ -210,6 +216,7 @@ pub struct OrchestratorReady {
     pub pool: Arc<PermitPool>,
     pub schema: Option<serde_json::Value>,
     pub handle: OrchestratorHandle,
+    pub setup_logs: String,
 }
 
 pub struct OrchestratorHandle {
@@ -272,6 +279,7 @@ pub enum OrchestratorError {
 
 pub async fn spawn_worker(
     config: OrchestratorConfig,
+    setup_log_rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
 ) -> Result<OrchestratorReady, OrchestratorError> {
     let num_slots = config.num_slots;
 
@@ -370,6 +378,8 @@ pub async fn spawn_worker(
         Err(_) => return Err(OrchestratorError::SetupTimeout),
     };
 
+    let setup_logs = crate::setup_log_accumulator::drain_accumulated_logs(setup_log_rx);
+
     tracing::debug!(num_slots = slot_ids.len(), "Worker ready");
 
     if let Some(ref s) = schema
@@ -412,6 +422,7 @@ pub async fn spawn_worker(
         pool,
         schema,
         handle,
+        setup_logs,
     })
 }
 

@@ -57,14 +57,15 @@ impl SetupResult {
         }
     }
 
-    /// Mark setup as succeeded.
-    pub fn succeeded(mut self) -> Self {
+    /// Mark setup as succeeded with accumulated logs.
+    pub fn succeeded(mut self, logs: String) -> Self {
         self.completed_at = Some(chrono::Utc::now().to_rfc3339());
         self.status = Some(SetupStatus::Succeeded);
+        self.logs = logs;
         self
     }
 
-    /// Mark setup as failed.
+    /// Mark setup as failed with error logs.
     pub fn failed(mut self, logs: String) -> Self {
         self.completed_at = Some(chrono::Utc::now().to_rfc3339());
         self.status = Some(SetupStatus::Failed);
