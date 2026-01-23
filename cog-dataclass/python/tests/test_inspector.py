@@ -210,7 +210,7 @@ class TestCheckInput:
             check_input(inputs, {})
             assert False, "Should have raised ValueError"
         except ValueError as e:
-            assert "missing required input field" in str(e)
+            assert "Field required" in str(e)
 
     def test_check_input_unknown_field_warning(self, capsys) -> None:
         field = _create_input_field(0, "text", str, None)
