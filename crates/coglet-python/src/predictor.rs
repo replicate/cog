@@ -30,6 +30,50 @@ fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
     false
 }
 
+/// Format a Python validation error to match pydantic format: "field: message".
+///
+/// Handles both Pydantic ValidationError and cog-dataclass ValueError.
+fn format_validation_error(py: Python<'_>, err: &PyErr) -> String {
+    // Check if it's a Pydantic ValidationError
+    if let Ok(pydantic_core) = py.import("pydantic_core") {
+        if let Ok(validation_error_cls) = pydantic_core.getattr("ValidationError") {
+            if err.is_instance(py, &validation_error_cls) {
+                // Extract error details from ValidationError.errors()
+                if let Ok(err_value) = err.value(py).call_method0("errors") {
+                    if let Ok(errors) = err_value.extract::<Vec<Bound<'_, PyDict>>>() {
+                        let messages: Vec<String> = errors
+                            .iter()
+                            .filter_map(|e| {
+                                // Get 'loc' (location) and 'msg' (message) from error dict
+                                let loc = e.get_item("loc").ok()??;
+                                let msg = e.get_item("msg").ok()??;
+
+                                // Extract field name from loc (typically a list like ['field_name'])
+                                if let Ok(loc_list) = loc.extract::<Vec<String>>() {
+                                    if let Some(field) = loc_list.last() {
+                                        if let Ok(msg_str) = msg.extract::<String>() {
+                                            return Some(format!("{}: {}", field, msg_str));
+                                        }
+                                    }
+                                }
+                                None
+                            })
+                            .collect();
+
+                        if !messages.is_empty() {
+                            return messages.join("\n");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // For ValueError (cog-dataclass) or other errors, just extract the message
+    // which is already formatted as "field: message"
+    err.value(py).to_string()
+}
+
 /// Type alias for Python object (Py<PyAny>).
 type PyObject = Py<PyAny>;
 
@@ -495,7 +539,7 @@ impl PythonPredictor {
                 .input_processor
                 .prepare(py, raw_input_dict)
                 .map_err(|e| {
-                    PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+                    PredictionError::InvalidInput(format_validation_error(py, &e))
                 })?;
             let input_dict = prepared.dict(py);
 
@@ -567,7 +611,7 @@ impl PythonPredictor {
                 .input_processor
                 .prepare(py, raw_input_dict)
                 .map_err(|e| {
-                    PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+                    PredictionError::InvalidInput(format_validation_error(py, &e))
                 })?;
             let input_dict = prepared.dict(py);
 
@@ -709,7 +753,7 @@ impl PythonPredictor {
                 .input_processor
                 .prepare(py, raw_input_dict)
                 .map_err(|e| {
-                    PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+                    PredictionError::InvalidInput(format_validation_error(py, &e))
                 })?;
             let input_dict = prepared.dict(py);
 
@@ -901,7 +945,7 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
                 .input_processor
                 .prepare(py, raw_input_dict)
                 .map_err(|e| {
-                    PredictionError::InvalidInput(format!("Input validation failed: {}", e))
+                    PredictionError::InvalidInput(format_validation_error(py, &e))
                 })?;
             let input_dict = prepared.dict(py);
 
