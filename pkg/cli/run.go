@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"strconv"
 	"strings"
 
@@ -108,9 +109,15 @@ func run(cmd *cobra.Command, args []string) error {
 		gpus = "all"
 	}
 
+	// Automatically propagate RUST_LOG for Rust coglet debugging
+	env := envFlags
+	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
+		env = append(env, "RUST_LOG="+rustLog)
+	}
+
 	runOptions := command.RunOptions{
 		Args:    args,
-		Env:     envFlags,
+		Env:     env,
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: []command.Volume{{Source: projectDir, Destination: "/src"}},

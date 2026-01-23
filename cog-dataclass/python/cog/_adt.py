@@ -125,10 +125,10 @@ class PrimitiveType(Enum):
             # URL string or data URI - validate to file-like object
             return File.validate(value)
         elif self is PrimitiveType.PATH:
-            # Convert strings to Path objects
+            # Convert strings/URLs to Path or URLPath objects
             if isinstance(value, Path):
                 return value
-            return Path(value)
+            return Path.validate(value)
         elif self is PrimitiveType.SECRET:
             # Convert strings to Secret objects
             if isinstance(value, Secret):
@@ -175,7 +175,12 @@ class PrimitiveType(Enum):
         """Encode a value for JSON serialization."""
         if self is PrimitiveType.FLOAT:
             return float(value)
-        elif self in {PrimitiveType.PATH, PrimitiveType.FILE, PrimitiveType.SECRET}:
+        elif self in {PrimitiveType.PATH, PrimitiveType.FILE}:
+            return value
+        elif self is PrimitiveType.SECRET:
+            # Secret objects need to be unwrapped for JSON serialization
+            if isinstance(value, Secret):
+                return value.get_secret_value()
             return value
         elif self is PrimitiveType.ANY:
             return value

@@ -64,7 +64,15 @@ class PredictionRequest:
 
     def dict(self, exclude_unset: bool = False) -> Dict[str, Any]:
         """Convert to dictionary (pydantic compat)."""
-        result = asdict(self)
+        result = {
+            "input": self.input,
+            "id": self.id,
+            "created_at": self.created_at,
+            "context": self.context,
+            "output_file_prefix": self.output_file_prefix,
+            "webhook": self.webhook,
+            "webhook_events_filter": self.webhook_events_filter,
+        }
         if exclude_unset:
             result = {k: v for k, v in result.items() if v is not None}
         return result

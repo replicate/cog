@@ -1,4 +1,7 @@
 # Test that Python 3.7 is deprecated and build fails with appropriate error
+# Skip for cog-dataclass and coglet (Rust) which require Python 3.10+
+[cog_dataclass] skip
+[coglet_rust] skip
 
 # Build should fail with deprecation error
 ! cog build -t $TEST_IMAGE
