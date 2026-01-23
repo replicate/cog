@@ -18,6 +18,9 @@ def make_encodeable(obj: Any) -> Any:
 
     Almost JSON-compatible. Files must be done in a separate step with upload_files().
     """
+    # Handle Pydantic models (v2 has model_dump(), v1 has dict())
+    if hasattr(obj, "model_dump") and callable(obj.model_dump):
+        return make_encodeable(obj.model_dump())
     if hasattr(obj, "dict") and callable(obj.dict):
         return make_encodeable(obj.dict())
     if isinstance(obj, dict):
