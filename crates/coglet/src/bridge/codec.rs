@@ -57,6 +57,15 @@ impl<T: Serialize> Encoder<T> for JsonCodec<T> {
     fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let json =
             serde_json::to_vec(&item).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let json_len = json.len();
+        tracing::trace!(json_size_bytes = json_len, "Encoding frame");
+        if json_len > 100_000 {
+            tracing::warn!(
+                json_size_bytes = json_len,
+                json_size_kb = json_len / 1024,
+                "Large frame being encoded"
+            );
+        }
         self.inner.encode(Bytes::from(json), dst)
     }
 }

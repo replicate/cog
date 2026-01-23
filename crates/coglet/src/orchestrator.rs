@@ -402,8 +402,11 @@ async fn run_event_loop(
                     Some(Ok(ControlResponse::Ready { .. })) => {
                         tracing::warn!("Unexpected Ready in event loop");
                     }
-                    Some(Ok(ControlResponse::Log { source, data })) => {
-                        tracing::debug!(?source, "Late setup log: {}", data.trim());
+                    Some(Ok(ControlResponse::Log { source: _, data })) => {
+                        // Subprocess output not tied to a prediction (orphan logs)
+                        for line in data.lines() {
+                            tracing::info!(target: "coglet::user", "{}", line);
+                        }
                     }
                     Some(Ok(ControlResponse::ShuttingDown)) => {
                         tracing::info!("Worker shutting down");

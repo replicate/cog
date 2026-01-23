@@ -14,7 +14,6 @@ use std::io;
 use std::sync::Arc;
 
 use futures::{SinkExt, StreamExt};
-use tokio::io::{stdin, stdout};
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
@@ -177,7 +176,7 @@ impl PredictResult {
 /// Called before setup() with a sender for routing logs to the control channel.
 /// Returns a cleanup function that unregisters the sender.
 pub type SetupLogHook =
-    Box<dyn FnOnce(mpsc::UnboundedSender<ControlResponse>) -> Box<dyn FnOnce() + Send> + Send>;
+    Box<dyn FnOnce(mpsc::Sender<ControlResponse>) -> Box<dyn FnOnce() + Send> + Send>;
 
 pub struct WorkerConfig {
     pub num_slots: usize,
@@ -222,37 +221,73 @@ pub async fn run_worker<H: PredictHandler>(
 ) -> io::Result<()> {
     let num_slots = config.num_slots;
 
+    // Set up log forwarding for setup phase
+    // This channel is used both for setup logs from Python and for captured subprocess output
+    // Bounded at 500 messages (~25-100KB) to prevent unbounded memory growth if subprocess
+    // spams output. Backpressure will slow the capture threads, which is fine.
+    let (setup_log_tx, mut setup_log_rx) = mpsc::channel::<ControlResponse>(500);
+
+    // CRITICAL: Redirect fds BEFORE any FFI initialization to prevent subprocesses
+    // from polluting the control channel
+    let control_fds =
+        crate::fd_redirect::redirect_fds_for_subprocess_isolation(setup_log_tx.clone())?;
+
     // Connect to slot sockets (transport info from env, set by parent)
     let child_info = get_transport_info_from_env()?;
     tracing::trace!(?child_info, "Connecting to slot transport");
     let mut transport = connect_transport(child_info).await?;
     tracing::info!(num_slots, "Connected to slot transport");
 
-    // Control channel via stdin/stdout
-    let mut ctrl_reader = FramedRead::new(stdin(), JsonCodec::<ControlRequest>::new());
+    // Control channel via redirected fds (not stdin/stdout)
+    let ctrl_stdin = tokio::fs::File::from_std(control_fds.stdin_fd.into());
+    let ctrl_stdout = tokio::fs::File::from_std(control_fds.stdout_fd.into());
+
+    let mut ctrl_reader = FramedRead::new(ctrl_stdin, JsonCodec::<ControlRequest>::new());
     let ctrl_writer = Arc::new(tokio::sync::Mutex::new(FramedWrite::new(
-        stdout(),
+        ctrl_stdout,
         JsonCodec::<ControlResponse>::new(),
     )));
 
     // Generate unique SlotIds for each socket
     let slot_ids: Vec<SlotId> = (0..num_slots).map(|_| SlotId::new()).collect();
 
-    // Set up log forwarding for setup phase
-    let (setup_log_tx, mut setup_log_rx) = mpsc::unbounded_channel::<ControlResponse>();
-
     let setup_cleanup = config.setup_log_hook.map(|hook| hook(setup_log_tx.clone()));
 
-    // Forward setup logs to control channel
+    // Forward logs to control channel (runs for entire worker lifetime)
+    // Receives logs from both Python (during setup) and fd_redirect capture threads (always)
     let ctrl_writer_for_logs = Arc::clone(&ctrl_writer);
-    let log_forwarder = tokio::spawn(async move {
+    let _log_forwarder = tokio::spawn(async move {
+        let mut log_count = 0;
+        let mut total_bytes = 0;
         while let Some(msg) = setup_log_rx.recv().await {
+            if let ControlResponse::Log { ref data, .. } = msg {
+                let msg_size = data.len();
+                log_count += 1;
+                total_bytes += msg_size;
+                tracing::trace!(
+                    log_number = log_count,
+                    msg_size_bytes = msg_size,
+                    total_bytes,
+                    "Forwarding log"
+                );
+            }
             let mut w = ctrl_writer_for_logs.lock().await;
             if let Err(e) = w.send(msg).await {
-                tracing::warn!(error = %e, "Failed to forward setup log");
+                tracing::warn!(
+                    error = %e,
+                    log_count,
+                    total_bytes,
+                    "Failed to forward log"
+                );
                 break;
             }
         }
+        tracing::debug!(
+            total_logs = log_count,
+            total_bytes,
+            total_kb = total_bytes / 1024,
+            "Log forwarder exiting"
+        );
     });
 
     // Run setup
@@ -260,16 +295,14 @@ pub async fn run_worker<H: PredictHandler>(
     let setup_result = handler.setup().await;
     tracing::trace!("Setup handler returned");
 
-    // Clean up setup log forwarding
-    // Must unregister sender BEFORE waiting for forwarder (sender keeps channel alive)
+    // Unregister Python's setup sender, but keep log_forwarder running
+    // The fd_redirect capture threads will continue sending subprocess logs
     if let Some(cleanup) = setup_cleanup {
-        tracing::trace!("Running cleanup (unregistering setup sender)");
+        tracing::trace!("Running cleanup (unregistering Python setup sender)");
         cleanup();
     }
-    drop(setup_log_tx);
-    tracing::trace!("Waiting for log forwarder to finish");
-    let _ = log_forwarder.await;
-    tracing::trace!("Log forwarder finished");
+    // Note: We DON'T drop setup_log_tx or wait for log_forwarder
+    // The log_forwarder continues running to forward subprocess output throughout worker lifetime
 
     // Handle setup failure
     if let Err(e) = setup_result {
@@ -287,6 +320,22 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Send Ready with slot IDs and schema
     let schema = handler.schema();
+    if let Some(ref s) = schema {
+        let schema_json = serde_json::to_string(s).unwrap_or_else(|_| "{}".to_string());
+        let schema_size = schema_json.len();
+        tracing::info!(
+            schema_size_bytes = schema_size,
+            schema_size_kb = schema_size / 1024,
+            "Schema generated"
+        );
+        if schema_size > 1024 * 1024 {
+            // Log first 500 chars if schema is >1MB
+            tracing::warn!(
+                schema_preview = &schema_json[..500.min(schema_json.len())],
+                "Large schema detected"
+            );
+        }
+    }
     tracing::trace!(num_slots, ?slot_ids, "Sending Ready to parent");
     {
         let mut w = ctrl_writer.lock().await;
