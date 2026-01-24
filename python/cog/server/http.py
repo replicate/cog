@@ -425,6 +425,16 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                     jsonable_encoder(task.result),
                     status_code=202,
                 )
+        else:
+            # even if not busy (use concurrency and max > 1) ,
+            # but someone put with the same prediction id repeatedly ,
+            # return its current state.
+            task = runner.get_predict_task(request.id)
+            if task:
+                return JSONResponse(
+                    jsonable_encoder(task.result),
+                    status_code=202,
+                )
 
         # TODO: spec-compliant parsing of Prefer header.
         respond_async = prefer == "respond-async"
