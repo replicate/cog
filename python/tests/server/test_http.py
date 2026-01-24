@@ -747,3 +747,56 @@ def test_openapi_specification_with_deprecated(client, static_schema):
         "title": "Text",
         "description": "Some deprecated text",
     }
+
+
+@uses_predictor("healthcheck_healthy")
+def test_healthcheck_healthy(client):
+    """Test that a healthy healthcheck returns READY status."""
+    resp = client.get("/health-check")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "READY"
+    # Healthy healthcheck should not have the user error field
+    assert "user_healthcheck_error" not in data
+
+
+@uses_predictor("healthcheck_unhealthy")
+def test_healthcheck_unhealthy(client):
+    """Test that an unhealthy healthcheck returns SETUP_FAILED status."""
+    resp = client.get("/health-check")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "SETUP_FAILED"
+    assert (
+        "user_healthcheck_error" in data
+        and data["user_healthcheck_error"]
+        == "Healthcheck failed: user-defined healthcheck returned False"
+    )
+
+
+@uses_predictor("healthcheck_exception")
+def test_healthcheck_exception(client):
+    """Test that a healthcheck that raises an exception returns error."""
+    resp = client.get("/health-check")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "SETUP_FAILED"
+    assert (
+        "user_healthcheck_error" in data
+        and data["user_healthcheck_error"]
+        == "Healthcheck failed: Healthcheck failed with error"
+    )
+
+
+@uses_predictor("healthcheck_timeout")
+def test_healthcheck_timeout(client):
+    """Test that a healthcheck that times out returns timeout error."""
+    resp = client.get("/health-check")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "SETUP_FAILED"
+    assert (
+        "user_healthcheck_error" in data
+        and data["user_healthcheck_error"]
+        == "Healthcheck failed: user-defined healthcheck timed out after 5.0 seconds"
+    )

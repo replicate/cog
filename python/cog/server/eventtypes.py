@@ -55,6 +55,7 @@ class Done:
     canceled: bool = False
     error: bool = False
     error_detail: str = ""
+    event_type: str = "prediction"
 
 
 @define

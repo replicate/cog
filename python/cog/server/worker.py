@@ -380,7 +380,7 @@ class Worker:
 
             ev = self._events.recv()
             self._publish(ev)
-            if isinstance(ev.event, Done):
+            if isinstance(ev.event, Done) and ev.event.event_type != "healthcheck":
                 self._complete_prediction(ev.event, ev.tag)
 
         # If we dropped off the end off the end of the loop, it's because the
@@ -388,7 +388,7 @@ class Worker:
         while self._events.poll():
             ev = self._events.recv()
             self._publish(ev)
-            if isinstance(ev.event, Done):
+            if isinstance(ev.event, Done) and ev.event.event_type != "healthcheck":
                 self._complete_prediction(ev.event, ev.tag)
 
         if not self._terminating:
@@ -785,7 +785,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         redirector: StreamRedirector,
     ) -> None:
         """Execute the healthcheck method."""
-        done = Done()
+        done = Done(event_type="healthcheck")
         asyncio.run(self._healthcheck_internal(done))
         # This code, while the exact same as in ahealthcheck, cannot
         # be factored out because StreamRedirector and
@@ -802,7 +802,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         redirector: SimpleStreamRedirector,
     ) -> None:
         """Execute the healthcheck method asynchronously."""
-        done = Done()
+        done = Done(event_type="healthcheck")
         await self._healthcheck_internal(done)
 
         try:
@@ -841,9 +841,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     )
         except asyncio.TimeoutError:
             done.error = True
-            done.error_detail = (
-                f"Healthcheck timed out after {HEALTHCHECK_TIMEOUT} seconds"
-            )
+            done.error_detail = f"Healthcheck failed: user-defined healthcheck timed out after {HEALTHCHECK_TIMEOUT} seconds"
             print(f"Healthcheck timed out after {HEALTHCHECK_TIMEOUT} seconds")
         except Exception as e:
             done.error = True
