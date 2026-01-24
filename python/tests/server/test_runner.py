@@ -696,3 +696,43 @@ def test_predict_task_file_uploads_multi():
         "http://example.com/hello.jpg",
         "http://example.com/world.jpg",
     ]
+
+
+def test_predict_quiet():
+    p = PredictionRequest(
+        input={"hello": "there"},
+        id=None,
+        created_at=None,
+        output_file_prefix=None,
+        webhook=None,
+        quiet=False,
+    )
+    t = PredictTask(p)
+
+    assert t.result.status == Status.PROCESSING
+    assert t.result.output is None
+    assert t.result.logs == ""
+    assert isinstance(t.result.started_at, datetime)
+    t.set_output_type(multi=False)
+    t.append_output("giraffes")
+    assert t.result.output == "giraffes"
+    assert t.result.input == {"hello": "there"}
+
+    p = PredictionRequest(
+        input={"hello": "there"},
+        id=None,
+        created_at=None,
+        output_file_prefix=None,
+        webhook=None,
+        quiet=True,
+    )
+    t = PredictTask(p)
+
+    assert t.result.status == Status.PROCESSING
+    assert t.result.output is None
+    assert t.result.logs == ""
+    assert isinstance(t.result.started_at, datetime)
+    t.set_output_type(multi=False)
+    t.append_output("giraffes")
+    assert t.result.output == "giraffes"
+    assert t.result.input == None
