@@ -363,6 +363,13 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         setup = app.state.setup_result.to_dict() if app.state.setup_result else {}
         return jsonable_encoder({"status": health.name, "setup": setup})
 
+    @app.get("/ready")
+    async def readinesscheck() -> Any:
+        _check_setup_result()
+        if app.state.health == Health.READY:
+            return JSONResponse({}, status_code=200)
+        return JSONResponse({}, status_code=503)
+
     @limited
     @app.post(
         "/predictions",
