@@ -253,10 +253,10 @@ class Worker:
         with self._subscribers_lock:
             del self._subscribers[sid]
 
-    def healthcheck(self) -> Future[Done]:
+    def healthcheck(self) -> "Future[Done]":
         """Execute the healthcheck method if defined."""
         self._assert_state(WorkerState.READY)
-        result: Future[Done] = Future()
+        result: "Future[Done]" = Future()
 
         # Create a unique tag for this healthcheck
         tag = f"healthcheck-{uuid.uuid4().hex}"
