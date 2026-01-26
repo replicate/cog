@@ -279,7 +279,7 @@ func (c *apiClient) Inspect(ctx context.Context, ref string) (*image.InspectResp
 }
 
 func (c *apiClient) LocalImageID(ctx context.Context, ref string) (string, error) {
-	console.Debugf("=== APIClient.LocalImageTag %s", ref)
+	console.Debugf("=== APIClient.LocalImageID %s", ref)
 
 	if !strings.HasSuffix(ref, ":latest") {
 		ref = fmt.Sprintf("%s:latest", ref)
