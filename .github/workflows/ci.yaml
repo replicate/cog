@@ -26,6 +26,8 @@ jobs:
         with:
           fetch-depth: 0 # needed for setuptools_scm version determination
       - uses: jdx/mise-action@v2
+        with:
+          cache: false
       # Build main cog package (wheel + sdist)
       - name: Build cog package
         run: uv build --out-dir=dist .
@@ -43,9 +45,6 @@ jobs:
           name: CogDataclassWheel
           path: dist/cog_dataclass-*.whl
       # Build Rust coglet wheel
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: crates -> target
       - name: Check Rust formatting
         run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
       - name: Run clippy
@@ -72,6 +71,8 @@ jobs:
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: jdx/mise-action@v2
+        with:
+          cache: false
       - name: Lint
         run: make lint
 
