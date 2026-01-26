@@ -12,6 +12,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
@@ -275,6 +276,34 @@ func (c *apiClient) Inspect(ctx context.Context, ref string) (*image.InspectResp
 	}
 
 	return &inspect, nil
+}
+
+func (c *apiClient) LocalImageID(ctx context.Context, ref string) (string, error) {
+	console.Debugf("=== APIClient.LocalImageID %s", ref)
+
+	if !strings.HasSuffix(ref, ":latest") {
+		ref = fmt.Sprintf("%s:latest", ref)
+	}
+
+	imageList, err := c.client.ImageList(ctx, image.ListOptions{
+		Filters: filters.NewArgs(filters.KeyValuePair{
+			Key:   "reference",
+			Value: ref,
+		}),
+	})
+	if err != nil {
+		if command.IsNotFoundError(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if len(imageList) == 0 {
+		return "", &command.NotFoundError{Ref: ref, Object: "image"}
+	}
+	if len(imageList) > 1 {
+		return "", &command.NotFoundError{Ref: ref, Object: "image"}
+	}
+	return imageList[0].ID, nil
 }
 
 func (c *apiClient) ImageExists(ctx context.Context, ref string) (bool, error) {
