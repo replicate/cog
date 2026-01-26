@@ -71,6 +71,8 @@ jobs:
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: jdx/mise-action@v2
+        with:
+          cache: false
       - name: Lint
         run: make lint
 
