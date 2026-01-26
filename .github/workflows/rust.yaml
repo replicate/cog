@@ -39,7 +39,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.12.3
+        uses: cargo-bins/cargo-binstall@v1.17.3
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -70,7 +70,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.12.3
+        uses: cargo-bins/cargo-binstall@v1.17.3
 
       - uses: Swatinem/rust-cache@v2
         with:
