@@ -423,6 +423,19 @@ def get_filename(url: str) -> str:
     return basename
 
 
+class ImageMaskFile(File):
+    @classmethod
+    def __get_pydantic_json_schema__(cls, *args, **kwargs) -> "JsonSchemaValue":
+        json_schema = File.__get_pydantic_json_schema__(cls, *args, **kwargs)
+        json_schema.update(
+            {
+                "x-cog-file-type": "image/png",
+                "x-cog-file-display": "mask",
+            }
+        )
+        return json_schema
+
+
 Item = TypeVar("Item")
 _concatenate_iterator_schema = {
     "type": "array",
