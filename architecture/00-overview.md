@@ -48,15 +48,22 @@ An OpenAPI specification generated from the predictor's type hints. Describes wh
 
 The HTTP interface for running predictions. A fixed envelope format (`PredictionRequest`/`PredictionResponse`) wraps model-specific inputs and outputs.
 
-**Deep dive**: [Prediction API](./03-prediction-api.md)
+**Deep dives**:
+- [Legacy API](./legacy/03-prediction-api.md) - FastAPI implementation details
+- [FFI API](./ffi/03-prediction-api.md) - Rust/Axum implementation details
 
 ---
 
 ### Container Runtime
 
-The Python runtime that runs inside the container: an HTTP server, worker process isolation, and prediction execution.
+The runtime that runs inside the container: an HTTP server, worker process isolation, and prediction execution. Cog has two runtime implementations:
 
-**Deep dive**: [Container Runtime](./04-container-runtime.md)
+- **Legacy (Python/FastAPI)**: Current default implementation - [Documentation](./legacy/)
+- **FFI (Rust/PyO3)**: Next-generation experimental implementation - [Documentation](./ffi/)
+
+**Deep dives**:
+- [Legacy Runtime](./legacy/04-container-runtime.md) - FastAPI/Uvicorn two-process architecture
+- [FFI Runtime](./ffi/04-container-runtime.md) - Rust/Axum with PyO3 FFI bridge
 
 ---
 
@@ -127,13 +134,33 @@ flowchart TB
 | **Worker** | Isolated subprocess running user code |
 | **Setup** | One-time model initialization at container start |
 
+## Runtime Implementations
+
+Cog supports two runtime implementations:
+
+### Legacy Runtime (Python/FastAPI)
+- **Status**: Current default
+- **Use when**: Running standard Cog containers
+- **Implementation**: `python/cog/server/`
+- **Documentation**: [legacy/](./legacy/)
+
+### FFI Runtime (Rust/PyO3)
+- **Status**: Experimental (in development)
+- **Use when**: Set `USE_COGLET` environment variable
+- **Implementation**: `crates/coglet/`
+- **Documentation**: [ffi/](./ffi/)
+- **Benefits**: Better performance, stability, and resource management
+
+Both runtimes expose the same HTTP API and support the same model code. The FFI runtime is a drop-in replacement with improved internals.
+
 ## Reading Order
 
 For understanding Cog's architecture, we recommend reading in this order:
 
 1. [Model Source](./01-model-source.md) - What users write
 2. [Schema](./02-schema.md) - How the interface is described
-3. [Prediction API](./03-prediction-api.md) - How requests and responses work
-4. [Container Runtime](./04-container-runtime.md) - How it runs
-5. [Build System](./05-build-system.md) - How images are built
-6. [CLI](./06-cli.md) - How users interact with it all
+3. **Choose a runtime path**:
+   - **Legacy**: [Prediction API](./legacy/03-prediction-api.md) → [Container Runtime](./legacy/04-container-runtime.md)
+   - **FFI**: [Prediction API](./ffi/03-prediction-api.md) → [Container Runtime](./ffi/04-container-runtime.md)
+4. [Build System](./05-build-system.md) - How images are built
+5. [CLI](./06-cli.md) - How users interact with it all

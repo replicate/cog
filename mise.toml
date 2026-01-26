@@ -3,18 +3,19 @@ experimental_monorepo_root = true
 [tools]
 go = "latest"
 uv = "0.9.26"
+zig = "0.15.2"
+"rust" = { version = "1.93.0", components = "rustfmt,clippy" }
 cargo-binstall = "1.16.6"
 "cargo:cargo-deny" = "0.19.0"
 "cargo:cargo-insta" = "1.46.0"
 "cargo:cargo-nextest" = "0.9.120"
 "cargo:maturin" = "1.11.5"
+"cargo:cargo-zigbuild" = "0.20.1"
 ruff = "0.14.13"
 ty = "0.0.10"
-"cargo:cargo-zigbuild" = "0.20.1"
-zig = "0.15.2"
 
 [env]
-_.path = './bin'
+_.path = "./bin"
 _.file = [".env"]
 _.python.venv = ".venv"
 

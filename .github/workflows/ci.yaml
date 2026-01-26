@@ -25,11 +25,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for setuptools_scm version determination
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
+        with:
+          cache: false
       # Build main cog package (wheel + sdist)
       - name: Build cog package
         run: uv build --out-dir=dist .
@@ -47,9 +45,6 @@ jobs:
           name: CogDataclassWheel
           path: dist/cog_dataclass-*.whl
       # Build Rust coglet wheel
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: crates -> target
       - name: Check Rust formatting
         run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
       - name: Run clippy
@@ -75,11 +70,9 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
+        with:
+          cache: false
       - name: Lint
         run: make lint
 
@@ -116,10 +109,6 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Build
         run: make cog
@@ -146,10 +135,6 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Compute tox env name
         run: echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
@@ -178,10 +163,6 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - name: Create virtual environment and install cog-dataclass wheel with dev dependencies
         run: |
@@ -208,17 +189,9 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: astral-sh/setup-uv@v5
+      - uses: jdx/mise-action@v2
       - name: Create virtual environment
         run: uv venv
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.12.3
-      - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
@@ -314,10 +287,6 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@v1.12.3
       - uses: jdx/mise-action@v2
       - uses: goreleaser/goreleaser-action@v6
         with:

@@ -45,6 +45,10 @@ backend = "aqua:astral-sh/ruff"
 "platforms.macos-x64" = { checksum = "sha256:69e424a42ac3a7c6c7032ad96deb757c35c93c848b6ea329a3f4c605e6d89ef9", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-apple-darwin.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:d2af4376053458f283d74980b49dc0d61d3ef9d9b8684c5b25bd64b73e11634a", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-pc-windows-msvc.zip"}
 
+[[tools.rust]]
+version = "1.93.0"
+backend = "core:rust"
+
 [[tools.ty]]
 version = "0.0.10"
 backend = "aqua:astral-sh/ty"
@@ -66,3 +70,4 @@ backend = "aqua:astral-sh/uv"
 [[tools.zig]]
 version = "0.15.2"
 backend = "core:zig"
+"platforms.macos-arm64" = { checksum = "blake3:c7d2fb746701fea2c070f66c29a0300ba42a0d5d2c09c493462b8c0f4f0bd604"}
