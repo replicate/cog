@@ -7,18 +7,18 @@ import (
 	"strings"
 )
 
-//go:generate sh -c "rm -f cog-*.whl coglet-*.whl"
+//go:generate sh -c "rm -f cog-*.whl cog_dataclass-*.whl"
 //go:generate sh -c "cp ../../dist/cog-*.whl ."
-//go:generate sh -c "cp ../../dist/coglet-*.whl ."
+//go:generate sh -c "cp ../../dist/cog_dataclass-*.whl ."
 
-//go:embed cog-*.whl coglet-*.whl
+//go:embed cog-*.whl cog_dataclass-*.whl
 var wheelsFS embed.FS
 
 func init() {
 	assertExactlyOneWheelPerRuntime()
 }
 
-// assertExactlyOneWheelPerRuntime ensures exactly 2 wheels are embedded (one cog, one coglet).
+// assertExactlyOneWheelPerRuntime ensures exactly 2 wheels are embedded (cog and cog-dataclass).
 // If there are more or fewer, the build is broken - likely stale wheels left in pkg/wheels/
 // or dist/, or the wheels weren't built at all. Panics on failure since this is a build-time
 // invariant that must hold for the binary to function correctly.
@@ -28,12 +28,12 @@ func assertExactlyOneWheelPerRuntime() {
 		panic(fmt.Sprintf("failed to read embedded wheels directory: %v", err))
 	}
 
-	var cogCount, cogletCount int
+	var cogCount, cogDataclassCount int
 	for _, f := range files {
 		name := f.Name()
 		if strings.HasSuffix(name, ".whl") {
-			if strings.HasPrefix(name, "coglet-") {
-				cogletCount++
+			if strings.HasPrefix(name, "cog_dataclass-") {
+				cogDataclassCount++
 			} else if strings.HasPrefix(name, "cog-") {
 				cogCount++
 			}
@@ -43,8 +43,8 @@ func assertExactlyOneWheelPerRuntime() {
 	if cogCount != 1 {
 		panic(fmt.Sprintf("expected exactly 1 cog wheel embedded, found %d - run 'make wheel' to fix", cogCount))
 	}
-	if cogletCount != 1 {
-		panic(fmt.Sprintf("expected exactly 1 coglet wheel embedded, found %d - run 'make wheel' to fix", cogletCount))
+	if cogDataclassCount != 1 {
+		panic(fmt.Sprintf("expected exactly 1 cog-dataclass wheel embedded, found %d - run 'make wheel' to fix", cogDataclassCount))
 	}
 }
 
@@ -52,8 +52,9 @@ func ReadCogWheel() (string, []byte) {
 	return readWheelFromFS("cog-")
 }
 
-func ReadCogletWheel() (string, []byte) {
-	return readWheelFromFS("coglet-")
+// ReadCogDataclassWheel returns the embedded cog-dataclass wheel.
+func ReadCogDataclassWheel() (string, []byte) {
+	return readWheelFromFS("cog_dataclass-")
 }
 
 func readWheelFromFS(prefix string) (string, []byte) {
@@ -83,6 +84,8 @@ const (
 	WheelSourceCogletEmbedded
 	// WheelSourceCogletAlpha uses the PinnedCogletURL (default when cog_runtime: true)
 	WheelSourceCogletAlpha
+	// WheelSourceCogDataclass uses the embedded cog-dataclass wheel (pydantic-less)
+	WheelSourceCogDataclass
 	// WheelSourceURL uses a custom URL
 	WheelSourceURL
 	// WheelSourceFile uses a local file path
@@ -98,6 +101,8 @@ func (s WheelSource) String() string {
 		return "coglet"
 	case WheelSourceCogletAlpha:
 		return "coglet-alpha"
+	case WheelSourceCogDataclass:
+		return "cog-dataclass"
 	case WheelSourceURL:
 		return "url"
 	case WheelSourceFile:
@@ -125,6 +130,7 @@ const CogWheelEnvVar = "COG_WHEEL"
 //   - "cog" - Embedded cog wheel
 //   - "coglet" - Embedded coglet wheel
 //   - "coglet-alpha" - PinnedCogletURL
+//   - "cog-dataclass" - Embedded cog-dataclass wheel (pydantic-less)
 //   - "https://..." or "http://..." - Direct wheel URL
 //   - "/path/to/file.whl" or "./path/to/file.whl" - Local wheel file
 //
@@ -142,6 +148,8 @@ func ParseCogWheel(value string) *WheelConfig {
 		return &WheelConfig{Source: WheelSourceCogletEmbedded}
 	case "coglet-alpha":
 		return &WheelConfig{Source: WheelSourceCogletAlpha}
+	case "cog-dataclass":
+		return &WheelConfig{Source: WheelSourceCogDataclass}
 	}
 
 	// Check for URL (http:// or https://)

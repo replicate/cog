@@ -1,3 +1,8 @@
+# Skip for coglet_alpha and cog-dataclass (Pydantic 2 specific test)
+[coglet_alpha] skip
+[cog_dataclass] skip
+[coglet_rust] skip
+
 # Test Pydantic 2 output types work correctly with train command
 
 # Train with input

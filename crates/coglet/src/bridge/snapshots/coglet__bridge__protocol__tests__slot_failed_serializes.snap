@@ -1,0 +1,9 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "failed",
+  "id": "pred_123",
+  "error": "ValueError: invalid input"
+}

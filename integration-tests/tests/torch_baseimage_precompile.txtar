@@ -1,4 +1,7 @@
 [short] skip 'slow test - run without -short flag'
+# Skip for cog-dataclass and coglet (Rust) which require Python 3.10+
+[cog_dataclass] skip
+[coglet_rust] skip
 
 # Test Torch 1.13.0 base image with --precompile flag
 cog build -t $TEST_IMAGE --openapi-schema openapi.json --use-cog-base-image=false --precompile

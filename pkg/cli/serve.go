@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -78,9 +79,15 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		"--await-explicit-shutdown", "true",
 	}
 
+	// Automatically propagate RUST_LOG for Rust coglet debugging
+	env := envFlags
+	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
+		env = append(env, "RUST_LOG="+rustLog)
+	}
+
 	runOptions := command.RunOptions{
 		Args:    args,
-		Env:     envFlags,
+		Env:     env,
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: []command.Volume{{Source: projectDir, Destination: "/src"}},

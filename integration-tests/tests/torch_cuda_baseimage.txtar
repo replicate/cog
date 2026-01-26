@@ -1,4 +1,7 @@
 [short] skip 'slow test - run without -short flag'
+# Skip for cog-dataclass and coglet (Rust) which require Python 3.10+
+[cog_dataclass] skip
+[coglet_rust] skip
 
 # Test Torch 2.0.1+cu118 with --use-cog-base-image flag
 cog build -t $TEST_IMAGE --use-cog-base-image

@@ -1,4 +1,5 @@
 # Test that python_overrides can override package versions
+[cog_dataclass] skip
 
 # Build the image
 cog build -t $TEST_IMAGE

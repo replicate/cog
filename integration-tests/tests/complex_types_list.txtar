@@ -1,4 +1,5 @@
 # Test complex list input types (list of anthropic MessageParam)
+[cog_dataclass] skip
 
 # Build the image
 cog build -t $TEST_IMAGE

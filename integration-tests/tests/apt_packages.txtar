@@ -1,3 +1,7 @@
+# Skip for cog-dataclass and coglet (Rust) which require Python 3.10+
+[cog_dataclass] skip
+[coglet_rust] skip
+
 # Test that system packages are installed correctly via system_packages in cog.yaml
 
 # Build the image (the run command verifies git is installed)

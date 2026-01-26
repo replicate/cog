@@ -1,3 +1,7 @@
+# Skip for cog-dataclass and coglet (Rust) which do not support monobase
+[cog_dataclass] skip
+[coglet_rust] skip
+
 # Test Python 3.13 works with cog base images
 # Source: test_build.py::test_python_313_base_images
 

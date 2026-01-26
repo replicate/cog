@@ -1,3 +1,7 @@
+# Skip for cog-dataclass and coglet (Rust) which do not support monobase
+[cog_dataclass] skip
+[coglet_rust] skip
+
 # Test --x-localimage flag with fast build
 # Source: test_predict.py::test_predict_with_fast_build_with_local_image
 # Note: This test requires linux/amd64 architecture for monobase to work
