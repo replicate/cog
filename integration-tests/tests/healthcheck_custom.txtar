@@ -1,0 +1,44 @@
+# Skip for coglet_alpha which does not support this
+[coglet_alpha] skip
+# Skip for coglet_rust which does not support this
+[coglet_rust] skip
+# Skip for cog-dataclass which does not support this
+[cog_dataclass] skip
+
+# Test custom healthcheck functionality
+# This tests the user-defined healthcheck() method in predictors
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+cog serve
+
+# Test 1: Healthy healthcheck returns READY status
+curl GET /health-check
+stdout '"status":"READY"'
+! stdout 'user_healthcheck_error'
+
+# Test 2: Make a prediction to ensure predictor works
+curl POST /predictions '{"input":{"text":"world"}}'
+stdout '"output":"hello world"'
+
+# Test 3: Health check still works after prediction
+curl GET /health-check
+stdout '"status":"READY"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return f"hello {text}"
+    
+    def healthcheck(self) -> bool:
+        """Custom healthcheck that always returns healthy."""
+        return True

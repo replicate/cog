@@ -21,6 +21,11 @@ class Shutdown:
     pass
 
 
+@define
+class Healthcheck:
+    pass
+
+
 # From predictor child process
 #
 @define
@@ -50,6 +55,7 @@ class Done:
     canceled: bool = False
     error: bool = False
     error_detail: str = ""
+    event_type: str = "prediction"
 
 
 @define
@@ -63,6 +69,7 @@ class Envelope:
         Cancel,
         PredictionInput,
         Shutdown,
+        Healthcheck,
         Log,
         PredictionMetric,
         PredictionOutput,
