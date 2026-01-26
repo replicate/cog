@@ -73,6 +73,42 @@
           "type": "string",
           "description": "A pip requirements file specifying the Python packages to install."
         },
+        "conda_packages": {
+          "$id": "#/properties/build/properties/conda_packages",
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "A list of packages to install via conda (e.g., conda-only packages from conda-forge).",
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/conda_packages/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/conda_packages/items/anyOf/0",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "conda_channels": {
+          "$id": "#/properties/build/properties/conda_channels",
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Conda channels to use for package installation. Defaults to ['conda-forge', 'defaults'] if not specified.",
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/conda_channels/items",
+            "anyOf": [
+              {
+                "$id": "#/properties/build/properties/conda_channels/items/anyOf/0",
+                "type": "string"
+              }
+            ]
+          }
+        },
         "system_packages": {
           "$id": "#/properties/build/properties/system_packages",
           "type": [

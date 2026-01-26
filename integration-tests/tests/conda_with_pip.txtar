@@ -1,0 +1,28 @@
+# Test that conda packages work together with pip packages
+
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE
+stdout 'numpy from conda'
+stdout 'requests from pip'
+
+-- cog.yaml --
+build:
+  python_version: "3.11"
+  conda_packages:
+    - numpy=1.24.3
+  conda_channels:
+    - conda-forge
+  python_requirements: requirements.txt
+predict: predict.py:Predictor
+
+-- requirements.txt --
+requests==2.31.0
+
+-- predict.py --
+from cog import BasePredictor
+import numpy as np
+import requests
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        return f"numpy from conda: {np.__version__}, requests from pip: {requests.__version__}"
