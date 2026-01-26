@@ -834,7 +834,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                         timeout=HEALTHCHECK_TIMEOUT,
                     )
 
-                if result is False or result is None:
+                if not bool(result):
                     done.error = True
                     done.error_detail = (
                         "Healthcheck failed: user-defined healthcheck returned False"
@@ -842,7 +842,11 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         except asyncio.TimeoutError:
             done.error = True
             done.error_detail = f"Healthcheck failed: user-defined healthcheck timed out after {HEALTHCHECK_TIMEOUT} seconds"
-            print(f"Healthcheck timed out after {HEALTHCHECK_TIMEOUT} seconds")
+            log.warn(
+                "User-defined healthcheck timed out",
+                timeout_secs=HEALTHCHECK_TIMEOUT,
+            )
+            log.warn(f"Healthcheck timed out after {HEALTHCHECK_TIMEOUT} seconds")
         except Exception as e:
             done.error = True
             done.error_detail = f"Healthcheck failed: {str(e)}"

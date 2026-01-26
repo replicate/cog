@@ -81,6 +81,7 @@ class Health(Enum):
     BUSY = auto()
     SETUP_FAILED = auto()
     DEFUNCT = auto()
+    UNHEALTHY = auto()
 
 
 class MyState:
@@ -366,7 +367,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             custom_health_error = healthcheck_result.error_detail
 
             if not custom_health_ok:
-                health = Health.SETUP_FAILED
+                health = Health.UNHEALTHY
         else:
             health = app.state.health
             custom_health_ok = True
