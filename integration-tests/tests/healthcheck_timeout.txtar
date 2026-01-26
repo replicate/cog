@@ -1,0 +1,45 @@
+# Skip for coglet_alpha which does not support this
+[coglet_alpha] skip
+# Skip for coglet_rust which does not support this
+[coglet_rust] skip
+# Skip for cog-dataclass which does not support this
+[cog_dataclass] skip
+
+# Test healthcheck timeout behavior
+# This tests when healthcheck takes too long (>5 seconds)
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+cog serve
+
+# Timeout in healthcheck should return UNHEALTHY with timeout message
+curl GET /health-check
+stdout '"status":"UNHEALTHY"'
+stdout 'user_healthcheck_error'
+stdout 'timed out after 5.0 seconds'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self) -> None:
+        self._healthcheck_calls = 0
+
+    def predict(self, text: str) -> str:
+        return f"hello {text}"
+    
+    async def healthcheck(self) -> bool:
+        """Healthcheck that times out after startup."""
+        self._healthcheck_calls += 1
+        if self._healthcheck_calls == 1:
+            return True
+        await asyncio.sleep(10)  # Sleep longer than the 5 second timeout
+        return True
