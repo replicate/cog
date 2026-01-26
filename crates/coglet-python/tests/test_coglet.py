@@ -143,7 +143,9 @@ class CogletServer:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,  # Line buffered
-            cwd=str(self.predictor_path.parent),  # Run from predictor directory to find cog.yaml
+            cwd=str(
+                self.predictor_path.parent
+            ),  # Run from predictor directory to find cog.yaml
         )
 
         # Start background thread to read stderr
