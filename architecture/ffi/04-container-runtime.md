@@ -125,19 +125,19 @@ Communication between the Rust server and Python worker uses two channels:
 ```mermaid
 stateDiagram-v2
     [*] --> STARTING: Container start
-    note right of STARTING: HTTP serves 503
+    note right of STARTING: Predictions return 503
     
     STARTING --> READY: setup() succeeds
     STARTING --> SETUP_FAILED: setup() raises exception
     
     READY --> BUSY: All slots occupied
-    note right of BUSY: 409 for new predictions
+    note right of BUSY: New predictions get 409
     
     BUSY --> READY: Slot freed
     
     READY --> DEFUNCT: Fatal error / worker crash
     BUSY --> DEFUNCT: Fatal error / worker crash
-    note right of DEFUNCT: HTTP serves 503
+    note right of DEFUNCT: Predictions return 503
     
     SETUP_FAILED --> [*]
     DEFUNCT --> [*]
@@ -145,13 +145,17 @@ stateDiagram-v2
 
 ### Health States
 
-| State | HTTP Behavior | Meaning |
-|-------|--------------|---------|
-| `STARTING` | 503 Service Unavailable | Worker subprocess initializing, `setup()` running |
-| `READY` | 200 OK | Worker ready, at least one slot available |
-| `BUSY` | 409 Conflict | All slots occupied, no capacity for new predictions |
-| `SETUP_FAILED` | 503 Service Unavailable | `setup()` threw exception, cannot serve predictions |
-| `DEFUNCT` | 503 Service Unavailable | Fatal error or worker crash, server unusable |
+The health-check endpoint always returns HTTP 200 with the status in the JSON body. This allows load balancers and orchestrators to distinguish between "server is running but not ready" vs "server is down".
+
+| State | JSON `status` | Meaning |
+|-------|---------------|---------|
+| `STARTING` | `"STARTING"` | Worker subprocess initializing, `setup()` running |
+| `READY` | `"READY"` | Worker ready, at least one slot available |
+| `BUSY` | `"BUSY"` | All slots occupied, no capacity for new predictions |
+| `SETUP_FAILED` | `"SETUP_FAILED"` | `setup()` threw exception, cannot serve predictions |
+| `DEFUNCT` | `"DEFUNCT"` | Fatal error or worker crash, server unusable |
+
+> **Note**: Prediction endpoints (`/predictions`) return 503 when health is not `READY`.
 
 ## Prediction Flow
 
@@ -351,7 +355,7 @@ How coglet gets invoked when running a Cog container:
 - **Isolation**: Python crashes/segfaults don't kill server
 - **CUDA context**: Clean GPU initialization per worker
 - **Memory**: Fresh address space for model loading
-- **Restart**: Server can restart worker on fatal errors
+- **Restart potential**: Architecture enables future worker restart on fatal errors (not yet implemented)
 
 ### Why Slots (not async tasks)?
 - **Predictable**: Fixed number of concurrent predictions

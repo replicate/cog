@@ -32,17 +32,19 @@ This prevents wasted computation on predictions where the client is no longer li
 
 ### Health States
 
-The FFI runtime uses a more detailed health state machine:
+The FFI runtime uses a more detailed health state machine. The `/health-check` endpoint always returns HTTP 200 with the status in the JSON body:
 
-| State | HTTP Response | Condition |
-|-------|--------------|-----------|
-| `STARTING` | 503 | Worker subprocess initializing |
-| `READY` | 200 | Worker ready, slots available |
-| `BUSY` | 409 Conflict | All slots occupied (backpressure) |
-| `SETUP_FAILED` | 503 | `setup()` threw exception |
-| `DEFUNCT` | 503 | Fatal error, worker crashed |
+| State | JSON `status` | Condition |
+|-------|---------------|-----------|
+| `STARTING` | `"STARTING"` | Worker subprocess initializing |
+| `READY` | `"READY"` | Worker ready, slots available |
+| `BUSY` | `"BUSY"` | All slots occupied (backpressure) |
+| `SETUP_FAILED` | `"SETUP_FAILED"` | `setup()` threw exception |
+| `DEFUNCT` | `"DEFUNCT"` | Fatal error, worker crashed |
 
 **New behavior**: When all concurrency slots are occupied, new predictions receive `409 Conflict` instead of queuing. Clients should implement retry with backoff.
+
+> **Note**: Prediction endpoints return 503 when health is not `READY`.
 
 ### Idempotent PUT Behavior
 
