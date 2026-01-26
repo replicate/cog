@@ -7,6 +7,14 @@
 When you run a Docker image built by Cog, 
 it serves an HTTP API for making predictions.
 
+> [!NOTE]
+> Cog has two runtime implementations:
+> - **Default (Python)**: Uses FastAPI/Uvicorn
+> - **FFI (Rust)**: Uses Axum with PyO3 (experimental, faster, more stable)
+> 
+> Enable the FFI runtime by setting `USE_COGLET=1` environment variable.
+> Both expose the same HTTP API. See [architecture docs](../architecture/) for details.
+
 The server supports both synchronous and asynchronous prediction creation:
 
 - **Synchronous**: 
