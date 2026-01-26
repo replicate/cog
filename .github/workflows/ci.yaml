@@ -43,9 +43,6 @@ jobs:
           name: CogDataclassWheel
           path: dist/cog_dataclass-*.whl
       # Build Rust coglet wheel
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: crates -> target
       - name: Check Rust formatting
         run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
       - name: Run clippy
