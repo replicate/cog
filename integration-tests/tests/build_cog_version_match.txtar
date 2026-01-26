@@ -100,9 +100,27 @@ def assert_versions_match(semver_version, pep440_version):
             assert pep440_groups["dev_l"] == "dev", "Dev build status does not match"
 
     if pep440_groups["local"] is not None and semver_groups["buildmetadata"] is not None:
-        assert pep440_groups["local"].startswith(semver_groups["buildmetadata"]), (
-            f"Local/build metadata component does not match: {semver_groups['buildmetadata']} != {pep440_groups['local']}"
+        # Both build metadata formats are: g<commit_hash>.d<date>
+        # The git short hash length can vary (typically 7-9 chars) depending on
+        # git settings and repo size, so we need to compare flexibly.
+        # Split by '.' and compare the git hash and date parts separately.
+        semver_parts = semver_groups["buildmetadata"].split(".")
+        pep440_parts = pep440_groups["local"].split(".")
+
+        # Compare git commit hash - one should be a prefix of the other
+        # (e.g., "g5606e933" and "g5606e9331" both refer to the same commit)
+        semver_hash = semver_parts[0] if semver_parts else ""
+        pep440_hash = pep440_parts[0] if pep440_parts else ""
+        hash_match = semver_hash.startswith(pep440_hash) or pep440_hash.startswith(semver_hash)
+        assert hash_match, (
+            f"Git commit hash does not match: {semver_hash} vs {pep440_hash}"
         )
+
+        # Compare date parts if present (should be exact match)
+        if len(semver_parts) > 1 and len(pep440_parts) > 1:
+            assert semver_parts[1] == pep440_parts[1], (
+                f"Date component does not match: {semver_parts[1]} != {pep440_parts[1]}"
+            )
 
 image = os.environ["TEST_IMAGE"]
 label = subprocess.check_output(

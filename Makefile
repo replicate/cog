@@ -48,7 +48,7 @@ clean: clean-coglet
 
 .PHONY: test-go
 test-go: generate
-	$(GO) tool gotestsum -- -short -timeout 1200s -parallel 5 $$(go list ./... | grep -v 'coglet/') $(ARGS)
+	$(GO) tool gotestsum -- -short -timeout 1200s -parallel 5 $$(go list ./...) $(ARGS)
 
 # Run Go-based integration tests (testscript)
 # Use TEST_PARALLEL to control concurrency (default 4 to avoid Docker overload)
@@ -70,6 +70,7 @@ test: test-go test-python
 fmt:
 	$(GOIMPORTS) -w -d .
 	uv run ruff format
+	cd crates && cargo fmt
 
 .PHONY: generate
 generate:
@@ -88,6 +89,7 @@ check-fmt:
 lint: generate check-fmt vet
 	$(GOLINT) run ./...
 	$(TOX) run --installpkg $$(ls dist/cog-*.whl) -e lint,typecheck-pydantic2
+	cd crates && cargo clippy -- -D warnings
 
 .PHONY: run-docs-server
 run-docs-server:
@@ -101,24 +103,34 @@ gen-mocks:
 	mockery
 
 # =============================================================================
-# Coglet targets
+# Coglet targets (Rust)
 # =============================================================================
 
-# Run coglet Go tests
-.PHONY: test-coglet-go
-test-coglet-go:
-	go run gotest.tools/gotestsum@latest --format dots-v2 ./coglet/... -- -timeout=30s $(ARGS)
+# Run coglet Rust tests
+.PHONY: test-coglet-rust
+test-coglet-rust:
+	cd crates && cargo test $(ARGS)
 
-# Run coglet Python tests (requires coglet to be installed)
-.PHONY: test-coglet-python
-test-coglet-python:
-	cd coglet && $(UV) run pytest python/tests $(ARGS)
+# Run coglet Rust linter
+.PHONY: lint-coglet
+lint-coglet:
+	cd crates && cargo clippy -- -D warnings
+
+# Format coglet Rust code
+.PHONY: fmt-coglet
+fmt-coglet:
+	cd crates && cargo fmt
+
+# Check coglet Rust formatting
+.PHONY: check-fmt-coglet
+check-fmt-coglet:
+	cd crates && cargo fmt --check
 
 # Run all coglet tests
 .PHONY: test-coglet
-test-coglet: test-coglet-go test-coglet-python
+test-coglet: test-coglet-rust
 
 # Clean coglet build artifacts
 .PHONY: clean-coglet
 clean-coglet:
-	rm -rf coglet/dist coglet/build coglet/python/cog/bin
+	cd crates && cargo clean
