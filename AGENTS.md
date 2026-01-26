@@ -9,6 +9,7 @@ Cog is a tool that packages machine learning models in production-ready containe
 It consists of:
 - **Cog CLI** (`cmd/cog/`) - Command-line interface for building, running, and deploying models, written in Go
 - **Python SDK** (`python/cog/`) - Python library for defining model predictors and training in Python
+- **Coglet** (`crates/`) - Rust-based prediction server that runs inside containers, with Python bindings via PyO3
 
 Documentation for the CLI and SDK is available by reading ./docs/llms.txt.
 
@@ -51,6 +52,15 @@ import (
 - **Testing**: Use pytest with fixtures; async tests with pytest-asyncio
 - **Compatibility**: Must support Python 3.8-3.13 and both Pydantic 1.x and 2.x (test with tox)
 
+### Rust
+- **Formatting**: Use `cargo fmt`
+- **Linting**: Must pass `cargo clippy`
+- **Dependencies**: Audited with `cargo-deny` (see `crates/deny.toml`)
+- **Error Handling**: Use `thiserror` for typed errors, `anyhow` for application errors
+- **Naming**: snake_case for functions/variables, PascalCase for types
+- **Testing**: Use `cargo test`; snapshot tests use `insta`
+- **Async**: tokio runtime; async/await patterns
+
 ## Working on the CLI and support tooling
 The CLI code is in the `cmd/cog/` and `pkg/` directories. Support tooling is in the `tools/` directory. 
 
@@ -66,6 +76,21 @@ The Python SDK is developed in the `python/cog/` directory. It uses `uv` for vir
 
 The main commands for working on the SDK are:
 - `make wheel` - Rebuilds the Python wheel from the `python/` directory
+
+## Working on Coglet (Rust)
+Coglet is the Rust-based prediction server that runs inside Cog containers, handling HTTP requests, worker process management, and prediction execution.
+
+The code is in the `crates/` directory:
+- `crates/coglet/` - Core Rust library (HTTP server, worker orchestration, IPC)
+- `crates/coglet-python/` - PyO3 bindings for Python predictor integration (requires Python 3.10+)
+
+For detailed architecture documentation, see `crates/README.md` and `crates/coglet/README.md`.
+
+The main commands for working on Coglet are:
+- `cargo build` - Build the Rust crates (run from `crates/` directory)
+- `cargo test` - Run Rust unit tests
+- `cargo clippy` - Run linter
+- `cargo fmt` - Format code
 
 ### Testing
 Go code is tested using the built-in `go test` framework:
@@ -112,6 +137,14 @@ The CLI follows a command pattern with subcommands. The main components are:
   - `server/` - HTTP/queue server implementation
   - `command/` - Runner implementations for predict/train
 
+### Coglet Architecture (Rust)
+The prediction server that runs inside Cog containers. Uses a two-process architecture: a parent process (HTTP server + orchestrator) and a worker subprocess (Python predictor execution).
+
+See `crates/README.md` for detailed architecture documentation.
+
+- `crates/coglet/` - Core Rust library (HTTP server, worker orchestration, IPC bridge)
+- `crates/coglet-python/` - PyO3 bindings for Python predictor integration
+
 ### Key Design Patterns
 1. **Embedded Python Wheel**: The Go binary embeds the Python wheel at build time (`pkg/dockerfile/embed/`)
 2. **Docker SDK Integration**: Uses Docker Go SDK for container operations
@@ -147,6 +180,8 @@ For comprehensive architecture documentation, see [`architecture/`](./architectu
 - `pkg/config/config.go` - Go code for parsing and validating `cog.yaml`
 - `pkg/config/data/config_schema_v1.0.json` - JSON schema for `cog.yaml`
 - `python/cog/base_predictor.py` - Predictor interface
+- `crates/Cargo.toml` - Rust workspace configuration
+- `crates/README.md` - Coglet architecture overview
 
 ## Testing Philosophy
 - Unit tests for individual components (Go and Python)
