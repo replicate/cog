@@ -762,11 +762,11 @@ def test_healthcheck_healthy(client):
 
 @uses_predictor("healthcheck_unhealthy")
 def test_healthcheck_unhealthy(client):
-    """Test that an unhealthy healthcheck returns SETUP_FAILED status."""
+    """Test that an unhealthy healthcheck returns UNHEALTHY status."""
     resp = client.get("/health-check")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "SETUP_FAILED"
+    assert data["status"] == "UNHEALTHY"
     assert (
         "user_healthcheck_error" in data
         and data["user_healthcheck_error"]
@@ -780,7 +780,7 @@ def test_healthcheck_exception(client):
     resp = client.get("/health-check")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "SETUP_FAILED"
+    assert data["status"] == "UNHEALTHY"
     assert (
         "user_healthcheck_error" in data
         and data["user_healthcheck_error"]
@@ -794,7 +794,7 @@ def test_healthcheck_timeout(client):
     resp = client.get("/health-check")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "SETUP_FAILED"
+    assert data["status"] == "UNHEALTHY"
     assert (
         "user_healthcheck_error" in data
         and data["user_healthcheck_error"]
