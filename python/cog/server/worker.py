@@ -846,7 +846,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 "User-defined healthcheck timed out",
                 timeout_secs=HEALTHCHECK_TIMEOUT,
             )
-            log.warn(f"Healthcheck timed out after {HEALTHCHECK_TIMEOUT} seconds")
         except Exception as e:
             done.error = True
             done.error_detail = f"Healthcheck failed: {str(e)}"
