@@ -16,3 +16,4 @@ if [[ "$IMG_HASH" != "$ORIG_HASH" ]]; then
   echo "Incorrect hash for predict.py, got $IMG_HASH. expected a15aa0c8c69714ce1610f28af525a2b102cb6510"
   exit 1
 fi
+echo "Success"
