@@ -85,12 +85,15 @@ func Build(
 
 	var cogBaseImageName string
 
-	hash := sha256.New()
-	_, err := hash.Write([]byte(imageName))
-	if err != nil {
-		return err
+	tmpImageId := imageName
+	if strings.HasPrefix(imageName, "r8.im") {
+		hash := sha256.New()
+		_, err := hash.Write([]byte(imageName))
+		if err != nil {
+			return err
+		}
+		tmpImageId = fmt.Sprintf("cog-tmp:%s", hex.EncodeToString(hash.Sum(nil)))
 	}
-	tmpImageId := fmt.Sprintf("cog-tmp:%s", hex.EncodeToString(hash.Sum(nil)))
 
 	if dockerfileFile != "" {
 		dockerfileContents, err := os.ReadFile(dockerfileFile)
