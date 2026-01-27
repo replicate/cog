@@ -386,8 +386,8 @@ class URLFile(io.IOBase):
         if ua:
             headers["User-Agent"] = ua
 
-        resp = requests.get(url, stream=True, timeout=10,headers=headers)
-        
+        resp = requests.get(url, stream=True, timeout=10, headers=headers)
+
         resp.raise_for_status()
         resp.raw.decode_content = True
         object.__setattr__(self, "__target__", resp.raw)

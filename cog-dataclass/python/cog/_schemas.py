@@ -112,7 +112,9 @@ def to_json_output(predictor: adt.PredictorInfo) -> Dict[str, Any]:
     return predictor.output.json_type()
 
 
-def to_json_schema(predictor: adt.PredictorInfo, mode: Mode = Mode.PREDICT) -> Dict[str, Any]:
+def to_json_schema(
+    predictor: adt.PredictorInfo, mode: Mode = Mode.PREDICT
+) -> Dict[str, Any]:
     """
     Generate a complete OpenAPI schema for a predictor.
 
@@ -335,9 +337,13 @@ def to_json_schema(predictor: adt.PredictorInfo, mode: Mode = Mode.PREDICT) -> D
     # Debug: log schema size
     import json
     import os
+
     schema_json = json.dumps(schema, indent=2)
     schema_size = len(schema_json)
-    print(f"[DEBUG] Schema size: {schema_size} bytes ({schema_size / 1024:.1f} KB)", file=__import__('sys').stderr)
+    print(
+        f"[DEBUG] Schema size: {schema_size} bytes ({schema_size / 1024:.1f} KB)",
+        file=__import__("sys").stderr,
+    )
 
     # Write to /tmp for inspection if large
     if schema_size > 100_000:  # >100KB
@@ -345,8 +351,11 @@ def to_json_schema(predictor: adt.PredictorInfo, mode: Mode = Mode.PREDICT) -> D
         try:
             with open(debug_path, "w") as f:
                 f.write(schema_json)
-            print(f"[DEBUG] Large schema written to {debug_path}", file=__import__('sys').stderr)
+            print(
+                f"[DEBUG] Large schema written to {debug_path}",
+                file=__import__("sys").stderr,
+            )
         except Exception as e:
-            print(f"[DEBUG] Failed to write schema: {e}", file=__import__('sys').stderr)
+            print(f"[DEBUG] Failed to write schema: {e}", file=__import__("sys").stderr)
 
     return schema
