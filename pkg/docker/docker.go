@@ -35,8 +35,6 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-var errIncorrectImageDeleted = errors.New("incorrect image was deleted")
-
 func NewClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 	clientOptions := &clientOptions{
 		authConfigs: make(map[string]registry.AuthConfig),
