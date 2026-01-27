@@ -3,6 +3,8 @@ package image
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,6 +85,16 @@ func Build(
 
 	var cogBaseImageName string
 
+	tmpImageId := imageName
+	if strings.HasPrefix(imageName, "r8.im") {
+		hash := sha256.New()
+		_, err := hash.Write([]byte(imageName))
+		if err != nil {
+			return err
+		}
+		tmpImageId = fmt.Sprintf("cog-tmp:%s", hex.EncodeToString(hash.Sum(nil)))
+	}
+
 	if dockerfileFile != "" {
 		dockerfileContents, err := os.ReadFile(dockerfileFile)
 		if err != nil {
@@ -92,7 +104,7 @@ func Build(
 		buildOpts := command.ImageBuildOptions{
 			WorkingDir:         dir,
 			DockerfileContents: string(dockerfileContents),
-			ImageName:          imageName,
+			ImageName:          tmpImageId,
 			Secrets:            secrets,
 			NoCache:            noCache,
 			ProgressOutput:     progressOutput,
@@ -174,7 +186,7 @@ func Build(
 			buildOpts := command.ImageBuildOptions{
 				WorkingDir:         dir,
 				DockerfileContents: dockerfileContents,
-				ImageName:          imageName,
+				ImageName:          tmpImageId,
 				Secrets:            secrets,
 				NoCache:            noCache,
 				ProgressOutput:     progressOutput,
@@ -311,8 +323,12 @@ func Build(
 		labels[key] = val
 	}
 
-	if err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, imageName, labels, bundledSchemaFile, progressOutput); err != nil {
+	if err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, bundledSchemaFile, progressOutput); err != nil {
 		return fmt.Errorf("Failed to add labels to image: %w", err)
+	}
+
+	if err = dockerCommand.RemoveImage(ctx, tmpImageId); err != nil {
+		return err
 	}
 	return nil
 }
@@ -320,17 +336,8 @@ func Build(
 // BuildAddLabelsAndSchemaToImage builds a cog model with labels and schema.
 //
 // The new image is based on the provided image with the labels and schema file appended to it.
-func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, image string, labels map[string]string, bundledSchemaFile string, progressOutput string) error {
-	if strings.HasPrefix(image, "r8.im") {
-		// Find the docker image on the local machine matching the image name - this disambiguates pulling the latest version from the remote repository
-		localID, err := dockerClient.LocalImageID(ctx, image)
-		if err != nil {
-			return err
-		}
-		image = fmt.Sprintf("%s@%s", image, localID)
-	}
-
-	dockerfile := fmt.Sprintf("FROM %s\nCOPY %s .cog\n", image, bundledSchemaFile)
+func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, tmpName, image string, labels map[string]string, bundledSchemaFile string, progressOutput string) error {
+	dockerfile := fmt.Sprintf("FROM %s\nCOPY %s .cog\n", tmpName, bundledSchemaFile)
 
 	buildOpts := command.ImageBuildOptions{
 		DockerfileContents: dockerfile,
