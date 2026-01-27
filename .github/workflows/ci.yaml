@@ -168,6 +168,8 @@ jobs:
         run: |
           uv venv
           uv pip install $(ls dist/cog_dataclass-*.whl)[dev]
+      - name: Remove src to ensure tests run against wheel
+        run: rm -rf cog-dataclass/python/cog
       - name: Test
         run: uv run pytest cog-dataclass/python/tests -v
 
