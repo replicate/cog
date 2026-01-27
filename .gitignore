@@ -26,6 +26,7 @@ bin/*
 # Auto-:d version files from setuptools-scm
 python/cog/_version.py
 coglet/python/coglet/_version.py
+cog-dataclass/python/cog/_version.py
 
 # Built coglet-server binaries
 coglet/python/cog/bin/
