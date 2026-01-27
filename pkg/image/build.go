@@ -327,7 +327,7 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 		if err != nil {
 			return err
 		}
-		image = fmt.Sprintf("%s@%s", image, localID)
+		image = localID
 	}
 
 	dockerfile := fmt.Sprintf("FROM %s\nCOPY %s .cog\n", image, bundledSchemaFile)
