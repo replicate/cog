@@ -12,8 +12,5 @@ mkdir -p "${ROOT_DIR}/dist"
 # Build cog wheel
 uv build --wheel --out-dir="${ROOT_DIR}/dist" "${ROOT_DIR}"
 
-# Build coglet wheel
-uv build --wheel --out-dir="${ROOT_DIR}/dist" "${ROOT_DIR}/coglet"
-
 # Build cog-dataclass wheel
 uv build --wheel --out-dir="${ROOT_DIR}/dist" "${ROOT_DIR}/cog-dataclass"
