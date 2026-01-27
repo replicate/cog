@@ -36,7 +36,7 @@ func (f *DockerfileFactory) Name() string {
 
 // Build delegates to the existing image.Build() function.
 func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
-	err := image.Build(
+	imageID, err := image.Build(
 		ctx,
 		src.Config,
 		src.ProjectDir,
@@ -64,6 +64,7 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 
 	return &Image{
 		Reference: opts.ImageName,
+		Digest:    imageID,
 		Source:    ImageSourceBuild,
 	}, nil
 }

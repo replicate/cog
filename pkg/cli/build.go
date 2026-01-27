@@ -105,7 +105,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	registryClient := registry.NewRegistryClient()
-	if err := image.Build(
+	if _, err := image.Build(
 		ctx,
 		cfg,
 		projectDir,

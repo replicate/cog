@@ -190,7 +190,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		client := registry.NewRegistryClient()
 		if buildFast || pipelinesImage {
 			imageName = config.DockerImageName(projectDir)
-			if err := image.Build(
+			if _, err := image.Build(
 				ctx,
 				cfg,
 				projectDir,

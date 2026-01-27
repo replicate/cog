@@ -107,7 +107,7 @@ func push(cmd *cobra.Command, args []string) error {
 
 	startBuildTime := time.Now()
 	registryClient := registry.NewRegistryClient()
-	if err := image.Build(
+	if _, err := image.Build(
 		ctx,
 		cfg,
 		projectDir,

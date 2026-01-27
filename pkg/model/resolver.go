@@ -175,13 +175,22 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 		return nil, err
 	}
 
-	// Inspect the built image to get labels
-	resp, err := r.docker.Inspect(ctx, img.Reference)
+	// Inspect the built image to get labels.
+	// Prefer using the image digest (ID) for stable lookups,
+	// falling back to tag if Digest is empty (for backwards compatibility
+	// with custom Factory implementations that don't populate Digest).
+	inspectRef := img.Digest
+	if inspectRef == "" {
+		inspectRef = img.Reference
+	}
+
+	resp, err := r.docker.Inspect(ctx, inspectRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect built image: %w", err)
 	}
 
 	img.Labels = resp.Config.Labels
+	// Use the canonical ID from the response
 	img.Digest = resp.ID
 
 	return r.modelFromImage(img, src.Config), nil

@@ -56,7 +56,7 @@ func (m *mockDocker) ContainerStop(ctx context.Context, containerID string) erro
 	panic("not implemented")
 }
 
-func (m *mockDocker) ImageBuild(ctx context.Context, options command.ImageBuildOptions) error {
+func (m *mockDocker) ImageBuild(ctx context.Context, options command.ImageBuildOptions) (string, error) {
 	panic("not implemented")
 }
 

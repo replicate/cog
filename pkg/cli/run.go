@@ -71,7 +71,7 @@ func run(cmd *cobra.Command, args []string) error {
 	var imageName string
 	if cfg.Build.Fast || buildFast || pipelinesImage {
 		imageName = config.DockerImageName(projectDir)
-		err = image.Build(
+		_, err = image.Build(
 			ctx,
 			cfg,
 			projectDir,

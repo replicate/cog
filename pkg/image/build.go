@@ -36,7 +36,7 @@ const bundledSchemaFile = ".cog/openapi_schema.json"
 
 var errGit = errors.New("git error")
 
-// Build a Cog model from a config
+// Build a Cog model from a config and returns the image ID (sha256:...) on success.
 //
 // This is separated out from docker.Build(), so that can be as close as possible to the behavior of 'docker build'.
 func Build(
@@ -59,7 +59,7 @@ func Build(
 	localImage bool,
 	dockerCommand command.Command,
 	client registry.Client,
-	pipelinesImage bool) error {
+	pipelinesImage bool) (string, error) {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 	if fastFlag {
 		console.Info("Fast build enabled.")
@@ -68,11 +68,11 @@ func Build(
 	if pipelinesImage {
 		httpClient, err := http.ProvideHTTPClient(ctx, dockerCommand)
 		if err != nil {
-			return err
+			return "", err
 		}
 		err = procedure.Validate(dir, httpClient, cfg, true)
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
 
@@ -80,7 +80,7 @@ func Build(
 	_ = os.Remove(bundledSchemaFile)
 
 	if err := checkCompatibleDockerIgnore(dir); err != nil {
-		return err
+		return "", err
 	}
 
 	var cogBaseImageName string
@@ -91,7 +91,7 @@ func Build(
 		hash := sha256.New()
 		_, err := hash.Write([]byte(imageName))
 		if err != nil {
-			return err
+			return "", err
 		}
 		tmpImageId = fmt.Sprintf("cog-tmp:%s", hex.EncodeToString(hash.Sum(nil)))
 	}
@@ -99,7 +99,7 @@ func Build(
 	if dockerfileFile != "" {
 		dockerfileContents, err := os.ReadFile(dockerfileFile)
 		if err != nil {
-			return fmt.Errorf("Failed to read Dockerfile at %s: %w", dockerfileFile, err)
+			return "", fmt.Errorf("Failed to read Dockerfile at %s: %w", dockerfileFile, err)
 		}
 
 		buildOpts := command.ImageBuildOptions{
@@ -112,21 +112,21 @@ func Build(
 			Epoch:              &config.BuildSourceEpochTimestamp,
 			ContextDir:         dockercontext.StandardBuildDirectory,
 		}
-		if err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
-			return fmt.Errorf("Failed to build Docker image: %w", err)
+		if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
+			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
 		generator, err := dockerfile.NewGenerator(cfg, dir, fastFlag, dockerCommand, localImage, client, true)
 		if err != nil {
-			return fmt.Errorf("Error creating Dockerfile generator: %w", err)
+			return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}
 		contextDir, err := generator.BuildDir()
 		if err != nil {
-			return err
+			return "", err
 		}
 		buildContexts, err := generator.BuildContexts()
 		if err != nil {
-			return err
+			return "", err
 		}
 		defer func() {
 			if err := generator.Cleanup(); err != nil {
@@ -143,45 +143,45 @@ func Build(
 		if generator.IsUsingCogBaseImage() {
 			cogBaseImageName, err = generator.BaseImage(ctx)
 			if err != nil {
-				return fmt.Errorf("Failed to get cog base image name: %s", err)
+				return "", fmt.Errorf("Failed to get cog base image name: %s", err)
 			}
 		}
 
 		if separateWeights {
 			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(ctx, imageName)
 			if err != nil {
-				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
+				return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)
 			}
 
 			if err := backupDockerignore(); err != nil {
-				return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
+				return "", fmt.Errorf("Failed to backup .dockerignore file: %w", err)
 			}
 
 			weightsManifest, err := generator.GenerateWeightsManifest(ctx)
 			if err != nil {
-				return fmt.Errorf("Failed to generate weights manifest: %w", err)
+				return "", fmt.Errorf("Failed to generate weights manifest: %w", err)
 			}
 			cachedManifest, _ := weights.LoadManifest(weightsManifestPath)
 			changed := cachedManifest == nil || !weightsManifest.Equal(cachedManifest)
 			if changed {
 				if err := buildWeightsImage(ctx, dockerCommand, dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
-					return fmt.Errorf("Failed to build model weights Docker image: %w", err)
+					return "", fmt.Errorf("Failed to build model weights Docker image: %w", err)
 				}
 				err := weightsManifest.Save(weightsManifestPath)
 				if err != nil {
-					return fmt.Errorf("Failed to save weights hash: %w", err)
+					return "", fmt.Errorf("Failed to save weights hash: %w", err)
 				}
 			} else {
 				console.Info("Weights unchanged, skip rebuilding and use cached image...")
 			}
 
 			if err := buildRunnerImage(ctx, dockerCommand, dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
-				return fmt.Errorf("Failed to build runner Docker image: %w", err)
+				return "", fmt.Errorf("Failed to build runner Docker image: %w", err)
 			}
 		} else {
 			dockerfileContents, err := generator.GenerateDockerfileWithoutSeparateWeights(ctx)
 			if err != nil {
-				return fmt.Errorf("Failed to generate Dockerfile: %w", err)
+				return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)
 			}
 
 			buildOpts := command.ImageBuildOptions{
@@ -196,8 +196,8 @@ func Build(
 				BuildContexts:      buildContexts,
 			}
 
-			if err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
-				return fmt.Errorf("Failed to build Docker image: %w", err)
+			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
+				return "", fmt.Errorf("Failed to build Docker image: %w", err)
 			}
 		}
 	}
@@ -207,7 +207,7 @@ func Build(
 		console.Infof("Validating model schema from %s...", schemaFile)
 		data, err := os.ReadFile(schemaFile)
 		if err != nil {
-			return fmt.Errorf("Failed to read schema file: %w", err)
+			return "", fmt.Errorf("Failed to read schema file: %w", err)
 		}
 
 		schemaJSON = data
@@ -215,12 +215,12 @@ func Build(
 		console.Info("Validating model schema...")
 		schema, err := GenerateOpenAPISchema(ctx, dockerCommand, tmpImageId, cfg.Build.GPU)
 		if err != nil {
-			return fmt.Errorf("Failed to get type signature: %w", err)
+			return "", fmt.Errorf("Failed to get type signature: %w", err)
 		}
 
 		data, err := json.Marshal(schema)
 		if err != nil {
-			return fmt.Errorf("Failed to convert type signature to JSON: %w", err)
+			return "", fmt.Errorf("Failed to convert type signature to JSON: %w", err)
 		}
 
 		schemaJSON = data
@@ -228,18 +228,18 @@ func Build(
 
 	// save open_api schema file
 	if err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644); err != nil {
-		return fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
+		return "", fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
 	}
 
 	loader := openapi3.NewLoader()
 	loader.IsExternalRefsAllowed = true
 	doc, err := loader.LoadFromData(schemaJSON)
 	if err != nil {
-		return fmt.Errorf("Failed to load model schema JSON: %w", err)
+		return "", fmt.Errorf("Failed to load model schema JSON: %w", err)
 	}
 	err = doc.Validate(loader.Context)
 	if err != nil {
-		return fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
+		return "", fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
 	}
 
 	console.Info("Adding labels to image...")
@@ -249,17 +249,17 @@ func Build(
 	// doesn't seem to be a problem here, so do it here instead.
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
-		return fmt.Errorf("Failed to convert config to JSON: %w", err)
+		return "", fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
 
 	pipFreeze, err := GeneratePipFreeze(ctx, dockerCommand, tmpImageId, fastFlag)
 	if err != nil {
-		return fmt.Errorf("Failed to generate pip freeze from image: %w", err)
+		return "", fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}
 
 	modelDependencies, err := GenerateModelDependencies(ctx, dockerCommand, tmpImageId, cfg)
 	if err != nil {
-		return fmt.Errorf("Failed to generate model dependencies from image: %w", err)
+		return "", fmt.Errorf("Failed to generate model dependencies from image: %w", err)
 	}
 
 	labels := map[string]string{
@@ -278,27 +278,27 @@ func Build(
 
 		ref, err := name.ParseReference(cogBaseImageName)
 		if err != nil {
-			return fmt.Errorf("Failed to parse cog base image reference: %w", err)
+			return "", fmt.Errorf("Failed to parse cog base image reference: %w", err)
 		}
 
 		img, err := remote.Image(ref)
 		if err != nil {
-			return fmt.Errorf("Failed to fetch cog base image: %w", err)
+			return "", fmt.Errorf("Failed to fetch cog base image: %w", err)
 		}
 
 		layers, err := img.Layers()
 		if err != nil {
-			return fmt.Errorf("Failed to get layers for cog base image: %w", err)
+			return "", fmt.Errorf("Failed to get layers for cog base image: %w", err)
 		}
 
 		if len(layers) == 0 {
-			return fmt.Errorf("Cog base image has no layers: %s", cogBaseImageName)
+			return "", fmt.Errorf("Cog base image has no layers: %s", cogBaseImageName)
 		}
 
 		lastLayerIndex := len(layers) - 1
 		layerLayerDigest, err := layers[lastLayerIndex].DiffID()
 		if err != nil {
-			return fmt.Errorf("Failed to get last layer digest for cog base image: %w", err)
+			return "", fmt.Errorf("Failed to get last layer digest for cog base image: %w", err)
 		}
 
 		lastLayer := layerLayerDigest.String()
@@ -324,24 +324,28 @@ func Build(
 		labels[key] = val
 	}
 
-	if err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, bundledSchemaFile, progressOutput); err != nil {
-		return fmt.Errorf("Failed to add labels to image: %w", err)
+	// The final image ID comes from the label-adding step
+	imageID, err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, bundledSchemaFile, progressOutput)
+	if err != nil {
+		return "", fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 
 	// We created a temp image, so delete it. Don't "-f" so it doesn't blow anything up
 	if isR8imImage {
 		if err = dockerCommand.RemoveImage(ctx, tmpImageId); err != nil {
-			return err
+			return "", err
 		}
 	}
 
-	return nil
+	return imageID, nil
 }
 
 // BuildAddLabelsAndSchemaToImage builds a cog model with labels and schema.
+// Returns the image ID (sha256:...) of the final image.
 //
 // The new image is based on the provided image with the labels and schema file appended to it.
-func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, tmpName, image string, labels map[string]string, bundledSchemaFile string, progressOutput string) error {
+// tmpName is the source image to build from, image is the final image name/tag.
+func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, tmpName, image string, labels map[string]string, bundledSchemaFile string, progressOutput string) (string, error) {
 	dockerfile := fmt.Sprintf("FROM %s\nCOPY %s .cog\n", tmpName, bundledSchemaFile)
 
 	buildOpts := command.ImageBuildOptions{
@@ -351,10 +355,11 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 		ProgressOutput:     progressOutput,
 	}
 
-	if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
-		return fmt.Errorf("Failed to add labels and schema to image: %w", err)
+	imageID, err := dockerClient.ImageBuild(ctx, buildOpts)
+	if err != nil {
+		return "", fmt.Errorf("Failed to add labels and schema to image: %w", err)
 	}
-	return nil
+	return imageID, nil
 }
 
 func BuildBase(ctx context.Context, dockerClient command.Command, cfg *config.Config, dir string, useCudaBaseImage string, useCogBaseImage *bool, progressOutput string, client registry.Client, requiresCog bool) (string, error) {
@@ -401,7 +406,7 @@ func BuildBase(ctx context.Context, dockerClient command.Command, cfg *config.Co
 		ContextDir:         contextDir,
 		BuildContexts:      buildContexts,
 	}
-	if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
+	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return "", fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 	return imageName, nil
@@ -474,7 +479,7 @@ func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, d
 		ContextDir:         contextDir,
 		BuildContexts:      buildContexts,
 	}
-	if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
+	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
 	}
 	return nil
@@ -495,7 +500,7 @@ func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, do
 		ContextDir:         contextDir,
 		BuildContexts:      buildContexts,
 	}
-	if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
+	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
 	if err := restoreDockerignore(); err != nil {
