@@ -12,7 +12,6 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
@@ -35,6 +34,8 @@ import (
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
+
+var errIncorrectImageDeleted = errors.New("incorrect image was deleted")
 
 func NewClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 	clientOptions := &clientOptions{
@@ -278,32 +279,18 @@ func (c *apiClient) Inspect(ctx context.Context, ref string) (*image.InspectResp
 	return &inspect, nil
 }
 
-func (c *apiClient) LocalImageID(ctx context.Context, ref string) (string, error) {
-	console.Debugf("=== APIClient.LocalImageID %s", ref)
+func (c *apiClient) RemoveImage(ctx context.Context, ref string) error {
+	console.Debugf("=== APIClient.RemoveImage %s", ref)
 
-	if !strings.HasSuffix(ref, ":latest") {
-		ref = fmt.Sprintf("%s:latest", ref)
-	}
-
-	imageList, err := c.client.ImageList(ctx, image.ListOptions{
-		Filters: filters.NewArgs(filters.KeyValuePair{
-			Key:   "reference",
-			Value: ref,
-		}),
-	})
+	resp, err := c.client.ImageRemove(ctx, ref, image.RemoveOptions{})
 	if err != nil {
-		if command.IsNotFoundError(err) {
-			return "", nil
-		}
-		return "", err
+		return err
 	}
-	if len(imageList) == 0 {
-		return "", &command.NotFoundError{Ref: ref, Object: "image"}
+
+	if len(resp) == 0 {
+		return &command.NotFoundError{Ref: ref, Object: "image"}
 	}
-	if len(imageList) > 1 {
-		return "", &command.NotFoundError{Ref: ref, Object: "image"}
-	}
-	return imageList[0].ID, nil
+	return nil
 }
 
 func (c *apiClient) ImageExists(ctx context.Context, ref string) (bool, error) {

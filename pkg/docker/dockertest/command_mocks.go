@@ -10,8 +10,9 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
-	"github.com/replicate/cog/pkg/docker/command"
 	mock "github.com/stretchr/testify/mock"
+
+	"github.com/replicate/cog/pkg/docker/command"
 )
 
 // NewMockCommand2 creates a new instance of MockCommand2. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -554,12 +555,12 @@ func (_c *MockCommand2_LoadUserInformation_Call) RunAndReturn(run func(ctx conte
 	return _c
 }
 
-// LocalImageID provides a mock function for the type MockCommand2
-func (_mock *MockCommand2) LocalImageID(ctx context.Context, ref string) (string, error) {
+// RemoveImage provides a mock function for the type MockCommand2
+func (_mock *MockCommand2) RemoveImage(ctx context.Context, ref string) error {
 	ret := _mock.Called(ctx, ref)
 
 	if len(ret) == 0 {
-		panic("no return value specified for LocalImageID")
+		panic("no return value specified for RemoveImage")
 	}
 
 	var r0 string
@@ -580,19 +581,19 @@ func (_mock *MockCommand2) LocalImageID(ctx context.Context, ref string) (string
 	return r0, r1
 }
 
-// MockCommand2_LocalImageID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LocalImageID'
-type MockCommand2_LocalImageID_Call struct {
+// MockCommand2_RemoveImage_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RemoveImage'
+type MockCommand2_RemoveImage_Call struct {
 	*mock.Call
 }
 
-// LocalImageID is a helper method to define mock.On call
+// RemoveImage is a helper method to define mock.On call
 //   - ctx context.Context
 //   - ref string
-func (_e *MockCommand2_Expecter) LocalImageID(ctx interface{}, ref interface{}) *MockCommand2_LocalImageID_Call {
-	return &MockCommand2_LocalImageID_Call{Call: _e.mock.On("LocalImageID", ctx, ref)}
+func (_e *MockCommand2_Expecter) RemoveImage(ctx interface{}, ref interface{}) *MockCommand2_RemoveImage_Call {
+	return &MockCommand2_RemoveImage_Call{Call: _e.mock.On("RemoveImage", ctx, ref)}
 }
 
-func (_c *MockCommand2_LocalImageID_Call) Run(run func(ctx context.Context, ref string)) *MockCommand2_LocalImageID_Call {
+func (_c *MockCommand2_RemoveImage_Call) Run(run func(ctx context.Context, ref string)) *MockCommand2_RemoveImage_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -610,12 +611,12 @@ func (_c *MockCommand2_LocalImageID_Call) Run(run func(ctx context.Context, ref 
 	return _c
 }
 
-func (_c *MockCommand2_LocalImageID_Call) Return(s string, err error) *MockCommand2_LocalImageID_Call {
+func (_c *MockCommand2_RemoveImage_Call) Return(s string, err error) *MockCommand2_RemoveImage_Call {
 	_c.Call.Return(s, err)
 	return _c
 }
 
-func (_c *MockCommand2_LocalImageID_Call) RunAndReturn(run func(ctx context.Context, ref string) (string, error)) *MockCommand2_LocalImageID_Call {
+func (_c *MockCommand2_RemoveImage_Call) RunAndReturn(run func(ctx context.Context, ref string) (string, error)) *MockCommand2_RemoveImage_Call {
 	_c.Call.Return(run)
 	return _c
 }
