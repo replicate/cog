@@ -86,7 +86,8 @@ func Build(
 	var cogBaseImageName string
 
 	tmpImageId := imageName
-	if strings.HasPrefix(imageName, "r8.im") {
+	isR8imImage := strings.HasPrefix(imageName, "r8.im")
+	if isR8imImage {
 		hash := sha256.New()
 		_, err := hash.Write([]byte(imageName))
 		if err != nil {
@@ -327,9 +328,13 @@ func Build(
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 
-	if err = dockerCommand.RemoveImage(ctx, tmpImageId); err != nil {
-		return err
+	// We created a temp image, so delete it since we don't want to take up 2x space
+	if isR8imImage {
+		if err = dockerCommand.RemoveImage(ctx, tmpImageId); err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 
