@@ -10,9 +10,8 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
-	mock "github.com/stretchr/testify/mock"
-
 	"github.com/replicate/cog/pkg/docker/command"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // NewMockCommand2 creates a new instance of MockCommand2. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -555,72 +554,6 @@ func (_c *MockCommand2_LoadUserInformation_Call) RunAndReturn(run func(ctx conte
 	return _c
 }
 
-// RemoveImage provides a mock function for the type MockCommand2
-func (_mock *MockCommand2) RemoveImage(ctx context.Context, ref string) error {
-	ret := _mock.Called(ctx, ref)
-
-	if len(ret) == 0 {
-		panic("no return value specified for RemoveImage")
-	}
-
-	var r0 string
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (string, error)); ok {
-		return returnFunc(ctx, ref)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) string); ok {
-		r0 = returnFunc(ctx, ref)
-	} else {
-		r0 = ret.Get(0).(string)
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = returnFunc(ctx, ref)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockCommand2_RemoveImage_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RemoveImage'
-type MockCommand2_RemoveImage_Call struct {
-	*mock.Call
-}
-
-// RemoveImage is a helper method to define mock.On call
-//   - ctx context.Context
-//   - ref string
-func (_e *MockCommand2_Expecter) RemoveImage(ctx interface{}, ref interface{}) *MockCommand2_RemoveImage_Call {
-	return &MockCommand2_RemoveImage_Call{Call: _e.mock.On("RemoveImage", ctx, ref)}
-}
-
-func (_c *MockCommand2_RemoveImage_Call) Run(run func(ctx context.Context, ref string)) *MockCommand2_RemoveImage_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		run(
-			arg0,
-			arg1,
-		)
-	})
-	return _c
-}
-
-func (_c *MockCommand2_RemoveImage_Call) Return(s string, err error) *MockCommand2_RemoveImage_Call {
-	_c.Call.Return(s, err)
-	return _c
-}
-
-func (_c *MockCommand2_RemoveImage_Call) RunAndReturn(run func(ctx context.Context, ref string) (string, error)) *MockCommand2_RemoveImage_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // Pull provides a mock function for the type MockCommand2
 func (_mock *MockCommand2) Pull(ctx context.Context, ref string, force bool) (*image.InspectResponse, error) {
 	ret := _mock.Called(ctx, ref, force)
@@ -748,6 +681,63 @@ func (_c *MockCommand2_Push_Call) Return(err error) *MockCommand2_Push_Call {
 }
 
 func (_c *MockCommand2_Push_Call) RunAndReturn(run func(ctx context.Context, ref string) error) *MockCommand2_Push_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// RemoveImage provides a mock function for the type MockCommand2
+func (_mock *MockCommand2) RemoveImage(ctx context.Context, ref string) error {
+	ret := _mock.Called(ctx, ref)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RemoveImage")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, ref)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockCommand2_RemoveImage_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RemoveImage'
+type MockCommand2_RemoveImage_Call struct {
+	*mock.Call
+}
+
+// RemoveImage is a helper method to define mock.On call
+//   - ctx context.Context
+//   - ref string
+func (_e *MockCommand2_Expecter) RemoveImage(ctx interface{}, ref interface{}) *MockCommand2_RemoveImage_Call {
+	return &MockCommand2_RemoveImage_Call{Call: _e.mock.On("RemoveImage", ctx, ref)}
+}
+
+func (_c *MockCommand2_RemoveImage_Call) Run(run func(ctx context.Context, ref string)) *MockCommand2_RemoveImage_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockCommand2_RemoveImage_Call) Return(err error) *MockCommand2_RemoveImage_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockCommand2_RemoveImage_Call) RunAndReturn(run func(ctx context.Context, ref string) error) *MockCommand2_RemoveImage_Call {
 	_c.Call.Return(run)
 	return _c
 }
