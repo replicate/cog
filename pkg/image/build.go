@@ -328,7 +328,7 @@ func Build(
 		return fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 
-	// We created a temp image, so delete it since we don't want to take up 2x space
+	// We created a temp image, so delete it. Don't "-f" so it doesn't blow anything up
 	if isR8imImage {
 		if err = dockerCommand.RemoveImage(ctx, tmpImageId); err != nil {
 			return err
