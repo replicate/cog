@@ -12,9 +12,6 @@ mkdir -p "${ROOT_DIR}/dist"
 # Build cog wheel
 uv build --wheel --out-dir="${ROOT_DIR}/dist" "${ROOT_DIR}"
 
-# Build coglet-server binary (required for coglet wheel)
-"${SCRIPT_DIR}/build-coglet-server"
-
 # Build coglet wheel
 uv build --wheel --out-dir="${ROOT_DIR}/dist" "${ROOT_DIR}/coglet"
 
