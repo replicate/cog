@@ -15,24 +15,24 @@ import (
 	"github.com/replicate/cog/pkg/registry"
 )
 
-// LoadOption configures how Load resolves a model.
-type LoadOption func(*loadOptions)
+// Option configures how Resolver methods behave.
+type Option func(*options)
 
-type loadOptions struct {
+type options struct {
 	localOnly   bool
 	remoteOnly  bool
 	preferLocal bool // default: true
 	platform    *registry.Platform
 }
 
-func defaultLoadOptions() *loadOptions {
-	return &loadOptions{preferLocal: true}
+func defaultOptions() *options {
+	return &options{preferLocal: true}
 }
 
 // LocalOnly loads only from the local docker daemon.
 // Returns an error if the image is not found locally.
-func LocalOnly() LoadOption {
-	return func(o *loadOptions) {
+func LocalOnly() Option {
+	return func(o *options) {
 		o.localOnly = true
 		o.remoteOnly = false
 		o.preferLocal = false
@@ -41,8 +41,8 @@ func LocalOnly() LoadOption {
 
 // RemoteOnly loads only from the remote registry.
 // Does not check the local docker daemon.
-func RemoteOnly() LoadOption {
-	return func(o *loadOptions) {
+func RemoteOnly() Option {
+	return func(o *options) {
 		o.remoteOnly = true
 		o.localOnly = false
 		o.preferLocal = false
@@ -50,8 +50,8 @@ func RemoteOnly() LoadOption {
 }
 
 // PreferRemote tries remote registry first, falls back to local on not-found.
-func PreferRemote() LoadOption {
-	return func(o *loadOptions) {
+func PreferRemote() Option {
+	return func(o *options) {
 		o.preferLocal = false
 		o.localOnly = false
 		o.remoteOnly = false
@@ -59,8 +59,8 @@ func PreferRemote() LoadOption {
 }
 
 // WithPlatform sets the platform for remote registry queries.
-func WithPlatform(p *registry.Platform) LoadOption {
-	return func(o *loadOptions) {
+func WithPlatform(p *registry.Platform) Option {
+	return func(o *options) {
 		o.platform = p
 	}
 }
@@ -87,11 +87,12 @@ func (r *Resolver) WithFactory(f Factory) *Resolver {
 	return r
 }
 
-// Load resolves a parsed ref to a Model.
+// Inspect returns Model metadata for a parsed ref without pulling.
 // By default (PreferLocal), tries local docker daemon first, then remote registry.
 // Only falls back on "not found" errors; real errors (docker down, auth) are surfaced.
-func (r *Resolver) Load(ctx context.Context, ref *ParsedRef, opts ...LoadOption) (*Model, error) {
-	o := defaultLoadOptions()
+// Returns ErrNotCogModel if the image is not a valid Cog model.
+func (r *Resolver) Inspect(ctx context.Context, ref *ParsedRef, opts ...Option) (*Model, error) {
+	o := defaultOptions()
 	for _, opt := range opts {
 		opt(o)
 	}
@@ -125,10 +126,11 @@ func (r *Resolver) Load(ctx context.Context, ref *ParsedRef, opts ...LoadOption)
 	}
 }
 
-// LoadByID loads a Model from the local docker daemon by image ID.
+// InspectByID returns Model metadata from the local docker daemon by image ID.
 // This supports both full IDs (sha256:...) and short IDs (e.g., "9056219a5fb2").
 // Use this when you have an image ID rather than a tagged reference.
-func (r *Resolver) LoadByID(ctx context.Context, id string) (*Model, error) {
+// Returns ErrNotCogModel if the image is not a valid Cog model.
+func (r *Resolver) InspectByID(ctx context.Context, id string) (*Model, error) {
 	resp, err := r.docker.Inspect(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load image by ID %s: %w", id, err)
@@ -140,6 +142,11 @@ func (r *Resolver) LoadByID(ctx context.Context, id string) (*Model, error) {
 		Digest:    resp.ID,
 		Labels:    resp.Config.Labels,
 		Source:    ImageSourceLocal,
+	}
+
+	// Validate this is a Cog model
+	if !img.IsCogModel() {
+		return nil, fmt.Errorf("image %s: %w", id, ErrNotCogModel)
 	}
 
 	// Parse config from labels
@@ -164,6 +171,57 @@ func (r *Resolver) LoadByID(ctx context.Context, id string) (*Model, error) {
 		Schema:     schema,
 		CogVersion: img.CogVersion(),
 	}, nil
+}
+
+// Pull ensures a Model is locally available for running.
+// It first checks if the image exists locally. If not, it pulls from the registry.
+// Returns ErrNotCogModel if the image is not a valid Cog model.
+// Returns ErrNotFound if the image cannot be found locally or remotely.
+func (r *Resolver) Pull(ctx context.Context, ref *ParsedRef, opts ...Option) (*Model, error) {
+	o := defaultOptions()
+	for _, opt := range opts {
+		opt(o)
+	}
+
+	// First, try to inspect locally
+	model, err := r.inspectLocal(ctx, ref)
+	if err == nil {
+		return model, nil
+	}
+
+	// If local-only mode, don't try to pull
+	if o.localOnly {
+		return nil, fmt.Errorf("image %s: %w", ref.Original, ErrNotFound)
+	}
+
+	// If local image exists but isn't a Cog model, don't try to pull
+	// (pulling won't change the existing image)
+	if errors.Is(err, ErrNotCogModel) {
+		return nil, err
+	}
+
+	// Check if it's a "not found" error (safe to try pull)
+	if !isNotFoundError(errors.Unwrap(err)) {
+		// Real error (connection refused, etc.) - don't mask it
+		return nil, err
+	}
+
+	// Pull the image
+	_, err = r.docker.Pull(ctx, ref.String(), false)
+	if err != nil {
+		if isNotFoundError(err) {
+			return nil, fmt.Errorf("image %s: %w", ref.Original, ErrNotFound)
+		}
+		return nil, fmt.Errorf("failed to pull image %s: %w", ref.Original, err)
+	}
+
+	// Inspect the now-local image
+	return r.inspectLocal(ctx, ref)
+}
+
+// inspectLocal loads a Model from the local docker daemon only.
+func (r *Resolver) inspectLocal(ctx context.Context, ref *ParsedRef) (*Model, error) {
+	return r.loadLocal(ctx, ref)
 }
 
 // Build creates a Model by building from source.
@@ -194,6 +252,25 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	img.Digest = resp.ID
 
 	return r.modelFromImage(img, src.Config), nil
+}
+
+// BuildBase creates a base image for dev mode (without /src copied).
+// The source directory is expected to be mounted as a volume at runtime.
+// Returns a Model with the built image info and the source config.
+func (r *Resolver) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Model, error) {
+	opts = opts.WithDefaults()
+
+	img, err := r.factory.BuildBase(ctx, src, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// For base builds, we don't have labels yet (they're added in full builds).
+	// Return the model with the source config.
+	return &Model{
+		Image:  img,
+		Config: src.Config,
+	}, nil
 }
 
 // loadLocal loads a Model from the local docker daemon.
@@ -231,12 +308,18 @@ func (r *Resolver) modelFromImage(img *Image, cfg *config.Config) *Model {
 }
 
 // modelFromInspect creates a Model from docker inspect response.
+// Returns ErrNotCogModel if the image is not a valid Cog model.
 func (r *Resolver) modelFromInspect(ref *ParsedRef, resp *image.InspectResponse, source ImageSource) (*Model, error) {
 	img := &Image{
 		Reference: ref.String(),
 		Digest:    resp.ID,
 		Labels:    resp.Config.Labels,
 		Source:    source,
+	}
+
+	// Validate this is a Cog model
+	if !img.IsCogModel() {
+		return nil, fmt.Errorf("image %s: %w", ref.Original, ErrNotCogModel)
 	}
 
 	// Parse config from labels
@@ -264,16 +347,41 @@ func (r *Resolver) modelFromInspect(ref *ParsedRef, resp *image.InspectResponse,
 }
 
 // modelFromManifest creates a Model from registry manifest.
+// Returns ErrNotCogModel if the image is not a valid Cog model.
 func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.ManifestResult, source ImageSource) (*Model, error) {
-	// Registry manifest has limited label info - primarily for existence checks.
-	// Full model metadata requires pulling the image.
-	// TODO: Add Digest field to ManifestResult and populate here.
+	img := &Image{
+		Reference: ref.String(),
+		Digest:    manifest.Config, // Config digest serves as image ID
+		Labels:    manifest.Labels,
+		Source:    source,
+	}
+
+	// Validate this is a Cog model
+	if !img.IsCogModel() {
+		return nil, fmt.Errorf("image %s: %w", ref.Original, ErrNotCogModel)
+	}
+
+	// Parse config from labels
+	var cfg *config.Config
+	if configJSON := img.Config(); configJSON != "" {
+		cfg = new(config.Config)
+		if err := json.Unmarshal([]byte(configJSON), cfg); err != nil {
+			return nil, fmt.Errorf("failed to parse cog config from labels: %w", err)
+		}
+	}
+
+	// Parse schema from labels
+	var schema *openapi3.T
+	if schemaJSON := img.OpenAPISchema(); schemaJSON != "" {
+		loader := openapi3.NewLoader()
+		schema, _ = loader.LoadFromData([]byte(schemaJSON))
+	}
+
 	return &Model{
-		Image: &Image{
-			Reference: ref.String(),
-			Digest:    "", // ManifestResult doesn't currently expose manifest digest
-			Source:    source,
-		},
+		Image:      img,
+		Config:     cfg,
+		Schema:     schema,
+		CogVersion: img.CogVersion(),
 	}, nil
 }
 

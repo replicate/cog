@@ -18,6 +18,7 @@ import (
 // mockDocker implements command.Command for testing.
 type mockDocker struct {
 	inspectFunc func(ctx context.Context, ref string) (*image.InspectResponse, error)
+	pullFunc    func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
 }
 
 func (m *mockDocker) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {
@@ -27,9 +28,11 @@ func (m *mockDocker) Inspect(ctx context.Context, ref string) (*image.InspectRes
 	return nil, errors.New("not implemented")
 }
 
-// Implement other command.Command methods as panics (not needed for resolver tests).
 func (m *mockDocker) Pull(ctx context.Context, ref string, force bool) (*image.InspectResponse, error) {
-	panic("not implemented")
+	if m.pullFunc != nil {
+		return m.pullFunc(ctx, ref, force)
+	}
+	panic("pullFunc not implemented")
 }
 
 func (m *mockDocker) Push(ctx context.Context, ref string) error {
@@ -90,8 +93,9 @@ func (m *mockRegistry) Exists(ctx context.Context, ref string) (bool, error) {
 
 // mockFactory implements Factory for testing.
 type mockFactory struct {
-	name      string
-	buildFunc func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error)
+	name          string
+	buildFunc     func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error)
+	buildBaseFunc func(ctx context.Context, src *Source, opts BuildBaseOptions) (*Image, error)
 }
 
 func (f *mockFactory) Build(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
@@ -99,6 +103,13 @@ func (f *mockFactory) Build(ctx context.Context, src *Source, opts BuildOptions)
 		return f.buildFunc(ctx, src, opts)
 	}
 	return &Image{Reference: opts.ImageName, Source: ImageSourceBuild}, nil
+}
+
+func (f *mockFactory) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Image, error) {
+	if f.buildBaseFunc != nil {
+		return f.buildBaseFunc(ctx, src, opts)
+	}
+	return &Image{Reference: "cog-base", Source: ImageSourceBuild}, nil
 }
 
 func (f *mockFactory) Name() string {
@@ -130,7 +141,7 @@ func TestResolver_WithFactory(t *testing.T) {
 	require.Equal(t, "custom", resolver.factory.Name())
 }
 
-func TestResolver_Load_LocalOnly_Found(t *testing.T) {
+func TestResolver_Inspect_LocalOnly_Found(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
@@ -150,7 +161,7 @@ func TestResolver_Load_LocalOnly_Found(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	model, err := resolver.Load(context.Background(), ref, LocalOnly())
+	model, err := resolver.Inspect(context.Background(), ref, LocalOnly())
 
 	require.NoError(t, err)
 	require.NotNil(t, model)
@@ -160,7 +171,7 @@ func TestResolver_Load_LocalOnly_Found(t *testing.T) {
 	require.Equal(t, "3.11", model.Config.Build.PythonVersion)
 }
 
-func TestResolver_Load_LocalOnly_NotFound(t *testing.T) {
+func TestResolver_Inspect_LocalOnly_NotFound(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return nil, errors.New("No such image: my-image:latest")
@@ -177,13 +188,13 @@ func TestResolver_Load_LocalOnly_NotFound(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	_, err = resolver.Load(context.Background(), ref, LocalOnly())
+	_, err = resolver.Inspect(context.Background(), ref, LocalOnly())
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not found locally")
 }
 
-func TestResolver_Load_RemoteOnly_Found(t *testing.T) {
+func TestResolver_Inspect_RemoteOnly_Found(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			t.Fatal("should not call docker.Inspect when RemoteOnly")
@@ -196,6 +207,10 @@ func TestResolver_Load_RemoteOnly_Found(t *testing.T) {
 				SchemaVersion: 2,
 				MediaType:     "application/vnd.docker.distribution.manifest.v2+json",
 				Config:        "sha256:configdigest",
+				Labels: map[string]string{
+					LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+					LabelVersion: "0.10.0",
+				},
 			}, nil
 		},
 	}
@@ -204,14 +219,15 @@ func TestResolver_Load_RemoteOnly_Found(t *testing.T) {
 	ref, err := ParseRef("r8.im/user/model")
 	require.NoError(t, err)
 
-	model, err := resolver.Load(context.Background(), ref, RemoteOnly())
+	model, err := resolver.Inspect(context.Background(), ref, RemoteOnly())
 
 	require.NoError(t, err)
 	require.NotNil(t, model)
 	require.Equal(t, ImageSourceRemote, model.Image.Source)
+	require.Equal(t, "0.10.0", model.CogVersion)
 }
 
-func TestResolver_Load_RemoteOnly_NotFound(t *testing.T) {
+func TestResolver_Inspect_RemoteOnly_NotFound(t *testing.T) {
 	docker := &mockDocker{}
 	reg := &mockRegistry{
 		inspectFunc: func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error) {
@@ -223,13 +239,39 @@ func TestResolver_Load_RemoteOnly_NotFound(t *testing.T) {
 	ref, err := ParseRef("r8.im/user/model")
 	require.NoError(t, err)
 
-	_, err = resolver.Load(context.Background(), ref, RemoteOnly())
+	_, err = resolver.Inspect(context.Background(), ref, RemoteOnly())
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not found in registry")
 }
 
-func TestResolver_Load_PreferLocal_FoundLocally(t *testing.T) {
+func TestResolver_Inspect_RemoteOnly_NotCogModel(t *testing.T) {
+	docker := &mockDocker{}
+	reg := &mockRegistry{
+		inspectFunc: func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error) {
+			return &registry.ManifestResult{
+				SchemaVersion: 2,
+				MediaType:     "application/vnd.docker.distribution.manifest.v2+json",
+				Config:        "sha256:configdigest",
+				Labels: map[string]string{
+					// No Cog labels - just a regular image
+					"maintainer": "someone@example.com",
+				},
+			}, nil
+		},
+	}
+
+	resolver := NewResolver(docker, reg)
+	ref, err := ParseRef("nginx:latest")
+	require.NoError(t, err)
+
+	_, err = resolver.Inspect(context.Background(), ref, RemoteOnly())
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotCogModel)
+}
+
+func TestResolver_Inspect_PreferLocal_FoundLocally(t *testing.T) {
 	localCalled := false
 	remoteCalled := false
 
@@ -240,6 +282,7 @@ func TestResolver_Load_PreferLocal_FoundLocally(t *testing.T) {
 				ID: "sha256:local123",
 				Config: &container.Config{
 					Labels: map[string]string{
+						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 						LabelVersion: "0.9.0",
 					},
 				},
@@ -257,7 +300,7 @@ func TestResolver_Load_PreferLocal_FoundLocally(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	model, err := resolver.Load(context.Background(), ref) // default is PreferLocal
+	model, err := resolver.Inspect(context.Background(), ref) // default is PreferLocal
 
 	require.NoError(t, err)
 	require.True(t, localCalled, "should try local first")
@@ -265,7 +308,7 @@ func TestResolver_Load_PreferLocal_FoundLocally(t *testing.T) {
 	require.Equal(t, ImageSourceLocal, model.Image.Source)
 }
 
-func TestResolver_Load_PreferLocal_Fallback(t *testing.T) {
+func TestResolver_Inspect_PreferLocal_Fallback(t *testing.T) {
 	localCalled := false
 	remoteCalled := false
 
@@ -280,6 +323,10 @@ func TestResolver_Load_PreferLocal_Fallback(t *testing.T) {
 			remoteCalled = true
 			return &registry.ManifestResult{
 				SchemaVersion: 2,
+				Labels: map[string]string{
+					LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+					LabelVersion: "0.10.0",
+				},
 			}, nil
 		},
 	}
@@ -288,7 +335,7 @@ func TestResolver_Load_PreferLocal_Fallback(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	model, err := resolver.Load(context.Background(), ref) // default is PreferLocal
+	model, err := resolver.Inspect(context.Background(), ref) // default is PreferLocal
 
 	require.NoError(t, err)
 	require.True(t, localCalled, "should try local first")
@@ -296,7 +343,7 @@ func TestResolver_Load_PreferLocal_Fallback(t *testing.T) {
 	require.Equal(t, ImageSourceRemote, model.Image.Source)
 }
 
-func TestResolver_Load_PreferLocal_NoFallbackOnRealError(t *testing.T) {
+func TestResolver_Inspect_PreferLocal_NoFallbackOnRealError(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return nil, errors.New("connection refused") // Real error, not "not found"
@@ -313,13 +360,13 @@ func TestResolver_Load_PreferLocal_NoFallbackOnRealError(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	_, err = resolver.Load(context.Background(), ref)
+	_, err = resolver.Inspect(context.Background(), ref)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "connection refused")
 }
 
-func TestResolver_Load_PreferRemote_FoundRemotely(t *testing.T) {
+func TestResolver_Inspect_PreferRemote_FoundRemotely(t *testing.T) {
 	localCalled := false
 	remoteCalled := false
 
@@ -334,6 +381,10 @@ func TestResolver_Load_PreferRemote_FoundRemotely(t *testing.T) {
 			remoteCalled = true
 			return &registry.ManifestResult{
 				SchemaVersion: 2,
+				Labels: map[string]string{
+					LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+					LabelVersion: "0.10.0",
+				},
 			}, nil
 		},
 	}
@@ -342,7 +393,7 @@ func TestResolver_Load_PreferRemote_FoundRemotely(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	model, err := resolver.Load(context.Background(), ref, PreferRemote())
+	model, err := resolver.Inspect(context.Background(), ref, PreferRemote())
 
 	require.NoError(t, err)
 	require.False(t, localCalled, "should not try local when remote succeeds")
@@ -350,7 +401,7 @@ func TestResolver_Load_PreferRemote_FoundRemotely(t *testing.T) {
 	require.Equal(t, ImageSourceRemote, model.Image.Source)
 }
 
-func TestResolver_Load_PreferRemote_Fallback(t *testing.T) {
+func TestResolver_Inspect_PreferRemote_Fallback(t *testing.T) {
 	localCalled := false
 	remoteCalled := false
 
@@ -360,7 +411,10 @@ func TestResolver_Load_PreferRemote_Fallback(t *testing.T) {
 			return &image.InspectResponse{
 				ID: "sha256:local123",
 				Config: &container.Config{
-					Labels: map[string]string{},
+					Labels: map[string]string{
+						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+						LabelVersion: "0.10.0",
+					},
 				},
 			}, nil
 		},
@@ -376,7 +430,7 @@ func TestResolver_Load_PreferRemote_Fallback(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	model, err := resolver.Load(context.Background(), ref, PreferRemote())
+	model, err := resolver.Inspect(context.Background(), ref, PreferRemote())
 
 	require.NoError(t, err)
 	require.True(t, remoteCalled, "should try remote first")
@@ -384,7 +438,7 @@ func TestResolver_Load_PreferRemote_Fallback(t *testing.T) {
 	require.Equal(t, ImageSourceLocal, model.Image.Source)
 }
 
-func TestResolver_Load_PreferRemote_NoFallbackOnRealError(t *testing.T) {
+func TestResolver_Inspect_PreferRemote_NoFallbackOnRealError(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			t.Fatal("should not fall back to local on real error")
@@ -401,13 +455,13 @@ func TestResolver_Load_PreferRemote_NoFallbackOnRealError(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	_, err = resolver.Load(context.Background(), ref, PreferRemote())
+	_, err = resolver.Inspect(context.Background(), ref, PreferRemote())
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "authentication required")
 }
 
-func TestResolver_Load_WithPlatform(t *testing.T) {
+func TestResolver_Inspect_WithPlatform(t *testing.T) {
 	var capturedPlatform *registry.Platform
 
 	docker := &mockDocker{}
@@ -416,6 +470,10 @@ func TestResolver_Load_WithPlatform(t *testing.T) {
 			capturedPlatform = platform
 			return &registry.ManifestResult{
 				SchemaVersion: 2,
+				Labels: map[string]string{
+					LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+					LabelVersion: "0.10.0",
+				},
 			}, nil
 		},
 	}
@@ -425,7 +483,7 @@ func TestResolver_Load_WithPlatform(t *testing.T) {
 	require.NoError(t, err)
 
 	platform := &registry.Platform{OS: "linux", Architecture: "amd64"}
-	_, err = resolver.Load(context.Background(), ref, RemoteOnly(), WithPlatform(platform))
+	_, err = resolver.Inspect(context.Background(), ref, RemoteOnly(), WithPlatform(platform))
 
 	require.NoError(t, err)
 	require.NotNil(t, capturedPlatform)
@@ -433,7 +491,7 @@ func TestResolver_Load_WithPlatform(t *testing.T) {
 	require.Equal(t, "amd64", capturedPlatform.Architecture)
 }
 
-func TestResolver_Load_ParsesConfigFromLabels(t *testing.T) {
+func TestResolver_Inspect_ParsesConfigFromLabels(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
@@ -452,7 +510,7 @@ func TestResolver_Load_ParsesConfigFromLabels(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	model, err := resolver.Load(context.Background(), ref, LocalOnly())
+	model, err := resolver.Inspect(context.Background(), ref, LocalOnly())
 
 	require.NoError(t, err)
 	require.NotNil(t, model.Config)
@@ -462,7 +520,7 @@ func TestResolver_Load_ParsesConfigFromLabels(t *testing.T) {
 	require.Equal(t, "predict.py:Predictor", model.Config.Predict)
 }
 
-func TestResolver_Load_InvalidConfigJSON(t *testing.T) {
+func TestResolver_Inspect_InvalidConfigJSON(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
@@ -480,20 +538,20 @@ func TestResolver_Load_InvalidConfigJSON(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	_, err = resolver.Load(context.Background(), ref, LocalOnly())
+	_, err = resolver.Inspect(context.Background(), ref, LocalOnly())
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to parse cog config")
 }
 
-func TestResolver_Load_NoConfigLabel(t *testing.T) {
+func TestResolver_Inspect_NoConfigLabel_ReturnsErrNotCogModel(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
 				ID: "sha256:abc123",
 				Config: &container.Config{
 					Labels: map[string]string{
-						// No LabelConfig
+						// No LabelConfig - just version label
 						LabelVersion: "0.10.0",
 					},
 				},
@@ -505,14 +563,40 @@ func TestResolver_Load_NoConfigLabel(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	model, err := resolver.Load(context.Background(), ref, LocalOnly())
+	_, err = resolver.Inspect(context.Background(), ref, LocalOnly())
 
-	require.NoError(t, err)
-	require.Nil(t, model.Config) // Config should be nil when label is missing
-	require.Equal(t, "0.10.0", model.CogVersion)
+	// Without LabelConfig, image is not a valid Cog model
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotCogModel)
 }
 
-func TestResolver_LoadByID_Found(t *testing.T) {
+func TestResolver_Inspect_NotCogModel(t *testing.T) {
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return &image.InspectResponse{
+				ID: "sha256:abc123",
+				Config: &container.Config{
+					Labels: map[string]string{
+						// No Cog labels at all - just some random image
+						"maintainer": "someone@example.com",
+					},
+				},
+			}, nil
+		},
+	}
+
+	resolver := NewResolver(docker, &mockRegistry{})
+	ref, err := ParseRef("nginx:latest")
+	require.NoError(t, err)
+
+	_, err = resolver.Inspect(context.Background(), ref, LocalOnly())
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotCogModel)
+	require.Contains(t, err.Error(), "nginx:latest")
+}
+
+func TestResolver_InspectByID_Found(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			// Verify the ID was passed directly (not mangled by ParseRef)
@@ -531,7 +615,7 @@ func TestResolver_LoadByID_Found(t *testing.T) {
 
 	resolver := NewResolver(docker, &mockRegistry{})
 
-	model, err := resolver.LoadByID(context.Background(), "9056219a5fb2")
+	model, err := resolver.InspectByID(context.Background(), "9056219a5fb2")
 
 	require.NoError(t, err)
 	require.NotNil(t, model)
@@ -543,7 +627,7 @@ func TestResolver_LoadByID_Found(t *testing.T) {
 	require.Equal(t, "3.11", model.Config.Build.PythonVersion)
 }
 
-func TestResolver_LoadByID_FullSHA(t *testing.T) {
+func TestResolver_InspectByID_FullSHA(t *testing.T) {
 	fullID := "sha256:9056219a5fb2abc123def456789"
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
@@ -551,7 +635,10 @@ func TestResolver_LoadByID_FullSHA(t *testing.T) {
 			return &image.InspectResponse{
 				ID: fullID,
 				Config: &container.Config{
-					Labels: map[string]string{},
+					Labels: map[string]string{
+						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+						LabelVersion: "0.10.0",
+					},
 				},
 			}, nil
 		},
@@ -559,14 +646,37 @@ func TestResolver_LoadByID_FullSHA(t *testing.T) {
 
 	resolver := NewResolver(docker, &mockRegistry{})
 
-	model, err := resolver.LoadByID(context.Background(), fullID)
+	model, err := resolver.InspectByID(context.Background(), fullID)
 
 	require.NoError(t, err)
 	require.NotNil(t, model)
 	require.Equal(t, fullID, model.Image.Digest)
 }
 
-func TestResolver_LoadByID_NotFound(t *testing.T) {
+func TestResolver_InspectByID_NotCogModel(t *testing.T) {
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return &image.InspectResponse{
+				ID: "sha256:abc123",
+				Config: &container.Config{
+					Labels: map[string]string{
+						// No Cog labels
+						"maintainer": "someone",
+					},
+				},
+			}, nil
+		},
+	}
+
+	resolver := NewResolver(docker, &mockRegistry{})
+
+	_, err := resolver.InspectByID(context.Background(), "abc123")
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotCogModel)
+}
+
+func TestResolver_InspectByID_NotFound(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return nil, errors.New("No such image: abc123")
@@ -575,10 +685,199 @@ func TestResolver_LoadByID_NotFound(t *testing.T) {
 
 	resolver := NewResolver(docker, &mockRegistry{})
 
-	_, err := resolver.LoadByID(context.Background(), "abc123")
+	_, err := resolver.InspectByID(context.Background(), "abc123")
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to load image by ID")
+}
+
+// =============================================================================
+// Pull tests
+// =============================================================================
+
+func TestResolver_Pull_AlreadyLocal(t *testing.T) {
+	pullCalled := false
+
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return &image.InspectResponse{
+				ID: "sha256:abc123",
+				Config: &container.Config{
+					Labels: map[string]string{
+						LabelConfig:  `{"build":{"gpu":false}}`,
+						LabelVersion: "0.10.0",
+					},
+				},
+			}, nil
+		},
+		pullFunc: func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error) {
+			pullCalled = true
+			return nil, nil
+		},
+	}
+
+	resolver := NewResolver(docker, &mockRegistry{})
+	ref, err := ParseRef("my-image:latest")
+	require.NoError(t, err)
+
+	model, err := resolver.Pull(context.Background(), ref)
+
+	require.NoError(t, err)
+	require.False(t, pullCalled, "should not pull when image exists locally")
+	require.NotNil(t, model)
+	require.Equal(t, "0.10.0", model.CogVersion)
+}
+
+func TestResolver_Pull_NotLocal_PullsAndReturns(t *testing.T) {
+	pullCalled := false
+	inspectCalls := 0
+
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			inspectCalls++
+			if inspectCalls == 1 {
+				// First call: not found locally
+				return nil, errors.New("No such image")
+			}
+			// After pull: found
+			return &image.InspectResponse{
+				ID: "sha256:abc123",
+				Config: &container.Config{
+					Labels: map[string]string{
+						LabelConfig:  `{"build":{"gpu":true}}`,
+						LabelVersion: "0.10.0",
+					},
+				},
+			}, nil
+		},
+		pullFunc: func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error) {
+			pullCalled = true
+			return &image.InspectResponse{
+				ID: "sha256:abc123",
+				Config: &container.Config{
+					Labels: map[string]string{
+						LabelConfig:  `{"build":{"gpu":true}}`,
+						LabelVersion: "0.10.0",
+					},
+				},
+			}, nil
+		},
+	}
+
+	resolver := NewResolver(docker, &mockRegistry{})
+	ref, err := ParseRef("r8.im/user/model:latest")
+	require.NoError(t, err)
+
+	model, err := resolver.Pull(context.Background(), ref)
+
+	require.NoError(t, err)
+	require.True(t, pullCalled, "should call Pull when image not local")
+	require.NotNil(t, model)
+	require.True(t, model.HasGPU())
+}
+
+func TestResolver_Pull_NotCogModel(t *testing.T) {
+	inspectCalls := 0
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			inspectCalls++
+			if inspectCalls == 1 {
+				// First call: not found locally
+				return nil, errors.New("No such image")
+			}
+			// After pull: found but not a Cog model
+			return &image.InspectResponse{
+				ID: "sha256:abc123",
+				Config: &container.Config{
+					Labels: map[string]string{
+						// Not a Cog model
+						"some.label": "value",
+					},
+				},
+			}, nil
+		},
+		pullFunc: func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error) {
+			return &image.InspectResponse{
+				ID: "sha256:abc123",
+				Config: &container.Config{
+					Labels: map[string]string{
+						"some.label": "value",
+					},
+				},
+			}, nil
+		},
+	}
+
+	resolver := NewResolver(docker, &mockRegistry{})
+	ref, err := ParseRef("not-cog:latest")
+	require.NoError(t, err)
+
+	_, err = resolver.Pull(context.Background(), ref)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotCogModel)
+}
+
+func TestResolver_Pull_LocalOnly_NotFound(t *testing.T) {
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return nil, errors.New("No such image")
+		},
+		pullFunc: func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error) {
+			t.Fatal("should not pull when LocalOnly")
+			return nil, nil
+		},
+	}
+
+	resolver := NewResolver(docker, &mockRegistry{})
+	ref, err := ParseRef("my-image:latest")
+	require.NoError(t, err)
+
+	_, err = resolver.Pull(context.Background(), ref, LocalOnly())
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestResolver_Pull_PullFails(t *testing.T) {
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return nil, errors.New("No such image")
+		},
+		pullFunc: func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error) {
+			return nil, errors.New("manifest unknown")
+		},
+	}
+
+	resolver := NewResolver(docker, &mockRegistry{})
+	ref, err := ParseRef("nonexistent:latest")
+	require.NoError(t, err)
+
+	_, err = resolver.Pull(context.Background(), ref)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestResolver_Pull_LocalInspectRealError(t *testing.T) {
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return nil, errors.New("connection refused")
+		},
+		pullFunc: func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error) {
+			t.Fatal("should not pull when local inspect has real error")
+			return nil, nil
+		},
+	}
+
+	resolver := NewResolver(docker, &mockRegistry{})
+	ref, err := ParseRef("my-image:latest")
+	require.NoError(t, err)
+
+	_, err = resolver.Pull(context.Background(), ref)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "connection refused")
 }
 
 func TestIsNotFoundError(t *testing.T) {

@@ -9,6 +9,7 @@ type ManifestResult struct {
 	Manifests []PlatformManifest
 	Layers    []string
 	Config    string
+	Labels    map[string]string
 }
 
 func (m *ManifestResult) IsIndex() bool {

@@ -107,22 +107,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
-	m, err := resolver.Build(ctx, src, model.BuildOptions{
-		ImageName:        imageName,
-		Secrets:          buildSecrets,
-		NoCache:          buildNoCache,
-		SeparateWeights:  buildSeparateWeights,
-		UseCudaBaseImage: buildUseCudaBaseImage,
-		ProgressOutput:   buildProgressOutput,
-		SchemaFile:       buildSchemaFile,
-		DockerfileFile:   buildDockerfileFile,
-		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
-		Strip:            buildStrip,
-		Precompile:       buildPrecompile,
-		Fast:             buildFast,
-		LocalImage:       buildLocalImage,
-		PipelinesImage:   pipelinesImage,
-	})
+	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, buildFast, nil))
 	if err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
@@ -232,4 +217,37 @@ func DetermineUseCogBaseImage(cmd *cobra.Command) *bool {
 	useCogBaseImage := new(bool)
 	*useCogBaseImage = buildUseCogBaseImage
 	return useCogBaseImage
+}
+
+// buildOptionsFromFlags creates BuildOptions from the current CLI flag values.
+// The imageName and annotations parameters vary by command and must be provided.
+// The fast parameter should reflect the resolved fast mode (from flags OR config).
+func buildOptionsFromFlags(cmd *cobra.Command, imageName string, fast bool, annotations map[string]string) model.BuildOptions {
+	return model.BuildOptions{
+		ImageName:        imageName,
+		Secrets:          buildSecrets,
+		NoCache:          buildNoCache,
+		SeparateWeights:  buildSeparateWeights,
+		UseCudaBaseImage: buildUseCudaBaseImage,
+		ProgressOutput:   buildProgressOutput,
+		SchemaFile:       buildSchemaFile,
+		DockerfileFile:   buildDockerfileFile,
+		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
+		Strip:            buildStrip,
+		Precompile:       buildPrecompile,
+		Fast:             fast,
+		Annotations:      annotations,
+		LocalImage:       buildLocalImage,
+		PipelinesImage:   pipelinesImage,
+	}
+}
+
+// buildBaseOptionsFromFlags creates BuildBaseOptions from the current CLI flag values.
+func buildBaseOptionsFromFlags(cmd *cobra.Command) model.BuildBaseOptions {
+	return model.BuildBaseOptions{
+		UseCudaBaseImage: buildUseCudaBaseImage,
+		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
+		ProgressOutput:   buildProgressOutput,
+		RequiresCog:      true,
+	}
 }

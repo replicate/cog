@@ -14,6 +14,10 @@ type Factory interface {
 	// Build creates a Docker image from source and returns Image metadata.
 	Build(ctx context.Context, src *Source, opts BuildOptions) (*Image, error)
 
+	// BuildBase creates a base image for dev mode (without /src copied).
+	// The source directory is expected to be mounted as a volume at runtime.
+	BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Image, error)
+
 	// Name returns the factory name for logging/debugging.
 	Name() string
 }
@@ -65,6 +69,29 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 	return &Image{
 		Reference: opts.ImageName,
 		Digest:    imageID,
+		Source:    ImageSourceBuild,
+	}, nil
+}
+
+// BuildBase delegates to the existing image.BuildBase() function.
+func (f *DockerfileFactory) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Image, error) {
+	imageName, err := image.BuildBase(
+		ctx,
+		f.docker,
+		src.Config,
+		src.ProjectDir,
+		opts.UseCudaBaseImage,
+		opts.UseCogBaseImage,
+		opts.ProgressOutput,
+		f.registry,
+		opts.RequiresCog,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Image{
+		Reference: imageName,
 		Source:    ImageSourceBuild,
 	}, nil
 }

@@ -40,8 +40,8 @@ func FromTag(ref string) (*TagRef, error) {
 }
 
 func (t *TagRef) resolve(ctx context.Context, r *Resolver) (*Model, error) {
-	// Use default Load behavior (PreferLocal)
-	return r.Load(ctx, t.Parsed)
+	// Use default Inspect behavior (PreferLocal)
+	return r.Inspect(ctx, t.Parsed)
 }
 
 // =============================================================================
@@ -65,7 +65,7 @@ func FromLocal(ref string) (*LocalRef, error) {
 }
 
 func (l *LocalRef) resolve(ctx context.Context, r *Resolver) (*Model, error) {
-	return r.Load(ctx, l.Parsed, LocalOnly())
+	return r.Inspect(ctx, l.Parsed, LocalOnly())
 }
 
 // =============================================================================
@@ -89,7 +89,7 @@ func FromRemote(ref string) (*RemoteRef, error) {
 }
 
 func (rr *RemoteRef) resolve(ctx context.Context, r *Resolver) (*Model, error) {
-	return r.Load(ctx, rr.Parsed, RemoteOnly())
+	return r.Inspect(ctx, rr.Parsed, RemoteOnly())
 }
 
 // =============================================================================

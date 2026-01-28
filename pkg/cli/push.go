@@ -10,11 +10,10 @@ import (
 	"github.com/replicate/go/uuid"
 
 	"github.com/replicate/cog/pkg/coglog"
-	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/http"
-	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -63,22 +62,23 @@ func push(cmd *cobra.Command, args []string) error {
 	logClient := coglog.NewClient(client)
 	logCtx := logClient.StartPush(buildLocalImage)
 
-	cfg, projectDir, err := config.GetConfig(configFilename)
+	src, err := model.NewSource(configFilename)
 	if err != nil {
 		logClient.EndPush(ctx, err, logCtx)
 		return err
 	}
+
 	// In case one of `--x-fast` & `fast: bool` is set
-	if cfg.Build.Fast {
-		buildFast = cfg.Build.Fast
+	if src.Config.Build != nil && src.Config.Build.Fast {
+		buildFast = true
 	}
 	logCtx.Fast = buildFast
 	logCtx.CogRuntime = false
-	if cfg.Build.CogRuntime != nil {
-		logCtx.CogRuntime = *cfg.Build.CogRuntime
+	if src.Config.Build != nil && src.Config.Build.CogRuntime != nil {
+		logCtx.CogRuntime = *src.Config.Build.CogRuntime
 	}
 
-	imageName := cfg.Image
+	imageName := src.Config.Image
 	if len(args) > 0 {
 		imageName = args[0]
 	}
@@ -106,43 +106,25 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	startBuildTime := time.Now()
-	registryClient := registry.NewRegistryClient()
-	if _, err := image.Build(
-		ctx,
-		cfg,
-		projectDir,
-		imageName,
-		buildSecrets,
-		buildNoCache,
-		buildSeparateWeights,
-		buildUseCudaBaseImage,
-		buildProgressOutput,
-		buildSchemaFile,
-		buildDockerfileFile,
-		DetermineUseCogBaseImage(cmd),
-		buildStrip,
-		buildPrecompile,
-		buildFast,
-		annotations,
-		buildLocalImage,
-		dockerClient,
-		registryClient,
-		pipelinesImage); err != nil {
+	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, buildFast, annotations))
+	if err != nil {
+		logClient.EndPush(ctx, err, logCtx)
 		return err
 	}
 
 	buildDuration := time.Since(startBuildTime)
 
-	console.Infof("\nPushing image '%s'...", imageName)
+	console.Infof("\nPushing image '%s'...", m.ImageRef())
 	if buildFast {
 		console.Info("Fast push enabled.")
 	}
 
-	err = docker.Push(ctx, imageName, buildFast, projectDir, dockerClient, docker.BuildInfo{
+	err = docker.Push(ctx, m.ImageRef(), buildFast, src.ProjectDir, dockerClient, docker.BuildInfo{
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
 		Pipeline:  pipelinesImage,
-	}, client, cfg)
+	}, client, src.Config)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
 			err = fmt.Errorf("Unable to find existing Replicate model for %s. "+

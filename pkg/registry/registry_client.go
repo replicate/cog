@@ -66,6 +66,13 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 					Variant:      m.Platform.Variant,
 				})
 			}
+			// For indexes, pick a default image to get labels from.
+			// Prefer linux/amd64, otherwise use the first manifest.
+			if defaultImg := pickDefaultImage(ref, indexManifest); defaultImg != nil {
+				if configFile, err := defaultImg.ConfigFile(); err == nil {
+					result.Labels = configFile.Config.Labels
+				}
+			}
 			return result, nil
 
 		case types.OCIManifestSchema1, types.DockerManifestSchema2:
@@ -77,10 +84,15 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 			if err != nil {
 				return nil, fmt.Errorf("getting manifest: %w", err)
 			}
+			configFile, err := img.ConfigFile()
+			if err != nil {
+				return nil, fmt.Errorf("getting config file: %w", err)
+			}
 			result := &ManifestResult{
 				SchemaVersion: manifest.SchemaVersion,
 				MediaType:     string(mediaType),
 				Config:        manifest.Config.Digest.String(),
+				Labels:        configFile.Config.Labels,
 			}
 			for _, layer := range manifest.Layers {
 				result.Layers = append(result.Layers, layer.Digest.String())
@@ -138,10 +150,15 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 	if err != nil {
 		return nil, fmt.Errorf("getting manifest: %w", err)
 	}
+	configFile, err := img.ConfigFile()
+	if err != nil {
+		return nil, fmt.Errorf("getting config file: %w", err)
+	}
 	result := &ManifestResult{
 		SchemaVersion: manifest.SchemaVersion,
 		MediaType:     string(manifestDesc.Descriptor.MediaType),
 		Config:        manifest.Config.Digest.String(),
+		Labels:        configFile.Config.Labels,
 	}
 	for _, layer := range manifest.Layers {
 		result.Layers = append(result.Layers, layer.Digest.String())
@@ -250,4 +267,44 @@ func checkError(err error, codes ...transport.ErrorCode) bool {
 		}
 	}
 	return false
+}
+
+// pickDefaultImage selects an image from a manifest index to use for fetching labels.
+// Prefers linux/amd64, otherwise returns the first image manifest.
+func pickDefaultImage(ref name.Reference, idx *v1.IndexManifest) v1.Image {
+	var targetDigest string
+
+	// First, look for linux/amd64
+	for _, m := range idx.Manifests {
+		if m.Platform != nil && m.Platform.OS == "linux" && m.Platform.Architecture == "amd64" {
+			targetDigest = m.Digest.String()
+			break
+		}
+	}
+
+	// Fall back to first manifest
+	if targetDigest == "" && len(idx.Manifests) > 0 {
+		targetDigest = idx.Manifests[0].Digest.String()
+	}
+
+	if targetDigest == "" {
+		return nil
+	}
+
+	digestRef, err := name.NewDigest(ref.Context().Name() + "@" + targetDigest)
+	if err != nil {
+		return nil
+	}
+
+	desc, err := remote.Get(digestRef, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	if err != nil {
+		return nil
+	}
+
+	img, err := desc.Image()
+	if err != nil {
+		return nil
+	}
+
+	return img
 }

@@ -126,6 +126,7 @@ func TestTagRef_Resolve_Success(t *testing.T) {
 				ID: "sha256:abc123",
 				Config: &container.Config{
 					Labels: map[string]string{
+						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 						LabelVersion: "0.10.0",
 					},
 				},
@@ -157,7 +158,13 @@ func TestTagRef_Resolve_FallsBackToRemote(t *testing.T) {
 	reg := &mockRegistry{
 		inspectFunc: func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error) {
 			remoteCalled = true
-			return &registry.ManifestResult{SchemaVersion: 2}, nil
+			return &registry.ManifestResult{
+				SchemaVersion: 2,
+				Labels: map[string]string{
+					LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+					LabelVersion: "0.10.0",
+				},
+			}, nil
 		},
 	}
 
@@ -185,6 +192,7 @@ func TestLocalRef_Resolve_Success(t *testing.T) {
 				ID: "sha256:local123",
 				Config: &container.Config{
 					Labels: map[string]string{
+						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 						LabelVersion: "0.9.0",
 					},
 				},
@@ -240,7 +248,13 @@ func TestRemoteRef_Resolve_Success(t *testing.T) {
 	}
 	reg := &mockRegistry{
 		inspectFunc: func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error) {
-			return &registry.ManifestResult{SchemaVersion: 2}, nil
+			return &registry.ManifestResult{
+				SchemaVersion: 2,
+				Labels: map[string]string{
+					LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+					LabelVersion: "0.10.0",
+				},
+			}, nil
 		},
 	}
 
@@ -253,6 +267,7 @@ func TestRemoteRef_Resolve_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, model)
 	require.Equal(t, ImageSourceRemote, model.Image.Source)
+	require.Equal(t, "0.10.0", model.CogVersion)
 }
 
 func TestRemoteRef_Resolve_NotFound(t *testing.T) {
@@ -376,8 +391,11 @@ func TestResolver_Resolve_DispatchesCorrectly(t *testing.T) {
 				inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 					localCalled = true
 					return &image.InspectResponse{
-						ID:     "sha256:test",
-						Config: &container.Config{Labels: map[string]string{}},
+						ID: "sha256:test",
+						Config: &container.Config{Labels: map[string]string{
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
+						}},
 					}, nil
 				},
 			}

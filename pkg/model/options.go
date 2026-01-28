@@ -71,3 +71,27 @@ func (o BuildOptions) WithDefaults(src *Source) BuildOptions {
 
 	return o
 }
+
+// BuildBaseOptions contains settings for building a base image (dev mode).
+// Base images don't copy /src - the source is mounted as a volume at runtime.
+type BuildBaseOptions struct {
+	// UseCudaBaseImage controls CUDA base image usage: "auto", "true", or "false".
+	UseCudaBaseImage string
+
+	// UseCogBaseImage controls cog base image usage. nil means auto-detect.
+	UseCogBaseImage *bool
+
+	// ProgressOutput controls build output format: "auto", "plain", or "tty".
+	ProgressOutput string
+
+	// RequiresCog indicates whether the build requires cog to be installed.
+	RequiresCog bool
+}
+
+// WithDefaults returns a copy of BuildBaseOptions with defaults applied.
+func (o BuildBaseOptions) WithDefaults() BuildBaseOptions {
+	if o.ProgressOutput == "" {
+		o.ProgressOutput = "auto"
+	}
+	return o
+}

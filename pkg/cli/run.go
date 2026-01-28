@@ -7,10 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -61,42 +60,23 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	client := registry.NewRegistryClient()
 
-	cfg, projectDir, err := config.GetConfig(configFilename)
+	src, err := model.NewSource(configFilename)
 	if err != nil {
 		return err
 	}
 
-	var imageName string
-	if cfg.Build.Fast || buildFast || pipelinesImage {
-		imageName = config.DockerImageName(projectDir)
-		_, err = image.Build(
-			ctx,
-			cfg,
-			projectDir,
-			imageName,
-			buildSecrets,
-			buildNoCache,
-			buildSeparateWeights,
-			buildUseCudaBaseImage,
-			buildProgressOutput,
-			buildSchemaFile,
-			buildDockerfileFile,
-			DetermineUseCogBaseImage(cmd),
-			buildStrip,
-			buildPrecompile,
-			cfg.Build.Fast || buildFast,
-			nil,
-			buildLocalImage,
-			dockerClient,
-			client,
-			pipelinesImage)
+	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+
+	var m *model.Model
+	useFast := (src.Config.Build != nil && src.Config.Build.Fast) || buildFast
+	if useFast || pipelinesImage {
+		m, err = resolver.Build(ctx, src, buildOptionsFromFlags(cmd, "", useFast, nil))
 		if err != nil {
 			return err
 		}
 	} else {
-		imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client, true)
+		m, err = resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
 		if err != nil {
 			return err
 		}
@@ -105,7 +85,7 @@ func run(cmd *cobra.Command, args []string) error {
 	gpus := ""
 	if gpusFlag != "" {
 		gpus = gpusFlag
-	} else if cfg.Build.GPU {
+	} else if m.HasGPU() {
 		gpus = "all"
 	}
 
@@ -119,8 +99,8 @@ func run(cmd *cobra.Command, args []string) error {
 		Args:    args,
 		Env:     env,
 		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: []command.Volume{{Source: projectDir, Destination: "/src"}},
+		Image:   m.ImageRef(),
+		Volumes: []command.Volume{{Source: src.ProjectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
 	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerClient, runOptions)
