@@ -213,7 +213,7 @@ func Build(
 		schemaJSON = data
 	} else {
 		console.Info("Validating model schema...")
-		schema, err := GenerateOpenAPISchema(ctx, dockerCommand, imageName, cfg.Build.GPU)
+		schema, err := GenerateOpenAPISchema(ctx, dockerCommand, tmpImageId, cfg.Build.GPU)
 		if err != nil {
 			return fmt.Errorf("Failed to get type signature: %w", err)
 		}
@@ -252,12 +252,12 @@ func Build(
 		return fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
 
-	pipFreeze, err := GeneratePipFreeze(ctx, dockerCommand, imageName, fastFlag)
+	pipFreeze, err := GeneratePipFreeze(ctx, dockerCommand, tmpImageId, fastFlag)
 	if err != nil {
 		return fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}
 
-	modelDependencies, err := GenerateModelDependencies(ctx, dockerCommand, imageName, cfg)
+	modelDependencies, err := GenerateModelDependencies(ctx, dockerCommand, tmpImageId, cfg)
 	if err != nil {
 		return fmt.Errorf("Failed to generate model dependencies from image: %w", err)
 	}
