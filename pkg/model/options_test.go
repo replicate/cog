@@ -57,36 +57,6 @@ func TestBuildOptions_WithDefaults_PreservesExplicitProgressOutput(t *testing.T)
 	require.Equal(t, "plain", opts.ProgressOutput)
 }
 
-func TestBuildOptions_WithDefaults_FastFromConfig(t *testing.T) {
-	src := &Source{
-		Config: &config.Config{
-			Build: &config.Build{Fast: true},
-		},
-		ProjectDir: "/path/to/project",
-	}
-
-	opts := BuildOptions{}
-	opts = opts.WithDefaults(src)
-
-	require.True(t, opts.Fast)
-}
-
-func TestBuildOptions_WithDefaults_ExplicitFastOverridesConfig(t *testing.T) {
-	// When Fast is explicitly set to true in options, it stays true
-	// even if config has Fast: false
-	src := &Source{
-		Config: &config.Config{
-			Build: &config.Build{Fast: false},
-		},
-		ProjectDir: "/path/to/project",
-	}
-
-	opts := BuildOptions{Fast: true}
-	opts = opts.WithDefaults(src)
-
-	require.True(t, opts.Fast)
-}
-
 func TestBuildOptions_WithDefaults_NilBuildConfig(t *testing.T) {
 	src := &Source{
 		Config:     &config.Config{Build: nil},
@@ -99,6 +69,7 @@ func TestBuildOptions_WithDefaults_NilBuildConfig(t *testing.T) {
 	// Should not panic and should apply other defaults
 	require.Equal(t, "cog-project", opts.ImageName)
 	require.Equal(t, "auto", opts.ProgressOutput)
+	// Fast should not be set by WithDefaults (it comes from config at build time)
 	require.False(t, opts.Fast)
 }
 

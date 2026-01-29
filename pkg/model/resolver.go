@@ -160,7 +160,7 @@ func (r *Resolver) Pull(ctx context.Context, ref *ParsedRef, opts ...Option) (*M
 	}
 
 	// First, try to inspect locally
-	model, err := r.inspectLocal(ctx, ref)
+	model, err := r.loadLocal(ctx, ref)
 	if err == nil {
 		return model, nil
 	}
@@ -183,6 +183,7 @@ func (r *Resolver) Pull(ctx context.Context, ref *ParsedRef, opts ...Option) (*M
 	}
 
 	// Pull the image
+	// TODO: Support platform option for multi-platform images
 	_, err = r.docker.Pull(ctx, ref.String(), false)
 	if err != nil {
 		if isNotFoundError(err) {
@@ -192,11 +193,6 @@ func (r *Resolver) Pull(ctx context.Context, ref *ParsedRef, opts ...Option) (*M
 	}
 
 	// Inspect the now-local image
-	return r.inspectLocal(ctx, ref)
-}
-
-// inspectLocal loads a Model from the local docker daemon only.
-func (r *Resolver) inspectLocal(ctx context.Context, ref *ParsedRef) (*Model, error) {
 	return r.loadLocal(ctx, ref)
 }
 

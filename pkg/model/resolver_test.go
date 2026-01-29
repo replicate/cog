@@ -36,39 +36,43 @@ func (m *mockDocker) Pull(ctx context.Context, ref string, force bool) (*image.I
 }
 
 func (m *mockDocker) Push(ctx context.Context, ref string) error {
-	panic("not implemented")
+	return errors.New("mockDocker.Push not implemented")
 }
 
 func (m *mockDocker) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
-	panic("not implemented")
+	return nil, errors.New("mockDocker.LoadUserInformation not implemented")
 }
 
 func (m *mockDocker) ImageExists(ctx context.Context, ref string) (bool, error) {
-	panic("not implemented")
+	return false, errors.New("mockDocker.ImageExists not implemented")
 }
 
 func (m *mockDocker) ContainerLogs(ctx context.Context, containerID string, w io.Writer) error {
-	panic("not implemented")
+	return errors.New("mockDocker.ContainerLogs not implemented")
 }
 
 func (m *mockDocker) ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error) {
-	panic("not implemented")
+	return nil, errors.New("mockDocker.ContainerInspect not implemented")
 }
 
 func (m *mockDocker) ContainerStop(ctx context.Context, containerID string) error {
-	panic("not implemented")
+	return errors.New("mockDocker.ContainerStop not implemented")
+}
+
+func (m *mockDocker) RemoveImage(ctx context.Context, ref string) error {
+	return errors.New("mockDocker.RemoveImage not implemented")
 }
 
 func (m *mockDocker) ImageBuild(ctx context.Context, options command.ImageBuildOptions) (string, error) {
-	panic("not implemented")
+	return "", errors.New("mockDocker.ImageBuild not implemented")
 }
 
 func (m *mockDocker) Run(ctx context.Context, options command.RunOptions) error {
-	panic("not implemented")
+	return errors.New("mockDocker.Run not implemented")
 }
 
 func (m *mockDocker) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
-	panic("not implemented")
+	return "", errors.New("mockDocker.ContainerStart not implemented")
 }
 
 // mockRegistry implements registry.Client for testing.

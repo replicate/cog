@@ -15,6 +15,8 @@ type BuildOptions struct {
 	SeparateWeights bool
 
 	// Fast enables fast/monobase build mode.
+	// Deprecated: Fast mode is read from cog.yaml config. This field exists
+	// for backwards compatibility but new code should not set it.
 	Fast bool
 
 	// Strip removes debug symbols from binaries.
@@ -62,11 +64,6 @@ func (o BuildOptions) WithDefaults(src *Source) BuildOptions {
 	// Default progress output
 	if o.ProgressOutput == "" {
 		o.ProgressOutput = "auto"
-	}
-
-	// Apply fast mode from config if not already set via flag
-	if src.Config != nil && src.Config.Build != nil && src.Config.Build.Fast && !o.Fast {
-		o.Fast = true
 	}
 
 	return o

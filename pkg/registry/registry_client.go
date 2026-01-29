@@ -11,6 +11,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 var NotFoundError = errors.New("image reference not found")
@@ -271,6 +273,7 @@ func checkError(err error, codes ...transport.ErrorCode) bool {
 
 // pickDefaultImage selects an image from a manifest index to use for fetching labels.
 // Prefers linux/amd64, otherwise returns the first image manifest.
+// Returns nil if no suitable image is found or if fetching fails.
 func pickDefaultImage(ref name.Reference, idx *v1.IndexManifest) v1.Image {
 	var targetDigest string
 
@@ -288,21 +291,25 @@ func pickDefaultImage(ref name.Reference, idx *v1.IndexManifest) v1.Image {
 	}
 
 	if targetDigest == "" {
+		console.Debugf("pickDefaultImage: no manifests in index for %s", ref.String())
 		return nil
 	}
 
 	digestRef, err := name.NewDigest(ref.Context().Name() + "@" + targetDigest)
 	if err != nil {
+		console.Debugf("pickDefaultImage: failed to create digest ref: %v", err)
 		return nil
 	}
 
 	desc, err := remote.Get(digestRef, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	if err != nil {
+		console.Debugf("pickDefaultImage: failed to fetch image %s: %v", digestRef.String(), err)
 		return nil
 	}
 
 	img, err := desc.Image()
 	if err != nil {
+		console.Debugf("pickDefaultImage: failed to load image %s: %v", digestRef.String(), err)
 		return nil
 	}
 
