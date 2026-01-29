@@ -541,7 +541,8 @@ func TestResolver_Inspect_InvalidConfigJSON(t *testing.T) {
 	_, err = resolver.Inspect(context.Background(), ref, LocalOnly())
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to parse cog config")
+	// Error should contain the JSON parse error message
+	require.Contains(t, err.Error(), "invalid character")
 }
 
 func TestResolver_Inspect_NoConfigLabel_ReturnsErrNotCogModel(t *testing.T) {

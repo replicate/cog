@@ -2,13 +2,11 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/docker/docker/api/types/image"
-	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
@@ -144,33 +142,11 @@ func (r *Resolver) InspectByID(ctx context.Context, id string) (*Model, error) {
 		Source:    ImageSourceLocal,
 	}
 
-	// Validate this is a Cog model
-	if !img.IsCogModel() {
-		return nil, fmt.Errorf("image %s: %w", id, ErrNotCogModel)
+	model, err := img.ToModel()
+	if err != nil {
+		return nil, fmt.Errorf("image %s: %w", id, err)
 	}
-
-	// Parse config from labels
-	var cfg *config.Config
-	if configJSON := img.Config(); configJSON != "" {
-		cfg = new(config.Config)
-		if err := json.Unmarshal([]byte(configJSON), cfg); err != nil {
-			return nil, fmt.Errorf("failed to parse cog config from labels: %w", err)
-		}
-	}
-
-	// Parse schema from labels
-	var schema *openapi3.T
-	if schemaJSON := img.OpenAPISchema(); schemaJSON != "" {
-		loader := openapi3.NewLoader()
-		schema, _ = loader.LoadFromData([]byte(schemaJSON))
-	}
-
-	return &Model{
-		Image:      img,
-		Config:     cfg,
-		Schema:     schema,
-		CogVersion: img.CogVersion(),
-	}, nil
+	return model, nil
 }
 
 // Pull ensures a Model is locally available for running.
@@ -251,7 +227,7 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	// Use the canonical ID from the response
 	img.Digest = resp.ID
 
-	return r.modelFromImage(img, src.Config), nil
+	return r.modelFromImage(img, src.Config)
 }
 
 // BuildBase creates a base image for dev mode (without /src copied).
@@ -292,11 +268,11 @@ func (r *Resolver) loadRemote(ctx context.Context, ref *ParsedRef, platform *reg
 }
 
 // modelFromImage creates a Model from Image with a known config (post-build).
-func (r *Resolver) modelFromImage(img *Image, cfg *config.Config) *Model {
-	var schema *openapi3.T
-	if schemaJSON := img.OpenAPISchema(); schemaJSON != "" {
-		loader := openapi3.NewLoader()
-		schema, _ = loader.LoadFromData([]byte(schemaJSON))
+// Uses the provided config rather than parsing from labels.
+func (r *Resolver) modelFromImage(img *Image, cfg *config.Config) (*Model, error) {
+	schema, err := img.ParsedOpenAPISchema()
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse schema from image labels: %w", err)
 	}
 
 	return &Model{
@@ -304,7 +280,7 @@ func (r *Resolver) modelFromImage(img *Image, cfg *config.Config) *Model {
 		Config:     cfg,
 		Schema:     schema,
 		CogVersion: img.CogVersion(),
-	}
+	}, nil
 }
 
 // modelFromInspect creates a Model from docker inspect response.
@@ -317,33 +293,11 @@ func (r *Resolver) modelFromInspect(ref *ParsedRef, resp *image.InspectResponse,
 		Source:    source,
 	}
 
-	// Validate this is a Cog model
-	if !img.IsCogModel() {
-		return nil, fmt.Errorf("image %s: %w", ref.Original, ErrNotCogModel)
+	model, err := img.ToModel()
+	if err != nil {
+		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
-
-	// Parse config from labels
-	var cfg *config.Config
-	if configJSON := img.Config(); configJSON != "" {
-		cfg = new(config.Config)
-		if err := json.Unmarshal([]byte(configJSON), cfg); err != nil {
-			return nil, fmt.Errorf("failed to parse cog config from labels: %w", err)
-		}
-	}
-
-	// Parse schema from labels
-	var schema *openapi3.T
-	if schemaJSON := img.OpenAPISchema(); schemaJSON != "" {
-		loader := openapi3.NewLoader()
-		schema, _ = loader.LoadFromData([]byte(schemaJSON))
-	}
-
-	return &Model{
-		Image:      img,
-		Config:     cfg,
-		Schema:     schema,
-		CogVersion: img.CogVersion(),
-	}, nil
+	return model, nil
 }
 
 // modelFromManifest creates a Model from registry manifest.
@@ -356,33 +310,11 @@ func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.Manifest
 		Source:    source,
 	}
 
-	// Validate this is a Cog model
-	if !img.IsCogModel() {
-		return nil, fmt.Errorf("image %s: %w", ref.Original, ErrNotCogModel)
+	model, err := img.ToModel()
+	if err != nil {
+		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
-
-	// Parse config from labels
-	var cfg *config.Config
-	if configJSON := img.Config(); configJSON != "" {
-		cfg = new(config.Config)
-		if err := json.Unmarshal([]byte(configJSON), cfg); err != nil {
-			return nil, fmt.Errorf("failed to parse cog config from labels: %w", err)
-		}
-	}
-
-	// Parse schema from labels
-	var schema *openapi3.T
-	if schemaJSON := img.OpenAPISchema(); schemaJSON != "" {
-		loader := openapi3.NewLoader()
-		schema, _ = loader.LoadFromData([]byte(schemaJSON))
-	}
-
-	return &Model{
-		Image:      img,
-		Config:     cfg,
-		Schema:     schema,
-		CogVersion: img.CogVersion(),
-	}, nil
+	return model, nil
 }
 
 // isNotFoundError checks if an error indicates "not found" vs a real error.

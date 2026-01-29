@@ -1,6 +1,13 @@
 package model
 
-import "github.com/replicate/cog/pkg/global"
+import (
+	"encoding/json"
+
+	"github.com/getkin/kin-openapi/openapi3"
+
+	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/global"
+)
 
 // ImageSource indicates where an image was loaded from.
 type ImageSource string
@@ -66,4 +73,62 @@ func (i *Image) OpenAPISchema() string {
 		return ""
 	}
 	return i.Labels[LabelOpenAPISchema]
+}
+
+// ParsedConfig returns the parsed cog.yaml config from image labels.
+// Returns nil without error if no config label is present.
+// Returns error if the label contains invalid JSON.
+func (i *Image) ParsedConfig() (*config.Config, error) {
+	raw := i.Config()
+	if raw == "" {
+		return nil, nil
+	}
+
+	cfg := new(config.Config)
+	if err := json.Unmarshal([]byte(raw), cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// ParsedOpenAPISchema returns the parsed OpenAPI schema from image labels.
+// Returns nil without error if no schema label is present.
+// Returns error if the label contains invalid JSON.
+func (i *Image) ParsedOpenAPISchema() (*openapi3.T, error) {
+	raw := i.OpenAPISchema()
+	if raw == "" {
+		return nil, nil
+	}
+
+	loader := openapi3.NewLoader()
+	schema, err := loader.LoadFromData([]byte(raw))
+	if err != nil {
+		return nil, err
+	}
+	return schema, nil
+}
+
+// ToModel converts the Image to a Model by parsing its labels.
+// Returns error if the image is not a valid Cog model or if labels contain invalid JSON.
+func (i *Image) ToModel() (*Model, error) {
+	if !i.IsCogModel() {
+		return nil, ErrNotCogModel
+	}
+
+	cfg, err := i.ParsedConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	schema, err := i.ParsedOpenAPISchema()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Model{
+		Image:      i,
+		Config:     cfg,
+		Schema:     schema,
+		CogVersion: i.CogVersion(),
+	}, nil
 }
