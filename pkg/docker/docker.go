@@ -361,6 +361,9 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 	}
 
 	imageID := res.ExporterResponse[exptypes.ExporterImageDigestKey]
+	if imageID == "" {
+		return "", fmt.Errorf("buildkit did not return an image digest")
+	}
 	console.Debugf("image digest %s", imageID)
 
 	return imageID, nil

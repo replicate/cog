@@ -198,6 +198,15 @@ func (r *Resolver) Pull(ctx context.Context, ref *ParsedRef, opts ...Option) (*M
 
 // Build creates a Model by building from source.
 func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*Model, error) {
+	if src == nil {
+		return nil, fmt.Errorf("source is required for Build")
+	}
+	if src.Config == nil {
+		return nil, fmt.Errorf("source.Config is required for Build")
+	}
+	if src.ProjectDir == "" {
+		return nil, fmt.Errorf("source.ProjectDir is required for Build")
+	}
 	opts = opts.WithDefaults(src)
 
 	img, err := r.factory.Build(ctx, src, opts)
@@ -230,6 +239,15 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 // The source directory is expected to be mounted as a volume at runtime.
 // Returns a Model with the built image info and the source config.
 func (r *Resolver) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Model, error) {
+	if src == nil {
+		return nil, fmt.Errorf("source is required for BuildBase")
+	}
+	if src.Config == nil {
+		return nil, fmt.Errorf("source.Config is required for BuildBase")
+	}
+	if src.ProjectDir == "" {
+		return nil, fmt.Errorf("source.ProjectDir is required for BuildBase")
+	}
 	opts = opts.WithDefaults()
 
 	img, err := r.factory.BuildBase(ctx, src, opts)

@@ -70,7 +70,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 			}
 			// For indexes, pick a default image to get labels from.
 			// Prefer linux/amd64, otherwise use the first manifest.
-			if defaultImg := pickDefaultImage(ref, indexManifest); defaultImg != nil {
+			if defaultImg := pickDefaultImage(ctx, ref, indexManifest); defaultImg != nil {
 				if configFile, err := defaultImg.ConfigFile(); err == nil {
 					result.Labels = configFile.Config.Labels
 				}
@@ -274,7 +274,7 @@ func checkError(err error, codes ...transport.ErrorCode) bool {
 // pickDefaultImage selects an image from a manifest index to use for fetching labels.
 // Prefers linux/amd64, otherwise returns the first image manifest.
 // Returns nil if no suitable image is found or if fetching fails.
-func pickDefaultImage(ref name.Reference, idx *v1.IndexManifest) v1.Image {
+func pickDefaultImage(ctx context.Context, ref name.Reference, idx *v1.IndexManifest) v1.Image {
 	var targetDigest string
 
 	// First, look for linux/amd64
@@ -295,13 +295,16 @@ func pickDefaultImage(ref name.Reference, idx *v1.IndexManifest) v1.Image {
 		return nil
 	}
 
-	digestRef, err := name.NewDigest(ref.Context().Name() + "@" + targetDigest)
+	digestRef, err := name.NewDigest(ref.Context().Name()+"@"+targetDigest, name.Insecure)
 	if err != nil {
 		console.Debugf("pickDefaultImage: failed to create digest ref: %v", err)
 		return nil
 	}
 
-	desc, err := remote.Get(digestRef, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	desc, err := remote.Get(digestRef,
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+	)
 	if err != nil {
 		console.Debugf("pickDefaultImage: failed to fetch image %s: %v", digestRef.String(), err)
 		return nil
