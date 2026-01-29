@@ -12,7 +12,7 @@ You can deploy your packaged model to your own infrastructure, or to [Replicate]
 
 - ✅ **Define the inputs and outputs for your model with standard Python.** Then, Cog generates an OpenAPI schema and validates the inputs and outputs with Pydantic.
 
-- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using [FastAPI](https://fastapi.tiangolo.com/).
+- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API. Two runtime implementations available: FastAPI (default) and Rust/Axum (experimental, faster).
 
 - 🥞 **Automatic queue worker.** Long-running deep learning models or batch processing is best architected with a queue. Cog models do this out of the box. Redis is currently supported, with more in the pipeline.
 
@@ -1188,6 +1188,14 @@ Those are the basics! Next, you might want to take a look at:
 
 When you run a Docker image built by Cog, 
 it serves an HTTP API for making predictions.
+
+> [!NOTE]
+> Cog has two runtime implementations:
+> - **Default (Python)**: Uses FastAPI/Uvicorn
+> - **FFI (Rust)**: Uses Axum with PyO3 (experimental, faster, more stable)
+> 
+> Enable the FFI runtime by setting `USE_COGLET=1` environment variable.
+> Both expose the same HTTP API. See [architecture docs](../architecture/) for details.
 
 The server supports both synchronous and asynchronous prediction creation:
 
