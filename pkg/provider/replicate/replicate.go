@@ -11,10 +11,12 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"golang.org/x/term"
 
-	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/provider"
@@ -22,7 +24,13 @@ import (
 )
 
 // ReplicateProvider handles Replicate's r8.im registry
-type ReplicateProvider struct{}
+type ReplicateProvider struct {
+	// Analytics state (protected by mutex for thread safety)
+	mu        sync.Mutex
+	logClient *coglog.Client
+	logCtx    coglog.PushLogContext
+	started   time.Time
+}
 
 // New creates a new ReplicateProvider
 func New() *ReplicateProvider {
@@ -79,15 +87,61 @@ func (p *ReplicateProvider) LoginWithOptions(ctx context.Context, registryHost s
 	return nil
 }
 
-func (p *ReplicateProvider) PrePush(ctx context.Context, image string, cfg *config.Config) error {
-	// Future: Add Replicate-specific pre-push validation here
-	// For now, this is a no-op - the existing validation is in docker.Push
+func (p *ReplicateProvider) PrePush(ctx context.Context, opts provider.PushOptions) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// All features are supported for Replicate - no validation errors
+
+	// Start analytics
+	if opts.HTTPClient != nil {
+		p.logClient = coglog.NewClient(opts.HTTPClient)
+		p.logCtx = p.logClient.StartPush(opts.LocalImage)
+		p.logCtx.Fast = opts.FastPush
+		p.logCtx.CogRuntime = false
+		if opts.Config != nil && opts.Config.Build.CogRuntime != nil {
+			p.logCtx.CogRuntime = *opts.Config.Build.CogRuntime
+		}
+		p.started = time.Now()
+	}
+
+	if opts.FastPush {
+		console.Info("Fast push enabled.")
+	}
+
 	return nil
 }
 
-func (p *ReplicateProvider) PostPush(ctx context.Context, image string, cfg *config.Config, pushErr error) error {
-	// Future: Move coglog analytics and Replicate model registration here
-	// For now, this is a no-op - analytics are still in push.go
+func (p *ReplicateProvider) PostPush(ctx context.Context, opts provider.PushOptions, pushErr error) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// End analytics
+	if p.logClient != nil {
+		p.logClient.EndPush(ctx, pushErr, p.logCtx)
+	}
+
+	if pushErr != nil {
+		// Return Replicate-specific error message for 404s
+		if strings.Contains(pushErr.Error(), "404") {
+			return fmt.Errorf("Unable to find existing Replicate model for %s. "+
+				"Go to replicate.com and create a new model before pushing."+
+				"\n\n"+
+				"If the model already exists, you may be getting this error "+
+				"because you're not logged in as owner of the model. "+
+				"This can happen if you did `sudo cog login` instead of `cog login` "+
+				"or `sudo cog push` instead of `cog push`, "+
+				"which causes Docker to use the wrong Docker credentials.",
+				opts.Image)
+		}
+		return pushErr
+	}
+
+	// Success - show Replicate model URL
+	console.Infof("Image '%s' pushed", opts.Image)
+	replicatePage := fmt.Sprintf("https://%s", strings.Replace(opts.Image, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
+	console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
+
 	return nil
 }
 

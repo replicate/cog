@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/provider"
 )
 
@@ -34,12 +33,53 @@ func TestGenericProvider_Login(t *testing.T) {
 
 func TestGenericProvider_PrePush(t *testing.T) {
 	p := New()
-	err := p.PrePush(context.Background(), "ghcr.io/org/model", &config.Config{})
-	require.NoError(t, err)
+
+	t.Run("basic push succeeds", func(t *testing.T) {
+		opts := provider.PushOptions{
+			Image: "ghcr.io/org/model",
+		}
+		err := p.PrePush(context.Background(), opts)
+		require.NoError(t, err)
+	})
+
+	t.Run("local image push fails", func(t *testing.T) {
+		opts := provider.PushOptions{
+			Image:      "ghcr.io/org/model",
+			LocalImage: true,
+		}
+		err := p.PrePush(context.Background(), opts)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "local image push")
+	})
+
+	t.Run("fast push warns but succeeds", func(t *testing.T) {
+		opts := provider.PushOptions{
+			Image:    "ghcr.io/org/model",
+			FastPush: true,
+		}
+		// FastPush warns but doesn't error
+		err := p.PrePush(context.Background(), opts)
+		require.NoError(t, err)
+	})
 }
 
 func TestGenericProvider_PostPush(t *testing.T) {
 	p := New()
-	err := p.PostPush(context.Background(), "ghcr.io/org/model", &config.Config{}, nil)
-	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		opts := provider.PushOptions{
+			Image: "ghcr.io/org/model",
+		}
+		err := p.PostPush(context.Background(), opts, nil)
+		require.NoError(t, err)
+	})
+
+	t.Run("with error", func(t *testing.T) {
+		opts := provider.PushOptions{
+			Image: "ghcr.io/org/model",
+		}
+		pushErr := errors.New("push failed")
+		err := p.PostPush(context.Background(), opts, pushErr)
+		require.NoError(t, err) // PostPush itself doesn't error
+	})
 }

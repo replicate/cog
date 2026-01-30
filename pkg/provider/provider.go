@@ -3,12 +3,30 @@ package provider
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/replicate/cog/pkg/config"
 )
 
 // ErrUseDockerLogin is returned by Login() when provider doesn't support custom login
 var ErrUseDockerLogin = errors.New("use docker login")
+
+// PushOptions contains all options for a push operation
+type PushOptions struct {
+	Image      string
+	Config     *config.Config
+	ProjectDir string
+
+	// Feature flags
+	LocalImage bool
+	FastPush   bool
+
+	// For analytics
+	BuildID string
+
+	// HTTP client for API calls (may be nil for generic provider)
+	HTTPClient *http.Client
+}
 
 // Provider encapsulates registry-specific behavior
 type Provider interface {
@@ -22,9 +40,15 @@ type Provider interface {
 	// Returns ErrUseDockerLogin if provider doesn't support custom login
 	Login(ctx context.Context, registryHost string) error
 
-	// PrePush is called before pushing (for validation, setup, analytics start)
-	PrePush(ctx context.Context, image string, cfg *config.Config) error
+	// PrePush is called before pushing
+	// - Validates push options (returns error if unsupported features are used)
+	// - Starts analytics/telemetry
+	// - Any other pre-push setup
+	PrePush(ctx context.Context, opts PushOptions) error
 
-	// PostPush is called after successful push (for registration, analytics end)
-	PostPush(ctx context.Context, image string, cfg *config.Config, pushErr error) error
+	// PostPush is called after push attempt (success or failure)
+	// - Ends analytics/telemetry
+	// - Shows success message (e.g., Replicate model URL)
+	// - pushErr is nil on success, contains the push error on failure
+	PostPush(ctx context.Context, opts PushOptions, pushErr error) error
 }

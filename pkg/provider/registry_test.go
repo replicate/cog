@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/replicate/cog/pkg/config"
 )
 
 // mockProvider implements Provider for testing
@@ -27,11 +25,11 @@ func (m *mockProvider) Login(ctx context.Context, registryHost string) error {
 	return nil
 }
 
-func (m *mockProvider) PrePush(ctx context.Context, image string, cfg *config.Config) error {
+func (m *mockProvider) PrePush(ctx context.Context, opts PushOptions) error {
 	return nil
 }
 
-func (m *mockProvider) PostPush(ctx context.Context, image string, cfg *config.Config, pushErr error) error {
+func (m *mockProvider) PostPush(ctx context.Context, opts PushOptions, pushErr error) error {
 	return nil
 }
 

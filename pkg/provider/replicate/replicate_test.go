@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/provider"
 )
 
 func TestReplicateProvider_Name(t *testing.T) {
@@ -35,13 +36,19 @@ func TestReplicateProvider_MatchesRegistry(t *testing.T) {
 
 func TestReplicateProvider_PrePush(t *testing.T) {
 	p := New()
-	err := p.PrePush(context.Background(), "r8.im/user/model", nil)
+	opts := provider.PushOptions{
+		Image: "r8.im/user/model",
+	}
+	err := p.PrePush(context.Background(), opts)
 	require.NoError(t, err)
 }
 
 func TestReplicateProvider_PostPush(t *testing.T) {
 	p := New()
-	err := p.PostPush(context.Background(), "r8.im/user/model", nil, nil)
+	opts := provider.PushOptions{
+		Image: "r8.im/user/model",
+	}
+	err := p.PostPush(context.Background(), opts, nil)
 	require.NoError(t, err)
 }
 

@@ -2,16 +2,13 @@ package cli
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/go/uuid"
 
-	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/provider"
@@ -56,7 +53,7 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := http.ProvideHTTPClient(ctx, dockerClient)
+	httpClient, err := http.ProvideHTTPClient(ctx, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -82,35 +79,41 @@ func push(cmd *cobra.Command, args []string) error {
 
 	// Look up the provider for the target registry
 	p := provider.DefaultRegistry().ForImage(imageName)
-	isReplicate := p != nil && p.Name() == "replicate"
-
-	// Helper function for analytics - only logs when pushing to Replicate
-	var logClient *coglog.Client
-	var logCtx coglog.PushLogContext
-	if isReplicate {
-		logClient = coglog.NewClient(client)
-		logCtx = logClient.StartPush()
-		logCtx.Fast = buildFast
-		logCtx.CogRuntime = false
-		if src.Config.Build != nil && src.Config.Build.CogRuntime != nil {
-			logCtx.CogRuntime = *src.Config.Build.CogRuntime
-		}
+	if p == nil {
+		return fmt.Errorf("no provider found for image '%s'", imageName)
 	}
 
-	// Wrapper to conditionally log errors
-	endPushWithError := func(err error) error {
-		if isReplicate && logClient != nil {
-			logClient.EndPush(ctx, err, logCtx)
-		}
-		return err
-	}
-
-	annotations := map[string]string{}
+	// Build push options
 	buildID, err := uuid.NewV7()
 	if err != nil {
 		// Don't insert build ID but continue anyways
 		console.Debugf("Failed to create build ID %v", err)
-	} else {
+	}
+
+	pushOpts := provider.PushOptions{
+		Image:      imageName,
+		Config:     src.Config,
+		ProjectDir: src.ProjectDir,
+		FastPush:   buildFast,
+		BuildID:    buildID.String(),
+		HTTPClient: httpClient,
+	}
+
+	// PrePush: validation and setup (analytics start, feature checks)
+	if err := p.PrePush(ctx, pushOpts); err != nil {
+		return err
+	}
+
+	// If PrePush warned about FastPush but didn't error, disable it
+	// (GenericProvider warns but doesn't error for FastPush)
+	if buildFast && p.Name() != "replicate" {
+		buildFast = false
+		pushOpts.FastPush = false
+	}
+
+	// Build the image
+	annotations := map[string]string{}
+	if buildID.String() != "" {
 		annotations["run.cog.push_id"] = buildID.String()
 	}
 
@@ -118,56 +121,31 @@ func push(cmd *cobra.Command, args []string) error {
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, buildFast, annotations))
 	if err != nil {
-		return endPushWithError(err)
+		// Call PostPush to handle error logging/analytics
+		_ = p.PostPush(ctx, pushOpts, err)
+		return err
 	}
 
 	buildDuration := time.Since(startBuildTime)
 
+	// Push the image
 	console.Infof("\nPushing image '%s'...", m.ImageRef())
-	if buildFast {
-		if isReplicate {
-			console.Info("Fast push enabled.")
-		} else {
-			console.Warnf("Fast push (--x-fast) is only supported for Replicate's registry (%s). Falling back to standard push.", global.ReplicateRegistryHost)
-			buildFast = false
-		}
-	}
 
-	err = docker.Push(ctx, m.ImageRef(), buildFast, src.ProjectDir, dockerClient, docker.BuildInfo{
+	pushErr := docker.Push(ctx, m.ImageRef(), buildFast, src.ProjectDir, dockerClient, docker.BuildInfo{
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
-	}, client, src.Config)
-	if err != nil {
-		if strings.Contains(err.Error(), "404") {
-			if isReplicate {
-				// Replicate-specific error message with helpful hints
-				err = fmt.Errorf("Unable to find existing Replicate model for %s. "+
-					"Go to replicate.com and create a new model before pushing."+
-					"\n\n"+
-					"If the model already exists, you may be getting this error "+
-					"because you're not logged in as owner of the model. "+
-					"This can happen if you did `sudo cog login` instead of `cog login` "+
-					"or `sudo cog push` instead of `cog push`, "+
-					"which causes Docker to use the wrong Docker credentials.",
-					imageName)
-			} else {
-				// Generic error message for other registries
-				err = fmt.Errorf("Failed to push image %s: repository not found (404). "+
-					"Please ensure the repository exists and you have push access. "+
-					"You may need to run 'docker login' to authenticate.",
-					imageName)
-			}
-			return endPushWithError(err)
-		}
-		err = fmt.Errorf("Failed to push image: %w", err)
-		return endPushWithError(err)
+	}, httpClient, src.Config)
+
+	// PostPush: cleanup, analytics end, success/error messages
+	// The provider handles formatting errors and showing success messages
+	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {
+		return err
 	}
 
-	console.Infof("Image '%s' pushed", imageName)
-	if isReplicate {
-		replicatePage := fmt.Sprintf("https://%s", strings.Replace(imageName, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
-		console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
-		logClient.EndPush(ctx, nil, logCtx)
+	// If there was a push error but PostPush didn't return one,
+	// return a generic error
+	if pushErr != nil {
+		return fmt.Errorf("failed to push image: %w", pushErr)
 	}
 
 	return nil
