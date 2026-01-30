@@ -2,14 +2,10 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"net/http"
 
 	"github.com/replicate/cog/pkg/config"
 )
-
-// ErrUseDockerLogin is returned by Login() when provider doesn't support custom login
-var ErrUseDockerLogin = errors.New("use docker login")
 
 // PushOptions contains all options for a push operation
 type PushOptions struct {
@@ -37,7 +33,6 @@ type Provider interface {
 	MatchesRegistry(host string) bool
 
 	// Login performs provider-specific authentication
-	// Returns ErrUseDockerLogin if provider doesn't support custom login
 	Login(ctx context.Context, registryHost string) error
 
 	// PrePush is called before pushing

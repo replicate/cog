@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -24,7 +23,8 @@ func newLoginCommand() *cobra.Command {
 For Replicate's registry (r8.im), this command handles authentication
 through Replicate's token-based flow.
 
-For other registries, use 'docker login' directly.`,
+For other registries, this command prompts for username and password,
+then stores credentials using Docker's credential system.`,
 		RunE: login,
 		Args: cobra.MaximumNArgs(0),
 	}
@@ -63,17 +63,7 @@ func login(cmd *cobra.Command, args []string) error {
 	}
 
 	// For other providers, use regular Login
-	err = p.Login(ctx, registryHost)
-	if errors.Is(err, provider.ErrUseDockerLogin) {
-		console.Infof("Registry '%s' doesn't have a custom login flow.", registryHost)
-		console.Infof("Please use 'docker login %s' to authenticate.", registryHost)
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return p.Login(ctx, registryHost)
 }
 
 // LoginToRegistry performs login for a specific registry host with options
@@ -92,9 +82,5 @@ func LoginToRegistry(ctx context.Context, registryHost string, tokenStdin bool) 
 	}
 
 	// For other providers, use regular Login
-	err := p.Login(ctx, registryHost)
-	if errors.Is(err, provider.ErrUseDockerLogin) {
-		return fmt.Errorf("registry '%s' doesn't have a custom login flow; please use 'docker login %s'", registryHost, registryHost)
-	}
-	return err
+	return p.Login(ctx, registryHost)
 }
