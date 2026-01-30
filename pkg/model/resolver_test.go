@@ -235,7 +235,7 @@ func TestResolver_Inspect_RemoteOnly_NotFound(t *testing.T) {
 	docker := &mockDocker{}
 	reg := &mockRegistry{
 		inspectFunc: func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error) {
-			return nil, errors.New("manifest unknown")
+			return nil, registry.NotFoundError
 		},
 	}
 
@@ -367,6 +367,7 @@ func TestResolver_Inspect_PreferLocal_NoFallbackOnRealError(t *testing.T) {
 	_, err = resolver.Inspect(context.Background(), ref)
 
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to inspect local image")
 	require.Contains(t, err.Error(), "connection refused")
 }
 
@@ -462,6 +463,7 @@ func TestResolver_Inspect_PreferRemote_NoFallbackOnRealError(t *testing.T) {
 	_, err = resolver.Inspect(context.Background(), ref, PreferRemote())
 
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to inspect remote image")
 	require.Contains(t, err.Error(), "authentication required")
 }
 

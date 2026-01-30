@@ -11,8 +11,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-
-	"github.com/replicate/cog/pkg/util/console"
 )
 
 var NotFoundError = errors.New("image reference not found")
@@ -70,11 +68,15 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 			}
 			// For indexes, pick a default image to get labels from.
 			// Prefer linux/amd64, otherwise use the first manifest.
-			if defaultImg := pickDefaultImage(ctx, ref, indexManifest); defaultImg != nil {
-				if configFile, err := defaultImg.ConfigFile(); err == nil {
-					result.Labels = configFile.Config.Labels
-				}
+			defaultImg, err := pickDefaultImage(ctx, ref, indexManifest)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read image config from index: %w", err)
 			}
+			configFile, err := defaultImg.ConfigFile()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get image config: %w", err)
+			}
+			result.Labels = configFile.Config.Labels
 			return result, nil
 
 		case types.OCIManifestSchema1, types.DockerManifestSchema2:
@@ -273,8 +275,8 @@ func checkError(err error, codes ...transport.ErrorCode) bool {
 
 // pickDefaultImage selects an image from a manifest index to use for fetching labels.
 // Prefers linux/amd64, otherwise returns the first image manifest.
-// Returns nil if no suitable image is found or if fetching fails.
-func pickDefaultImage(ctx context.Context, ref name.Reference, idx *v1.IndexManifest) v1.Image {
+// Returns an error if no suitable image is found or if fetching fails.
+func pickDefaultImage(ctx context.Context, ref name.Reference, idx *v1.IndexManifest) (v1.Image, error) {
 	var targetDigest string
 
 	// First, look for linux/amd64
@@ -291,14 +293,12 @@ func pickDefaultImage(ctx context.Context, ref name.Reference, idx *v1.IndexMani
 	}
 
 	if targetDigest == "" {
-		console.Debugf("pickDefaultImage: no manifests in index for %s", ref.String())
-		return nil
+		return nil, fmt.Errorf("index for %s contains no manifests", ref.String())
 	}
 
 	digestRef, err := name.NewDigest(ref.Context().Name()+"@"+targetDigest, name.Insecure)
 	if err != nil {
-		console.Debugf("pickDefaultImage: failed to create digest ref: %v", err)
-		return nil
+		return nil, fmt.Errorf("failed to create digest reference: %w", err)
 	}
 
 	desc, err := remote.Get(digestRef,
@@ -306,15 +306,13 @@ func pickDefaultImage(ctx context.Context, ref name.Reference, idx *v1.IndexMani
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
 	)
 	if err != nil {
-		console.Debugf("pickDefaultImage: failed to fetch image %s: %v", digestRef.String(), err)
-		return nil
+		return nil, fmt.Errorf("failed to fetch image %s: %w", digestRef.String(), err)
 	}
 
 	img, err := desc.Image()
 	if err != nil {
-		console.Debugf("pickDefaultImage: failed to load image %s: %v", digestRef.String(), err)
-		return nil
+		return nil, fmt.Errorf("failed to load image %s: %w", digestRef.String(), err)
 	}
 
-	return img
+	return img, nil
 }

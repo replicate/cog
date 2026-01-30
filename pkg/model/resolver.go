@@ -267,7 +267,10 @@ func (r *Resolver) BuildBase(ctx context.Context, src *Source, opts BuildBaseOpt
 func (r *Resolver) loadLocal(ctx context.Context, ref *ParsedRef) (*Model, error) {
 	resp, err := r.docker.Inspect(ctx, ref.String())
 	if err != nil {
-		return nil, fmt.Errorf("image %s not found locally: %w", ref.Original, err)
+		if isNotFoundError(err) {
+			return nil, fmt.Errorf("image %s not found locally: %w", ref.Original, err)
+		}
+		return nil, fmt.Errorf("failed to inspect local image %s: %w", ref.Original, err)
 	}
 	return r.modelFromInspect(ref, resp, ImageSourceLocal)
 }
@@ -276,7 +279,10 @@ func (r *Resolver) loadLocal(ctx context.Context, ref *ParsedRef) (*Model, error
 func (r *Resolver) loadRemote(ctx context.Context, ref *ParsedRef, platform *registry.Platform) (*Model, error) {
 	manifest, err := r.registry.Inspect(ctx, ref.String(), platform)
 	if err != nil {
-		return nil, fmt.Errorf("image %s not found in registry: %w", ref.Original, err)
+		if errors.Is(err, registry.NotFoundError) {
+			return nil, fmt.Errorf("image %s not found in registry: %w", ref.Original, err)
+		}
+		return nil, fmt.Errorf("failed to inspect remote image %s: %w", ref.Original, err)
 	}
 	return r.modelFromManifest(ref, manifest, ImageSourceRemote)
 }

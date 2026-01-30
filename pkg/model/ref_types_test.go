@@ -274,7 +274,7 @@ func TestRemoteRef_Resolve_NotFound(t *testing.T) {
 	docker := &mockDocker{}
 	reg := &mockRegistry{
 		inspectFunc: func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error) {
-			return nil, errors.New("manifest unknown")
+			return nil, registry.NotFoundError
 		},
 	}
 
