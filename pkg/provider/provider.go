@@ -24,6 +24,11 @@ type PushOptions struct {
 	HTTPClient *http.Client
 }
 
+type LoginOptions struct {
+	TokenStdin bool
+	Host       string
+}
+
 // Provider encapsulates registry-specific behavior
 type Provider interface {
 	// Name returns the provider identifier (e.g., "replicate", "generic")
@@ -33,7 +38,7 @@ type Provider interface {
 	MatchesRegistry(host string) bool
 
 	// Login performs provider-specific authentication
-	Login(ctx context.Context, registryHost string) error
+	Login(ctx context.Context, opts LoginOptions) error
 
 	// PrePush is called before pushing
 	// - Validates push options (returns error if unsupported features are used)

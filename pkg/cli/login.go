@@ -1,14 +1,10 @@
 package cli
 
 import (
-	"context"
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/provider"
-	"github.com/replicate/cog/pkg/provider/replicate"
 	"github.com/replicate/cog/pkg/provider/setup"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -57,30 +53,8 @@ func login(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Check if this is the Replicate provider which supports LoginWithOptions
-	if rp, ok := p.(*replicate.ReplicateProvider); ok {
-		return rp.LoginWithOptions(ctx, registryHost, tokenStdin, nil)
-	}
-
-	// For other providers, use regular Login
-	return p.Login(ctx, registryHost)
-}
-
-// LoginToRegistry performs login for a specific registry host with options
-// This is exported for use by other commands that may need to trigger login
-func LoginToRegistry(ctx context.Context, registryHost string, tokenStdin bool) error {
-	setup.Init()
-
-	p := provider.DefaultRegistry().ForHost(registryHost)
-	if p == nil {
-		return fmt.Errorf("no provider found for registry '%s'", registryHost)
-	}
-
-	// Check if this is the Replicate provider which supports LoginWithOptions
-	if rp, ok := p.(*replicate.ReplicateProvider); ok {
-		return rp.LoginWithOptions(ctx, registryHost, tokenStdin, nil)
-	}
-
-	// For other providers, use regular Login
-	return p.Login(ctx, registryHost)
+	return p.Login(ctx, provider.LoginOptions{
+		TokenStdin: tokenStdin,
+		Host:       registryHost,
+	})
 }

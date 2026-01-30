@@ -30,8 +30,9 @@ func (p *GenericProvider) MatchesRegistry(host string) bool {
 	return true // Fallback - matches everything
 }
 
-func (p *GenericProvider) Login(ctx context.Context, registryHost string) error {
-	console.Infof("Logging in to %s", registryHost)
+func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions) error {
+
+	console.Infof("Logging in to %s", opts.Host)
 	console.Info("")
 
 	// Prompt for username
@@ -61,11 +62,11 @@ func (p *GenericProvider) Login(ctx context.Context, registryHost string) error 
 	}
 
 	// Save credentials using Docker's credential system
-	if err := docker.SaveLoginToken(ctx, registryHost, username, password); err != nil {
+	if err := docker.SaveLoginToken(ctx, opts.Host, username, password); err != nil {
 		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 
-	console.Infof("Login succeeded for %s", registryHost)
+	console.Infof("Login succeeded for %s", opts.Host)
 	return nil
 }
 

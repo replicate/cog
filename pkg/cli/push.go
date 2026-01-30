@@ -59,6 +59,10 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if buildFast {
+		console.Warn("The `--x-fast` flag is deprecated and will be removed in future versions.")
+	}
+
 	// In case one of `--x-fast` & `fast: bool` is set
 	if cfg.Build.Fast {
 		buildFast = cfg.Build.Fast
