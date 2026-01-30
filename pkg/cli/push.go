@@ -25,7 +25,7 @@ func newPushCommand() *cobra.Command {
 		Use: "push [IMAGE]",
 
 		Short:   "Build and push model in current directory to a Docker registry",
-		Example: `cog push r8.im/your-username/hotdog-detector`,
+		Example: `cog push registry.example.com/your-username/model-name`,
 		RunE:    push,
 		Args:    cobra.MaximumNArgs(1),
 	}
@@ -85,7 +85,7 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	if imageName == "" {
-		err = fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push r8.im/your-username/hotdog-detector'")
+		err = fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.example.com/your-username/model-name'")
 		logClient.EndPush(ctx, err, logCtx)
 		return err
 	}
