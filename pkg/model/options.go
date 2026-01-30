@@ -40,6 +40,15 @@ type BuildOptions struct {
 
 	// DockerfileFile is a custom Dockerfile path.
 	DockerfileFile string
+
+	// OCIIndex enables building an OCI Image Index with weights artifact.
+	// This is a feature flag for the new OCI bundle format.
+	// When enabled, WeightsLockPath must also be set.
+	OCIIndex bool
+
+	// WeightsLockPath is the path to the weights.lock file.
+	// Only used when OCIIndex is true.
+	WeightsLockPath string
 }
 
 // WithDefaults returns a copy of BuildOptions with defaults applied from Source.
