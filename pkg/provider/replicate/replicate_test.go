@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/provider"
 )
@@ -48,8 +49,28 @@ func TestReplicateProvider_PostPush(t *testing.T) {
 	opts := provider.PushOptions{
 		Image: "r8.im/user/model",
 	}
-	err := p.PostPush(context.Background(), opts, nil)
-	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		err := p.PostPush(context.Background(), opts, nil)
+		require.NoError(t, err)
+	})
+
+	t.Run("repository not found error", func(t *testing.T) {
+		// Simulate a NotFoundError from docker push (repository doesn't exist)
+		pushErr := &command.NotFoundError{Ref: "r8.im/user/model", Object: "repository"}
+		err := p.PostPush(context.Background(), opts, pushErr)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Unable to find existing Replicate model")
+		require.Contains(t, err.Error(), "replicate.com and create a new model")
+	})
+
+	t.Run("tag not found error", func(t *testing.T) {
+		// Tag not found errors should also trigger the helpful message
+		pushErr := &command.NotFoundError{Ref: "r8.im/user/model:v1", Object: "tag"}
+		err := p.PostPush(context.Background(), opts, pushErr)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Unable to find existing Replicate model")
+	})
 }
 
 func TestCheckTokenFormat(t *testing.T) {
