@@ -24,7 +24,6 @@ type buildLog struct {
 	BuildError *string `json:"error"`
 	Fast       bool    `json:"fast"`
 	CogRuntime bool    `json:"cog_runtime"`
-	LocalImage bool    `json:"local_image"`
 }
 
 type pushLog struct {
@@ -32,7 +31,6 @@ type pushLog struct {
 	BuildError *string `json:"error"`
 	Fast       bool    `json:"fast"`
 	CogRuntime bool    `json:"cog_runtime"`
-	LocalImage bool    `json:"local_image"`
 }
 
 type pullLog struct {
@@ -46,10 +44,9 @@ func NewClient(client *http.Client) *Client {
 	}
 }
 
-func (c *Client) StartBuild(localImage bool) BuildLogContext {
+func (c *Client) StartBuild() BuildLogContext {
 	logContext := BuildLogContext{
-		started:    time.Now(),
-		localImage: localImage,
+		started: time.Now(),
 	}
 	return logContext
 }
@@ -65,7 +62,6 @@ func (c *Client) EndBuild(ctx context.Context, err error, logContext BuildLogCon
 		BuildError: errorStr,
 		Fast:       logContext.Fast,
 		CogRuntime: logContext.CogRuntime,
-		LocalImage: logContext.localImage,
 	}
 
 	jsonData, err := json.Marshal(buildLog)
@@ -83,10 +79,9 @@ func (c *Client) EndBuild(ctx context.Context, err error, logContext BuildLogCon
 	return true
 }
 
-func (c *Client) StartPush(localImage bool) PushLogContext {
+func (c *Client) StartPush() PushLogContext {
 	logContext := PushLogContext{
-		started:    time.Now(),
-		localImage: localImage,
+		started: time.Now(),
 	}
 	return logContext
 }
@@ -102,7 +97,6 @@ func (c *Client) EndPush(ctx context.Context, err error, logContext PushLogConte
 		BuildError: errorStr,
 		Fast:       logContext.Fast,
 		CogRuntime: logContext.CogRuntime,
-		LocalImage: logContext.localImage,
 	}
 
 	jsonData, err := json.Marshal(pushLog)

@@ -92,10 +92,6 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		Volumes: []command.Volume{{Source: src.ProjectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
-	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerClient, runOptions)
-	if err != nil {
-		return err
-	}
 
 	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000})
 
