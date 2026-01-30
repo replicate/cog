@@ -56,6 +56,32 @@ func push(cmd *cobra.Command, args []string) error {
 	// Initialize the provider registry
 	setup.Init()
 
+	// Get config first to determine the image name
+	cfg, projectDir, err := config.GetConfig(configFilename)
+	if err != nil {
+		return err
+	}
+
+	// In case one of `--x-fast` & `fast: bool` is set
+	if cfg.Build.Fast {
+		buildFast = cfg.Build.Fast
+	}
+
+	// Determine image name
+	imageName := cfg.Image
+	if len(args) > 0 {
+		imageName = args[0]
+	}
+
+	if imageName == "" {
+		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.example.com/your-username/model-name'")
+	}
+
+	// Look up the provider for the target registry
+	p := provider.DefaultRegistry().ForImage(imageName)
+	isReplicate := p != nil && p.Name() == "replicate"
+
+	// Set up analytics client (only used for Replicate)
 	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
 		return err
@@ -65,44 +91,31 @@ func push(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	logClient := coglog.NewClient(client)
-	logCtx := logClient.StartPush(buildLocalImage)
 
-	cfg, projectDir, err := config.GetConfig(configFilename)
-	if err != nil {
-		logClient.EndPush(ctx, err, logCtx)
+	// Helper function for analytics - only logs when pushing to Replicate
+	var logClient *coglog.Client
+	var logCtx coglog.PushLogContext
+	if isReplicate {
+		logClient = coglog.NewClient(client)
+		logCtx = logClient.StartPush(buildLocalImage)
+		logCtx.Fast = buildFast
+		logCtx.CogRuntime = false
+		if cfg.Build.CogRuntime != nil {
+			logCtx.CogRuntime = *cfg.Build.CogRuntime
+		}
+	}
+
+	// Wrapper to conditionally log errors
+	endPushWithError := func(err error) error {
+		if isReplicate && logClient != nil {
+			logClient.EndPush(ctx, err, logCtx)
+		}
 		return err
 	}
-	// In case one of `--x-fast` & `fast: bool` is set
-	if cfg.Build.Fast {
-		buildFast = cfg.Build.Fast
-	}
-	logCtx.Fast = buildFast
-	logCtx.CogRuntime = false
-	if cfg.Build.CogRuntime != nil {
-		logCtx.CogRuntime = *cfg.Build.CogRuntime
-	}
-
-	imageName := cfg.Image
-	if len(args) > 0 {
-		imageName = args[0]
-	}
-
-	if imageName == "" {
-		err = fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.example.com/your-username/model-name'")
-		logClient.EndPush(ctx, err, logCtx)
-		return err
-	}
-
-	// Look up the provider for the target registry
-	p := provider.DefaultRegistry().ForImage(imageName)
-	isReplicate := p != nil && p.Name() == "replicate"
 
 	// Local image push is only supported for Replicate
 	if !isReplicate && buildLocalImage {
-		err = fmt.Errorf("Local image push (--local-image) is only supported for Replicate's registry (%s). Please disable the --local-image flag when pushing to other registries.", global.ReplicateRegistryHost)
-		logClient.EndPush(ctx, err, logCtx)
-		return err
+		return fmt.Errorf("Local image push (--local-image) is only supported for Replicate's registry (%s). Please disable the --local-image flag when pushing to other registries.", global.ReplicateRegistryHost)
 	}
 
 	annotations := map[string]string{}
@@ -177,20 +190,18 @@ func push(cmd *cobra.Command, args []string) error {
 					"You may need to run 'docker login' to authenticate.",
 					imageName)
 			}
-			logClient.EndPush(ctx, err, logCtx)
-			return err
+			return endPushWithError(err)
 		}
 		err = fmt.Errorf("Failed to push image: %w", err)
-		logClient.EndPush(ctx, err, logCtx)
-		return err
+		return endPushWithError(err)
 	}
 
 	console.Infof("Image '%s' pushed", imageName)
 	if isReplicate {
 		replicatePage := fmt.Sprintf("https://%s", strings.Replace(imageName, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
 		console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
+		logClient.EndPush(ctx, nil, logCtx)
 	}
-	logClient.EndPush(ctx, nil, logCtx)
 
 	return nil
 }
