@@ -179,7 +179,6 @@ func TestLabelKeys(t *testing.T) {
 	require.Equal(t, "run.cog.version", LabelVersion)
 	require.Equal(t, "run.cog.openapi_schema", LabelOpenAPISchema)
 	require.Equal(t, "run.cog.r8_weights_manifest", LabelWeightsManifest)
-	require.Equal(t, "run.cog.r8_model_dependencies", LabelModelDependencies)
 }
 
 // =============================================================================

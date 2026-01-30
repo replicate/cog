@@ -68,7 +68,6 @@ the prediction on that.`,
 	addFastFlag(cmd)
 	addLocalImage(cmd)
 	addConfigFlag(cmd)
-	addPipelineImage(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
@@ -187,7 +186,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			buildFast = true
 		}
 
-		if buildFast || pipelinesImage {
+		if buildFast {
 			m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, "", buildFast, nil))
 			if err != nil {
 				return err
