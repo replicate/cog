@@ -337,6 +337,44 @@ func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.Manifest
 	return model, nil
 }
 
+// isOCIIndex checks if the manifest result is an OCI Image Index.
+func isOCIIndex(mr *registry.ManifestResult) bool {
+	return mr.IsIndex()
+}
+
+// findWeightsManifest finds the weights manifest in an index.
+// Returns nil if no weights manifest is found.
+func findWeightsManifest(manifests []registry.PlatformManifest) *registry.PlatformManifest {
+	for i := range manifests {
+		m := &manifests[i]
+		if m.Annotations != nil && m.Annotations[AnnotationReferenceType] == "weights" {
+			return m
+		}
+	}
+	return nil
+}
+
+// findImageManifest finds the model image manifest in an index.
+// If platform is specified, matches on OS/Architecture.
+// Skips artifacts (platform: unknown/unknown).
+func findImageManifest(manifests []registry.PlatformManifest, platform *registry.Platform) *registry.PlatformManifest {
+	for i := range manifests {
+		m := &manifests[i]
+		// Skip artifacts (unknown platform)
+		if m.OS == "unknown" {
+			continue
+		}
+		// Match platform if specified
+		if platform != nil {
+			if m.OS != platform.OS || m.Architecture != platform.Architecture {
+				continue
+			}
+		}
+		return m
+	}
+	return nil
+}
+
 // isNotFoundError checks if an error indicates "not found" vs a real error.
 // Only "not found" errors should trigger fallback to alternative source.
 func isNotFoundError(err error) bool {

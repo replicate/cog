@@ -34,3 +34,13 @@ func (c *MockRegistryClient) Inspect(ctx context.Context, imageRef string, platf
 func (c *MockRegistryClient) AddMockImage(imageRef string) {
 	c.mockImages[imageRef] = true
 }
+
+func (c *MockRegistryClient) PushImage(ctx context.Context, ref string, img v1.Image) error {
+	c.mockImages[ref] = true
+	return nil
+}
+
+func (c *MockRegistryClient) PushIndex(ctx context.Context, ref string, idx v1.ImageIndex) error {
+	c.mockImages[ref] = true
+	return nil
+}

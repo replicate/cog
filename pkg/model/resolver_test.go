@@ -95,6 +95,14 @@ func (m *mockRegistry) Exists(ctx context.Context, ref string) (bool, error) {
 	panic("not implemented")
 }
 
+func (m *mockRegistry) PushImage(ctx context.Context, ref string, img v1.Image) error {
+	panic("not implemented")
+}
+
+func (m *mockRegistry) PushIndex(ctx context.Context, ref string, idx v1.ImageIndex) error {
+	panic("not implemented")
+}
+
 // mockFactory implements Factory for testing.
 type mockFactory struct {
 	name          string
@@ -885,6 +893,92 @@ func TestResolver_Pull_LocalInspectRealError(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "connection refused")
+}
+
+func TestIndexDetectionHelpers(t *testing.T) {
+	t.Run("findWeightsManifest", func(t *testing.T) {
+		manifests := []registry.PlatformManifest{
+			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},
+			{
+				Digest:       "sha256:weights456",
+				OS:           "unknown",
+				Architecture: "unknown",
+				Annotations: map[string]string{
+					AnnotationReferenceType: "weights",
+				},
+			},
+		}
+
+		wm := findWeightsManifest(manifests)
+		require.NotNil(t, wm)
+		require.Equal(t, "sha256:weights456", wm.Digest)
+	})
+
+	t.Run("findWeightsManifest not found", func(t *testing.T) {
+		manifests := []registry.PlatformManifest{
+			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},
+		}
+
+		wm := findWeightsManifest(manifests)
+		require.Nil(t, wm)
+	})
+
+	t.Run("findImageManifest", func(t *testing.T) {
+		manifests := []registry.PlatformManifest{
+			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},
+			{Digest: "sha256:weights456", OS: "unknown", Architecture: "unknown"},
+		}
+
+		platform := &registry.Platform{OS: "linux", Architecture: "amd64"}
+		im := findImageManifest(manifests, platform)
+		require.NotNil(t, im)
+		require.Equal(t, "sha256:image123", im.Digest)
+	})
+
+	t.Run("findImageManifest skips unknown", func(t *testing.T) {
+		manifests := []registry.PlatformManifest{
+			{Digest: "sha256:weights456", OS: "unknown", Architecture: "unknown"},
+		}
+
+		im := findImageManifest(manifests, nil)
+		require.Nil(t, im)
+	})
+
+	t.Run("findImageManifest no platform filter", func(t *testing.T) {
+		manifests := []registry.PlatformManifest{
+			{Digest: "sha256:arm123", OS: "linux", Architecture: "arm64"},
+			{Digest: "sha256:weights456", OS: "unknown", Architecture: "unknown"},
+		}
+
+		im := findImageManifest(manifests, nil)
+		require.NotNil(t, im)
+		require.Equal(t, "sha256:arm123", im.Digest)
+	})
+
+	t.Run("findImageManifest platform mismatch", func(t *testing.T) {
+		manifests := []registry.PlatformManifest{
+			{Digest: "sha256:arm123", OS: "linux", Architecture: "arm64"},
+			{Digest: "sha256:weights456", OS: "unknown", Architecture: "unknown"},
+		}
+
+		platform := &registry.Platform{OS: "linux", Architecture: "amd64"}
+		im := findImageManifest(manifests, platform)
+		require.Nil(t, im)
+	})
+
+	t.Run("isOCIIndex with index", func(t *testing.T) {
+		mr := &registry.ManifestResult{
+			MediaType: "application/vnd.oci.image.index.v1+json",
+		}
+		require.True(t, isOCIIndex(mr))
+	})
+
+	t.Run("isOCIIndex with single manifest", func(t *testing.T) {
+		mr := &registry.ManifestResult{
+			MediaType: "application/vnd.oci.image.manifest.v1+json",
+		}
+		require.False(t, isOCIIndex(mr))
+	})
 }
 
 func TestIsNotFoundError(t *testing.T) {
