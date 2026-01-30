@@ -14,6 +14,12 @@ type Model struct {
 	Config     *config.Config // Parsed cog.yaml
 	Schema     *openapi3.T    // OpenAPI schema
 	CogVersion string         // Version of cog used to build
+
+	// V2 (OCI Index) fields
+	Format ModelFormat // OCI structure (image or index)
+	Index  *Index      // OCI Image Index (v2 format only, nil for v1)
+	// TODO: WeightsManifest *WeightsManifest - weight file metadata (v2 format only, nil for v1)
+	// WeightsManifest type will be added in a subsequent task
 }
 
 // HasGPU returns true if the model requires GPU.
@@ -35,4 +41,9 @@ func (m *Model) ImageRef() string {
 		return ""
 	}
 	return m.Image.Reference
+}
+
+// IsIndexed returns true if this model uses the OCI Index format (v2).
+func (m *Model) IsIndexed() bool {
+	return m.Format == ModelFormatIndex
 }
