@@ -33,6 +33,15 @@ func isAuthorizationFailedError(err error) bool {
 	return false
 }
 
+// isRepositoryNotFoundError checks if the error indicates that the repository
+// doesn't exist on the registry. This typically means the model hasn't been
+// created on Replicate yet.
+func isRepositoryNotFoundError(err error) bool {
+	msg := err.Error()
+	// NAME_UNKNOWN is an OCI registry error code meaning "repository name not known to registry"
+	return strings.Contains(msg, "NAME_UNKNOWN")
+}
+
 func isMissingDeviceDriverError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "could not select device driver") ||

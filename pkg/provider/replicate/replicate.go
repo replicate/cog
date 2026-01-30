@@ -18,6 +18,7 @@ import (
 
 	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/provider"
 	"github.com/replicate/cog/pkg/util/console"
@@ -122,8 +123,8 @@ func (p *ReplicateProvider) PostPush(ctx context.Context, opts provider.PushOpti
 	}
 
 	if pushErr != nil {
-		// Return Replicate-specific error message for 404s
-		if strings.Contains(pushErr.Error(), "404") {
+		// Return Replicate-specific error message for repository not found errors
+		if command.IsNotFoundError(pushErr) {
 			return fmt.Errorf("Unable to find existing Replicate model for %s. "+
 				"Go to replicate.com and create a new model before pushing."+
 				"\n\n"+
