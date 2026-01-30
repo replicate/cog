@@ -22,24 +22,6 @@ func TestInit(t *testing.T) {
 	require.FileExists(t, path.Join(dir, "requirements.txt"))
 }
 
-func TestInitPipeline(t *testing.T) {
-	dir := t.TempDir()
-
-	require.NoError(t, os.Chdir(dir))
-
-	pipelineTemplate = true
-	t.Cleanup(func() {
-		pipelineTemplate = false
-	})
-
-	err := initCommand(nil, []string{"--x-pipeline"})
-	require.NoError(t, err)
-
-	require.FileExists(t, path.Join(dir, ".dockerignore"))
-	require.FileExists(t, path.Join(dir, "cog.yaml"))
-	require.FileExists(t, path.Join(dir, "main.py"))
-}
-
 func TestInitSkipExisting(t *testing.T) {
 	dir := t.TempDir()
 

@@ -18,8 +18,6 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-var pipelinesImage bool
-
 func newPushCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "push [IMAGE]",
@@ -42,7 +40,6 @@ func newPushCommand() *cobra.Command {
 	addFastFlag(cmd)
 	addLocalImage(cmd)
 	addConfigFlag(cmd)
-	addPipelineImage(cmd)
 
 	return cmd
 }
@@ -123,7 +120,6 @@ func push(cmd *cobra.Command, args []string) error {
 	err = docker.Push(ctx, m.ImageRef(), buildFast, src.ProjectDir, dockerClient, docker.BuildInfo{
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
-		Pipeline:  pipelinesImage,
 	}, client, src.Config)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
@@ -152,10 +148,4 @@ func push(cmd *cobra.Command, args []string) error {
 	logClient.EndPush(ctx, nil, logCtx)
 
 	return nil
-}
-
-func addPipelineImage(cmd *cobra.Command) {
-	const pipeline = "x-pipeline"
-	cmd.Flags().BoolVar(&pipelinesImage, pipeline, false, "Whether to use the experimental pipeline feature")
-	_ = cmd.Flags().MarkHidden(pipeline)
 }

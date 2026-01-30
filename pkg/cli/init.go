@@ -5,23 +5,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 )
 
-var (
-	//go:embed init-templates/**/*
-	initTemplates    embed.FS
-	pipelineTemplate bool
-)
+//go:embed init-templates/**/*
+var initTemplates embed.FS
 
 func newInitCommand() *cobra.Command {
 	var cmd = &cobra.Command{
@@ -32,7 +27,6 @@ func newInitCommand() *cobra.Command {
 		Args:       cobra.MaximumNArgs(0),
 	}
 
-	addPipelineInit(cmd)
 	return cmd
 }
 
@@ -45,9 +39,6 @@ func initCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	initTemplate := "base"
-	if pipelineTemplate {
-		initTemplate = "pipeline"
-	}
 
 	// Discover all files in the embedded template directory
 	templateDir := path.Join("init-templates", initTemplate)
@@ -137,20 +128,6 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 		} else {
 			content = downloadedContent
 		}
-	case filename == "requirements.txt" && pipelineTemplate:
-		// Special handling for requirements.txt in pipeline templates - download from runtime
-		downloadedContent, err := downloadPipelineRequirementsFile()
-		if err != nil {
-			console.Infof("Failed to download pipeline requirements.txt: %v", err)
-			console.Infof("Using template version instead...")
-			// Fall back to template version
-			content, err = fs.ReadFile(path.Join(templateDir, filename))
-			if err != nil {
-				return fmt.Errorf("Error reading template %s: %w", filename, err)
-			}
-		} else {
-			content = downloadedContent
-		}
 	default:
 		// Regular template file processing
 		content, err = fs.ReadFile(path.Join(templateDir, filename))
@@ -168,7 +145,7 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 }
 
 func downloadAgentsFile() ([]byte, error) {
-	const agentsURL = "https://replicate.com/docs/reference/pipelines/llms.txt"
+	const agentsURL = "https://replicate.com/docs/reference/cog/llms.txt"
 
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -190,44 +167,4 @@ func downloadAgentsFile() ([]byte, error) {
 	}
 
 	return content, nil
-}
-
-func downloadPipelineRequirementsFile() ([]byte, error) {
-	requirementsURL := pipelinesRuntimeRequirementsURL()
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	resp, err := client.Get(requirementsURL.String())
-	if err != nil {
-		return nil, fmt.Errorf("%w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	content, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	return content, nil
-}
-
-func pipelinesRuntimeRequirementsURL() url.URL {
-	baseURL := url.URL{
-		Scheme: env.SchemeFromEnvironment(),
-		Host:   env.PipelinesRuntimeHostFromEnvironment(),
-	}
-	baseURL.Path = "requirements.txt"
-	return baseURL
-}
-
-func addPipelineInit(cmd *cobra.Command) {
-	const pipeline = "x-pipeline"
-	cmd.Flags().BoolVar(&pipelineTemplate, pipeline, false, "Initialize a pipeline template")
-	_ = cmd.Flags().MarkHidden(pipeline)
 }

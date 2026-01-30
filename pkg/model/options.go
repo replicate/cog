@@ -28,9 +28,6 @@ type BuildOptions struct {
 	// LocalImage marks the image as local-only (not for pushing).
 	LocalImage bool
 
-	// PipelinesImage marks this as a pipeline/workflow image.
-	PipelinesImage bool
-
 	// UseCudaBaseImage controls CUDA base image usage: "auto", "true", or "false".
 	UseCudaBaseImage string
 
