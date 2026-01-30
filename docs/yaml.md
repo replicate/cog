@@ -115,7 +115,7 @@ build:
   python_version: "3.11.1"
 ```
 
-Cog supports all active branches of Python: 3.8, 3.9, 3.10, 3.11, 3.12, 3.13. If you don't define a version, Cog will use the latest version of Python 3.12 or a version of Python that is compatible with the versions of PyTorch or TensorFlow you specify.
+Cog supports Python 3.10, 3.11, 3.12, and 3.13. If you don't define a version, Cog will use the latest version of Python 3.13 or a version of Python that is compatible with the versions of PyTorch or TensorFlow you specify.
 
 Note that these are the versions supported **in the Docker container**, not your host machine. You can run any version(s) of Python you wish on your host machine.
 

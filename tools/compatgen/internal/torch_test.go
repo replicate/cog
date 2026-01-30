@@ -73,7 +73,7 @@ func TestFetchTorchPackages(t *testing.T) {
 			Version:       "2.7.1",
 			Variant:       "cu128",
 			CUDA:          &cuda128,
-			PythonVersion: "3.9",
+			PythonVersion: "3.10",
 		},
 	}, torch271Packages)
 }
@@ -89,12 +89,12 @@ func TestIsValidPytorchVersionFormat(t *testing.T) {
 }
 
 func TestIsValidPytorchVersionFormatWithOldVersion(t *testing.T) {
-	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torch-1.10.0+cpu-cp39-cp39-linux_x86_64.whl")
+	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torch-1.10.0+cpu-cp310-cp310-linux_x86_64.whl")
 	require.NoError(t, err)
 	require.Equal(t, "1.10.0+cpu", name)
 	require.Equal(t, "1.10.0", version)
 	require.Equal(t, "cpu", variant)
-	require.Equal(t, "39", pythonVersion)
+	require.Equal(t, "310", pythonVersion)
 	require.Equal(t, "linux_x86_64", platform)
 }
 

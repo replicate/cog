@@ -46,7 +46,7 @@ jobs:
         run: mise run test:rust
 
   # coglet-python checks (requires Python + maturin build)
-  # Builds once with ABI3 (works across Python 3.8+)
+  # Builds once with ABI3 (works across Python 3.10+)
   coglet-python:
     name: coglet-python
     runs-on: ubuntu-latest

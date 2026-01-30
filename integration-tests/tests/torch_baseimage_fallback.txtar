@@ -9,7 +9,7 @@ cog build -t $TEST_IMAGE --openapi-schema openapi.json
 -- cog.yaml --
 build:
   gpu: true
-  python_version: "3.9"
+  python_version: "3.10"
   python_packages:
     - "torch==1.13.0"
 predict: "predict.py:Predictor"

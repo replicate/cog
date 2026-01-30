@@ -3,7 +3,7 @@
 [cog_dataclass] skip
 [coglet_rust] skip
 
-# Skip for coglet_alpha which requires Python 3.9+
+# Skip for coglet_alpha which requires Python 3.10+
 [coglet_alpha] skip
 
 # Test multiprocessing.Process spawned during setup
@@ -27,7 +27,7 @@ stdout 'received .* from background job'
 
 -- cog.yaml --
 build:
-  python_version: "3.8"
+  python_version: "3.10"
 predict: "predict.py:Predictor"
 
 -- predict.py --

@@ -31,7 +31,7 @@ var (
 
 const (
 	MinimumMajorPythonVersion               int = 3
-	MinimumMinorPythonVersion               int = 8
+	MinimumMinorPythonVersion               int = 10
 	MinimumMinorPythonVersionForConcurrency int = 11
 	MinimumMajorCudaVersion                 int = 11
 )

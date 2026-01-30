@@ -1,6 +1,5 @@
 import inspect
 import os
-import sys
 import uuid
 from typing import Any, Callable, Optional, Tuple, Type
 
@@ -119,13 +118,9 @@ class Config:
         source_code = os.environ.get(_env_var_from_mode(mode))
         if source_code is not None:
             return source_code
-        if sys.version_info >= (3, 9):
-            wait_for_env(include_imports=False)
-            with open(module_path, encoding="utf-8") as file:
-                return strip_model_source_code(file.read(), [class_name], [method_name])
-        else:
-            log.debug(f"[{module_name}] cannot use fast loader as current Python <3.9")
-        return None
+        wait_for_env(include_imports=False)
+        with open(module_path, encoding="utf-8") as file:
+            return strip_model_source_code(file.read(), [class_name], [method_name])
 
     def _load_predictor_for_types(
         self, ref: str, method_name: str, mode: Mode

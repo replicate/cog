@@ -1,7 +1,4 @@
 # Skip for cog-dataclass and coglet (Rust) which require Python 3.10+
-[cog_dataclass] skip
-[coglet_rust] skip
-
 # Test that build fails with proper error when .cog is in .dockerignore
 ! cog build -t $TEST_IMAGE
 stderr 'The .cog tmp path cannot be ignored by docker in .dockerignore'
@@ -9,7 +6,7 @@ stderr 'The .cog tmp path cannot be ignored by docker in .dockerignore'
 -- cog.yaml --
 build:
   gpu: true
-  python_version: "3.9"
+  python_version: "3.10"
 predict: "predict.py:Predictor"
 
 -- .dockerignore --

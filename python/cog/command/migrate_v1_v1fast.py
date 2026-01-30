@@ -24,7 +24,11 @@ def check(file: str, predictor: str) -> None:
     fn = find(p.body, ast.FunctionDef, "name", "predict")
     if fn is None:
         fn = find(p.body, ast.AsyncFunctionDef, "name", "predict")  # type: ignore
-    args_and_defaults = zip(fn.args.args[-len(fn.args.defaults) :], fn.args.defaults)  # type: ignore
+    if fn is None:
+        return
+    args_and_defaults = zip(
+        fn.args.args[-len(fn.args.defaults) :], fn.args.defaults, strict=True
+    )  # type: ignore
     none_defaults = []
     for a, d in args_and_defaults:
         if type(a.annotation) is not ast.Name:
