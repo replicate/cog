@@ -285,31 +285,6 @@ cog login
 echo $REPLICATE_API_TOKEN | cog login --token-stdin
 ```
 
-### cog migrate
-
-Run a migration to update project to newer Cog version.
-
-```
-cog migrate [options]
-```
-
-**Flags:**
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `-y` | bool | false | Disable interaction and automatically accept changes |
-| `-f` | string | cog.yaml | The name of the config file |
-
-**Examples:**
-
-```bash
-# Run migration interactively
-cog migrate
-
-# Run migration automatically accepting all changes
-cog migrate -y
-```
-
 ### cog debug
 
 Generate a Dockerfile from cog configuration.
