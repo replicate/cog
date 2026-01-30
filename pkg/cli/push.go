@@ -15,6 +15,8 @@ import (
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/provider"
+	"github.com/replicate/cog/pkg/provider/setup"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -50,6 +52,9 @@ func newPushCommand() *cobra.Command {
 
 func push(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+
+	// Initialize the provider registry
+	setup.Init()
 
 	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
@@ -89,9 +94,13 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
-	if !strings.HasPrefix(imageName, replicatePrefix) && buildLocalImage {
-		err = fmt.Errorf("Unable to push a local image model to a non replicate host, please disable the local image flag before pushing to this host.")
+	// Look up the provider for the target registry
+	p := provider.DefaultRegistry().ForImage(imageName)
+	isReplicate := p != nil && p.Name() == "replicate"
+
+	// Local image push is only supported for Replicate
+	if !isReplicate && buildLocalImage {
+		err = fmt.Errorf("Local image push (--local-image) is only supported for Replicate's registry (%s). Please disable the --local-image flag when pushing to other registries.", global.ReplicateRegistryHost)
 		logClient.EndPush(ctx, err, logCtx)
 		return err
 	}
@@ -145,15 +154,24 @@ func push(cmd *cobra.Command, args []string) error {
 	}, client, cfg)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
-			err = fmt.Errorf("Unable to find existing Replicate model for %s. "+
-				"Go to replicate.com and create a new model before pushing."+
-				"\n\n"+
-				"If the model already exists, you may be getting this error "+
-				"because you're not logged in as owner of the model. "+
-				"This can happen if you did `sudo cog login` instead of `cog login` "+
-				"or `sudo cog push` instead of `cog push`, "+
-				"which causes Docker to use the wrong Docker credentials.",
-				imageName)
+			if isReplicate {
+				// Replicate-specific error message with helpful hints
+				err = fmt.Errorf("Unable to find existing Replicate model for %s. "+
+					"Go to replicate.com and create a new model before pushing."+
+					"\n\n"+
+					"If the model already exists, you may be getting this error "+
+					"because you're not logged in as owner of the model. "+
+					"This can happen if you did `sudo cog login` instead of `cog login` "+
+					"or `sudo cog push` instead of `cog push`, "+
+					"which causes Docker to use the wrong Docker credentials.",
+					imageName)
+			} else {
+				// Generic error message for other registries
+				err = fmt.Errorf("Failed to push image %s: repository not found (404). "+
+					"Please ensure the repository exists and you have push access. "+
+					"You may need to run 'docker login' to authenticate.",
+					imageName)
+			}
 			logClient.EndPush(ctx, err, logCtx)
 			return err
 		}
@@ -163,7 +181,7 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	console.Infof("Image '%s' pushed", imageName)
-	if strings.HasPrefix(imageName, replicatePrefix) {
+	if isReplicate {
 		replicatePage := fmt.Sprintf("https://%s", strings.Replace(imageName, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
 		console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
 	}
