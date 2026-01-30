@@ -78,7 +78,6 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
-
 	// In case one of `--x-fast` & `fast: bool` is set
 	if src.Config.Build != nil && src.Config.Build.Fast {
 		buildFast = true

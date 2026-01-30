@@ -47,44 +47,42 @@ func (p *ReplicateProvider) MatchesRegistry(host string) bool {
 		host == global.ReplicateRegistryHost
 }
 
-// Login performs Replicate-specific authentication via browser token flow
-func (p *ReplicateProvider) Login(ctx context.Context, registryHost string) error {
-	return p.LoginWithOptions(ctx, registryHost, false, nil)
-}
+// Login performs login to the registry with options
+func (p *ReplicateProvider) Login(ctx context.Context, opts provider.LoginOptions) error {
 
-// LoginWithOptions performs Replicate-specific authentication with configurable options
-func (p *ReplicateProvider) LoginWithOptions(ctx context.Context, registryHost string, tokenStdin bool, stdin *os.File) error {
-	var token string
-	var err error
+	var (
+		token string
+		err   error
+	)
 
-	if tokenStdin {
+	if opts.TokenStdin {
 		token, err = readTokenFromStdin()
 		if err != nil {
 			return err
 		}
 	} else {
-		token, err = readTokenInteractively(registryHost, stdin)
+		token, err = readTokenInteractively(opts.Host)
 		if err != nil {
 			return err
 		}
 	}
+
 	token = strings.TrimSpace(token)
 
 	if err := checkTokenFormat(token); err != nil {
 		return err
 	}
 
-	username, err := verifyToken(registryHost, token)
+	username, err := verifyToken(opts.Host, token)
 	if err != nil {
 		return err
 	}
 
-	if err := docker.SaveLoginToken(ctx, registryHost, username, token); err != nil {
+	if err := docker.SaveLoginToken(ctx, opts.Host, username, token); err != nil {
 		return err
 	}
 
-	console.Infof("You've successfully authenticated as %s! You can now use the '%s' registry.", username, registryHost)
-
+	console.Infof("You've successfully authenticated as %s! You can now use the '%s' registry.", username, opts.Host)
 	return nil
 }
 
@@ -156,7 +154,7 @@ func readTokenFromStdin() (string, error) {
 }
 
 // readTokenInteractively guides user through browser-based token flow
-func readTokenInteractively(registryHost string, stdin *os.File) (string, error) {
+func readTokenInteractively(registryHost string) (string, error) {
 	tokenURL, err := getDisplayTokenURL(registryHost)
 	if err != nil {
 		return "", err
@@ -168,10 +166,6 @@ func readTokenInteractively(registryHost string, stdin *os.File) (string, error)
 
 	inputReader := os.Stdin
 	inputFd := int(os.Stdin.Fd())
-	if stdin != nil {
-		inputReader = stdin
-		inputFd = int(stdin.Fd())
-	}
 
 	reader := bufio.NewReader(inputReader)
 	if _, err := reader.ReadString('\n'); err != nil {

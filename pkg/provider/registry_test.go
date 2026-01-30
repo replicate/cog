@@ -21,7 +21,7 @@ func (m *mockProvider) MatchesRegistry(host string) bool {
 	return m.matches(host)
 }
 
-func (m *mockProvider) Login(ctx context.Context, registryHost string) error {
+func (m *mockProvider) Login(ctx context.Context, opts LoginOptions) error {
 	return nil
 }
 
