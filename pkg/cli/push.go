@@ -144,7 +144,12 @@ func push(cmd *cobra.Command, args []string) error {
 
 	console.Infof("\nPushing image '%s'...", imageName)
 	if buildFast {
-		console.Info("Fast push enabled.")
+		if isReplicate {
+			console.Info("Fast push enabled.")
+		} else {
+			console.Warnf("Fast push (--x-fast) is only supported for Replicate's registry (%s). Falling back to standard push.", global.ReplicateRegistryHost)
+			buildFast = false
+		}
 	}
 
 	err = docker.Push(ctx, imageName, buildFast, projectDir, dockerClient, docker.BuildInfo{
