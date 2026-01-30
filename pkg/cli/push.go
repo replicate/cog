@@ -40,7 +40,6 @@ func newPushCommand() *cobra.Command {
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
 	addFastFlag(cmd)
-	addLocalImage(cmd)
 	addConfigFlag(cmd)
 	addPipelineImage(cmd)
 
@@ -60,7 +59,7 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logClient := coglog.NewClient(client)
-	logCtx := logClient.StartPush(buildLocalImage)
+	logCtx := logClient.StartPush()
 
 	src, err := model.NewSource(configFilename)
 	if err != nil {
@@ -90,11 +89,6 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
-	if !strings.HasPrefix(imageName, replicatePrefix) && buildLocalImage {
-		err = fmt.Errorf("Unable to push a local image model to a non replicate host, please disable the local image flag before pushing to this host.")
-		logClient.EndPush(ctx, err, logCtx)
-		return err
-	}
 
 	annotations := map[string]string{}
 	buildID, err := uuid.NewV7()

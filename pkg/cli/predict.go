@@ -66,7 +66,6 @@ the prediction on that.`,
 	addGpusFlag(cmd)
 	addSetupTimeoutFlag(cmd)
 	addFastFlag(cmd)
-	addLocalImage(cmd)
 	addConfigFlag(cmd)
 	addPipelineImage(cmd)
 

@@ -63,7 +63,6 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 		opts.Precompile,
 		fast,
 		opts.Annotations,
-		opts.LocalImage,
 		f.docker,
 		f.registry,
 		opts.PipelinesImage,

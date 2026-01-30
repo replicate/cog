@@ -48,7 +48,7 @@ func TestGenerate(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights(t.Context())
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestGenerateUVCacheMount(t *testing.T) {
 	}
 
 	command := dockertest.NewMockCommand()
-	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights(t.Context())
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestGenerateCUDA(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights(t.Context())
 	require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestGeneratePythonPackages(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights(t.Context())
 	require.NoError(t, err)
@@ -188,7 +188,7 @@ func TestGenerateVerboseEnv(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights(t.Context())
 	require.NoError(t, err)
@@ -223,7 +223,7 @@ func TestAptInstall(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights(t.Context())
 	require.NoError(t, err)
@@ -260,7 +260,7 @@ func TestValidateConfigWithBuildRunItems(t *testing.T) {
 			},
 		},
 	}
-	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 
 	err = generator.validateConfig()
@@ -300,7 +300,7 @@ func TestTorchVersionDefaultCUDA(t *testing.T) {
 		},
 	}
 
-	generator, err := NewFastGenerator(&config, dir, command, &matrix, true)
+	generator, err := NewFastGenerator(&config, dir, command, &matrix)
 	require.NoError(t, err)
 	dockerfile, err := generator.GenerateDockerfileWithoutSeparateWeights(t.Context())
 	require.NoError(t, err)

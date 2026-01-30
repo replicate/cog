@@ -2,24 +2,19 @@ package dockerfile
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
-	"github.com/replicate/cog/pkg/dockercontext"
-	"github.com/replicate/cog/pkg/dockerignore"
-	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/util/files"
-
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/requirements"
+	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/weights"
 )
 
@@ -37,7 +32,6 @@ type FastGenerator struct {
 	Dir           string
 	dockerCommand command.Command
 	matrix        MonobaseMatrix
-	localImage    bool
 }
 
 type MonobaseVenv struct {
@@ -46,13 +40,12 @@ type MonobaseVenv struct {
 	Cuda   string `json:"cuda"`
 }
 
-func NewFastGenerator(config *config.Config, dir string, dockerCommand command.Command, matrix *MonobaseMatrix, localImage bool) (*FastGenerator, error) {
+func NewFastGenerator(config *config.Config, dir string, dockerCommand command.Command, matrix *MonobaseMatrix) (*FastGenerator, error) {
 	return &FastGenerator{
 		Config:        config,
 		Dir:           dir,
 		dockerCommand: dockerCommand,
 		matrix:        *matrix,
-		localImage:    localImage,
 	}, nil
 }
 
@@ -108,14 +101,7 @@ func (g *FastGenerator) Name() string {
 }
 
 func (g *FastGenerator) BuildDir() (string, error) {
-	if !g.localImage {
-		return dockercontext.StandardBuildDirectory, nil
-	}
-	contextDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.ContextBuildDir)
-	if err != nil {
-		return "", err
-	}
-	return contextDir, nil
+	return dockercontext.StandardBuildDirectory, nil
 }
 
 func (g *FastGenerator) BuildContexts() (map[string]string, error) {
@@ -311,28 +297,8 @@ func (g *FastGenerator) copyWeights(lines []string, weightsInfo []weights.Weight
 		return lines, nil
 	}
 
-	if g.localImage {
-		weightPaths := []weights.WeightManifest{}
-		for _, weight := range weightsInfo {
-			weightPathAbs, err := filepath.Abs(weight.Path)
-			if err != nil {
-				return lines, err
-			}
-			weightPaths = append(weightPaths, weights.WeightManifest{
-				Source:      weightPathAbs,
-				Destination: weight.Path,
-			})
-		}
-		jsonBytes, err := json.Marshal(weightPaths)
-		if err != nil {
-			return lines, err
-		}
-		escapedJSON := strings.ReplaceAll(string(jsonBytes), `"`, `\"`)
-		lines = append(lines, "LABEL "+command.CogWeightsManifestLabelKey+"=\""+escapedJSON+"\"")
-	} else {
-		for _, weight := range weightsInfo {
-			lines = append(lines, "COPY --link \""+weight.Path+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\"")
-		}
+	for _, weight := range weightsInfo {
+		lines = append(lines, "COPY --link \""+weight.Path+"\" \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\"")
 	}
 
 	return lines, nil
@@ -382,45 +348,16 @@ func (g *FastGenerator) installPython(lines []string, tmpDir string) ([]string, 
 }
 
 func (g *FastGenerator) installSrc(lines []string, weights []weights.Weight) ([]string, error) {
-	// Install /src
-
-	srcDir, err := dockercontext.BuildCogTempDir(g.Dir, dockercontext.SrcBuildDir)
-	if err != nil {
-		return nil, err
-	}
-
-	// Rsync local src with our srcdir
-	if g.localImage {
-		err := g.rsyncSrc(srcDir, weights)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// Copy over source / without weights
-	if !g.localImage {
-		copyCommand := "COPY --link --exclude='.cog' "
-		for _, weight := range weights {
-			copyCommand += "--exclude='" + weight.Path + "' "
-		}
-		copyCommand += ". /src"
-		lines = append(lines, copyCommand)
-	} else {
-		buildDir, err := g.BuildDir()
-		if err != nil {
-			return nil, err
-		}
-		relSrcDir, err := filepath.Rel(buildDir, srcDir)
-		if err != nil {
-			return nil, err
-		}
-		copyCommand := "COPY --link " + relSrcDir + "/. /src"
-		lines = append(lines, copyCommand)
+	copyCommand := "COPY --link --exclude='.cog' "
+	for _, weight := range weights {
+		copyCommand += "--exclude='" + weight.Path + "' "
 	}
+	copyCommand += ". /src"
+	lines = append(lines, copyCommand)
 
 	// Link to weights
-	// If it is a local image we do this with a runtime mount instead to make builds faster.
-	if len(weights) > 0 && !g.localImage {
+	if len(weights) > 0 {
 		linkCommands := []string{}
 		for _, weight := range weights {
 			linkCommands = append(linkCommands, "ln -s \""+filepath.Join(FUSE_RPC_WEIGHTS_PATH, weight.Digest)+"\" \"/src/"+weight.Path+"\"")
@@ -461,157 +398,5 @@ func (g *FastGenerator) validateConfig() error {
 	if len(g.Config.Build.Run) > 0 {
 		return errors.New("cog builds with fast: true in the cog.yaml do not support build run commands.")
 	}
-	return nil
-}
-
-func (g *FastGenerator) rsyncSrc(srcDir string, weights []weights.Weight) error {
-	matcher, err := dockerignore.CreateMatcher(g.Dir)
-	if err != nil {
-		return err
-	}
-
-	relPath, err := filepath.Rel(g.Dir, srcDir)
-	if err != nil {
-		return err
-	}
-
-	// Build weights path set
-	weightPaths := map[string]bool{}
-	for _, weight := range weights {
-		weightPaths[weight.Path] = true
-	}
-
-	// Find files we haven't copied over yet.
-	usedFiles := make(map[string]bool)
-	usedFiles[relPath] = true
-	err = filepath.Walk(g.Dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if matcher != nil && matcher.MatchesPath(path) {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		if info.IsDir() && info.Name() == global.CogBuildArtifactsFolder {
-			return filepath.SkipDir
-		}
-
-		relPath, err := filepath.Rel(g.Dir, path)
-		if err != nil {
-			return err
-		}
-
-		// Skip weights, we handle them separately
-		_, ok := weightPaths[relPath]
-		if ok {
-			return nil
-		}
-
-		copyPath := filepath.Join(srcDir, relPath)
-		err = ensureFSObjectExists(copyPath, path)
-		if err != nil {
-			return err
-		}
-		usedFiles[relPath] = true
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	// Remove files that we no longer need in our tmp dir.
-	err = filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return err
-		}
-
-		_, ok := usedFiles[relPath]
-		if !ok {
-			console.Debug("Deleting " + relPath)
-			err = os.RemoveAll(path)
-			if err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func linkFile(destination string, src string) error {
-	console.Debug("Linking " + destination + " to " + src)
-
-	fileInfo, err := os.Lstat(src)
-	if err != nil {
-		return err
-	}
-	// If we are a symlink, link to the original target
-	if fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink {
-		destination, err = os.Readlink(src)
-		if err != nil {
-			return err
-		}
-	}
-
-	err = os.Link(src, destination)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func ensureFSObjectExists(destination string, src string) error {
-	exists, err := files.Exists(destination)
-	if err != nil {
-		return err
-	}
-
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	mode := info.Mode()
-
-	if !exists {
-		switch {
-		case mode.IsDir():
-			err := os.MkdirAll(destination, mode.Perm())
-			if err != nil {
-				return err
-			}
-		case mode.IsRegular():
-			err := linkFile(destination, src)
-			if err != nil {
-				return err
-			}
-		}
-	} else if mode.IsDir() {
-		destinationInfo, err := os.Stat(destination)
-		if err != nil {
-			return err
-		}
-		destinationMode := destinationInfo.Mode()
-		if destinationMode.Perm() != mode.Perm() {
-			err = os.Chmod(destination, mode.Perm())
-			if err != nil {
-				return err
-			}
-		}
-	}
-
 	return nil
 }

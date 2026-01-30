@@ -69,11 +69,6 @@ func NewPredictor(ctx context.Context, runOptions command.RunOptions, isTrain bo
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=warning")
 	}
 
-	runOptions, err := docker.FillInWeightsManifestVolumes(ctx, dockerCommand, runOptions)
-	if err != nil {
-		return nil, err
-	}
-
 	return &Predictor{
 		runOptions:   runOptions,
 		isTrain:      isTrain,

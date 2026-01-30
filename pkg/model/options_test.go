@@ -102,7 +102,6 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 		Fast:             true,
 		Strip:            true,
 		Precompile:       true,
-		LocalImage:       true,
 		PipelinesImage:   true,
 		UseCudaBaseImage: "true",
 		UseCogBaseImage:  &useCogBase,
@@ -121,7 +120,6 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 	require.True(t, result.Fast)
 	require.True(t, result.Strip)
 	require.True(t, result.Precompile)
-	require.True(t, result.LocalImage)
 	require.True(t, result.PipelinesImage)
 	require.Equal(t, "true", result.UseCudaBaseImage)
 	require.NotNil(t, result.UseCogBaseImage)
