@@ -66,6 +66,17 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 					Variant:      m.Platform.Variant,
 				})
 			}
+			// For indexes, pick a default image to get labels from.
+			// Prefer linux/amd64, otherwise use the first manifest.
+			defaultImg, err := pickDefaultImage(ctx, ref, indexManifest)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read image config from index: %w", err)
+			}
+			configFile, err := defaultImg.ConfigFile()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get image config: %w", err)
+			}
+			result.Labels = configFile.Config.Labels
 			return result, nil
 
 		case types.OCIManifestSchema1, types.DockerManifestSchema2:
@@ -77,10 +88,15 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 			if err != nil {
 				return nil, fmt.Errorf("getting manifest: %w", err)
 			}
+			configFile, err := img.ConfigFile()
+			if err != nil {
+				return nil, fmt.Errorf("getting config file: %w", err)
+			}
 			result := &ManifestResult{
 				SchemaVersion: manifest.SchemaVersion,
 				MediaType:     string(mediaType),
 				Config:        manifest.Config.Digest.String(),
+				Labels:        configFile.Config.Labels,
 			}
 			for _, layer := range manifest.Layers {
 				result.Layers = append(result.Layers, layer.Digest.String())
@@ -138,10 +154,15 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 	if err != nil {
 		return nil, fmt.Errorf("getting manifest: %w", err)
 	}
+	configFile, err := img.ConfigFile()
+	if err != nil {
+		return nil, fmt.Errorf("getting config file: %w", err)
+	}
 	result := &ManifestResult{
 		SchemaVersion: manifest.SchemaVersion,
 		MediaType:     string(manifestDesc.Descriptor.MediaType),
 		Config:        manifest.Config.Digest.String(),
+		Labels:        configFile.Config.Labels,
 	}
 	for _, layer := range manifest.Layers {
 		result.Layers = append(result.Layers, layer.Digest.String())
@@ -250,4 +271,48 @@ func checkError(err error, codes ...transport.ErrorCode) bool {
 		}
 	}
 	return false
+}
+
+// pickDefaultImage selects an image from a manifest index to use for fetching labels.
+// Prefers linux/amd64, otherwise returns the first image manifest.
+// Returns an error if no suitable image is found or if fetching fails.
+func pickDefaultImage(ctx context.Context, ref name.Reference, idx *v1.IndexManifest) (v1.Image, error) {
+	var targetDigest string
+
+	// First, look for linux/amd64
+	for _, m := range idx.Manifests {
+		if m.Platform != nil && m.Platform.OS == "linux" && m.Platform.Architecture == "amd64" {
+			targetDigest = m.Digest.String()
+			break
+		}
+	}
+
+	// Fall back to first manifest
+	if targetDigest == "" && len(idx.Manifests) > 0 {
+		targetDigest = idx.Manifests[0].Digest.String()
+	}
+
+	if targetDigest == "" {
+		return nil, fmt.Errorf("index for %s contains no manifests", ref.String())
+	}
+
+	digestRef, err := name.NewDigest(ref.Context().Name()+"@"+targetDigest, name.Insecure)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create digest reference: %w", err)
+	}
+
+	desc, err := remote.Get(digestRef,
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch image %s: %w", digestRef.String(), err)
+	}
+
+	img, err := desc.Image()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load image %s: %w", digestRef.String(), err)
+	}
+
+	return img, nil
 }

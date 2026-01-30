@@ -99,7 +99,7 @@ func (c *MockCommand) RemoveImage(ctx context.Context, ref string) error {
 	panic("not implemented")
 }
 
-func (c *MockCommand) ImageBuild(ctx context.Context, options command.ImageBuildOptions) error {
+func (c *MockCommand) ImageBuild(ctx context.Context, options command.ImageBuildOptions) (string, error) {
 	panic("not implemented")
 }
 

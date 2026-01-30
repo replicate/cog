@@ -6,10 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -50,13 +49,13 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		return err
 	}
 
-	cfg, projectDir, err := config.GetConfig(configFilename)
+	src, err := model.NewSource(configFilename)
 	if err != nil {
 		return err
 	}
 
-	client := registry.NewRegistryClient()
-	imageName, err := image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client, true)
+	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+	m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
 	if err != nil {
 		return err
 	}
@@ -68,7 +67,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	gpus := ""
 	if gpusFlag != "" {
 		gpus = gpusFlag
-	} else if cfg.Build.GPU {
+	} else if m.HasGPU() {
 		gpus = "all"
 	}
 
@@ -89,8 +88,8 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		Args:    args,
 		Env:     env,
 		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: []command.Volume{{Source: projectDir, Destination: "/src"}},
+		Image:   m.ImageRef(),
+		Volumes: []command.Volume{{Source: src.ProjectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
 	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerClient, runOptions)

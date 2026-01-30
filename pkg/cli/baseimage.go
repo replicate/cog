@@ -188,7 +188,7 @@ func newBaseImageBuildCommand() *cobra.Command {
 				Epoch:              &config.BuildSourceEpochTimestamp,
 				ContextDir:         dockercontext.StandardBuildDirectory,
 			}
-			if err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
+			if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 				return err
 			}
 			fmt.Println("Successfully built image: " + baseImageName)

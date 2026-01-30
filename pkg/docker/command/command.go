@@ -22,7 +22,8 @@ type Command interface {
 	ContainerInspect(ctx context.Context, id string) (*container.InspectResponse, error)
 	ContainerStop(ctx context.Context, containerID string) error
 
-	ImageBuild(ctx context.Context, options ImageBuildOptions) error
+	// ImageBuild builds an image and returns the image ID (sha256:...) on success.
+	ImageBuild(ctx context.Context, options ImageBuildOptions) (string, error)
 	Run(ctx context.Context, options RunOptions) error
 	ContainerStart(ctx context.Context, options RunOptions) (string, error)
 }

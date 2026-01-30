@@ -296,20 +296,29 @@ func (_c *MockCommand2_ContainerStop_Call) RunAndReturn(run func(ctx context.Con
 }
 
 // ImageBuild provides a mock function for the type MockCommand2
-func (_mock *MockCommand2) ImageBuild(ctx context.Context, options command.ImageBuildOptions) error {
+func (_mock *MockCommand2) ImageBuild(ctx context.Context, options command.ImageBuildOptions) (string, error) {
 	ret := _mock.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ImageBuild")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, command.ImageBuildOptions) error); ok {
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, command.ImageBuildOptions) (string, error)); ok {
+		return returnFunc(ctx, options)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, command.ImageBuildOptions) string); ok {
 		r0 = returnFunc(ctx, options)
 	} else {
-		r0 = ret.Error(0)
+		r0 = ret.Get(0).(string)
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(context.Context, command.ImageBuildOptions) error); ok {
+		r1 = returnFunc(ctx, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
 // MockCommand2_ImageBuild_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ImageBuild'
@@ -342,12 +351,12 @@ func (_c *MockCommand2_ImageBuild_Call) Run(run func(ctx context.Context, option
 	return _c
 }
 
-func (_c *MockCommand2_ImageBuild_Call) Return(err error) *MockCommand2_ImageBuild_Call {
-	_c.Call.Return(err)
+func (_c *MockCommand2_ImageBuild_Call) Return(imageID string, err error) *MockCommand2_ImageBuild_Call {
+	_c.Call.Return(imageID, err)
 	return _c
 }
 
-func (_c *MockCommand2_ImageBuild_Call) RunAndReturn(run func(ctx context.Context, options command.ImageBuildOptions) error) *MockCommand2_ImageBuild_Call {
+func (_c *MockCommand2_ImageBuild_Call) RunAndReturn(run func(ctx context.Context, options command.ImageBuildOptions) (string, error)) *MockCommand2_ImageBuild_Call {
 	_c.Call.Return(run)
 	return _c
 }

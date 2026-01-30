@@ -12,7 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/http"
-	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -76,61 +76,44 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	logClient := coglog.NewClient(client)
 	logCtx := logClient.StartBuild(buildLocalImage)
 
-	cfg, projectDir, err := config.GetConfig(configFilename)
+	src, err := model.NewSource(configFilename)
 	if err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
+
 	// In case one of `--x-fast` & `fast: bool` is set
-	if cfg.Build.Fast {
-		buildFast = cfg.Build.Fast
+	if src.Config.Build != nil && src.Config.Build.Fast {
+		buildFast = true
 	}
 	logCtx.Fast = buildFast
 	logCtx.CogRuntime = false
-	if cfg.Build.CogRuntime != nil {
-		logCtx.CogRuntime = *cfg.Build.CogRuntime
+	if src.Config.Build != nil && src.Config.Build.CogRuntime != nil {
+		logCtx.CogRuntime = *src.Config.Build.CogRuntime
 	}
 
-	imageName := cfg.Image
+	imageName := src.Config.Image
 	if buildTag != "" {
 		imageName = buildTag
 	}
 	if imageName == "" {
-		imageName = config.DockerImageName(projectDir)
+		imageName = config.DockerImageName(src.ProjectDir)
 	}
 
-	err = config.ValidateModelPythonVersion(cfg)
+	err = config.ValidateModelPythonVersion(src.Config)
 	if err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
-	registryClient := registry.NewRegistryClient()
-	if err := image.Build(
-		ctx,
-		cfg,
-		projectDir,
-		imageName,
-		buildSecrets,
-		buildNoCache,
-		buildSeparateWeights,
-		buildUseCudaBaseImage,
-		buildProgressOutput,
-		buildSchemaFile,
-		buildDockerfileFile,
-		DetermineUseCogBaseImage(cmd),
-		buildStrip,
-		buildPrecompile,
-		buildFast,
-		nil,
-		buildLocalImage,
-		dockerClient,
-		registryClient,
-		pipelinesImage); err != nil {
+
+	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, buildFast, nil))
+	if err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
 
-	console.Infof("\nImage built as %s", imageName)
+	console.Infof("\nImage built as %s", m.ImageRef())
 	logClient.EndBuild(ctx, nil, logCtx)
 
 	return nil
@@ -234,4 +217,37 @@ func DetermineUseCogBaseImage(cmd *cobra.Command) *bool {
 	useCogBaseImage := new(bool)
 	*useCogBaseImage = buildUseCogBaseImage
 	return useCogBaseImage
+}
+
+// buildOptionsFromFlags creates BuildOptions from the current CLI flag values.
+// The imageName and annotations parameters vary by command and must be provided.
+// The fast parameter should reflect the resolved fast mode (from flags OR config).
+func buildOptionsFromFlags(cmd *cobra.Command, imageName string, fast bool, annotations map[string]string) model.BuildOptions {
+	return model.BuildOptions{
+		ImageName:        imageName,
+		Secrets:          buildSecrets,
+		NoCache:          buildNoCache,
+		SeparateWeights:  buildSeparateWeights,
+		UseCudaBaseImage: buildUseCudaBaseImage,
+		ProgressOutput:   buildProgressOutput,
+		SchemaFile:       buildSchemaFile,
+		DockerfileFile:   buildDockerfileFile,
+		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
+		Strip:            buildStrip,
+		Precompile:       buildPrecompile,
+		Fast:             fast,
+		Annotations:      annotations,
+		LocalImage:       buildLocalImage,
+		PipelinesImage:   pipelinesImage,
+	}
+}
+
+// buildBaseOptionsFromFlags creates BuildBaseOptions from the current CLI flag values.
+func buildBaseOptionsFromFlags(cmd *cobra.Command) model.BuildBaseOptions {
+	return model.BuildBaseOptions{
+		UseCudaBaseImage: buildUseCudaBaseImage,
+		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
+		ProgressOutput:   buildProgressOutput,
+		RequiresCog:      true,
+	}
 }

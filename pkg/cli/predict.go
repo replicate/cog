@@ -21,10 +21,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 
-	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/model"
 	r8_path "github.com/replicate/cog/pkg/path"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
@@ -175,56 +174,43 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	volumes := []command.Volume{}
 	gpus := gpusFlag
 
+	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+
 	if len(args) == 0 {
 		// Build image
-
-		cfg, projectDir, err := config.GetConfig(configFilename)
+		src, err := model.NewSource(configFilename)
 		if err != nil {
 			return err
 		}
 
-		if cfg.Build.Fast {
-			buildFast = cfg.Build.Fast
+		if src.Config.Build != nil && src.Config.Build.Fast {
+			buildFast = true
 		}
 
-		client := registry.NewRegistryClient()
 		if buildFast || pipelinesImage {
-			imageName = config.DockerImageName(projectDir)
-			if err := image.Build(
-				ctx,
-				cfg,
-				projectDir,
-				imageName,
-				buildSecrets,
-				buildNoCache,
-				buildSeparateWeights,
-				buildUseCudaBaseImage,
-				buildProgressOutput,
-				buildSchemaFile,
-				buildDockerfileFile,
-				DetermineUseCogBaseImage(cmd),
-				buildStrip,
-				buildPrecompile,
-				buildFast,
-				nil,
-				buildLocalImage,
-				dockerClient,
-				client,
-				pipelinesImage); err != nil {
+			m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, "", buildFast, nil))
+			if err != nil {
 				return err
+			}
+			imageName = m.ImageRef()
+
+			if gpus == "" && m.HasGPU() {
+				gpus = "all"
 			}
 		} else {
-			if imageName, err = image.BuildBase(ctx, dockerClient, cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput, client, true); err != nil {
+			m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
+			if err != nil {
 				return err
 			}
+			imageName = m.ImageRef()
 
 			// Base image doesn't have /src in it, so mount as volume
 			volumes = append(volumes, command.Volume{
-				Source:      projectDir,
+				Source:      src.ProjectDir,
 				Destination: "/src",
 			})
 
-			if gpus == "" && cfg.Build.GPU {
+			if gpus == "" && m.HasGPU() {
 				gpus = "all"
 			}
 		}
@@ -238,20 +224,21 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("Invalid image name '%s'. Did you forget `-i`?", imageName)
 		}
 
-		inspectResp, err := dockerClient.Pull(ctx, imageName, false)
-		if err != nil {
-			return fmt.Errorf("Failed to pull image %q: %w", imageName, err)
-		}
-
-		conf, err := image.CogConfigFromManifest(ctx, inspectResp)
+		// Pull the image (if needed) and validate it's a Cog model
+		ref, err := model.ParseRef(imageName)
 		if err != nil {
 			return err
 		}
-		if gpus == "" && conf.Build.GPU {
+		m, err := resolver.Pull(ctx, ref)
+		if err != nil {
+			return err
+		}
+
+		if gpus == "" && m.HasGPU() {
 			gpus = "all"
 		}
-		if conf.Build.Fast {
-			buildFast = conf.Build.Fast
+		if m.IsFast() {
+			buildFast = true
 		}
 	}
 

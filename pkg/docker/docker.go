@@ -304,12 +304,12 @@ func (c *apiClient) ImageExists(ctx context.Context, ref string) (bool, error) {
 	return true, nil
 }
 
-func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOptions) error {
+func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOptions) (string, error) {
 	console.Debugf("=== APIClient.ImageBuild %s", options.ImageName)
 
 	buildDir, err := os.MkdirTemp("", "cog-build")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer os.RemoveAll(buildDir)
 
@@ -320,7 +320,7 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 		}),
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	statusCh := make(chan *buildkitclient.SolveStatus)
@@ -357,13 +357,16 @@ func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOp
 	err = eg.Wait()
 
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	console.Debugf("image digest %s", res.ExporterResponse[exptypes.ExporterImageDigestKey])
+	imageID := res.ExporterResponse[exptypes.ExporterImageDigestKey]
+	if imageID == "" {
+		return "", fmt.Errorf("buildkit did not return an image digest")
+	}
+	console.Debugf("image digest %s", imageID)
 
-	// TODO[md]: return the image id on success
-	return nil
+	return imageID, nil
 }
 
 func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions) (string, error) {
