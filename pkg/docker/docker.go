@@ -242,6 +242,9 @@ func (c *apiClient) Push(ctx context.Context, imageRef string) error {
 			if isTagNotFoundError(err) {
 				return &command.NotFoundError{Ref: imageRef, Object: "tag"}
 			}
+			if isRepositoryNotFoundError(err) {
+				return &command.NotFoundError{Ref: imageRef, Object: "repository"}
+			}
 			if isAuthorizationFailedError(err) {
 				return command.ErrAuthorizationFailed
 			}
