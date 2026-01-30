@@ -56,7 +56,7 @@ flowchart TB
 ### 1. Config Parsing & Validation
 
 Reads `cog.yaml` and validates/completes the configuration:
-- Validates Python version (3.8-3.12)
+- Validates Python version (3.10-3.13)
 - Auto-detects CUDA version from PyTorch/TensorFlow requirements
 - Resolves package versions against compatibility matrix
 
@@ -121,7 +121,7 @@ flowchart LR
     subgraph output["Cog determines"]
         cuda["CUDA 12.1"]
         cudnn["cuDNN 8"]
-        python["Python 3.8-3.11"]
+        python["Python 3.10-3.13"]
     end
     
     torch --> lookup

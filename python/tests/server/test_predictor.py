@@ -1,6 +1,5 @@
 import inspect
 import os
-import sys
 import uuid
 
 import pytest
@@ -43,12 +42,11 @@ PREDICTOR_FIXTURES = [
 ]
 
 
-def _fixture_path(name):
+def _fixture_path(name: str) -> str:
     test_dir = os.path.dirname(os.path.realpath(__file__))
     return os.path.join(test_dir, f"fixtures/{name}.py")
 
 
-@pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9 or newer")
 @pytest.mark.parametrize("fixture_name, class_name, method_name", PREDICTOR_FIXTURES)
 def test_fast_slow_signatures(fixture_name: str, class_name: str, method_name: str):
     module_path = _fixture_path(fixture_name)
@@ -56,7 +54,9 @@ def test_fast_slow_signatures(fixture_name: str, class_name: str, method_name: s
     code = None
     with open(module_path, encoding="utf-8") as file:
         code = strip_model_source_code(file.read(), [class_name], [method_name])
+    assert code is not None
     module_fast = load_module_from_string(uuid.uuid4().hex, code)
+    assert module_fast is not None
     assert hasattr(module_fast, class_name)
     predictor_fast = get_predictor(module_fast, class_name)
     predict_fast = get_predict(predictor_fast)

@@ -5,12 +5,6 @@ import types
 import typing
 from pathlib import Path
 
-try:
-    assert ast.unparse
-except (AssertionError, AttributeError):
-    # bad "compat" with python3.8
-    ast.unparse = repr
-
 BASE_SCHEMA = """
 {
   "components": {
@@ -342,7 +336,10 @@ def to_serializable(val: "AstVal") -> "JSONObject":
 def get_value(node: ast.AST) -> "AstVal":
     """Return the value of constant or list of constants"""
     if isinstance(node, ast.Constant):
-        return node.value
+        value = node.value
+        if value is Ellipsis:
+            raise ValueError("Unexpected annotation type", type(node))
+        return typing.cast("AstVal", value)
     if isinstance(node, (ast.List, ast.Tuple)):
         return [get_value(e) for e in node.elts]
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
@@ -357,21 +354,15 @@ def get_annotation(node: "ast.AST | None") -> str:
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Constant):
-        return node.value  # e.g. arg: "Path"
+        if isinstance(node.value, str):
+            return node.value  # e.g. arg: "Path"
+        raise ValueError("Unexpected annotation type", type(node))
     if isinstance(node, ast.Subscript):
         value = get_annotation(node.value)
         if value == "Literal":
-            if sys.version_info < (3, 9):
-                if isinstance(node.slice, ast.Index):
-                    elts = [node.slice.value]
-                else:
-                    elts = node.slice.elts
-            else:
-                elts = (
-                    node.slice.elts
-                    if isinstance(node.slice, ast.Tuple)
-                    else [node.slice]
-                )
+            elts = (
+                node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+            )
             return f"Literal[{','.join(repr(get_value(e)) for e in elts)}]"
         # ignore other Subscript (Optional[str]), BinOp (str | int), and stuff like that
     raise ValueError("Unexpected annotation type", type(node))
@@ -393,7 +384,7 @@ def parse_args(tree: ast.AST) -> "list[tuple[ast.arg, ast.expr | types.EllipsisT
     args = predict.args.args  # [-len(defaults) :]
     # use Ellipsis instead of None here to distinguish a default of None
     defaults = [...] * (len(args) - len(predict.args.defaults)) + predict.args.defaults
-    return list(zip(args, defaults))
+    return list(zip(args, defaults, strict=True))
 
 
 def parse_assignment(assignment: ast.AST) -> "None | tuple[str, JSONObject]":
@@ -453,7 +444,6 @@ def resolve_name(node: ast.expr) -> str:
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Index):
-        # deprecated, but needed for py3.8
         return resolve_name(node.value)  # type: ignore
     if isinstance(node, ast.Attribute):
         return node.attr

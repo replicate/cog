@@ -1,12 +1,12 @@
-# Test that Python 3.7 is deprecated and build fails with appropriate error
+# Test that Python 3.8 is deprecated and build fails with appropriate error
 # Build should fail with deprecation error
 ! cog build -t $TEST_IMAGE
-stderr 'minimum supported Python version is 3.10. requested 3.7'
+stderr 'minimum supported Python version is 3.10. requested 3.8'
 
 -- cog.yaml --
 build:
   gpu: false
-  python_version: "3.7"
+  python_version: "3.8"
 predict: "predict.py:Predictor"
 
 -- predict.py --

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/anaskhan96/soup"
@@ -421,6 +422,15 @@ func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
 
 		// 310 -> 3.10
 		pythonVersion = pythonVersion[:1] + "." + pythonVersion[1:]
+		if minor := strings.TrimPrefix(pythonVersion, "3."); minor != pythonVersion {
+			minorInt, err := strconv.Atoi(minor)
+			if err != nil {
+				return nil, fmt.Errorf("invalid python version %q: %w", pythonVersion, err)
+			}
+			if minorInt < config.MinimumMinorPythonVersion {
+				continue
+			}
+		}
 
 		pkg := TorchPackage{
 			Name:          name,

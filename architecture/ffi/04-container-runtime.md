@@ -346,7 +346,7 @@ How coglet gets invoked when running a Cog container:
 - **Memory safety**: No Python GIL contention in HTTP layer
 
 ### Why PyO3 FFI?
-- **ABI3 wheel**: Single wheel works across Python 3.8-3.13
+- **ABI3 wheel**: Single wheel works across Python 3.10-3.13
 - **Native performance**: Direct C API calls, no serialization overhead
 - **Same predictor code**: Users don't change anything
 - **Drop-in replacement**: Same HTTP API, same behavior

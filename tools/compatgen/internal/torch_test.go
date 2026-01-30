@@ -20,8 +20,8 @@ func TestFetchTorchPackages(t *testing.T) {
 		if err != nil {
 			log.Fatalf("Error reading file: %v", err)
 		}
-		w.Write(content)
 		w.WriteHeader(http.StatusOK)
+		w.Write(content)
 	}))
 	defer server.Close()
 	url, err := url.Parse(server.URL)
@@ -68,13 +68,6 @@ func TestFetchTorchPackages(t *testing.T) {
 			CUDA:          &cuda128,
 			PythonVersion: "3.13",
 		},
-		{
-			Name:          "2.7.1+cu128",
-			Version:       "2.7.1",
-			Variant:       "cu128",
-			CUDA:          &cuda128,
-			PythonVersion: "3.9",
-		},
 	}, torch271Packages)
 }
 
@@ -89,12 +82,12 @@ func TestIsValidPytorchVersionFormat(t *testing.T) {
 }
 
 func TestIsValidPytorchVersionFormatWithOldVersion(t *testing.T) {
-	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torch-1.10.0+cpu-cp39-cp39-linux_x86_64.whl")
+	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torch-1.10.0+cpu-cp310-cp310-linux_x86_64.whl")
 	require.NoError(t, err)
 	require.Equal(t, "1.10.0+cpu", name)
 	require.Equal(t, "1.10.0", version)
 	require.Equal(t, "cpu", variant)
-	require.Equal(t, "39", pythonVersion)
+	require.Equal(t, "310", pythonVersion)
 	require.Equal(t, "linux_x86_64", platform)
 }
 

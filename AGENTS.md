@@ -50,7 +50,7 @@ import (
 - **Error Handling**: Raise exceptions with descriptive messages; avoid generic exception catching
 - **Naming**: snake_case for functions/variables/modules, PascalCase for classes
 - **Testing**: Use pytest with fixtures; async tests with pytest-asyncio
-- **Compatibility**: Must support Python 3.8-3.13 and both Pydantic 1.x and 2.x (test with tox)
+- **Compatibility**: Must support Python 3.10-3.13 and both Pydantic 1.x and 2.x (test with tox)
 
 ### Rust
 - **Formatting**: Use `cargo fmt`
@@ -189,4 +189,4 @@ For comprehensive architecture documentation, see [`architecture/`](./architectu
 - Tests use real Docker operations (no mocking Docker API)
 - Always run `make wheel` after making Python changes before testing Go code
 - Both Pydantic 1.x and 2.x must pass tests (use appropriate tox environments)
-- Python 3.8-3.13 compatibility is required
+- Python 3.10-3.13 compatibility is required

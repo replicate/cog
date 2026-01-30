@@ -18,7 +18,7 @@ import (
 	"github.com/replicate/cog/pkg/util/version"
 )
 
-// TODO(andreas): check tf/py versions. tf 1.5.0 didn't install on py 3.8
+// TODO(andreas): check tf/py versions. tf 1.5.0 didn't install on py 3.10
 // TODO(andreas): support more tf versions. No matching tensorflow CPU package for version 1.15.4, etc.
 // TODO(andreas): allow user to install versions that aren't compatible
 // TODO(andreas): allow user to install tf cpu package on gpu

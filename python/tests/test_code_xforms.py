@@ -1,5 +1,4 @@
 import os
-import sys
 import uuid
 
 import pytest
@@ -9,12 +8,12 @@ from cog.code_xforms import load_module_from_string, strip_model_source_code
 g_module_dir = os.path.dirname(os.path.abspath(__file__))
 
 
-@pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 def test_train_function_model():
     with open(f"{g_module_dir}/server/fixtures/train.py", encoding="utf-8") as file:
         source_code = file.read()
 
-    new_source = strip_model_source_code(source_code, "train", "train")
+    new_source = strip_model_source_code(source_code, ["train"], ["train"])
+    assert new_source is not None
     expected_source = """
 from cog import BaseModel, Input, Path
 class TrainingOutput(BaseModel):
@@ -26,7 +25,6 @@ def train(n: int=Input(description='Dimension of weights to generate')) -> Train
     assert load_module_from_string(uuid.uuid4().hex, new_source)
 
 
-@pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 def test_predict_many_inputs():
     source_code = """
 from cog import BasePredictor, Input, Path
@@ -64,6 +62,7 @@ class Predictor(BasePredictor):
 """
 
     new_source = strip_model_source_code(source_code, ["Predictor"], ["predict"])
+    assert new_source is not None
     expected_source = """
 from cog import BasePredictor, Input, Path
 class Predictor(BasePredictor):
@@ -75,7 +74,6 @@ class Predictor(BasePredictor):
     assert load_module_from_string(uuid.uuid4().hex, new_source)
 
 
-@pytest.mark.skipif(sys.version_info < (3, 9), reason="requires python3.9 or higher")
 def test_predict_output_path_model():
     source_code = """
 import os
@@ -95,6 +93,7 @@ class Predictor(BasePredictor):
 """
 
     new_source = strip_model_source_code(source_code, ["Predictor"], ["predict"])
+    assert new_source is not None
     expected_source = """
 import os
 from cog import BasePredictor, Path
@@ -107,7 +106,6 @@ class Predictor(BasePredictor):
     assert load_module_from_string(uuid.uuid4().hex, new_source)
 
 
-@pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9 or newer")
 def test_strip_model_source_code():
     stripped_code = strip_model_source_code(
         """
@@ -149,7 +147,6 @@ class Predictor(BasePredictor):
     ), "Stripped code needs to equal the minimum viable type inference."
 
 
-@pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9 or newer")
 def test_strip_model_source_code_removes_function_decorators():
     stripped_code = strip_model_source_code(
         """
@@ -193,7 +190,6 @@ class Predictor(BasePredictor):
     ), "Stripped code needs to equal the minimum viable type inference."
 
 
-@pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9 or newer")
 def test_strip_model_source_code_keeps_referenced_globals():
     stripped_code = strip_model_source_code(
         """
@@ -241,7 +237,6 @@ class Predictor(BasePredictor):
     ), "Stripped code needs to equal the minimum viable type inference."
 
 
-@pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9 or newer")
 def test_strip_model_source_code_keeps_referenced_subclasses():
     stripped_code = strip_model_source_code(
         """
@@ -299,7 +294,6 @@ class SchnellPredictor(Predictor):
     ), "Stripped code needs to equal the minimum viable type inference."
 
 
-@pytest.mark.skipif(sys.version_info < (3, 9), reason="Requires Python 3.9 or newer")
 def test_strip_model_source_code_keeps_referenced_class_from_function():
     stripped_code = strip_model_source_code(
         """

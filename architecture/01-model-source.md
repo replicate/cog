@@ -37,7 +37,7 @@ concurrency:
 
 | Field | Purpose |
 |-------|---------|
-| `build.python_version` | Python interpreter version (3.8-3.12) |
+| `build.python_version` | Python interpreter version (3.10-3.13) |
 | `build.gpu` | Enable CUDA support |
 | `build.python_packages` | pip packages to install |
 | `build.system_packages` | apt packages to install |

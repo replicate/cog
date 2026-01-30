@@ -449,7 +449,7 @@ RUN --mount=type=cache,target=/root/.cache/pip curl -s -S -L https://raw.githubu
 	pyenv global $(pyenv install-latest --print "%s") && \
 	pip install "wheel<1"`, py, py) + `
 RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3", nil
-	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.8 -> 3.8.17 or 3.8.18)
+	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.10 -> 3.10.14, etc.)
 	// install-latest essentially does pyenv install --list | grep $py | tail -1
 	// there are many bad options, but a symlink to $(pyenv prefix) is the least bad one
 }
