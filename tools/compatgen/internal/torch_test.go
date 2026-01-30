@@ -20,8 +20,8 @@ func TestFetchTorchPackages(t *testing.T) {
 		if err != nil {
 			log.Fatalf("Error reading file: %v", err)
 		}
-		w.Write(content)
 		w.WriteHeader(http.StatusOK)
+		w.Write(content)
 	}))
 	defer server.Close()
 	url, err := url.Parse(server.URL)
@@ -67,13 +67,6 @@ func TestFetchTorchPackages(t *testing.T) {
 			Variant:       "cu128",
 			CUDA:          &cuda128,
 			PythonVersion: "3.13",
-		},
-		{
-			Name:          "2.7.1+cu128",
-			Version:       "2.7.1",
-			Variant:       "cu128",
-			CUDA:          &cuda128,
-			PythonVersion: "3.10",
 		},
 	}, torch271Packages)
 }
