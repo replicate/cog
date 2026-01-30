@@ -22,6 +22,50 @@ This stanza describes how to build the Docker image your model runs in. It conta
 
 <!-- Alphabetical order, please! -->
 
+### `conda_channels`
+
+Conda channels to search for packages. If not specified, defaults to `["conda-forge", "defaults"]`.
+
+For example:
+
+```yaml
+build:
+  conda_channels:
+    - conda-forge
+    - bioconda
+    - defaults
+  conda_packages:
+    - biopython
+```
+
+Channels are searched in the order specified.
+
+### `conda_packages`
+
+A list of packages to install via conda. This is useful for packages that are only available through conda-forge or have complex C/C++ dependencies better managed by conda.
+
+For example:
+
+```yaml
+build:
+  conda_packages:
+    - pythonocc-core
+    - rdkit
+  conda_channels:
+    - conda-forge
+```
+
+You can specify exact versions using the conda format:
+
+```yaml
+build:
+  conda_packages:
+    - numpy=1.24.0
+    - scipy>=1.10,<2.0
+```
+
+Conda packages are installed before pip packages, so you can use both `conda_packages` and `python_requirements` together. Pip will install on top of the conda environment.
+
 ### `cuda`
 
 Cog automatically picks the correct version of CUDA to install, but this lets you override it for whatever reason by specifying the minor (`11.8`) or patch (`11.8.0`) version of CUDA to use.

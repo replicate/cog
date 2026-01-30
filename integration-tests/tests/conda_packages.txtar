@@ -1,0 +1,24 @@
+# Test that conda packages can be installed in cog builds
+
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE -i text='hello'
+stdout 'numpy version: 1.24'
+stdout 'conda packages work!'
+
+-- cog.yaml --
+build:
+  python_version: "3.11"
+  conda_packages:
+    - numpy=1.24.3
+  conda_channels:
+    - conda-forge
+predict: predict.py:Predictor
+
+-- predict.py --
+from cog import BasePredictor
+import numpy as np
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        numpy_version = np.__version__
+        return f"numpy version: {numpy_version}, conda packages work! input: {text}"

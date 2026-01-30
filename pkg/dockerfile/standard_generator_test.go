@@ -1114,3 +1114,121 @@ predict: predict.py:Predictor
 	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
 	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
 }
+
+func TestCondaInstalls(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf := &config.Config{
+		Build: &config.Build{
+			PythonVersion: "3.11",
+			CondaPackages: []string{"pythonocc-core", "numpy=1.24"},
+			CondaChannels: []string{"conda-forge"},
+		},
+	}
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	output, err := gen.condaInstalls()
+	require.NoError(t, err)
+	require.Contains(t, output, "micromamba create")
+	require.Contains(t, output, "-c conda-forge")
+	require.Contains(t, output, "pythonocc-core")
+	require.Contains(t, output, "numpy=1.24")
+	require.Contains(t, output, "micromamba clean -a -y")
+	require.Contains(t, output, "site-packages")
+}
+
+func TestCondaInstallsEmpty(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf := &config.Config{
+		Build: &config.Build{
+			PythonVersion: "3.11",
+			CondaPackages: []string{},
+		},
+	}
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	output, err := gen.condaInstalls()
+	require.NoError(t, err)
+	require.Equal(t, "", output)
+}
+
+func TestCondaInstallsMultipleChannels(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf := &config.Config{
+		Build: &config.Build{
+			PythonVersion: "3.11",
+			CondaPackages: []string{"biopython"},
+			CondaChannels: []string{"conda-forge", "bioconda", "defaults"},
+		},
+	}
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	output, err := gen.condaInstalls()
+	require.NoError(t, err)
+	require.Contains(t, output, "-c conda-forge")
+	require.Contains(t, output, "-c bioconda")
+	require.Contains(t, output, "-c defaults")
+}
+
+func TestCondaInstallsArchitectureDetection(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf := &config.Config{
+		Build: &config.Build{
+			PythonVersion: "3.11",
+			CondaPackages: []string{"numpy"},
+			CondaChannels: []string{"conda-forge"},
+		},
+	}
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	output, err := gen.condaInstalls()
+	require.NoError(t, err)
+	// Verify architecture detection using uname -m
+	require.Contains(t, output, "uname -m")
+	require.Contains(t, output, "linux-64")
+	require.Contains(t, output, "linux-aarch64")
+	// Verify download from GitHub releases with version pinning
+	require.Contains(t, output, "github.com/mamba-org/micromamba-releases/releases/download/2.5.0-1")
+	require.Contains(t, output, "micromamba-${ARCH}")
+}
+
+func TestCondaInstallsVersionPinned(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf := &config.Config{
+		Build: &config.Build{
+			PythonVersion: "3.11",
+			CondaPackages: []string{"numpy"},
+		},
+	}
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	output, err := gen.condaInstalls()
+	require.NoError(t, err)
+	// Verify version is pinned (not using "latest")
+	require.Contains(t, output, "2.5.0-1")
+	require.NotContains(t, output, "latest")
+}

@@ -93,7 +93,7 @@ func NewStandardGenerator(config *config.Config, dir string, command command.Com
 		Config:           config,
 		Dir:              dir,
 		GOOS:             runtime.GOOS,
-		GOARCH:           runtime.GOOS,
+		GOARCH:           runtime.GOARCH,
 		tmpDir:           tmpDir,
 		relativeTmpDir:   relativeTmpDir,
 		fileWalker:       filepath.Walk,
@@ -158,6 +158,10 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 	if err != nil {
 		return "", err
 	}
+	condaInstalls, err := g.condaInstalls()
+	if err != nil {
+		return "", err
+	}
 	pipInstalls, err := g.pipInstalls()
 	if err != nil {
 		return "", err
@@ -182,6 +186,10 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 		if installCog != "" {
 			steps = append(steps, installCog)
 		}
+		// Install conda packages before pip packages
+		if condaInstalls != "" {
+			steps = append(steps, condaInstalls)
+		}
 		steps = append(steps, pipInstalls)
 		if g.precompile {
 			steps = append(steps, PrecompilePythonCommand)
@@ -200,9 +208,12 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 		envs,
 		aptInstalls,
 		installPython,
-		pipInstalls,
-		installCog,
 	}
+	// Install conda packages before pip packages
+	if condaInstalls != "" {
+		steps = append(steps, condaInstalls)
+	}
+	steps = append(steps, pipInstalls, installCog)
 	if g.precompile {
 		steps = append(steps, PrecompilePythonCommand)
 	}
@@ -695,6 +706,61 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 		pipInstallLine,
 		"ENV CFLAGS=",
 	}, "\n"), nil
+}
+
+// condaInstalls generates Dockerfile lines to install conda packages using micromamba.
+// Returns empty string if no conda packages are specified.
+// Micromamba is used instead of conda/miniconda for smaller image size (~10MB vs ~500MB).
+func (g *StandardGenerator) condaInstalls() (string, error) {
+	if len(g.Config.Build.CondaPackages) == 0 {
+		return "", nil
+	}
+
+	lines := []string{}
+
+	// Install bzip2 (required for extracting micromamba) and micromamba
+	// We use micromamba instead of full conda/miniconda for:
+	// - Smaller image size (micromamba is ~10MB vs conda ~500MB)
+	// - Faster installation
+	// - Drop-in replacement for conda commands
+	lines = append(lines, "RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy --no-install-recommends bzip2 && rm -rf /var/lib/apt/lists/*")
+
+	// Detect architecture within the Docker build context and download micromamba
+	// Pinned to version 2.5.0-1 for reproducible builds
+	// Downloads directly from GitHub releases for version pinning support
+	lines = append(lines, strings.Join([]string{
+		"RUN ARCH=$([ \"$(uname -m)\" = \"x86_64\" ] && echo \"linux-64\" || echo \"linux-aarch64\")",
+		"&& curl -Ls https://github.com/mamba-org/micromamba-releases/releases/download/2.5.0-1/micromamba-${ARCH}",
+		"--output /usr/local/bin/micromamba",
+		"&& chmod +x /usr/local/bin/micromamba",
+	}, " "))
+
+	// Configure channels
+	channelArgs := []string{}
+	for _, channel := range g.Config.Build.CondaChannels {
+		channelArgs = append(channelArgs, "-c "+channel)
+	}
+
+	// Install conda packages to /opt/conda and symlink to system Python
+	// This avoids needing to reinstall cog while allowing conda packages to work
+	packages := strings.Join(g.Config.Build.CondaPackages, " ")
+	pythonVersion := g.Config.Build.PythonVersion
+
+	lines = append(lines, fmt.Sprintf(
+		"RUN --mount=type=cache,target=/root/.mamba/pkgs micromamba create -y -p /opt/conda python=%s %s %s && micromamba clean -a -y",
+		pythonVersion,
+		strings.Join(channelArgs, " "),
+		packages,
+	))
+
+	// Symlink conda packages to system Python's site-packages
+	lines = append(lines, fmt.Sprintf(
+		"RUN for pkg in /opt/conda/lib/python%s/site-packages/*; do [ -e \"$pkg\" ] && ln -sf \"$pkg\" \"/usr/local/lib/python%s/site-packages/$(basename \"$pkg\")\" || true; done",
+		pythonVersion,
+		pythonVersion,
+	))
+
+	return strings.Join(lines, "\n"), nil
 }
 
 func (g *StandardGenerator) runCommands() (string, error) {

@@ -763,3 +763,76 @@ func TestContainsCoglet(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, config.ContainsCoglet())
 }
+
+func TestCondaPackagesBasic(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			PythonVersion: "3.11",
+			CondaPackages: []string{"pythonocc-core", "numpy=1.24"},
+			CondaChannels: []string{"conda-forge"},
+		},
+	}
+
+	projectDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(projectDir)
+
+	err = config.ValidateAndComplete(projectDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{"conda-forge"}, config.Build.CondaChannels)
+}
+
+func TestCondaPackagesDefaultChannels(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			PythonVersion: "3.11",
+			CondaPackages: []string{"pythonocc-core"},
+			// No channels specified
+		},
+	}
+
+	projectDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(projectDir)
+
+	err = config.ValidateAndComplete(projectDir)
+	require.NoError(t, err)
+	// Should get default channels
+	require.Equal(t, []string{"conda-forge", "defaults"}, config.Build.CondaChannels)
+}
+
+func TestCondaAndPipTogether(t *testing.T) {
+	// Test that conda and pip can coexist
+	config := &Config{
+		Build: &Build{
+			PythonVersion:  "3.11",
+			CondaPackages:  []string{"pythonocc-core"},
+			PythonPackages: []string{"torch==2.0.0"},
+		},
+	}
+
+	projectDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(projectDir)
+
+	err = config.ValidateAndComplete(projectDir)
+	require.NoError(t, err)
+	// Should NOT error - both are allowed
+}
+
+func TestCondaPackagesEmpty(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			PythonVersion: "3.11",
+			CondaPackages: []string{"", "numpy"},
+		},
+	}
+
+	projectDir, err := os.MkdirTemp("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(projectDir)
+
+	err = config.ValidateAndComplete(projectDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty package name")
+}

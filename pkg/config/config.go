@@ -24,7 +24,6 @@ var (
 	PipPackageNameRegex       = regexp.MustCompile(`^([^>=<~ \n[#]+)`)
 )
 
-// TODO(andreas): support conda packages
 // TODO(andreas): support dockerfiles
 // TODO(andreas): custom cpu/gpu installs
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
@@ -50,6 +49,8 @@ type Build struct {
 	PythonVersion      string    `json:"python_version,omitempty" yaml:"python_version"`
 	PythonRequirements string    `json:"python_requirements,omitempty" yaml:"python_requirements,omitempty"`
 	PythonPackages     []string  `json:"python_packages,omitempty" yaml:"python_packages,omitempty"` // Deprecated, but included for backwards compatibility
+	CondaPackages      []string  `json:"conda_packages,omitempty" yaml:"conda_packages,omitempty"`   // Conda packages to install via micromamba (e.g., conda-only packages from conda-forge)
+	CondaChannels      []string  `json:"conda_channels,omitempty" yaml:"conda_channels,omitempty"`   // Conda channels for package installation (defaults to ["conda-forge", "defaults"])
 	Run                []RunItem `json:"run,omitempty" yaml:"run,omitempty"`
 	SystemPackages     []string  `json:"system_packages,omitempty" yaml:"system_packages,omitempty"`
 	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install,omitempty"` // Deprecated, but included for backwards compatibility
@@ -333,6 +334,21 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 	// Backwards compatibility
 	if len(c.Build.PythonPackages) > 0 {
 		c.Build.pythonRequirementsContent = c.Build.PythonPackages
+	}
+
+	// Validate conda packages
+	if len(c.Build.CondaPackages) > 0 {
+		// If no channels specified, add conda-forge as default
+		if len(c.Build.CondaChannels) == 0 {
+			c.Build.CondaChannels = []string{"conda-forge", "defaults"}
+		}
+
+		// Validate package names (basic check)
+		for _, pkg := range c.Build.CondaPackages {
+			if strings.TrimSpace(pkg) == "" {
+				errs = append(errs, fmt.Errorf("conda_packages contains empty package name"))
+			}
+		}
 	}
 
 	if c.Build.GPU {
