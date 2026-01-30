@@ -2,8 +2,16 @@
 package ociartifact
 
 import (
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -77,4 +85,65 @@ type weightsArtifact struct {
 // ArtifactType implements the withArtifactType interface used by partial.ArtifactType.
 func (a *weightsArtifact) ArtifactType() (string, error) {
 	return model.MediaTypeWeightsManifest, nil
+}
+
+// AddLayersFromLock adds layers for all files in a WeightsLock.
+// The baseDir is used to resolve file:// source URLs.
+func (b *WeightsArtifactBuilder) AddLayersFromLock(lock *model.WeightsLock, baseDir string) error {
+	for i := range lock.Files {
+		wf := &lock.Files[i]
+
+		// Resolve source path
+		sourcePath, err := resolveSource(wf.Source, baseDir)
+		if err != nil {
+			return fmt.Errorf("resolve source for %s: %w", wf.Name, err)
+		}
+
+		// Read and compress file
+		data, err := os.ReadFile(sourcePath)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", sourcePath, err)
+		}
+
+		// Compute original digest
+		originalHash := sha256.Sum256(data)
+		wf.DigestOriginal = "sha256:" + hex.EncodeToString(originalHash[:])
+		wf.SizeUncompressed = int64(len(data))
+
+		// Compress
+		var compressed bytes.Buffer
+		gw := gzip.NewWriter(&compressed)
+		if _, err := io.Copy(gw, bytes.NewReader(data)); err != nil {
+			return fmt.Errorf("compress %s: %w", wf.Name, err)
+		}
+		if err := gw.Close(); err != nil {
+			return fmt.Errorf("close gzip for %s: %w", wf.Name, err)
+		}
+
+		// Compute compressed digest
+		compressedHash := sha256.Sum256(compressed.Bytes())
+		wf.Digest = "sha256:" + hex.EncodeToString(compressedHash[:])
+		wf.Size = int64(compressed.Len())
+		wf.MediaType = model.MediaTypeWeightsLayerGzip
+
+		if err := b.AddLayer(*wf, compressed.Bytes()); err != nil {
+			return fmt.Errorf("add layer %s: %w", wf.Name, err)
+		}
+	}
+	return nil
+}
+
+func resolveSource(source, baseDir string) (string, error) {
+	if strings.HasPrefix(source, "file://") {
+		path := strings.TrimPrefix(source, "file://")
+		// Handle relative paths (./something or just something)
+		if !filepath.IsAbs(path) {
+			// Remove leading ./ if present
+			path = strings.TrimPrefix(path, "./")
+			path = filepath.Join(baseDir, path)
+		}
+		return path, nil
+	}
+	// For now, only file:// sources are supported
+	return "", fmt.Errorf("unsupported source scheme: %s (only file:// supported in placeholder)", source)
 }

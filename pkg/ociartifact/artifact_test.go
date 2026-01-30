@@ -6,7 +6,10 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -211,5 +214,86 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		// Source annotation should not be present when empty
 		_, hasSource := layer.Annotations[model.AnnotationWeightsSource]
 		require.False(t, hasSource, "source annotation should not be present when empty")
+	})
+}
+
+func TestWeightsArtifactBuilderFromFiles(t *testing.T) {
+	t.Run("build from weights lock and files", func(t *testing.T) {
+		// Create temp dir with test files
+		dir := t.TempDir()
+		testData := []byte("test model weights content for testing")
+		testFile := filepath.Join(dir, "model.bin")
+		require.NoError(t, os.WriteFile(testFile, testData, 0o644))
+
+		// Create weights lock pointing to the file
+		lock := &model.WeightsLock{
+			Version: "1",
+			Created: time.Now().UTC(),
+			Files: []model.WeightFile{
+				{
+					Name:   "model.bin",
+					Dest:   "/cache/model.bin",
+					Source: "file://" + testFile,
+				},
+			},
+		}
+
+		builder := NewWeightsArtifactBuilder()
+		err := builder.AddLayersFromLock(lock, dir)
+		require.NoError(t, err)
+
+		artifact, err := builder.Build()
+		require.NoError(t, err)
+
+		manifest, err := artifact.Manifest()
+		require.NoError(t, err)
+		require.Len(t, manifest.Layers, 1)
+
+		// Verify layer has correct annotations
+		layer := manifest.Layers[0]
+		require.Equal(t, "model.bin", layer.Annotations[model.AnnotationWeightsName])
+		require.Equal(t, "/cache/model.bin", layer.Annotations[model.AnnotationWeightsDest])
+		require.NotEmpty(t, layer.Annotations[model.AnnotationWeightsDigestOriginal])
+	})
+
+	t.Run("resolve file source", func(t *testing.T) {
+		dir := t.TempDir()
+		testFile := filepath.Join(dir, "weights", "model.bin")
+		require.NoError(t, os.MkdirAll(filepath.Dir(testFile), 0o755))
+		require.NoError(t, os.WriteFile(testFile, []byte("test"), 0o644))
+
+		// Test relative path resolution
+		lock := &model.WeightsLock{
+			Version: "1",
+			Files: []model.WeightFile{
+				{
+					Name:   "model.bin",
+					Dest:   "/cache/model.bin",
+					Source: "file://./weights/model.bin",
+				},
+			},
+		}
+
+		builder := NewWeightsArtifactBuilder()
+		err := builder.AddLayersFromLock(lock, dir)
+		require.NoError(t, err)
+	})
+
+	t.Run("unsupported source scheme", func(t *testing.T) {
+		lock := &model.WeightsLock{
+			Version: "1",
+			Files: []model.WeightFile{
+				{
+					Name:   "model.bin",
+					Dest:   "/cache/model.bin",
+					Source: "hf://user/repo/model.bin",
+				},
+			},
+		}
+
+		builder := NewWeightsArtifactBuilder()
+		err := builder.AddLayersFromLock(lock, "/tmp")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported source scheme")
 	})
 }
