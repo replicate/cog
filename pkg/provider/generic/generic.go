@@ -1,9 +1,15 @@
 package generic
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
+	"golang.org/x/term"
+
+	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/provider"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -25,9 +31,42 @@ func (p *GenericProvider) MatchesRegistry(host string) bool {
 }
 
 func (p *GenericProvider) Login(ctx context.Context, registryHost string) error {
-	// Return ErrUseDockerLogin - actual push auth uses Docker's credential system
-	// (pkg/docker/credentials.go) which already handles any registry
-	return provider.ErrUseDockerLogin
+	console.Infof("Logging in to %s", registryHost)
+	console.Info("")
+
+	// Prompt for username
+	fmt.Print("Username: ")
+	reader := bufio.NewReader(os.Stdin)
+	username, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read username: %w", err)
+	}
+	username = strings.TrimSpace(username)
+
+	if username == "" {
+		return fmt.Errorf("username cannot be empty")
+	}
+
+	// Prompt for password (hidden input)
+	fmt.Print("Password: ")
+	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+	if err != nil {
+		return fmt.Errorf("failed to read password: %w", err)
+	}
+	fmt.Println() // newline after hidden input
+	password := string(passwordBytes)
+
+	if password == "" {
+		return fmt.Errorf("password cannot be empty")
+	}
+
+	// Save credentials using Docker's credential system
+	if err := docker.SaveLoginToken(ctx, registryHost, username, password); err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	console.Infof("Login succeeded for %s", registryHost)
+	return nil
 }
 
 func (p *GenericProvider) PrePush(ctx context.Context, opts provider.PushOptions) error {
