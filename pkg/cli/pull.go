@@ -24,7 +24,7 @@ func newPullCommand() *cobra.Command {
 		Use: "pull [IMAGE] [FOLDER]",
 
 		Short:   "Pull the contents of a model into your local directory.",
-		Example: `cog pull r8.im/your-username/hotdog-detector`,
+		Example: `cog pull registry.example.com/your-username/model-name`,
 		RunE:    pull,
 		Args:    cobra.MinimumNArgs(1),
 		Hidden:  true,
