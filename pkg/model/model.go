@@ -16,10 +16,9 @@ type Model struct {
 	CogVersion string         // Version of cog used to build
 
 	// V2 (OCI Index) fields
-	Format ModelFormat // OCI structure (image or index)
-	Index  *Index      // OCI Image Index (v2 format only, nil for v1)
-	// TODO: WeightsManifest *WeightsManifest - weight file metadata (v2 format only, nil for v1)
-	// WeightsManifest type will be added in a subsequent task
+	Format          ModelFormat      // OCI structure (image or index)
+	Index           *Index           // OCI Image Index (v2 format only, nil for v1)
+	WeightsManifest *WeightsManifest // Weight file metadata (v2 format only, nil for v1)
 }
 
 // HasGPU returns true if the model requires GPU.
