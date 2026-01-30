@@ -24,6 +24,7 @@ These options are available for all commands:
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--debug` | bool | false | Show debugging output |
+| `--registry` | string | r8.im | Container registry host (can also be set via `COG_REGISTRY_HOST` env var) |
 | `--version` | bool | false | Show version of Cog |
 
 ## Commands
@@ -279,13 +280,13 @@ Log in to a container registry.
 cog login [options]
 ```
 
-For Replicate's registry (r8.im), this command handles authentication through Replicate's token-based flow. For other registries, use `docker login` directly.
+For Replicate's registry (r8.im), this command handles authentication through Replicate's token-based flow. For other registries, this command prompts for username and password, then stores credentials using Docker's credential system.
 
 **Flags:**
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--token-stdin` | bool | false | Pass login token on stdin instead of opening browser |
+| `--token-stdin` | bool | false | Pass login token on stdin instead of opening browser (Replicate only) |
 
 **Examples:**
 
@@ -296,10 +297,14 @@ cog login
 # Login to Replicate with token
 echo $REPLICATE_API_TOKEN | cog login --token-stdin
 
-# For other registries, use docker login
-docker login ghcr.io
-docker login gcr.io
-docker login your-registry.example.com
+# Login to GitHub Container Registry
+cog login --registry ghcr.io
+
+# Login to Google Container Registry
+cog login --registry gcr.io
+
+# Login to a private registry
+cog login --registry your-registry.example.com
 ```
 
 ### cog debug
