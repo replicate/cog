@@ -210,7 +210,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, cog-dataclass, coglet-alpha, cog-rust, cog-dataclass-rust]
+        runtime: [cog, cog-dataclass, cog-rust, cog-dataclass-rust]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -245,9 +245,6 @@ jobs:
               ;;
             cog-dataclass)
               echo "COG_WHEEL=cog-dataclass" >> $GITHUB_ENV
-              ;;
-            coglet-alpha)
-              echo "COG_WHEEL=coglet-alpha" >> $GITHUB_ENV
               ;;
             cog-rust)
               RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl | head -1)
