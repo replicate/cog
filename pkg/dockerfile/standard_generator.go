@@ -47,7 +47,6 @@ const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -nam
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
-const PinnedCogletURL = "https://github.com/replicate/cog-runtime/releases/download/v0.1.0-beta10/coglet-0.1.0b10-py3-none-any.whl" // Pinned coglet URL to avoid API dependency
 
 type StandardGenerator struct {
 	Config *config.Config
@@ -475,8 +474,6 @@ func (g *StandardGenerator) installCog() (string, error) {
 	switch wheelConfig.Source {
 	case wheels.WheelSourceCog:
 		installLines, err = g.installEmbeddedCogWheel()
-	case wheels.WheelSourceCogletAlpha:
-		installLines, err = g.installCogletAlpha()
 	case wheels.WheelSourceCogDataclass:
 		installLines, err = g.installEmbeddedCogDataclassWheel()
 	case wheels.WheelSourceURL:
@@ -493,18 +490,13 @@ func (g *StandardGenerator) installCog() (string, error) {
 
 	// Optionally install Rust coglet wheel alongside cog
 	// This allows testing the Rust HTTP server implementation
-	// WARNING: Cannot install Rust coglet when using coglet-alpha
 	if rustWheelPath := os.Getenv("COGLET_RUST_WHEEL"); rustWheelPath != "" {
-		if wheelConfig != nil && wheelConfig.Source == wheels.WheelSourceCogletAlpha {
-			fmt.Fprintf(os.Stderr, "WARNING: COGLET_RUST_WHEEL is set but COG_WHEEL=coglet-alpha. Rust coglet cannot be installed alongside coglet-alpha (Go implementation). Skipping Rust coglet installation.\n")
-		} else {
-			rustInstall, err := g.installRustCogletWheel(rustWheelPath)
-			if err != nil {
-				return "", fmt.Errorf("failed to install Rust coglet wheel: %w", err)
-			}
-			if rustInstall != "" {
-				installLines += "\n" + rustInstall
-			}
+		rustInstall, err := g.installRustCogletWheel(rustWheelPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to install Rust coglet wheel: %w", err)
+		}
+		if rustInstall != "" {
+			installLines += "\n" + rustInstall
 		}
 	}
 
@@ -543,23 +535,6 @@ func (g *StandardGenerator) installEmbeddedCogDataclassWheel() (string, error) {
 	}
 	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
 	return strings.Join(lines, "\n"), nil
-}
-
-// installCogletAlpha installs coglet from the pinned URL (default for cog_runtime: true)
-func (g *StandardGenerator) installCogletAlpha() (string, error) {
-	// We need fast-* compliant Python version to reconstruct coglet venv PYTHONPATH
-	if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
-		return "", fmt.Errorf("Python version must be <major>.<minor>")
-	}
-	cmds := []string{
-		"ENV R8_COG_VERSION=coglet",
-		"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-		// Uninstall cog first to avoid conflicts with coglet's cog shim package.
-		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
-		// with coglet's cog compatibility shim that provides the same module paths.
-		"RUN pip uninstall -y cog 2>/dev/null || true && pip install " + PinnedCogletURL,
-	}
-	return strings.Join(cmds, "\n"), nil
 }
 
 // installWheelFromURL installs a wheel from a URL (when COG_WHEEL=https://...)

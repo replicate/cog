@@ -925,7 +925,7 @@ predict: predict.py:Predictor
 }
 
 func TestCOGWheelDefaultCogRuntimeTrue(t *testing.T) {
-	// Default behavior with cog_runtime: true should use coglet-alpha (PinnedCogletURL)
+	// Default behavior with cog_runtime: true should use cog-dataclass
 	tmpDir := t.TempDir()
 
 	yaml := `
@@ -947,10 +947,11 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain coglet-alpha/PinnedCogletURL install with cog uninstall prefix
-	require.Contains(t, actual, "RUN pip uninstall -y cog 2>/dev/null || true && pip install "+PinnedCogletURL)
-	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
-	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
+	// Should contain the embedded cog-dataclass wheel install
+	require.Contains(t, actual, "/tmp/cog_dataclass-")
+	require.Contains(t, actual, ".whl")
+	require.NotContains(t, actual, "'pydantic>=1.9,<3'")
+	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
 
 func TestCOGWheelEnvCog(t *testing.T) {
@@ -987,7 +988,7 @@ predict: predict.py:Predictor
 }
 
 func TestCOGWheelEnvCogletAlpha(t *testing.T) {
-	// COG_WHEEL=coglet-alpha should use PinnedCogletURL even without cog_runtime: true
+	// COG_WHEEL=coglet-alpha should map to cog-dataclass
 	t.Setenv("COG_WHEEL", "coglet-alpha")
 
 	tmpDir := t.TempDir()
@@ -1010,10 +1011,11 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain coglet-alpha/PinnedCogletURL install with cog uninstall prefix
-	require.Contains(t, actual, "RUN pip uninstall -y cog 2>/dev/null || true && pip install "+PinnedCogletURL)
-	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
-	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
+	// Should contain the embedded cog-dataclass wheel install
+	require.Contains(t, actual, "/tmp/cog_dataclass-")
+	require.Contains(t, actual, ".whl")
+	require.NotContains(t, actual, "'pydantic>=1.9,<3'")
+	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
 
 func TestCOGWheelEnvURL(t *testing.T) {
