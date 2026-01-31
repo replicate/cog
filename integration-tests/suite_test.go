@@ -29,7 +29,7 @@ func TestIntegration(t *testing.T) {
 // condition provides custom conditions for testscript.
 // Supported conditions:
 //   - linux/linux_amd64/amd64: platform guards for specialized tests.
-//   - coglet_alpha: true when COG_WHEEL=coglet-alpha (old Go coglet)
+//   - coglet_alpha: deprecated (always false)
 //   - cog_dataclass: true when COG_WHEEL=cog-dataclass (Python 3.10+ only)
 //   - cog_rust: true when COG_WHEEL=cog and COGLET_RUST_WHEEL is set
 //   - cog_dataclass_rust: true when COG_WHEEL=cog-dataclass and COGLET_RUST_WHEEL is set
@@ -55,7 +55,7 @@ func condition(cond string) (bool, error) {
 	case "linux_amd64":
 		value = runtime.GOOS == "linux" && runtime.GOARCH == "amd64"
 	case "coglet_alpha":
-		value = cogWheel == "coglet-alpha"
+		value = false
 	case "cog_dataclass":
 		value = cogWheel == "cog-dataclass"
 	case "cog_rust":

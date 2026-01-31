@@ -117,10 +117,13 @@ def main():
 
             os.unlink(".inbox")
 
-            with open(".outbox", "w") as outbox:
+            outbox_tmp = ".outbox.tmp"
+            with open(outbox_tmp, "w") as outbox:
                 print(f"---> CHILD ({pid}) sending response")
 
                 outbox.write("hello " + s)
+
+            os.replace(outbox_tmp, ".outbox")
 
         if time.time() % 10 == 0:
             if is_child:

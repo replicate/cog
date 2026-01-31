@@ -31,13 +31,6 @@ func TestConcurrentPredictions(t *testing.T) {
 		t.Skip("skipping slow test in short mode")
 	}
 
-	// Skip for coglet-alpha runtime - it has a known bug with concurrent async predictions
-	// that causes predictions to return empty output. This is in the released version and
-	// cannot be fixed without a new release.
-	if cogWheel := os.Getenv("COG_WHEEL"); cogWheel == "coglet-alpha" {
-		t.Skip("skipping: coglet-alpha has a known bug with concurrent async predictions")
-	}
-
 	// Create a temp directory for our test project
 	tmpDir, err := os.MkdirTemp("", "cog-concurrent-test-*")
 	if err != nil {
