@@ -1,0 +1,34 @@
+# Test building an OCI bundle with weights
+# This test verifies the bundle format builds correctly and the image runs
+
+# Generate mock weights (small for speed)
+mock-weights --count 2 --min-size 1kb --max-size 10kb
+
+# Build with bundle format
+env COG_OCI_INDEX=1
+cog build -t $TEST_IMAGE
+
+# Verify image was built by checking it exists
+exec docker image inspect $TEST_IMAGE
+stdout 'run.cog.config'
+
+# Verify prediction works
+cog predict $TEST_IMAGE -i text=hello
+stdout 'processed: hello'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Path
+from typing import Optional
+
+class Predictor(BasePredictor):
+    def setup(self, weights: Optional[Path] = None) -> None:
+        """Load the model weights. weights parameter is optional for bundle format."""
+        self.weights_loaded = weights is not None
+    
+    def predict(self, text: str) -> str:
+        return f"processed: {text}"

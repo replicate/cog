@@ -2,7 +2,6 @@ package registry
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -10,15 +9,18 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/registry_testhelpers"
 )
 
 func TestPushOperations(t *testing.T) {
-	// Skip unless TEST_REGISTRY is set to a local registry address
-	// e.g., TEST_REGISTRY=localhost:5000 go test ./pkg/registry/... -run TestPushOperations -v
-	registryAddr := os.Getenv("TEST_REGISTRY")
-	if registryAddr == "" {
-		t.Skip("TEST_REGISTRY not set - run: docker run -d -p 5000:5000 registry:2")
+	if testing.Short() {
+		t.Skip("skipping integration tests in short mode")
 	}
+
+	// Start a test registry using testcontainers
+	registry := registry_testhelpers.StartTestRegistry(t)
+	registryAddr := registry.RegistryHost()
 
 	ctx := context.Background()
 	client := NewRegistryClient()

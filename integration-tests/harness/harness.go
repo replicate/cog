@@ -2,11 +2,14 @@
 package harness
 
 import (
-	"crypto/rand"
+	"context"
+	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	mathrand "math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -18,6 +21,9 @@ import (
 	"time"
 
 	"github.com/rogpeppe/go-internal/testscript"
+
+	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/registry_testhelpers"
 )
 
 // Harness provides utilities for running cog integration tests.
@@ -25,6 +31,13 @@ import (
 type serverInfo struct {
 	cmd  *exec.Cmd
 	port int
+}
+
+// registryInfo tracks a running test registry container
+type registryInfo struct {
+	container *registry_testhelpers.RegistryContainer
+	cleanup   func()
+	host      string // e.g., "localhost:5432"
 }
 
 type Harness struct {
@@ -36,6 +49,9 @@ type Harness struct {
 	// serverProcs tracks background cog serve processes for cleanup, keyed by work directory
 	serverProcs   map[string]*serverInfo
 	serverProcsMu sync.Mutex
+	// registries tracks test registry containers for cleanup, keyed by work directory
+	registries   map[string]*registryInfo
+	registriesMu sync.Mutex
 }
 
 // New creates a new Harness, resolving the cog binary location.
@@ -53,6 +69,7 @@ func New() (*Harness, error) {
 		realHome:    os.Getenv("HOME"),
 		repoRoot:    repoRoot,
 		serverProcs: make(map[string]*serverInfo),
+		registries:  make(map[string]*registryInfo),
 	}, nil
 }
 
@@ -175,6 +192,12 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 		NewCommand("wait-for", h.cmdWaitFor),
 		NewCommand("docker-run", h.cmdDockerRun),
 
+		// Registry and OCI bundle testing commands
+		NewCommand("registry-start", h.cmdRegistryStart),
+		NewCommand("registry-inspect", h.cmdRegistryInspect),
+		NewCommand("docker-push", h.cmdDockerPush),
+		NewCommand("mock-weights", h.cmdMockWeights),
+
 		// PTY command (defined in cmd_pty.go)
 		&PtyRunCommand{harness: h},
 	}
@@ -259,10 +282,12 @@ func (h *Harness) Setup(env *testscript.Env) error {
 	// Capture the work directory for this test (used as key for server tracking)
 	workDir := env.WorkDir
 
-	// Register cleanup to remove the Docker image and stop any servers after the test
+	// Register cleanup to remove the Docker image, stop servers, and cleanup registries
 	env.Defer(func() {
 		// Stop the server for this specific test (if any)
 		h.stopServerByWorkDir(workDir)
+		// Stop the registry for this specific test (if any)
+		h.stopRegistryByWorkDir(workDir)
 		removeDockerImage(imageName)
 	})
 
@@ -272,7 +297,7 @@ func (h *Harness) Setup(env *testscript.Env) error {
 // generateUniqueImageName creates a unique Docker image name for test isolation.
 func generateUniqueImageName() string {
 	b := make([]byte, 5)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := cryptorand.Read(b); err != nil {
 		// Fall back to a less random but still unique name
 		return fmt.Sprintf("cog-test-%d", os.Getpid())
 	}
@@ -720,4 +745,331 @@ func (h *Harness) cmdDockerRun(ts *testscript.TestScript, neg bool, args []strin
 	if err != nil {
 		ts.Fatalf("docker-run: command failed: %v", err)
 	}
+}
+
+// =============================================================================
+// Registry commands
+// =============================================================================
+
+// cmdRegistryStart starts a test registry container.
+// The registry is automatically cleaned up when the test ends.
+// Usage: registry-start
+// Exports $TEST_REGISTRY environment variable with the registry address.
+func (h *Harness) cmdRegistryStart(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("registry-start: does not support negation")
+	}
+
+	workDir := ts.Getenv("WORK")
+
+	// Check if registry is already running (idempotent)
+	h.registriesMu.Lock()
+	if info, exists := h.registries[workDir]; exists {
+		h.registriesMu.Unlock()
+		// Already started, just ensure env is set
+		ts.Setenv("TEST_REGISTRY", info.host)
+		return
+	}
+	h.registriesMu.Unlock()
+
+	// Start new registry
+	container, cleanup, err := registry_testhelpers.StartTestRegistryWithCleanup(context.Background())
+	if err != nil {
+		ts.Fatalf("registry-start: failed to start registry: %v", err)
+	}
+
+	host := container.RegistryHost()
+
+	// Store for cleanup
+	h.registriesMu.Lock()
+	h.registries[workDir] = &registryInfo{
+		container: container,
+		cleanup:   cleanup,
+		host:      host,
+	}
+	h.registriesMu.Unlock()
+
+	ts.Setenv("TEST_REGISTRY", host)
+	ts.Logf("registry-start: started registry at %s", host)
+}
+
+// stopRegistryByWorkDir stops the registry container associated with a work directory.
+func (h *Harness) stopRegistryByWorkDir(workDir string) {
+	h.registriesMu.Lock()
+	info, exists := h.registries[workDir]
+	if !exists {
+		h.registriesMu.Unlock()
+		return
+	}
+	delete(h.registries, workDir)
+	h.registriesMu.Unlock()
+
+	if info.cleanup != nil {
+		info.cleanup()
+	}
+}
+
+// cmdRegistryInspect inspects a registry manifest and outputs JSON.
+// Usage: registry-inspect <image-ref>
+// Outputs the manifest result as JSON to stdout.
+func (h *Harness) cmdRegistryInspect(ts *testscript.TestScript, neg bool, args []string) {
+	if len(args) < 1 {
+		ts.Fatalf("registry-inspect: usage: registry-inspect <image-ref>")
+	}
+
+	imageRef := os.Expand(args[0], ts.Getenv)
+
+	client := registry.NewRegistryClient()
+	result, err := client.Inspect(context.Background(), imageRef, nil)
+
+	if neg {
+		if err == nil {
+			ts.Fatalf("registry-inspect: expected failure but succeeded")
+		}
+		return
+	}
+
+	if err != nil {
+		ts.Fatalf("registry-inspect: failed to inspect %s: %v", imageRef, err)
+	}
+
+	// Output as JSON
+	output, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		ts.Fatalf("registry-inspect: failed to marshal result: %v", err)
+	}
+
+	ts.Stdout().Write(output)
+	ts.Stdout().Write([]byte("\n"))
+}
+
+// cmdDockerPush tags and pushes a local image to the test registry.
+// Usage: docker-push <local-image> <registry-repo:tag>
+// Example: docker-push $TEST_IMAGE test/mymodel:v1
+// The image is pushed to $TEST_REGISTRY/<registry-repo:tag>
+func (h *Harness) cmdDockerPush(ts *testscript.TestScript, neg bool, args []string) {
+	if len(args) < 2 {
+		ts.Fatalf("docker-push: usage: docker-push <local-image> <registry-repo:tag>")
+	}
+
+	localImage := os.Expand(args[0], ts.Getenv)
+	repoTag := os.Expand(args[1], ts.Getenv)
+
+	testRegistry := ts.Getenv("TEST_REGISTRY")
+	if testRegistry == "" {
+		ts.Fatalf("docker-push: TEST_REGISTRY not set (call registry-start first)")
+	}
+
+	remoteRef := testRegistry + "/" + repoTag
+
+	// Tag the image
+	tagCmd := exec.Command("docker", "tag", localImage, remoteRef)
+	tagCmd.Stdout = ts.Stdout()
+	tagCmd.Stderr = ts.Stderr()
+	if err := tagCmd.Run(); err != nil {
+		if neg {
+			return
+		}
+		ts.Fatalf("docker-push: failed to tag image: %v", err)
+	}
+
+	// Push the image
+	pushCmd := exec.Command("docker", "push", remoteRef)
+	pushCmd.Stdout = ts.Stdout()
+	pushCmd.Stderr = ts.Stderr()
+	err := pushCmd.Run()
+
+	if neg {
+		if err == nil {
+			ts.Fatalf("docker-push: expected failure but succeeded")
+		}
+		return
+	}
+
+	if err != nil {
+		ts.Fatalf("docker-push: failed to push image: %v", err)
+	}
+
+	ts.Logf("docker-push: pushed %s to %s", localImage, remoteRef)
+}
+
+// =============================================================================
+// Mock weights command
+// =============================================================================
+
+// mockWeightsLock mirrors the structure from pkg/model/weights_lock.go
+// SYNC: If pkg/model/WeightsLock changes, update this copy.
+// We duplicate it here to avoid importing pkg/model which transitively imports pkg/wheels.
+type mockWeightsLock struct {
+	Version string           `json:"version"`
+	Created time.Time        `json:"created"`
+	Files   []mockWeightFile `json:"files"`
+}
+
+// mockWeightFile mirrors WeightFile from pkg/model/weights.go
+// SYNC: If pkg/model/WeightFile changes, update this copy.
+type mockWeightFile struct {
+	Name             string `json:"name"`
+	Dest             string `json:"dest"`
+	Source           string `json:"source,omitempty"`
+	DigestOriginal   string `json:"digestOriginal"`
+	Digest           string `json:"digest"`
+	Size             int64  `json:"size"`
+	SizeUncompressed int64  `json:"sizeUncompressed"`
+	MediaType        string `json:"mediaType"`
+	ContentType      string `json:"contentType,omitempty"`
+}
+
+// cmdMockWeights generates mock weight files and a weights.lock file.
+// Usage: mock-weights [--count N] [--min-size S] [--max-size S]
+// Defaults:
+//   - count: 2
+//   - min-size: 1kb
+//   - max-size: 10kb
+//
+// Creates files in $WORK/weights/ and writes $WORK/weights.lock
+func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("mock-weights: does not support negation")
+	}
+
+	// Parse arguments
+	count := 2
+	minSize := int64(1024)      // 1KB
+	maxSize := int64(10 * 1024) // 10KB
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--count", "-n":
+			if i+1 < len(args) {
+				if n, err := strconv.Atoi(args[i+1]); err == nil {
+					count = n
+				}
+				i++
+			}
+		case "--min-size":
+			if i+1 < len(args) {
+				if size, err := parseSize(args[i+1]); err == nil {
+					minSize = size
+				}
+				i++
+			}
+		case "--max-size":
+			if i+1 < len(args) {
+				if size, err := parseSize(args[i+1]); err == nil {
+					maxSize = size
+				}
+				i++
+			}
+		}
+	}
+
+	workDir := ts.Getenv("WORK")
+	weightsDir := filepath.Join(workDir, "weights")
+	lockPath := filepath.Join(workDir, "weights.lock")
+
+	// Create weights directory
+	if err := os.MkdirAll(weightsDir, 0o755); err != nil {
+		ts.Fatalf("mock-weights: failed to create weights dir: %v", err)
+	}
+
+	var files []mockWeightFile
+
+	// Seed the RNG for varied sizes across test runs
+	rng := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
+
+	for i := 1; i <= count; i++ {
+		// Random size between min and max
+		size := minSize
+		if maxSize > minSize {
+			size = minSize + (rng.Int63() % (maxSize - minSize + 1))
+		}
+
+		filename := fmt.Sprintf("weights-%03d.bin", i)
+		filePath := filepath.Join(weightsDir, filename)
+
+		// Generate random data
+		data := make([]byte, size)
+		if _, err := cryptorand.Read(data); err != nil {
+			ts.Fatalf("mock-weights: failed to generate random data: %v", err)
+		}
+
+		// Write file
+		if err := os.WriteFile(filePath, data, 0o644); err != nil {
+			ts.Fatalf("mock-weights: failed to write %s: %v", filename, err)
+		}
+
+		// Compute digest (uncompressed, since we're not actually compressing for tests)
+		hash := sha256.Sum256(data)
+		digest := "sha256:" + hex.EncodeToString(hash[:])
+
+		files = append(files, mockWeightFile{
+			Name:             filename,
+			Dest:             "/cache/" + filename,
+			Source:           "file://" + filePath,
+			DigestOriginal:   digest,
+			Digest:           digest, // Same as original since we're not compressing
+			Size:             size,
+			SizeUncompressed: size,
+			// MediaType indicates gzip but data is uncompressed for test simplicity.
+			// Production code should validate/compress accordingly.
+			MediaType:   "application/vnd.cog.weights.layer.v1+gzip",
+			ContentType: "application/octet-stream",
+		})
+	}
+
+	// Create weights.lock
+	lock := mockWeightsLock{
+		Version: "1",
+		Created: time.Now().UTC(),
+		Files:   files,
+	}
+
+	lockData, err := json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		ts.Fatalf("mock-weights: failed to marshal weights.lock: %v", err)
+	}
+
+	if err := os.WriteFile(lockPath, lockData, 0o644); err != nil {
+		ts.Fatalf("mock-weights: failed to write weights.lock: %v", err)
+	}
+
+	ts.Logf("mock-weights: created %d files in %s", count, weightsDir)
+}
+
+// parseSize parses size strings like "1kb", "10KB", "1mb" into bytes.
+func parseSize(s string) (int64, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return 0, fmt.Errorf("empty size string")
+	}
+
+	var multiplier int64 = 1
+	var numStr string
+
+	switch {
+	case strings.HasSuffix(s, "gb"):
+		multiplier = 1024 * 1024 * 1024
+		numStr = strings.TrimSuffix(s, "gb")
+	case strings.HasSuffix(s, "mb"):
+		multiplier = 1024 * 1024
+		numStr = strings.TrimSuffix(s, "mb")
+	case strings.HasSuffix(s, "kb"):
+		multiplier = 1024
+		numStr = strings.TrimSuffix(s, "kb")
+	case strings.HasSuffix(s, "b"):
+		numStr = strings.TrimSuffix(s, "b")
+	default:
+		numStr = s
+	}
+
+	num, err := strconv.ParseFloat(strings.TrimSpace(numStr), 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid number: %s", numStr)
+	}
+	if num < 0 {
+		return 0, fmt.Errorf("size cannot be negative")
+	}
+
+	return int64(num * float64(multiplier)), nil
 }
