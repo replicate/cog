@@ -60,6 +60,33 @@ func (f *IndexFactory) BuildWeightsArtifact(ctx context.Context, lockPath, baseD
 	return artifact, manifest, nil
 }
 
+// BuildWeightsArtifactFromManifest builds an OCI artifact from a WeightsManifest.
+// This is similar to BuildWeightsArtifact but takes an already-parsed manifest
+// instead of a lock file path. Useful for push operations where the manifest
+// is already attached to the Model.
+func (f *IndexFactory) BuildWeightsArtifactFromManifest(ctx context.Context, manifest *WeightsManifest, baseDir string) (v1.Image, error) {
+	if manifest == nil {
+		return nil, fmt.Errorf("manifest is nil")
+	}
+
+	builder := NewWeightsArtifactBuilder()
+
+	// Convert WeightsManifest to WeightsLock format for the builder
+	// (both use the same WeightFile structure)
+	lock := &WeightsLock{
+		Version: "1",
+		Created: manifest.Created,
+		Files:   make([]WeightFile, len(manifest.Files)),
+	}
+	copy(lock.Files, manifest.Files)
+
+	if err := builder.AddLayersFromLock(lock, baseDir); err != nil {
+		return nil, fmt.Errorf("add layers: %w", err)
+	}
+
+	return builder.Build()
+}
+
 // BuildIndex creates an OCI Image Index from a model image and weights artifact.
 func (f *IndexFactory) BuildIndex(ctx context.Context, modelImg v1.Image, weightsArtifact v1.Image, platform *Platform) (v1.ImageIndex, error) {
 	imgDigest, err := modelImg.Digest()

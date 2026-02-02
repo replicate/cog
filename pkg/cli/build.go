@@ -208,7 +208,7 @@ func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map
 		Strip:            buildStrip,
 		Precompile:       buildPrecompile,
 		Annotations:      annotations,
-		OCIIndex:         os.Getenv("COG_OCI_INDEX") == "1",
+		ImageFormat:      model.ImageFormatFromEnv(),
 	}
 }
 

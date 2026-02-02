@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types/image"
@@ -232,7 +233,51 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	// Use the canonical ID from the response
 	img.Digest = resp.ID
 
-	return r.modelFromImage(img, src.Config)
+	m, err := r.modelFromImage(img, src.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set image format from build options
+	m.ImageFormat = opts.ImageFormat
+	if m.ImageFormat == "" {
+		m.ImageFormat = FormatStandalone
+	}
+
+	// For bundle format, load weights manifest
+	if m.ImageFormat == FormatBundle {
+		lockPath := opts.WeightsLockPath
+		if lockPath == "" {
+			lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
+		}
+
+		lock, err := LoadWeightsLock(lockPath)
+		if err != nil {
+			return nil, fmt.Errorf("bundle format requires weights.lock: %w", err)
+		}
+		m.WeightsManifest = lock.ToWeightsManifest()
+	}
+
+	return m, nil
+}
+
+// Push pushes a Model to a container registry.
+// The push strategy is determined by Model.ImageFormat:
+// - FormatStandalone (or empty): Standard docker push
+// - FormatBundle: Push image, build index with weights, push index
+func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
+	pusher := r.pusherFor(m.ImageFormat)
+	return pusher.Push(ctx, m, opts)
+}
+
+// pusherFor returns the appropriate Pusher for the given format.
+func (r *Resolver) pusherFor(format ModelImageFormat) Pusher {
+	switch format {
+	case FormatBundle:
+		return NewBundlePusher(r.docker, r.registry)
+	default:
+		return NewImagePusher(r.docker)
+	}
 }
 
 // BuildBase creates a base image for dev mode (without /src copied).
@@ -340,7 +385,7 @@ func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.Manifest
 	if err != nil {
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
-	m.Format = ModelFormatImage
+	m.ImageFormat = FormatStandalone
 	return m, nil
 }
 
@@ -371,8 +416,8 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
 
-	// Set v2 format fields
-	m.Format = ModelFormatIndex
+	// Set bundle format fields
+	m.ImageFormat = FormatBundle
 	m.Index = &Index{
 		Digest:    ref.String(), // The index reference
 		Reference: ref.String(),

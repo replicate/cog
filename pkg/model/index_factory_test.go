@@ -108,6 +108,56 @@ func TestIndexFactory(t *testing.T) {
 	})
 }
 
+func TestIndexFactory_BuildWeightsArtifactFromManifest(t *testing.T) {
+	t.Run("builds artifact from weights manifest", func(t *testing.T) {
+		dir := t.TempDir()
+		weightsDir := filepath.Join(dir, "weights")
+		require.NoError(t, os.MkdirAll(weightsDir, 0o755))
+
+		testData := []byte("test model weights content")
+		require.NoError(t, os.WriteFile(filepath.Join(weightsDir, "model.bin"), testData, 0o644))
+
+		// Create a WeightsManifest (instead of WeightsLock)
+		manifest := &WeightsManifest{
+			ArtifactType: MediaTypeWeightsManifest,
+			Created:      time.Now().UTC(),
+			Files: []WeightFile{
+				{
+					Name:   "model.bin",
+					Dest:   "/cache/model.bin",
+					Source: "file://./weights/model.bin",
+				},
+			},
+		}
+
+		factory := NewIndexFactory()
+		artifact, err := factory.BuildWeightsArtifactFromManifest(context.Background(), manifest, dir)
+		require.NoError(t, err)
+		require.NotNil(t, artifact)
+
+		// Verify artifact has the expected layer
+		layers, err := artifact.Layers()
+		require.NoError(t, err)
+		require.Len(t, layers, 1)
+	})
+
+	t.Run("returns error when source file not found", func(t *testing.T) {
+		manifest := &WeightsManifest{
+			Files: []WeightFile{
+				{
+					Name:   "missing.bin",
+					Dest:   "/cache/missing.bin",
+					Source: "file://./missing/weights.bin",
+				},
+			},
+		}
+
+		factory := NewIndexFactory()
+		_, err := factory.BuildWeightsArtifactFromManifest(context.Background(), manifest, "/nonexistent/dir")
+		require.Error(t, err)
+	})
+}
+
 func TestWeightsArtifactBuilder(t *testing.T) {
 	t.Run("build empty artifact", func(t *testing.T) {
 		builder := NewWeightsArtifactBuilder()

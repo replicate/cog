@@ -106,7 +106,10 @@ func push(cmd *cobra.Command, args []string) error {
 	startBuildTime := time.Now()
 	regClient := registry.NewRegistryClient()
 	resolver := model.NewResolver(dockerClient, regClient)
-	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, annotations))
+
+	// Build the model
+	buildOpts := buildOptionsFromFlags(cmd, imageName, annotations)
+	m, err := resolver.Build(ctx, src, buildOpts)
 	if err != nil {
 		// Call PostPush to handle error logging/analytics
 		_ = p.PostPush(ctx, pushOpts, err)
@@ -114,6 +117,12 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	buildDuration := time.Since(startBuildTime)
+
+	// Log weights info for bundle format
+	if m.ImageFormat == model.FormatBundle && m.WeightsManifest != nil {
+		console.Infof("\nBundle format: %d weight files (%.2f MB)",
+			len(m.WeightsManifest.Files), float64(m.WeightsManifest.TotalSize())/1024/1024)
+	}
 
 	// Push the image
 	console.Infof("\nPushing image '%s'...", m.ImageRef())

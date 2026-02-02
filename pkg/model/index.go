@@ -1,16 +1,6 @@
 // pkg/model/index.go
 package model
 
-// ModelFormat indicates the OCI structure of a model.
-type ModelFormat string
-
-const (
-	// ModelFormatImage is a traditional single OCI image (v1).
-	ModelFormatImage ModelFormat = "image"
-	// ModelFormatIndex is an OCI Image Index containing image + weights (v2).
-	ModelFormatIndex ModelFormat = "index"
-)
-
 // Index represents an OCI Image Index containing multiple manifests.
 type Index struct {
 	// Digest is the index digest (sha256:...).

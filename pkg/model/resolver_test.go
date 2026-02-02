@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path/filepath"
 	"testing"
 
 	"github.com/docker/docker/api/types/container"
@@ -11,6 +12,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
 )
@@ -19,6 +21,7 @@ import (
 type mockDocker struct {
 	inspectFunc func(ctx context.Context, ref string) (*image.InspectResponse, error)
 	pullFunc    func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
+	pushFunc    func(ctx context.Context, ref string) error
 }
 
 func (m *mockDocker) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {
@@ -36,6 +39,9 @@ func (m *mockDocker) Pull(ctx context.Context, ref string, force bool) (*image.I
 }
 
 func (m *mockDocker) Push(ctx context.Context, ref string) error {
+	if m.pushFunc != nil {
+		return m.pushFunc(ctx, ref)
+	}
 	return errors.New("mockDocker.Push not implemented")
 }
 
@@ -77,7 +83,9 @@ func (m *mockDocker) ContainerStart(ctx context.Context, options command.RunOpti
 
 // mockRegistry implements registry.Client for testing.
 type mockRegistry struct {
-	inspectFunc func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error)
+	inspectFunc   func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error)
+	getImageFunc  func(ctx context.Context, ref string, platform *registry.Platform) (v1.Image, error)
+	pushIndexFunc func(ctx context.Context, ref string, idx v1.ImageIndex) error
 }
 
 func (m *mockRegistry) Inspect(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error) {
@@ -88,7 +96,10 @@ func (m *mockRegistry) Inspect(ctx context.Context, ref string, platform *regist
 }
 
 func (m *mockRegistry) GetImage(ctx context.Context, ref string, platform *registry.Platform) (v1.Image, error) {
-	panic("not implemented")
+	if m.getImageFunc != nil {
+		return m.getImageFunc(ctx, ref, platform)
+	}
+	panic("mockRegistry.GetImage not implemented")
 }
 
 func (m *mockRegistry) Exists(ctx context.Context, ref string) (bool, error) {
@@ -100,7 +111,10 @@ func (m *mockRegistry) PushImage(ctx context.Context, ref string, img v1.Image) 
 }
 
 func (m *mockRegistry) PushIndex(ctx context.Context, ref string, idx v1.ImageIndex) error {
-	panic("not implemented")
+	if m.pushIndexFunc != nil {
+		return m.pushIndexFunc(ctx, ref, idx)
+	}
+	panic("mockRegistry.PushIndex not implemented")
 }
 
 // mockFactory implements Factory for testing.
@@ -893,6 +907,169 @@ func TestResolver_Pull_LocalInspectRealError(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "connection refused")
+}
+
+// =============================================================================
+// Build tests
+// =============================================================================
+
+func TestResolver_Build_SetsImageFormat(t *testing.T) {
+	t.Run("sets standalone format by default", func(t *testing.T) {
+		docker := &mockDocker{
+			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+				return &image.InspectResponse{
+					ID: "sha256:abc123",
+					Config: &container.Config{
+						Labels: map[string]string{
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
+						},
+					},
+				}, nil
+			},
+		}
+
+		factory := &mockFactory{}
+		resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
+
+		src := &Source{
+			Config:     &config.Config{Build: &config.Build{}},
+			ProjectDir: t.TempDir(),
+		}
+
+		m, err := resolver.Build(context.Background(), src, BuildOptions{
+			ImageName: "test-image",
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, FormatStandalone, m.ImageFormat)
+		require.Nil(t, m.WeightsManifest)
+	})
+
+	t.Run("sets bundle format when specified", func(t *testing.T) {
+		docker := &mockDocker{
+			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+				return &image.InspectResponse{
+					ID: "sha256:abc123",
+					Config: &container.Config{
+						Labels: map[string]string{
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
+						},
+					},
+				}, nil
+			},
+		}
+
+		factory := &mockFactory{}
+		resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
+
+		// Create weights.lock file
+		dir := t.TempDir()
+		lock := &WeightsLock{
+			Version: "1",
+			Files: []WeightFile{
+				{Name: "model.bin", Dest: "/cache/model.bin", Source: "file://./model.bin"},
+			},
+		}
+		require.NoError(t, lock.Save(filepath.Join(dir, WeightsLockFilename)))
+
+		src := &Source{
+			Config:     &config.Config{Build: &config.Build{}},
+			ProjectDir: dir,
+		}
+
+		m, err := resolver.Build(context.Background(), src, BuildOptions{
+			ImageName:   "test-image",
+			ImageFormat: FormatBundle,
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, FormatBundle, m.ImageFormat)
+		require.NotNil(t, m.WeightsManifest)
+		require.Len(t, m.WeightsManifest.Files, 1)
+		require.Equal(t, "model.bin", m.WeightsManifest.Files[0].Name)
+	})
+
+	t.Run("returns error for bundle format without weights.lock", func(t *testing.T) {
+		docker := &mockDocker{
+			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+				return &image.InspectResponse{
+					ID: "sha256:abc123",
+					Config: &container.Config{
+						Labels: map[string]string{
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
+						},
+					},
+				}, nil
+			},
+		}
+
+		factory := &mockFactory{}
+		resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
+
+		src := &Source{
+			Config:     &config.Config{Build: &config.Build{}},
+			ProjectDir: t.TempDir(), // No weights.lock
+		}
+
+		_, err := resolver.Build(context.Background(), src, BuildOptions{
+			ImageName:   "test-image",
+			ImageFormat: FormatBundle,
+		})
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "bundle format requires weights.lock")
+	})
+
+	t.Run("uses custom weights lock path", func(t *testing.T) {
+		docker := &mockDocker{
+			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+				return &image.InspectResponse{
+					ID: "sha256:abc123",
+					Config: &container.Config{
+						Labels: map[string]string{
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
+						},
+					},
+				}, nil
+			},
+		}
+
+		factory := &mockFactory{}
+		resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
+
+		// Create weights.lock file in a different location
+		dir := t.TempDir()
+		customDir := t.TempDir()
+		customLockPath := filepath.Join(customDir, "custom.lock")
+		lock := &WeightsLock{
+			Version: "1",
+			Files: []WeightFile{
+				{Name: "custom.bin", Dest: "/cache/custom.bin", Source: "file://./custom.bin"},
+			},
+		}
+		require.NoError(t, lock.Save(customLockPath))
+
+		src := &Source{
+			Config:     &config.Config{Build: &config.Build{}},
+			ProjectDir: dir,
+		}
+
+		m, err := resolver.Build(context.Background(), src, BuildOptions{
+			ImageName:       "test-image",
+			ImageFormat:     FormatBundle,
+			WeightsLockPath: customLockPath,
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, FormatBundle, m.ImageFormat)
+		require.NotNil(t, m.WeightsManifest)
+		require.Len(t, m.WeightsManifest.Files, 1)
+		require.Equal(t, "custom.bin", m.WeightsManifest.Files[0].Name)
+	})
 }
 
 func TestIndexDetectionHelpers(t *testing.T) {

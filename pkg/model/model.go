@@ -15,10 +15,15 @@ type Model struct {
 	Schema     *openapi3.T    // OpenAPI schema
 	CogVersion string         // Version of cog used to build
 
-	// V2 (OCI Index) fields
-	Format          ModelFormat      // OCI structure (image or index)
-	Index           *Index           // OCI Image Index (v2 format only, nil for v1)
-	WeightsManifest *WeightsManifest // Weight file metadata (v2 format only, nil for v1)
+	// ImageFormat describes the OCI structure.
+	// Set at build time, determines push strategy.
+	// FormatStandalone (default): Traditional single OCI image
+	// FormatBundle: OCI Image Index with image + weights artifact
+	ImageFormat ModelImageFormat
+
+	// Bundle-specific fields (nil for standalone)
+	Index           *Index           // OCI Image Index (populated when inspecting bundle)
+	WeightsManifest *WeightsManifest // Weight file metadata (populated for bundles)
 }
 
 // HasGPU returns true if the model requires GPU.
@@ -42,7 +47,7 @@ func (m *Model) ImageRef() string {
 	return m.Image.Reference
 }
 
-// IsIndexed returns true if this model uses the OCI Index format (v2).
-func (m *Model) IsIndexed() bool {
-	return m.Format == ModelFormatIndex
+// IsBundle returns true if this model uses the bundle format (OCI Index with weights).
+func (m *Model) IsBundle() bool {
+	return m.ImageFormat == FormatBundle
 }
