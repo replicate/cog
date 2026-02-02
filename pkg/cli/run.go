@@ -38,7 +38,6 @@ func newRunCommand() *cobra.Command {
 	addGpusFlag(cmd)
 	addFastFlag(cmd)
 	addConfigFlag(cmd)
-	addPipelineImage(cmd)
 
 	flags := cmd.Flags()
 	// Flags after first argument are considered args and passed to command
@@ -69,7 +68,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	var m *model.Model
 	useFast := (src.Config.Build != nil && src.Config.Build.Fast) || buildFast
-	if useFast || pipelinesImage {
+	if useFast {
 		m, err = resolver.Build(ctx, src, buildOptionsFromFlags(cmd, "", useFast, nil))
 		if err != nil {
 			return err

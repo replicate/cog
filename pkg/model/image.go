@@ -35,11 +35,10 @@ type Platform struct {
 
 // Label keys for Cog-specific metadata stored in image labels.
 var (
-	LabelConfig            = global.LabelNamespace + "config"
-	LabelVersion           = global.LabelNamespace + "version"
-	LabelOpenAPISchema     = global.LabelNamespace + "openapi_schema"
-	LabelWeightsManifest   = global.LabelNamespace + "r8_weights_manifest"
-	LabelModelDependencies = global.LabelNamespace + "r8_model_dependencies"
+	LabelConfig          = global.LabelNamespace + "config"
+	LabelVersion         = global.LabelNamespace + "version"
+	LabelOpenAPISchema   = global.LabelNamespace + "openapi_schema"
+	LabelWeightsManifest = global.LabelNamespace + "r8_weights_manifest"
 )
 
 // IsCogModel returns true if this image has Cog labels indicating it's a Cog model.

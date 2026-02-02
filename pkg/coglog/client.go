@@ -33,11 +33,6 @@ type pushLog struct {
 	CogRuntime bool    `json:"cog_runtime"`
 }
 
-type pullLog struct {
-	DurationMs float32 `json:"length_ms"`
-	BuildError *string `json:"error"`
-}
-
 func NewClient(client *http.Client) *Client {
 	return &Client{
 		client: client,
@@ -106,39 +101,6 @@ func (c *Client) EndPush(ctx context.Context, err error, logContext PushLogConte
 	}
 
 	err = c.postLog(ctx, jsonData, "push")
-	if err != nil {
-		console.Warn(err.Error())
-		return false
-	}
-
-	return true
-}
-
-func (c *Client) StartPull() PullLogContext {
-	logContext := PullLogContext{
-		started: time.Now(),
-	}
-	return logContext
-}
-
-func (c *Client) EndPull(ctx context.Context, err error, logContext PullLogContext) bool {
-	var errorStr *string = nil
-	if err != nil {
-		errStr := err.Error()
-		errorStr = &errStr
-	}
-	pushLog := pullLog{
-		DurationMs: float32(time.Since(logContext.started).Milliseconds()),
-		BuildError: errorStr,
-	}
-
-	jsonData, err := json.Marshal(pushLog)
-	if err != nil {
-		console.Warn("Failed to marshal JSON for build log: " + err.Error())
-		return false
-	}
-
-	err = c.postLog(ctx, jsonData, "pull")
 	if err != nil {
 		console.Warn(err.Error())
 		return false

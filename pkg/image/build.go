@@ -23,8 +23,6 @@ import (
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/dockerignore"
 	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/http"
-	"github.com/replicate/cog/pkg/procedure"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/weights"
@@ -57,22 +55,10 @@ func Build(
 	fastFlag bool,
 	annotations map[string]string,
 	dockerCommand command.Command,
-	client registry.Client,
-	pipelinesImage bool) (string, error) {
+	client registry.Client) (string, error) {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
 	if fastFlag {
 		console.Info("Fast build enabled.")
-	}
-
-	if pipelinesImage {
-		httpClient, err := http.ProvideHTTPClient(ctx, dockerCommand)
-		if err != nil {
-			return "", err
-		}
-		err = procedure.Validate(dir, httpClient, cfg, true)
-		if err != nil {
-			return "", err
-		}
 	}
 
 	// remove bundled schema files that may be left from previous builds
@@ -256,11 +242,6 @@ func Build(
 		return "", fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}
 
-	modelDependencies, err := GenerateModelDependencies(ctx, dockerCommand, tmpImageId, cfg)
-	if err != nil {
-		return "", fmt.Errorf("Failed to generate model dependencies from image: %w", err)
-	}
-
 	labels := map[string]string{
 		command.CogVersionLabelKey:           global.Version,
 		command.CogConfigLabelKey:            string(bytes.TrimSpace(configJSON)),
@@ -268,8 +249,7 @@ func Build(
 		global.LabelNamespace + "pip_freeze": pipFreeze,
 		// Mark the image as having an appropriate init entrypoint. We can use this
 		// to decide how/if to shim the image.
-		global.LabelNamespace + "has_init":   "true",
-		command.CogModelDependenciesLabelKey: modelDependencies,
+		global.LabelNamespace + "has_init": "true",
 	}
 
 	if cogBaseImageName != "" {

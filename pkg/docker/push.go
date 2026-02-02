@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/replicate/cog/pkg/api"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/monobeam"
@@ -16,16 +15,10 @@ import (
 type BuildInfo struct {
 	BuildTime time.Duration
 	BuildID   string
-	Pipeline  bool
 }
 
 func Push(ctx context.Context, image string, fast bool, projectDir string, command command.Command, buildInfo BuildInfo, client *http.Client, cfg *config.Config) error {
 	webClient := web.NewClient(command, client)
-
-	if buildInfo.Pipeline {
-		apiClient := api.NewClient(command, client, webClient)
-		return PipelinePush(ctx, image, projectDir, apiClient, client, cfg)
-	}
 
 	if err := webClient.PostPushStart(ctx, buildInfo.BuildID, buildInfo.BuildTime); err != nil {
 		console.Warnf("Failed to send build timings to server: %v", err)

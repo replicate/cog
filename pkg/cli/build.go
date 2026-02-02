@@ -54,7 +54,6 @@ func newBuildCommand() *cobra.Command {
 	addPrecompileFlag(cmd)
 	addFastFlag(cmd)
 	addConfigFlag(cmd)
-	addPipelineImage(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -229,7 +228,6 @@ func buildOptionsFromFlags(cmd *cobra.Command, imageName string, fast bool, anno
 		Precompile:       buildPrecompile,
 		Fast:             fast,
 		Annotations:      annotations,
-		PipelinesImage:   pipelinesImage,
 	}
 }
 

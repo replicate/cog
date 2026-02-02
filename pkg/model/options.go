@@ -25,9 +25,6 @@ type BuildOptions struct {
 	// Precompile precompiles Python bytecode.
 	Precompile bool
 
-	// PipelinesImage marks this as a pipeline/workflow image.
-	PipelinesImage bool
-
 	// UseCudaBaseImage controls CUDA base image usage: "auto", "true", or "false".
 	UseCudaBaseImage string
 

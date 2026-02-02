@@ -65,7 +65,6 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 		opts.Annotations,
 		f.docker,
 		f.registry,
-		opts.PipelinesImage,
 	)
 	if err != nil {
 		return nil, err
