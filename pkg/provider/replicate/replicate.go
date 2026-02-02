@@ -95,7 +95,7 @@ func (p *ReplicateProvider) PrePush(ctx context.Context, opts provider.PushOptio
 	// Start analytics
 	if opts.HTTPClient != nil {
 		p.logClient = coglog.NewClient(opts.HTTPClient)
-		p.logCtx = p.logClient.StartPush(opts.LocalImage)
+		p.logCtx = p.logClient.StartPush()
 		p.logCtx.Fast = opts.FastPush
 		p.logCtx.CogRuntime = false
 		if opts.Config != nil && opts.Config.Build.CogRuntime != nil {
