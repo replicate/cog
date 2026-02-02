@@ -104,7 +104,8 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	startBuildTime := time.Now()
-	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+	regClient := registry.NewRegistryClient()
+	resolver := model.NewResolver(dockerClient, regClient)
 	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, annotations))
 	if err != nil {
 		// Call PostPush to handle error logging/analytics

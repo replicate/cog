@@ -323,6 +323,12 @@ func (r *Resolver) modelFromInspect(ref *ParsedRef, resp *image.InspectResponse,
 // modelFromManifest creates a Model from registry manifest.
 // Returns ErrNotCogModel if the image is not a valid Cog model.
 func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.ManifestResult, source ImageSource) (*Model, error) {
+	// Check if this is an OCI Index (v2 format)
+	if isOCIIndex(manifest) {
+		return r.modelFromIndex(ref, manifest, source)
+	}
+
+	// Standard image (v1 format)
 	img := &Image{
 		Reference: ref.String(),
 		Digest:    manifest.Config, // Config digest serves as image ID
@@ -330,11 +336,83 @@ func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.Manifest
 		Source:    source,
 	}
 
-	model, err := img.ToModel()
+	m, err := img.ToModel()
 	if err != nil {
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
-	return model, nil
+	m.Format = ModelFormatImage
+	return m, nil
+}
+
+// modelFromIndex creates a Model from an OCI Image Index.
+// It extracts the image manifest and weights manifest from the index.
+func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestResult, source ImageSource) (*Model, error) {
+	// Find the image manifest (skip unknown/unknown platform artifacts)
+	imgManifest := findImageManifest(manifest.Manifests, nil)
+	if imgManifest == nil {
+		return nil, fmt.Errorf("no image manifest found in index %s", ref.Original)
+	}
+
+	// Create Image from the image manifest
+	img := &Image{
+		Reference: ref.String(),
+		Digest:    imgManifest.Digest,
+		Labels:    manifest.Labels, // Labels come from the index inspection
+		Source:    source,
+		Platform: &Platform{
+			OS:           imgManifest.OS,
+			Architecture: imgManifest.Architecture,
+			Variant:      imgManifest.Variant,
+		},
+	}
+
+	m, err := img.ToModel()
+	if err != nil {
+		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
+	}
+
+	// Set v2 format fields
+	m.Format = ModelFormatIndex
+	m.Index = &Index{
+		Digest:    ref.String(), // The index reference
+		Reference: ref.String(),
+		MediaType: manifest.MediaType,
+		Manifests: make([]IndexManifest, len(manifest.Manifests)),
+	}
+
+	// Populate index manifests
+	for i, pm := range manifest.Manifests {
+		im := IndexManifest{
+			Digest:      pm.Digest,
+			Annotations: pm.Annotations,
+		}
+		if pm.OS != "" {
+			im.Platform = &Platform{
+				OS:           pm.OS,
+				Architecture: pm.Architecture,
+				Variant:      pm.Variant,
+			}
+		}
+		// Determine manifest type
+		if pm.OS == "unknown" && pm.Annotations != nil && pm.Annotations[AnnotationReferenceType] == "weights" {
+			im.Type = ManifestTypeWeights
+		} else {
+			im.Type = ManifestTypeImage
+		}
+		m.Index.Manifests[i] = im
+	}
+
+	// Find and populate weights manifest info
+	weightsManifest := findWeightsManifest(manifest.Manifests)
+	if weightsManifest != nil {
+		m.WeightsManifest = &WeightsManifest{
+			Digest: weightsManifest.Digest,
+			// Note: Full weights file metadata would require fetching the weights manifest
+			// For now, we just record that weights exist
+		}
+	}
+
+	return m, nil
 }
 
 // isOCIIndex checks if the manifest result is an OCI Image Index.
