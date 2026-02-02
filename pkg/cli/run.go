@@ -37,7 +37,6 @@ func newRunCommand() *cobra.Command {
 	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)
 	addFastFlag(cmd)
-	addLocalImage(cmd)
 	addConfigFlag(cmd)
 
 	flags := cmd.Flags()
@@ -101,10 +100,6 @@ func run(cmd *cobra.Command, args []string) error {
 		Image:   m.ImageRef(),
 		Volumes: []command.Volume{{Source: src.ProjectDir, Destination: "/src"}},
 		Workdir: "/src",
-	}
-	runOptions, err = docker.FillInWeightsManifestVolumes(ctx, dockerClient, runOptions)
-	if err != nil {
-		return err
 	}
 
 	for _, portString := range runPorts {

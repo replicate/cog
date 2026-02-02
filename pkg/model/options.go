@@ -25,9 +25,6 @@ type BuildOptions struct {
 	// Precompile precompiles Python bytecode.
 	Precompile bool
 
-	// LocalImage marks the image as local-only (not for pushing).
-	LocalImage bool
-
 	// UseCudaBaseImage controls CUDA base image usage: "auto", "true", or "false".
 	UseCudaBaseImage string
 

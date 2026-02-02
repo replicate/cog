@@ -102,7 +102,6 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 		Fast:             true,
 		Strip:            true,
 		Precompile:       true,
-		LocalImage:       true,
 		UseCudaBaseImage: "true",
 		UseCogBaseImage:  &useCogBase,
 		Secrets:          []string{"secret1", "secret2"},
@@ -120,7 +119,6 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 	require.True(t, result.Fast)
 	require.True(t, result.Strip)
 	require.True(t, result.Precompile)
-	require.True(t, result.LocalImage)
 	require.Equal(t, "true", result.UseCudaBaseImage)
 	require.NotNil(t, result.UseCogBaseImage)
 	require.True(t, *result.UseCogBaseImage)

@@ -66,7 +66,6 @@ the prediction on that.`,
 	addGpusFlag(cmd)
 	addSetupTimeoutFlag(cmd)
 	addFastFlag(cmd)
-	addLocalImage(cmd)
 	addConfigFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
