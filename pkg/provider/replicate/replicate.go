@@ -43,8 +43,11 @@ func (p *ReplicateProvider) Name() string {
 }
 
 func (p *ReplicateProvider) MatchesRegistry(host string) bool {
-	return host == global.DefaultReplicateRegistryHost ||
-		host == global.ReplicateRegistryHost
+	// Only match the default Replicate registry host (r8.im)
+	// Note: We don't use global.ReplicateRegistryHost here because that variable
+	// gets updated by the --registry flag, which would cause us to incorrectly
+	// match any registry the user specifies.
+	return host == global.DefaultReplicateRegistryHost
 }
 
 // Login performs login to the registry with options

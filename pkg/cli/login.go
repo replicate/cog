@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/global"
@@ -46,7 +44,6 @@ func login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Logging in to %s\n", registryHost)
 	// Look up the provider for this registry
 	p := provider.DefaultRegistry().ForHost(registryHost)
 	if p == nil {
