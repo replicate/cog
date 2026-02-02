@@ -88,14 +88,12 @@ func ExtractHost(image string) string {
 		image = image[:idx]
 	}
 
+	// Get the first component (everything before the first slash)
 	// If there's no slash, it's a Docker Hub image (e.g., "nginx" or "nginx:latest")
-	if !strings.Contains(image, "/") {
+	firstComponent, _, found := strings.Cut(image, "/")
+	if !found {
 		return "docker.io"
 	}
-
-	// Get the first component (everything before the first slash)
-	firstSlash := strings.Index(image, "/")
-	firstComponent := image[:firstSlash]
 
 	// Check if it looks like a registry host:
 	// - Contains a dot (e.g., gcr.io, ghcr.io, r8.im, myregistry.com)
