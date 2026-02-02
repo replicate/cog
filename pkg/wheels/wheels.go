@@ -80,10 +80,6 @@ type WheelSource int
 const (
 	// WheelSourceCog uses the embedded cog wheel (default when cog_runtime: false)
 	WheelSourceCog WheelSource = iota
-	// WheelSourceCogletEmbedded uses the embedded coglet wheel
-	WheelSourceCogletEmbedded
-	// WheelSourceCogletAlpha uses the PinnedCogletURL (default when cog_runtime: true)
-	WheelSourceCogletAlpha
 	// WheelSourceCogDataclass uses the embedded cog-dataclass wheel (pydantic-less)
 	WheelSourceCogDataclass
 	// WheelSourceURL uses a custom URL
@@ -97,10 +93,6 @@ func (s WheelSource) String() string {
 	switch s {
 	case WheelSourceCog:
 		return "cog"
-	case WheelSourceCogletEmbedded:
-		return "coglet"
-	case WheelSourceCogletAlpha:
-		return "coglet-alpha"
 	case WheelSourceCogDataclass:
 		return "cog-dataclass"
 	case WheelSourceURL:
@@ -128,8 +120,7 @@ const CogWheelEnvVar = "COG_WHEEL"
 // ParseCogWheel parses a COG_WHEEL value and returns the appropriate WheelConfig.
 // Supported values:
 //   - "cog" - Embedded cog wheel
-//   - "coglet" - Embedded coglet wheel
-//   - "coglet-alpha" - PinnedCogletURL
+//   - "coglet" - Deprecated (maps to cog-dataclass)
 //   - "cog-dataclass" - Embedded cog-dataclass wheel (pydantic-less)
 //   - "https://..." or "http://..." - Direct wheel URL
 //   - "/path/to/file.whl" or "./path/to/file.whl" - Local wheel file
@@ -145,9 +136,9 @@ func ParseCogWheel(value string) *WheelConfig {
 	case "cog":
 		return &WheelConfig{Source: WheelSourceCog}
 	case "coglet":
-		return &WheelConfig{Source: WheelSourceCogletEmbedded}
+		return &WheelConfig{Source: WheelSourceCogDataclass}
 	case "coglet-alpha":
-		return &WheelConfig{Source: WheelSourceCogletAlpha}
+		return &WheelConfig{Source: WheelSourceCogDataclass}
 	case "cog-dataclass":
 		return &WheelConfig{Source: WheelSourceCogDataclass}
 	}
@@ -164,17 +155,20 @@ func ParseCogWheel(value string) *WheelConfig {
 // GetWheelConfig returns the WheelConfig based on COG_WHEEL env var and cog_runtime flag.
 // Priority:
 //  1. COG_WHEEL env var (if set, overrides everything)
-//  2. cog_runtime: true -> coglet-alpha (PinnedCogletURL)
+//  2. cog_runtime: true -> cog-dataclass (coglet-alpha removed)
 //  3. cog_runtime: false (default) -> embedded cog wheel
 func GetWheelConfig(cogRuntimeEnabled bool) *WheelConfig {
 	envValue := os.Getenv(CogWheelEnvVar)
+	if strings.EqualFold(envValue, "coglet-alpha") || strings.EqualFold(envValue, "coglet") {
+		return &WheelConfig{Source: WheelSourceCogDataclass}
+	}
 	if config := ParseCogWheel(envValue); config != nil {
 		return config
 	}
 
 	// Default based on cog_runtime flag
 	if cogRuntimeEnabled {
-		return &WheelConfig{Source: WheelSourceCogletAlpha}
+		return &WheelConfig{Source: WheelSourceCogDataclass}
 	}
 	return &WheelConfig{Source: WheelSourceCog}
 }
