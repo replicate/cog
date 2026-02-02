@@ -17,7 +17,6 @@ cog build -t $TEST_IMAGE
 -- cog.yaml --
 build:
   python_version: "3.12"
-  fast: true
   python_requirements: "requirements.txt"
 predict: "predict.py:Predictor"
 

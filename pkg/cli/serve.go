@@ -33,7 +33,6 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)
-	addFastFlag(cmd)
 	addConfigFlag(cmd)
 
 	cmd.Flags().IntVarP(&port, "port", "p", port, "Port on which to listen")
@@ -58,10 +57,6 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
 	if err != nil {
 		return err
-	}
-
-	if buildFast {
-		console.Info("Fast serve enabled.")
 	}
 
 	gpus := ""

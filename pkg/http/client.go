@@ -25,8 +25,7 @@ func ProvideHTTPClient(ctx context.Context, dockerCommand command.Command) (*htt
 				"Content-Type":  "application/json",
 			},
 			authentication: map[string]string{
-				env.MonobeamHostFromEnvironment(): BearerHeaderPrefix + userInfo.Token,
-				env.WebHostFromEnvironment():      BearerHeaderPrefix + userInfo.Token,
+				env.WebHostFromEnvironment(): BearerHeaderPrefix + userInfo.Token,
 			},
 		},
 	}

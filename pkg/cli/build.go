@@ -28,7 +28,6 @@ var buildDockerfileFile string
 var buildUseCogBaseImage bool
 var buildStrip bool
 var buildPrecompile bool
-var buildFast bool
 var configFilename string
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
@@ -52,7 +51,6 @@ func newBuildCommand() *cobra.Command {
 	addBuildTimestampFlag(cmd)
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
-	addFastFlag(cmd)
 	addConfigFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
@@ -79,16 +77,6 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// In case one of `--x-fast` & `fast: bool` is set
-	if src.Config.Build != nil && src.Config.Build.Fast {
-		buildFast = true
-	}
-	logCtx.Fast = buildFast
-	logCtx.CogRuntime = false
-	if src.Config.Build != nil && src.Config.Build.CogRuntime != nil {
-		logCtx.CogRuntime = *src.Config.Build.CogRuntime
-	}
-
 	imageName := src.Config.Image
 	if buildTag != "" {
 		imageName = buildTag
@@ -104,7 +92,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
-	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, buildFast, nil))
+	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, nil))
 	if err != nil {
 		logClient.EndBuild(ctx, err, logCtx)
 		return err
@@ -177,12 +165,6 @@ func addPrecompileFlag(cmd *cobra.Command) {
 	_ = cmd.Flags().MarkHidden(precompileFlag)
 }
 
-func addFastFlag(cmd *cobra.Command) {
-	const fastFlag = "x-fast"
-	cmd.Flags().BoolVar(&buildFast, fastFlag, false, "Whether to use the experimental fast features")
-	_ = cmd.Flags().MarkHidden(fastFlag)
-}
-
 func addConfigFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&configFilename, "file", "f", "cog.yaml", "The name of the config file.")
 }
@@ -212,8 +194,7 @@ func DetermineUseCogBaseImage(cmd *cobra.Command) *bool {
 
 // buildOptionsFromFlags creates BuildOptions from the current CLI flag values.
 // The imageName and annotations parameters vary by command and must be provided.
-// The fast parameter should reflect the resolved fast mode (from flags OR config).
-func buildOptionsFromFlags(cmd *cobra.Command, imageName string, fast bool, annotations map[string]string) model.BuildOptions {
+func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map[string]string) model.BuildOptions {
 	return model.BuildOptions{
 		ImageName:        imageName,
 		Secrets:          buildSecrets,
@@ -226,7 +207,6 @@ func buildOptionsFromFlags(cmd *cobra.Command, imageName string, fast bool, anno
 		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
 		Strip:            buildStrip,
 		Precompile:       buildPrecompile,
-		Fast:             fast,
 		Annotations:      annotations,
 	}
 }

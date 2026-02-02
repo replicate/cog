@@ -36,7 +36,6 @@ func newRunCommand() *cobra.Command {
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)
-	addFastFlag(cmd)
 	addConfigFlag(cmd)
 
 	flags := cmd.Flags()
@@ -66,18 +65,9 @@ func run(cmd *cobra.Command, args []string) error {
 
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
-	var m *model.Model
-	useFast := (src.Config.Build != nil && src.Config.Build.Fast) || buildFast
-	if useFast {
-		m, err = resolver.Build(ctx, src, buildOptionsFromFlags(cmd, "", useFast, nil))
-		if err != nil {
-			return err
-		}
-	} else {
-		m, err = resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
-		if err != nil {
-			return err
-		}
+	m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
+	if err != nil {
+		return err
 	}
 
 	gpus := ""

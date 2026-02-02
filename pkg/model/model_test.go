@@ -45,42 +45,6 @@ func TestModel_HasGPU(t *testing.T) {
 	}
 }
 
-func TestModel_IsFast(t *testing.T) {
-	tests := []struct {
-		name   string
-		model  *Model
-		expect bool
-	}{
-		{
-			name:   "nil config",
-			model:  &Model{Config: nil},
-			expect: false,
-		},
-		{
-			name:   "nil build",
-			model:  &Model{Config: &config.Config{Build: nil}},
-			expect: false,
-		},
-		{
-			name:   "Fast false",
-			model:  &Model{Config: &config.Config{Build: &config.Build{Fast: false}}},
-			expect: false,
-		},
-		{
-			name:   "Fast true",
-			model:  &Model{Config: &config.Config{Build: &config.Build{Fast: true}}},
-			expect: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.model.IsFast()
-			require.Equal(t, tt.expect, result)
-		})
-	}
-}
-
 func TestModel_SchemaJSON(t *testing.T) {
 	tests := []struct {
 		name       string

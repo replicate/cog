@@ -3,7 +3,6 @@ package env
 import "os"
 
 const SchemeEnvVarName = "R8_SCHEME"
-const MonobeamHostEnvVarName = "R8_MONOBEAM_HOST"
 const WebHostEnvVarName = "R8_WEB_HOST"
 const APIHostEnvVarName = "R8_API_HOST"
 const PytorchHostEnvVarName = "R8_PYTORCH_HOST"
@@ -14,14 +13,6 @@ func SchemeFromEnvironment() string {
 		scheme = "https"
 	}
 	return scheme
-}
-
-func MonobeamHostFromEnvironment() string {
-	host := os.Getenv(MonobeamHostEnvVarName)
-	if host == "" {
-		host = "monobeam.replicate.delivery"
-	}
-	return host
 }
 
 func WebHostFromEnvironment() string {

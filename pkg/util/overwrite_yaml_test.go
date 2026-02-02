@@ -129,7 +129,6 @@ func TestStep1XYaml(t *testing.T) {
     - "libglib2.0-0"
   python_version: "3.11"
   python_requirements: requirements.txt
-  fast: true
 predict: "predict.py:Predictor"
 `
 
@@ -173,7 +172,6 @@ build:
     python_version: "3.11"
     # path to a Python requirements.txt file
     python_requirements: requirements.txt
-    fast: true
 # predict.py defines how predictions are run on your model
 predict: "predict.py:Predictor"
 `

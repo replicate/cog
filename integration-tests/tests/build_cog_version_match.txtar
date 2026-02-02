@@ -1,6 +1,3 @@
-# Skip for cog-dataclass and coglet (Rust) which do not support monobase
-[cog_dataclass] skip
-[coglet_rust] skip
 # Skip for coglet_alpha which does not support this
 [coglet_alpha] skip
 
@@ -10,7 +7,7 @@
 # This test verifies that when building with --use-cog-base-image,
 # the installed Python cog package has a valid version number.
 
-# Build using cog base image
+# Build using --use-cog-base-image
 cog build -t $TEST_IMAGE --use-cog-base-image=true
 
 # Compare the embedded version label with the Python package version inside the image

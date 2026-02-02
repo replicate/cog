@@ -43,7 +43,6 @@ Otherwise, it will build the model in the current directory and train it.`,
 	addUseCudaBaseImageFlag(cmd)
 	addGpusFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
-	addFastFlag(cmd)
 	addConfigFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&trainInputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
@@ -72,10 +71,6 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		src, err := model.NewSource(configFilename)
 		if err != nil {
 			return err
-		}
-
-		if src.Config.Build != nil && src.Config.Build.Fast {
-			buildFast = true
 		}
 
 		m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
@@ -110,9 +105,6 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		if gpus == "" && m.HasGPU() {
 			gpus = "all"
 		}
-		if m.IsFast() {
-			buildFast = true
-		}
 	}
 
 	console.Info("")
@@ -124,7 +116,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		Volumes: volumes,
 		Env:     trainEnvFlags,
 		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	}, true, buildFast, dockerClient)
+	}, true, dockerClient)
 	if err != nil {
 		return err
 	}
