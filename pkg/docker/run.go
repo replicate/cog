@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/weights"
 )
 
 var ErrMissingDeviceDriver = errors.New("Docker is missing required device driver")
@@ -70,28 +68,4 @@ func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command,
 	}
 
 	return 0, fmt.Errorf("container %s does not have a port bound to 0.0.0.0", containerID)
-}
-
-func FillInWeightsManifestVolumes(ctx context.Context, dockerCommand command.Command, runOptions command.RunOptions) (command.RunOptions, error) {
-	// Check if the image has a weights manifest
-	manifest, err := dockerCommand.Inspect(ctx, runOptions.Image)
-	if err != nil {
-		return runOptions, err
-	}
-	weightsManifest, ok := manifest.Config.Labels[command.CogWeightsManifestLabelKey]
-	if ok {
-		var weightsPaths []weights.WeightManifest
-		err = json.Unmarshal([]byte(weightsManifest), &weightsPaths)
-		if err != nil {
-			return runOptions, err
-		}
-		for _, weightPath := range weightsPaths {
-			runOptions.Volumes = append(runOptions.Volumes, command.Volume{
-				Source:      weightPath.Source,
-				Destination: "/src/" + weightPath.Destination,
-			})
-		}
-	}
-
-	return runOptions, nil
 }

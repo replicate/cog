@@ -23,7 +23,7 @@ func TestLogBuild(t *testing.T) {
 	t.Setenv(CoglogHostEnvVarName, url.Host)
 
 	client := NewClient(http.DefaultClient)
-	logContext := client.StartBuild(false)
+	logContext := client.StartBuild()
 	success := client.EndBuild(t.Context(), nil, logContext)
 	require.True(t, success)
 }
@@ -31,7 +31,7 @@ func TestLogBuild(t *testing.T) {
 func TestLogBuildDisabled(t *testing.T) {
 	t.Setenv(CoglogDisableEnvVarName, "true")
 	client := NewClient(http.DefaultClient)
-	logContext := client.StartBuild(false)
+	logContext := client.StartBuild()
 	success := client.EndBuild(t.Context(), nil, logContext)
 	require.False(t, success)
 }
@@ -48,7 +48,7 @@ func TestLogPush(t *testing.T) {
 	t.Setenv(CoglogHostEnvVarName, url.Host)
 
 	client := NewClient(http.DefaultClient)
-	logContext := client.StartPush(false)
+	logContext := client.StartPush()
 	success := client.EndPush(t.Context(), nil, logContext)
 	require.True(t, success)
 }

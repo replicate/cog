@@ -29,7 +29,6 @@ var buildUseCogBaseImage bool
 var buildStrip bool
 var buildPrecompile bool
 var buildFast bool
-var buildLocalImage bool
 var configFilename string
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
@@ -54,7 +53,6 @@ func newBuildCommand() *cobra.Command {
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
 	addFastFlag(cmd)
-	addLocalImage(cmd)
 	addConfigFlag(cmd)
 	addPipelineImage(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
@@ -74,7 +72,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logClient := coglog.NewClient(client)
-	logCtx := logClient.StartBuild(buildLocalImage)
+	logCtx := logClient.StartBuild()
 
 	src, err := model.NewSource(configFilename)
 	if err != nil {
@@ -186,12 +184,6 @@ func addFastFlag(cmd *cobra.Command) {
 	_ = cmd.Flags().MarkHidden(fastFlag)
 }
 
-func addLocalImage(cmd *cobra.Command) {
-	const localImage = "x-localimage"
-	cmd.Flags().BoolVar(&buildLocalImage, localImage, false, "Whether to use the experimental local image features")
-	_ = cmd.Flags().MarkHidden(localImage)
-}
-
 func addConfigFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&configFilename, "file", "f", "cog.yaml", "The name of the config file.")
 }
@@ -237,7 +229,6 @@ func buildOptionsFromFlags(cmd *cobra.Command, imageName string, fast bool, anno
 		Precompile:       buildPrecompile,
 		Fast:             fast,
 		Annotations:      annotations,
-		LocalImage:       buildLocalImage,
 		PipelinesImage:   pipelinesImage,
 	}
 }
