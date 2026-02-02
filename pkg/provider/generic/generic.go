@@ -31,6 +31,7 @@ func (p *GenericProvider) MatchesRegistry(host string) bool {
 }
 
 func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions) error {
+	fmt.Println("Generic provider login")
 
 	console.Infof("Logging in to %s", opts.Host)
 	console.Info("")
