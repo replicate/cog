@@ -195,7 +195,7 @@ The `COG_WHEEL` environment variable controls which wheel is installed:
 |-------|--------|
 | (unset) | Embedded `cog` wheel (default) |
 | `cog` | Embedded `cog` wheel |
-| `coglet` / `coglet-alpha` | Experimental runtime (temporary compatibility) |
+| `coglet` | Experimental runtime (temporary compatibility) |
 | `https://...` | Download wheel from URL |
 | `/path/to/file.whl` | Use local wheel file |
 

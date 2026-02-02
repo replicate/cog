@@ -216,7 +216,7 @@ func (g *FastGenerator) generateMonobase(lines []string, tmpDir string) ([]strin
 	var envs []string
 
 	envs = append(envs, []string{
-		"ENV R8_COG_VERSION=" + PinnedCogletURL,
+		"ENV R8_COG_VERSION=cog-dataclass",
 	}...)
 
 	torchVersion, ok := g.Config.TorchVersion()

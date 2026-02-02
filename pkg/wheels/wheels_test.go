@@ -20,7 +20,6 @@ func TestWheelSourceString(t *testing.T) {
 		expected string
 	}{
 		{WheelSourceCog, "cog"},
-		{WheelSourceCogletAlpha, "coglet-alpha"},
 		{WheelSourceCogDataclass, "cog-dataclass"},
 		{WheelSourceURL, "url"},
 		{WheelSourceFile, "file"},
@@ -69,14 +68,19 @@ func TestParseCogWheel(t *testing.T) {
 			expected: &WheelConfig{Source: WheelSourceCog},
 		},
 		{
+			name:     "coglet keyword",
+			input:    "coglet",
+			expected: &WheelConfig{Source: WheelSourceCogDataclass},
+		},
+		{
 			name:     "coglet-alpha keyword",
 			input:    "coglet-alpha",
-			expected: &WheelConfig{Source: WheelSourceCogletAlpha},
+			expected: &WheelConfig{Source: WheelSourceCogDataclass},
 		},
 		{
 			name:     "coglet-alpha uppercase",
 			input:    "COGLET-ALPHA",
-			expected: &WheelConfig{Source: WheelSourceCogletAlpha},
+			expected: &WheelConfig{Source: WheelSourceCogDataclass},
 		},
 		{
 			name:     "cog with whitespace",
@@ -186,7 +190,7 @@ func TestGetWheelConfig(t *testing.T) {
 			name:              "default with cog_runtime true",
 			envValue:          "",
 			cogRuntimeEnabled: true,
-			expected:          &WheelConfig{Source: WheelSourceCogletAlpha},
+			expected:          &WheelConfig{Source: WheelSourceCogDataclass},
 		},
 
 		// Env var overrides cog_runtime
@@ -200,7 +204,7 @@ func TestGetWheelConfig(t *testing.T) {
 			name:              "env coglet-alpha overrides cog_runtime false",
 			envValue:          "coglet-alpha",
 			cogRuntimeEnabled: false,
-			expected:          &WheelConfig{Source: WheelSourceCogletAlpha},
+			expected:          &WheelConfig{Source: WheelSourceCogDataclass},
 		},
 		{
 			name:              "env URL overrides cog_runtime",
