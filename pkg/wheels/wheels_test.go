@@ -19,8 +19,7 @@ func TestWheelSourceString(t *testing.T) {
 		source   WheelSource
 		expected string
 	}{
-		{WheelSourceCog, "cog"},
-		{WheelSourceCogDataclass, "cog-dataclass"},
+		{WheelSourceEmbedded, "embedded"},
 		{WheelSourceURL, "url"},
 		{WheelSourceFile, "file"},
 		{WheelSource(99), "unknown"},
@@ -55,37 +54,22 @@ func TestParseCogWheel(t *testing.T) {
 		{
 			name:     "cog keyword",
 			input:    "cog",
-			expected: &WheelConfig{Source: WheelSourceCog},
+			expected: &WheelConfig{Source: WheelSourceEmbedded},
 		},
 		{
 			name:     "cog uppercase",
 			input:    "COG",
-			expected: &WheelConfig{Source: WheelSourceCog},
+			expected: &WheelConfig{Source: WheelSourceEmbedded},
 		},
 		{
 			name:     "cog mixed case",
 			input:    "Cog",
-			expected: &WheelConfig{Source: WheelSourceCog},
-		},
-		{
-			name:     "coglet keyword",
-			input:    "coglet",
-			expected: &WheelConfig{Source: WheelSourceCogDataclass},
-		},
-		{
-			name:     "coglet-alpha keyword",
-			input:    "coglet-alpha",
-			expected: &WheelConfig{Source: WheelSourceCogDataclass},
-		},
-		{
-			name:     "coglet-alpha uppercase",
-			input:    "COGLET-ALPHA",
-			expected: &WheelConfig{Source: WheelSourceCogDataclass},
+			expected: &WheelConfig{Source: WheelSourceEmbedded},
 		},
 		{
 			name:     "cog with whitespace",
 			input:    "  cog  ",
-			expected: &WheelConfig{Source: WheelSourceCog},
+			expected: &WheelConfig{Source: WheelSourceEmbedded},
 		},
 
 		// URLs
@@ -182,18 +166,13 @@ func TestGetWheelConfig(t *testing.T) {
 		{
 			name:     "default uses embedded cog wheel",
 			envValue: "",
-			expected: &WheelConfig{Source: WheelSourceCog},
+			expected: &WheelConfig{Source: WheelSourceEmbedded},
 		},
 		// Env var overrides
 		{
 			name:     "env cog uses embedded cog wheel",
 			envValue: "cog",
-			expected: &WheelConfig{Source: WheelSourceCog},
-		},
-		{
-			name:     "env coglet-alpha uses cog-dataclass",
-			envValue: "coglet-alpha",
-			expected: &WheelConfig{Source: WheelSourceCogDataclass},
+			expected: &WheelConfig{Source: WheelSourceEmbedded},
 		},
 		{
 			name:     "env URL uses custom URL",

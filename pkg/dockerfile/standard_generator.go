@@ -471,10 +471,8 @@ func (g *StandardGenerator) installCog() (string, error) {
 	var err error
 
 	switch wheelConfig.Source {
-	case wheels.WheelSourceCog:
+	case wheels.WheelSourceEmbedded:
 		installLines, err = g.installEmbeddedCogWheel()
-	case wheels.WheelSourceCogDataclass:
-		installLines, err = g.installEmbeddedCogDataclassWheel()
 	case wheels.WheelSourceURL:
 		installLines, err = g.installWheelFromURL(wheelConfig.URL)
 	case wheels.WheelSourceFile:
@@ -502,31 +500,13 @@ func (g *StandardGenerator) installCog() (string, error) {
 	return installLines, nil
 }
 
-// installEmbeddedCogWheel installs the embedded cog wheel (default)
+// installEmbeddedCogWheel installs the embedded cog wheel
 func (g *StandardGenerator) installEmbeddedCogWheel() (string, error) {
 	filename, data := wheels.ReadCogWheel()
 	lines, containerPath, err := g.writeTemp(filename, data)
 	if err != nil {
 		return "", err
 	}
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir"
-	pipInstallLine += " " + containerPath
-	pipInstallLine += " 'pydantic>=1.9,<3'"
-	if g.strip {
-		pipInstallLine += " && " + StripDebugSymbolsCommand
-	}
-	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
-	return strings.Join(lines, "\n"), nil
-}
-
-// installEmbeddedCogDataclassWheel installs the embedded cog-dataclass wheel (pydantic-less)
-func (g *StandardGenerator) installEmbeddedCogDataclassWheel() (string, error) {
-	filename, data := wheels.ReadCogDataclassWheel()
-	lines, containerPath, err := g.writeTemp(filename, data)
-	if err != nil {
-		return "", err
-	}
-	// cog-dataclass does NOT require pydantic
 	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir"
 	pipInstallLine += " " + containerPath
 	if g.strip {

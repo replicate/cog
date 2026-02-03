@@ -919,7 +919,6 @@ predict: predict.py:Predictor
 	// Should contain the embedded cog wheel install (versioned filename like cog-0.x.x-py3-none-any.whl)
 	require.Contains(t, actual, "/tmp/cog-")
 	require.Contains(t, actual, ".whl")
-	require.Contains(t, actual, "'pydantic>=1.9,<3'")
 	// Should NOT contain coglet-specific env vars
 	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
@@ -951,39 +950,7 @@ predict: predict.py:Predictor
 	// Should contain the embedded cog wheel install (versioned filename like cog-0.x.x-py3-none-any.whl)
 	require.Contains(t, actual, "/tmp/cog-")
 	require.Contains(t, actual, ".whl")
-	require.Contains(t, actual, "'pydantic>=1.9,<3'")
 	// Should NOT contain coglet-specific env vars
-	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
-}
-
-func TestCOGWheelEnvCogletAlpha(t *testing.T) {
-	// COG_WHEEL=coglet-alpha should map to cog-dataclass
-	t.Setenv("COG_WHEEL", "coglet-alpha")
-
-	tmpDir := t.TempDir()
-
-	yaml := `
-build:
-  gpu: false
-  python_version: "3.11"
-predict: predict.py:Predictor
-`
-	conf, err := config.FromYAML([]byte(yaml))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
-
-	command := dockertest.NewMockCommand()
-	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
-	require.NoError(t, err)
-
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
-	require.NoError(t, err)
-
-	// Should contain the embedded cog-dataclass wheel install
-	require.Contains(t, actual, "/tmp/cog_dataclass-")
-	require.Contains(t, actual, ".whl")
-	require.NotContains(t, actual, "'pydantic>=1.9,<3'")
 	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
 
