@@ -894,8 +894,8 @@ pandas==2.0.3
 coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha31/coglet-0.1.0a31-py3-none-any.whl`, string(requirements))
 }
 
-func TestCOGWheelDefaultCogRuntimeFalse(t *testing.T) {
-	// Default behavior with cog_runtime: false (or not set) should use embedded cog wheel
+func TestCOGWheelDefault(t *testing.T) {
+	// Default behavior should use embedded cog wheel
 	tmpDir := t.TempDir()
 
 	yaml := `
@@ -924,38 +924,8 @@ predict: predict.py:Predictor
 	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
 
-func TestCOGWheelDefaultCogRuntimeTrue(t *testing.T) {
-	// Default behavior with cog_runtime: true should use cog-dataclass
-	tmpDir := t.TempDir()
-
-	yaml := `
-build:
-  gpu: false
-  python_version: "3.11"
-  cog_runtime: true
-predict: predict.py:Predictor
-`
-	conf, err := config.FromYAML([]byte(yaml))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
-
-	command := dockertest.NewMockCommand()
-	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
-	require.NoError(t, err)
-
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
-	require.NoError(t, err)
-
-	// Should contain the embedded cog-dataclass wheel install
-	require.Contains(t, actual, "/tmp/cog_dataclass-")
-	require.Contains(t, actual, ".whl")
-	require.NotContains(t, actual, "'pydantic>=1.9,<3'")
-	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
-}
-
 func TestCOGWheelEnvCog(t *testing.T) {
-	// COG_WHEEL=cog should use embedded cog wheel even with cog_runtime: true
+	// COG_WHEEL=cog should use embedded cog wheel
 	t.Setenv("COG_WHEEL", "cog")
 
 	tmpDir := t.TempDir()
@@ -964,7 +934,6 @@ func TestCOGWheelEnvCog(t *testing.T) {
 build:
   gpu: false
   python_version: "3.11"
-  cog_runtime: true
 predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))

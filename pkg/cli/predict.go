@@ -65,7 +65,6 @@ the prediction on that.`,
 	addDockerfileFlag(cmd)
 	addGpusFlag(cmd)
 	addSetupTimeoutFlag(cmd)
-	addFastFlag(cmd)
 	addConfigFlag(cmd)
 
 	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
@@ -181,38 +180,21 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		if src.Config.Build != nil && src.Config.Build.Fast {
-			buildFast = true
+		m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
+		if err != nil {
+			return err
 		}
+		imageName = m.ImageRef()
 
-		if buildFast {
-			m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, "", buildFast, nil))
-			if err != nil {
-				return err
-			}
-			imageName = m.ImageRef()
+		// Base image doesn't have /src in it, so mount as volume
+		volumes = append(volumes, command.Volume{
+			Source:      src.ProjectDir,
+			Destination: "/src",
+		})
 
-			if gpus == "" && m.HasGPU() {
-				gpus = "all"
-			}
-		} else {
-			m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
-			if err != nil {
-				return err
-			}
-			imageName = m.ImageRef()
-
-			// Base image doesn't have /src in it, so mount as volume
-			volumes = append(volumes, command.Volume{
-				Source:      src.ProjectDir,
-				Destination: "/src",
-			})
-
-			if gpus == "" && m.HasGPU() {
-				gpus = "all"
-			}
+		if gpus == "" && m.HasGPU() {
+			gpus = "all"
 		}
-
 	} else {
 		// Use existing image
 		imageName = args[0]
@@ -235,9 +217,6 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		if gpus == "" && m.HasGPU() {
 			gpus = "all"
 		}
-		if m.IsFast() {
-			buildFast = true
-		}
 	}
 
 	console.Info("")
@@ -254,7 +233,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		Image:   imageName,
 		Volumes: volumes,
 		Env:     env,
-	}, false, buildFast, dockerClient)
+	}, false, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -283,7 +262,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     env,
-			}, false, buildFast, dockerClient)
+			}, false, dockerClient)
 			if err != nil {
 				return err
 			}

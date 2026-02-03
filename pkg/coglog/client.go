@@ -22,15 +22,11 @@ type Client struct {
 type buildLog struct {
 	DurationMs float32 `json:"length_ms"`
 	BuildError *string `json:"error"`
-	Fast       bool    `json:"fast"`
-	CogRuntime bool    `json:"cog_runtime"`
 }
 
 type pushLog struct {
 	DurationMs float32 `json:"length_ms"`
 	BuildError *string `json:"error"`
-	Fast       bool    `json:"fast"`
-	CogRuntime bool    `json:"cog_runtime"`
 }
 
 func NewClient(client *http.Client) *Client {
@@ -55,8 +51,6 @@ func (c *Client) EndBuild(ctx context.Context, err error, logContext BuildLogCon
 	buildLog := buildLog{
 		DurationMs: float32(time.Since(logContext.started).Milliseconds()),
 		BuildError: errorStr,
-		Fast:       logContext.Fast,
-		CogRuntime: logContext.CogRuntime,
 	}
 
 	jsonData, err := json.Marshal(buildLog)
@@ -90,8 +84,6 @@ func (c *Client) EndPush(ctx context.Context, err error, logContext PushLogConte
 	pushLog := pushLog{
 		DurationMs: float32(time.Since(logContext.started).Milliseconds()),
 		BuildError: errorStr,
-		Fast:       logContext.Fast,
-		CogRuntime: logContext.CogRuntime,
 	}
 
 	jsonData, err := json.Marshal(pushLog)

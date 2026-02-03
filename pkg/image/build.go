@@ -52,14 +52,10 @@ func Build(
 	useCogBaseImage *bool,
 	strip bool,
 	precompile bool,
-	fastFlag bool,
 	annotations map[string]string,
 	dockerCommand command.Command,
 	client registry.Client) (string, error) {
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
-	if fastFlag {
-		console.Info("Fast build enabled.")
-	}
 
 	// remove bundled schema files that may be left from previous builds
 	_ = os.Remove(bundledSchemaFile)
@@ -101,7 +97,7 @@ func Build(
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
-		generator, err := dockerfile.NewGenerator(cfg, dir, fastFlag, dockerCommand, client, true)
+		generator, err := dockerfile.NewGenerator(cfg, dir, dockerCommand, client, true)
 		if err != nil {
 			return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}
@@ -237,7 +233,7 @@ func Build(
 		return "", fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}
 
-	pipFreeze, err := GeneratePipFreeze(ctx, dockerCommand, tmpImageId, fastFlag)
+	pipFreeze, err := GeneratePipFreeze(ctx, dockerCommand, tmpImageId)
 	if err != nil {
 		return "", fmt.Errorf("Failed to generate pip freeze from image: %w", err)
 	}
@@ -347,7 +343,7 @@ func BuildBase(ctx context.Context, dockerClient command.Command, cfg *config.Co
 	imageName := config.BaseDockerImageName(dir)
 
 	console.Info("Building Docker image from environment in cog.yaml...")
-	generator, err := dockerfile.NewGenerator(cfg, dir, false, dockerClient, client, requiresCog)
+	generator, err := dockerfile.NewGenerator(cfg, dir, dockerClient, client, requiresCog)
 	if err != nil {
 		return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}

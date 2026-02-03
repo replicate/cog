@@ -189,7 +189,7 @@ Use conditions to control when tests run based on environment. Conditions are ev
 | `[short]` | `go test -short` is used | `[!short]` | Use `[short] skip` to skip GPU tests, long builds, or slow framework installs when running in short mode |
 | `[linux]` | Running on Linux | `[!linux]` | Tests requiring Linux-specific features |
 | `[amd64]` | Running on amd64/x86_64 architecture | `[!amd64]` | Tests requiring specific CPU architecture |
-| `[linux_amd64]` | Running on Linux AND amd64 | `[!linux_amd64]` | Tests requiring both Linux and amd64 (e.g., monobase images) |
+| `[linux_amd64]` | Running on Linux AND amd64 | `[!linux_amd64]` | Tests requiring both Linux and amd64 (e.g., `--use-cog-base-image` builds) |
 
 ### Usage Examples
 
@@ -227,7 +227,7 @@ cog build -t $TEST_IMAGE
 ```txtar
 [!linux_amd64] skip 'requires Linux on amd64'
 
-# Test that requires both (e.g., monobase image tests)
+# Test that requires both (e.g., --use-cog-base-image builds)
 cog build -t $TEST_IMAGE --use-cog-base-image
 ```
 

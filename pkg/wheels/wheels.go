@@ -78,7 +78,7 @@ func readWheelFromFS(prefix string) (string, []byte) {
 type WheelSource int
 
 const (
-	// WheelSourceCog uses the embedded cog wheel (default when cog_runtime: false)
+	// WheelSourceCog uses the embedded cog wheel (default)
 	WheelSourceCog WheelSource = iota
 	// WheelSourceCogDataclass uses the embedded cog-dataclass wheel (pydantic-less)
 	WheelSourceCogDataclass
@@ -152,12 +152,11 @@ func ParseCogWheel(value string) *WheelConfig {
 	return &WheelConfig{Source: WheelSourceFile, Path: value}
 }
 
-// GetWheelConfig returns the WheelConfig based on COG_WHEEL env var and cog_runtime flag.
+// GetWheelConfig returns the WheelConfig based on COG_WHEEL env var.
 // Priority:
-//  1. COG_WHEEL env var (if set, overrides everything)
-//  2. cog_runtime: true -> cog-dataclass (coglet-alpha removed)
-//  3. cog_runtime: false (default) -> embedded cog wheel
-func GetWheelConfig(cogRuntimeEnabled bool) *WheelConfig {
+//  1. COG_WHEEL env var (if set, overrides default)
+//  2. Default: embedded cog wheel
+func GetWheelConfig() *WheelConfig {
 	envValue := os.Getenv(CogWheelEnvVar)
 	if strings.EqualFold(envValue, "coglet-alpha") || strings.EqualFold(envValue, "coglet") {
 		return &WheelConfig{Source: WheelSourceCogDataclass}
@@ -166,9 +165,5 @@ func GetWheelConfig(cogRuntimeEnabled bool) *WheelConfig {
 		return config
 	}
 
-	// Default based on cog_runtime flag
-	if cogRuntimeEnabled {
-		return &WheelConfig{Source: WheelSourceCogDataclass}
-	}
 	return &WheelConfig{Source: WheelSourceCog}
 }

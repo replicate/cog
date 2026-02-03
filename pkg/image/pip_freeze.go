@@ -11,22 +11,14 @@ import (
 
 // GeneratePipFreeze by running a pip freeze on the image.
 // This will be run as part of the build process then added as a label to the image.
-func GeneratePipFreeze(ctx context.Context, dockerClient command.Command, imageName string, fastFlag bool) (string, error) {
+func GeneratePipFreeze(ctx context.Context, dockerClient command.Command, imageName string) (string, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
 	args := []string{"python", "-m", "pip", "freeze"}
-	var env []string
-	// Fast-push builds with monobase has 3 disjoint venvs, base, cog & user
-	// Freeze user layer only
-	if fastFlag {
-		args = []string{"uv", "pip", "freeze"}
-		env = []string{"VIRTUAL_ENV=/root/.venv"}
-	}
 	err := docker.RunWithIO(ctx, dockerClient, command.RunOptions{
 		Image: imageName,
 		Args:  args,
-		Env:   env,
 	}, nil, &stdout, &stderr)
 
 	if err != nil {

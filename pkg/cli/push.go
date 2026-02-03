@@ -37,7 +37,6 @@ func newPushCommand() *cobra.Command {
 	addUseCogBaseImageFlag(cmd)
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
-	addFastFlag(cmd)
 	addConfigFlag(cmd)
 
 	return cmd
@@ -64,16 +63,6 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// In case one of `--x-fast` & `fast: bool` is set
-	if src.Config.Build != nil && src.Config.Build.Fast {
-		buildFast = true
-	}
-	logCtx.Fast = buildFast
-	logCtx.CogRuntime = false
-	if src.Config.Build != nil && src.Config.Build.CogRuntime != nil {
-		logCtx.CogRuntime = *src.Config.Build.CogRuntime
-	}
-
 	imageName := src.Config.Image
 	if len(args) > 0 {
 		imageName = args[0]
@@ -98,7 +87,7 @@ func push(cmd *cobra.Command, args []string) error {
 
 	startBuildTime := time.Now()
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
-	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, buildFast, annotations))
+	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, annotations))
 	if err != nil {
 		logClient.EndPush(ctx, err, logCtx)
 		return err
@@ -107,14 +96,11 @@ func push(cmd *cobra.Command, args []string) error {
 	buildDuration := time.Since(startBuildTime)
 
 	console.Infof("\nPushing image '%s'...", m.ImageRef())
-	if buildFast {
-		console.Info("Fast push enabled.")
-	}
 
-	err = docker.Push(ctx, m.ImageRef(), buildFast, src.ProjectDir, dockerClient, docker.BuildInfo{
+	err = docker.Push(ctx, m.ImageRef(), src.ProjectDir, dockerClient, docker.BuildInfo{
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
-	}, client, src.Config)
+	}, client)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
 			err = fmt.Errorf("Unable to find existing Replicate model for %s. "+
