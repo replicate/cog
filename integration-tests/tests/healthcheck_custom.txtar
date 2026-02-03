@@ -1,7 +1,5 @@
 # Skip for coglet_rust which does not support this
 [coglet_rust] skip
-# Skip for cog-dataclass which does not support this
-[cog_dataclass] skip
 
 # Test custom healthcheck functionality
 # This tests the user-defined healthcheck() method in predictors

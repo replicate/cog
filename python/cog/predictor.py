@@ -134,3 +134,10 @@ def extract_setup_weights(predictor: BasePredictor) -> Optional[Union[Path, str]
 def wait_for_env() -> None:
     """Wait for environment to be ready (noop in dataclass version)."""
     pass
+
+
+def get_healthcheck(predictor: Any) -> Optional[Callable[[], bool]]:
+    """Get the healthcheck method from a predictor if it exists."""
+    if hasattr(predictor, "healthcheck"):
+        return predictor.healthcheck
+    return None

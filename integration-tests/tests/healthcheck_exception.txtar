@@ -1,7 +1,5 @@
 # Skip for coglet_rust which does not support this
 [coglet_rust] skip
-# Skip for cog-dataclass which does not support this
-[cog_dataclass] skip
 
 # Test healthcheck that raises an exception
 # This tests error handling when healthcheck throws

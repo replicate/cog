@@ -33,6 +33,7 @@ from ..predictor import (
     load_predictor_from_ref,
     get_predict,
     get_train,
+    get_healthcheck,
     has_setup_weights,
     extract_setup_weights,
     wait_for_env,
@@ -44,6 +45,7 @@ from .eventtypes import (
     Cancel,
     Done,
     Envelope,
+    Healthcheck,
     Log,
     PredictionInput,
     PredictionMetric,
@@ -316,6 +318,34 @@ class Worker:
                 self._events.send(Envelope(event=Cancel(), tag=tag))
                 predict_state.cancel_sent = True
 
+    def healthcheck(self) -> "Future[Done]":
+        """Execute the healthcheck method if defined."""
+        self._assert_state(WorkerState.READY)
+        result: "Future[Done]" = Future()
+
+        # Create a unique tag for this healthcheck
+        tag = f"healthcheck-{uuid.uuid4().hex}"
+
+        # Subscribe to the healthcheck response
+        def handle_response(event: _PublicEventType) -> None:
+            if isinstance(event, Done):
+                result.set_result(event)
+
+        sid = self.subscribe(handle_response, tag=tag)
+
+        # Send healthcheck request to child worker
+        self._events.send(
+            Envelope(
+                event=Healthcheck(),
+                tag=tag,
+            )
+        )
+
+        # Unsubscribe after done
+        result.add_done_callback(lambda _: self.unsubscribe(sid))
+
+        return result
+
     def _assert_state(self, state: WorkerState) -> None:
         if self._state != state:
             raise InvalidStateException(
@@ -376,7 +406,7 @@ class Worker:
 
             ev = self._events.recv()
             self._publish(ev)
-            if isinstance(ev.event, Done):
+            if isinstance(ev.event, Done) and ev.event.event_type != "healthcheck":
                 self._complete_prediction(ev.event, ev.tag)
 
         # If we dropped off the end off the end of the loop, it's because the
@@ -384,7 +414,7 @@ class Worker:
         while self._events.poll():
             ev = self._events.recv()
             self._publish(ev)
-            if isinstance(ev.event, Done):
+            if isinstance(ev.event, Done) and ev.event.event_type != "healthcheck":
                 self._complete_prediction(ev.event, ev.tag)
 
         if not self._terminating:
@@ -608,6 +638,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 continue
             elif isinstance(e.event, Shutdown):
                 break
+            elif isinstance(e.event, Healthcheck):
+                self._healthcheck(e.tag, redirector)
             elif isinstance(e.event, PredictionInput):
                 self._predict(
                     e.tag,
@@ -647,6 +679,8 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     task.cancel()
                 elif isinstance(e.event, Shutdown):
                     break
+                elif isinstance(e.event, Healthcheck):
+                    tasks[e.tag] = tg.create_task(self._ahealthcheck(e.tag, redirector))
                 elif isinstance(e.event, PredictionInput):
                     tasks[e.tag] = tg.create_task(
                         self._apredict(
@@ -752,6 +786,78 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                             tag=tag,
                         )
                     )
+
+    # Timeout for healthcheck execution in seconds
+    HEALTHCHECK_TIMEOUT = 5.0
+
+    def _healthcheck(
+        self,
+        tag: Optional[str],
+        redirector: StreamRedirector,
+    ) -> None:
+        """Execute the healthcheck method."""
+        done = Done(event_type="healthcheck")
+        asyncio.run(self._healthcheck_internal(done))
+        try:
+            redirector.drain(timeout=10)
+        except TimeoutError:
+            pass
+        self._events.send(Envelope(event=done, tag=tag))
+
+    async def _ahealthcheck(
+        self,
+        tag: Optional[str],
+        redirector: SimpleStreamRedirector,
+    ) -> None:
+        """Execute the healthcheck method asynchronously."""
+        done = Done(event_type="healthcheck")
+        await self._healthcheck_internal(done)
+
+        try:
+            redirector.drain(timeout=10)
+        except TimeoutError:
+            pass
+        self._events.send(Envelope(event=done, tag=tag))
+
+    async def _healthcheck_internal(
+        self,
+        done: Done,
+    ) -> None:
+        try:
+            assert self._predictor
+            healthcheck_fn = get_healthcheck(self._predictor)
+
+            if healthcheck_fn is not None:
+                # Check if it's async
+                if inspect.iscoroutinefunction(healthcheck_fn):
+                    result = await asyncio.wait_for(
+                        healthcheck_fn(),
+                        timeout=self.HEALTHCHECK_TIMEOUT,
+                    )
+                else:
+                    # If sync, run in executor with timeout
+                    loop = asyncio.get_event_loop()
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(None, healthcheck_fn),
+                        timeout=self.HEALTHCHECK_TIMEOUT,
+                    )
+
+                if not bool(result):
+                    done.error = True
+                    done.error_detail = (
+                        "Healthcheck failed: user-defined healthcheck returned False"
+                    )
+        except asyncio.TimeoutError:
+            done.error = True
+            done.error_detail = f"Healthcheck failed: user-defined healthcheck timed out after {self.HEALTHCHECK_TIMEOUT} seconds"
+            log.warn(
+                "User-defined healthcheck timed out",
+                timeout_secs=self.HEALTHCHECK_TIMEOUT,
+            )
+        except Exception as e:
+            done.error = True
+            done.error_detail = f"Healthcheck failed: {str(e)}"
+            traceback.print_exc()
 
     @contextlib.contextmanager
     def _handle_setup_error(

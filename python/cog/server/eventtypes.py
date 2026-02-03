@@ -25,6 +25,11 @@ class Shutdown:
     pass
 
 
+@dataclass
+class Healthcheck:
+    pass
+
+
 # From predictor child process
 
 
@@ -61,6 +66,7 @@ class Done:
     canceled: bool = False
     error: bool = False
     error_detail: str = ""
+    event_type: str = "prediction"  # "prediction", "setup", or "healthcheck"
 
 
 @dataclass
@@ -72,6 +78,7 @@ class Envelope:
 
     event: Union[
         Cancel,
+        Healthcheck,
         PredictionInput,
         Shutdown,
         Log,

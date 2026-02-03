@@ -73,6 +73,7 @@ class Health(Enum):
     BUSY = auto()
     SETUP_FAILED = auto()
     DEFUNCT = auto()
+    UNHEALTHY = auto()
 
 
 class MyState:
@@ -456,10 +457,31 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     async def healthcheck() -> Any:
         if app.state.health == Health.READY:
             health = Health.BUSY if runner.is_busy() else Health.READY
+
+            # Run custom healthcheck. If it doesn't exist, this will
+            # always return healthy (healthcheck_result.error = False)
+            healthcheck_result = await runner.healthcheck()
+            custom_health_ok = not healthcheck_result.error
+            custom_health_error = healthcheck_result.error_detail
+
+            if not custom_health_ok:
+                health = Health.UNHEALTHY
         else:
             health = app.state.health
+            custom_health_ok = True
+            custom_health_error = None
+
         setup = app.state.setup_result.to_dict() if app.state.setup_result else {}
-        return jsonable_encoder({"status": health.name, "setup": setup})
+
+        response = {
+            "status": health.name,
+            "setup": setup,
+        }
+
+        if not custom_health_ok:
+            response["user_healthcheck_error"] = custom_health_error
+
+        return jsonable_encoder(response)
 
     @limited
     @app.post(
