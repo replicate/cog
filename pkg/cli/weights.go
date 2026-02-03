@@ -2,11 +2,13 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -20,6 +22,7 @@ func newWeightsCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newWeightsBuildCommand())
+	cmd.AddCommand(newWeightsPushCommand())
 	return cmd
 }
 
@@ -97,4 +100,84 @@ func formatSize(bytes int64) string {
 	default:
 		return fmt.Sprintf("%dB", bytes)
 	}
+}
+
+func newWeightsPushCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "push [IMAGE]",
+		Short: "Push weights to a registry",
+		Long: `Reads weights.lock and pushes weight files as an OCI artifact to a registry.
+
+The registry is determined from the image name, which can be:
+- Specified as an argument: cog weights push registry.example.com/user/model
+- Set in cog.yaml as the 'image' field`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: weightsPushCommand,
+	}
+
+	addConfigFlag(cmd)
+	return cmd
+}
+
+func weightsPushCommand(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	src, err := model.NewSource(configFilename)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	cfg := src.Config
+	projectDir := src.ProjectDir
+
+	// Determine image name
+	imageName := cfg.Image
+	if len(args) > 0 {
+		imageName = args[0]
+	}
+	if imageName == "" {
+		return fmt.Errorf("no image specified; provide an argument or set 'image' in cog.yaml")
+	}
+
+	// Check weights.lock exists
+	lockPath := filepath.Join(projectDir, model.WeightsLockFilename)
+	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		return fmt.Errorf("weights.lock not found; run 'cog weights build' first")
+	}
+
+	// Generate filePaths map from weights config
+	if len(cfg.Weights) == 0 {
+		return fmt.Errorf("no weights defined in %s", configFilename)
+	}
+
+	gen := model.NewWeightsLockGenerator(model.WeightsLockGeneratorOptions{
+		DestPrefix: weightsDestPrefix,
+	})
+
+	_, filePaths, err := gen.GenerateWithFilePaths(projectDir, cfg.Weights)
+	if err != nil {
+		return fmt.Errorf("failed to resolve weight files: %w", err)
+	}
+
+	// Build weights artifact using existing IndexFactory
+	console.Infof("Building weights artifact from %s...", model.WeightsLockFilename)
+	factory := model.NewIndexFactory()
+	artifact, manifest, err := factory.BuildWeightsArtifact(ctx, lockPath, filePaths)
+	if err != nil {
+		return fmt.Errorf("failed to build weights artifact: %w", err)
+	}
+
+	// Push to registry
+	console.Infof("Pushing %d weight file(s) to %s...", len(manifest.Files), imageName)
+
+	regClient := registry.NewRegistryClient()
+	weightsRef := imageName + ":weights"
+	if err := regClient.PushImage(ctx, weightsRef, artifact); err != nil {
+		return fmt.Errorf("failed to push weights: %w", err)
+	}
+
+	console.Infof("\nPushed weights to %s", weightsRef)
+	console.Infof("Total: %d files, %s", len(manifest.Files), formatSize(manifest.TotalSize()))
+
+	return nil
 }
