@@ -1,10 +1,6 @@
-# Skip for coglet_alpha which does not support this
-[coglet_alpha] skip
-# Skip due to version date mismatch between wheel build time and CI run time
-# causing flaky test failures when CI runs cross day boundaries
-[cog] skip
-[cog_dataclass] skip
-[coglet_rust] skip
+# Note: This test can be flaky if the wheel build time and CI run time
+# cross day boundaries (version date mismatch). If that happens, the test
+# will fail with a date component mismatch.
 
 # Test that cog version in base image contains a version number
 # Source: test_build.py::test_cog_install_base_image
