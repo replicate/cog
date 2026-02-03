@@ -315,10 +315,6 @@ func (c *Config) ValidateAndComplete(projectDir string) error {
 		console.Warn("`pre_install` in cog.yaml is deprecated and will be removed in future versions.")
 	}
 
-	if c.Build.Fast {
-		console.Warn("`fast` in cog.yaml is deprecated and will be removed in future versions.")
-	}
-
 	// Load python_requirements into memory to simplify reading it multiple times
 	if c.Build.PythonRequirements != "" {
 		requirementsFilePath := c.Build.PythonRequirements

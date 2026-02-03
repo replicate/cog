@@ -52,7 +52,6 @@ func (p *ReplicateProvider) MatchesRegistry(host string) bool {
 
 // Login performs login to the registry with options
 func (p *ReplicateProvider) Login(ctx context.Context, opts provider.LoginOptions) error {
-
 	var (
 		token string
 		err   error
@@ -99,16 +98,7 @@ func (p *ReplicateProvider) PrePush(ctx context.Context, opts provider.PushOptio
 	if opts.HTTPClient != nil {
 		p.logClient = coglog.NewClient(opts.HTTPClient)
 		p.logCtx = p.logClient.StartPush()
-		p.logCtx.Fast = opts.FastPush
-		p.logCtx.CogRuntime = false
-		if opts.Config != nil && opts.Config.Build.CogRuntime != nil {
-			p.logCtx.CogRuntime = *opts.Config.Build.CogRuntime
-		}
 		p.started = time.Now()
-	}
-
-	if opts.FastPush {
-		console.Info("Fast push enabled.")
 	}
 
 	return nil

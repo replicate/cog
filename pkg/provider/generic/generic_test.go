@@ -48,26 +48,6 @@ func TestGenericProvider_PrePush(t *testing.T) {
 		err := p.PrePush(context.Background(), opts)
 		require.NoError(t, err)
 	})
-
-	t.Run("local image push fails", func(t *testing.T) {
-		opts := provider.PushOptions{
-			Image:      "ghcr.io/org/model",
-			LocalImage: true,
-		}
-		err := p.PrePush(context.Background(), opts)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "local image push")
-	})
-
-	t.Run("fast push warns but succeeds", func(t *testing.T) {
-		opts := provider.PushOptions{
-			Image:    "ghcr.io/org/model",
-			FastPush: true,
-		}
-		// FastPush warns but doesn't error
-		err := p.PrePush(context.Background(), opts)
-		require.NoError(t, err)
-	})
 }
 
 func TestGenericProvider_PostPush(t *testing.T) {

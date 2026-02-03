@@ -88,7 +88,6 @@ func push(cmd *cobra.Command, args []string) error {
 		Image:      imageName,
 		Config:     src.Config,
 		ProjectDir: src.ProjectDir,
-		FastPush:   buildFast,
 		BuildID:    buildID.String(),
 		HTTPClient: httpClient,
 	}
@@ -96,13 +95,6 @@ func push(cmd *cobra.Command, args []string) error {
 	// PrePush: validation and setup (analytics start, feature checks)
 	if err := p.PrePush(ctx, pushOpts); err != nil {
 		return err
-	}
-
-	// If PrePush warned about FastPush but didn't error, disable it
-	// (GenericProvider warns but doesn't error for FastPush)
-	if buildFast && p.Name() != "replicate" {
-		buildFast = false
-		pushOpts.FastPush = false
 	}
 
 	// Build the image
@@ -125,10 +117,10 @@ func push(cmd *cobra.Command, args []string) error {
 	// Push the image
 	console.Infof("\nPushing image '%s'...", m.ImageRef())
 
-	pushErr := docker.Push(ctx, m.ImageRef(), buildFast, src.ProjectDir, dockerClient, docker.BuildInfo{
+	pushErr := docker.Push(ctx, m.ImageRef(), src.ProjectDir, dockerClient, docker.BuildInfo{
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
-	}, httpClient, src.Config)
+	}, httpClient)
 
 	// PostPush: cleanup, analytics end, success/error messages
 	// The provider handles formatting errors and showing success messages

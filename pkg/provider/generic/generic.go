@@ -71,16 +71,6 @@ func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions)
 }
 
 func (p *GenericProvider) PrePush(ctx context.Context, opts provider.PushOptions) error {
-	// Validate options - some features are not supported for generic registries
-	if opts.LocalImage {
-		return fmt.Errorf("local image push (--local-image) is not supported for this registry; it only works with Replicate's registry (r8.im)")
-	}
-
-	if opts.FastPush {
-		console.Warnf("Fast push (--x-fast) is not supported for this registry. Falling back to standard push.")
-		// Note: We warn but don't error - the caller should set FastPush=false
-	}
-
 	return nil
 }
 

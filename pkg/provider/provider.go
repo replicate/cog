@@ -13,10 +13,6 @@ type PushOptions struct {
 	Config     *config.Config
 	ProjectDir string
 
-	// Feature flags
-	LocalImage bool
-	FastPush   bool
-
 	// For analytics
 	BuildID string
 
