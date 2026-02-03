@@ -1,6 +1,3 @@
-# Skip for coglet_rust which does not support this
-[coglet_rust] skip
-
 # Test unhealthy healthcheck behavior
 # This tests when healthcheck returns False
 

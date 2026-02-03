@@ -1,6 +1,3 @@
-# Skip for coglet_rust which does not support this
-[coglet_rust] skip
-
 # Test healthcheck timeout behavior
 # This tests when healthcheck takes too long (>5 seconds)
 
