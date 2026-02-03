@@ -12,6 +12,7 @@ However, some tests require capabilities that don't fit txtar's sequential execu
 |------|----------|-------------------------|
 | `TestConcurrentPredictions` | `concurrent/` | Requires parallel HTTP requests with precise timing coordination |
 | `TestInteractiveTTY` | `pty/` | Requires bidirectional PTY interaction |
+| `TestLogin*` | `login/` | Login requires interactive PTY input and mock HTTP servers |
 
 ## Quick Start
 

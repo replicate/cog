@@ -4,16 +4,17 @@ import "os"
 
 const (
 	DefaultReplicateRegistryHost = "r8.im"
+	ReplicateWebsiteHost         = "replicate.com"
 )
 
 var (
-	Version                 = "dev"
-	Commit                  = ""
-	BuildTime               = "none"
-	Debug                   = false
-	ProfilingEnabled        = false
-	ReplicateRegistryHost   = getDefaultRegistryHost()
-	ReplicateWebsiteHost    = "replicate.com"
+	Version               = "dev"
+	Commit                = ""
+	BuildTime             = "none"
+	Debug                 = false
+	ProfilingEnabled      = false
+	ReplicateRegistryHost = getDefaultRegistryHost()
+
 	LabelNamespace          = "run.cog."
 	CogBuildArtifactsFolder = ".cog"
 )

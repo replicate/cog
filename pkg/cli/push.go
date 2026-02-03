@@ -2,18 +2,17 @@ package cli
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/go/uuid"
 
-	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/provider"
+	"github.com/replicate/cog/pkg/provider/setup"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -23,7 +22,7 @@ func newPushCommand() *cobra.Command {
 		Use: "push [IMAGE]",
 
 		Short:   "Build and push model in current directory to a Docker registry",
-		Example: `cog push r8.im/your-username/hotdog-detector`,
+		Example: `cog push registry.example.com/your-username/model-name`,
 		RunE:    push,
 		Args:    cobra.MaximumNArgs(1),
 	}
@@ -45,21 +44,21 @@ func newPushCommand() *cobra.Command {
 func push(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	// Initialize the provider registry
+	setup.Init()
+
 	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	client, err := http.ProvideHTTPClient(ctx, dockerClient)
+	httpClient, err := http.ProvideHTTPClient(ctx, dockerClient)
 	if err != nil {
 		return err
 	}
-	logClient := coglog.NewClient(client)
-	logCtx := logClient.StartPush()
 
 	src, err := model.NewSource(configFilename)
 	if err != nil {
-		logClient.EndPush(ctx, err, logCtx)
 		return err
 	}
 
@@ -69,19 +68,38 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	if imageName == "" {
-		err = fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push r8.im/your-username/hotdog-detector'")
-		logClient.EndPush(ctx, err, logCtx)
-		return err
+		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.example.com/your-username/model-name'")
 	}
 
-	replicatePrefix := fmt.Sprintf("%s/", global.ReplicateRegistryHost)
+	// Look up the provider for the target registry
+	p := provider.DefaultRegistry().ForImage(imageName)
+	if p == nil {
+		return fmt.Errorf("no provider found for image '%s'", imageName)
+	}
 
-	annotations := map[string]string{}
+	// Build push options
 	buildID, err := uuid.NewV7()
 	if err != nil {
 		// Don't insert build ID but continue anyways
 		console.Debugf("Failed to create build ID %v", err)
-	} else {
+	}
+
+	pushOpts := provider.PushOptions{
+		Image:      imageName,
+		Config:     src.Config,
+		ProjectDir: src.ProjectDir,
+		BuildID:    buildID.String(),
+		HTTPClient: httpClient,
+	}
+
+	// PrePush: validation and setup (analytics start, feature checks)
+	if err := p.PrePush(ctx, pushOpts); err != nil {
+		return err
+	}
+
+	// Build the image
+	annotations := map[string]string{}
+	if buildID.String() != "" {
 		annotations["run.cog.push_id"] = buildID.String()
 	}
 
@@ -89,43 +107,32 @@ func push(cmd *cobra.Command, args []string) error {
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, annotations))
 	if err != nil {
-		logClient.EndPush(ctx, err, logCtx)
+		// Call PostPush to handle error logging/analytics
+		_ = p.PostPush(ctx, pushOpts, err)
 		return err
 	}
 
 	buildDuration := time.Since(startBuildTime)
 
+	// Push the image
 	console.Infof("\nPushing image '%s'...", m.ImageRef())
 
-	err = docker.Push(ctx, m.ImageRef(), src.ProjectDir, dockerClient, docker.BuildInfo{
+	pushErr := docker.Push(ctx, m.ImageRef(), src.ProjectDir, dockerClient, docker.BuildInfo{
 		BuildTime: buildDuration,
 		BuildID:   buildID.String(),
-	}, client)
-	if err != nil {
-		if strings.Contains(err.Error(), "404") {
-			err = fmt.Errorf("Unable to find existing Replicate model for %s. "+
-				"Go to replicate.com and create a new model before pushing."+
-				"\n\n"+
-				"If the model already exists, you may be getting this error "+
-				"because you're not logged in as owner of the model. "+
-				"This can happen if you did `sudo cog login` instead of `cog login` "+
-				"or `sudo cog push` instead of `cog push`, "+
-				"which causes Docker to use the wrong Docker credentials.",
-				imageName)
-			logClient.EndPush(ctx, err, logCtx)
-			return err
-		}
-		err = fmt.Errorf("Failed to push image: %w", err)
-		logClient.EndPush(ctx, err, logCtx)
+	}, httpClient)
+
+	// PostPush: cleanup, analytics end, success/error messages
+	// The provider handles formatting errors and showing success messages
+	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {
 		return err
 	}
 
-	console.Infof("Image '%s' pushed", imageName)
-	if strings.HasPrefix(imageName, replicatePrefix) {
-		replicatePage := fmt.Sprintf("https://%s", strings.Replace(imageName, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
-		console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
+	// If there was a push error but PostPush didn't return one,
+	// return a generic error
+	if pushErr != nil {
+		return fmt.Errorf("failed to push image: %w", pushErr)
 	}
-	logClient.EndPush(ctx, nil, logCtx)
 
 	return nil
 }

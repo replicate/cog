@@ -24,6 +24,7 @@ These options are available for all commands:
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--debug` | bool | false | Show debugging output |
+| `--registry` | string | r8.im | Container registry host (can also be set via `COG_REGISTRY_HOST` env var) |
 | `--version` | bool | false | Show version of Cog |
 
 ## Commands
@@ -235,6 +236,8 @@ Build and push a model to a Docker registry.
 cog push [IMAGE]
 ```
 
+Cog can push to any OCI-compliant container registry. When pushing to Replicate's registry (r8.im), additional features like version tracking are available. For other registries, standard Docker push is used.
+
 **Flags:**
 
 | Flag | Type | Default | Description |
@@ -254,7 +257,15 @@ cog push [IMAGE]
 # Push to Replicate
 cog push r8.im/username/model-name
 
-# Push with separated weights
+# Push to GitHub Container Registry
+docker login ghcr.io
+cog push ghcr.io/your-org/model-name
+
+# Push to Google Container Registry
+docker login gcr.io
+cog push gcr.io/your-project/model-name
+
+# Push with separated weights (Replicate only)
 cog push r8.im/username/model-name --separate-weights
 
 # Push without cache
@@ -263,26 +274,37 @@ cog push r8.im/username/model-name --no-cache
 
 ### cog login
 
-Log in to Replicate Docker registry.
+Log in to a container registry.
 
 ```
 cog login [options]
 ```
 
+For Replicate's registry (r8.im), this command handles authentication through Replicate's token-based flow. For other registries, this command prompts for username and password, then stores credentials using Docker's credential system.
+
 **Flags:**
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--token-stdin` | bool | false | Pass login token on stdin instead of opening browser |
+| `--token-stdin` | bool | false | Pass login token on stdin instead of opening browser (Replicate only) |
 
 **Examples:**
 
 ```bash
-# Interactive login (opens browser)
+# Interactive login to Replicate (opens browser)
 cog login
 
-# Login with token
+# Login to Replicate with token
 echo $REPLICATE_API_TOKEN | cog login --token-stdin
+
+# Login to GitHub Container Registry
+cog login --registry ghcr.io
+
+# Login to Google Container Registry
+cog login --registry gcr.io
+
+# Login to a private registry
+cog login --registry your-registry.example.com
 ```
 
 ### cog debug
