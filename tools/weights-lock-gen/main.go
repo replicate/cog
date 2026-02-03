@@ -144,7 +144,8 @@ func generateWeightsLock(outputDir, destPrefix, outputPath string, count int, mi
 	}
 
 	// Seed random number generator
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// Using math/rand is fine for test data generation - we don't need crypto randomness
+	rng := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec
 
 	// Generate random files
 	fmt.Printf("Generating %d random weight files (%s - %s each)...\n",
