@@ -40,12 +40,6 @@ func (f *DockerfileFactory) Name() string {
 
 // Build delegates to the existing image.Build() function.
 func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
-	// Fast mode: config takes precedence, then opts (for backwards compatibility)
-	fast := opts.Fast
-	if src.Config != nil && src.Config.Build != nil && src.Config.Build.Fast {
-		fast = true
-	}
-
 	imageID, err := image.Build(
 		ctx,
 		src.Config,
@@ -61,7 +55,6 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 		opts.UseCogBaseImage,
 		opts.Strip,
 		opts.Precompile,
-		fast,
 		opts.Annotations,
 		f.docker,
 		f.registry,

@@ -1,7 +1,7 @@
-# Build the image with cog_runtime enabled
+# Test float input and output types work correctly
 cog build -t $TEST_IMAGE
 
-# Integer input and output works
+# Float input and output works
 cog predict $TEST_IMAGE -i num=10
 stdout '20'
 
@@ -12,7 +12,6 @@ stdout '-20'
 -- cog.yaml --
 build:
   python_version: "3.11"
-  cog_runtime: true
 predict: "predict.py:Predictor"
 
 -- predict.py --
@@ -20,6 +19,6 @@ from cog import BasePredictor, Input
 
 class Predictor(BasePredictor):
     def predict(
-        self, num: int = Input(description="Number of things")
-    ) -> int:
-        return num * 2
+        self, num: float = Input(description="Number of things")
+    ) -> float:
+        return num * 2.0

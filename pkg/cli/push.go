@@ -36,7 +36,6 @@ func newPushCommand() *cobra.Command {
 	addUseCogBaseImageFlag(cmd)
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
-	addFastFlag(cmd)
 	addConfigFlag(cmd)
 
 	return cmd
@@ -61,15 +60,6 @@ func push(cmd *cobra.Command, args []string) error {
 	src, err := model.NewSource(configFilename)
 	if err != nil {
 		return err
-	}
-
-	if buildFast {
-		console.Warn("The `--x-fast` flag is deprecated and will be removed in future versions.")
-	}
-
-	// In case one of `--x-fast` & `fast: bool` is set
-	if src.Config.Build != nil && src.Config.Build.Fast {
-		buildFast = true
 	}
 
 	imageName := src.Config.Image
@@ -123,7 +113,7 @@ func push(cmd *cobra.Command, args []string) error {
 
 	startBuildTime := time.Now()
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
-	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, buildFast, annotations))
+	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, annotations))
 	if err != nil {
 		// Call PostPush to handle error logging/analytics
 		_ = p.PostPush(ctx, pushOpts, err)

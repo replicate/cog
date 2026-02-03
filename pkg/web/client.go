@@ -451,11 +451,8 @@ func (c *Client) doSingleFileChallenge(ctx context.Context, file File, fileType 
 func newVersionURL(image string) (url.URL, error) {
 	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
-	if len(imageComponents) != 3 {
+	if len(imageComponents) != 3 || imageComponents[0] != global.ReplicateRegistryHost {
 		return newVersionUrl, r8_errors.ErrorBadRegistryURL
-	}
-	if imageComponents[0] != global.ReplicateRegistryHost {
-		return newVersionUrl, r8_errors.ErrorBadRegistryHost
 	}
 	newVersionUrl.Path = strings.Join([]string{"", "api", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
 	return newVersionUrl, nil

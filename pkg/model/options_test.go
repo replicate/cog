@@ -69,8 +69,6 @@ func TestBuildOptions_WithDefaults_NilBuildConfig(t *testing.T) {
 	// Should not panic and should apply other defaults
 	require.Equal(t, "cog-project", opts.ImageName)
 	require.Equal(t, "auto", opts.ProgressOutput)
-	// Fast should not be set by WithDefaults (it comes from config at build time)
-	require.False(t, opts.Fast)
 }
 
 func TestBuildOptions_WithDefaults_NilConfig(t *testing.T) {
@@ -85,7 +83,6 @@ func TestBuildOptions_WithDefaults_NilConfig(t *testing.T) {
 	// Should not panic and should apply other defaults
 	require.Equal(t, "cog-project", opts.ImageName)
 	require.Equal(t, "auto", opts.ProgressOutput)
-	require.False(t, opts.Fast)
 }
 
 func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
@@ -99,7 +96,6 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 		ImageName:        "my-image",
 		NoCache:          true,
 		SeparateWeights:  true,
-		Fast:             true,
 		Strip:            true,
 		Precompile:       true,
 		UseCudaBaseImage: "true",
@@ -116,7 +112,6 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 	require.Equal(t, "my-image", result.ImageName)
 	require.True(t, result.NoCache)
 	require.True(t, result.SeparateWeights)
-	require.True(t, result.Fast)
 	require.True(t, result.Strip)
 	require.True(t, result.Precompile)
 	require.Equal(t, "true", result.UseCudaBaseImage)

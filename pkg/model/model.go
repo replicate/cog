@@ -21,11 +21,6 @@ func (m *Model) HasGPU() bool {
 	return m.Config != nil && m.Config.Build != nil && m.Config.Build.GPU
 }
 
-// IsFast returns true if the model uses fast build mode.
-func (m *Model) IsFast() bool {
-	return m.Config != nil && m.Config.Build != nil && m.Config.Build.Fast
-}
-
 // SchemaJSON returns the OpenAPI schema as JSON bytes, or nil if no schema.
 func (m *Model) SchemaJSON() ([]byte, error) {
 	if m.Schema == nil {

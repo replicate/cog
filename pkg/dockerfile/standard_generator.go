@@ -464,9 +464,8 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", nil
 	}
 
-	// Determine which wheel to install based on COG_WHEEL env var and cog_runtime flag
-	cogRuntimeEnabled := g.Config.Build.CogRuntime != nil && *g.Config.Build.CogRuntime
-	wheelConfig := wheels.GetWheelConfig(cogRuntimeEnabled)
+	// Determine which wheel to install based on COG_WHEEL env var
+	wheelConfig := wheels.GetWheelConfig()
 
 	var installLines string
 	var err error
@@ -503,7 +502,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 	return installLines, nil
 }
 
-// installEmbeddedCogWheel installs the embedded cog wheel (default for cog_runtime: false)
+// installEmbeddedCogWheel installs the embedded cog wheel (default)
 func (g *StandardGenerator) installEmbeddedCogWheel() (string, error) {
 	filename, data := wheels.ReadCogWheel()
 	lines, containerPath, err := g.writeTemp(filename, data)

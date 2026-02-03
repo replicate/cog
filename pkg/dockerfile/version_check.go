@@ -4,7 +4,7 @@ import (
 	"regexp"
 )
 
-// Version string in the form x.y.z for Monobase R8_*_VERSION
+// Version string in the form x.y.z (e.g., Python version, CUDA version)
 // We do not support suffixes like -alpha1 or +cu124
 var versionRegex = regexp.MustCompile(`^(?P<major>\d+)(\.(?P<minor>\d+)(\.(?P<patch>\d+))?)?$`)
 

@@ -14,11 +14,6 @@ type BuildOptions struct {
 	// SeparateWeights builds weights as a separate layer.
 	SeparateWeights bool
 
-	// Fast enables fast/monobase build mode.
-	// Deprecated: Fast mode is read from cog.yaml config. This field exists
-	// for backwards compatibility but new code should not set it.
-	Fast bool
-
 	// Strip removes debug symbols from binaries.
 	Strip bool
 
