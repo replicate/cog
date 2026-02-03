@@ -1,5 +1,3 @@
-# Skip for coglet_alpha which does not support this
-[coglet_alpha] skip
 # Skip for coglet_rust which does not support this
 [coglet_rust] skip
 # Skip for cog-dataclass which does not support this

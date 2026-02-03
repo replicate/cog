@@ -1,5 +1,3 @@
-# Skip for coglet_alpha which does not support this
-[coglet_alpha] skip
 
 # Test predict with many input types against pre-built image
 # Source: test_predict.py::test_predict_many_inputs_with_existing_image
