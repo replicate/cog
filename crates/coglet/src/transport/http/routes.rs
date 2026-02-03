@@ -11,7 +11,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::health::{Health, SetupResult};
+use crate::health::{Health, HealthResponse, SetupResult};
 use crate::prediction::PredictionStatus;
 use crate::predictor::PredictionError;
 use crate::service::{CreatePredictionError, HealthSnapshot, PredictionService};
@@ -20,25 +20,30 @@ use crate::webhook::{TraceContext, WebhookConfig, WebhookEventType, WebhookSende
 
 #[derive(Debug, Serialize)]
 pub struct HealthCheckResponse {
-    pub status: Health,
+    pub status: HealthResponse,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub setup: Option<SetupResult>,
     pub version: VersionInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_healthcheck_error: Option<String>,
 }
 
-impl From<HealthSnapshot> for HealthCheckResponse {
-    fn from(snapshot: HealthSnapshot) -> Self {
-        // If ready but at capacity, report BUSY
-        let status = if snapshot.is_busy() {
-            Health::Busy
+impl HealthCheckResponse {
+    pub fn from_snapshot(snapshot: HealthSnapshot, user_healthcheck_error: Option<String>) -> Self {
+        // Determine response status
+        let status = if user_healthcheck_error.is_some() {
+            HealthResponse::Unhealthy
+        } else if snapshot.is_busy() {
+            HealthResponse::Busy
         } else {
-            snapshot.state
+            snapshot.state.into()
         };
 
         Self {
             status,
             setup: snapshot.setup_result,
             version: snapshot.version,
+            user_healthcheck_error,
         }
     }
 }
@@ -95,11 +100,21 @@ fn generate_prediction_id() -> String {
 async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
     let snapshot = service.health().await;
 
-    if snapshot.is_ready() && !snapshot.is_busy() {
+    // Run user healthcheck if ready and not busy
+    let user_healthcheck_error = if snapshot.is_ready() && !snapshot.is_busy() {
         write_readiness_file();
-    }
 
-    Json(snapshot.into())
+        // Run user-defined healthcheck
+        match service.healthcheck().await {
+            Ok(result) if result.is_healthy() => None,
+            Ok(result) => result.error,
+            Err(e) => Some(format!("Healthcheck error: {}", e)),
+        }
+    } else {
+        None
+    };
+
+    Json(HealthCheckResponse::from_snapshot(snapshot, user_healthcheck_error))
 }
 
 /// Write /var/run/cog/ready for K8s readiness probe.
@@ -655,6 +670,13 @@ mod tests {
                 let mut pred = prediction.lock().unwrap();
                 pred.set_succeeded(PredictionOutput::Single(serde_json::json!("mock output")));
             }
+        }
+
+        async fn healthcheck(
+            &self,
+        ) -> Result<crate::orchestrator::HealthcheckResult, crate::orchestrator::OrchestratorError>
+        {
+            Ok(crate::orchestrator::HealthcheckResult::healthy())
         }
 
         async fn shutdown(&self) -> Result<(), crate::orchestrator::OrchestratorError> {

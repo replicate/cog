@@ -1,0 +1,13 @@
+---
+source: coglet/src/health.rs
+expression: "[HealthResponse::Unknown, HealthResponse::Starting, HealthResponse::Ready,\nHealthResponse::Busy, HealthResponse::SetupFailed, HealthResponse::Defunct,\nHealthResponse::Unhealthy,]"
+---
+[
+  "UNKNOWN",
+  "STARTING",
+  "READY",
+  "BUSY",
+  "SETUP_FAILED",
+  "DEFUNCT",
+  "UNHEALTHY"
+]

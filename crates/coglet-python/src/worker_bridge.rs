@@ -562,6 +562,51 @@ impl PredictHandler for PythonPredictHandler {
             .expect("Worker internal error: predictor mutex poisoned");
         guard.as_ref().and_then(|pred| pred.schema(self.mode))
     }
+
+    async fn healthcheck(&self) -> coglet_core::orchestrator::HealthcheckResult {
+        // Get predictor
+        let pred = {
+            let guard = self
+                .predictor
+                .lock()
+                .expect("Worker internal error: predictor mutex poisoned");
+            match guard.as_ref() {
+                Some(p) => Arc::clone(p),
+                None => {
+                    return coglet_core::orchestrator::HealthcheckResult::unhealthy(
+                        "Predictor not initialized",
+                    );
+                }
+            }
+        };
+
+        // Check if predictor has a healthcheck method
+        let has_healthcheck = Python::attach(|py| pred.has_healthcheck(py));
+        if !has_healthcheck {
+            // No healthcheck defined = healthy
+            return coglet_core::orchestrator::HealthcheckResult::healthy();
+        }
+
+        // Run healthcheck with timeout
+        let is_async = Python::attach(|py| pred.is_healthcheck_async(py));
+
+        if is_async {
+            // Async healthcheck - run in event loop with timeout
+            let loop_obj = match self.get_async_loop() {
+                Some(l) => l,
+                None => {
+                    return coglet_core::orchestrator::HealthcheckResult::unhealthy(
+                        "Async event loop not initialized",
+                    );
+                }
+            };
+
+            Python::attach(|py| pred.healthcheck_async(py, &loop_obj))
+        } else {
+            // Sync healthcheck - run in thread pool with timeout
+            Python::attach(|py| pred.healthcheck_sync(py))
+        }
+    }
 }
 
 /// Shutdown the asyncio event loop and join the thread.

@@ -81,6 +81,7 @@ use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
     ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
+use crate::orchestrator::HealthcheckResult;
 use crate::bridge::transport::{connect_transport, get_transport_info_from_env};
 use crate::worker_tracing_layer::WorkerTracingLayer;
 
@@ -184,6 +185,11 @@ pub trait PredictHandler: Send + Sync + 'static {
     /// Get OpenAPI schema for the predictor.
     fn schema(&self) -> Option<serde_json::Value> {
         None
+    }
+
+    /// Run user-defined healthcheck. Default: healthy.
+    async fn healthcheck(&self) -> HealthcheckResult {
+        HealthcheckResult::healthy()
     }
 }
 
@@ -476,6 +482,16 @@ pub async fn run_worker<H: PredictHandler>(
                         let mut w = ctrl_writer.lock().await;
                         let _ = w.send(ControlResponse::ShuttingDown).await;
                         break;
+                    }
+                    Some(Ok(ControlRequest::Healthcheck { id })) => {
+                        tracing::debug!(%id, "Healthcheck requested");
+                        let result = handler.healthcheck().await;
+                        let mut w = ctrl_writer.lock().await;
+                        let _ = w.send(ControlResponse::HealthcheckResult {
+                            id,
+                            status: result.status,
+                            error: result.error,
+                        }).await;
                     }
                     Some(Err(e)) => {
                         tracing::error!(error = %e, "Control channel error");

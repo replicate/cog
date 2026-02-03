@@ -905,4 +905,166 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
             Ok((future.unbind(), false, prepared))
         })
     }
+
+    // =========================================================================
+    // Healthcheck methods
+    // =========================================================================
+
+    /// Healthcheck timeout in seconds.
+    const HEALTHCHECK_TIMEOUT: f64 = 5.0;
+
+    /// Check if the predictor has a healthcheck() method.
+    pub fn has_healthcheck(&self, py: Python<'_>) -> bool {
+        match &self.kind {
+            PredictorKind::Class { .. } => {
+                let instance = self.instance.bind(py);
+                instance.hasattr("healthcheck").unwrap_or(false)
+            }
+            PredictorKind::StandaloneFunction(_) => false,
+        }
+    }
+
+    /// Check if the healthcheck() method is async.
+    pub fn is_healthcheck_async(&self, py: Python<'_>) -> bool {
+        match &self.kind {
+            PredictorKind::Class { .. } => {
+                let instance = self.instance.bind(py);
+                if let Ok(healthcheck) = instance.getattr("healthcheck") {
+                    let inspect = py.import("inspect").ok();
+                    if let Some(inspect) = inspect {
+                        inspect
+                            .call_method1("iscoroutinefunction", (&healthcheck,))
+                            .ok()
+                            .and_then(|r| r.extract::<bool>().ok())
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            PredictorKind::StandaloneFunction(_) => false,
+        }
+    }
+
+    /// Run a synchronous healthcheck with timeout.
+    ///
+    /// Runs the healthcheck in a thread pool executor with a 5 second timeout.
+    pub fn healthcheck_sync(&self, py: Python<'_>) -> coglet_core::orchestrator::HealthcheckResult {
+        use coglet_core::orchestrator::HealthcheckResult;
+
+        let instance = self.instance.bind(py);
+
+        // Run healthcheck in executor with timeout, mirroring Python impl
+        let result: PyResult<bool> = (|| {
+            let concurrent_futures = py.import("concurrent.futures")?;
+            let thread_pool = concurrent_futures.getattr("ThreadPoolExecutor")?;
+
+            // Create a small executor just for this healthcheck
+            let executor = thread_pool.call1((1,))?;
+
+            // Get the healthcheck method
+            let healthcheck_fn = instance.getattr("healthcheck")?;
+
+            // Submit to executor
+            let future = executor.call_method1("submit", (healthcheck_fn,))?;
+
+            // Wait with timeout
+            let result = future.call_method1("result", (Self::HEALTHCHECK_TIMEOUT,));
+
+            // Shutdown executor
+            let _ = executor.call_method1("shutdown", (false,));
+
+            match result {
+                Ok(r) => Ok(r.extract::<bool>().unwrap_or(true)),
+                Err(e) => {
+                    let err_str = e.to_string();
+                    if err_str.contains("TimeoutError") {
+                        Err(pyo3::exceptions::PyTimeoutError::new_err(
+                            "Healthcheck timed out",
+                        ))
+                    } else {
+                        Err(e)
+                    }
+                }
+            }
+        })();
+
+        match result {
+            Ok(true) => HealthcheckResult::healthy(),
+            Ok(false) => {
+                HealthcheckResult::unhealthy("Healthcheck failed: user-defined healthcheck returned False")
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("TimeoutError") {
+                    HealthcheckResult::unhealthy("Healthcheck failed: timed out")
+                } else {
+                    HealthcheckResult::unhealthy(format!("Healthcheck failed: {}", e))
+                }
+            }
+        }
+    }
+
+    /// Run an async healthcheck with timeout.
+    ///
+    /// Runs the healthcheck in the async event loop with a 5 second timeout.
+    pub fn healthcheck_async(
+        &self,
+        py: Python<'_>,
+        event_loop: &Py<PyAny>,
+    ) -> coglet_core::orchestrator::HealthcheckResult {
+        use coglet_core::orchestrator::HealthcheckResult;
+
+        let instance = self.instance.bind(py);
+
+        let result: PyResult<bool> = (|| {
+            let asyncio = py.import("asyncio")?;
+
+            // Get the healthcheck coroutine
+            let healthcheck_fn = instance.getattr("healthcheck")?;
+            let coro = healthcheck_fn.call0()?;
+
+            // Wrap with timeout
+            let wait_for = asyncio.getattr("wait_for")?;
+            let timeout_coro = wait_for.call1((&coro, Self::HEALTHCHECK_TIMEOUT))?;
+
+            // Submit to event loop
+            let future =
+                asyncio.call_method1("run_coroutine_threadsafe", (&timeout_coro, event_loop.bind(py)))?;
+
+            // Block on result with extra buffer time for event loop overhead
+            let result = future.call_method1("result", (Self::HEALTHCHECK_TIMEOUT + 1.0,));
+
+            match result {
+                Ok(r) => Ok(r.extract::<bool>().unwrap_or(true)),
+                Err(e) => {
+                    let err_str = e.to_string();
+                    if err_str.contains("TimeoutError") || err_str.contains("timed out") {
+                        Err(pyo3::exceptions::PyTimeoutError::new_err(
+                            "Healthcheck timed out",
+                        ))
+                    } else {
+                        Err(e)
+                    }
+                }
+            }
+        })();
+
+        match result {
+            Ok(true) => HealthcheckResult::healthy(),
+            Ok(false) => {
+                HealthcheckResult::unhealthy("Healthcheck failed: user-defined healthcheck returned False")
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("TimeoutError") {
+                    HealthcheckResult::unhealthy("Healthcheck failed: timed out")
+                } else {
+                    HealthcheckResult::unhealthy(format!("Healthcheck failed: {}", e))
+                }
+            }
+        }
+    }
 }
