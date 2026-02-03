@@ -30,62 +30,14 @@ fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
     false
 }
 
-/// Format a Python validation error to match pydantic format: "field: message".
+/// Format a Python validation error.
 ///
-/// Handles both Pydantic ValidationError and cog-dataclass ValueError.
+/// Cog validation errors are already formatted as "field: message".
 fn format_validation_error(py: Python<'_>, err: &PyErr) -> String {
-    // Check if it's a Pydantic ValidationError
-    if let Ok(pydantic_core) = py.import("pydantic_core")
-        && let Ok(validation_error_cls) = pydantic_core.getattr("ValidationError")
-        && err.is_instance(py, &validation_error_cls)
-    {
-        // Extract error details from ValidationError.errors()
-        if let Ok(err_value) = err.value(py).call_method0("errors")
-            && let Ok(errors) = err_value.extract::<Vec<Bound<'_, PyDict>>>()
-        {
-            let messages: Vec<String> = errors
-                .iter()
-                .filter_map(|e| {
-                    // Get 'loc' (location) and 'msg' (message) from error dict
-                    let loc = e.get_item("loc").ok()??;
-                    let msg = e.get_item("msg").ok()??;
-
-                    // Extract field name from loc (typically a list like ['field_name'])
-                    if let Ok(loc_list) = loc.extract::<Vec<String>>()
-                        && let Some(field) = loc_list.last()
-                        && let Ok(msg_str) = msg.extract::<String>()
-                    {
-                        return Some(format!("{}: {}", field, msg_str));
-                    }
-                    None
-                })
-                .collect();
-
-            if !messages.is_empty() {
-                return messages.join("\n");
-            }
-        }
-    }
-
-    // For ValueError (cog-dataclass) or other errors, just extract the message
-    // which is already formatted as "field: message"
     err.value(py).to_string()
 }
 
-fn unwrap_pydantic_serialization_iterators<'py>(
-    py: Python<'py>,
-    value: &Bound<'py, PyAny>,
-) -> Result<Bound<'py, PyAny>, PredictionError> {
-    if let Ok(helpers) = py.import("cog.server.helpers")
-        && let Ok(unwrap) = helpers.getattr("unwrap_pydantic_serialization_iterators")
-    {
-        return unwrap
-            .call1((value,))
-            .map_err(|e| PredictionError::Failed(format!("Failed to unwrap output: {}", e)));
-    }
 
-    Ok(value.clone())
-}
 
 /// Type alias for Python object (Py<PyAny>).
 type PyObject = Py<PyAny>;
@@ -152,11 +104,9 @@ pub enum PredictorKind {
 ///
 /// # Runtime Detection
 ///
-/// Predictors can come from different runtimes:
-/// - **Pydantic (cog)**: Uses Pydantic BaseModel, URLPath for file downloads
-/// - **Non-pydantic (cog-dataclass)**: Uses ADT types
-///
-/// We detect the runtime on load and use the appropriate input processor.
+/// The predictor uses cog's ADT (Algebraic Data Type) system for input
+/// validation and schema generation. The runtime is detected on load
+/// and the appropriate input processor is used.
 pub struct PythonPredictor {
     instance: PyObject,
     /// The predictor's kind (class or standalone function) and method execution types
@@ -314,23 +264,16 @@ impl PythonPredictor {
 
     /// Generate OpenAPI schema for this predictor.
     ///
-    /// Uses cog-dataclass schema generation for non-pydantic runtimes and
-    /// FastAPI schema generation for pydantic runtimes.
+    /// Uses cog's schema generation via the `cog._schemas` module.
     ///
     /// Returns None if schema generation fails (best-effort).
     pub fn schema(&self, mode: crate::worker_bridge::HandlerMode) -> Option<serde_json::Value> {
         Python::attach(|py| {
-            // Generate schema for the active runtime
             let result: PyResult<serde_json::Value> = (|| {
                 let json_module = py.import("json")?;
 
-                // For non-pydantic runtime, we have the ADT predictor directly
-                // For Pydantic runtime, use FastAPI schema generation
-                let adt_predictor = match &self.runtime {
-                    Runtime::NonPydantic { adt_predictor } => adt_predictor.bind(py).clone(),
-                    Runtime::Pydantic { input_type: _ } => {
-                        return self.schema_via_fastapi(py, json_module.as_any(), mode);
-                    }
+                let predictor_info = match &self.runtime {
+                    Runtime::Cog { predictor_info } => predictor_info.bind(py).clone(),
                 };
 
                 // Get Python Mode enum value (Mode.TRAIN or Mode.PREDICT)
@@ -341,10 +284,10 @@ impl PythonPredictor {
                     crate::worker_bridge::HandlerMode::Predict => mode_enum.getattr("PREDICT")?,
                 };
 
-                // Use cog-dataclass schema generation
+                // Use cog schema generation
                 let schemas_module = py.import("cog._schemas")?;
                 let to_json_schema = schemas_module.getattr("to_json_schema")?;
-                let schema = to_json_schema.call1((&adt_predictor, py_mode))?;
+                let schema = to_json_schema.call1((&predictor_info, py_mode))?;
 
                 // Convert to JSON string then parse to serde_json::Value
                 let schema_str: String =
@@ -364,55 +307,6 @@ impl PythonPredictor {
                 }
             }
         })
-    }
-
-    /// Generate schema via FastAPI (fallback for Pydantic predictors).
-    fn schema_via_fastapi(
-        &self,
-        py: Python<'_>,
-        json_module: &Bound<'_, PyAny>,
-        mode: crate::worker_bridge::HandlerMode,
-    ) -> PyResult<serde_json::Value> {
-        use crate::worker_bridge::HandlerMode;
-
-        // For Pydantic runtime, use cog's FastAPI app to generate schema
-        // This is what cog.command.openapi_schema does
-        let cog_server_http = py.import("cog.server.http")?;
-        let create_app = cog_server_http.getattr("create_app")?;
-
-        // Need to pass a Config - try to load from cog.yaml
-        let cog_config_module = py.import("cog.config")?;
-        let config_class = cog_config_module.getattr("Config")?;
-        let config = config_class.call0()?;
-
-        // Get Python Mode enum value (Mode.TRAIN or Mode.PREDICT)
-        let mode_module = py.import("cog.mode")?;
-        let mode_enum = mode_module.getattr("Mode")?;
-        let py_mode = match mode {
-            HandlerMode::Train => mode_enum.getattr("TRAIN")?,
-            HandlerMode::Predict => mode_enum.getattr("PREDICT")?,
-        };
-
-        // Create app with is_build=True to skip actual setup, and correct mode
-        let kwargs = pyo3::types::PyDict::new(py);
-        kwargs.set_item("cog_config", &config)?;
-        kwargs.set_item("shutdown_event", py.None())?;
-        kwargs.set_item("is_build", true)?;
-        kwargs.set_item("mode", py_mode)?;
-
-        let app = create_app.call((), Some(&kwargs))?;
-
-        // Get OpenAPI schema from app
-        let openapi_method = app.getattr("openapi")?;
-        let schema = openapi_method.call0()?;
-
-        // Convert to JSON string then parse
-        let schema_str: String = json_module.call_method1("dumps", (&schema,))?.extract()?;
-
-        let schema_value: serde_json::Value = serde_json::from_str(&schema_str)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-
-        Ok(schema_value)
     }
 
     /// Call setup() on the predictor, handling weights parameter if present.
@@ -682,9 +576,8 @@ impl PythonPredictor {
                 PredictionError::Failed(format!("Failed to process output item: {}", e))
             })?;
 
-            let normalized = unwrap_pydantic_serialization_iterators(py, &processed)?;
             let item_str: String = json_module
-                .call_method1("dumps", (&normalized,))
+                .call_method1("dumps", (&processed,))
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to serialize output item: {}", e))
                 })?
@@ -713,9 +606,8 @@ impl PythonPredictor {
         let processed = output::process_output(py, result, None)
             .map_err(|e| PredictionError::Failed(format!("Failed to process output: {}", e)))?;
 
-        let normalized = unwrap_pydantic_serialization_iterators(py, &processed)?;
         let result_str: String = json_module
-            .call_method1("dumps", (&normalized,))
+            .call_method1("dumps", (&processed,))
             .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
             .extract()
             .map_err(|e| {

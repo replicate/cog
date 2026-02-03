@@ -20,13 +20,14 @@ pub enum HandlerMode {
     Train,
 }
 
-/// SDK implementation type detected from the Python predictor
+/// SDK implementation type detected from the Python predictor.
+///
+/// This enum allows for future extensibility if additional SDK
+/// implementations are needed (e.g., Node.js).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SdkImplementation {
-    /// Pydantic-based cog SDK
-    Pydantic,
-    /// Dataclass-based cog SDK
-    Dataclass,
+    /// Standard cog Python SDK
+    Cog,
     /// Unable to detect SDK type
     Unknown,
 }
@@ -34,8 +35,7 @@ pub enum SdkImplementation {
 impl std::fmt::Display for SdkImplementation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Pydantic => write!(f, "pydantic"),
-            Self::Dataclass => write!(f, "dataclass"),
+            Self::Cog => write!(f, "cog"),
             Self::Unknown => write!(f, "unknown"),
         }
     }
@@ -279,17 +279,9 @@ impl PredictHandler for PythonPredictHandler {
             let pred = PythonPredictor::load(py, &self.predictor_ref)
                 .map_err(|e| SetupError::load(e.to_string()))?;
 
-            // Detect SDK implementation (pydantic-based or dataclass-based)
-            // PYDANTIC_V2 attribute exists in both pydantic v1 (False) and v2 (True)
-            // but does not exist in dataclass-based cog
-            let sdk_impl = match py.import("cog.types") {
-                Ok(cog_types) => {
-                    if cog_types.hasattr("PYDANTIC_V2").unwrap_or(false) {
-                        SdkImplementation::Pydantic
-                    } else {
-                        SdkImplementation::Dataclass
-                    }
-                }
+            // Detect SDK implementation
+            let sdk_impl = match py.import("cog._adt") {
+                Ok(_) => SdkImplementation::Cog,
                 Err(_) => SdkImplementation::Unknown,
             };
             tracing::info!(sdk_implementation = %sdk_impl, "Detected Cog SDK implementation");
