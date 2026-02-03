@@ -1,7 +1,8 @@
 # Skip for coglet_alpha which does not support this
 [coglet_alpha] skip
-# Skip for cog-dataclass and coglet_rust due to version date mismatch between
-# wheel build time and CI run time causing flaky test failures
+# Skip due to version date mismatch between wheel build time and CI run time
+# causing flaky test failures when CI runs cross day boundaries
+[cog] skip
 [cog_dataclass] skip
 [coglet_rust] skip
 
