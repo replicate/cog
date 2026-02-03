@@ -45,6 +45,7 @@ https://github.com/replicate/cog`,
 		newRunCommand(),
 		newServeCommand(),
 		newTrainCommand(),
+		newWeightsCommand(),
 	)
 
 	return &rootCmd, nil
