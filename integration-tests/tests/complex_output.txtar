@@ -1,10 +1,9 @@
-# Test complex output type using Pydantic BaseModel
-# Users can still use Pydantic for their own types
+# Test complex/structured output type using cog.BaseModel (dataclass)
 
 # Build the image
 cog build -t $TEST_IMAGE
 
-# Predict returns structured BaseModel output
+# Predict returns structured output
 cog predict $TEST_IMAGE -i msg='test error'
 stdout '"success": false'
 stdout '"error": "test error"'
@@ -17,16 +16,15 @@ predict: "predict.py:Predictor"
 -- predict.py --
 from typing import Optional
 
-from cog import BasePredictor, Path
-from pydantic import BaseModel
+from cog import BaseModel, BasePredictor, Path
 
 
 class ModelOutput(BaseModel):
     success: bool
     error: Optional[str]
-    segmentedImage: Optional[Path]
+    segmented_image: Optional[Path]
 
 
 class Predictor(BasePredictor):
     def predict(self, msg: str) -> ModelOutput:
-        return ModelOutput(success=False, error=msg, segmentedImage=None)
+        return ModelOutput(success=False, error=msg, segmented_image=None)
