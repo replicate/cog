@@ -27,24 +27,28 @@ func TestIndexFactory(t *testing.T) {
 		require.NoError(t, os.MkdirAll(weightsDir, 0o755))
 
 		testData := []byte("fake model weights for testing purposes only")
-		require.NoError(t, os.WriteFile(filepath.Join(weightsDir, "model.bin"), testData, 0o644))
+		modelPath := filepath.Join(weightsDir, "model.bin")
+		require.NoError(t, os.WriteFile(modelPath, testData, 0o644))
 
 		lock := &WeightsLock{
 			Version: "1",
 			Created: time.Now().UTC(),
 			Files: []WeightFile{
 				{
-					Name:   "model.bin",
-					Dest:   "/cache/model.bin",
-					Source: "file://./weights/model.bin",
+					Name: "my-model-v1",
+					Dest: "/cache/model.bin",
 				},
 			},
 		}
 		lockPath := filepath.Join(dir, "weights.lock")
 		require.NoError(t, lock.Save(lockPath))
 
+		filePaths := map[string]string{
+			"my-model-v1": modelPath,
+		}
+
 		factory := NewIndexFactory()
-		artifact, manifest, err := factory.BuildWeightsArtifact(context.Background(), lockPath, dir)
+		artifact, manifest, err := factory.BuildWeightsArtifact(context.Background(), lockPath, filePaths)
 		require.NoError(t, err)
 		require.NotNil(t, artifact)
 		require.NotNil(t, manifest)
@@ -65,25 +69,29 @@ func TestIndexFactory(t *testing.T) {
 		dir := t.TempDir()
 		weightsDir := filepath.Join(dir, "weights")
 		require.NoError(t, os.MkdirAll(weightsDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(weightsDir, "model.bin"), []byte("test"), 0o644))
+		modelPath := filepath.Join(weightsDir, "model.bin")
+		require.NoError(t, os.WriteFile(modelPath, []byte("test"), 0o644))
 
 		lock := &WeightsLock{
 			Version: "1",
 			Created: time.Now().UTC(),
 			Files: []WeightFile{
 				{
-					Name:   "model.bin",
-					Dest:   "/cache/model.bin",
-					Source: "file://./weights/model.bin",
+					Name: "my-model-v1",
+					Dest: "/cache/model.bin",
 				},
 			},
 		}
 		lockPath := filepath.Join(dir, "weights.lock")
 		require.NoError(t, lock.Save(lockPath))
 
+		filePaths := map[string]string{
+			"my-model-v1": modelPath,
+		}
+
 		factory := NewIndexFactory()
 
-		weightsArtifact, _, err := factory.BuildWeightsArtifact(context.Background(), lockPath, dir)
+		weightsArtifact, _, err := factory.BuildWeightsArtifact(context.Background(), lockPath, filePaths)
 		require.NoError(t, err)
 
 		platform := &Platform{OS: "linux", Architecture: "amd64"}
@@ -102,7 +110,8 @@ func TestIndexFactory(t *testing.T) {
 
 	t.Run("weights lock not found", func(t *testing.T) {
 		factory := NewIndexFactory()
-		_, _, err := factory.BuildWeightsArtifact(context.Background(), "/nonexistent/weights.lock", "/tmp")
+		filePaths := map[string]string{"test": "/tmp/test"}
+		_, _, err := factory.BuildWeightsArtifact(context.Background(), "/nonexistent/weights.lock", filePaths)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "load weights lock")
 	})
@@ -115,7 +124,8 @@ func TestIndexFactory_BuildWeightsArtifactFromManifest(t *testing.T) {
 		require.NoError(t, os.MkdirAll(weightsDir, 0o755))
 
 		testData := []byte("test model weights content")
-		require.NoError(t, os.WriteFile(filepath.Join(weightsDir, "model.bin"), testData, 0o644))
+		modelPath := filepath.Join(weightsDir, "model.bin")
+		require.NoError(t, os.WriteFile(modelPath, testData, 0o644))
 
 		// Create a WeightsManifest (instead of WeightsLock)
 		manifest := &WeightsManifest{
@@ -123,15 +133,18 @@ func TestIndexFactory_BuildWeightsArtifactFromManifest(t *testing.T) {
 			Created:      time.Now().UTC(),
 			Files: []WeightFile{
 				{
-					Name:   "model.bin",
-					Dest:   "/cache/model.bin",
-					Source: "file://./weights/model.bin",
+					Name: "my-model-v1",
+					Dest: "/cache/model.bin",
 				},
 			},
 		}
 
+		filePaths := map[string]string{
+			"my-model-v1": modelPath,
+		}
+
 		factory := NewIndexFactory()
-		artifact, err := factory.BuildWeightsArtifactFromManifest(context.Background(), manifest, dir)
+		artifact, err := factory.BuildWeightsArtifactFromManifest(context.Background(), manifest, filePaths)
 		require.NoError(t, err)
 		require.NotNil(t, artifact)
 
@@ -141,20 +154,23 @@ func TestIndexFactory_BuildWeightsArtifactFromManifest(t *testing.T) {
 		require.Len(t, layers, 1)
 	})
 
-	t.Run("returns error when source file not found", func(t *testing.T) {
+	t.Run("returns error when file path not provided", func(t *testing.T) {
 		manifest := &WeightsManifest{
 			Files: []WeightFile{
 				{
-					Name:   "missing.bin",
-					Dest:   "/cache/missing.bin",
-					Source: "file://./missing/weights.bin",
+					Name: "missing-weight",
+					Dest: "/cache/missing.bin",
 				},
 			},
 		}
 
+		// Empty filePaths map - weight name not found
+		filePaths := map[string]string{}
+
 		factory := NewIndexFactory()
-		_, err := factory.BuildWeightsArtifactFromManifest(context.Background(), manifest, "/nonexistent/dir")
+		_, err := factory.BuildWeightsArtifactFromManifest(context.Background(), manifest, filePaths)
 		require.Error(t, err)
+		require.Contains(t, err.Error(), "no file path provided")
 	})
 }
 
@@ -225,9 +241,8 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		digest := "sha256:" + hex.EncodeToString(hash[:])
 
 		wf := WeightFile{
-			Name:             "model.safetensors",
+			Name:             "llama-3.1-8b-weights",
 			Dest:             "/cache/model.safetensors",
-			Source:           "hf://meta-llama/Llama-3.1-8B",
 			Digest:           digest,
 			DigestOriginal:   "sha256:abc123def456",
 			Size:             int64(compressed.Len()),
@@ -247,9 +262,8 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		require.Len(t, manifest.Layers, 1)
 
 		layer := manifest.Layers[0]
-		require.Equal(t, "model.safetensors", layer.Annotations[AnnotationWeightsName])
+		require.Equal(t, "llama-3.1-8b-weights", layer.Annotations[AnnotationWeightsName])
 		require.Equal(t, "/cache/model.safetensors", layer.Annotations[AnnotationWeightsDest])
-		require.Equal(t, "hf://meta-llama/Llama-3.1-8B", layer.Annotations[AnnotationWeightsSource])
 		require.Equal(t, "sha256:abc123def456", layer.Annotations[AnnotationWeightsDigestOriginal])
 		require.Equal(t, "16", layer.Annotations[AnnotationWeightsSizeUncompressed])
 	})
@@ -315,7 +329,7 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		require.Equal(t, "/cache/layer2.bin", manifest.Layers[1].Annotations[AnnotationWeightsDest])
 	})
 
-	t.Run("layer without source annotation", func(t *testing.T) {
+	t.Run("layer has expected annotations", func(t *testing.T) {
 		data := []byte("test data")
 		var compressed bytes.Buffer
 		gw := gzip.NewWriter(&compressed)
@@ -326,9 +340,8 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		digest := "sha256:" + hex.EncodeToString(hash[:])
 
 		wf := WeightFile{
-			Name:             "test.bin",
+			Name:             "test-weight-v1",
 			Dest:             "/cache/test.bin",
-			Source:           "", // No source
 			Digest:           digest,
 			DigestOriginal:   "sha256:orig",
 			Size:             int64(compressed.Len()),
@@ -348,8 +361,9 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		require.Len(t, manifest.Layers, 1)
 
 		layer := manifest.Layers[0]
-		_, hasSource := layer.Annotations[AnnotationWeightsSource]
-		require.False(t, hasSource, "source annotation should not be present when empty")
+		require.Equal(t, "test-weight-v1", layer.Annotations[AnnotationWeightsName])
+		require.Equal(t, "/cache/test.bin", layer.Annotations[AnnotationWeightsDest])
+		require.Equal(t, "sha256:orig", layer.Annotations[AnnotationWeightsDigestOriginal])
 	})
 }
 
@@ -365,15 +379,18 @@ func TestWeightsArtifactBuilderFromFiles(t *testing.T) {
 			Created: time.Now().UTC(),
 			Files: []WeightFile{
 				{
-					Name:   "model.bin",
-					Dest:   "/cache/model.bin",
-					Source: "file://" + testFile,
+					Name: "my-model-v1",
+					Dest: "/cache/model.bin",
 				},
 			},
 		}
 
+		filePaths := map[string]string{
+			"my-model-v1": testFile,
+		}
+
 		builder := NewWeightsArtifactBuilder()
-		err := builder.AddLayersFromLock(lock, dir)
+		err := builder.AddLayersFromLock(context.Background(), lock, filePaths)
 		require.NoError(t, err)
 
 		artifact, err := builder.Build()
@@ -384,12 +401,12 @@ func TestWeightsArtifactBuilderFromFiles(t *testing.T) {
 		require.Len(t, manifest.Layers, 1)
 
 		layer := manifest.Layers[0]
-		require.Equal(t, "model.bin", layer.Annotations[AnnotationWeightsName])
+		require.Equal(t, "my-model-v1", layer.Annotations[AnnotationWeightsName])
 		require.Equal(t, "/cache/model.bin", layer.Annotations[AnnotationWeightsDest])
 		require.NotEmpty(t, layer.Annotations[AnnotationWeightsDigestOriginal])
 	})
 
-	t.Run("resolve file source", func(t *testing.T) {
+	t.Run("resolve file path from map", func(t *testing.T) {
 		dir := t.TempDir()
 		testFile := filepath.Join(dir, "weights", "model.bin")
 		require.NoError(t, os.MkdirAll(filepath.Dir(testFile), 0o755))
@@ -399,34 +416,41 @@ func TestWeightsArtifactBuilderFromFiles(t *testing.T) {
 			Version: "1",
 			Files: []WeightFile{
 				{
-					Name:   "model.bin",
-					Dest:   "/cache/model.bin",
-					Source: "file://./weights/model.bin",
+					Name: "my-model-v1",
+					Dest: "/cache/model.bin",
 				},
 			},
 		}
 
+		filePaths := map[string]string{
+			"my-model-v1": testFile,
+		}
+
 		builder := NewWeightsArtifactBuilder()
-		err := builder.AddLayersFromLock(lock, dir)
+		err := builder.AddLayersFromLock(context.Background(), lock, filePaths)
 		require.NoError(t, err)
 	})
 
-	t.Run("unsupported source scheme", func(t *testing.T) {
+	t.Run("missing file path in map", func(t *testing.T) {
 		lock := &WeightsLock{
 			Version: "1",
 			Files: []WeightFile{
 				{
-					Name:   "model.bin",
-					Dest:   "/cache/model.bin",
-					Source: "hf://user/repo/model.bin",
+					Name: "unknown-weight",
+					Dest: "/cache/model.bin",
 				},
 			},
 		}
 
+		// filePaths doesn't contain "unknown-weight"
+		filePaths := map[string]string{
+			"other-weight": "/tmp/other.bin",
+		}
+
 		builder := NewWeightsArtifactBuilder()
-		err := builder.AddLayersFromLock(lock, "/tmp")
+		err := builder.AddLayersFromLock(context.Background(), lock, filePaths)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "unsupported source scheme")
+		require.Contains(t, err.Error(), "no file path provided")
 	})
 }
 

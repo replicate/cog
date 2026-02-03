@@ -19,7 +19,6 @@ const (
 const (
 	AnnotationWeightsName             = "vnd.cog.weights.name"
 	AnnotationWeightsDest             = "vnd.cog.weights.dest"
-	AnnotationWeightsSource           = "vnd.cog.weights.source"
 	AnnotationWeightsDigestOriginal   = "vnd.cog.weights.digest.original"
 	AnnotationWeightsSizeUncompressed = "vnd.cog.weights.size.uncompressed"
 )
@@ -64,14 +63,14 @@ func (wm *WeightsManifest) FindByDest(dest string) *WeightFile {
 	return nil
 }
 
-// WeightFile represents a single weight file entry.
+// WeightFile represents a single weight file entry in a weights lockfile or manifest.
+// The Name field is an identifier/handle (like a Docker volume name), not a filename.
 type WeightFile struct {
-	// Name is the original filename.
+	// Name is the identifier/handle for this weight (e.g., "personaplex-7b-v1", "model-v42.5").
+	// This is a logical name that maps to deployment blob metadata, not a file path.
 	Name string `json:"name"`
 	// Dest is the mount path in the container (e.g., /cache/model.safetensors).
 	Dest string `json:"dest"`
-	// Source is the origin URL (e.g., hf://..., file://...).
-	Source string `json:"source,omitempty"`
 	// DigestOriginal is the SHA256 of the uncompressed file (canonical ID).
 	DigestOriginal string `json:"digestOriginal"`
 	// Digest is the SHA256 of the compressed blob (OCI layer ID).
@@ -83,6 +82,5 @@ type WeightFile struct {
 	// MediaType is the OCI layer media type (e.g., application/vnd.cog.weights.layer.v1+gzip).
 	MediaType string `json:"mediaType"`
 	// ContentType is the file's MIME type (e.g., application/octet-stream).
-	// TODO: Determine content type handling based on declarative weights implementation.
 	ContentType string `json:"contentType,omitempty"`
 }

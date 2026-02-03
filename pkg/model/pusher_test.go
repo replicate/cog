@@ -126,7 +126,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		require.Contains(t, err.Error(), "bundle format requires WeightsManifest")
 	})
 
-	t.Run("returns error when project dir not provided", func(t *testing.T) {
+	t.Run("returns error when file paths not provided", func(t *testing.T) {
 		docker := &mockDocker{}
 		reg := &mockRegistry{}
 		pusher := NewBundlePusher(docker, reg)
@@ -134,14 +134,14 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image:       &Image{Reference: "r8.im/user/model:latest"},
 			ImageFormat: FormatBundle,
 			WeightsManifest: &WeightsManifest{
-				Files: []WeightFile{{Name: "weights.bin", Dest: "/weights/weights.bin"}},
+				Files: []WeightFile{{Name: "my-weights-v1", Dest: "/weights/weights.bin"}},
 			},
 		}
 
-		err := pusher.Push(context.Background(), m, PushOptions{ProjectDir: ""})
+		err := pusher.Push(context.Background(), m, PushOptions{FilePaths: nil})
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "bundle push requires ProjectDir")
+		require.Contains(t, err.Error(), "bundle push requires FilePaths")
 	})
 
 	t.Run("full push flow succeeds", func(t *testing.T) {
@@ -149,7 +149,8 @@ func TestBundlePusher_Push(t *testing.T) {
 		dir := t.TempDir()
 		weightsDir := filepath.Join(dir, "weights")
 		require.NoError(t, os.MkdirAll(weightsDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(weightsDir, "model.bin"), []byte("test weights"), 0o644))
+		modelPath := filepath.Join(weightsDir, "model.bin")
+		require.NoError(t, os.WriteFile(modelPath, []byte("test weights"), 0o644))
 
 		// Track calls to verify correct sequence
 		var pushOrder []string
@@ -185,17 +186,18 @@ func TestBundlePusher_Push(t *testing.T) {
 				Created:      time.Now().UTC(),
 				Files: []WeightFile{
 					{
-						Name:   "model.bin",
-						Dest:   "/cache/model.bin",
-						Source: "file://./weights/model.bin",
+						Name: "my-model-v1",
+						Dest: "/cache/model.bin",
 					},
 				},
 			},
 		}
 
 		err := pusher.Push(context.Background(), m, PushOptions{
-			ProjectDir: dir,
-			Platform:   &Platform{OS: "linux", Architecture: "amd64"},
+			FilePaths: map[string]string{
+				"my-model-v1": modelPath,
+			},
+			Platform: &Platform{OS: "linux", Architecture: "amd64"},
 		})
 
 		require.NoError(t, err)
@@ -213,7 +215,8 @@ func TestBundlePusher_Push(t *testing.T) {
 		dir := t.TempDir()
 		weightsDir := filepath.Join(dir, "weights")
 		require.NoError(t, os.MkdirAll(weightsDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(weightsDir, "model.bin"), []byte("test"), 0o644))
+		modelPath := filepath.Join(weightsDir, "model.bin")
+		require.NoError(t, os.WriteFile(modelPath, []byte("test"), 0o644))
 
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error {
@@ -228,12 +231,14 @@ func TestBundlePusher_Push(t *testing.T) {
 			ImageFormat: FormatBundle,
 			WeightsManifest: &WeightsManifest{
 				Files: []WeightFile{
-					{Name: "model.bin", Dest: "/cache/model.bin", Source: "file://./weights/model.bin"},
+					{Name: "my-model-v1", Dest: "/cache/model.bin"},
 				},
 			},
 		}
 
-		err := pusher.Push(context.Background(), m, PushOptions{ProjectDir: dir})
+		err := pusher.Push(context.Background(), m, PushOptions{
+			FilePaths: map[string]string{"my-model-v1": modelPath},
+		})
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "push model image")
@@ -244,7 +249,8 @@ func TestBundlePusher_Push(t *testing.T) {
 		dir := t.TempDir()
 		weightsDir := filepath.Join(dir, "weights")
 		require.NoError(t, os.MkdirAll(weightsDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(weightsDir, "model.bin"), []byte("test"), 0o644))
+		modelPath := filepath.Join(weightsDir, "model.bin")
+		require.NoError(t, os.WriteFile(modelPath, []byte("test"), 0o644))
 
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error {
@@ -263,12 +269,14 @@ func TestBundlePusher_Push(t *testing.T) {
 			ImageFormat: FormatBundle,
 			WeightsManifest: &WeightsManifest{
 				Files: []WeightFile{
-					{Name: "model.bin", Dest: "/cache/model.bin", Source: "file://./weights/model.bin"},
+					{Name: "my-model-v1", Dest: "/cache/model.bin"},
 				},
 			},
 		}
 
-		err := pusher.Push(context.Background(), m, PushOptions{ProjectDir: dir})
+		err := pusher.Push(context.Background(), m, PushOptions{
+			FilePaths: map[string]string{"my-model-v1": modelPath},
+		})
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "fetch pushed image")
@@ -278,7 +286,8 @@ func TestBundlePusher_Push(t *testing.T) {
 		dir := t.TempDir()
 		weightsDir := filepath.Join(dir, "weights")
 		require.NoError(t, os.MkdirAll(weightsDir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(weightsDir, "model.bin"), []byte("test"), 0o644))
+		modelPath := filepath.Join(weightsDir, "model.bin")
+		require.NoError(t, os.WriteFile(modelPath, []byte("test"), 0o644))
 
 		testImg := empty.Image
 		testImg, _ = mutate.Config(testImg, v1.Config{})
@@ -303,12 +312,14 @@ func TestBundlePusher_Push(t *testing.T) {
 			ImageFormat: FormatBundle,
 			WeightsManifest: &WeightsManifest{
 				Files: []WeightFile{
-					{Name: "model.bin", Dest: "/cache/model.bin", Source: "file://./weights/model.bin"},
+					{Name: "my-model-v1", Dest: "/cache/model.bin"},
 				},
 			},
 		}
 
-		err := pusher.Push(context.Background(), m, PushOptions{ProjectDir: dir})
+		err := pusher.Push(context.Background(), m, PushOptions{
+			FilePaths: map[string]string{"my-model-v1": modelPath},
+		})
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "push OCI index")

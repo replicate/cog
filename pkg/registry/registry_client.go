@@ -287,7 +287,7 @@ func (c *RegistryClient) PushImage(ctx context.Context, ref string, img v1.Image
 	}
 
 	if err := remote.Write(parsedRef, img, opts...); err != nil {
-		return fmt.Errorf("pushing image: %w", err)
+		return fmt.Errorf("pushing image %s: %w", ref, err)
 	}
 
 	return nil
@@ -306,7 +306,7 @@ func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.Image
 	}
 
 	if err := remote.WriteIndex(parsedRef, idx, opts...); err != nil {
-		return fmt.Errorf("pushing index: %w", err)
+		return fmt.Errorf("pushing index %s: %w", ref, err)
 	}
 
 	return nil

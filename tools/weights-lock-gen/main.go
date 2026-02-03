@@ -282,10 +282,13 @@ func processFile(path, baseDir, destPrefix string) (*model.WeightFile, error) {
 	// Normalize to forward slashes for container paths
 	dest = strings.ReplaceAll(dest, "\\", "/")
 
+	// Generate a simple identifier from the filename (without extension)
+	baseName := filepath.Base(path)
+	name := baseName[:len(baseName)-len(filepath.Ext(baseName))]
+
 	return &model.WeightFile{
-		Name:             filepath.Base(path),
+		Name:             name,
 		Dest:             dest,
-		Source:           "file://" + path,
 		DigestOriginal:   digestOriginal,
 		Digest:           digest,
 		Size:             int64(compressed.Len()),

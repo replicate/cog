@@ -969,7 +969,7 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		lock := &WeightsLock{
 			Version: "1",
 			Files: []WeightFile{
-				{Name: "model.bin", Dest: "/cache/model.bin", Source: "file://./model.bin"},
+				{Name: "my-model-v1", Dest: "/cache/model.bin"},
 			},
 		}
 		require.NoError(t, lock.Save(filepath.Join(dir, WeightsLockFilename)))
@@ -988,7 +988,7 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		require.Equal(t, FormatBundle, m.ImageFormat)
 		require.NotNil(t, m.WeightsManifest)
 		require.Len(t, m.WeightsManifest.Files, 1)
-		require.Equal(t, "model.bin", m.WeightsManifest.Files[0].Name)
+		require.Equal(t, "my-model-v1", m.WeightsManifest.Files[0].Name)
 	})
 
 	t.Run("returns error for bundle format without weights.lock", func(t *testing.T) {
@@ -1048,7 +1048,7 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		lock := &WeightsLock{
 			Version: "1",
 			Files: []WeightFile{
-				{Name: "custom.bin", Dest: "/cache/custom.bin", Source: "file://./custom.bin"},
+				{Name: "my-custom-v1", Dest: "/cache/custom.bin"},
 			},
 		}
 		require.NoError(t, lock.Save(customLockPath))
@@ -1068,7 +1068,7 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		require.Equal(t, FormatBundle, m.ImageFormat)
 		require.NotNil(t, m.WeightsManifest)
 		require.Len(t, m.WeightsManifest.Files, 1)
-		require.Equal(t, "custom.bin", m.WeightsManifest.Files[0].Name)
+		require.Equal(t, "my-custom-v1", m.WeightsManifest.Files[0].Name)
 	})
 }
 

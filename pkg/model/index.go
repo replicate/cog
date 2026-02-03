@@ -44,3 +44,9 @@ const (
 	AnnotationReferenceType   = "vnd.cog.reference.type"
 	AnnotationReferenceDigest = "vnd.cog.reference.digest"
 )
+
+// Annotation values.
+const (
+	// AnnotationValueWeights is the value for AnnotationReferenceType indicating a weights manifest.
+	AnnotationValueWeights = "weights"
+)

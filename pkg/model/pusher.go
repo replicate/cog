@@ -17,8 +17,13 @@ type Pusher interface {
 // PushOptions configures push behavior.
 type PushOptions struct {
 	// ProjectDir is the base directory for resolving weight file paths.
-	// Required when Model.ImageFormat == FormatBundle.
+	// Deprecated: Use FilePaths instead.
 	ProjectDir string
+
+	// FilePaths maps weight name identifiers to their file paths.
+	// Required when Model.ImageFormat == FormatBundle.
+	// Keys are weight names (e.g., "model-v1"), values are absolute file paths.
+	FilePaths map[string]string
 
 	// Platform specifies the target platform for bundle indexes.
 	// Default: linux/amd64
@@ -70,13 +75,13 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	if m.WeightsManifest == nil {
 		return fmt.Errorf("bundle format requires WeightsManifest")
 	}
-	if opts.ProjectDir == "" {
-		return fmt.Errorf("bundle push requires ProjectDir for weight files")
+	if len(opts.FilePaths) == 0 {
+		return fmt.Errorf("bundle push requires FilePaths for weight files")
 	}
 
 	// 1. Build weights artifact from manifest
 	factory := NewIndexFactory()
-	weightsArtifact, err := factory.BuildWeightsArtifactFromManifest(ctx, m.WeightsManifest, opts.ProjectDir)
+	weightsArtifact, err := factory.BuildWeightsArtifactFromManifest(ctx, m.WeightsManifest, opts.FilePaths)
 	if err != nil {
 		return fmt.Errorf("build weights artifact: %w", err)
 	}

@@ -911,7 +911,6 @@ type mockWeightsLock struct {
 type mockWeightFile struct {
 	Name             string `json:"name"`
 	Dest             string `json:"dest"`
-	Source           string `json:"source,omitempty"`
 	DigestOriginal   string `json:"digestOriginal"`
 	Digest           string `json:"digest"`
 	Size             int64  `json:"size"`
@@ -985,7 +984,9 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 			size = minSize + (rng.Int63() % (maxSize - minSize + 1))
 		}
 
-		filename := fmt.Sprintf("weights-%03d.bin", i)
+		// Generate identifier (e.g., "weights-001")
+		weightName := fmt.Sprintf("weights-%03d", i)
+		filename := weightName + ".bin"
 		filePath := filepath.Join(weightsDir, filename)
 
 		// Generate random data
@@ -1004,9 +1005,8 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 		digest := "sha256:" + hex.EncodeToString(hash[:])
 
 		files = append(files, mockWeightFile{
-			Name:             filename,
+			Name:             weightName,
 			Dest:             "/cache/" + filename,
-			Source:           "file://" + filePath,
 			DigestOriginal:   digest,
 			Digest:           digest, // Same as original since we're not compressing
 			Size:             size,

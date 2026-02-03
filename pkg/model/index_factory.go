@@ -10,9 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -30,15 +28,16 @@ func NewIndexFactory() *IndexFactory {
 }
 
 // BuildWeightsArtifact builds an OCI artifact from a weights.lock file.
+// The filePaths map provides name→filepath mappings for locating the actual weight files.
 // Returns the artifact image and the populated WeightsManifest.
-func (f *IndexFactory) BuildWeightsArtifact(ctx context.Context, lockPath, baseDir string) (v1.Image, *WeightsManifest, error) {
+func (f *IndexFactory) BuildWeightsArtifact(ctx context.Context, lockPath string, filePaths map[string]string) (v1.Image, *WeightsManifest, error) {
 	lock, err := LoadWeightsLock(lockPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("load weights lock: %w", err)
 	}
 
 	builder := NewWeightsArtifactBuilder()
-	if err := builder.AddLayersFromLock(lock, baseDir); err != nil {
+	if err := builder.AddLayersFromLock(ctx, lock, filePaths); err != nil {
 		return nil, nil, fmt.Errorf("add layers: %w", err)
 	}
 
@@ -64,7 +63,8 @@ func (f *IndexFactory) BuildWeightsArtifact(ctx context.Context, lockPath, baseD
 // This is similar to BuildWeightsArtifact but takes an already-parsed manifest
 // instead of a lock file path. Useful for push operations where the manifest
 // is already attached to the Model.
-func (f *IndexFactory) BuildWeightsArtifactFromManifest(ctx context.Context, manifest *WeightsManifest, baseDir string) (v1.Image, error) {
+// The filePaths map provides name→filepath mappings for locating the actual weight files.
+func (f *IndexFactory) BuildWeightsArtifactFromManifest(ctx context.Context, manifest *WeightsManifest, filePaths map[string]string) (v1.Image, error) {
 	if manifest == nil {
 		return nil, fmt.Errorf("manifest is nil")
 	}
@@ -80,7 +80,7 @@ func (f *IndexFactory) BuildWeightsArtifactFromManifest(ctx context.Context, man
 	}
 	copy(lock.Files, manifest.Files)
 
-	if err := builder.AddLayersFromLock(lock, baseDir); err != nil {
+	if err := builder.AddLayersFromLock(ctx, lock, filePaths); err != nil {
 		return nil, fmt.Errorf("add layers: %w", err)
 	}
 
@@ -127,9 +127,6 @@ func (b *WeightsArtifactBuilder) AddLayer(wf WeightFile, data []byte) error {
 		AnnotationWeightsDigestOriginal:   wf.DigestOriginal,
 		AnnotationWeightsSizeUncompressed: strconv.FormatInt(wf.SizeUncompressed, 10),
 	}
-	if wf.Source != "" {
-		annotations[AnnotationWeightsSource] = wf.Source
-	}
 
 	layer := static.NewLayer(data, types.MediaType(wf.MediaType))
 
@@ -169,19 +166,27 @@ func (a *weightsArtifact) ArtifactType() (string, error) {
 }
 
 // AddLayersFromLock adds layers for all files in a WeightsLock.
-// The baseDir is used to resolve file:// source URLs.
-func (b *WeightsArtifactBuilder) AddLayersFromLock(lock *WeightsLock, baseDir string) error {
+// The filePaths map provides name→filepath mappings for locating the actual weight files.
+// This map will typically come from the weights configuration in cog.yaml.
+func (b *WeightsArtifactBuilder) AddLayersFromLock(ctx context.Context, lock *WeightsLock, filePaths map[string]string) error {
 	for i := range lock.Files {
-		wf := &lock.Files[i]
-
-		sourcePath, err := resolveWeightsSource(wf.Source, baseDir)
-		if err != nil {
-			return fmt.Errorf("resolve source for %s: %w", wf.Name, err)
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
 		}
 
-		data, err := os.ReadFile(sourcePath)
+		wf := &lock.Files[i]
+
+		filePath, ok := filePaths[wf.Name]
+		if !ok {
+			return fmt.Errorf("no file path provided for weight %q", wf.Name)
+		}
+
+		data, err := os.ReadFile(filePath)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", sourcePath, err)
+			return fmt.Errorf("read %s: %w", filePath, err)
 		}
 
 		// Compute original digest
@@ -210,20 +215,6 @@ func (b *WeightsArtifactBuilder) AddLayersFromLock(lock *WeightsLock, baseDir st
 		}
 	}
 	return nil
-}
-
-// resolveWeightsSource resolves a source URL to an absolute file path.
-// Currently only file:// URLs are supported.
-func resolveWeightsSource(source, baseDir string) (string, error) {
-	if strings.HasPrefix(source, "file://") {
-		path := strings.TrimPrefix(source, "file://")
-		if !filepath.IsAbs(path) {
-			path = strings.TrimPrefix(path, "./")
-			path = filepath.Join(baseDir, path)
-		}
-		return path, nil
-	}
-	return "", fmt.Errorf("unsupported source scheme: %s (only file:// supported)", source)
 }
 
 // IndexBuilder builds an OCI Image Index containing a model image and optional weights artifact.
@@ -269,7 +260,7 @@ func (b *IndexBuilder) Build() (v1.ImageIndex, error) {
 
 	if b.weightsArtifact != nil {
 		annotations := map[string]string{
-			AnnotationReferenceType: "weights",
+			AnnotationReferenceType: AnnotationValueWeights,
 		}
 		if b.imageDigest != "" {
 			annotations[AnnotationReferenceDigest] = b.imageDigest
