@@ -116,15 +116,9 @@ func (p *ReplicateProvider) PostPush(ctx context.Context, opts provider.PushOpti
 	if pushErr != nil {
 		// Return Replicate-specific error message for repository not found errors
 		if command.IsNotFoundError(pushErr) {
-			return fmt.Errorf("Unable to find existing Replicate model for %s. "+
-				"Go to replicate.com and create a new model before pushing."+
-				"\n\n"+
-				"If the model already exists, you may be getting this error "+
-				"because you're not logged in as owner of the model. "+
-				"This can happen if you did `sudo cog login` instead of `cog login` "+
-				"or `sudo cog push` instead of `cog push`, "+
-				"which causes Docker to use the wrong Docker credentials.",
-				opts.Image)
+			return fmt.Errorf(`Unable to find existing Replicate model for %s. Go to replicate.com and create a new model before pushing.
+
+If the model already exists, you may be getting this error because you're not logged in as owner of the model. This can happen if you did 'sudo cog login' instead of 'cog login' or 'sudo cog push' instead of 'cog push', which causes Docker to use the wrong Docker credentials.`, opts.Image)
 		}
 		return pushErr
 	}
