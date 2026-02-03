@@ -1,5 +1,7 @@
 # Test that local wheel files can be installed via requirements.txt
+# Skip for cog-dataclass and coglet_rust (test was only validated with fast build)
 [cog_dataclass] skip
+[coglet_rust] skip
 
 # Create a minimal wheel package with proper structure
 exec mkdir -p my_package

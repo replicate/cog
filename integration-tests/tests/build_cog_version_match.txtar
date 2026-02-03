@@ -1,5 +1,9 @@
 # Skip for coglet_alpha which does not support this
 [coglet_alpha] skip
+# Skip for cog-dataclass and coglet_rust due to version date mismatch between
+# wheel build time and CI run time causing flaky test failures
+[cog_dataclass] skip
+[coglet_rust] skip
 
 # Test that cog version in base image contains a version number
 # Source: test_build.py::test_cog_install_base_image

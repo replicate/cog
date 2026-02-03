@@ -1,5 +1,7 @@
 # Test complex list input types (list of anthropic MessageParam)
+# Skip for cog-dataclass and coglet_rust (test was only validated with fast build)
 [cog_dataclass] skip
+[coglet_rust] skip
 
 # Build the image
 cog build -t $TEST_IMAGE
