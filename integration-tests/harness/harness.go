@@ -167,12 +167,24 @@ func runCommand(dir string, name string, args ...string) error {
 
 // Commands returns the custom testscript commands provided by this harness.
 func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool, args []string) {
-	return map[string]func(ts *testscript.TestScript, neg bool, args []string){
-		"cog":        h.cmdCog,
-		"curl":       h.cmdCurl,
-		"wait-for":   h.cmdWaitFor,
-		"docker-run": h.cmdDockerRun,
+	// Register all commands
+	commands := []Command{
+		// Built-in commands (defined in this file)
+		NewCommand("cog", h.cmdCog),
+		NewCommand("curl", h.cmdCurl),
+		NewCommand("wait-for", h.cmdWaitFor),
+		NewCommand("docker-run", h.cmdDockerRun),
+
+		// PTY command (defined in cmd_pty.go)
+		&PtyRunCommand{harness: h},
 	}
+
+	// Build the command map
+	result := make(map[string]func(ts *testscript.TestScript, neg bool, args []string))
+	for _, cmd := range commands {
+		result[cmd.Name()] = cmd.Run
+	}
+	return result
 }
 
 // cmdCog implements the 'cog' command for testscript.

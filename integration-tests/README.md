@@ -11,8 +11,9 @@ However, some tests require capabilities that don't fit txtar's sequential execu
 | Test | Location | Why Go instead of txtar |
 |------|----------|-------------------------|
 | `TestConcurrentPredictions` | `concurrent/` | Requires parallel HTTP requests with precise timing coordination |
-| `TestInteractiveTTY` | `pty/` | Requires bidirectional PTY interaction |
 | `TestLogin*` | `login/` | Login requires interactive PTY input and mock HTTP servers |
+
+Note: PTY/TTY tests now use the `pty-run` command in txtar format (see Custom Commands below).
 
 ## Quick Start
 
@@ -37,13 +38,15 @@ integration-tests/
 ├── README.md           # This file
 ├── suite_test.go       # Main test runner (txtar tests)
 ├── harness/
-│   └── harness.go      # Test harness with custom commands
+│   ├── harness.go      # Test harness core
+│   ├── command.go      # Command interface
+│   └── cmd_pty.go      # PTY command implementation
 ├── tests/
 │   └── *.txtar         # Test files (one per test case)
 ├── concurrent/
 │   └── concurrent_test.go  # Concurrent request tests
-├── pty/
-│   └── pty_test.go     # Interactive TTY tests
+├── login/
+│   └── login_test.go   # Login tests with PTY
 └── .bin/
     └── cog             # Cached cog binary (auto-generated)
 ```
@@ -178,6 +181,27 @@ wait-for not-empty results.json 30s
 ```
 
 Usage: `wait-for CONDITION TARGET [ARGS] [TIMEOUT]`
+
+### `pty-run` - Run commands with PTY
+
+Run a command with a pseudo-terminal (PTY), sending input from a file and capturing output.
+
+```txtar
+# Run bash interactively with commands from input file
+pty-run input.txt cog run $TEST_IMAGE /bin/bash
+stdout 'expected output'
+
+# Run a simple command (no input needed)
+pty-run /dev/null cog run $TEST_IMAGE echo "hello"
+stdout 'hello'
+```
+
+Usage: `pty-run <input-file> <command> [args...]`
+
+- The input file contents are written to the PTY as terminal input
+- Use `/dev/null` if no input is needed
+- Output is captured and can be matched with `stdout` command
+- Uses `github.com/creack/pty` which works on both Linux and macOS
 
 ## Conditions
 

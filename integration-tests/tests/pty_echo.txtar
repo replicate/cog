@@ -1,0 +1,21 @@
+[short] skip 'slow test - requires Docker build'
+
+# Test that cog run works with PTY for simple commands
+# This is a simpler variant that just tests echo works
+
+# Run echo command with PTY (no input needed)
+# cog run builds from current directory and runs the command
+pty-run /dev/null cog run echo "hello from cog run"
+stdout 'hello from cog run'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str = "world") -> str:
+        return "hello " + s
