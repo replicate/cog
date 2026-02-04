@@ -1,5 +1,3 @@
-# Skip for coglet_alpha which does not support this
-[coglet_alpha] skip
 
 # Build image
 cog build -t $TEST_IMAGE

@@ -1,10 +1,4 @@
 [short] skip 'slow test - skip in short mode'
-# Skip for cog-dataclass and coglet (Rust) which require Python 3.10+
-[cog_dataclass] skip
-[coglet_rust] skip
-
-# Skip for coglet_alpha which requires Python 3.10+
-[coglet_alpha] skip
 
 # Test multiprocessing.Process spawned during setup
 # This ensures stream redirection works correctly with Python multiprocessing

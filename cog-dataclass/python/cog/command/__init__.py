@@ -1,1 +1,0 @@
-"""Cog CLI command modules."""

@@ -2,7 +2,7 @@
 //!
 //! Handles conversion of Python output values to JSON-serializable format:
 //! - Path objects are converted to base64 data URLs (sync mode)
-//! - Pydantic models are serialized via model_dump()
+//! - Dataclass/object outputs are serialized to dicts
 //! - Generators are iterated and collected
 //! - numpy arrays are converted to lists
 //!

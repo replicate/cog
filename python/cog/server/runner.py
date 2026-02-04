@@ -5,20 +5,18 @@ import traceback
 import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import Future
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Generic, List, Literal, Optional, TypeVar, Union
 
 import requests
 import structlog
-from attrs import define, field
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from .. import schema
-from ..base_input import BaseInput
 from ..files import put_file_to_signed_endpoint
 from ..json import upload_files
-from ..types import PYDANTIC_V2
 from .errors import FileUploadError, RunnerBusyError, UnknownPredictionError
 from .eventtypes import (
     Done,
@@ -27,9 +25,6 @@ from .eventtypes import (
     PredictionOutput,
     PredictionOutputType,
 )
-
-if PYDANTIC_V2:
-    from .helpers import unwrap_pydantic_serialization_iterators
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered
@@ -38,11 +33,11 @@ from .worker import Worker, _PublicEventType
 log = structlog.get_logger("cog.server.runner")
 
 
-@define
+@dataclass
 class SetupResult:
     started_at: datetime
     completed_at: Optional[datetime] = None
-    logs: List[str] = field(factory=list)
+    logs: List[str] = field(default_factory=list)
     status: Optional[Literal[schema.Status.FAILED, schema.Status.SUCCEEDED]] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -103,15 +98,10 @@ class PredictionRunner:
         with self._predict_tasks_lock:
             self._predict_tasks[tag] = task
 
-        if isinstance(prediction.input, BaseInput):
-            if PYDANTIC_V2:
-                payload = unwrap_pydantic_serialization_iterators(
-                    prediction.input.model_dump()
-                )
-            else:
-                payload = prediction.input.dict()
-        else:
+        if hasattr(prediction.input, "copy"):
             payload = prediction.input.copy()
+        else:
+            payload = dict(prediction.input) if prediction.input else {}
 
         if prediction.context is None:
             prediction.context = {}
@@ -306,12 +296,9 @@ class PredictTask(Task[schema.PredictionResponse]):
 
         self._fut: "Optional[Future[Done]]" = None
 
-        if PYDANTIC_V2:
-            request_dict = unwrap_pydantic_serialization_iterators(
-                prediction_request.model_dump()
-            )
-        else:
-            request_dict = prediction_request.dict()
+        request_dict = (
+            prediction_request.dict() if hasattr(prediction_request, "dict") else {}
+        )
 
         self._p = schema.PredictionResponse(**request_dict)
         self._p.status = schema.Status.PROCESSING

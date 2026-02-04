@@ -79,39 +79,14 @@ description = "Run Rust tests with nextest (excludes coglet-python)"
 run = "cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude coglet-python --no-tests=pass"
 
 [tasks."test:coglet-python"]
-description = "Run coglet-python Python tests (both runtimes)"
-run = """
-#!/usr/bin/env bash
-set -e
-
-mise run test:coglet-python:dataclass
-mise run test:coglet-python:cog
-"""
-
-[tasks."test:coglet-python:dataclass"]
-description = "Run coglet-python tests with cog-dataclass"
+description = "Run coglet-python Python tests"
 depends = ["build:coglet"]
 dir = "crates/coglet-python"
 run = """
 #!/usr/bin/env bash
 set -e
 
-echo "==> Running coglet-python tests with cog-dataclass"
-uv pip uninstall cog || true
-uv pip install -e . -e ../../cog-dataclass pytest requests
-python -m pytest tests/ -v
-"""
-
-[tasks."test:coglet-python:cog"]
-description = "Run coglet-python tests with cog (pydantic)"
-depends = ["build:coglet"]
-dir = "crates/coglet-python"
-run = """
-#!/usr/bin/env bash
-set -e
-
-echo "==> Running coglet-python tests with cog (pydantic)"
-uv pip uninstall cog-dataclass || true
+echo "==> Running coglet-python tests"
 uv pip install -e . -e ../.. pytest requests
 python -m pytest tests/ -v
 """

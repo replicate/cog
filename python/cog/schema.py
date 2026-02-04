@@ -1,20 +1,25 @@
+"""
+Request/Response schema for the Cog server.
+
+Validation is handled by _inspector.check_input().
+"""
+
 import importlib.util
 import os
 import os.path
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Type
-
-import pydantic
-
-from .types import PYDANTIC_V2
+from typing import Any, Dict, List, Optional
 
 BUNDLED_SCHEMA_PATH = ".cog/schema.py"
 
 
 class Status(str, Enum):
+    """Prediction status."""
+
     STARTING = "starting"
     PROCESSING = "processing"
     SUCCEEDED = "succeeded"
@@ -27,6 +32,8 @@ class Status(str, Enum):
 
 
 class WebhookEvent(str, Enum):
+    """Webhook event types."""
+
     START = "start"
     OUTPUT = "output"
     LOGS = "logs"
@@ -36,103 +43,100 @@ class WebhookEvent(str, Enum):
     def default_events(cls) -> List["WebhookEvent"]:
         # if this is a set, it gets serialized to an array with an unstable ordering
         # so even though it's logically a set, have it as a list for deterministic schemas
-        # note: this change removes "uniqueItems":true
         return [cls.START, cls.OUTPUT, cls.LOGS, cls.COMPLETED]
 
 
-class PredictionBaseModel(pydantic.BaseModel):
-    input: Dict[str, Any]
+@dataclass
+class PredictionRequest:
+    """Request to run a prediction."""
 
-    if PYDANTIC_V2:
-        model_config = pydantic.ConfigDict(use_enum_values=True)  # type: ignore
-    else:
-
-        class Config:
-            # When using `choices`, the type is converted into an enum to validate
-            # But, after validation, we want to pass the actual value to predict(), not the enum object
-            use_enum_values = True
-
-
-if PYDANTIC_V2:
-    from typing import Annotated
-
-    from pydantic.networks import UrlConstraints
-    from pydantic_core import Url
-
-    WebhookUrl = Annotated[
-        Url, UrlConstraints(allowed_schemes=["http", "https"], max_length=65536)
-    ]
-else:
-    WebhookUrl = pydantic.AnyUrl
-
-
-class PredictionRequest(PredictionBaseModel):
+    input: Dict[str, Any] = field(default_factory=dict)
     id: Optional[str] = None
     created_at: Optional[datetime] = None
     context: Optional[Dict[str, str]] = None
+    output_file_prefix: Optional[str] = None  # deprecated
+    webhook: Optional[str] = None
+    webhook_events_filter: Optional[List[WebhookEvent]] = None
 
-    # TODO: deprecate this
-    output_file_prefix: Optional[str] = None
+    def __post_init__(self) -> None:
+        if self.webhook_events_filter is None:
+            self.webhook_events_filter = WebhookEvent.default_events()
 
-    webhook: Optional[WebhookUrl] = None
-    webhook_events_filter: Optional[List[WebhookEvent]] = pydantic.Field(
-        default=WebhookEvent.default_events(),
-    )
+    def dict(self, exclude_unset: bool = False) -> Dict[str, Any]:
+        """Convert to dictionary ."""
+        result = {
+            "input": self.input,
+            "id": self.id,
+            "created_at": self.created_at,
+            "context": self.context,
+            "output_file_prefix": self.output_file_prefix,
+            "webhook": self.webhook,
+            "webhook_events_filter": self.webhook_events_filter,
+        }
+        if exclude_unset:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result
 
-    @classmethod
-    def with_types(cls, input_type: Type[Any]) -> Any:
-        # [compat] Input is implicitly optional -- previous versions of the
-        # Cog HTTP API allowed input to be omitted (e.g. for models that don't
-        # have any inputs). We should consider changing this in future.
-        return pydantic.create_model(
-            cls.__name__, __base__=cls, input=(Optional[input_type], None)
-        )
 
+@dataclass
+class PredictionResponse:
+    """Response from a prediction."""
 
-class PredictionResponse(PredictionBaseModel):
+    input: Dict[str, Any] = field(default_factory=dict)
     output: Any = None
-
     id: Optional[str] = None
     version: Optional[str] = None
-
     created_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-
     logs: str = ""
     error: Optional[str] = None
     status: Optional[Status] = None
-
     metrics: Optional[Dict[str, Any]] = None
+    # Fields from request (copied but not always serialized)
+    context: Optional[Dict[str, str]] = None
+    output_file_prefix: Optional[str] = None
+    webhook: Optional[str] = None
+    webhook_events_filter: Optional[List[WebhookEvent]] = None
+    # Internal: track fatal exceptions (not serialized)
+    _fatal_exception: Optional[BaseException] = field(default=None, repr=False)
 
-    # This is used to track a fatal exception that occurs during a prediction.
-    # "Fatal" means that we require the worker to be shut down to recover:
-    # regular exceptions raised during predict are handled and do not use this
-    # field.
-    _fatal_exception: Optional[BaseException] = pydantic.PrivateAttr(default=None)
+    def dict(self, exclude_unset: bool = False) -> Dict[str, Any]:
+        """Convert to dictionary ."""
+        result = {
+            "input": self.input,
+            "output": self.output,
+            "id": self.id,
+            "version": self.version,
+            "created_at": self.created_at,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "logs": self.logs,
+            "error": self.error,
+            "status": self.status,
+            "metrics": self.metrics,
+        }
+        if exclude_unset:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result
 
-    @classmethod
-    def with_types(cls, input_type: Type[Any], output_type: Type[Any]) -> Any:
-        # [compat] Input is implicitly optional -- previous versions of the
-        # Cog HTTP API allowed input to be omitted (e.g. for models that don't
-        # have any inputs). We should consider changing this in future.
-        return pydantic.create_model(
-            cls.__name__,
-            __base__=cls,
-            input=(Optional[input_type], None),
-            output=(Optional[output_type], None),
-        )
 
-
+@dataclass
 class TrainingRequest(PredictionRequest):
+    """Request to run a training job."""
+
     pass
 
 
+@dataclass
 class TrainingResponse(PredictionResponse):
+    """Response from a training job."""
+
     pass
 
 
 def create_schema_module() -> Optional[ModuleType]:
+    """Load bundled schema module if it exists."""
     if not os.path.exists(BUNDLED_SCHEMA_PATH):
         return None
     name = "cog.bundled_schema"

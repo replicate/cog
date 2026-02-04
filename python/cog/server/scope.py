@@ -1,17 +1,20 @@
+"""
+Scope management for predictions.
+"""
+
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, Generator, Optional, Union
-
-from attrs import evolve, frozen
 
 from ..types import ExperimentalFeatureWarning
 
 
-@frozen
+@dataclass(frozen=True)
 class Scope:
     record_metric: Callable[[str, Union[float, int]], None]
-    context: Dict[str, str] = {}
+    context: Dict[str, str] = field(default_factory=dict)
     _tag: Optional[str] = None
 
 
@@ -45,7 +48,10 @@ def scope(sc: Scope) -> Generator[None, None, None]:
 
 @contextmanager
 def evolve_scope(**kwargs: Any) -> Generator[None, None, None]:
-    new_scope = evolve(_get_current_scope(), **kwargs)
+    # attrs allows passing 'tag' for field '_tag', emulate that behavior
+    if "tag" in kwargs:
+        kwargs["_tag"] = kwargs.pop("tag")
+    new_scope = replace(_get_current_scope(), **kwargs)
     s = _current_scope.set(new_scope)
     try:
         yield

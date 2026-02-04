@@ -1,11 +1,8 @@
-//! Input processing for different predictor runtimes.
+//! Input processing for cog predictors.
 //!
-//! Cog predictors can come from different runtimes with different type systems:
-//! - **Pydantic (cog)**: Uses Pydantic BaseModel for input validation, URLPath for file downloads
-//! - **Non-pydantic (cog-dataclass)**: Uses ADT types, different file handling
-//!
-//! This module provides a trait-based abstraction to handle input processing
-//! for each runtime correctly.
+//! This module handles input validation and file downloads for cog predictors.
+//! The architecture supports multiple runtime implementations, but currently
+//! only the standard cog runtime is implemented.
 
 use std::path::Path;
 
@@ -66,107 +63,58 @@ impl Drop for PreparedInput {
 unsafe impl Send for PreparedInput {}
 
 /// Detected predictor runtime.
+///
+/// This enum allows for future extensibility if additional runtime
+/// implementations are needed.
 #[derive(Debug)]
 pub enum Runtime {
-    /// Pydantic-based cog runtime.
-    /// Uses BaseInput for validation, URLPath for file inputs.
-    Pydantic {
-        /// The Pydantic input model class (BaseInput subclass)
-        input_type: PyObject,
-    },
-    /// Non-pydantic runtime (cog-dataclass).
-    /// Uses cog-dataclass ADT types.
-    NonPydantic {
+    /// Standard cog runtime using ADT types for input validation.
+    Cog {
         /// The adt.PredictorInfo object with inputs dict
-        adt_predictor: PyObject,
+        predictor_info: PyObject,
     },
 }
 
 /// Input processor trait for runtime-specific input handling.
+///
+/// This trait allows different runtime implementations to handle input
+/// validation and file downloads in their own way.
 pub trait InputProcessor: Send + Sync {
     /// Prepare input for prediction.
     ///
     /// This performs:
-    /// 1. Validation (Pydantic or ADT)
+    /// 1. Input validation
     /// 2. Type coercion
-    /// 3. File downloads (for Pydantic URLPath inputs)
+    /// 3. File downloads (for URLPath inputs)
     ///
     /// Returns a PreparedInput that cleans up temp files on drop.
     fn prepare(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput>;
 }
 
-/// Pydantic input processor for cog runtime.
-pub struct PydanticInputProcessor {
-    /// The Pydantic input model class (BaseInput subclass)
-    input_type: PyObject,
-}
-
-impl PydanticInputProcessor {
-    pub fn new(input_type: PyObject) -> Self {
-        Self { input_type }
-    }
-}
-
-impl InputProcessor for PydanticInputProcessor {
-    fn prepare(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput> {
-        // 1. Validate input through Pydantic model
-        //    InputType(**input_dict) creates URLPath objects for cog.Path fields
-        let input_type = self.input_type.bind(py);
-        let validated = input_type.call((), Some(input))?;
-
-        // 2. Get dict from validated model (preserves URLPath objects)
-        let cog_types = py.import("cog.types")?;
-        let pydantic_v2: bool = cog_types.getattr("PYDANTIC_V2")?.extract()?;
-
-        let payload = if pydantic_v2 {
-            // Pydantic v2: model_dump(), then unwrap serialization iterators
-            let dumped = validated.call_method0("model_dump")?;
-            let helpers = py.import("cog.server.helpers")?;
-            let unwrap = helpers.getattr("unwrap_pydantic_serialization_iterators")?;
-            unwrap.call1((&dumped,))?
-        } else {
-            // Pydantic v1: dict()
-            validated.call_method0("dict")?
-        };
-
-        #[allow(deprecated)]
-        let payload_dict = payload.downcast::<PyDict>()?;
-
-        // 3. Download URLPath inputs in parallel and replace in payload
-        //    This mutates payload_dict and returns the downloaded paths for cleanup
-        let cleanup_paths = download_url_paths_into_dict(py, payload_dict)?;
-
-        Ok(PreparedInput::new(
-            payload_dict.clone().unbind(),
-            cleanup_paths,
-        ))
-    }
-}
-
-/// Input processor for non-pydantic runtime (cog-dataclass).
-pub struct NonPydanticInputProcessor {
+/// Input processor for the standard cog runtime.
+pub struct CogInputProcessor {
     /// The adt.PredictorInfo object
-    adt_predictor: PyObject,
+    predictor_info: PyObject,
 }
 
-impl NonPydanticInputProcessor {
-    pub fn new(adt_predictor: PyObject) -> Self {
-        Self { adt_predictor }
+impl CogInputProcessor {
+    pub fn new(predictor_info: PyObject) -> Self {
+        Self { predictor_info }
     }
 }
 
-impl InputProcessor for NonPydanticInputProcessor {
+impl InputProcessor for CogInputProcessor {
     fn prepare(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput> {
-        // Use cog-dataclass inspector.check_input() for validation
+        // Use cog inspector.check_input() for validation
         let inspector = py.import("cog._inspector")?;
         let check_input = inspector.getattr("check_input")?;
 
-        // Get inputs dict from adt_predictor
-        let adt_predictor = self.adt_predictor.bind(py);
-        let adt_inputs = adt_predictor.getattr("inputs")?;
+        // Get inputs dict from predictor_info
+        let predictor_info = self.predictor_info.bind(py);
+        let inputs = predictor_info.getattr("inputs")?;
 
-        // check_input(adt_inputs, input_dict) -> validated kwargs dict
-        let result = check_input.call1((&adt_inputs, input))?;
+        // check_input(inputs, input_dict) -> validated kwargs dict
+        let result = check_input.call1((&inputs, input))?;
         let result_dict = result.extract::<Bound<'_, PyDict>>()?;
 
         // Download URLPath inputs in parallel and replace in payload
@@ -323,8 +271,7 @@ impl std::fmt::Display for RuntimeDetectionError {
         write!(
             f,
             "Unable to detect predictor runtime for '{}'. \
-             Expected either Pydantic (cog) or non-pydantic (cog-dataclass) type system. \
-             This predictor may be incompatible with the runtime.",
+             This predictor may be incompatible with the cog runtime.",
             self.predictor_ref
         )
     }
@@ -339,17 +286,11 @@ impl std::error::Error for RuntimeDetectionError {}
 pub fn detect_runtime(
     py: Python<'_>,
     predictor_ref: &str,
-    instance: &PyObject,
+    _instance: &PyObject,
 ) -> Result<Runtime, RuntimeDetectionError> {
-    // Try Pydantic first
-    if let Some(runtime) = try_pydantic_runtime(py, instance) {
-        tracing::info!("Detected Pydantic runtime");
-        return Ok(runtime);
-    }
-
-    // Try non-pydantic runtime (cog-dataclass)
-    if let Some(runtime) = try_non_pydantic_runtime(py, predictor_ref) {
-        tracing::info!("Detected non-pydantic runtime");
+    // Try to create a PredictorInfo via cog._inspector
+    if let Some(runtime) = try_cog_runtime(py, predictor_ref) {
+        tracing::info!("Detected cog runtime");
         return Ok(runtime);
     }
 
@@ -357,35 +298,6 @@ pub fn detect_runtime(
     Err(RuntimeDetectionError {
         predictor_ref: predictor_ref.to_string(),
     })
-}
-
-/// Try to detect Pydantic runtime.
-fn try_pydantic_runtime(py: Python<'_>, instance: &PyObject) -> Option<Runtime> {
-    let cog_predictor = py.import("cog.predictor").ok()?;
-    let get_input_type = cog_predictor.getattr("get_input_type").ok()?;
-
-    // get_input_type returns the Pydantic input model class
-    let input_type = get_input_type.call1((instance.bind(py),)).ok()?;
-
-    // Verify it's a BaseInput subclass using issubclass()
-    let base_input = py.import("cog.base_input").ok()?;
-    let base_input_class = base_input.getattr("BaseInput").ok()?;
-
-    let builtins = py.import("builtins").ok()?;
-    let issubclass = builtins.getattr("issubclass").ok()?;
-    let is_subclass: bool = issubclass
-        .call1((&input_type, &base_input_class))
-        .ok()
-        .and_then(|r| r.extract().ok())
-        .unwrap_or(false);
-
-    if is_subclass {
-        Some(Runtime::Pydantic {
-            input_type: input_type.unbind(),
-        })
-    } else {
-        None
-    }
 }
 
 fn parse_predictor_ref(predictor_ref: &str) -> Option<(String, String)> {
@@ -413,18 +325,18 @@ fn parse_predictor_ref(predictor_ref: &str) -> Option<(String, String)> {
     Some((module_name, predictor_name))
 }
 
-/// Try to detect non-pydantic runtime (cog-dataclass).
-fn try_non_pydantic_runtime(py: Python<'_>, predictor_ref: &str) -> Option<Runtime> {
+/// Try to detect cog runtime.
+fn try_cog_runtime(py: Python<'_>, predictor_ref: &str) -> Option<Runtime> {
     let (module_name, predictor_name) = parse_predictor_ref(predictor_ref)?;
 
     let inspector = py.import("cog._inspector").ok()?;
     let create_predictor = inspector.getattr("create_predictor").ok()?;
 
-    let adt_predictor = create_predictor.call1((module_name, predictor_name)).ok()?;
+    let predictor_info = create_predictor.call1((module_name, predictor_name)).ok()?;
 
     let adt_module = py.import("cog._adt").ok()?;
     let predictor_info_class = adt_module.getattr("PredictorInfo").ok()?;
-    let is_predictor_info = adt_predictor
+    let is_predictor_info = predictor_info
         .is_instance(&predictor_info_class)
         .ok()
         .unwrap_or(false);
@@ -433,21 +345,17 @@ fn try_non_pydantic_runtime(py: Python<'_>, predictor_ref: &str) -> Option<Runti
         return None;
     }
 
-    Some(Runtime::NonPydantic {
-        adt_predictor: adt_predictor.unbind(),
+    Some(Runtime::Cog {
+        predictor_info: predictor_info.unbind(),
     })
 }
 
 /// Create an InputProcessor for the given runtime.
 pub fn create_input_processor(runtime: &Runtime) -> Box<dyn InputProcessor> {
     match runtime {
-        Runtime::Pydantic { input_type } => {
-            // Clone PyObject using Python GIL
-            Python::attach(|py| Box::new(PydanticInputProcessor::new(input_type.clone_ref(py))))
+        Runtime::Cog { predictor_info } => {
+            Python::attach(|py| Box::new(CogInputProcessor::new(predictor_info.clone_ref(py))))
         }
-        Runtime::NonPydantic { adt_predictor } => Python::attach(|py| {
-            Box::new(NonPydanticInputProcessor::new(adt_predictor.clone_ref(py)))
-        }),
     }
 }
 

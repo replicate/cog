@@ -30,61 +30,11 @@ fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
     false
 }
 
-/// Format a Python validation error to match pydantic format: "field: message".
+/// Format a Python validation error.
 ///
-/// Handles both Pydantic ValidationError and cog-dataclass ValueError.
+/// Cog validation errors are already formatted as "field: message".
 fn format_validation_error(py: Python<'_>, err: &PyErr) -> String {
-    // Check if it's a Pydantic ValidationError
-    if let Ok(pydantic_core) = py.import("pydantic_core")
-        && let Ok(validation_error_cls) = pydantic_core.getattr("ValidationError")
-        && err.is_instance(py, &validation_error_cls)
-    {
-        // Extract error details from ValidationError.errors()
-        if let Ok(err_value) = err.value(py).call_method0("errors")
-            && let Ok(errors) = err_value.extract::<Vec<Bound<'_, PyDict>>>()
-        {
-            let messages: Vec<String> = errors
-                .iter()
-                .filter_map(|e| {
-                    // Get 'loc' (location) and 'msg' (message) from error dict
-                    let loc = e.get_item("loc").ok()??;
-                    let msg = e.get_item("msg").ok()??;
-
-                    // Extract field name from loc (typically a list like ['field_name'])
-                    if let Ok(loc_list) = loc.extract::<Vec<String>>()
-                        && let Some(field) = loc_list.last()
-                        && let Ok(msg_str) = msg.extract::<String>()
-                    {
-                        return Some(format!("{}: {}", field, msg_str));
-                    }
-                    None
-                })
-                .collect();
-
-            if !messages.is_empty() {
-                return messages.join("\n");
-            }
-        }
-    }
-
-    // For ValueError (cog-dataclass) or other errors, just extract the message
-    // which is already formatted as "field: message"
     err.value(py).to_string()
-}
-
-fn unwrap_pydantic_serialization_iterators<'py>(
-    py: Python<'py>,
-    value: &Bound<'py, PyAny>,
-) -> Result<Bound<'py, PyAny>, PredictionError> {
-    if let Ok(helpers) = py.import("cog.server.helpers")
-        && let Ok(unwrap) = helpers.getattr("unwrap_pydantic_serialization_iterators")
-    {
-        return unwrap
-            .call1((value,))
-            .map_err(|e| PredictionError::Failed(format!("Failed to unwrap output: {}", e)));
-    }
-
-    Ok(value.clone())
 }
 
 /// Type alias for Python object (Py<PyAny>).
@@ -152,11 +102,9 @@ pub enum PredictorKind {
 ///
 /// # Runtime Detection
 ///
-/// Predictors can come from different runtimes:
-/// - **Pydantic (cog)**: Uses Pydantic BaseModel, URLPath for file downloads
-/// - **Non-pydantic (cog-dataclass)**: Uses ADT types
-///
-/// We detect the runtime on load and use the appropriate input processor.
+/// The predictor uses cog's ADT (Algebraic Data Type) system for input
+/// validation and schema generation. The runtime is detected on load
+/// and the appropriate input processor is used.
 pub struct PythonPredictor {
     instance: PyObject,
     /// The predictor's kind (class or standalone function) and method execution types
@@ -314,23 +262,16 @@ impl PythonPredictor {
 
     /// Generate OpenAPI schema for this predictor.
     ///
-    /// Uses cog-dataclass schema generation for non-pydantic runtimes and
-    /// FastAPI schema generation for pydantic runtimes.
+    /// Uses cog's schema generation via the `cog._schemas` module.
     ///
     /// Returns None if schema generation fails (best-effort).
     pub fn schema(&self, mode: crate::worker_bridge::HandlerMode) -> Option<serde_json::Value> {
         Python::attach(|py| {
-            // Generate schema for the active runtime
             let result: PyResult<serde_json::Value> = (|| {
                 let json_module = py.import("json")?;
 
-                // For non-pydantic runtime, we have the ADT predictor directly
-                // For Pydantic runtime, use FastAPI schema generation
-                let adt_predictor = match &self.runtime {
-                    Runtime::NonPydantic { adt_predictor } => adt_predictor.bind(py).clone(),
-                    Runtime::Pydantic { input_type: _ } => {
-                        return self.schema_via_fastapi(py, json_module.as_any(), mode);
-                    }
+                let predictor_info = match &self.runtime {
+                    Runtime::Cog { predictor_info } => predictor_info.bind(py).clone(),
                 };
 
                 // Get Python Mode enum value (Mode.TRAIN or Mode.PREDICT)
@@ -341,10 +282,10 @@ impl PythonPredictor {
                     crate::worker_bridge::HandlerMode::Predict => mode_enum.getattr("PREDICT")?,
                 };
 
-                // Use cog-dataclass schema generation
+                // Use cog schema generation
                 let schemas_module = py.import("cog._schemas")?;
                 let to_json_schema = schemas_module.getattr("to_json_schema")?;
-                let schema = to_json_schema.call1((&adt_predictor, py_mode))?;
+                let schema = to_json_schema.call1((&predictor_info, py_mode))?;
 
                 // Convert to JSON string then parse to serde_json::Value
                 let schema_str: String =
@@ -364,55 +305,6 @@ impl PythonPredictor {
                 }
             }
         })
-    }
-
-    /// Generate schema via FastAPI (fallback for Pydantic predictors).
-    fn schema_via_fastapi(
-        &self,
-        py: Python<'_>,
-        json_module: &Bound<'_, PyAny>,
-        mode: crate::worker_bridge::HandlerMode,
-    ) -> PyResult<serde_json::Value> {
-        use crate::worker_bridge::HandlerMode;
-
-        // For Pydantic runtime, use cog's FastAPI app to generate schema
-        // This is what cog.command.openapi_schema does
-        let cog_server_http = py.import("cog.server.http")?;
-        let create_app = cog_server_http.getattr("create_app")?;
-
-        // Need to pass a Config - try to load from cog.yaml
-        let cog_config_module = py.import("cog.config")?;
-        let config_class = cog_config_module.getattr("Config")?;
-        let config = config_class.call0()?;
-
-        // Get Python Mode enum value (Mode.TRAIN or Mode.PREDICT)
-        let mode_module = py.import("cog.mode")?;
-        let mode_enum = mode_module.getattr("Mode")?;
-        let py_mode = match mode {
-            HandlerMode::Train => mode_enum.getattr("TRAIN")?,
-            HandlerMode::Predict => mode_enum.getattr("PREDICT")?,
-        };
-
-        // Create app with is_build=True to skip actual setup, and correct mode
-        let kwargs = pyo3::types::PyDict::new(py);
-        kwargs.set_item("cog_config", &config)?;
-        kwargs.set_item("shutdown_event", py.None())?;
-        kwargs.set_item("is_build", true)?;
-        kwargs.set_item("mode", py_mode)?;
-
-        let app = create_app.call((), Some(&kwargs))?;
-
-        // Get OpenAPI schema from app
-        let openapi_method = app.getattr("openapi")?;
-        let schema = openapi_method.call0()?;
-
-        // Convert to JSON string then parse
-        let schema_str: String = json_module.call_method1("dumps", (&schema,))?.extract()?;
-
-        let schema_value: serde_json::Value = serde_json::from_str(&schema_str)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-
-        Ok(schema_value)
     }
 
     /// Call setup() on the predictor, handling weights parameter if present.
@@ -682,9 +574,8 @@ impl PythonPredictor {
                 PredictionError::Failed(format!("Failed to process output item: {}", e))
             })?;
 
-            let normalized = unwrap_pydantic_serialization_iterators(py, &processed)?;
             let item_str: String = json_module
-                .call_method1("dumps", (&normalized,))
+                .call_method1("dumps", (&processed,))
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to serialize output item: {}", e))
                 })?
@@ -713,9 +604,8 @@ impl PythonPredictor {
         let processed = output::process_output(py, result, None)
             .map_err(|e| PredictionError::Failed(format!("Failed to process output: {}", e)))?;
 
-        let normalized = unwrap_pydantic_serialization_iterators(py, &processed)?;
         let result_str: String = json_module
-            .call_method1("dumps", (&normalized,))
+            .call_method1("dumps", (&processed,))
             .map_err(|e| PredictionError::Failed(format!("Failed to serialize output: {}", e)))?
             .extract()
             .map_err(|e| {
@@ -1012,5 +902,175 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
             // Train doesn't typically use async generators, but we return false for consistency
             Ok((future.unbind(), false, prepared))
         })
+    }
+
+    // =========================================================================
+    // Healthcheck methods
+    // =========================================================================
+
+    /// Healthcheck timeout in seconds.
+    const HEALTHCHECK_TIMEOUT: f64 = 5.0;
+
+    /// Check if the predictor has a healthcheck() method.
+    pub fn has_healthcheck(&self, py: Python<'_>) -> bool {
+        match &self.kind {
+            PredictorKind::Class { .. } => {
+                let instance = self.instance.bind(py);
+                instance.hasattr("healthcheck").unwrap_or(false)
+            }
+            PredictorKind::StandaloneFunction(_) => false,
+        }
+    }
+
+    /// Check if the healthcheck() method is async.
+    pub fn is_healthcheck_async(&self, py: Python<'_>) -> bool {
+        match &self.kind {
+            PredictorKind::Class { .. } => {
+                let instance = self.instance.bind(py);
+                if let Ok(healthcheck) = instance.getattr("healthcheck") {
+                    let inspect = py.import("inspect").ok();
+                    if let Some(inspect) = inspect {
+                        inspect
+                            .call_method1("iscoroutinefunction", (&healthcheck,))
+                            .ok()
+                            .and_then(|r| r.extract::<bool>().ok())
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            PredictorKind::StandaloneFunction(_) => false,
+        }
+    }
+
+    /// Run a synchronous healthcheck with timeout.
+    ///
+    /// Runs the healthcheck in a thread pool executor with a 5 second timeout.
+    pub fn healthcheck_sync(&self, py: Python<'_>) -> coglet_core::orchestrator::HealthcheckResult {
+        use coglet_core::orchestrator::HealthcheckResult;
+
+        let instance = self.instance.bind(py);
+
+        // Run healthcheck in executor with timeout, mirroring Python impl
+        let result: PyResult<bool> = (|| {
+            let concurrent_futures = py.import("concurrent.futures")?;
+            let thread_pool = concurrent_futures.getattr("ThreadPoolExecutor")?;
+
+            // Create a small executor just for this healthcheck
+            let executor = thread_pool.call1((1,))?;
+
+            // Get the healthcheck method
+            let healthcheck_fn = instance.getattr("healthcheck")?;
+
+            // Submit to executor
+            let future = executor.call_method1("submit", (healthcheck_fn,))?;
+
+            // Wait with timeout
+            let result = future.call_method1("result", (Self::HEALTHCHECK_TIMEOUT,));
+
+            // Shutdown executor
+            let _ = executor.call_method1("shutdown", (false,));
+
+            match result {
+                Ok(r) => Ok(r.extract::<bool>().unwrap_or(true)),
+                Err(e) => {
+                    let err_str = e.to_string();
+                    if err_str.contains("TimeoutError") {
+                        Err(pyo3::exceptions::PyTimeoutError::new_err(
+                            "Healthcheck timed out",
+                        ))
+                    } else {
+                        Err(e)
+                    }
+                }
+            }
+        })();
+
+        match result {
+            Ok(true) => HealthcheckResult::healthy(),
+            Ok(false) => HealthcheckResult::unhealthy(
+                "Healthcheck failed: user-defined healthcheck returned False",
+            ),
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("TimeoutError") {
+                    HealthcheckResult::unhealthy(format!(
+                        "Healthcheck failed: user-defined healthcheck timed out after {:.1} seconds",
+                        Self::HEALTHCHECK_TIMEOUT
+                    ))
+                } else {
+                    HealthcheckResult::unhealthy(format!("Healthcheck failed: {}", e))
+                }
+            }
+        }
+    }
+
+    /// Run an async healthcheck with timeout.
+    ///
+    /// Runs the healthcheck in the async event loop with a 5 second timeout.
+    pub fn healthcheck_async(
+        &self,
+        py: Python<'_>,
+        event_loop: &Py<PyAny>,
+    ) -> coglet_core::orchestrator::HealthcheckResult {
+        use coglet_core::orchestrator::HealthcheckResult;
+
+        let instance = self.instance.bind(py);
+
+        let result: PyResult<bool> = (|| {
+            let asyncio = py.import("asyncio")?;
+
+            // Get the healthcheck coroutine
+            let healthcheck_fn = instance.getattr("healthcheck")?;
+            let coro = healthcheck_fn.call0()?;
+
+            // Wrap with timeout
+            let wait_for = asyncio.getattr("wait_for")?;
+            let timeout_coro = wait_for.call1((&coro, Self::HEALTHCHECK_TIMEOUT))?;
+
+            // Submit to event loop
+            let future = asyncio.call_method1(
+                "run_coroutine_threadsafe",
+                (&timeout_coro, event_loop.bind(py)),
+            )?;
+
+            // Block on result with extra buffer time for event loop overhead
+            let result = future.call_method1("result", (Self::HEALTHCHECK_TIMEOUT + 1.0,));
+
+            match result {
+                Ok(r) => Ok(r.extract::<bool>().unwrap_or(true)),
+                Err(e) => {
+                    let err_str = e.to_string();
+                    if err_str.contains("TimeoutError") || err_str.contains("timed out") {
+                        Err(pyo3::exceptions::PyTimeoutError::new_err(
+                            "Healthcheck timed out",
+                        ))
+                    } else {
+                        Err(e)
+                    }
+                }
+            }
+        })();
+
+        match result {
+            Ok(true) => HealthcheckResult::healthy(),
+            Ok(false) => HealthcheckResult::unhealthy(
+                "Healthcheck failed: user-defined healthcheck returned False",
+            ),
+            Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("TimeoutError") {
+                    HealthcheckResult::unhealthy(format!(
+                        "Healthcheck failed: user-defined healthcheck timed out after {:.1} seconds",
+                        Self::HEALTHCHECK_TIMEOUT
+                    ))
+                } else {
+                    HealthcheckResult::unhealthy(format!("Healthcheck failed: {}", e))
+                }
+            }
+        }
     }
 }

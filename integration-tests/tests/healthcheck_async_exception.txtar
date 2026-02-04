@@ -1,0 +1,32 @@
+# Test async healthcheck that raises an exception
+# Tests that async def healthcheck() exceptions are handled
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+cog serve
+
+# Test: Async healthcheck raising exception gives UNHEALTHY with error
+curl GET /health-check
+stdout '"status":"UNHEALTHY"'
+stdout 'user_healthcheck_error'
+stdout 'Async healthcheck error'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+import asyncio
+
+class Predictor(BasePredictor):
+    async def predict(self, text: str) -> str:
+        return f"hello {text}"
+    
+    async def healthcheck(self) -> bool:
+        """Async healthcheck that raises an exception."""
+        await asyncio.sleep(0.01)
+        raise RuntimeError("Async healthcheck error")

@@ -1,64 +1,74 @@
+"""
+Event types for worker communication.
+"""
+
+from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Union
 
-from attrs import define, field, validators
-
-
 # From worker parent process
-#
-@define
+
+
+@dataclass
 class Cancel:
     pass
 
 
-@define
+@dataclass
 class PredictionInput:
     payload: Dict[str, Any]
-    context: Dict[str, str] = {}
+    context: Dict[str, str] = field(default_factory=dict)
 
 
-@define
+@dataclass
 class Shutdown:
     pass
 
 
-@define
+@dataclass
 class Healthcheck:
     pass
 
 
 # From predictor child process
-#
-@define
+
+
+@dataclass
 class Log:
     message: str
-    source: str = field(validator=validators.in_(["stdout", "stderr"]))
+    source: str = "stdout"
+
+    def __post_init__(self) -> None:
+        if self.source not in ("stdout", "stderr"):
+            raise ValueError(
+                f"source must be 'stdout' or 'stderr', got {self.source!r}"
+            )
 
 
-@define
+@dataclass
 class PredictionMetric:
     name: str
     value: Union[float, int]
 
 
-@define
+@dataclass
 class PredictionOutput:
     payload: Any
 
 
-@define
+@dataclass
 class PredictionOutputType:
     multi: bool = False
 
 
-@define
+@dataclass
 class Done:
     canceled: bool = False
     error: bool = False
     error_detail: str = ""
-    event_type: str = "prediction"
+    event_type: str = "prediction"  # "prediction", "setup", or "healthcheck"
 
 
-@define
+@dataclass
 class Envelope:
     """
     Envelope contains an arbitrary event along with an optional tag used to
@@ -67,9 +77,9 @@ class Envelope:
 
     event: Union[
         Cancel,
+        Healthcheck,
         PredictionInput,
         Shutdown,
-        Healthcheck,
         Log,
         PredictionMetric,
         PredictionOutput,

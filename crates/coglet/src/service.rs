@@ -14,7 +14,7 @@ use tokio::sync::{RwLock, watch};
 
 use crate::bridge::protocol::SlotRequest;
 use crate::health::{Health, SetupResult};
-use crate::orchestrator::Orchestrator;
+use crate::orchestrator::{HealthcheckResult, Orchestrator};
 use crate::permit::{PermitPool, PredictionSlot};
 use crate::prediction::{Prediction, PredictionStatus};
 use crate::predictor::{PredictionError, PredictionOutput, PredictionResult};
@@ -219,6 +219,20 @@ impl PredictionService {
         self.schema.read().await.clone()
     }
 
+    /// Run user-defined healthcheck via orchestrator.
+    ///
+    /// Returns healthy if no orchestrator is configured (not ready yet).
+    pub async fn healthcheck(
+        &self,
+    ) -> Result<HealthcheckResult, crate::orchestrator::OrchestratorError> {
+        if let Some(ref state) = *self.orchestrator.read().await {
+            state.orchestrator.healthcheck().await
+        } else {
+            // No orchestrator = not ready, return healthy (healthcheck not applicable)
+            Ok(HealthcheckResult::healthy())
+        }
+    }
+
     /// Create a new prediction, acquiring a slot permit.
     ///
     /// Caller should check for duplicates via supervisor first.
@@ -411,6 +425,12 @@ mod tests {
                     "mock result"
                 )));
             }
+        }
+
+        async fn healthcheck(
+            &self,
+        ) -> Result<HealthcheckResult, crate::orchestrator::OrchestratorError> {
+            Ok(HealthcheckResult::healthy())
         }
 
         async fn shutdown(&self) -> Result<(), crate::orchestrator::OrchestratorError> {

@@ -8,7 +8,6 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ..schema import PredictionResponse, Status, WebhookEvent
-from ..types import PYDANTIC_V2
 from .response_throttler import ResponseThrottler
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
@@ -46,12 +45,7 @@ def webhook_caller(webhook: str) -> Callable[[Any], None]:
 
     def caller(response: PredictionResponse) -> None:
         if throttler.should_send_response(response):
-            if PYDANTIC_V2:
-                dict_response = jsonable_encoder(
-                    response.model_dump(exclude_unset=True)
-                )
-            else:
-                dict_response = jsonable_encoder(response.dict(exclude_unset=True))
+            dict_response = jsonable_encoder(response.dict(exclude_unset=True))
             if Status.is_terminal(response.status):
                 # For terminal updates, retry persistently
                 retry_session.post(webhook, json=dict_response)

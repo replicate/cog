@@ -1,5 +1,4 @@
 [short] skip 'slow test - skip in short mode'
-[coglet_alpha] skip
 [!coglet_rust] skip
 
 # Test worker tracing logs appear in setuplog
