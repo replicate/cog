@@ -10,6 +10,20 @@
 
 SHELL := bash
 
+# Show deprecation warning (set MAKE_NO_WARN=1 to suppress)
+ifndef MAKE_NO_WARN
+$(info )
+$(info ┌────────────────────────────────────────────────────────────────────┐)
+$(info │ NOTE: This Makefile is a compatibility shim. Prefer using mise:   │)
+$(info │                                                                    │)
+$(info │   mise run build:cog      mise run test:go      mise run fmt:fix  │)
+$(info │                                                                    │)
+$(info │ Run 'mise tasks' to see all available tasks.                      │)
+$(info │ Set MAKE_NO_WARN=1 to suppress this message.                      │)
+$(info └────────────────────────────────────────────────────────────────────┘)
+$(info )
+endif
+
 DESTDIR ?=
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
