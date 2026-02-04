@@ -4,7 +4,7 @@ experimental_monorepo_root = true
 go = "latest"
 uv = "0.9.26"
 zig = "0.15.2"
-"rust" = { version = "1.93.0", components = "rustfmt,clippy" }
+"rust" = { version = "1.93.0", components = "rustfmt,clippy", targets ="x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
 cargo-binstall = "1.16.6"
 "cargo:cargo-deny" = "0.19.0"
 "cargo:cargo-insta" = "1.46.0"
