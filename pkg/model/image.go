@@ -31,6 +31,7 @@ type Image struct {
 type Platform struct {
 	OS           string
 	Architecture string
+	Variant      string
 }
 
 // Label keys for Cog-specific metadata stored in image labels.

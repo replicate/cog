@@ -208,6 +208,7 @@ func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map
 		Strip:            buildStrip,
 		Precompile:       buildPrecompile,
 		Annotations:      annotations,
+		ImageFormat:      model.ImageFormatFromEnv(),
 	}
 }
 

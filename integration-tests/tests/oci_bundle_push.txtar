@@ -1,0 +1,37 @@
+# Test pushing an OCI bundle image to registry
+# This test verifies we can build with bundle format and push to a registry
+
+# Start test registry
+registry-start
+
+# Generate mock weights
+mock-weights --count 2 --min-size 1kb --max-size 10kb
+
+# Build with bundle format
+env COG_OCI_INDEX=1
+cog build -t $TEST_IMAGE
+
+# Push to test registry using docker
+docker-push $TEST_IMAGE test/mymodel:v1
+
+# Verify the image was pushed correctly
+registry-inspect $TEST_REGISTRY/test/mymodel:v1
+stdout '"MediaType"'
+stdout 'run.cog.config'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Path
+from typing import Optional
+
+class Predictor(BasePredictor):
+    def setup(self, weights: Optional[Path] = None) -> None:
+        """Load the model weights."""
+        pass
+    
+    def predict(self, text: str) -> str:
+        return f"hello {text}"

@@ -64,6 +64,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 					OS:           m.Platform.OS,
 					Architecture: m.Platform.Architecture,
 					Variant:      m.Platform.Variant,
+					Annotations:  m.Annotations,
 				})
 			}
 			// For indexes, pick a default image to get labels from.
@@ -271,6 +272,44 @@ func checkError(err error, codes ...transport.ErrorCode) bool {
 		}
 	}
 	return false
+}
+
+// PushImage pushes a single image to a registry.
+func (c *RegistryClient) PushImage(ctx context.Context, ref string, img v1.Image) error {
+	parsedRef, err := name.ParseReference(ref, name.Insecure)
+	if err != nil {
+		return fmt.Errorf("parsing reference: %w", err)
+	}
+
+	opts := []remote.Option{
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+	}
+
+	if err := remote.Write(parsedRef, img, opts...); err != nil {
+		return fmt.Errorf("pushing image %s: %w", ref, err)
+	}
+
+	return nil
+}
+
+// PushIndex pushes an OCI Image Index to a registry.
+func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.ImageIndex) error {
+	parsedRef, err := name.ParseReference(ref, name.Insecure)
+	if err != nil {
+		return fmt.Errorf("parsing reference: %w", err)
+	}
+
+	opts := []remote.Option{
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+	}
+
+	if err := remote.WriteIndex(parsedRef, idx, opts...); err != nil {
+		return fmt.Errorf("pushing index %s: %w", ref, err)
+	}
+
+	return nil
 }
 
 // pickDefaultImage selects an image from a manifest index to use for fetching labels.

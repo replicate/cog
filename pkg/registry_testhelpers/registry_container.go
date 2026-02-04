@@ -1,6 +1,7 @@
 package registry_testhelpers
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -35,6 +36,19 @@ import (
 func StartTestRegistry(t *testing.T, opts ...Option) *RegistryContainer {
 	t.Helper()
 
+	container, cleanup, err := StartTestRegistryWithCleanup(t.Context(), opts...)
+	require.NoError(t, err, "Failed to start registry container")
+
+	// Register cleanup with testing.T
+	t.Cleanup(cleanup)
+
+	return container
+}
+
+// StartTestRegistryWithCleanup starts a test registry and returns a cleanup function.
+// Use this when you don't have a *testing.T (e.g., in testscript harness).
+// The caller is responsible for calling the cleanup function when done.
+func StartTestRegistryWithCleanup(ctx context.Context, opts ...Option) (*RegistryContainer, func(), error) {
 	options := &options{}
 	for _, opt := range opts {
 		opt(options)
@@ -42,6 +56,12 @@ func StartTestRegistry(t *testing.T, opts ...Option) *RegistryContainer {
 
 	_, filename, _, _ := runtime.Caller(0)
 	testdataDir := filepath.Join(filepath.Dir(filename), "testdata", "docker")
+
+	// Pick a port in the insecure range (Docker considers localhost:1-9999 as insecure)
+	port, err := util.PickFreePort(1024, 9999)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pick free port: %w", err)
+	}
 
 	containerCustomizers := []testcontainers.ContainerCustomizer{
 		testcontainers.WithFiles(testcontainers.ContainerFile{
@@ -54,11 +74,6 @@ func StartTestRegistry(t *testing.T, opts ...Option) *RegistryContainer {
 				WithStartupTimeout(10 * time.Second),
 		),
 		testcontainers.WithHostConfigModifier(func(hostConfig *container.HostConfig) {
-			// docker only considers localhost:1 through localhost:9999 as insecure. testcontainers
-			// picks higher ports by default, so we need to pick one ourselves to allow insecure access
-			// without modifying the daemon config.
-			port, err := util.PickFreePort(1024, 9999)
-			require.NoError(t, err, "Failed to pick free port")
 			hostConfig.PortBindings = map[nat.Port][]nat.PortBinding{
 				nat.Port("5000/tcp"): {{HostIP: "0.0.0.0", HostPort: strconv.Itoa(port)}},
 			}
@@ -67,24 +82,33 @@ func StartTestRegistry(t *testing.T, opts ...Option) *RegistryContainer {
 
 	if options.auth != nil {
 		htpasswd, err := generateHtpasswd(options.auth.Username, options.auth.Password)
-		require.NoError(t, err)
+		if err != nil {
+			return nil, nil, fmt.Errorf("generate htpasswd: %w", err)
+		}
 		containerCustomizers = append(containerCustomizers,
 			registry.WithHtpasswd(htpasswd),
 		)
 	}
 
 	registryContainer, err := registry.Run(
-		t.Context(),
+		ctx,
 		"registry:3",
 		containerCustomizers...,
 	)
-	defer testcontainers.CleanupContainer(t, registryContainer)
-	require.NoError(t, err, "Failed to start registry container")
+	if err != nil {
+		return nil, nil, fmt.Errorf("start registry container: %w", err)
+	}
+
+	cleanup := func() {
+		if registryContainer != nil {
+			_ = registryContainer.Terminate(context.Background())
+		}
+	}
 
 	return &RegistryContainer{
 		Container: registryContainer,
 		options:   options,
-	}
+	}, cleanup, nil
 }
 
 type RegistryContainer struct {

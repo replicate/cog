@@ -17,10 +17,16 @@ type PlatformManifest struct {
 	OS           string
 	Architecture string
 	Variant      string
+	Annotations  map[string]string
 }
 
 type Client interface {
+	// Read methods
 	Inspect(ctx context.Context, imageRef string, platform *Platform) (*ManifestResult, error)
 	GetImage(ctx context.Context, imageRef string, platform *Platform) (v1.Image, error)
 	Exists(ctx context.Context, imageRef string) (bool, error)
+
+	// Write methods for OCI index support
+	PushImage(ctx context.Context, ref string, img v1.Image) error
+	PushIndex(ctx context.Context, ref string, idx v1.ImageIndex) error
 }

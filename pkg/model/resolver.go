@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types/image"
@@ -232,7 +233,51 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	// Use the canonical ID from the response
 	img.Digest = resp.ID
 
-	return r.modelFromImage(img, src.Config)
+	m, err := r.modelFromImage(img, src.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set image format from build options
+	m.ImageFormat = opts.ImageFormat
+	if m.ImageFormat == "" {
+		m.ImageFormat = FormatStandalone
+	}
+
+	// For bundle format, load weights manifest
+	if m.ImageFormat == FormatBundle {
+		lockPath := opts.WeightsLockPath
+		if lockPath == "" {
+			lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
+		}
+
+		lock, err := LoadWeightsLock(lockPath)
+		if err != nil {
+			return nil, fmt.Errorf("bundle format requires weights.lock: %w", err)
+		}
+		m.WeightsManifest = lock.ToWeightsManifest()
+	}
+
+	return m, nil
+}
+
+// Push pushes a Model to a container registry.
+// The push strategy is determined by Model.ImageFormat:
+// - FormatStandalone (or empty): Standard docker push
+// - FormatBundle: Push image, build index with weights, push index
+func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
+	pusher := r.pusherFor(m.ImageFormat)
+	return pusher.Push(ctx, m, opts)
+}
+
+// pusherFor returns the appropriate Pusher for the given format.
+func (r *Resolver) pusherFor(format ModelImageFormat) Pusher {
+	switch format {
+	case FormatBundle:
+		return NewBundlePusher(r.docker, r.registry)
+	default:
+		return NewImagePusher(r.docker)
+	}
 }
 
 // BuildBase creates a base image for dev mode (without /src copied).
@@ -323,6 +368,12 @@ func (r *Resolver) modelFromInspect(ref *ParsedRef, resp *image.InspectResponse,
 // modelFromManifest creates a Model from registry manifest.
 // Returns ErrNotCogModel if the image is not a valid Cog model.
 func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.ManifestResult, source ImageSource) (*Model, error) {
+	// Check if this is an OCI Index (v2 format)
+	if isOCIIndex(manifest) {
+		return r.modelFromIndex(ref, manifest, source)
+	}
+
+	// Standard image (v1 format)
 	img := &Image{
 		Reference: ref.String(),
 		Digest:    manifest.Config, // Config digest serves as image ID
@@ -330,11 +381,121 @@ func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.Manifest
 		Source:    source,
 	}
 
-	model, err := img.ToModel()
+	m, err := img.ToModel()
 	if err != nil {
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
-	return model, nil
+	m.ImageFormat = FormatStandalone
+	return m, nil
+}
+
+// modelFromIndex creates a Model from an OCI Image Index.
+// It extracts the image manifest and weights manifest from the index.
+func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestResult, source ImageSource) (*Model, error) {
+	// Find the image manifest (skip unknown/unknown platform artifacts)
+	imgManifest := findImageManifest(manifest.Manifests, nil)
+	if imgManifest == nil {
+		return nil, fmt.Errorf("no image manifest found in index %s", ref.Original)
+	}
+
+	// Create Image from the image manifest
+	img := &Image{
+		Reference: ref.String(),
+		Digest:    imgManifest.Digest,
+		Labels:    manifest.Labels, // Labels come from the index inspection
+		Source:    source,
+		Platform: &Platform{
+			OS:           imgManifest.OS,
+			Architecture: imgManifest.Architecture,
+			Variant:      imgManifest.Variant,
+		},
+	}
+
+	m, err := img.ToModel()
+	if err != nil {
+		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
+	}
+
+	// Set bundle format fields
+	m.ImageFormat = FormatBundle
+	m.Index = &Index{
+		Digest:    ref.String(), // The index reference
+		Reference: ref.String(),
+		MediaType: manifest.MediaType,
+		Manifests: make([]IndexManifest, len(manifest.Manifests)),
+	}
+
+	// Populate index manifests
+	for i, pm := range manifest.Manifests {
+		im := IndexManifest{
+			Digest:      pm.Digest,
+			Annotations: pm.Annotations,
+		}
+		if pm.OS != "" {
+			im.Platform = &Platform{
+				OS:           pm.OS,
+				Architecture: pm.Architecture,
+				Variant:      pm.Variant,
+			}
+		}
+		// Determine manifest type
+		if pm.OS == PlatformUnknown && pm.Annotations != nil && pm.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
+			im.Type = ManifestTypeWeights
+		} else {
+			im.Type = ManifestTypeImage
+		}
+		m.Index.Manifests[i] = im
+	}
+
+	// Find and populate weights manifest info
+	weightsManifest := findWeightsManifest(manifest.Manifests)
+	if weightsManifest != nil {
+		m.WeightsManifest = &WeightsManifest{
+			Digest: weightsManifest.Digest,
+			// Note: Full weights file metadata would require fetching the weights manifest
+			// For now, we just record that weights exist
+		}
+	}
+
+	return m, nil
+}
+
+// isOCIIndex checks if the manifest result is an OCI Image Index.
+func isOCIIndex(mr *registry.ManifestResult) bool {
+	return mr.IsIndex()
+}
+
+// findWeightsManifest finds the weights manifest in an index.
+// Returns nil if no weights manifest is found.
+func findWeightsManifest(manifests []registry.PlatformManifest) *registry.PlatformManifest {
+	for i := range manifests {
+		m := &manifests[i]
+		if m.Annotations != nil && m.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
+			return m
+		}
+	}
+	return nil
+}
+
+// findImageManifest finds the model image manifest in an index.
+// If platform is specified, matches on OS/Architecture.
+// Skips artifacts (platform: unknown/unknown).
+func findImageManifest(manifests []registry.PlatformManifest, platform *registry.Platform) *registry.PlatformManifest {
+	for i := range manifests {
+		m := &manifests[i]
+		// Skip artifacts (unknown platform)
+		if m.OS == PlatformUnknown {
+			continue
+		}
+		// Match platform if specified
+		if platform != nil {
+			if m.OS != platform.OS || m.Architecture != platform.Architecture {
+				continue
+			}
+		}
+		return m
+	}
+	return nil
 }
 
 // isNotFoundError checks if an error indicates "not found" vs a real error.
