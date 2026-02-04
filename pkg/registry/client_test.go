@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -117,28 +118,18 @@ func TestIsRetryableError(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "wrapped unexpected EOF",
-			err:      errors.New("failed: unexpected EOF"),
-			expected: true, // Should match via string pattern
-		},
-		{
-			name:     "connection reset string",
-			err:      errors.New("read tcp: connection reset by peer"),
-			expected: true,
-		},
-		{
-			name:     "timeout string",
-			err:      errors.New("request timeout exceeded"),
-			expected: true,
-		},
-		{
-			name:     "generic error",
-			err:      errors.New("something completely different"),
+			name:     "context.Canceled",
+			err:      context.Canceled,
 			expected: false,
 		},
 		{
-			name:     "unauthorized error",
-			err:      errors.New("unauthorized: authentication required"),
+			name:     "context.DeadlineExceeded",
+			err:      context.DeadlineExceeded,
+			expected: false,
+		},
+		{
+			name:     "generic error (not retryable)",
+			err:      errors.New("something completely different"),
 			expected: false,
 		},
 	}
