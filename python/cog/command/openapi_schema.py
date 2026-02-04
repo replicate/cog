@@ -5,7 +5,7 @@ This prints a JSON object describing the inputs of the model.
 """
 
 import json
-from typing import Any, Dict, List, Union
+from typing import Any, Dict
 
 from ..config import Config
 from ..errors import ConfigDoesNotExist
