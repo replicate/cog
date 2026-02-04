@@ -2,6 +2,7 @@
 package model
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -29,7 +30,7 @@ func TestWeightsLockGenerator_ProcessSingleFile(t *testing.T) {
 		{Source: "model.safetensors"},
 	}
 
-	lock, err := gen.Generate(tmpDir, sources)
+	lock, err := gen.Generate(context.TODO(), tmpDir, sources)
 	require.NoError(t, err)
 	require.NotNil(t, lock)
 
@@ -70,7 +71,7 @@ func TestWeightsLockGenerator_ProcessDirectory(t *testing.T) {
 		{Source: "weights"},
 	}
 
-	lock, err := gen.Generate(tmpDir, sources)
+	lock, err := gen.Generate(context.TODO(), tmpDir, sources)
 	require.NoError(t, err)
 	require.NotNil(t, lock)
 
@@ -103,7 +104,7 @@ func TestWeightsLockGenerator_CustomTarget(t *testing.T) {
 		{Source: "local-model.bin", Target: "/custom/path/model.bin"},
 	}
 
-	lock, err := gen.Generate(tmpDir, sources)
+	lock, err := gen.Generate(context.TODO(), tmpDir, sources)
 	require.NoError(t, err)
 	require.NotNil(t, lock)
 
@@ -125,7 +126,7 @@ func TestWeightsLockGenerator_MissingSource(t *testing.T) {
 		{Source: "nonexistent.bin"},
 	}
 
-	lock, err := gen.Generate(tmpDir, sources)
+	lock, err := gen.Generate(context.TODO(), tmpDir, sources)
 	require.Error(t, err)
 	require.Nil(t, lock)
 	require.Contains(t, err.Error(), "nonexistent.bin")
@@ -150,7 +151,7 @@ func TestWeightsLockGenerator_DigestCorrectness(t *testing.T) {
 		{Source: "model.bin"},
 	}
 
-	lock, err := gen.Generate(tmpDir, sources)
+	lock, err := gen.Generate(context.TODO(), tmpDir, sources)
 	require.NoError(t, err)
 	require.NotNil(t, lock)
 
@@ -182,7 +183,7 @@ func TestWeightsLockGenerator_FilePaths(t *testing.T) {
 		{Source: "subdir"},
 	}
 
-	lock, filePaths, err := gen.GenerateWithFilePaths(tmpDir, sources)
+	lock, filePaths, err := gen.GenerateWithFilePaths(context.TODO(), tmpDir, sources)
 	require.NoError(t, err)
 	require.NotNil(t, lock)
 	require.NotNil(t, filePaths)

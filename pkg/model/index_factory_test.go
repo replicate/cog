@@ -2,8 +2,6 @@
 package model
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -50,12 +48,13 @@ func TestIndexFactory(t *testing.T) {
 		factory := NewIndexFactory()
 		artifact, manifest, err := factory.BuildWeightsArtifact(context.Background(), lockPath, filePaths)
 		require.NoError(t, err)
+
 		require.NotNil(t, artifact)
 		require.NotNil(t, manifest)
 		require.Len(t, manifest.Files, 1)
 		require.NotEmpty(t, manifest.Files[0].Digest)
 		require.NotEmpty(t, manifest.Files[0].DigestOriginal)
-		require.Equal(t, MediaTypeWeightsLayerGzip, manifest.Files[0].MediaType)
+		require.Equal(t, MediaTypeWeightsLayer, manifest.Files[0].MediaType)
 
 		artifactType, err := partial.ArtifactType(artifact)
 		require.NoError(t, err)
@@ -193,28 +192,27 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		require.Empty(t, manifest.Layers)
 	})
 
-	t.Run("add layer from weight file", func(t *testing.T) {
+	t.Run("add layer from file", func(t *testing.T) {
+		dir := t.TempDir()
 		data := []byte("test weight content")
-		var compressed bytes.Buffer
-		gw := gzip.NewWriter(&compressed)
-		_, _ = gw.Write(data)
-		_ = gw.Close()
+		testFile := filepath.Join(dir, "test.bin")
+		require.NoError(t, os.WriteFile(testFile, data, 0o644))
 
-		hash := sha256.Sum256(compressed.Bytes())
+		hash := sha256.Sum256(data)
 		digest := "sha256:" + hex.EncodeToString(hash[:])
 
 		wf := WeightFile{
 			Name:             "test.bin",
 			Dest:             "/cache/test.bin",
 			Digest:           digest,
-			DigestOriginal:   "sha256:original123",
-			Size:             int64(compressed.Len()),
+			DigestOriginal:   digest,
+			Size:             int64(len(data)),
 			SizeUncompressed: int64(len(data)),
-			MediaType:        MediaTypeWeightsLayerGzip,
+			MediaType:        MediaTypeWeightsLayer,
 		}
 
 		builder := NewWeightsArtifactBuilder()
-		err := builder.AddLayer(wf, compressed.Bytes())
+		err := builder.AddLayerFromFile(wf, testFile)
 		require.NoError(t, err)
 
 		artifact, err := builder.Build()
@@ -225,33 +223,32 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		require.Len(t, manifest.Layers, 1)
 
 		layer := manifest.Layers[0]
-		require.Equal(t, types.MediaType(MediaTypeWeightsLayerGzip), layer.MediaType)
+		require.Equal(t, types.MediaType(MediaTypeWeightsLayer), layer.MediaType)
 		require.Equal(t, "test.bin", layer.Annotations[AnnotationWeightsName])
 		require.Equal(t, "/cache/test.bin", layer.Annotations[AnnotationWeightsDest])
 	})
 
 	t.Run("add layer with all annotations", func(t *testing.T) {
+		dir := t.TempDir()
 		data := []byte("test weight data")
-		var compressed bytes.Buffer
-		gw := gzip.NewWriter(&compressed)
-		_, _ = gw.Write(data)
-		_ = gw.Close()
+		testFile := filepath.Join(dir, "model.safetensors")
+		require.NoError(t, os.WriteFile(testFile, data, 0o644))
 
-		hash := sha256.Sum256(compressed.Bytes())
+		hash := sha256.Sum256(data)
 		digest := "sha256:" + hex.EncodeToString(hash[:])
 
 		wf := WeightFile{
 			Name:             "llama-3.1-8b-weights",
 			Dest:             "/cache/model.safetensors",
 			Digest:           digest,
-			DigestOriginal:   "sha256:abc123def456",
-			Size:             int64(compressed.Len()),
+			DigestOriginal:   digest,
+			Size:             int64(len(data)),
 			SizeUncompressed: int64(len(data)),
-			MediaType:        MediaTypeWeightsLayerGzip,
+			MediaType:        MediaTypeWeightsLayer,
 		}
 
 		builder := NewWeightsArtifactBuilder()
-		err := builder.AddLayer(wf, compressed.Bytes())
+		err := builder.AddLayerFromFile(wf, testFile)
 		require.NoError(t, err)
 
 		artifact, err := builder.Build()
@@ -264,55 +261,50 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		layer := manifest.Layers[0]
 		require.Equal(t, "llama-3.1-8b-weights", layer.Annotations[AnnotationWeightsName])
 		require.Equal(t, "/cache/model.safetensors", layer.Annotations[AnnotationWeightsDest])
-		require.Equal(t, "sha256:abc123def456", layer.Annotations[AnnotationWeightsDigestOriginal])
+		require.Equal(t, digest, layer.Annotations[AnnotationWeightsDigestOriginal])
 		require.Equal(t, "16", layer.Annotations[AnnotationWeightsSizeUncompressed])
 	})
 
 	t.Run("add multiple layers", func(t *testing.T) {
+		dir := t.TempDir()
 		builder := NewWeightsArtifactBuilder()
 
 		// Add first layer
 		data1 := []byte("first weight file")
-		var compressed1 bytes.Buffer
-		gw1 := gzip.NewWriter(&compressed1)
-		_, _ = gw1.Write(data1)
-		_ = gw1.Close()
-
-		hash1 := sha256.Sum256(compressed1.Bytes())
+		file1 := filepath.Join(dir, "layer1.bin")
+		require.NoError(t, os.WriteFile(file1, data1, 0o644))
+		hash1 := sha256.Sum256(data1)
 		digest1 := "sha256:" + hex.EncodeToString(hash1[:])
 
 		wf1 := WeightFile{
 			Name:             "layer1.bin",
 			Dest:             "/cache/layer1.bin",
 			Digest:           digest1,
-			DigestOriginal:   "sha256:first",
-			Size:             int64(compressed1.Len()),
+			DigestOriginal:   digest1,
+			Size:             int64(len(data1)),
 			SizeUncompressed: int64(len(data1)),
-			MediaType:        MediaTypeWeightsLayerGzip,
+			MediaType:        MediaTypeWeightsLayer,
 		}
-		err := builder.AddLayer(wf1, compressed1.Bytes())
+		err := builder.AddLayerFromFile(wf1, file1)
 		require.NoError(t, err)
 
 		// Add second layer
 		data2 := []byte("second weight file")
-		var compressed2 bytes.Buffer
-		gw2 := gzip.NewWriter(&compressed2)
-		_, _ = gw2.Write(data2)
-		_ = gw2.Close()
-
-		hash2 := sha256.Sum256(compressed2.Bytes())
+		file2 := filepath.Join(dir, "layer2.bin")
+		require.NoError(t, os.WriteFile(file2, data2, 0o644))
+		hash2 := sha256.Sum256(data2)
 		digest2 := "sha256:" + hex.EncodeToString(hash2[:])
 
 		wf2 := WeightFile{
 			Name:             "layer2.bin",
 			Dest:             "/cache/layer2.bin",
 			Digest:           digest2,
-			DigestOriginal:   "sha256:second",
-			Size:             int64(compressed2.Len()),
+			DigestOriginal:   digest2,
+			Size:             int64(len(data2)),
 			SizeUncompressed: int64(len(data2)),
-			MediaType:        MediaTypeWeightsLayerGzip,
+			MediaType:        MediaTypeWeightsLayer,
 		}
-		err = builder.AddLayer(wf2, compressed2.Bytes())
+		err = builder.AddLayerFromFile(wf2, file2)
 		require.NoError(t, err)
 
 		artifact, err := builder.Build()
@@ -330,27 +322,26 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 	})
 
 	t.Run("layer has expected annotations", func(t *testing.T) {
+		dir := t.TempDir()
 		data := []byte("test data")
-		var compressed bytes.Buffer
-		gw := gzip.NewWriter(&compressed)
-		_, _ = gw.Write(data)
-		_ = gw.Close()
+		testFile := filepath.Join(dir, "test.bin")
+		require.NoError(t, os.WriteFile(testFile, data, 0o644))
 
-		hash := sha256.Sum256(compressed.Bytes())
+		hash := sha256.Sum256(data)
 		digest := "sha256:" + hex.EncodeToString(hash[:])
 
 		wf := WeightFile{
 			Name:             "test-weight-v1",
 			Dest:             "/cache/test.bin",
 			Digest:           digest,
-			DigestOriginal:   "sha256:orig",
-			Size:             int64(compressed.Len()),
+			DigestOriginal:   digest,
+			Size:             int64(len(data)),
 			SizeUncompressed: int64(len(data)),
-			MediaType:        MediaTypeWeightsLayerGzip,
+			MediaType:        MediaTypeWeightsLayer,
 		}
 
 		builder := NewWeightsArtifactBuilder()
-		err := builder.AddLayer(wf, compressed.Bytes())
+		err := builder.AddLayerFromFile(wf, testFile)
 		require.NoError(t, err)
 
 		artifact, err := builder.Build()
@@ -363,7 +354,7 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		layer := manifest.Layers[0]
 		require.Equal(t, "test-weight-v1", layer.Annotations[AnnotationWeightsName])
 		require.Equal(t, "/cache/test.bin", layer.Annotations[AnnotationWeightsDest])
-		require.Equal(t, "sha256:orig", layer.Annotations[AnnotationWeightsDigestOriginal])
+		require.Equal(t, digest, layer.Annotations[AnnotationWeightsDigestOriginal])
 	})
 }
 

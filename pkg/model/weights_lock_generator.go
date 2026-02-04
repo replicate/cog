@@ -2,6 +2,7 @@
 package model
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -31,20 +32,27 @@ func NewWeightsLockGenerator(opts WeightsLockGeneratorOptions) *WeightsLockGener
 }
 
 // Generate processes weight sources and returns a WeightsLock.
-func (g *WeightsLockGenerator) Generate(projectDir string, sources []config.WeightSource) (*WeightsLock, error) {
-	lock, _, err := g.GenerateWithFilePaths(projectDir, sources)
+func (g *WeightsLockGenerator) Generate(ctx context.Context, projectDir string, sources []config.WeightSource) (*WeightsLock, error) {
+	lock, _, err := g.GenerateWithFilePaths(ctx, projectDir, sources)
 	return lock, err
 }
 
 // GenerateWithFilePaths processes weight sources and returns a WeightsLock along with
 // a map of weight names to their absolute file paths.
-func (g *WeightsLockGenerator) GenerateWithFilePaths(projectDir string, sources []config.WeightSource) (*WeightsLock, map[string]string, error) {
+func (g *WeightsLockGenerator) GenerateWithFilePaths(ctx context.Context, projectDir string, sources []config.WeightSource) (*WeightsLock, map[string]string, error) {
 	var files []WeightFile
 	filePaths := make(map[string]string)
 
 	for _, src := range sources {
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		default:
+		}
+
 		sourcePath := filepath.Join(projectDir, src.Source)
 
+		// TODO: should we validate that sourcePath is within projectDir to avoid accidental file access outside the project?
 		info, err := os.Stat(sourcePath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -68,7 +76,7 @@ func (g *WeightsLockGenerator) GenerateWithFilePaths(projectDir string, sources 
 					return fmt.Errorf("compute relative path: %w", err)
 				}
 
-				wf, err := g.processFile(path, relPath, "")
+				wf, err := g.processFile(ctx, path, relPath, "")
 				if err != nil {
 					return err
 				}
@@ -82,7 +90,7 @@ func (g *WeightsLockGenerator) GenerateWithFilePaths(projectDir string, sources 
 			}
 		} else {
 			// Process single file
-			wf, err := g.processFile(sourcePath, src.Source, src.Target)
+			wf, err := g.processFile(ctx, sourcePath, src.Source, src.Target)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -101,7 +109,14 @@ func (g *WeightsLockGenerator) GenerateWithFilePaths(projectDir string, sources 
 }
 
 // processFile creates a WeightFile entry for a single file.
-func (g *WeightsLockGenerator) processFile(absPath, relPath, customTarget string) (*WeightFile, error) {
+func (g *WeightsLockGenerator) processFile(ctx context.Context, absPath, relPath, customTarget string) (*WeightFile, error) {
+	// TODO: it would be better if we could cancel during a copy op
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Open and read file for hashing
 	f, err := os.Open(absPath)
 	if err != nil {
@@ -109,29 +124,24 @@ func (g *WeightsLockGenerator) processFile(absPath, relPath, customTarget string
 	}
 	defer f.Close()
 
-	// Get file info for size
-	info, err := f.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("stat weight file %s: %w", relPath, err)
-	}
-	size := info.Size()
-
 	// Compute SHA256 digest
 	hash := sha256.New()
-	if _, err := io.Copy(hash, f); err != nil {
+	size, err := io.Copy(hash, f)
+	if err != nil {
 		return nil, fmt.Errorf("hash weight file %s: %w", relPath, err)
 	}
 	digest := "sha256:" + hex.EncodeToString(hash.Sum(nil))
 
 	// Compute name (filename without extension)
-	baseName := filepath.Base(relPath)
-	name := strings.TrimSuffix(baseName, filepath.Ext(baseName))
+	var (
+		baseName = filepath.Base(relPath)
+		name     = strings.TrimSuffix(baseName, filepath.Ext(baseName))
 
-	// Compute dest path
-	var dest string
-	if customTarget != "" {
+		// Compute dest path
 		dest = customTarget
-	} else {
+	)
+
+	if dest == "" {
 		dest = filepath.Join(g.opts.DestPrefix, relPath)
 		// Ensure forward slashes for container paths
 		dest = filepath.ToSlash(dest)

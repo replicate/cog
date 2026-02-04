@@ -50,6 +50,8 @@ and generates a weights.lock file containing metadata (digests, sizes) for each 
 }
 
 func weightsBuildCommand(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	src, err := model.NewSource(configFilename)
 	if err != nil {
 		return fmt.Errorf("failed to read config: %w", err)
@@ -70,7 +72,7 @@ func weightsBuildCommand(cmd *cobra.Command, args []string) error {
 		DestPrefix: weightsDest,
 	})
 
-	lock, err := gen.Generate(projectDir, cfg.Weights)
+	lock, err := gen.Generate(ctx, projectDir, cfg.Weights)
 	if err != nil {
 		return fmt.Errorf("failed to generate weights lock: %w", err)
 	}
@@ -183,7 +185,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		DestPrefix: weightsDest,
 	})
 
-	_, filePaths, err := gen.GenerateWithFilePaths(projectDir, cfg.Weights)
+	_, filePaths, err := gen.GenerateWithFilePaths(ctx, projectDir, cfg.Weights)
 	if err != nil {
 		return fmt.Errorf("failed to resolve weight files: %w", err)
 	}

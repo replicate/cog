@@ -105,10 +105,26 @@ func (p *WeightsPusher) Push(ctx context.Context, opts WeightsPushOptions) (*Wei
 	results := make(chan pushResult, len(opts.Lock.Files))
 	var wg sync.WaitGroup
 
+	const maxConcurrency = 4 // TODO: make this configurable or use a worker pool
+	sem := make(chan struct{}, maxConcurrency)
+
+	// Push each file in a separate goroutine with concurrency limit
 	for _, wf := range opts.Lock.Files {
 		wg.Add(1)
 		go func(wf WeightFile) {
-			defer wg.Done()
+			sem <- struct{}{} // acquire
+			defer func() {
+				<-sem
+				wg.Done()
+			}() // release
+
+			// Check cancellation before starting work
+			select {
+			case <-ctx.Done():
+				results <- pushResult{name: wf.Name, err: ctx.Err()}
+				return
+			default:
+			}
 
 			filePath := opts.FilePaths[wf.Name]
 
@@ -125,10 +141,14 @@ func (p *WeightsPusher) Push(ctx context.Context, opts WeightsPushOptions) (*Wei
 			sendProgress(WeightsPushProgress{Name: wf.Name, Total: size})
 
 			// Create progress channel for this upload, autoclosed by WriteLayerWithProgress
-			progressCh := make(chan v1.Update, 100)
+			var (
+				progressCh   = make(chan v1.Update, 100)
+				progressDone = make(chan struct{})
+			)
 
 			// Start goroutine to forward progress updates
 			go func() {
+				defer close(progressDone)
 				for update := range progressCh {
 					sendProgress(WeightsPushProgress{
 						Name:     wf.Name,
@@ -146,6 +166,15 @@ func (p *WeightsPusher) Push(ctx context.Context, opts WeightsPushOptions) (*Wei
 			}
 
 			sendProgress(WeightsPushProgress{Name: wf.Name, Complete: size, Total: size, Done: true})
+
+			// Ensure channel is closed even on error
+			select {
+			case <-progressDone:
+				// Already closed by WriteLayerWithProgress
+			default:
+				close(progressCh)
+				<-progressDone
+			}
 
 			digest, _ := layer.Digest()
 			results <- pushResult{name: wf.Name, digest: digest.String(), size: size}
