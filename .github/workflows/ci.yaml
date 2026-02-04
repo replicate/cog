@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for setuptools_scm version determination
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v3
         with:
           cache: false
       # Build cog package (wheel + sdist)
@@ -62,7 +62,7 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v3
         with:
           cache: false
       - name: Lint
@@ -100,7 +100,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v3
       - name: Build
         run: make cog
       - name: Test
@@ -125,7 +125,7 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v3
       - name: Compute tox env name
         run: echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
       - name: Remove src to ensure tests run against wheel
@@ -147,7 +147,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v3
       - name: Create virtual environment
         run: uv venv
       - uses: Swatinem/rust-cache@v2
@@ -226,7 +226,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v3
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
