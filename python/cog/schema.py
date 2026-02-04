@@ -1,7 +1,7 @@
 """
 Request/Response schema for the Cog server.
 
-Uses dataclasses instead of pydantic. Validation is handled by _inspector.check_input().
+Validation is handled by _inspector.check_input().
 """
 
 import importlib.util
@@ -63,7 +63,7 @@ class PredictionRequest:
             self.webhook_events_filter = WebhookEvent.default_events()
 
     def dict(self, exclude_unset: bool = False) -> Dict[str, Any]:
-        """Convert to dictionary (pydantic compat)."""
+        """Convert to dictionary ."""
         result = {
             "input": self.input,
             "id": self.id,
@@ -102,7 +102,7 @@ class PredictionResponse:
     _fatal_exception: Optional[BaseException] = field(default=None, repr=False)
 
     def dict(self, exclude_unset: bool = False) -> Dict[str, Any]:
-        """Convert to dictionary (pydantic compat)."""
+        """Convert to dictionary ."""
         result = {
             "input": self.input,
             "output": self.output,

@@ -318,7 +318,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     )
     runner = PredictionRunner(worker=worker, max_concurrency=cog_config.max_concurrency)
 
-    # Use schema classes directly - no dynamic type creation needed without pydantic
     PredictionRequest = schema.PredictionRequest
     PredictionResponse = schema.PredictionResponse
 
