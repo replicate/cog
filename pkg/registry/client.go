@@ -29,4 +29,8 @@ type Client interface {
 	// Write methods for OCI index support
 	PushImage(ctx context.Context, ref string, img v1.Image) error
 	PushIndex(ctx context.Context, ref string, idx v1.ImageIndex) error
+
+	// WriteLayer pushes a single layer (blob) to a repository.
+	// The repo parameter should be a repository reference (e.g., "registry.example.com/user/model").
+	WriteLayer(ctx context.Context, repo string, layer v1.Layer) error
 }

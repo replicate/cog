@@ -44,3 +44,7 @@ func (c *MockRegistryClient) PushIndex(ctx context.Context, ref string, idx v1.I
 	c.mockImages[ref] = true
 	return nil
 }
+
+func (c *MockRegistryClient) WriteLayer(ctx context.Context, repo string, layer v1.Layer) error {
+	return nil
+}

@@ -312,6 +312,25 @@ func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.Image
 	return nil
 }
 
+// WriteLayer pushes a single layer (blob) to a repository.
+func (c *RegistryClient) WriteLayer(ctx context.Context, repo string, layer v1.Layer) error {
+	parsedRepo, err := name.NewRepository(repo, name.Insecure)
+	if err != nil {
+		return fmt.Errorf("parsing repository: %w", err)
+	}
+
+	opts := []remote.Option{
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+	}
+
+	if err := remote.WriteLayer(parsedRepo, layer, opts...); err != nil {
+		return fmt.Errorf("pushing layer to %s: %w", repo, err)
+	}
+
+	return nil
+}
+
 // pickDefaultImage selects an image from a manifest index to use for fetching labels.
 // Prefers linux/amd64, otherwise returns the first image manifest.
 // Returns an error if no suitable image is found or if fetching fails.
