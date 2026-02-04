@@ -19,15 +19,13 @@ classifiers = [
 requires-python = ">=3.10"
 
 dependencies = [
-  # intentionally loose. perhaps these should be vendored to not collide with user code?
-  "attrs>=20.1,<24",
-  "fastapi>=0.100,<0.119.0",
-  "pydantic>=1.9,<3",
-  "PyYAML",
-  "requests>=2,<3",
-  "structlog>=20,<25",
-  "typing_extensions>=4.4.0",
-  "uvicorn[standard]>=0.12,<1",
+  "typing_extensions>=4.0",
+  "pyyaml>=6.0",
+  # Server deps
+  "fastapi>=0.100.0",
+  "uvicorn>=0.20.0",
+  "structlog>=21.0.0",
+  "requests>=2.25.0",
 ]
 
 dynamic = ["version"]
@@ -73,9 +71,6 @@ reportUnnecessaryComparison = "warning"
 reportUnneesssaryContains = "warning"
 reportMissingTypeArgument = "error"
 reportUnusedExpression = "warning"
-
-[tool.pyright.defineConstant]
-PYDANTIC_V2 = true
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
