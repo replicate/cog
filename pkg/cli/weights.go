@@ -219,10 +219,27 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 			return
 		}
 
+		// Clear retry status when we receive progress (upload is in progress)
+		tracker.clearRetrying(p.Name)
+
 		if p.Total > 0 {
 			tracker.setTotal(p.Name, p.Total)
 		}
 		tracker.update(p.Name, p.Complete, p.Total)
+	}
+
+	// Set up retry callback to show retry status in CLI
+	retryFn := func(event model.WeightsRetryEvent) bool {
+		tracker.setRetrying(event.Name, event.Attempt, event.MaxAttempts, event.NextRetryIn, event.Err)
+
+		// In non-TTY mode, print a message about the retry
+		if !tracker.isTTY {
+			console.Warnf("  %s: retrying (%d/%d) in %s: %v",
+				event.Name, event.Attempt, event.MaxAttempts,
+				event.NextRetryIn.Round(time.Second), event.Err)
+		}
+
+		return true // Always continue retrying
 	}
 
 	// Push weights using the model layer
@@ -231,6 +248,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		Lock:       lock,
 		FilePaths:  filePaths,
 		ProgressFn: progressFn,
+		RetryFn:    retryFn,
 	})
 
 	// Stop progress display
@@ -272,11 +290,13 @@ type progressTracker struct {
 }
 
 type fileProgress struct {
-	name     string
-	complete int64
-	total    int64
-	done     bool
-	err      error
+	name      string
+	complete  int64
+	total     int64
+	done      bool
+	err       error
+	retrying  bool
+	retryInfo string // Human-readable retry status
 }
 
 func newProgressTracker(files []model.WeightFile) *progressTracker {
@@ -329,6 +349,28 @@ func (pt *progressTracker) setError(name string, err error) {
 	if idx, ok := pt.fileMap[name]; ok {
 		pt.files[idx].done = true
 		pt.files[idx].err = err
+		pt.files[idx].retrying = false
+		pt.files[idx].retryInfo = ""
+	}
+}
+
+func (pt *progressTracker) setRetrying(name string, attempt, maxAttempts int, nextRetryIn time.Duration, err error) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if idx, ok := pt.fileMap[name]; ok {
+		pt.files[idx].retrying = true
+		pt.files[idx].retryInfo = fmt.Sprintf("retry %d/%d in %s", attempt, maxAttempts, nextRetryIn.Round(time.Second))
+		// Reset progress for retry attempt
+		pt.files[idx].complete = 0
+	}
+}
+
+func (pt *progressTracker) clearRetrying(name string) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if idx, ok := pt.fileMap[name]; ok {
+		pt.files[idx].retrying = false
+		pt.files[idx].retryInfo = ""
 	}
 }
 
@@ -383,6 +425,11 @@ func (pt *progressTracker) formatProgressLine(f fileProgress) string {
 
 	if f.done {
 		return fmt.Sprintf("  %-30s  %s  done", name, formatSize(f.total))
+	}
+
+	// Show retry status if retrying
+	if f.retrying && f.retryInfo != "" {
+		return fmt.Sprintf("  %-30s  %s", name, f.retryInfo)
 	}
 
 	if f.total == 0 {

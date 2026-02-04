@@ -5,8 +5,10 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 
 	"github.com/replicate/cog/pkg/registry"
@@ -22,6 +24,11 @@ type WeightsPushOptions struct {
 	FilePaths map[string]string
 	// ProgressFn is an optional callback for reporting progress of each file upload.
 	ProgressFn func(WeightsPushProgress)
+	// RetryFn is an optional callback for reporting retry attempts.
+	// Return false from this callback to abort the retry.
+	RetryFn func(WeightsRetryEvent) bool
+	// RetryBackoff configures retry behavior. If nil, default backoff is used.
+	RetryBackoff *remote.Backoff
 }
 
 // WeightsPushResult contains the results of pushing weights.
@@ -56,6 +63,20 @@ type WeightsPushProgress struct {
 	Done bool
 	// Err is any error that occurred (only set when Done is true).
 	Err error
+}
+
+// WeightsRetryEvent reports a retry attempt for a weight file upload.
+type WeightsRetryEvent struct {
+	// Name identifies which file is being retried.
+	Name string
+	// Attempt is the current retry attempt number (1-indexed).
+	Attempt int
+	// MaxAttempts is the maximum number of retry attempts.
+	MaxAttempts int
+	// Err is the error that caused the retry.
+	Err error
+	// NextRetryIn is the duration until the next retry attempt.
+	NextRetryIn time.Duration
 }
 
 // WeightsPusher handles pushing weight files to a registry.
@@ -140,7 +161,7 @@ func (p *WeightsPusher) Push(ctx context.Context, opts WeightsPushOptions) (*Wei
 			size, _ := layer.Size()
 			sendProgress(WeightsPushProgress{Name: wf.Name, Total: size})
 
-			// Create progress channel for this upload, autoclosed by WriteLayerWithProgress
+			// Create progress channel for this upload, autoclosed by WriteLayer
 			var (
 				progressCh   = make(chan v1.Update, 100)
 				progressDone = make(chan struct{})
@@ -158,8 +179,33 @@ func (p *WeightsPusher) Push(ctx context.Context, opts WeightsPushOptions) (*Wei
 				}
 			}()
 
-			// Push layer to registry with progress
-			if err := p.registry.WriteLayerWithProgress(ctx, opts.Repo, layer, progressCh); err != nil {
+			// Build retry configuration if callback is provided
+			var retryConfig *registry.RetryConfig
+			if opts.RetryFn != nil || opts.RetryBackoff != nil {
+				retryConfig = &registry.RetryConfig{
+					Backoff: opts.RetryBackoff,
+				}
+				if opts.RetryFn != nil {
+					retryConfig.OnRetry = func(event registry.RetryEvent) bool {
+						return opts.RetryFn(WeightsRetryEvent{
+							Name:        wf.Name,
+							Attempt:     event.Attempt,
+							MaxAttempts: event.MaxAttempts,
+							Err:         event.Err,
+							NextRetryIn: event.NextRetryIn,
+						})
+					}
+				}
+			}
+
+			// Push layer to registry with progress and retry support
+			err = p.registry.WriteLayer(ctx, registry.WriteLayerOptions{
+				Repo:       opts.Repo,
+				Layer:      layer,
+				ProgressCh: progressCh,
+				Retry:      retryConfig,
+			})
+			if err != nil {
 				sendProgress(WeightsPushProgress{Name: wf.Name, Done: true, Err: err})
 				results <- pushResult{name: wf.Name, err: fmt.Errorf("push layer %s: %w", wf.Name, err)}
 				return
@@ -170,7 +216,7 @@ func (p *WeightsPusher) Push(ctx context.Context, opts WeightsPushOptions) (*Wei
 			// Ensure channel is closed even on error
 			select {
 			case <-progressDone:
-				// Already closed by WriteLayerWithProgress
+				// Already closed by WriteLayer
 			default:
 				close(progressCh)
 				<-progressDone

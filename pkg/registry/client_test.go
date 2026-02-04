@@ -2,7 +2,11 @@ package registry
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
+	"net"
 	"os"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,4 +78,75 @@ func TestInspect(t *testing.T) {
 		assert.ErrorContains(t, err, "platform not found")
 		assert.Nil(t, resp)
 	})
+}
+
+func TestIsRetryableError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "io.EOF",
+			err:      io.EOF,
+			expected: true,
+		},
+		{
+			name:     "io.ErrUnexpectedEOF",
+			err:      io.ErrUnexpectedEOF,
+			expected: true,
+		},
+		{
+			name:     "syscall.EPIPE (broken pipe)",
+			err:      syscall.EPIPE,
+			expected: true,
+		},
+		{
+			name:     "syscall.ECONNRESET",
+			err:      syscall.ECONNRESET,
+			expected: true,
+		},
+		{
+			name:     "net.ErrClosed",
+			err:      net.ErrClosed,
+			expected: true,
+		},
+		{
+			name:     "wrapped unexpected EOF",
+			err:      errors.New("failed: unexpected EOF"),
+			expected: true, // Should match via string pattern
+		},
+		{
+			name:     "connection reset string",
+			err:      errors.New("read tcp: connection reset by peer"),
+			expected: true,
+		},
+		{
+			name:     "timeout string",
+			err:      errors.New("request timeout exceeded"),
+			expected: true,
+		},
+		{
+			name:     "generic error",
+			err:      errors.New("something completely different"),
+			expected: false,
+		},
+		{
+			name:     "unauthorized error",
+			err:      errors.New("unauthorized: authentication required"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isRetryableError(tt.err)
+			assert.Equal(t, tt.expected, result, "isRetryableError(%v) = %v, want %v", tt.err, result, tt.expected)
+		})
+	}
 }

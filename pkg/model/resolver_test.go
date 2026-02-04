@@ -117,11 +117,7 @@ func (m *mockRegistry) PushIndex(ctx context.Context, ref string, idx v1.ImageIn
 	panic("mockRegistry.PushIndex not implemented")
 }
 
-func (m *mockRegistry) WriteLayer(ctx context.Context, repo string, layer v1.Layer) error {
-	return nil
-}
-
-func (m *mockRegistry) WriteLayerWithProgress(ctx context.Context, repo string, layer v1.Layer, progressCh chan<- v1.Update) error {
+func (m *mockRegistry) WriteLayer(ctx context.Context, opts registry.WriteLayerOptions) error {
 	return nil
 }
 
