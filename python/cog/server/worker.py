@@ -795,14 +795,59 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         tag: Optional[str],
         redirector: StreamRedirector,
     ) -> None:
-        """Execute the healthcheck method."""
+        """Execute the sync healthcheck method."""
         done = Done(event_type="healthcheck")
-        asyncio.run(self._healthcheck_internal(done))
+        self._healthcheck_sync(done)
         try:
             redirector.drain(timeout=10)
         except TimeoutError:
             pass
         self._events.send(Envelope(event=done, tag=tag))
+
+    def _healthcheck_sync(self, done: Done) -> None:
+        """Execute sync healthcheck with proper timeout using ThreadPoolExecutor."""
+        try:
+            assert self._predictor
+            healthcheck_fn = get_healthcheck(self._predictor)
+
+            if healthcheck_fn is not None:
+                if inspect.iscoroutinefunction(healthcheck_fn):
+                    # Async healthcheck in sync context - run it
+                    result = asyncio.run(
+                        asyncio.wait_for(
+                            healthcheck_fn(), timeout=self.HEALTHCHECK_TIMEOUT
+                        )
+                    )
+                else:
+                    # Sync healthcheck - run in thread with timeout
+                    # Don't use context manager - it waits for threads on exit
+                    executor = ThreadPoolExecutor(max_workers=1)
+                    future = executor.submit(healthcheck_fn)
+                    try:
+                        result = future.result(timeout=self.HEALTHCHECK_TIMEOUT)
+                    except futures.TimeoutError:
+                        # Don't wait for thread - just abandon it
+                        executor.shutdown(wait=False)
+                        raise TimeoutError("healthcheck timed out")
+                    finally:
+                        executor.shutdown(wait=False)
+
+                if not bool(result):
+                    done.error = True
+                    done.error_detail = (
+                        "Healthcheck failed: user-defined healthcheck returned False"
+                    )
+        except TimeoutError:
+            done.error = True
+            done.error_detail = f"Healthcheck failed: user-defined healthcheck timed out after {self.HEALTHCHECK_TIMEOUT} seconds"
+            log.warn(
+                "User-defined healthcheck timed out",
+                timeout_secs=self.HEALTHCHECK_TIMEOUT,
+            )
+        except Exception as e:
+            done.error = True
+            done.error_detail = f"Healthcheck failed: {str(e)}"
+            traceback.print_exc()
 
     async def _ahealthcheck(
         self,
@@ -811,7 +856,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     ) -> None:
         """Execute the healthcheck method asynchronously."""
         done = Done(event_type="healthcheck")
-        await self._healthcheck_internal(done)
+        await self._healthcheck_async(done)
 
         try:
             redirector.drain(timeout=10)
@@ -819,23 +864,20 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             pass
         self._events.send(Envelope(event=done, tag=tag))
 
-    async def _healthcheck_internal(
-        self,
-        done: Done,
-    ) -> None:
+    async def _healthcheck_async(self, done: Done) -> None:
+        """Execute async healthcheck with timeout."""
         try:
             assert self._predictor
             healthcheck_fn = get_healthcheck(self._predictor)
 
             if healthcheck_fn is not None:
-                # Check if it's async
                 if inspect.iscoroutinefunction(healthcheck_fn):
                     result = await asyncio.wait_for(
                         healthcheck_fn(),
                         timeout=self.HEALTHCHECK_TIMEOUT,
                     )
                 else:
-                    # If sync, run in executor with timeout
+                    # Sync healthcheck in async context - run in executor
                     loop = asyncio.get_event_loop()
                     result = await asyncio.wait_for(
                         loop.run_in_executor(None, healthcheck_fn),
