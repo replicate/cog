@@ -828,7 +828,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     except futures.TimeoutError:
                         # Don't wait for thread - just abandon it
                         executor.shutdown(wait=False)
-                        raise TimeoutError("healthcheck timed out")
+                        raise TimeoutError("healthcheck timed out") from None
                     finally:
                         executor.shutdown(wait=False)
 

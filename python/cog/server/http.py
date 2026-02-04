@@ -62,6 +62,35 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger("cog.server.http")
 
+# Known safe validation messages - these exact messages (or prefixes) are safe to return
+# We return only the safe portion, never the full message which may contain sensitive data
+_SAFE_VALIDATION_MESSAGES = {
+    "Field required": "Field required",
+    "Invalid value": "Invalid value",
+    "fails constraint": "Value fails constraint",
+    "does not match regex": "Value does not match required pattern",
+    "does not match choices": "Value does not match allowed choices",
+}
+
+
+def _sanitize_validation_message(msg: str) -> str:
+    """
+    Sanitize validation error messages to prevent information leakage.
+
+    Returns only predefined safe messages, never the original message content
+    which could contain sensitive internal details.
+    """
+    if not msg:
+        return "Invalid value"
+
+    # Check if message contains any known pattern and return ONLY the safe version
+    for pattern, safe_msg in _SAFE_VALIDATION_MESSAGES.items():
+        if pattern in msg:
+            return safe_msg
+
+    # For unknown messages, return generic error
+    return "Invalid value"
+
 
 @unique
 class Health(Enum):
@@ -575,13 +604,18 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 )
             except ValueError as e:
                 # Format error as validation error format
-                # Error messages are formatted as "{field}: {message}"
+                # Error messages from check_input are formatted as "{field}: {message}"
+                # where field is always a known input field name from predictor_info.inputs
                 # Only use first line to avoid any stack trace leakage
                 error_str = str(e).split("\n", 1)[0]
                 if ": " in error_str:
-                    field_name, msg = error_str.split(": ", 1)
+                    field_name, raw_msg = error_str.split(": ", 1)
                 else:
-                    field_name, msg = "input", "Invalid value"
+                    field_name, raw_msg = "input", error_str
+
+                # Sanitize message - only pass through known safe patterns
+                msg = _sanitize_validation_message(raw_msg)
+
                 return JSONResponse(
                     {
                         "detail": [
