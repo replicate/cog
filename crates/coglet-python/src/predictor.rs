@@ -997,7 +997,10 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
             Err(e) => {
                 let err_str = e.to_string();
                 if err_str.contains("TimeoutError") {
-                    HealthcheckResult::unhealthy("Healthcheck failed: timed out")
+                    HealthcheckResult::unhealthy(format!(
+                        "Healthcheck failed: user-defined healthcheck timed out after {:.1} seconds",
+                        Self::HEALTHCHECK_TIMEOUT
+                    ))
                 } else {
                     HealthcheckResult::unhealthy(format!("Healthcheck failed: {}", e))
                 }
@@ -1060,7 +1063,10 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
             Err(e) => {
                 let err_str = e.to_string();
                 if err_str.contains("TimeoutError") {
-                    HealthcheckResult::unhealthy("Healthcheck failed: timed out")
+                    HealthcheckResult::unhealthy(format!(
+                        "Healthcheck failed: user-defined healthcheck timed out after {:.1} seconds",
+                        Self::HEALTHCHECK_TIMEOUT
+                    ))
                 } else {
                     HealthcheckResult::unhealthy(format!("Healthcheck failed: {}", e))
                 }
