@@ -239,9 +239,9 @@ run = """
 #!/usr/bin/env bash
 set -e
 if [ -n "$1" ]; then
-  go test -v -run "TestIntegration/$1" -timeout 30m
+  go tool gotestsum -- -v -run "TestIntegration/$1" -timeout 30m
 else
-  go test -v -parallel ${TEST_PARALLEL:-4} -timeout 30m
+  go tool gotestsum -- -v -parallel ${TEST_PARALLEL:-4} -timeout 30m
 fi
 """
 
@@ -516,7 +516,8 @@ run = """
 #!/usr/bin/env bash
 set -e
 # Concatenate README (minus contributors section) + all docs into llms.txt
-(sed '/## Contributors/q' README.md | head -n -1; for file in docs/*.md; do [ "$file" != "docs/llms.txt" ] && [ -f "$file" ] && echo -e "\n\n---\n\n" && cat "$file"; done) > docs/llms.txt
+# Use sed to remove the last line (the ## Contributors heading itself)
+(sed '/## Contributors/q' README.md | sed '$d'; for file in docs/*.md; do [ "$file" != "docs/llms.txt" ] && [ -f "$file" ] && echo -e "\n\n---\n\n" && cat "$file"; done) > docs/llms.txt
 echo "Updated docs/llms.txt"
 """
 
@@ -528,7 +529,7 @@ set -e
 tmpfile=$(mktemp)
 trap 'rm -f "$tmpfile"' EXIT
 # Generate to temp file and compare
-(sed '/## Contributors/q' README.md | head -n -1; for file in docs/*.md; do [ "$file" != "docs/llms.txt" ] && [ -f "$file" ] && echo -e "\n\n---\n\n" && cat "$file"; done) > "$tmpfile"
+(sed '/## Contributors/q' README.md | sed '$d'; for file in docs/*.md; do [ "$file" != "docs/llms.txt" ] && [ -f "$file" ] && echo -e "\n\n---\n\n" && cat "$file"; done) > "$tmpfile"
 if ! diff -q "$tmpfile" docs/llms.txt > /dev/null 2>&1; then
   echo "ERROR: docs/llms.txt is out of date. Run 'mise run docs:llm' to update."
   exit 1
@@ -561,8 +562,14 @@ run = [
   { task = "build:coglet:wheel:linux-x64" },
 ]
 
-# CI tasks that are just wrappers are not needed - GHA can call
-# fmt:cog, lint:cog, test:cog, etc. directly
+[tasks."ci:test:integration"]
+description = "CI: Run integration tests with GitHub Actions output"
+dir = "integration-tests"
+run = """
+#!/usr/bin/env bash
+set -e
+go tool gotestsum --format github-actions -- -parallel ${TEST_PARALLEL:-4} -timeout 30m
+"""
 
 # =============================================================================
 # Publish tasks (future)
