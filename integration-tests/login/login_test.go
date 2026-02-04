@@ -70,45 +70,52 @@ func TestLoginGenericRegistryPTY(t *testing.T) {
 			t.Logf("failed to set terminal size: %v", err)
 		}
 
-		// Helper to wait for a pattern in output with timeout
-		waitForPattern := func(pattern string, timeout time.Duration) (string, bool) {
-			var buf bytes.Buffer
-			deadline := time.Now().Add(timeout)
-			tmp := make([]byte, 1024)
+		// Use a single mutex-protected buffer for thread safety
+		// This avoids the race condition of multiple goroutines reading from the PTY
+		var bufMu bytes.Buffer
+		var mu sync.Mutex
 
-			// Read in a goroutine with a channel
-			readCh := make(chan int)
-			go func() {
-				for {
+		// Start a single reader goroutine
+		done := make(chan struct{})
+		go func() {
+			tmp := make([]byte, 1024)
+			for {
+				select {
+				case <-done:
+					return
+				default:
 					n, err := ptmx.Read(tmp)
 					if n > 0 {
-						buf.Write(tmp[:n])
-						readCh <- n
+						mu.Lock()
+						bufMu.Write(tmp[:n])
+						mu.Unlock()
 					}
 					if err != nil {
-						close(readCh)
 						return
 					}
 				}
-			}()
-
-			for time.Now().Before(deadline) {
-				select {
-				case _, ok := <-readCh:
-					if !ok {
-						return buf.String(), strings.Contains(strings.ToLower(buf.String()), strings.ToLower(pattern))
-					}
-					if strings.Contains(strings.ToLower(buf.String()), strings.ToLower(pattern)) {
-						return buf.String(), true
-					}
-				case <-time.After(100 * time.Millisecond):
-					// Check buffer even if no new data
-					if strings.Contains(strings.ToLower(buf.String()), strings.ToLower(pattern)) {
-						return buf.String(), true
-					}
-				}
 			}
-			return buf.String(), false
+		}()
+		defer close(done)
+
+		// Helper to get current buffer contents
+		getOutput := func() string {
+			mu.Lock()
+			defer mu.Unlock()
+			return bufMu.String()
+		}
+
+		// Helper to wait for a pattern in output with timeout
+		waitForPattern := func(pattern string, timeout time.Duration) (string, bool) {
+			deadline := time.Now().Add(timeout)
+			for time.Now().Before(deadline) {
+				output := getOutput()
+				if strings.Contains(strings.ToLower(output), strings.ToLower(pattern)) {
+					return output, true
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+			return getOutput(), false
 		}
 
 		// Wait for and verify username prompt
@@ -143,7 +150,8 @@ func TestLoginGenericRegistryPTY(t *testing.T) {
 		}
 
 		// Read final output briefly (expect failure since we can't actually save credentials)
-		output, _ = waitForPattern("", 2*time.Second)
+		time.Sleep(2 * time.Second)
+		output = getOutput()
 		t.Logf("Final output: %q", output)
 	})
 
