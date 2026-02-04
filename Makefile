@@ -1,3 +1,13 @@
+# Makefile - Shim that delegates to mise tasks
+#
+# This Makefile provides backward compatibility for common targets.
+# All task definitions live in mise.toml. Run `mise tasks` to see available tasks.
+#
+# For new development, prefer using mise directly:
+#   mise run build:cog    instead of    make cog
+#   mise run test:go      instead of    make test-go
+#   mise run fmt:fix      instead of    make fmt
+
 SHELL := bash
 
 DESTDIR ?=
@@ -7,130 +17,124 @@ BINDIR = $(PREFIX)/bin
 INSTALL := install -m 0755
 
 GO ?= go
-# GORELEASER := $(GO) tool goreleaser
-GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@latest
-GOIMPORTS := $(GO) tool goimports
-GOLINT := $(GO) tool golangci-lint
-
-UV ?= uv
-TOX := $(UV) run tox
-
-COG_GO_SOURCE := $(shell find cmd pkg -type f -name '*.go')
 
 COG_BINARIES := cog base-image
 
-default: all
+default: cog
 
-.PHONY: all
-all: cog
+# =============================================================================
+# Build targets
+# =============================================================================
 
-$(COG_BINARIES): $(COG_GO_SOURCE) generate
-	@echo Building $@
-	@if git name-rev --name-only --tags HEAD | grep -qFx undefined; then \
-		GOFLAGS=-buildvcs=false $(GORELEASER) build --clean --snapshot --single-target --id $@ --output $@; \
-	else \
-		GOFLAGS=-buildvcs=false $(GORELEASER) build --clean --auto-snapshot --single-target --id $@ --output $@; \
-	fi
-
-.PHONY: install
-install: $(COG_BINARIES)
-	$(INSTALL) -d $(DESTDIR)$(BINDIR)
-	$(INSTALL) $< $(DESTDIR)$(BINDIR)/$<
+.PHONY: cog base-image
+$(COG_BINARIES):
+	mise run build:cog
 
 .PHONY: wheel
 wheel:
-	script/build-wheels
+	mise run build:sdk
 
-.PHONY: clean
-clean: clean-coglet
-	rm -rf .tox build dist pkg/wheels/*.whl
-	rm -f $(COG_BINARIES)
+.PHONY: install
+install: cog
+	$(INSTALL) -d $(DESTDIR)$(BINDIR)
+	$(INSTALL) cog $(DESTDIR)$(BINDIR)/cog
 
-.PHONY: test-go
-test-go: generate
-	$(GO) tool gotestsum -- -short -timeout 1200s -parallel 5 $$(go list ./...) $(ARGS)
-
-# Run Go-based integration tests (testscript)
-# Use TEST_PARALLEL to control concurrency (default 4 to avoid Docker overload)
-# CI with more cores can set TEST_PARALLEL=8 or higher
-TEST_PARALLEL ?= 4
-.PHONY: test-integration
-test-integration: $(COG_BINARIES)
-	$(GO) test ./pkg/docker/...
-	cd integration-tests && $(GO) test -v -parallel $(TEST_PARALLEL) -timeout 30m $(ARGS) ./...
-
-.PHONY: test-python
-test-python: generate
-	$(TOX) run --installpkg $$(ls dist/cog-*.whl) -f tests
+# =============================================================================
+# Test targets
+# =============================================================================
 
 .PHONY: test
-test: test-go test-python
+test:
+	mise run test:go
+	mise run test:python
+
+.PHONY: test-go
+test-go:
+	mise run test:go
+
+.PHONY: test-python
+test-python:
+	mise run test:python
+
+.PHONY: test-integration
+test-integration:
+	mise run test:integration
+
+.PHONY: test-coglet
+test-coglet: test-coglet-rust
+
+.PHONY: test-coglet-rust
+test-coglet-rust:
+	mise run test:rust
+
+.PHONY: test-coglet-python
+test-coglet-python:
+	mise run test:coglet:python
+
+# =============================================================================
+# Format and lint targets
+# =============================================================================
 
 .PHONY: fmt
 fmt:
-	$(GOIMPORTS) -w -d .
-	uv run ruff format
-	cd crates && cargo fmt
-
-.PHONY: generate
-generate:
-	$(GO) generate ./...
-
-.PHONY: vet
-vet: generate
-	$(GO) vet ./...
+	mise run fmt:fix
 
 .PHONY: check-fmt
 check-fmt:
-	$(GOIMPORTS) -d .
-	@test -z $$($(GOIMPORTS) -l .)
+	mise run fmt
 
 .PHONY: lint
-lint: generate check-fmt vet
-	$(GOLINT) run ./...
-	$(TOX) run --installpkg $$(ls dist/cog-*.whl) -e lint,typecheck
-	cd crates && cargo clippy -- -D warnings
+lint:
+	mise run lint
 
-.PHONY: run-docs-server
-run-docs-server:
-	uv pip install mkdocs-material
-	sed 's/docs\///g' README.md > ./docs/README.md
-	cp CONTRIBUTING.md ./docs/
-	mkdocs serve
+.PHONY: vet
+vet:
+	$(GO) vet ./...
+
+# =============================================================================
+# Code generation
+# =============================================================================
+
+.PHONY: generate
+generate:
+	mise run generate:go
 
 .PHONY: gen-mocks
 gen-mocks:
 	mockery
 
 # =============================================================================
-# Coglet targets (Rust)
+# Coglet (Rust) targets
 # =============================================================================
 
-# Run coglet Rust tests
-.PHONY: test-coglet-rust
-test-coglet-rust:
-	cd crates && cargo test $(ARGS)
-
-# Run coglet Rust linter
-.PHONY: lint-coglet
-lint-coglet:
-	cd crates && cargo clippy -- -D warnings
-
-# Format coglet Rust code
 .PHONY: fmt-coglet
 fmt-coglet:
-	cd crates && cargo fmt
+	mise run fmt:rust:fix
 
-# Check coglet Rust formatting
 .PHONY: check-fmt-coglet
 check-fmt-coglet:
-	cd crates && cargo fmt --check
+	mise run fmt:rust
 
-# Run all coglet tests
-.PHONY: test-coglet
-test-coglet: test-coglet-rust
+.PHONY: lint-coglet
+lint-coglet:
+	mise run lint:rust
 
-# Clean coglet build artifacts
+# =============================================================================
+# Documentation
+# =============================================================================
+
+.PHONY: run-docs-server
+run-docs-server:
+	mise run docs:serve
+
+# =============================================================================
+# Clean
+# =============================================================================
+
+.PHONY: clean
+clean:
+	mise run clean
+
 .PHONY: clean-coglet
 clean-coglet:
-	cd crates && cargo clean
+	mise run clean:rust

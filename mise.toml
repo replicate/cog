@@ -362,6 +362,42 @@ description = "Generate Python type stubs for coglet"
 depends = ["build:coglet"]
 run = "python crates/coglet-python/scripts/generate_stubs.py -o crates/coglet-python/coglet.pyi"
 
+[tasks."generate:compat"]
+description = "Regenerate CUDA/PyTorch/TensorFlow compatibility matrices"
+run = """
+#!/usr/bin/env bash
+set -e
+target="${1:-all}"
+case "$target" in
+  cuda)
+    echo "Generating CUDA base images..."
+    go run ./tools/compatgen/main.go cuda -o pkg/config/cuda_base_images.json
+    ;;
+  torch)
+    echo "Generating PyTorch compatibility matrix..."
+    go run ./tools/compatgen/main.go torch -o pkg/config/torch_compatibility_matrix.json
+    ;;
+  tensorflow|tf)
+    echo "Generating TensorFlow compatibility matrix..."
+    go run ./tools/compatgen/main.go tensorflow -o pkg/config/tf_compatibility_matrix.json
+    ;;
+  all)
+    echo "Generating CUDA base images..."
+    go run ./tools/compatgen/main.go cuda -o pkg/config/cuda_base_images.json
+    echo "Generating PyTorch compatibility matrix..."
+    go run ./tools/compatgen/main.go torch -o pkg/config/torch_compatibility_matrix.json
+    echo "Generating TensorFlow compatibility matrix..."
+    go run ./tools/compatgen/main.go tensorflow -o pkg/config/tf_compatibility_matrix.json
+    ;;
+  *)
+    echo "Unknown target: $target"
+    echo "Usage: mise run generate:compat [cuda|torch|tensorflow|all]"
+    exit 1
+    ;;
+esac
+echo "Done."
+"""
+
 # =============================================================================
 # Stub tasks
 # =============================================================================
