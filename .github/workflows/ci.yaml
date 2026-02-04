@@ -17,6 +17,11 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
   CARGO_TERM_COLOR: always
+  # Disable Rust toolchain and cargo-binstall in mise - CI uses dedicated actions
+  # for better caching. mise installs tools in parallel, so rust might not be
+  # ready when cargo-binstall tries to compile cargo:* tools from source.
+  # Using actions guarantees toolchain is ready before mise installs cargo:* tools.
+  MISE_DISABLE_TOOLS: rust,cargo-binstall
 
 permissions: {}
 
@@ -133,13 +138,16 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@v3
-        with:
-          cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable  # Required for cargo-binstall to find cargo
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
       - name: Build coglet wheel (ABI3)
         run: mise run ci:build:coglet
       - name: Upload coglet wheel
@@ -174,11 +182,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          cache: false
+          components: rustfmt
+      # No mise needed - rustfmt comes with toolchain
       - name: Check Rust formatting
-        run: mise run fmt:rust
+        run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
 
   fmt-python:
     name: Format Python
@@ -234,15 +243,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          cache: false
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # No mise needed - clippy comes with toolchain
       - name: Lint Rust (clippy)
-        run: mise run lint:rust
+        run: cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
 
   lint-rust-deny:
     name: Lint Rust (deny)
@@ -252,6 +262,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable  # Required for cargo-binstall to find cargo
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v3
         with:
           cache: false
@@ -319,13 +332,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v3
-        with:
-          cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable  # Required for cargo-binstall to find cargo
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
       - name: Test Rust
         run: mise run test:rust
 
@@ -380,6 +396,13 @@ jobs:
           name: CogletRustWheel
           path: dist
         if: needs.build-rust.result == 'success'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable  # Required for cargo-binstall to find cargo
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v3
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -387,10 +410,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Create virtual environment
         run: uv venv --python ${{ matrix.python-version }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: crates -> target
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Test coglet-python bindings
         run: mise run test:coglet:python
 
