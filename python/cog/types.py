@@ -25,7 +25,6 @@ from typing import (
     Dict,
     Iterator,
     Optional,
-    Type,
     TypeVar,
 )
 

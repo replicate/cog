@@ -42,7 +42,7 @@ func testInstallCog(relativeTmpDir string, stripped bool) string {
 	}
 	return fmt.Sprintf(`COPY %s/%s /tmp/%s
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir /tmp/%s 'pydantic>=1.9,<3'%s
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir /tmp/%s%s
 ENV CFLAGS=`, relativeTmpDir, wheel, wheel, wheel, strippedCall)
 }
 

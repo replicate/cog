@@ -176,8 +176,6 @@ dill
 # Inspire
 webcolors
 
-# fix for pydantic issues in cog
-# https://github.com/replicate/cog/issues/1623
 albumentations==1.4.3
 
 # was-node-suite-comfyui

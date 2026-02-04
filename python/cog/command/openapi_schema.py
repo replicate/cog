@@ -15,8 +15,8 @@ from ..suppress_output import suppress_output
 
 
 def remove_title_next_to_ref(
-    schema_node: Union[Dict[str, Any], List[Any]],
-) -> Union[Dict[str, Any], List[Any]]:
+    schema_node: Any,
+) -> Any:
     """
     Recursively remove 'title' from schema components that have a '$ref'.
     This function addresses a non-compliance issue in FastAPI's OpenAPI schema generation.
@@ -32,7 +32,7 @@ def remove_title_next_to_ref(
     return schema_node
 
 
-def fix_nullable_anyof(schema_node: Union[Dict[str, Any], List[Any]]) -> None:
+def fix_nullable_anyof(schema_node: Any) -> None:
     """
     Convert anyOf with null type to nullable: true for OpenAPI 3.0 compatibility.
 
