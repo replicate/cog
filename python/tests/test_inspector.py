@@ -4,14 +4,12 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-import pytest
-
-from cog import BaseModel, BasePredictor, Input
+from cog import BaseModel
 from cog._adt import OutputKind, PrimitiveType, Repetition
 from cog._inspector import (
-    check_input,
     _create_input_field,
     _create_output_type,
+    check_input,
     create_predictor,
 )
 from cog.input import FieldInfo

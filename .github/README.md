@@ -25,33 +25,34 @@ The primary CI workflow that runs on all PRs and pushes to main.
                     ┌─────────────────┼─────────────────┐
                     ▼                 ▼                 ▼
               ┌──────────┐     ┌──────────┐     ┌──────────┐
-              │ build-go │     │build-rust│     │build-sdk │
-              │ (binary) │     │ (wheel)  │     │ (wheel)  │
-              └────┬─────┘     └────┬─────┘     └────┬─────┘
-                   │                │                │
-     ┌─────────────┴───┐    ┌──────┴──────┐   ┌────┴────────┐
-     ▼                 ▼    ▼             ▼   ▼             ▼
-┌─────────┐      ┌─────────┐ ┌─────────┐ ┌─────────┐  ┌──────────┐
-│ fmt-go  │      │fmt-rust │ │lint-rust│ │fmt-python│ │lint-python│
-│ lint-go │      │  deny   │ │test-rust│ │lint-python│ │test-python│
-│ test-go │      └─────────┘ └─────────┘ └──────────┘ │ (matrix) │
-└────┬────┘                                           └─────┬────┘
-     │                                                      │
-     └──────────────────────┬───────────────────────────────┘
-                            ▼
-                   ┌────────────────┐
-                   │test-integration│
-                   │   (matrix)     │
-                   └───────┬────────┘
-                           ▼
-                   ┌───────────────┐
-                   │  ci-complete  │  ← Branch protection requires this
-                   └───────────────┘
-                           │
-                           ▼ (on tag)
-                   ┌───────────────┐
-                   │    release    │
-                   └───────────────┘
+              │build-rust│     │ build-sdk│     │ (none)   │
+              │ (wheel)  │     │ (wheel)  │     │          │
+              └────┬─────┘     └────┬─────┘     └──────────┘
+                   │                │
+     ┌─────────────┼────────────────┼─────────────────────┐
+     │             │                │                     │
+     ▼             ▼                ▼                     ▼
+┌─────────┐  ┌──────────┐    ┌───────────┐         ┌───────────┐
+│fmt-rust │  │test-rust │    │ fmt-go    │         │fmt-python │
+│lint-rust│  │coglet-py │    │ lint-go   │         │lint-python│
+│  deny   │  │ (matrix) │    │ test-go   │         │test-python│
+└─────────┘  └────┬─────┘    └───────────┘         └───────────┘
+                  │                │                     │
+                  └────────────────┼─────────────────────┘
+                                   ▼
+                          ┌────────────────┐
+                          │test-integration│
+                          │   (matrix)     │
+                          └───────┬────────┘
+                                  ▼
+                          ┌───────────────┐
+                          │  ci-complete  │  ← Branch protection requires this
+                          └───────────────┘
+                                  │
+                                  ▼ (on tag)
+                          ┌───────────────┐
+                          │    release    │
+                          └───────────────┘
 ```
 
 #### Jobs
@@ -68,11 +69,11 @@ The primary CI workflow that runs on all PRs and pushes to main.
 | `lint-rust` | rust changed | changes | Run clippy |
 | `lint-rust-deny` | rust changed | changes | Check licenses/advisories |
 | `lint-python` | python changed | build-sdk | Lint Python code |
-| `test-go` | go changed | build-sdk, build-rust | Run Go tests (matrix: ubuntu, macos) |
+| `test-go` | go changed | build-sdk | Run Go tests (matrix: ubuntu, macos) |
 | `test-rust` | rust changed | changes | Run Rust tests |
 | `test-python` | python changed | build-sdk | Run Python tests (matrix: 3.10-3.13) |
 | `test-coglet-python` | rust or python changed | build-rust | Test coglet bindings (matrix: 3.10-3.13) |
-| `test-integration` | any changed | build-sdk, build-rust, test-go | Integration tests (matrix: cog, cog-rust) |
+| `test-integration` | any changed | build-sdk, build-rust | Integration tests (matrix: cog, cog-rust) |
 | `ci-complete` | Always | all jobs | Gate job for branch protection |
 | `release` | Tag push | ci-complete | Create GitHub release |
 

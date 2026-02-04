@@ -121,6 +121,7 @@ lint.ignore = [
 extend-exclude = [
   "python/tests/server/fixtures/*",
   "crates/coglet-python/*.pyi",
+  "crates/coglet-python/scripts/*",
 ]
 src = ["python"]
 
@@ -131,6 +132,19 @@ src = ["python"]
 "python/tests/*" = [
   "S101", # Use of assert
   "S104", # Possible binding to all interfaces
+  "S105", # Possible hardcoded password
+  "S106", # Possible hardcoded password in argument
+  "S108", # Probable insecure usage of temp file
+  "S110", # try-except-pass
   "S301", # pickle can be unsafe when used to deserialize untrusted data
-  "ANN",
+  "ANN",  # Type annotations not required in tests
+  "B011", # Do not assert False
+]
+"crates/coglet-python/tests/*" = [
+  "S101", # Use of assert
+  "S104", # Possible binding to all interfaces
+  "S110", # try-except-pass
+  "S603", # subprocess call
+  "ANN",  # Type annotations not required in tests
+  "B904", # raise from
 ]

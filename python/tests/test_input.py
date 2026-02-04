@@ -1,6 +1,6 @@
 """Tests for cog.input module (Input, FieldInfo)."""
 
-from dataclasses import Field, MISSING
+from dataclasses import Field
 
 from cog import Input
 from cog.input import FieldInfo

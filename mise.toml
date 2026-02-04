@@ -397,10 +397,10 @@ run = "go generate ./..."
 [tasks."generate:stubs"]
 alias = "stub:generate"
 description = "Generate Python type stubs for coglet"
-depends = ["build:coglet"]
-sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/scripts/generate_stubs.py"]
+sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml"]
 outputs = ["crates/coglet-python/coglet.pyi"]
-run = "python crates/coglet-python/scripts/generate_stubs.py -o crates/coglet-python/coglet.pyi"
+dir = "crates/coglet-python"
+run = "cargo run --bin stub_gen"
 
 [tasks."generate:compat"]
 description = "Regenerate CUDA/PyTorch/TensorFlow compatibility matrices"
@@ -446,8 +446,19 @@ echo "Done."
 
 [tasks."stub:check"]
 description = "Check that coglet Python stubs are up to date"
-depends = ["build:coglet"]
-run = "python crates/coglet-python/scripts/generate_stubs.py --check"
+dir = "crates/coglet-python"
+run = """
+#!/usr/bin/env bash
+set -e
+# Generate to temp file and compare
+cargo run --bin stub_gen 2>/dev/null
+if ! git diff --quiet coglet.pyi; then
+  echo "ERROR: Stubs are out of date. Run 'mise run generate:stubs' to update."
+  git diff coglet.pyi
+  exit 1
+fi
+echo "Stubs are up to date."
+"""
 
 [tasks."stub:typecheck"]
 description = "Type-check coglet stubs with ty"
@@ -564,7 +575,7 @@ dir = "integration-tests"
 run = """
 #!/usr/bin/env bash
 set -e
-go tool gotestsum --format github-actions -- -parallel ${TEST_PARALLEL:-4} -timeout 30m
+go run gotest.tools/gotestsum@latest --format github-actions -- -parallel ${TEST_PARALLEL:-4} -timeout 30m
 """
 
 # =============================================================================

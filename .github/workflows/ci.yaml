@@ -8,6 +8,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Cancel in-progress runs for PRs, queue for merge group and main
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   # Single source of truth for supported Python versions
   SUPPORTED_PYTHONS: '["3.10", "3.11", "3.12", "3.13"]'
@@ -322,7 +327,7 @@ jobs:
         with:
           cache: false
       - name: Lint Python
-        run: make lint
+        run: mise run lint:python
 
 # =============================================================================
 # Test Jobs
@@ -330,12 +335,11 @@ jobs:
 
   test-go:
     name: "Test Go (${{ matrix.platform }})"
-    needs: [changes, build-sdk, build-rust]
+    needs: [changes, build-sdk]
     if: |
       always() &&
       needs.changes.outputs.go == 'true' &&
-      (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
-      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
+      (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped')
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -356,9 +360,9 @@ jobs:
       - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v3
       - name: Build cog
-        run: make cog
+        run: mise run build:cog
       - name: Test Go
-        run: make test-go
+        run: mise run test:go
 
   test-rust:
     name: Test Rust
@@ -454,13 +458,12 @@ jobs:
 
   test-integration:
     name: "Test integration (${{ matrix.runtime }})"
-    needs: [changes, build-sdk, build-rust, test-go]
+    needs: [changes, build-sdk, build-rust]
     if: |
       always() &&
       needs.changes.outputs.integration == 'true' &&
       (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
-      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped') &&
-      (needs.test-go.result == 'success' || needs.test-go.result == 'skipped')
+      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
@@ -494,7 +497,7 @@ jobs:
             integration-tests/go.sum
       - uses: jdx/mise-action@v3
       - name: Build cog binary
-        run: make cog
+        run: mise run build:cog
       - name: Set wheels for runtime
         run: |
           if [ "${{ matrix.runtime }}" = "cog-rust" ]; then

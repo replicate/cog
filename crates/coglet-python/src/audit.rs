@@ -22,6 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use pyo3_stub_gen::derive::*;
 
 /// Whether the audit hook has been installed.
 static HOOK_INSTALLED: AtomicBool = AtomicBool::new(false);
@@ -138,7 +139,8 @@ sys.addaudithook(_coglet_audit_hook)
 /// This is a PyO3 class that wraps two writers:
 /// - inner: Our SlotLogWriter for slot routing
 /// - user_stream: The stream user code tried to install
-#[pyclass]
+#[gen_stub_pyclass]
+#[pyclass(module = "coglet")]
 pub struct TeeWriter {
     /// Our SlotLogWriter (does ContextVar-based routing)
     #[pyo3(get)]
@@ -154,6 +156,7 @@ pub struct TeeWriter {
     closed: bool,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl TeeWriter {
     #[new]
@@ -248,6 +251,7 @@ impl TeeWriter {
 }
 
 /// Check if a value is a SlotLogWriter (our core writer).
+#[gen_stub_pyfunction]
 #[pyfunction]
 pub fn _is_slot_log_writer(py: Python<'_>, value: &Bound<'_, PyAny>) -> bool {
     // Check by type reference
@@ -268,6 +272,7 @@ pub fn _is_slot_log_writer(py: Python<'_>, value: &Bound<'_, PyAny>) -> bool {
 }
 
 /// Check if a value is a TeeWriter.
+#[gen_stub_pyfunction]
 #[pyfunction]
 pub fn _is_tee_writer(_py: Python<'_>, value: &Bound<'_, PyAny>) -> bool {
     if value.is_instance_of::<TeeWriter>() {
@@ -285,6 +290,7 @@ pub fn _is_tee_writer(_py: Python<'_>, value: &Bound<'_, PyAny>) -> bool {
 }
 
 /// Get the inner SlotLogWriter from a TeeWriter.
+#[gen_stub_pyfunction]
 #[pyfunction]
 pub fn _get_inner_writer(py: Python<'_>, tee: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     // Try to extract as TeeWriter
@@ -303,6 +309,7 @@ pub fn _get_inner_writer(py: Python<'_>, tee: &Bound<'_, PyAny>) -> PyResult<Py<
 }
 
 /// Create a TeeWriter that wraps our SlotLogWriter and user's stream.
+#[gen_stub_pyfunction]
 #[pyfunction]
 pub fn _create_tee_writer(
     _py: Python<'_>,

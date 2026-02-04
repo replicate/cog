@@ -4,12 +4,12 @@ import io
 from dataclasses import is_dataclass
 
 from cog import (
+    AsyncConcatenateIterator,
+    ConcatenateIterator,
+    File,
     Path,
     Secret,
-    File,
     URLFile,
-    ConcatenateIterator,
-    AsyncConcatenateIterator,
 )
 
 

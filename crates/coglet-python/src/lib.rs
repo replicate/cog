@@ -12,8 +12,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::*;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+// Define stub info gatherer for generating .pyi files
+pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
 
 use coglet_core::{
     Health, PredictionService, SetupResult, VersionInfo,
@@ -27,6 +31,7 @@ fn set_active() {
     ACTIVE.store(true, Ordering::SeqCst);
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 fn active() -> bool {
     ACTIVE.load(Ordering::SeqCst)
@@ -129,6 +134,7 @@ fn read_max_concurrency(py: Python<'_>) -> usize {
     }
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
 fn serve(
@@ -267,11 +273,13 @@ fn serve_subprocess(
     })
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 fn _is_cancelable() -> bool {
     cancel::is_cancelable()
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(signature = ())]
 fn _run_worker(py: Python<'_>) -> PyResult<()> {
