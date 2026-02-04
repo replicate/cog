@@ -48,3 +48,10 @@ CLAUDE.local.md
 # Local mise files
 mise.local.toml
 mise.local.lock
+
+# Ignore rust specific build artifacts
+target
+/.cargo-home
+/.cargo-home/**
+/.rustup
+/.rustup/**

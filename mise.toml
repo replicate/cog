@@ -18,6 +18,14 @@ ty = "0.0.10"
 _.path = "./bin"
 _.file = [".env"]
 _.python.venv = ".venv"
+# Set sane cargo/rustup targets for the project, if 
+# a subordinate mise.toml needs to override CARGO_HOME or RUSTUP_HOME
+# it is allowed to do so at the cost of cache churn. If these pre-exist
+# e.g. in some CI contexts do not override them.
+# Uses the tera template format for if branch support
+CARGO_HOME = '{% if env.CARGO_HOME is undefined or env.CARGO_HOME == "undefined" or env.CARGO_HOME == "" %}{{config_root}}/.cargo-home{% else %}{{env.CARGO_HOME}}{% endif %}'
+RUSTUP_HOME = '{% if env.RUSTUP_HOME is undefined or env.RUSTUP_HOME == "undefined" or env.RUSTUP_HOME == "" %}{{config_root}}/.rustup{% else %}{{env.RUSTUP_HOME}}{% endif %}'
+
 
 [settings]
 lockfile = true
