@@ -81,8 +81,8 @@ use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
     ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
-use crate::orchestrator::HealthcheckResult;
 use crate::bridge::transport::{connect_transport, get_transport_info_from_env};
+use crate::orchestrator::HealthcheckResult;
 use crate::worker_tracing_layer::WorkerTracingLayer;
 
 type SlotWriter =

@@ -22,8 +22,8 @@ class Coder:
 
         class MyCustomCoder(Coder):
             @staticmethod
-            def factory(cls: Type) -> Optional["MyCustomCoder"]:
-                if cls is MyCustomType:
+            def factory(tpe: Type) -> Optional["MyCustomCoder"]:
+                if tpe is MyCustomType:
                     return MyCustomCoder()
                 return None
 
@@ -50,7 +50,7 @@ class Coder:
         Coder._coders.add(coder)
 
     @staticmethod
-    def lookup(tpe: Type[Any]) -> Optional["Coder"]:
+    def lookup(tpe: type | Any) -> Optional["Coder"]:
         """
         Find a coder that can handle the given type.
 
@@ -68,7 +68,7 @@ class Coder:
 
     @staticmethod
     @abstractmethod
-    def factory(cls: Type[Any]) -> Optional["Coder"]:
+    def factory(tpe: Type[Any]) -> Optional["Coder"]:
         """
         Factory method to create a coder for a given type.
 
@@ -76,7 +76,7 @@ class Coder:
         return an instance if so.
 
         Args:
-            cls: The type to potentially handle.
+            tpe: The type to potentially handle.
 
         Returns:
             A Coder instance if this coder can handle the type, None otherwise.

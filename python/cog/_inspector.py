@@ -10,17 +10,15 @@ import inspect
 import re
 import sys
 import typing
-import warnings
 from dataclasses import MISSING, Field
 from enum import Enum
 from types import ModuleType
-from typing import Any, AsyncIterator, Callable, Dict, Iterator, Optional, Type
+from typing import Any, AsyncIterator, Callable, Dict, Iterator, Type
 
 from . import _adt as adt
 from .coder import Coder
 from .input import FieldInfo
 from .model import BaseModel
-from .predictor import BasePredictor
 from .types import AsyncConcatenateIterator, ConcatenateIterator
 
 
@@ -337,7 +335,7 @@ def _create_predictor_info(
     field_infos = [None] * (len(names) - len(defaults)) + defaults
 
     inputs: Dict[str, adt.InputField] = {}
-    for i, (name, field_info) in enumerate(zip(names, field_infos)):
+    for i, (name, field_info) in enumerate(zip(names, field_infos, strict=False)):
         tpe = type_hints.get(name)
         if tpe is None:
             raise ValueError(f"missing type annotation for input: {name}")
@@ -373,25 +371,14 @@ def _is_coder(cls: Type[Any]) -> bool:
 
 def _find_coders(module: ModuleType) -> None:
     """Find and register coders defined in a module."""
-    found = False
-
     # Direct imports: from cog.coders.some_coder import SomeCoder
     for _, c in inspect.getmembers(module, _is_coder):
-        warnings.warn(f"Registering coder: {c}")
-        found = True
         Coder.register(c)
 
     # Module imports: from cog.coders import some_coders
     for _, m in inspect.getmembers(module, inspect.ismodule):
         for _, c in inspect.getmembers(m, _is_coder):
-            warnings.warn(f"Registering coder: {c}")
-            found = True
             Coder.register(c)
-
-    if found:
-        warnings.warn(
-            "Coders are experimental and might change or be removed without warning."
-        )
 
 
 def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo:
@@ -427,7 +414,7 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
             raise ValueError(f"predict method not found: {fullname}")
 
         if hasattr(p, "setup"):
-            _validate_setup(_unwrap(getattr(p, "setup")))
+            _validate_setup(_unwrap(p.setup))
 
         predict_fn_name = "predict"
         predict_fn = _unwrap(getattr(p, predict_fn_name))
@@ -480,10 +467,12 @@ def check_input(
                     # Extract just the type name without the value
                     if " as " in msg:
                         type_name = msg.split(" as ", 1)[1]
-                        raise ValueError(f"{name}: Invalid value for type {type_name}")
-                    raise ValueError(f"{name}: Invalid value")
+                        raise ValueError(
+                            f"{name}: Invalid value for type {type_name}"
+                        ) from None
+                    raise ValueError(f"{name}: Invalid value") from None
                 # For other normalize errors, prepend field name
-                raise ValueError(f"{name}: {msg}")
+                raise ValueError(f"{name}: {msg}") from None
 
     # Apply defaults for missing values
     for name, input_field in inputs.items():

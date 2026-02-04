@@ -25,7 +25,6 @@ from .eventtypes import (
     PredictionOutput,
     PredictionOutputType,
 )
-
 from .telemetry import current_trace_context
 from .useragent import get_user_agent
 from .webhook import SKIP_START_EVENT, webhook_caller_filtered

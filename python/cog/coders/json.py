@@ -10,15 +10,15 @@ class JsonCoder(Coder):
     """Coder that handles Dict[str, Any] and dict subclasses."""
 
     @staticmethod
-    def factory(cls: Type[Any]) -> Optional[Coder]:
-        origin = typing.get_origin(cls)
+    def factory(tpe: Type[Any]) -> Optional[Coder]:
+        origin = typing.get_origin(tpe)
         if origin in (dict, Dict):
-            args = typing.get_args(cls)
+            args = typing.get_args(tpe)
             if args and args[0] is str:
                 return JsonCoder()
 
         try:
-            if issubclass(cls, dict):
+            if issubclass(tpe, dict):
                 return JsonCoder()
         except TypeError:
             # Generic types like Set[Any] can't be used with issubclass

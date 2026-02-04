@@ -5,7 +5,6 @@ Event types for worker communication.
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Union
 
-
 # From worker parent process
 
 

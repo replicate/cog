@@ -353,9 +353,9 @@ fn try_cog_runtime(py: Python<'_>, predictor_ref: &str) -> Option<Runtime> {
 /// Create an InputProcessor for the given runtime.
 pub fn create_input_processor(runtime: &Runtime) -> Box<dyn InputProcessor> {
     match runtime {
-        Runtime::Cog { predictor_info } => Python::attach(|py| {
-            Box::new(CogInputProcessor::new(predictor_info.clone_ref(py)))
-        }),
+        Runtime::Cog { predictor_info } => {
+            Python::attach(|py| Box::new(CogInputProcessor::new(predictor_info.clone_ref(py))))
+        }
     }
 }
 

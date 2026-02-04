@@ -347,7 +347,7 @@ def to_json_schema(
 
     # Write to /tmp for inspection if large
     if schema_size > 100_000:  # >100KB
-        debug_path = f"/tmp/cog_schema_debug_{os.getpid()}_{mode.value}.json"
+        debug_path = f"/tmp/cog_schema_debug_{os.getpid()}_{mode.value}.json"  # noqa: S108
         try:
             with open(debug_path, "w") as f:
                 f.write(schema_json)

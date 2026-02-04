@@ -10,8 +10,8 @@ class SetCoder(Coder):
     """Coder that handles Set types by converting to/from lists."""
 
     @staticmethod
-    def factory(cls: Type[Any]) -> Optional[Coder]:
-        origin = typing.get_origin(cls)
+    def factory(tpe: Type[Any]) -> Optional[Coder]:
+        origin = typing.get_origin(tpe)
         if origin in (set, Set):
             return SetCoder()
         return None

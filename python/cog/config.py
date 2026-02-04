@@ -40,11 +40,11 @@ def _env_property(env_var: str) -> Callable[[Any], Any]:
 class Config:
     """A class for reading the cog.yaml properties."""
 
-    def __init__(self, config: Optional[dict] = None) -> None:
+    def __init__(self, config: Optional[dict[str, Any]] = None) -> None:
         self._config = config
 
     @property
-    def _cog_config(self) -> dict:
+    def _cog_config(self) -> dict[str, Any]:
         config = self._config
         if config is None:
             config_path = os.path.abspath(COG_YAML_FILE)

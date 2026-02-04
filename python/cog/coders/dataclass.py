@@ -11,9 +11,9 @@ class DataclassCoder(Coder):
     """Coder that handles dataclass encoding/decoding."""
 
     @staticmethod
-    def factory(cls: Type[Any]) -> Optional[Coder]:
-        if dataclasses.is_dataclass(cls):
-            return DataclassCoder(cls)
+    def factory(tpe: Type[Any]) -> Optional[Coder]:
+        if dataclasses.is_dataclass(tpe):
+            return DataclassCoder(tpe)
         return None
 
     def __init__(self, cls: Type[Any]) -> None:

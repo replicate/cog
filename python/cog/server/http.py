@@ -31,9 +31,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
-from .. import schema
-from .. import _inspector
-from .. import _schemas
+from .. import _inspector, _schemas, schema
 from ..config import Config
 from ..errors import PredictorNotSet
 from ..files import upload_file
@@ -173,7 +171,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             log.warning(
                 "Failed to load predictor types, using placeholders", exc_info=True
             )
-            InputType, OutputType, is_async = dict, Any, False
+            is_async = False
         else:
             msg = "Error while loading predictor:\n\n" + traceback.format_exc()
             add_setup_failed_routes(app, started_at, msg)
@@ -360,7 +358,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 "/trainings",
             )
             async def train(
-                request: TrainingRequest = Body(default=None),
+                request: TrainingRequest = Body(default=None),  # type: ignore[valid-type]
                 prefer: Optional[str] = Header(default=None),
                 traceparent: Optional[str] = Header(
                     default=None, include_in_schema=False
@@ -384,7 +382,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             )
             async def train_idempotent(
                 training_id: str = Path(..., title="Training ID"),
-                request: TrainingRequest = Body(..., title="Training Request"),
+                request: TrainingRequest = Body(..., title="Training Request"),  # type: ignore[valid-type]
                 prefer: Optional[str] = Header(default=None),
                 traceparent: Optional[str] = Header(
                     default=None, include_in_schema=False
@@ -488,7 +486,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         "/predictions",
     )
     async def predict(
-        request: PredictionRequest = Body(default=None),
+        request: PredictionRequest = Body(default=None),  # type: ignore[valid-type]
         prefer: Optional[str] = Header(default=None),
         traceparent: Optional[str] = Header(default=None, include_in_schema=False),
         tracestate: Optional[str] = Header(default=None, include_in_schema=False),
@@ -512,7 +510,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     )
     async def predict_idempotent(
         prediction_id: str = Path(..., title="Prediction ID"),
-        request: PredictionRequest = Body(..., title="Prediction Request"),
+        request: PredictionRequest = Body(..., title="Prediction Request"),  # type: ignore[valid-type]
         prefer: Optional[str] = Header(default=None),
         traceparent: Optional[str] = Header(default=None, include_in_schema=False),
         tracestate: Optional[str] = Header(default=None, include_in_schema=False),
@@ -554,7 +552,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
     async def _predict(
         *,
-        request: Optional[PredictionRequest],
+        request: Optional[PredictionRequest],  # type: ignore[valid-type]
         response_type: Type[schema.PredictionResponse],
         respond_async: bool = False,
         is_train: bool = False,
@@ -563,11 +561,12 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         # with empty input. This will throw a ValidationError if that's not
         # possible.
         if request is None:
-            request = PredictionRequest(input={})
+            request = PredictionRequest(input={})  # type: ignore[operator]
+        assert request is not None
         # [compat] If body is supplied but input is None, set it to an empty
         # dictionary so that later code can be simpler.
-        if request.input is None:
-            request.input = {}  # pylint: disable=attribute-defined-outside-init
+        if request.input is None:  # type: ignore[union-attr]
+            request.input = {}  # type: ignore[union-attr]
 
         # Validate and normalize input using predictor_info
         if predictor_info is not None:
@@ -611,7 +610,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             )
 
         if hasattr(request.input, "cleanup"):
-            predict_task.add_done_callback(lambda _: request.input.cleanup())
+            predict_task.add_done_callback(lambda _: request.input.cleanup())  # type: ignore[union-attr]
 
         predict_task.add_done_callback(_handle_predict_done)
 
@@ -779,7 +778,7 @@ if __name__ == "__main__":
         args = parser.parse_args()
 
         if args.version:
-            print(f"coglet (Rust) {coglet.__version__}")
+            print(f"coglet (Rust) {coglet.__version__}")  # type: ignore[attr-defined]
             sys.exit(0)
 
         port = int(os.getenv("PORT", "5000"))
@@ -798,7 +797,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
         log.info("Using Rust coglet server")
-        coglet.serve(
+        coglet.serve(  # type: ignore[attr-defined]
             predictor_ref=predictor_ref,
             host=args.host,
             port=port,

@@ -8,11 +8,11 @@ import importlib.util
 import os
 import os.path
 import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
 BUNDLED_SCHEMA_PATH = ".cog/schema.py"
 

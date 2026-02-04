@@ -21,6 +21,9 @@ Example:
 
 from ._version import __version__
 from .coder import Coder
+
+# Register built-in coders
+from .coders import DataclassCoder, JsonCoder, SetCoder
 from .input import FieldInfo, Input
 from .model import BaseModel
 from .predictor import BasePredictor
@@ -33,9 +36,6 @@ from .types import (
     URLFile,
     URLPath,
 )
-
-# Register built-in coders
-from .coders import DataclassCoder, JsonCoder, SetCoder
 
 Coder.register(DataclassCoder)
 Coder.register(JsonCoder)

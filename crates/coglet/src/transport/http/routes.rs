@@ -11,7 +11,9 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::health::{Health, HealthResponse, SetupResult};
+#[cfg(test)]
+use crate::health::Health;
+use crate::health::{HealthResponse, SetupResult};
 use crate::prediction::PredictionStatus;
 use crate::predictor::PredictionError;
 use crate::service::{CreatePredictionError, HealthSnapshot, PredictionService};
@@ -114,7 +116,10 @@ async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<Hea
         None
     };
 
-    Json(HealthCheckResponse::from_snapshot(snapshot, user_healthcheck_error))
+    Json(HealthCheckResponse::from_snapshot(
+        snapshot,
+        user_healthcheck_error,
+    ))
 }
 
 /// Write /var/run/cog/ready for K8s readiness probe.

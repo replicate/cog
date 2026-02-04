@@ -37,8 +37,6 @@ fn format_validation_error(py: Python<'_>, err: &PyErr) -> String {
     err.value(py).to_string()
 }
 
-
-
 /// Type alias for Python object (Py<PyAny>).
 type PyObject = Py<PyAny>;
 
@@ -993,9 +991,9 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
 
         match result {
             Ok(true) => HealthcheckResult::healthy(),
-            Ok(false) => {
-                HealthcheckResult::unhealthy("Healthcheck failed: user-defined healthcheck returned False")
-            }
+            Ok(false) => HealthcheckResult::unhealthy(
+                "Healthcheck failed: user-defined healthcheck returned False",
+            ),
             Err(e) => {
                 let err_str = e.to_string();
                 if err_str.contains("TimeoutError") {
@@ -1031,8 +1029,10 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
             let timeout_coro = wait_for.call1((&coro, Self::HEALTHCHECK_TIMEOUT))?;
 
             // Submit to event loop
-            let future =
-                asyncio.call_method1("run_coroutine_threadsafe", (&timeout_coro, event_loop.bind(py)))?;
+            let future = asyncio.call_method1(
+                "run_coroutine_threadsafe",
+                (&timeout_coro, event_loop.bind(py)),
+            )?;
 
             // Block on result with extra buffer time for event loop overhead
             let result = future.call_method1("result", (Self::HEALTHCHECK_TIMEOUT + 1.0,));
@@ -1054,9 +1054,9 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
 
         match result {
             Ok(true) => HealthcheckResult::healthy(),
-            Ok(false) => {
-                HealthcheckResult::unhealthy("Healthcheck failed: user-defined healthcheck returned False")
-            }
+            Ok(false) => HealthcheckResult::unhealthy(
+                "Healthcheck failed: user-defined healthcheck returned False",
+            ),
             Err(e) => {
                 let err_str = e.to_string();
                 if err_str.contains("TimeoutError") {

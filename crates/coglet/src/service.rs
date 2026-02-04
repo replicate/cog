@@ -222,7 +222,9 @@ impl PredictionService {
     /// Run user-defined healthcheck via orchestrator.
     ///
     /// Returns healthy if no orchestrator is configured (not ready yet).
-    pub async fn healthcheck(&self) -> Result<HealthcheckResult, crate::orchestrator::OrchestratorError> {
+    pub async fn healthcheck(
+        &self,
+    ) -> Result<HealthcheckResult, crate::orchestrator::OrchestratorError> {
         if let Some(ref state) = *self.orchestrator.read().await {
             state.orchestrator.healthcheck().await
         } else {
@@ -425,7 +427,9 @@ mod tests {
             }
         }
 
-        async fn healthcheck(&self) -> Result<HealthcheckResult, crate::orchestrator::OrchestratorError> {
+        async fn healthcheck(
+            &self,
+        ) -> Result<HealthcheckResult, crate::orchestrator::OrchestratorError> {
             Ok(HealthcheckResult::healthy())
         }
 

@@ -9,7 +9,7 @@ import copy
 import sys
 from dataclasses import MISSING, dataclass, field
 from enum import Enum
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, List, Optional, Union, cast
 
 
 class Representation:
@@ -76,7 +76,9 @@ class FieldInfo(Representation):
 def Input(
     default: Any = None,
     *,
-    default_factory: Optional[Callable[[], Any]] = None,
+    default_factory: Optional[
+        Callable[[], Any] | type[list[Any]] | type[dict[Any, Any]] | type[set[Any]]
+    ] = None,
     description: Optional[str] = None,
     ge: Optional[Union[int, float]] = None,
     le: Optional[Union[int, float]] = None,
@@ -162,11 +164,13 @@ def Input(
 
     # If default_factory is provided, create a proper dataclass Field
     if default_factory is not None:
+        # Cast to Callable for dataclass field() - type[list] etc are callable
+        factory_fn = cast(Callable[[], Any], default_factory)
         # kw_only parameter was added in Python 3.10
         if sys.version_info >= (3, 10):
-            computed_default: Any = field(
+            computed_default: Any = field(  # type: ignore[call-overload]
                 default=MISSING,
-                default_factory=default_factory,
+                default_factory=factory_fn,
                 init=True,
                 repr=True,
                 hash=None,
@@ -175,9 +179,9 @@ def Input(
                 kw_only=False,
             )
         else:
-            computed_default = field(
+            computed_default = field(  # type: ignore[call-overload]
                 default=MISSING,
-                default_factory=default_factory,
+                default_factory=factory_fn,
                 init=True,
                 repr=True,
                 hash=None,

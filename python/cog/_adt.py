@@ -51,7 +51,7 @@ class PrimitiveType(Enum):
     CUSTOM = auto()
 
     @staticmethod
-    def _python_type() -> Dict["PrimitiveType", type]:
+    def _python_type() -> Dict["PrimitiveType", type | Any]:
         return {
             PrimitiveType.BOOL: bool,
             PrimitiveType.FLOAT: float,
@@ -79,7 +79,7 @@ class PrimitiveType(Enum):
         }
 
     @staticmethod
-    def _adt_type() -> Dict[type, "PrimitiveType"]:
+    def _adt_type() -> Dict[type | Any, "PrimitiveType"]:
         return {
             bool: PrimitiveType.BOOL,
             float: PrimitiveType.FLOAT,
@@ -92,13 +92,15 @@ class PrimitiveType(Enum):
         }
 
     @staticmethod
-    def from_type(tpe: type) -> "PrimitiveType":
+    def from_type(tpe: type | Any) -> "PrimitiveType":
         """Determine the PrimitiveType for a given Python type."""
         if match := PrimitiveType._adt_type().get(tpe):
             return match
 
         try:
-            if tpe is os.PathLike or issubclass(tpe, os.PathLike):
+            if tpe is os.PathLike or (
+                isinstance(tpe, type) and issubclass(tpe, os.PathLike)  # type: ignore[arg-type]
+            ):
                 return PrimitiveType.PATH
         except TypeError:
             # issubclass raises TypeError for non-class types

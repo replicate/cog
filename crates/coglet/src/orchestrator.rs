@@ -504,7 +504,9 @@ pub async fn spawn_worker(
 
 async fn run_event_loop(
     mut ctrl_reader: FramedRead<tokio::process::ChildStdout, JsonCodec<ControlResponse>>,
-    ctrl_writer: Arc<tokio::sync::Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>>,
+    ctrl_writer: Arc<
+        tokio::sync::Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>,
+    >,
     slot_readers: Vec<(
         SlotId,
         FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotResponse>>,

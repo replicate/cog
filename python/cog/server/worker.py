@@ -12,6 +12,7 @@ import uuid
 import weakref
 from concurrent import futures
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
 from typing import (
@@ -26,19 +27,18 @@ from typing import (
 )
 
 import structlog
-from dataclasses import dataclass
 
+from ..json import make_encodeable
 from ..predictor import (
     BasePredictor,
-    load_predictor_from_ref,
+    extract_setup_weights,
+    get_healthcheck,
     get_predict,
     get_train,
-    get_healthcheck,
     has_setup_weights,
-    extract_setup_weights,
+    load_predictor_from_ref,
     wait_for_env,
 )
-from ..json import make_encodeable
 from ..types import URLPath
 from .connection import AsyncConnection, LockedConnection
 from .eventtypes import (
