@@ -28,7 +28,7 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           cache: false
-      # Build main cog package (wheel + sdist)
+      # Build cog package (wheel + sdist)
       - name: Build cog package
         run: uv build --out-dir=dist .
       - name: Upload cog package
@@ -36,14 +36,6 @@ jobs:
         with:
           name: CogPackage
           path: dist/cog-*
-      # Build cog-dataclass wheel
-      - name: Build cog-dataclass wheel
-        run: uv build --wheel --out-dir=dist ./cog-dataclass
-      - name: Upload cog-dataclass wheel
-        uses: actions/upload-artifact@v6
-        with:
-          name: CogDataclassWheel
-          path: dist/cog_dataclass-*.whl
       # Build Rust coglet wheel
       - name: Check Rust formatting
         run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
@@ -81,7 +73,6 @@ jobs:
     needs:
       - test-go
       - test-python
-      - test-python-dataclasses
       - test-coglet-python
       - test-integration
     runs-on: ubuntu-latest
@@ -116,14 +107,13 @@ jobs:
         run: make test-go
 
   test-python:
-    name: "Test Python ${{ matrix.python-version }} + Pydantic v${{ matrix.pydantic }}"
+    name: "Test Python ${{ matrix.python-version }}"
     needs: build-python
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        pydantic: ["1", "2"]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
@@ -141,47 +131,13 @@ jobs:
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test
-        run: uvx --with tox-uv tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-pydantic${{ matrix.pydantic }}-tests
-
-  test-python-dataclasses:
-    name: "Test Python ${{ matrix.python-version }} (Dataclasses)"
-    needs: build-python
-    runs-on: ubuntu-latest-8-cores
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Download built wheels
-        uses: actions/download-artifact@v7
-        with:
-          path: dist
-          merge-multiple: true
-      - uses: jdx/mise-action@v2
-      - name: Create virtual environment and install cog-dataclass wheel with dev dependencies
-        run: |
-          uv venv
-          uv pip install $(ls dist/cog_dataclass-*.whl)[dev]
-      - name: Remove src to ensure tests run against wheel
-        run: rm -rf cog-dataclass/python/cog
-      - name: Test
-        run: uv run pytest cog-dataclass/python/tests -v
+        run: uvx --with tox-uv tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-tests
 
   test-coglet-python:
-    name: "Test Coglet Python bindings (${{ matrix.runtime }})"
+    name: "Test Coglet Python bindings"
     needs: build-python
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        runtime: [dataclass, cog]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -198,7 +154,7 @@ jobs:
         with:
           workspaces: crates -> target
       - name: Test coglet Python bindings
-        run: mise test:coglet-python:${{ matrix.runtime }}
+        run: mise test:coglet-python
 
   # Go-based integration tests using testscript framework
   test-integration:
@@ -210,7 +166,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, cog-dataclass, cog-rust, cog-dataclass-rust]
+        runtime: [cog, cog-rust]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -238,27 +194,12 @@ jobs:
         run: make cog
       - name: Set wheels for runtime
         run: |
-          # Set COG_WHEEL and COGLET_RUST_WHEEL based on runtime matrix value
-          case "${{ matrix.runtime }}" in
-            cog)
-              echo "COG_WHEEL=cog" >> $GITHUB_ENV
-              ;;
-            cog-dataclass)
-              echo "COG_WHEEL=cog-dataclass" >> $GITHUB_ENV
-              ;;
-            cog-rust)
-              RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl | head -1)
-              echo "Found Rust coglet wheel: $RUST_WHEEL"
-              echo "COG_WHEEL=cog" >> $GITHUB_ENV
-              echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
-              ;;
-            cog-dataclass-rust)
-              RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl | head -1)
-              echo "Found Rust coglet wheel: $RUST_WHEEL"
-              echo "COG_WHEEL=cog-dataclass" >> $GITHUB_ENV
-              echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
-              ;;
-          esac
+          # Set COGLET_RUST_WHEEL for rust runtime
+          if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
+            RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl | head -1)
+            echo "Found Rust coglet wheel: $RUST_WHEEL"
+            echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+          fi
       - name: Run integration tests
         env:
           COG_BINARY: ./cog
@@ -271,7 +212,6 @@ jobs:
     needs:
       - test-go
       - test-python
-      - test-python-dataclasses
       - test-integration
     if: startsWith(github.ref, 'refs/tags/')
     permissions:

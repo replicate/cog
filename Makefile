@@ -88,7 +88,7 @@ check-fmt:
 .PHONY: lint
 lint: generate check-fmt vet
 	$(GOLINT) run ./...
-	$(TOX) run --installpkg $$(ls dist/cog-*.whl) -e lint,typecheck-pydantic2
+	$(TOX) run --installpkg $$(ls dist/cog-*.whl) -e lint,typecheck
 	cd crates && cargo clippy -- -D warnings
 
 .PHONY: run-docs-server

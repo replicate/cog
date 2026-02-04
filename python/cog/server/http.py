@@ -30,29 +30,19 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 
-from .. import schema
+from .. import _inspector, _schemas, schema
 from ..config import Config
 from ..errors import PredictorNotSet
 from ..files import upload_file
 from ..json import upload_files
 from ..logging import setup_logging
 from ..mode import Mode
-from ..types import PYDANTIC_V2
 
 try:
     from .._version import __version__
 except ImportError:
     __version__ = "dev"
-
-if PYDANTIC_V2:
-    from .helpers import (
-        unwrap_pydantic_serialization_iterators,
-        update_openapi_schema_for_pydantic_2,
-    )
-else:
-    from .helpers import update_nullable_optional
 
 from .probes import ProbeHelper
 from .runner import (
@@ -71,6 +61,35 @@ if TYPE_CHECKING:
     T = TypeVar("T")  # pylint: disable=invalid-name
 
 log = structlog.get_logger("cog.server.http")
+
+# Known safe validation messages - these exact messages (or prefixes) are safe to return
+# We return only the safe portion, never the full message which may contain sensitive data
+_SAFE_VALIDATION_MESSAGES = {
+    "Field required": "Field required",
+    "Invalid value": "Invalid value",
+    "fails constraint": "Value fails constraint",
+    "does not match regex": "Value does not match required pattern",
+    "does not match choices": "Value does not match allowed choices",
+}
+
+
+def _sanitize_validation_message(msg: str) -> str:
+    """
+    Sanitize validation error messages to prevent information leakage.
+
+    Returns only predefined safe messages, never the original message content
+    which could contain sensitive internal details.
+    """
+    if not msg:
+        return "Invalid value"
+
+    # Check if message contains any known pattern and return ONLY the safe version
+    for pattern, safe_msg in _SAFE_VALIDATION_MESSAGES.items():
+        if pattern in msg:
+            return safe_msg
+
+    # For unknown messages, return generic error
+    return "Invalid value"
 
 
 @unique
@@ -159,28 +178,6 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         lifespan=lifespan,
     )
 
-    def custom_openapi() -> Dict[str, Any]:
-        if not app.openapi_schema:
-            openapi_schema = get_openapi(
-                title="Cog",
-                openapi_version="3.0.2",
-                version="0.1.0",
-                routes=app.routes,
-            )
-
-            # Pydantic 2 changes how optional fields are represented in OpenAPI schema.
-            # See: https://github.com/tiangolo/fastapi/pull/9873#issuecomment-1997105091
-            if PYDANTIC_V2:
-                update_openapi_schema_for_pydantic_2(openapi_schema)
-            else:
-                update_nullable_optional(openapi_schema, app)
-
-            app.openapi_schema = openapi_schema
-
-        return app.openapi_schema
-
-    app.openapi = custom_openapi
-
     app.state.health = Health.STARTING
     app.state.setup_result = None
 
@@ -197,9 +194,150 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             mode=Mode.PREDICT
         )
     except Exception:  # pylint: disable=broad-exception-caught
-        msg = "Error while loading predictor:\n\n" + traceback.format_exc()
-        add_setup_failed_routes(app, started_at, msg)
-        return app
+        if is_build:
+            # During build, continue with placeholder types to allow schema generation
+            # This handles cases where the predictor imports unavailable modules
+            log.warning(
+                "Failed to load predictor types, using placeholders", exc_info=True
+            )
+            is_async = False
+        else:
+            msg = "Error while loading predictor:\n\n" + traceback.format_exc()
+            add_setup_failed_routes(app, started_at, msg)
+            return app
+
+    # Generate Input/Output schemas from predictor
+    predictor_ref = cog_config.get_predictor_ref(mode=mode)
+    module_path, class_name = (
+        predictor_ref.split(":", 1)
+        if ":" in predictor_ref
+        else (predictor_ref, "Predictor")
+    )
+    module_name = os.path.basename(module_path).replace(".py", "")
+    predictor_info = None
+    try:
+        predictor_info = _inspector.create_predictor(module_name, class_name)
+        input_schema = _schemas.to_json_input(predictor_info)
+        output_schema = _schemas.to_json_output(predictor_info)
+        enum_schemas = _schemas.to_json_enums(predictor_info)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # Check if the root cause is an import error (missing dependency)
+        is_import_error = isinstance(e, (ImportError, ModuleNotFoundError))
+        if not is_import_error and e.__cause__:
+            is_import_error = isinstance(
+                e.__cause__, (ImportError, ModuleNotFoundError)
+            )
+
+        # During build, re-raise validation errors but not import errors
+        # This allows builds to succeed when predictor has missing dependencies
+        # but fails on actual validation issues (like invalid defaults)
+        if is_build and not is_import_error:
+            raise
+
+        log.warning("Failed to generate input/output schemas", exc_info=True)
+        input_schema = {"type": "object", "title": "Input"}
+        output_schema = {"title": "Output"}
+        enum_schemas = {}
+
+    def custom_openapi() -> Dict[str, Any]:
+        if not app.openapi_schema:
+            openapi_schema = get_openapi(
+                title="Cog",
+                openapi_version="3.0.2",
+                version="0.1.0",
+                routes=app.routes,
+            )
+            # Inject Input/Output schemas
+            if "components" not in openapi_schema:
+                openapi_schema["components"] = {"schemas": {}}
+            if "schemas" not in openapi_schema["components"]:
+                openapi_schema["components"]["schemas"] = {}
+            openapi_schema["components"]["schemas"]["Input"] = input_schema
+            openapi_schema["components"]["schemas"]["Output"] = output_schema
+            openapi_schema["components"]["schemas"].update(enum_schemas)
+            # Update PredictionRequest.input to reference Input schema
+            if "PredictionRequest" in openapi_schema["components"]["schemas"]:
+                openapi_schema["components"]["schemas"]["PredictionRequest"][
+                    "properties"
+                ]["input"] = {"$ref": "#/components/schemas/Input"}
+            # Add Status enum schema
+            openapi_schema["components"]["schemas"]["Status"] = {
+                "title": "Status",
+                "description": "An enumeration.",
+                "type": "string",
+                "enum": ["starting", "processing", "succeeded", "canceled", "failed"],
+            }
+            # Add PredictionResponse schema
+            openapi_schema["components"]["schemas"]["PredictionResponse"] = {
+                "title": "PredictionResponse",
+                "type": "object",
+                "properties": {
+                    "input": {"$ref": "#/components/schemas/Input", "nullable": True},
+                    "output": {"$ref": "#/components/schemas/Output"},
+                    "id": {"title": "Id", "type": "string", "nullable": True},
+                    "version": {"title": "Version", "type": "string", "nullable": True},
+                    "created_at": {
+                        "title": "Created At",
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": True,
+                    },
+                    "started_at": {
+                        "title": "Started At",
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": True,
+                    },
+                    "completed_at": {
+                        "title": "Completed At",
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": True,
+                    },
+                    "status": {"$ref": "#/components/schemas/Status", "nullable": True},
+                    "error": {"title": "Error", "type": "string", "nullable": True},
+                    "logs": {"title": "Logs", "type": "string", "default": ""},
+                    "metrics": {
+                        "title": "Metrics",
+                        "type": "object",
+                        "additionalProperties": True,
+                        "nullable": True,
+                    },
+                },
+            }
+            # Update /predictions response to reference PredictionResponse
+            predictions_path = openapi_schema.get("paths", {}).get("/predictions", {})
+            if predictions_path.get("post", {}).get("responses", {}).get("200"):
+                predictions_path["post"]["responses"]["200"]["content"][
+                    "application/json"
+                ]["schema"] = {"$ref": "#/components/schemas/PredictionResponse"}
+            # Update /predictions/{prediction_id} response too
+            predictions_id_path = openapi_schema.get("paths", {}).get(
+                "/predictions/{prediction_id}", {}
+            )
+            if predictions_id_path.get("put", {}).get("responses", {}).get("200"):
+                predictions_id_path["put"]["responses"]["200"]["content"][
+                    "application/json"
+                ]["schema"] = {"$ref": "#/components/schemas/PredictionResponse"}
+            # Update /trainings response to reference PredictionResponse (same schema)
+            trainings_path = openapi_schema.get("paths", {}).get("/trainings", {})
+            if trainings_path.get("post", {}).get("responses", {}).get("200"):
+                trainings_path["post"]["responses"]["200"]["content"][
+                    "application/json"
+                ]["schema"] = {"$ref": "#/components/schemas/PredictionResponse"}
+            # Update /trainings/{training_id} response too
+            trainings_id_path = openapi_schema.get("paths", {}).get(
+                "/trainings/{training_id}", {}
+            )
+            if trainings_id_path.get("put", {}).get("responses", {}).get("200"):
+                trainings_id_path["put"]["responses"]["200"]["content"][
+                    "application/json"
+                ]["schema"] = {"$ref": "#/components/schemas/PredictionResponse"}
+            app.openapi_schema = openapi_schema
+
+        return app.openapi_schema
+
+    app.openapi = custom_openapi
 
     worker = make_worker(
         predictor_ref=cog_config.get_predictor_ref(mode=mode),
@@ -209,12 +347,8 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     )
     runner = PredictionRunner(worker=worker, max_concurrency=cog_config.max_concurrency)
 
-    class PredictionRequest(schema.PredictionRequest.with_types(input_type=InputType)):
-        pass
-
-    PredictionResponse = schema.PredictionResponse.with_types(  # pylint: disable=invalid-name
-        input_type=InputType, output_type=OutputType
-    )
+    PredictionRequest = schema.PredictionRequest
+    PredictionResponse = schema.PredictionResponse
 
     if app_threads is None:
         app_threads = 1 if cog_config.requires_gpu else _cpu_count()
@@ -245,22 +379,14 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
                 Mode.TRAIN
             )
 
-            class TrainingRequest(
-                schema.TrainingRequest.with_types(input_type=TrainingInputType)
-            ):
-                pass
-
-            TrainingResponse = schema.TrainingResponse.with_types(  # pylint: disable=invalid-name
-                input_type=TrainingInputType, output_type=TrainingOutputType
-            )
+            TrainingRequest = schema.TrainingRequest
+            TrainingResponse = schema.TrainingResponse
 
             @app.post(
                 "/trainings",
-                response_model=TrainingResponse,
-                response_model_exclude_unset=True,
             )
             async def train(
-                request: TrainingRequest = Body(default=None),
+                request: TrainingRequest = Body(default=None),  # type: ignore[valid-type]
                 prefer: Optional[str] = Header(default=None),
                 traceparent: Optional[str] = Header(
                     default=None, include_in_schema=False
@@ -281,12 +407,10 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
             @app.put(
                 "/trainings/{training_id}",
-                response_model=TrainingResponse,
-                response_model_exclude_unset=True,
             )
             async def train_idempotent(
                 training_id: str = Path(..., title="Training ID"),
-                request: TrainingRequest = Body(..., title="Training Request"),
+                request: TrainingRequest = Body(..., title="Training Request"),  # type: ignore[valid-type]
                 prefer: Optional[str] = Header(default=None),
                 traceparent: Optional[str] = Header(
                     default=None, include_in_schema=False
@@ -388,11 +512,9 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     @limited
     @app.post(
         "/predictions",
-        response_model=PredictionResponse,
-        response_model_exclude_unset=True,
     )
     async def predict(
-        request: PredictionRequest = Body(default=None),
+        request: PredictionRequest = Body(default=None),  # type: ignore[valid-type]
         prefer: Optional[str] = Header(default=None),
         traceparent: Optional[str] = Header(default=None, include_in_schema=False),
         tracestate: Optional[str] = Header(default=None, include_in_schema=False),
@@ -413,12 +535,10 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
     @limited
     @app.put(
         "/predictions/{prediction_id}",
-        response_model=PredictionResponse,
-        response_model_exclude_unset=True,
     )
     async def predict_idempotent(
         prediction_id: str = Path(..., title="Prediction ID"),
-        request: PredictionRequest = Body(..., title="Prediction Request"),
+        request: PredictionRequest = Body(..., title="Prediction Request"),  # type: ignore[valid-type]
         prefer: Optional[str] = Header(default=None),
         traceparent: Optional[str] = Header(default=None, include_in_schema=False),
         tracestate: Optional[str] = Header(default=None, include_in_schema=False),
@@ -460,7 +580,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
 
     async def _predict(
         *,
-        request: Optional[PredictionRequest],
+        request: Optional[PredictionRequest],  # type: ignore[valid-type]
         response_type: Type[schema.PredictionResponse],
         respond_async: bool = False,
         is_train: bool = False,
@@ -469,11 +589,45 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         # with empty input. This will throw a ValidationError if that's not
         # possible.
         if request is None:
-            request = PredictionRequest(input={})
+            request = PredictionRequest(input={})  # type: ignore[operator]
+        assert request is not None
         # [compat] If body is supplied but input is None, set it to an empty
         # dictionary so that later code can be simpler.
-        if request.input is None:
-            request.input = {}  # pylint: disable=attribute-defined-outside-init
+        if request.input is None:  # type: ignore[union-attr]
+            request.input = {}  # type: ignore[union-attr]
+
+        # Validate and normalize input using predictor_info
+        if predictor_info is not None:
+            try:
+                request.input = _inspector.check_input(
+                    predictor_info.inputs, request.input
+                )
+            except ValueError as e:
+                # Format error as validation error format
+                # Error messages from check_input are formatted as "{field}: {message}"
+                # where field is always a known input field name from predictor_info.inputs
+                # Only use first line to avoid any stack trace leakage
+                error_str = str(e).split("\n", 1)[0]
+                if ": " in error_str:
+                    field_name, raw_msg = error_str.split(": ", 1)
+                else:
+                    field_name, raw_msg = "input", error_str
+
+                # Sanitize message - only pass through known safe patterns
+                msg = _sanitize_validation_message(raw_msg)
+
+                return JSONResponse(
+                    {
+                        "detail": [
+                            {
+                                "loc": ["body", "input", field_name],
+                                "msg": msg,
+                                "type": "value_error",
+                            }
+                        ]
+                    },
+                    status_code=422,
+                )
 
         task_kwargs = {}
         if respond_async:
@@ -490,7 +644,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
             )
 
         if hasattr(request.input, "cleanup"):
-            predict_task.add_done_callback(lambda _: request.input.cleanup())
+            predict_task.add_done_callback(lambda _: request.input.cleanup())  # type: ignore[union-attr]
 
         predict_task.add_done_callback(_handle_predict_done)
 
@@ -504,17 +658,7 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         await predict_task.wait_async()
 
         # ...and return the result.
-        if PYDANTIC_V2:
-            response_object = unwrap_pydantic_serialization_iterators(
-                predict_task.result.model_dump()
-            )
-        else:
-            response_object = predict_task.result.dict()
-        try:
-            _ = response_type(**response_object)
-        except ValidationError as e:
-            _log_invalid_output(e, mode)
-            raise HTTPException(status_code=500, detail=str(e)) from e
+        response_object = predict_task.result.dict()
 
         response_object["output"] = upload_files(
             response_object["output"],

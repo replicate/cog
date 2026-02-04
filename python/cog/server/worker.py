@@ -12,6 +12,7 @@ import uuid
 import weakref
 from concurrent import futures
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from enum import Enum, auto, unique
 from multiprocessing.connection import Connection
 from typing import (
@@ -26,20 +27,19 @@ from typing import (
 )
 
 import structlog
-from attrs import define
 
-from ..base_predictor import BasePredictor
 from ..json import make_encodeable
 from ..predictor import (
+    BasePredictor,
     extract_setup_weights,
     get_healthcheck,
     get_predict,
     get_train,
     has_setup_weights,
     load_predictor_from_ref,
+    wait_for_env,
 )
-from ..types import PYDANTIC_V2, URLPath
-from ..wait import wait_for_env
+from ..types import URLPath
 from .connection import AsyncConnection, LockedConnection
 from .eventtypes import (
     Cancel,
@@ -61,17 +61,11 @@ from .exceptions import (
 from .helpers import SimpleStreamRedirector, StreamRedirector
 from .scope import Scope, _get_current_scope, evolve_scope, scope
 
-if PYDANTIC_V2:
-    from .helpers import unwrap_pydantic_serialization_iterators
-
 _spawn = multiprocessing.get_context("spawn")
 
 _PublicEventType = Union[Done, Log, PredictionOutput, PredictionOutputType]
 
 log = structlog.get_logger("cog.server.worker")
-
-# Timeout for healthcheck execution in seconds
-HEALTHCHECK_TIMEOUT = 5.0
 
 
 @unique
@@ -82,22 +76,21 @@ class WorkerState(Enum):
     DEFUNCT = auto()
 
 
-@define
+@dataclass
 class PredictionRequest:
     tag: Optional[str]
 
 
-@define
+@dataclass
 class CancelRequest:
     tag: Optional[str]
 
 
-@define
+@dataclass
 class PredictionState:
     tag: Optional[str]
     payload: Dict[str, Any]
     result: "Future[Done]"
-
     cancel_sent: bool = False
 
 
@@ -185,18 +178,51 @@ class Worker:
                 futs = {}
                 # Prepare payload asynchronously (download URLPath objects)
                 for k, v in payload.items():
+                    # Convert string URLs/data URIs to URLPath for downloading
+                    if isinstance(v, str) and (
+                        v.startswith("http://")
+                        or v.startswith("https://")
+                        or v.startswith("data:")
+                    ):
+                        from ..types import File, get_filename
+
+                        urlpath = URLPath(
+                            source=v,
+                            filename=get_filename(v),
+                            fileobj=File.validate(v),
+                        )
+                        futs[k] = self._input_download_pool.submit(urlpath.convert)
+                        to_await.append(futs[k])
                     # Check if v is an instance of URLPath
-                    if isinstance(v, URLPath):
+                    elif isinstance(v, URLPath):
                         futs[k] = self._input_download_pool.submit(v.convert)
                         to_await.append(futs[k])
-                    # Check if v is a list of URLPath instances
-                    elif isinstance(v, list) and all(
-                        isinstance(item, URLPath) for item in v
-                    ):
-                        futs[k] = [
-                            self._input_download_pool.submit(item.convert) for item in v
-                        ]
-                        to_await += futs[k]
+                    # Check if v is a list of URLPath instances or strings
+                    elif isinstance(v, list):
+                        url_items = []
+                        for item in v:
+                            if isinstance(item, str) and (
+                                item.startswith("http://")
+                                or item.startswith("https://")
+                                or item.startswith("data:")
+                            ):
+                                from ..types import File, get_filename
+
+                                url_items.append(
+                                    URLPath(
+                                        source=item,
+                                        filename=get_filename(item),
+                                        fileobj=File.validate(item),
+                                    )
+                                )
+                            elif isinstance(item, URLPath):
+                                url_items.append(item)
+                        if url_items:
+                            futs[k] = [
+                                self._input_download_pool.submit(item.convert)
+                                for item in url_items
+                            ]
+                            to_await += futs[k]
                 done, not_done = futures.wait(
                     to_await, return_when=futures.FIRST_EXCEPTION
                 )
@@ -253,34 +279,6 @@ class Worker:
         with self._subscribers_lock:
             del self._subscribers[sid]
 
-    def healthcheck(self) -> "Future[Done]":
-        """Execute the healthcheck method if defined."""
-        self._assert_state(WorkerState.READY)
-        result: "Future[Done]" = Future()
-
-        # Create a unique tag for this healthcheck
-        tag = f"healthcheck-{uuid.uuid4().hex}"
-
-        # Subscribe to the healthcheck response
-        def handle_response(event: _PublicEventType) -> None:
-            if isinstance(event, Done):
-                result.set_result(event)
-
-        sid = self.subscribe(handle_response, tag=tag)
-
-        # Send healthcheck request to child worker
-        self._events.send(
-            Envelope(
-                event=Healthcheck(),
-                tag=tag,
-            )
-        )
-
-        # Unsubscribe after done
-        result.add_done_callback(lambda _: self.unsubscribe(sid))
-
-        return result
-
     def shutdown(self, timeout: Optional[float] = None) -> None:
         """
         Shut down the worker gracefully. This waits for the child worker to
@@ -319,6 +317,34 @@ class Worker:
                 self._child.send_cancel_signal()
                 self._events.send(Envelope(event=Cancel(), tag=tag))
                 predict_state.cancel_sent = True
+
+    def healthcheck(self) -> "Future[Done]":
+        """Execute the healthcheck method if defined."""
+        self._assert_state(WorkerState.READY)
+        result: "Future[Done]" = Future()
+
+        # Create a unique tag for this healthcheck
+        tag = f"healthcheck-{uuid.uuid4().hex}"
+
+        # Subscribe to the healthcheck response
+        def handle_response(event: _PublicEventType) -> None:
+            if isinstance(event, Done):
+                result.set_result(event)
+
+        sid = self.subscribe(handle_response, tag=tag)
+
+        # Send healthcheck request to child worker
+        self._events.send(
+            Envelope(
+                event=Healthcheck(),
+                tag=tag,
+            )
+        )
+
+        # Unsubscribe after done
+        result.add_done_callback(lambda _: self.unsubscribe(sid))
+
+        return result
 
     def _assert_state(self, state: WorkerState) -> None:
         if self._state != state:
@@ -692,12 +718,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                         )
                     )
                     for r in result:
-                        if PYDANTIC_V2:
-                            payload = make_encodeable(
-                                unwrap_pydantic_serialization_iterators(r)
-                            )
-                        else:
-                            payload = make_encodeable(r)
+                        payload = make_encodeable(r)
                         self._events.send(
                             Envelope(
                                 event=PredictionOutput(payload=payload),
@@ -711,12 +732,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                             tag=tag,
                         )
                     )
-                    if PYDANTIC_V2:
-                        payload = make_encodeable(
-                            unwrap_pydantic_serialization_iterators(result)
-                        )
-                    else:
-                        payload = make_encodeable(result)
+                    payload = make_encodeable(result)
                     self._events.send(
                         Envelope(
                             event=PredictionOutput(payload=payload),
@@ -748,12 +764,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                         )
                     )
                     async for r in future_result:
-                        if PYDANTIC_V2:
-                            payload = make_encodeable(
-                                unwrap_pydantic_serialization_iterators(r)
-                            )
-                        else:
-                            payload = make_encodeable(r)
+                        payload = make_encodeable(r)
                         self._events.send(
                             Envelope(
                                 event=PredictionOutput(payload=payload),
@@ -768,12 +779,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                             tag=tag,
                         )
                     )
-                    if PYDANTIC_V2:
-                        payload = make_encodeable(
-                            unwrap_pydantic_serialization_iterators(result)
-                        )
-                    else:
-                        payload = make_encodeable(result)
+                    payload = make_encodeable(result)
                     self._events.send(
                         Envelope(
                             event=PredictionOutput(payload=payload),
@@ -781,22 +787,67 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                         )
                     )
 
+    # Timeout for healthcheck execution in seconds
+    HEALTHCHECK_TIMEOUT = 5.0
+
     def _healthcheck(
         self,
         tag: Optional[str],
         redirector: StreamRedirector,
     ) -> None:
-        """Execute the healthcheck method."""
+        """Execute the sync healthcheck method."""
         done = Done(event_type="healthcheck")
-        asyncio.run(self._healthcheck_internal(done))
-        # This code, while the exact same as in ahealthcheck, cannot
-        # be factored out because StreamRedirector and
-        # SimpleStreamRedirector are not the same class/base class
+        self._healthcheck_sync(done)
         try:
             redirector.drain(timeout=10)
         except TimeoutError:
             pass
         self._events.send(Envelope(event=done, tag=tag))
+
+    def _healthcheck_sync(self, done: Done) -> None:
+        """Execute sync healthcheck with proper timeout using ThreadPoolExecutor."""
+        try:
+            assert self._predictor
+            healthcheck_fn = get_healthcheck(self._predictor)
+
+            if healthcheck_fn is not None:
+                if inspect.iscoroutinefunction(healthcheck_fn):
+                    # Async healthcheck in sync context - run it
+                    result = asyncio.run(
+                        asyncio.wait_for(
+                            healthcheck_fn(), timeout=self.HEALTHCHECK_TIMEOUT
+                        )
+                    )
+                else:
+                    # Sync healthcheck - run in thread with timeout
+                    # Don't use context manager - it waits for threads on exit
+                    executor = ThreadPoolExecutor(max_workers=1)
+                    future = executor.submit(healthcheck_fn)
+                    try:
+                        result = future.result(timeout=self.HEALTHCHECK_TIMEOUT)
+                    except futures.TimeoutError:
+                        # Don't wait for thread - just abandon it
+                        executor.shutdown(wait=False)
+                        raise TimeoutError("healthcheck timed out") from None
+                    finally:
+                        executor.shutdown(wait=False)
+
+                if not bool(result):
+                    done.error = True
+                    done.error_detail = (
+                        "Healthcheck failed: user-defined healthcheck returned False"
+                    )
+        except TimeoutError:
+            done.error = True
+            done.error_detail = f"Healthcheck failed: user-defined healthcheck timed out after {self.HEALTHCHECK_TIMEOUT} seconds"
+            log.warn(
+                "User-defined healthcheck timed out",
+                timeout_secs=self.HEALTHCHECK_TIMEOUT,
+            )
+        except Exception as e:
+            done.error = True
+            done.error_detail = f"Healthcheck failed: {str(e)}"
+            traceback.print_exc()
 
     async def _ahealthcheck(
         self,
@@ -805,7 +856,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
     ) -> None:
         """Execute the healthcheck method asynchronously."""
         done = Done(event_type="healthcheck")
-        await self._healthcheck_internal(done)
+        await self._healthcheck_async(done)
 
         try:
             redirector.drain(timeout=10)
@@ -813,27 +864,24 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             pass
         self._events.send(Envelope(event=done, tag=tag))
 
-    async def _healthcheck_internal(
-        self,
-        done: Done,
-    ) -> None:
+    async def _healthcheck_async(self, done: Done) -> None:
+        """Execute async healthcheck with timeout."""
         try:
             assert self._predictor
             healthcheck_fn = get_healthcheck(self._predictor)
 
             if healthcheck_fn is not None:
-                # Check if it's async
                 if inspect.iscoroutinefunction(healthcheck_fn):
                     result = await asyncio.wait_for(
                         healthcheck_fn(),
-                        timeout=HEALTHCHECK_TIMEOUT,
+                        timeout=self.HEALTHCHECK_TIMEOUT,
                     )
                 else:
-                    # If sync, run in executor with timeout
+                    # Sync healthcheck in async context - run in executor
                     loop = asyncio.get_event_loop()
                     result = await asyncio.wait_for(
                         loop.run_in_executor(None, healthcheck_fn),
-                        timeout=HEALTHCHECK_TIMEOUT,
+                        timeout=self.HEALTHCHECK_TIMEOUT,
                     )
 
                 if not bool(result):
@@ -843,10 +891,10 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     )
         except asyncio.TimeoutError:
             done.error = True
-            done.error_detail = f"Healthcheck failed: user-defined healthcheck timed out after {HEALTHCHECK_TIMEOUT} seconds"
+            done.error_detail = f"Healthcheck failed: user-defined healthcheck timed out after {self.HEALTHCHECK_TIMEOUT} seconds"
             log.warn(
                 "User-defined healthcheck timed out",
-                timeout_secs=HEALTHCHECK_TIMEOUT,
+                timeout_secs=self.HEALTHCHECK_TIMEOUT,
             )
         except Exception as e:
             done.error = True

@@ -1,5 +1,3 @@
-# Skip for coglet_alpha which does not support this
-[coglet_alpha] skip
 
 # Test str return type that returns None
 # This tests the handling of None values for typed outputs

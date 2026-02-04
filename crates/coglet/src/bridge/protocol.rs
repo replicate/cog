@@ -59,6 +59,11 @@ pub enum ControlRequest {
         slot: SlotId,
     },
 
+    /// Request user-defined healthcheck execution.
+    Healthcheck {
+        id: String,
+    },
+
     Shutdown,
 }
 
@@ -107,7 +112,25 @@ pub enum ControlResponse {
         interval_millis: u64,
     },
 
+    /// Result of user-defined healthcheck execution.
+    HealthcheckResult {
+        id: String,
+        status: HealthcheckStatus,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+
     ShuttingDown,
+}
+
+/// Status of a user-defined healthcheck.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthcheckStatus {
+    /// Healthcheck passed (returned True or no healthcheck defined).
+    Healthy,
+    /// Healthcheck failed (returned False, raised exception, or timed out).
+    Unhealthy,
 }
 
 /// Type-safe slot completion - ensures poisoned slots produce Failed, not Idle.
@@ -233,6 +256,34 @@ mod tests {
     fn control_shutdown_serializes() {
         let req = ControlRequest::Shutdown;
         insta::assert_json_snapshot!(req);
+    }
+
+    #[test]
+    fn control_healthcheck_serializes() {
+        let req = ControlRequest::Healthcheck {
+            id: "hc_123".to_string(),
+        };
+        insta::assert_json_snapshot!(req);
+    }
+
+    #[test]
+    fn control_healthcheck_result_healthy_serializes() {
+        let resp = ControlResponse::HealthcheckResult {
+            id: "hc_123".to_string(),
+            status: HealthcheckStatus::Healthy,
+            error: None,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn control_healthcheck_result_unhealthy_serializes() {
+        let resp = ControlResponse::HealthcheckResult {
+            id: "hc_123".to_string(),
+            status: HealthcheckStatus::Unhealthy,
+            error: Some("user healthcheck returned False".to_string()),
+        };
+        insta::assert_json_snapshot!(resp);
     }
 
     #[test]

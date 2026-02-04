@@ -1,76 +1,93 @@
-import inspect
-import os
-import sys
+"""Tests for cog.predictor module (BasePredictor)."""
+
 from typing import Optional
-from unittest.mock import patch
 
-from pydantic.fields import FieldInfo
-
-from cog import File, Input, Path
-from cog.predictor import (
-    get_input_create_model_kwargs,
-    get_predict,
-    get_weights_type,
-    load_predictor_from_ref,
-)
-from cog.types import PYDANTIC_V2
-
-if PYDANTIC_V2:
-    from pydantic.fields import PydanticUndefined
-else:
-    from pydantic.fields import Undefined as PydanticUndefined
+from cog import BasePredictor, Path
 
 
-def is_field_required(field: FieldInfo):
-    if hasattr(field, "is_required"):
-        return field.is_required()
-    if hasattr(field, "required"):
-        return field.required
-    return field.default is PydanticUndefined and field.default_factory is None
+class TestBasePredictor:
+    """Tests for BasePredictor class."""
 
+    def test_subclass_can_override_predict(self) -> None:
+        class MyPredictor(BasePredictor):
+            def predict(self, text: str) -> str:
+                return text.upper()
 
-def test_get_weights_type() -> None:
-    def f() -> None:
-        pass
+        predictor = MyPredictor()
+        result = predictor.predict(text="hello")
+        assert result == "HELLO"
 
-    assert get_weights_type(f) is None
+    def test_default_predict_raises(self) -> None:
+        predictor = BasePredictor()
+        try:
+            predictor.predict()
+            assert False, "Should have raised NotImplementedError"
+        except NotImplementedError as e:
+            assert "predict has not been implemented" in str(e)
 
-    def f(weights: File) -> None:
-        pass
+    def test_setup_is_optional(self) -> None:
+        class MyPredictor(BasePredictor):
+            def predict(self, x: int) -> int:
+                return x * 2
 
-    assert get_weights_type(f) == File
+        predictor = MyPredictor()
+        # setup() should not raise
+        predictor.setup()
+        assert predictor.predict(x=5) == 10
 
-    def f(weights: Path) -> None:
-        pass
+    def test_setup_with_weights(self) -> None:
+        class MyPredictor(BasePredictor):
+            weights_path: Optional[str] = None
 
-    assert get_weights_type(f) == Path
+            def setup(self, weights: Optional[str] = None) -> None:
+                self.weights_path = weights
 
-    def f(weights: Optional[File]) -> None:
-        pass
+            def predict(self, x: int) -> int:
+                return x
 
-    assert get_weights_type(f) == File
+        predictor = MyPredictor()
+        predictor.setup(weights="/path/to/weights")
+        assert predictor.weights_path == "/path/to/weights"
 
+    def test_setup_with_path_weights(self) -> None:
+        class MyPredictor(BasePredictor):
+            weights_path: Optional[Path] = None
 
-def test_load_predictor_from_ref_overrides_argv():
-    with patch("sys.argv", ["foo.py", "exec", "--giraffes=2", "--eat-cookies"]):
-        predictor = load_predictor_from_ref(_fixture_path("argv_override"))
+            def setup(self, weights: Optional[Path] = None) -> None:
+                self.weights_path = weights
 
-        # check the predictor module saw no args
-        assert predictor.predict() == ["foo.py"]
-        # check we reset the args correctly
-        assert sys.argv == ["foo.py", "exec", "--giraffes=2", "--eat-cookies"]
+            def predict(self, x: int) -> int:
+                return x
 
+        predictor = MyPredictor()
+        predictor.setup(weights=Path("/path/to/weights"))
+        assert str(predictor.weights_path) == "/path/to/weights"
 
-def test_get_input_create_model_kwargs():
-    def predict(thing: Optional[str] = Input(description="Hello String.")) -> str:
-        return thing if thing is not None else "Nothing"
+    def test_predictor_with_multiple_inputs(self) -> None:
+        class MyPredictor(BasePredictor):
+            def predict(self, a: int, b: int, c: str = "default") -> str:
+                return f"{a + b}: {c}"
 
-    predict_type = get_predict(predict)
-    signature = inspect.signature(predict_type)
-    output = get_input_create_model_kwargs(signature)
-    assert not is_field_required(output["thing"][1])
+        predictor = MyPredictor()
+        result = predictor.predict(a=1, b=2, c="test")
+        assert result == "3: test"
 
+        result_default = predictor.predict(a=1, b=2)
+        assert result_default == "3: default"
 
-def _fixture_path(name):
-    test_dir = os.path.dirname(os.path.realpath(__file__))
-    return os.path.join(test_dir, f"fixtures/{name}.py") + ":Predictor"
+    def test_predictor_with_state(self) -> None:
+        class StatefulPredictor(BasePredictor):
+            count: int = 0
+
+            def setup(self, weights: Optional[str] = None) -> None:
+                self.count = 0
+
+            def predict(self, x: int) -> int:
+                self.count += 1
+                return x * self.count
+
+        predictor = StatefulPredictor()
+        predictor.setup()
+        assert predictor.predict(x=10) == 10
+        assert predictor.predict(x=10) == 20
+        assert predictor.predict(x=10) == 30

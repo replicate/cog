@@ -21,6 +21,34 @@ pub enum Health {
     Defunct,
 }
 
+/// Response-only health status (includes transient states like UNHEALTHY).
+/// Used in HTTP responses but not stored as internal state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum HealthResponse {
+    Unknown,
+    Starting,
+    Ready,
+    Busy,
+    SetupFailed,
+    Defunct,
+    /// User-defined healthcheck failed (transient - not stored)
+    Unhealthy,
+}
+
+impl From<Health> for HealthResponse {
+    fn from(health: Health) -> Self {
+        match health {
+            Health::Unknown => HealthResponse::Unknown,
+            Health::Starting => HealthResponse::Starting,
+            Health::Ready => HealthResponse::Ready,
+            Health::Busy => HealthResponse::Busy,
+            Health::SetupFailed => HealthResponse::SetupFailed,
+            Health::Defunct => HealthResponse::Defunct,
+        }
+    }
+}
+
 /// Status of the setup phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -94,6 +122,22 @@ mod tests {
                 Health::Busy,
                 Health::SetupFailed,
                 Health::Defunct,
+            ]
+        );
+    }
+
+    #[test]
+    fn health_response_serializes_screaming_snake_case() {
+        insta::assert_json_snapshot!(
+            "health_response_all_variants",
+            [
+                HealthResponse::Unknown,
+                HealthResponse::Starting,
+                HealthResponse::Ready,
+                HealthResponse::Busy,
+                HealthResponse::SetupFailed,
+                HealthResponse::Defunct,
+                HealthResponse::Unhealthy,
             ]
         );
     }

@@ -552,9 +552,11 @@ func waitForServer(serverURL string, timeout time.Duration) bool {
 				continue
 			}
 
-			// Only return success when the server is actually READY
-			// (setup has completed successfully)
-			if health.Status == "READY" {
+			// Return success when the server has completed setup
+			// READY = setup completed, healthcheck passed (or no healthcheck)
+			// UNHEALTHY = setup completed, but user healthcheck failed
+			// BUSY = setup completed, prediction in progress
+			if health.Status == "READY" || health.Status == "UNHEALTHY" || health.Status == "BUSY" {
 				return true
 			}
 

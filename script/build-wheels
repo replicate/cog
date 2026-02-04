@@ -5,12 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Clean old wheels to avoid embedding stale versions
-rm -f "${ROOT_DIR}/dist/cog-"*.whl "${ROOT_DIR}/dist/coglet-"*.whl
+rm -f "${ROOT_DIR}/dist/cog-"*.whl
 
 mkdir -p "${ROOT_DIR}/dist"
 
 # Build cog wheel
 uv build --wheel --out-dir="${ROOT_DIR}/dist" "${ROOT_DIR}"
-
-# Build cog-dataclass wheel
-uv build --wheel --out-dir="${ROOT_DIR}/dist" "${ROOT_DIR}/cog-dataclass"
