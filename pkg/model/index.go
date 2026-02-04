@@ -50,3 +50,9 @@ const (
 	// AnnotationValueWeights is the value for AnnotationReferenceType indicating a weights manifest.
 	AnnotationValueWeights = "weights"
 )
+
+// Platform values for non-platform-specific artifacts.
+const (
+	// PlatformUnknown is used for artifacts that are not platform-specific (e.g., weights).
+	PlatformUnknown = "unknown"
+)

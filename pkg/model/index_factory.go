@@ -270,8 +270,8 @@ func (b *IndexBuilder) Build() (v1.ImageIndex, error) {
 			Add: b.weightsArtifact,
 			Descriptor: v1.Descriptor{
 				Platform: &v1.Platform{
-					OS:           "unknown",
-					Architecture: "unknown",
+					OS:           PlatformUnknown,
+					Architecture: PlatformUnknown,
 				},
 				Annotations: annotations,
 			},

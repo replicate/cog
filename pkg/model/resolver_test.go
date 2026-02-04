@@ -1078,10 +1078,10 @@ func TestIndexDetectionHelpers(t *testing.T) {
 			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},
 			{
 				Digest:       "sha256:weights456",
-				OS:           "unknown",
-				Architecture: "unknown",
+				OS:           PlatformUnknown,
+				Architecture: PlatformUnknown,
 				Annotations: map[string]string{
-					AnnotationReferenceType: "weights",
+					AnnotationReferenceType: AnnotationValueWeights,
 				},
 			},
 		}
@@ -1103,7 +1103,7 @@ func TestIndexDetectionHelpers(t *testing.T) {
 	t.Run("findImageManifest", func(t *testing.T) {
 		manifests := []registry.PlatformManifest{
 			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},
-			{Digest: "sha256:weights456", OS: "unknown", Architecture: "unknown"},
+			{Digest: "sha256:weights456", OS: PlatformUnknown, Architecture: PlatformUnknown},
 		}
 
 		platform := &registry.Platform{OS: "linux", Architecture: "amd64"}
@@ -1114,7 +1114,7 @@ func TestIndexDetectionHelpers(t *testing.T) {
 
 	t.Run("findImageManifest skips unknown", func(t *testing.T) {
 		manifests := []registry.PlatformManifest{
-			{Digest: "sha256:weights456", OS: "unknown", Architecture: "unknown"},
+			{Digest: "sha256:weights456", OS: PlatformUnknown, Architecture: PlatformUnknown},
 		}
 
 		im := findImageManifest(manifests, nil)
@@ -1124,7 +1124,7 @@ func TestIndexDetectionHelpers(t *testing.T) {
 	t.Run("findImageManifest no platform filter", func(t *testing.T) {
 		manifests := []registry.PlatformManifest{
 			{Digest: "sha256:arm123", OS: "linux", Architecture: "arm64"},
-			{Digest: "sha256:weights456", OS: "unknown", Architecture: "unknown"},
+			{Digest: "sha256:weights456", OS: PlatformUnknown, Architecture: PlatformUnknown},
 		}
 
 		im := findImageManifest(manifests, nil)
@@ -1135,7 +1135,7 @@ func TestIndexDetectionHelpers(t *testing.T) {
 	t.Run("findImageManifest platform mismatch", func(t *testing.T) {
 		manifests := []registry.PlatformManifest{
 			{Digest: "sha256:arm123", OS: "linux", Architecture: "arm64"},
-			{Digest: "sha256:weights456", OS: "unknown", Architecture: "unknown"},
+			{Digest: "sha256:weights456", OS: PlatformUnknown, Architecture: PlatformUnknown},
 		}
 
 		platform := &registry.Platform{OS: "linux", Architecture: "amd64"}

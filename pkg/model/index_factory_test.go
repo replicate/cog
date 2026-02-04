@@ -104,8 +104,8 @@ func TestIndexFactory(t *testing.T) {
 
 		// First should be image, second should be weights
 		require.Equal(t, "linux", idxManifest.Manifests[0].Platform.OS)
-		require.Equal(t, "unknown", idxManifest.Manifests[1].Platform.OS)
-		require.Equal(t, "weights", idxManifest.Manifests[1].Annotations[AnnotationReferenceType])
+		require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.OS)
+		require.Equal(t, AnnotationValueWeights, idxManifest.Manifests[1].Annotations[AnnotationReferenceType])
 	})
 
 	t.Run("weights lock not found", func(t *testing.T) {
@@ -479,9 +479,9 @@ func TestIndexBuilder(t *testing.T) {
 		require.Equal(t, "linux", idxManifest.Manifests[0].Platform.OS)
 		require.Equal(t, "amd64", idxManifest.Manifests[0].Platform.Architecture)
 
-		require.Equal(t, "unknown", idxManifest.Manifests[1].Platform.OS)
-		require.Equal(t, "unknown", idxManifest.Manifests[1].Platform.Architecture)
-		require.Equal(t, "weights", idxManifest.Manifests[1].Annotations[AnnotationReferenceType])
+		require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.OS)
+		require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.Architecture)
+		require.Equal(t, AnnotationValueWeights, idxManifest.Manifests[1].Annotations[AnnotationReferenceType])
 		require.Equal(t, imgDigest.String(), idxManifest.Manifests[1].Annotations[AnnotationReferenceDigest])
 	})
 

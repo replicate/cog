@@ -439,7 +439,7 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 			}
 		}
 		// Determine manifest type
-		if pm.OS == "unknown" && pm.Annotations != nil && pm.Annotations[AnnotationReferenceType] == "weights" {
+		if pm.OS == PlatformUnknown && pm.Annotations != nil && pm.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
 			im.Type = ManifestTypeWeights
 		} else {
 			im.Type = ManifestTypeImage
@@ -470,7 +470,7 @@ func isOCIIndex(mr *registry.ManifestResult) bool {
 func findWeightsManifest(manifests []registry.PlatformManifest) *registry.PlatformManifest {
 	for i := range manifests {
 		m := &manifests[i]
-		if m.Annotations != nil && m.Annotations[AnnotationReferenceType] == "weights" {
+		if m.Annotations != nil && m.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
 			return m
 		}
 	}
@@ -484,7 +484,7 @@ func findImageManifest(manifests []registry.PlatformManifest, platform *registry
 	for i := range manifests {
 		m := &manifests[i]
 		// Skip artifacts (unknown platform)
-		if m.OS == "unknown" {
+		if m.OS == PlatformUnknown {
 			continue
 		}
 		// Match platform if specified
