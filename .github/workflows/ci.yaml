@@ -9,106 +9,308 @@ on:
   workflow_dispatch:
 
 env:
+  # Single source of truth for supported Python versions
+  SUPPORTED_PYTHONS: '["3.10", "3.11", "3.12", "3.13"]'
+  # Standard environment
   HYPOTHESIS_PROFILE: ci
   FORCE_COLOR: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
+  CARGO_TERM_COLOR: always
 
 permissions: {}
 
+# =============================================================================
+# Change Detection
+# =============================================================================
+
 jobs:
-  build-python:
-    name: Build & verify python package
+  changes:
+    name: Detect changes
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      rust: ${{ steps.filter.outputs.rust }}
+      python: ${{ steps.filter.outputs.python }}
+      integration: ${{ steps.filter.outputs.integration }}
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # needed for setuptools_scm version determination
+          fetch-depth: 0
+
+      - name: Detect changed paths
+        id: filter
+        run: |
+          # For PRs, compare against base; for pushes, compare against previous commit
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            # Handle initial push (no before)
+            if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+              BASE="HEAD~1"
+            fi
+          fi
+
+          echo "Comparing $BASE..HEAD"
+
+          # Get changed files
+          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
+
+          # Detect Go changes
+          if echo "$CHANGED" | grep -qE '^(cmd/|pkg/|go\.(mod|sum)|\.golangci\.yml|Makefile)'; then
+            echo "go=true" >> $GITHUB_OUTPUT
+          else
+            echo "go=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Detect Rust changes
+          if echo "$CHANGED" | grep -qE '^(crates/|Cargo\.(toml|lock))'; then
+            echo "rust=true" >> $GITHUB_OUTPUT
+          else
+            echo "rust=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Detect Python changes
+          if echo "$CHANGED" | grep -qE '^(python/|pyproject\.toml|tox\.ini|\.ruff\.toml)'; then
+            echo "python=true" >> $GITHUB_OUTPUT
+          else
+            echo "python=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Detect integration test changes (or if any code changed)
+          if echo "$CHANGED" | grep -qE '^(integration-tests/|cmd/|pkg/|python/|crates/)'; then
+            echo "integration=true" >> $GITHUB_OUTPUT
+          else
+            echo "integration=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Debug output
+          echo "Changed files:"
+          echo "$CHANGED" | head -50
+
+# =============================================================================
+# Build Stage - Produces artifacts for downstream jobs
+# =============================================================================
+
+  build-sdk:
+    name: Build SDK
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: jdx/mise-action@v3
         with:
           cache: false
-      # Build cog package (wheel + sdist)
-      - name: Build cog package
-        run: uv build --out-dir=dist .
-      - name: Upload cog package
+      - name: Build SDK
+        run: mise run ci:build:sdk
+      - name: Upload SDK package
         uses: actions/upload-artifact@v6
         with:
           name: CogPackage
           path: dist/cog-*
-      # Build Rust coglet wheel
-      - name: Check Rust formatting
-        run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
-      - name: Run clippy
-        run: cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
-      - name: Build Rust coglet wheel (ABI3)
-        run: mise run build:coglet:wheel:linux
-      - name: Upload Rust coglet wheel
+
+  build-rust:
+    name: Build coglet wheel
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.integration == 'true' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build coglet wheel (ABI3)
+        run: mise run ci:build:coglet
+      - name: Upload coglet wheel
         uses: actions/upload-artifact@v6
         with:
           name: CogletRustWheel
           path: dist/coglet-*-cp310-abi3-*.whl
 
-  lint:
-    name: Lint
-    needs: build-python
-    runs-on: ubuntu-latest-8-cores
-    timeout-minutes: 30
+# =============================================================================
+# Format Checks - Fast, parallel
+# =============================================================================
+
+  fmt-go:
+    name: Format Go
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Download built wheels
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Check Go formatting
+        run: mise run fmt:go
+
+  fmt-rust:
+    name: Format Rust
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Check Rust formatting
+        run: mise run fmt:rust
+
+  fmt-python:
+    name: Format Python
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Check Python formatting
+        run: mise run fmt:python
+
+# =============================================================================
+# Lint Checks - Parallel
+# =============================================================================
+
+  lint-go:
+    name: Lint Go
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Lint Go
+        run: mise run lint:go
+
+  lint-rust:
+    name: Lint Rust
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Lint Rust (clippy)
+        run: mise run lint:rust
+
+  lint-rust-deny:
+    name: Lint Rust (deny)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Check licenses and advisories
+        run: mise run lint:rust:deny
+
+  lint-python:
+    name: Lint Python
+    needs: [changes, build-sdk]
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 15
+    steps:
+      - name: Download SDK
         uses: actions/download-artifact@v7
         with:
+          name: CogPackage
           path: dist
-          merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: jdx/mise-action@v3
         with:
           cache: false
-      - name: Lint
+      - name: Lint Python
         run: make lint
 
-  test:
-    name: "Test Results"
-    needs:
-      - test-go
-      - test-python
-      - test-coglet-python
-      - test-integration
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Check test status
-        run: echo "All tests passed successfully!"
+# =============================================================================
+# Test Jobs
+# =============================================================================
 
   test-go:
-    name: "Test Go"
-    needs: build-python
+    name: "Test Go (${{ matrix.platform }})"
+    needs: [changes, build-sdk, build-rust]
+    if: |
+      always() &&
+      needs.changes.outputs.go == 'true' &&
+      (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
+      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
         platform: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # needed for goreleaser version determination
-      - name: Download built wheels
+          fetch-depth: 0
+      - name: Download artifacts
         uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
       - uses: jdx/mise-action@v3
-      - name: Build
+      - name: Build cog
         run: make cog
-      - name: Test
+      - name: Test Go
         run: make test-go
+
+  test-rust:
+    name: Test Rust
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Test Rust
+        run: mise run test:rust
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
-    needs: build-python
+    needs: [changes, build-sdk]
+    if: needs.changes.outputs.python == 'true' && needs.build-sdk.result == 'success'
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     strategy:
@@ -118,11 +320,11 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
-      - name: Download built wheels
+      - name: Download SDK
         uses: actions/download-artifact@v7
         with:
+          name: CogPackage
           path: dist
-          merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: jdx/mise-action@v3
@@ -130,37 +332,55 @@ jobs:
         run: echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
-      - name: Test
+      - name: Test Python
         run: uvx --with tox-uv tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-tests
 
   test-coglet-python:
-    name: "Test Coglet Python bindings"
-    needs: build-python
+    name: "Test coglet-python (${{ matrix.python-version }})"
+    needs: [changes, build-rust]
+    if: |
+      always() &&
+      (needs.changes.outputs.rust == 'true' || needs.changes.outputs.python == 'true') &&
+      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Download built wheels
+      - name: Download coglet wheel
         uses: actions/download-artifact@v7
         with:
+          name: CogletRustWheel
           path: dist
-          merge-multiple: true
+        if: needs.build-rust.result == 'success'
       - uses: jdx/mise-action@v3
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
       - name: Create virtual environment
-        run: uv venv
+        run: uv venv --python ${{ matrix.python-version }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
-      - name: Test coglet Python bindings
-        run: mise test:coglet-python
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Test coglet-python bindings
+        run: mise run test:coglet:python
 
-  # Go-based integration tests using testscript framework
   test-integration:
     name: "Test integration (${{ matrix.runtime }})"
-    needs:
-      - build-python
+    needs: [changes, build-sdk, build-rust, test-go]
+    if: |
+      always() &&
+      needs.changes.outputs.integration == 'true' &&
+      (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
+      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped') &&
+      (needs.test-go.result == 'success' || needs.test-go.result == 'skipped')
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
@@ -173,13 +393,12 @@ jobs:
           fetch-depth: 0
       - name: Login to Docker Hub
         uses: docker/login-action@v3
-        # Skip Docker Hub login for forked PRs (secrets not available)
         if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
         with:
           registry: index.docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Download built wheels
+      - name: Download artifacts
         uses: actions/download-artifact@v7
         with:
           path: dist
@@ -194,11 +413,12 @@ jobs:
         run: make cog
       - name: Set wheels for runtime
         run: |
-          # Set COGLET_RUST_WHEEL for rust runtime
           if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
-            RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl | head -1)
-            echo "Found Rust coglet wheel: $RUST_WHEEL"
-            echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+            RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl 2>/dev/null | head -1)
+            if [ -n "$RUST_WHEEL" ]; then
+              echo "Found Rust coglet wheel: $RUST_WHEEL"
+              echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+            fi
           fi
       - name: Run integration tests
         env:
@@ -207,21 +427,99 @@ jobs:
           BUILDKIT_PROGRESS: 'quiet'
         run: make test-integration
 
-  release:
-    name: "Release"
+# =============================================================================
+# Gate Job - Single required check for branch protection
+# =============================================================================
+
+  ci-complete:
+    name: CI Complete
     needs:
+      - changes
+      - build-sdk
+      - build-rust
+      - fmt-go
+      - fmt-rust
+      - fmt-python
+      - lint-go
+      - lint-rust
+      - lint-rust-deny
+      - lint-python
       - test-go
+      - test-rust
       - test-python
+      - test-coglet-python
       - test-integration
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check job results
+        run: |
+          echo "Job results:"
+          echo "  changes: ${{ needs.changes.result }}"
+          echo "  build-sdk: ${{ needs.build-sdk.result }}"
+          echo "  build-rust: ${{ needs.build-rust.result }}"
+          echo "  fmt-go: ${{ needs.fmt-go.result }}"
+          echo "  fmt-rust: ${{ needs.fmt-rust.result }}"
+          echo "  fmt-python: ${{ needs.fmt-python.result }}"
+          echo "  lint-go: ${{ needs.lint-go.result }}"
+          echo "  lint-rust: ${{ needs.lint-rust.result }}"
+          echo "  lint-rust-deny: ${{ needs.lint-rust-deny.result }}"
+          echo "  lint-python: ${{ needs.lint-python.result }}"
+          echo "  test-go: ${{ needs.test-go.result }}"
+          echo "  test-rust: ${{ needs.test-rust.result }}"
+          echo "  test-python: ${{ needs.test-python.result }}"
+          echo "  test-coglet-python: ${{ needs.test-coglet-python.result }}"
+          echo "  test-integration: ${{ needs.test-integration.result }}"
+
+          # Fail if any job failed (skipped is OK)
+          FAILED=false
+          for result in \
+            "${{ needs.changes.result }}" \
+            "${{ needs.build-sdk.result }}" \
+            "${{ needs.build-rust.result }}" \
+            "${{ needs.fmt-go.result }}" \
+            "${{ needs.fmt-rust.result }}" \
+            "${{ needs.fmt-python.result }}" \
+            "${{ needs.lint-go.result }}" \
+            "${{ needs.lint-rust.result }}" \
+            "${{ needs.lint-rust-deny.result }}" \
+            "${{ needs.lint-python.result }}" \
+            "${{ needs.test-go.result }}" \
+            "${{ needs.test-rust.result }}" \
+            "${{ needs.test-python.result }}" \
+            "${{ needs.test-coglet-python.result }}" \
+            "${{ needs.test-integration.result }}"
+          do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              FAILED=true
+            fi
+          done
+
+          if [ "$FAILED" = "true" ]; then
+            echo "::error::Some jobs failed or were cancelled"
+            exit 1
+          fi
+
+          echo "All CI checks passed!"
+
+# =============================================================================
+# Release - Only on tags
+# =============================================================================
+
+  release:
+    name: Release
+    needs: ci-complete
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # needed for goreleaser version determination
-      - name: Download built wheels
+          fetch-depth: 0
+      - name: Download artifacts
         uses: actions/download-artifact@v7
         with:
           path: dist
