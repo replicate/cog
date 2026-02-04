@@ -3,7 +3,9 @@ package integration_test
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
@@ -13,17 +15,33 @@ import (
 )
 
 func TestIntegration(t *testing.T) {
+	dir := "tests"
+
 	h, err := harness.New()
 	if err != nil {
 		t.Fatalf("failed to create harness: %v", err)
 	}
 
-	testscript.Run(t, testscript.Params{
-		Dir:       "tests",
-		Setup:     h.Setup,
-		Cmds:      h.Commands(),
-		Condition: condition,
-	})
+	files, err := filepath.Glob(filepath.Join(dir, "*.txtar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(files)
+	for _, f := range files {
+		name := strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
+		t.Run(name, func(t *testing.T) {
+			if !strings.HasSuffix(name, "_serial") {
+				t.Parallel()
+			}
+			testscript.Run(t, testscript.Params{
+				Files:     []string{f},
+				Setup:     h.Setup,
+				Cmds:      h.Commands(),
+				Condition: condition,
+			})
+		})
+	}
+
 }
 
 // condition provides custom conditions for testscript.

@@ -55,6 +55,8 @@ integration-tests/
 
 Tests are `.txtar` files in the `tests/` directory. Each file is a self-contained test with embedded fixtures.
 
+**NOTE: if a test has the suffix `_serial` (e.g. `tests/integration_test_name_serial.txtar`) it will be run in isolation of all other tests. By default we run integration tests in Parallel using `t.Parallel()`.**
+
 ### Editor Support
 
 For syntax highlighting of `.txtar` files:
