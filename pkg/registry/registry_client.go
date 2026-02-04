@@ -314,6 +314,13 @@ func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.Image
 
 // WriteLayer pushes a single layer (blob) to a repository.
 func (c *RegistryClient) WriteLayer(ctx context.Context, repo string, layer v1.Layer) error {
+	return c.WriteLayerWithProgress(ctx, repo, layer, nil)
+}
+
+// WriteLayerWithProgress pushes a single layer (blob) to a repository with progress reporting.
+// Progress updates are sent to the provided channel. Use a buffered channel to avoid deadlocks.
+// If progressCh is nil, no progress updates are sent.
+func (c *RegistryClient) WriteLayerWithProgress(ctx context.Context, repo string, layer v1.Layer, progressCh chan<- v1.Update) error {
 	parsedRepo, err := name.NewRepository(repo, name.Insecure)
 	if err != nil {
 		return fmt.Errorf("parsing repository: %w", err)
@@ -322,6 +329,10 @@ func (c *RegistryClient) WriteLayer(ctx context.Context, repo string, layer v1.L
 	opts := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+	}
+
+	if progressCh != nil {
+		opts = append(opts, remote.WithProgress(progressCh))
 	}
 
 	if err := remote.WriteLayer(parsedRepo, layer, opts...); err != nil {

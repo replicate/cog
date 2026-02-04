@@ -48,3 +48,7 @@ func (c *MockRegistryClient) PushIndex(ctx context.Context, ref string, idx v1.I
 func (c *MockRegistryClient) WriteLayer(ctx context.Context, repo string, layer v1.Layer) error {
 	return nil
 }
+
+func (c *MockRegistryClient) WriteLayerWithProgress(ctx context.Context, repo string, layer v1.Layer, progressCh chan<- v1.Update) error {
+	return nil
+}

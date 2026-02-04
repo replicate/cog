@@ -33,4 +33,9 @@ type Client interface {
 	// WriteLayer pushes a single layer (blob) to a repository.
 	// The repo parameter should be a repository reference (e.g., "registry.example.com/user/model").
 	WriteLayer(ctx context.Context, repo string, layer v1.Layer) error
+
+	// WriteLayerWithProgress pushes a single layer (blob) to a repository with progress reporting.
+	// Progress updates are sent to the provided channel. Use a buffered channel to avoid deadlocks.
+	// If progressCh is nil, behaves the same as WriteLayer.
+	WriteLayerWithProgress(ctx context.Context, repo string, layer v1.Layer, progressCh chan<- v1.Update) error
 }

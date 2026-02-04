@@ -121,6 +121,10 @@ func (m *mockRegistry) WriteLayer(ctx context.Context, repo string, layer v1.Lay
 	return nil
 }
 
+func (m *mockRegistry) WriteLayerWithProgress(ctx context.Context, repo string, layer v1.Layer, progressCh chan<- v1.Update) error {
+	return nil
+}
+
 // mockFactory implements Factory for testing.
 type mockFactory struct {
 	name          string

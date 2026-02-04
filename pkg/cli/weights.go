@@ -1,13 +1,17 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/moby/term"
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/model"
@@ -19,9 +23,10 @@ var weightsDest string
 
 func newWeightsCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "weights",
-		Short: "Manage model weights",
-		Long:  "Commands for managing model weight files.",
+		Use:    "weights",
+		Short:  "Manage model weights",
+		Long:   "Commands for managing model weight files.",
+		Hidden: true,
 	}
 
 	cmd.AddCommand(newWeightsBuildCommand())
@@ -50,8 +55,10 @@ func weightsBuildCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
 
-	cfg := src.Config
-	projectDir := src.ProjectDir
+	var (
+		cfg        = src.Config
+		projectDir = src.ProjectDir
+	)
 
 	if len(cfg.Weights) == 0 {
 		return fmt.Errorf("no weights defined in %s", configFilename)
@@ -130,8 +137,10 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
 
-	cfg := src.Config
-	projectDir := src.ProjectDir
+	var (
+		cfg        = src.Config
+		projectDir = src.ProjectDir
+	)
 
 	// Determine image name
 	imageName := cfg.Image
@@ -139,7 +148,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		imageName = args[0]
 	}
 	if imageName == "" {
-		return fmt.Errorf("no image specified; provide an argument or set 'image' in cog.yaml")
+		return fmt.Errorf("To push weights, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog weights push registry.example.com/your-username/model-name'")
 	}
 
 	// Parse repository from image name (strip tag if present)
@@ -179,79 +188,244 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to resolve weight files: %w", err)
 	}
 
-	// Push weight files as layers concurrently
+	// Push weight files as layers concurrently with progress tracking
 	console.Infof("Pushing %d weight file(s) to %s...", len(lock.Files), repo)
 
-	regClient := registry.NewRegistryClient()
+	var (
+		regClient = registry.NewRegistryClient()
+		pusher    = model.NewWeightsPusher(regClient)
+		tracker   = newProgressTracker(lock.Files)
 
-	type pushResult struct {
-		name   string
-		digest string
-		size   int64
-		err    error
-	}
+		// Start progress display in background
+		displayCtx, cancelDisplay = context.WithCancel(ctx)
+		displayDone               = make(chan struct{})
+	)
 
-	results := make(chan pushResult, len(lock.Files))
-	var wg sync.WaitGroup
-
-	for _, wf := range lock.Files {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			filePath, ok := filePaths[wf.Name]
-			if !ok {
-				results <- pushResult{name: wf.Name, err: fmt.Errorf("file path not found for weight %q", wf.Name)}
-				return
-			}
-
-			// Create layer from file
-			layer, err := tarball.LayerFromFile(filePath, tarball.WithMediaType(model.MediaTypeWeightsLayer))
-			if err != nil {
-				results <- pushResult{name: wf.Name, err: fmt.Errorf("create layer for %s: %w", wf.Name, err)}
-				return
-			}
-
-			// Push layer to registry
-			if err := regClient.WriteLayer(ctx, repo, layer); err != nil {
-				results <- pushResult{name: wf.Name, err: fmt.Errorf("push layer %s: %w", wf.Name, err)}
-				return
-			}
-
-			digest, _ := layer.Digest()
-			size, _ := layer.Size()
-			results <- pushResult{name: wf.Name, digest: digest.String(), size: size}
-		}()
-	}
-
-	// Wait for all goroutines and close results channel
 	go func() {
-		wg.Wait()
-		close(results)
+		defer close(displayDone)
+		tracker.displayLoop(displayCtx)
 	}()
 
-	// Collect results and report progress
-	var totalSize int64
-	var pushed int
-	var errors []error
+	// Set up progress callback to update the tracker
+	progressFn := func(p model.WeightsPushProgress) {
+		if p.Done {
+			if p.Err != nil {
+				tracker.setError(p.Name, p.Err)
+			} else {
+				tracker.setComplete(p.Name)
+			}
+			return
+		}
 
-	for result := range results {
-		pushed++
-		if result.err != nil {
-			errors = append(errors, result.err)
-			console.Warnf("  [%d/%d] Failed: %s", pushed, len(lock.Files), result.err)
-		} else {
-			totalSize += result.size
-			console.Infof("  [%d/%d] %s (%s)", pushed, len(lock.Files), result.name, formatSize(result.size))
+		if p.Total > 0 {
+			tracker.setTotal(p.Name, p.Total)
+		}
+		tracker.update(p.Name, p.Complete, p.Total)
+	}
+
+	// Push weights using the model layer
+	result, err := pusher.Push(ctx, model.WeightsPushOptions{
+		Repo:       repo,
+		Lock:       lock,
+		FilePaths:  filePaths,
+		ProgressFn: progressFn,
+	})
+
+	// Stop progress display
+	cancelDisplay()
+	<-displayDone
+
+	// Print final status for each file
+	tracker.printFinalStatus()
+
+	if err != nil {
+		return fmt.Errorf("failed to push weights: %w", err)
+	}
+
+	// Count errors from results
+	var errorCount int
+	for _, f := range result.Files {
+		if f.Err != nil {
+			errorCount++
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("failed to push %d/%d weight files", len(errors), len(lock.Files))
+	if errorCount > 0 {
+		return fmt.Errorf("failed to push %d/%d weight files", errorCount, len(lock.Files))
 	}
 
 	console.Infof("\nPushed %d weight blobs to %s", len(lock.Files), repo)
-	console.Infof("Total: %s", formatSize(totalSize))
+	console.Infof("Total: %s", formatSize(result.TotalSize))
 
 	return nil
+}
+
+// progressTracker tracks upload progress for multiple concurrent files
+type progressTracker struct {
+	mu       sync.Mutex
+	files    []fileProgress
+	fileMap  map[string]int // name -> index in files slice
+	isTTY    bool
+	lastDraw time.Time
+}
+
+type fileProgress struct {
+	name     string
+	complete int64
+	total    int64
+	done     bool
+	err      error
+}
+
+func newProgressTracker(files []model.WeightFile) *progressTracker {
+	pt := &progressTracker{
+		files:   make([]fileProgress, len(files)),
+		fileMap: make(map[string]int, len(files)),
+		isTTY:   term.IsTerminal(os.Stderr.Fd()),
+	}
+	for i, f := range files {
+		pt.files[i] = fileProgress{
+			name:  f.Name,
+			total: f.Size, // Initial estimate from lock file
+		}
+		pt.fileMap[f.Name] = i
+	}
+	return pt
+}
+
+func (pt *progressTracker) setTotal(name string, total int64) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if idx, ok := pt.fileMap[name]; ok {
+		pt.files[idx].total = total
+	}
+}
+
+func (pt *progressTracker) update(name string, complete, total int64) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if idx, ok := pt.fileMap[name]; ok {
+		pt.files[idx].complete = complete
+		if total > 0 {
+			pt.files[idx].total = total
+		}
+	}
+}
+
+func (pt *progressTracker) setComplete(name string) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if idx, ok := pt.fileMap[name]; ok {
+		pt.files[idx].done = true
+		pt.files[idx].complete = pt.files[idx].total
+	}
+}
+
+func (pt *progressTracker) setError(name string, err error) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if idx, ok := pt.fileMap[name]; ok {
+		pt.files[idx].done = true
+		pt.files[idx].err = err
+	}
+}
+
+func (pt *progressTracker) displayLoop(ctx context.Context) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pt.draw()
+		}
+	}
+}
+
+func (pt *progressTracker) draw() {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+
+	if !pt.isTTY {
+		// In non-TTY mode, don't redraw - we'll print final status only
+		return
+	}
+
+	// Move cursor up to overwrite previous output
+	if !pt.lastDraw.IsZero() {
+		// Move cursor up by the number of files
+		fmt.Fprintf(os.Stderr, "\033[%dA", len(pt.files))
+	}
+
+	for _, f := range pt.files {
+		line := pt.formatProgressLine(f)
+		// Clear line and print
+		fmt.Fprintf(os.Stderr, "\033[2K%s\n", line)
+	}
+
+	pt.lastDraw = time.Now()
+}
+
+func (pt *progressTracker) formatProgressLine(f fileProgress) string {
+	// Truncate name if too long
+	name := f.name
+	if len(name) > 30 {
+		name = "..." + name[len(name)-27:]
+	}
+
+	if f.err != nil {
+		return fmt.Sprintf("  %-30s  FAILED", name)
+	}
+
+	if f.done {
+		return fmt.Sprintf("  %-30s  %s  done", name, formatSize(f.total))
+	}
+
+	if f.total == 0 {
+		return fmt.Sprintf("  %-30s  waiting...", name)
+	}
+
+	percent := float64(f.complete) / float64(f.total) * 100
+	if percent > 100 {
+		percent = 100
+	}
+
+	// Create a simple progress bar
+	barWidth := 20
+	filled := min(int(percent/100*float64(barWidth)), barWidth)
+	bar := strings.Repeat("=", filled) + strings.Repeat("-", barWidth-filled)
+
+	return fmt.Sprintf("  %-30s  [%s] %5.1f%%  %s / %s",
+		name, bar, percent, formatSize(f.complete), formatSize(f.total))
+}
+
+func (pt *progressTracker) printFinalStatus() {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+
+	if pt.isTTY && !pt.lastDraw.IsZero() {
+		// Clear the progress lines we drew
+		fmt.Fprintf(os.Stderr, "\033[%dA", len(pt.files))
+		for range pt.files {
+			fmt.Fprintf(os.Stderr, "\033[2K\n")
+		}
+		fmt.Fprintf(os.Stderr, "\033[%dA", len(pt.files))
+	}
+
+	// Sort files by name for consistent output
+	sortedFiles := make([]fileProgress, len(pt.files))
+	copy(sortedFiles, pt.files)
+	sort.Slice(sortedFiles, func(i, j int) bool {
+		return sortedFiles[i].name < sortedFiles[j].name
+	})
+
+	for _, f := range sortedFiles {
+		if f.err != nil {
+			console.Warnf("  %s: FAILED - %v", f.name, f.err)
+		} else {
+			console.Infof("  %s: %s", f.name, formatSize(f.total))
+		}
+	}
 }
