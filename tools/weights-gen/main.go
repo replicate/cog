@@ -1,13 +1,10 @@
-// tools/weights-lock-gen/main.go
+// tools/weights-gen/main.go
 package main
 
 import (
-	"bytes"
-	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -28,25 +25,38 @@ func main() {
 		count      int
 		minSize    string
 		maxSize    string
+		noLock     bool
 	)
 
 	cmd := &cobra.Command{
-		Use:   "weights-lock-gen",
-		Short: "Generate a weights.lock file with random weight files",
-		Long: `This tool generates random weight files and a weights.lock file for testing.
+		Use:   "weights-gen",
+		Short: "Generate random weight files and optionally a weights.lock file",
+		Long: `This tool generates random weight files and optionally a weights.lock file for testing.
 
 It creates random binary files of configurable size and computes their digests,
 simulating what a future "cog weights" command would do with real weight files.
 
+By default, both weight files and a weights.lock file are generated. Use --no-lock
+to generate only the weight files without the lock file.
+
+The lock file's dest paths default to /cache/ for container paths.
+Use --dest-prefix to override this.
+
 Examples:
-  # Generate 3 random files (25-50MB each) with defaults
-  weights-lock-gen
+  # Generate 3 random files (25-50MB each) with defaults (includes weights.lock)
+  weights-gen
 
   # Generate 5 files between 12-50MB
-  weights-lock-gen --count 5 --min-size 12mb --max-size 50mb
+  weights-gen --count 5 --min-size 12mb --max-size 50mb
 
   # Generate files to a specific output directory
-  weights-lock-gen --output-dir ./my-weights/`,
+  weights-gen --output-dir ./my-weights/
+
+  # Generate only weight files without a lock file
+  weights-gen --output-dir ./my-weights/ --no-lock
+
+  # Generate files with custom destination prefix
+  weights-gen --output-dir ./my-weights/ --dest-prefix /models/`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			minBytes, err := parseSize(minSize)
 			if err != nil {
@@ -63,16 +73,17 @@ Examples:
 				return fmt.Errorf("--count must be at least 1")
 			}
 
-			return generateWeightsLock(outputDir, destPrefix, outputPath, count, minBytes, maxBytes)
+			return generateWeights(outputDir, destPrefix, outputPath, count, minBytes, maxBytes, !noLock)
 		},
 	}
 
-	cmd.Flags().StringVar(&destPrefix, "dest-prefix", "/cache/", "Prefix for destination paths in container")
+	cmd.Flags().StringVar(&destPrefix, "dest-prefix", "/cache/", "Prefix for destination paths in lock file (default: /cache/)")
 	cmd.Flags().StringVarP(&outputPath, "output", "o", "weights.lock", "Output path for weights.lock file")
-	cmd.Flags().StringVar(&outputDir, "output-dir", "", "Directory to write generated weight files (default: temp dir, cleaned up)")
+	cmd.Flags().StringVar(&outputDir, "output-dir", "", "Directory to write generated weight files (default: temp dir)")
 	cmd.Flags().IntVarP(&count, "count", "n", 3, "Number of random weight files to generate")
 	cmd.Flags().StringVar(&minSize, "min-size", "25mb", "Minimum file size (e.g., 12mb, 25MB, 1gb)")
 	cmd.Flags().StringVar(&maxSize, "max-size", "50mb", "Maximum file size (e.g., 50mb, 100MB, 1gb)")
+	cmd.Flags().BoolVar(&noLock, "no-lock", false, "Skip generating the weights.lock file")
 
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
@@ -117,10 +128,9 @@ func parseSize(s string) (int64, error) {
 	return int64(num * float64(multiplier)), nil
 }
 
-func generateWeightsLock(outputDir, destPrefix, outputPath string, count int, minSize, maxSize int64) error {
+func generateWeights(outputDir, destPrefix, outputPath string, count int, minSize, maxSize int64, generateLock bool) error {
 	// Determine where to write files
 	var filesDir string
-	var cleanup bool
 
 	if outputDir != "" {
 		// User specified an output directory
@@ -128,19 +138,13 @@ func generateWeightsLock(outputDir, destPrefix, outputPath string, count int, mi
 			return fmt.Errorf("create output directory: %w", err)
 		}
 		filesDir = outputDir
-		cleanup = false
 	} else {
-		// Use a temp directory that will be cleaned up
+		// Use a temp directory (not cleaned up so user can access the files)
 		tmpDir, err := os.MkdirTemp("", "weights-gen-")
 		if err != nil {
 			return fmt.Errorf("create temp directory: %w", err)
 		}
 		filesDir = tmpDir
-		cleanup = true
-	}
-
-	if cleanup {
-		defer os.RemoveAll(filesDir)
 	}
 
 	// Seed random number generator
@@ -170,30 +174,36 @@ func generateWeightsLock(outputDir, destPrefix, outputPath string, count int, mi
 			return fmt.Errorf("generate %s: %w", filename, err)
 		}
 
-		wf, err := processFile(filePath, filesDir, destPrefix)
-		if err != nil {
-			return fmt.Errorf("process %s: %w", filename, err)
+		if generateLock {
+			wf, err := processFile(filePath, filesDir, destPrefix)
+			if err != nil {
+				return fmt.Errorf("process %s: %w", filename, err)
+			}
+
+			files = append(files, *wf)
+			fmt.Printf("  Processed: %s -> %s\n", wf.Name, wf.Dest)
+		} else {
+			fmt.Printf("  Created: %s\n", filename)
+		}
+	}
+
+	if generateLock {
+		lock := &model.WeightsLock{
+			Version: "1",
+			Created: time.Now().UTC(),
+			Files:   files,
 		}
 
-		files = append(files, *wf)
-		fmt.Printf("  Processed: %s -> %s (%.2f MB compressed)\n",
-			wf.Name, wf.Dest, float64(wf.Size)/1024/1024)
+		if err := lock.Save(outputPath); err != nil {
+			return err
+		}
+
+		fmt.Printf("\nGenerated %s with %d files\n", outputPath, len(files))
+	} else {
+		fmt.Printf("\nGenerated %d weight files (no lock file)\n", count)
 	}
 
-	lock := &model.WeightsLock{
-		Version: "1",
-		Created: time.Now().UTC(),
-		Files:   files,
-	}
-
-	if err := lock.Save(outputPath); err != nil {
-		return err
-	}
-
-	fmt.Printf("\nGenerated %s with %d files\n", outputPath, len(files))
-	if !cleanup {
-		fmt.Printf("Weight files written to: %s\n", filesDir)
-	}
+	fmt.Printf("Weight files written to: %s\n", filesDir)
 	return nil
 }
 
@@ -255,23 +265,9 @@ func processFile(path, baseDir, destPrefix string) (*model.WeightFile, error) {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
-	// Compute original digest
-	originalHash := sha256.Sum256(data)
-	digestOriginal := "sha256:" + hex.EncodeToString(originalHash[:])
-
-	// Compress with gzip
-	var compressed bytes.Buffer
-	gw := gzip.NewWriter(&compressed)
-	if _, err := io.Copy(gw, bytes.NewReader(data)); err != nil {
-		return nil, fmt.Errorf("compress: %w", err)
-	}
-	if err := gw.Close(); err != nil {
-		return nil, fmt.Errorf("close gzip: %w", err)
-	}
-
-	// Compute compressed digest
-	compressedHash := sha256.Sum256(compressed.Bytes())
-	digest := "sha256:" + hex.EncodeToString(compressedHash[:])
+	// Compute digest
+	hash := sha256.Sum256(data)
+	digest := "sha256:" + hex.EncodeToString(hash[:])
 
 	// Compute relative path for dest
 	relPath, err := filepath.Rel(baseDir, path)
@@ -286,14 +282,15 @@ func processFile(path, baseDir, destPrefix string) (*model.WeightFile, error) {
 	baseName := filepath.Base(path)
 	name := baseName[:len(baseName)-len(filepath.Ext(baseName))]
 
+	size := int64(len(data))
+
 	return &model.WeightFile{
 		Name:             name,
 		Dest:             dest,
-		DigestOriginal:   digestOriginal,
 		Digest:           digest,
-		Size:             int64(compressed.Len()),
-		SizeUncompressed: int64(len(data)),
-		MediaType:        model.MediaTypeWeightsLayerGzip,
-		ContentType:      "application/octet-stream",
+		DigestOriginal:   digest,
+		Size:             size,
+		SizeUncompressed: size,
+		MediaType:        model.MediaTypeWeightsLayer,
 	}, nil
 }

@@ -4,6 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"syscall"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -310,6 +315,163 @@ func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.Image
 	}
 
 	return nil
+}
+
+// DefaultRetryBackoff returns the default retry backoff configuration for weight pushes.
+// It retries 5 times with exponential backoff starting at 2 seconds.
+func DefaultRetryBackoff() remote.Backoff {
+	return remote.Backoff{
+		Duration: 2 * time.Second,
+		Factor:   2.0,
+		Jitter:   0.1,
+		Steps:    5,
+	}
+}
+
+// isRetryableError determines if an error should trigger a retry.
+// This matches the go-containerregistry default retry predicate plus additional cases.
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for context cancellation - don't retry these
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	// Check for temporary errors (network issues, etc.)
+	var tempErr interface{ Temporary() bool }
+	if errors.As(err, &tempErr) && tempErr.Temporary() {
+		return true
+	}
+
+	// Check for common transient errors
+	if errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, net.ErrClosed) {
+		return true
+	}
+
+	// Check for retryable HTTP status codes in transport errors
+	var transportErr *transport.Error
+	if errors.As(err, &transportErr) {
+		switch transportErr.StatusCode {
+		case http.StatusRequestTimeout,
+			http.StatusInternalServerError,
+			http.StatusBadGateway,
+			http.StatusServiceUnavailable,
+			http.StatusGatewayTimeout,
+			499, // nginx-specific, client closed request
+			522: // Cloudflare-specific, connection timeout
+			return true
+		}
+	}
+
+	// Check for network operation errors (connection refused, timeout, etc.)
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	// Check for DNS errors
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.Temporary()
+	}
+
+	return false
+}
+
+// WriteLayer pushes a single layer with retry and optional progress reporting.
+// This implements retry at the application level with callbacks for CLI feedback.
+func (c *RegistryClient) WriteLayer(ctx context.Context, opts WriteLayerOptions) error {
+	parsedRepo, err := name.NewRepository(opts.Repo, name.Insecure)
+	if err != nil {
+		return fmt.Errorf("parsing repository: %w", err)
+	}
+
+	// Determine retry configuration
+	backoff := DefaultRetryBackoff()
+	if opts.Retry != nil && opts.Retry.Backoff != nil {
+		backoff = *opts.Retry.Backoff
+	}
+
+	var lastErr error
+	currentDelay := backoff.Duration
+
+	for attempt := 1; attempt <= backoff.Steps; attempt++ {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Build remote options for this attempt
+		remoteOpts := []remote.Option{
+			remote.WithContext(ctx),
+			remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		}
+
+		if opts.ProgressCh != nil {
+			remoteOpts = append(remoteOpts, remote.WithProgress(opts.ProgressCh))
+		}
+
+		// Attempt the push
+		err := remote.WriteLayer(parsedRepo, opts.Layer, remoteOpts...)
+		if err == nil {
+			return nil // Success
+		}
+
+		lastErr = err
+
+		// Check if this error is retryable
+		if !isRetryableError(err) {
+			return fmt.Errorf("pushing layer to %s: %w", opts.Repo, err)
+		}
+
+		// Don't retry if this was the last attempt
+		if attempt >= backoff.Steps {
+			break
+		}
+
+		// Calculate next delay with jitter
+		nextDelay := currentDelay
+		if backoff.Jitter > 0 {
+			// Simple jitter: add up to jitter% of the delay
+			jitterAmount := time.Duration(float64(currentDelay) * backoff.Jitter)
+			nextDelay = currentDelay + jitterAmount
+		}
+
+		// Invoke retry callback if configured
+		if opts.Retry != nil && opts.Retry.OnRetry != nil {
+			event := RetryEvent{
+				Attempt:     attempt,
+				MaxAttempts: backoff.Steps,
+				Err:         err,
+				NextRetryIn: nextDelay,
+			}
+			if !opts.Retry.OnRetry(event) {
+				// Callback returned false, abort retrying
+				return fmt.Errorf("pushing layer to %s (retry aborted): %w", opts.Repo, err)
+			}
+		}
+
+		// Wait before retrying
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(nextDelay):
+		}
+
+		// Update delay for next iteration
+		currentDelay = time.Duration(float64(currentDelay) * backoff.Factor)
+	}
+
+	return fmt.Errorf("pushing layer to %s (after %d attempts): %w", opts.Repo, backoff.Steps, lastErr)
 }
 
 // pickDefaultImage selects an image from a manifest index to use for fetching labels.

@@ -2,8 +2,6 @@
 package model
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,7 +13,6 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	"github.com/google/go-containerregistry/pkg/v1/static"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
@@ -89,6 +86,10 @@ func (f *IndexFactory) BuildWeightsArtifactFromManifest(ctx context.Context, man
 
 // BuildIndex creates an OCI Image Index from a model image and weights artifact.
 func (f *IndexFactory) BuildIndex(ctx context.Context, modelImg v1.Image, weightsArtifact v1.Image, platform *Platform) (v1.ImageIndex, error) {
+	if modelImg == nil {
+		return nil, fmt.Errorf("model image is required")
+	}
+
 	imgDigest, err := modelImg.Digest()
 	if err != nil {
 		return nil, fmt.Errorf("get image digest: %w", err)
@@ -119,8 +120,9 @@ func NewWeightsArtifactBuilder() *WeightsArtifactBuilder {
 	return &WeightsArtifactBuilder{}
 }
 
-// AddLayer adds a weight file as a layer to the artifact.
-func (b *WeightsArtifactBuilder) AddLayer(wf WeightFile, data []byte) error {
+// AddLayerFromFile adds a weight file as a layer to the artifact, streaming from disk.
+// The file is read on-demand when the layer is consumed, avoiding loading into memory.
+func (b *WeightsArtifactBuilder) AddLayerFromFile(wf WeightFile, filePath string) error {
 	annotations := map[string]string{
 		AnnotationWeightsName:             wf.Name,
 		AnnotationWeightsDest:             wf.Dest,
@@ -128,7 +130,13 @@ func (b *WeightsArtifactBuilder) AddLayer(wf WeightFile, data []byte) error {
 		AnnotationWeightsSizeUncompressed: strconv.FormatInt(wf.SizeUncompressed, 10),
 	}
 
-	layer := static.NewLayer(data, types.MediaType(wf.MediaType))
+	layer := &fileBackedLayer{
+		filePath:  filePath,
+		digest:    wf.Digest,
+		diffID:    wf.DigestOriginal, // For uncompressed, DiffID == original digest
+		size:      wf.Size,
+		mediaType: types.MediaType(wf.MediaType),
+	}
 
 	addendum := mutate.Addendum{
 		Layer:       layer,
@@ -138,6 +146,42 @@ func (b *WeightsArtifactBuilder) AddLayer(wf WeightFile, data []byte) error {
 
 	b.addendums = append(b.addendums, addendum)
 	return nil
+}
+
+// fileBackedLayer implements v1.Layer by streaming from a file on disk.
+// This avoids loading the entire layer into memory.
+// Layers are stored uncompressed since model weights don't compress well.
+type fileBackedLayer struct {
+	filePath  string
+	digest    string // SHA256 of file content
+	diffID    string // For uncompressed layers, same as digest
+	size      int64
+	mediaType types.MediaType
+}
+
+func (l *fileBackedLayer) Digest() (v1.Hash, error) {
+	return v1.NewHash(l.digest)
+}
+
+func (l *fileBackedLayer) DiffID() (v1.Hash, error) {
+	return v1.NewHash(l.diffID)
+}
+
+func (l *fileBackedLayer) Compressed() (io.ReadCloser, error) {
+	// Layer is uncompressed, so "compressed" just returns the file as-is
+	return os.Open(l.filePath)
+}
+
+func (l *fileBackedLayer) Uncompressed() (io.ReadCloser, error) {
+	return os.Open(l.filePath)
+}
+
+func (l *fileBackedLayer) Size() (int64, error) {
+	return l.size, nil
+}
+
+func (l *fileBackedLayer) MediaType() (types.MediaType, error) {
+	return l.mediaType, nil
 }
 
 // Build creates the OCI artifact image with all added layers.
@@ -167,7 +211,7 @@ func (a *weightsArtifact) ArtifactType() (string, error) {
 
 // AddLayersFromLock adds layers for all files in a WeightsLock.
 // The filePaths map provides name→filepath mappings for locating the actual weight files.
-// This map will typically come from the weights configuration in cog.yaml.
+// Files are stored uncompressed since model weights (safetensors, GGUF, etc.) don't compress well.
 func (b *WeightsArtifactBuilder) AddLayersFromLock(ctx context.Context, lock *WeightsLock, filePaths map[string]string) error {
 	for i := range lock.Files {
 		// Check for context cancellation
@@ -184,37 +228,42 @@ func (b *WeightsArtifactBuilder) AddLayersFromLock(ctx context.Context, lock *We
 			return fmt.Errorf("no file path provided for weight %q", wf.Name)
 		}
 
-		data, err := os.ReadFile(filePath)
+		// Compute digest and size by streaming through the file
+		digest, size, err := hashFile(filePath)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", filePath, err)
+			return fmt.Errorf("hash weight file %s: %w", wf.Name, err)
 		}
 
-		// Compute original digest
-		originalHash := sha256.Sum256(data)
-		wf.DigestOriginal = "sha256:" + hex.EncodeToString(originalHash[:])
-		wf.SizeUncompressed = int64(len(data))
+		// Update weight file metadata
+		wf.Digest = digest
+		wf.DigestOriginal = digest // Same for uncompressed
+		wf.Size = size
+		wf.SizeUncompressed = size
+		wf.MediaType = MediaTypeWeightsLayer // Uncompressed
 
-		// Compress with gzip
-		var compressed bytes.Buffer
-		gw := gzip.NewWriter(&compressed)
-		if _, err := io.Copy(gw, bytes.NewReader(data)); err != nil {
-			return fmt.Errorf("compress %s: %w", wf.Name, err)
-		}
-		if err := gw.Close(); err != nil {
-			return fmt.Errorf("close gzip for %s: %w", wf.Name, err)
-		}
-
-		// Compute compressed digest
-		compressedHash := sha256.Sum256(compressed.Bytes())
-		wf.Digest = "sha256:" + hex.EncodeToString(compressedHash[:])
-		wf.Size = int64(compressed.Len())
-		wf.MediaType = MediaTypeWeightsLayerGzip
-
-		if err := b.AddLayer(*wf, compressed.Bytes()); err != nil {
+		if err := b.AddLayerFromFile(*wf, filePath); err != nil {
 			return fmt.Errorf("add layer %s: %w", wf.Name, err)
 		}
 	}
 	return nil
+}
+
+// hashFile computes SHA256 digest and size of a file by streaming.
+func hashFile(path string) (digest string, size int64, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	size, err = io.Copy(h, f)
+	if err != nil {
+		return "", 0, err
+	}
+
+	digest = "sha256:" + hex.EncodeToString(h.Sum(nil))
+	return digest, size, nil
 }
 
 // IndexBuilder builds an OCI Image Index containing a model image and optional weights artifact.

@@ -117,6 +117,10 @@ func (m *mockRegistry) PushIndex(ctx context.Context, ref string, idx v1.ImageIn
 	panic("mockRegistry.PushIndex not implemented")
 }
 
+func (m *mockRegistry) WriteLayer(ctx context.Context, opts registry.WriteLayerOptions) error {
+	return nil
+}
+
 // mockFactory implements Factory for testing.
 type mockFactory struct {
 	name          string

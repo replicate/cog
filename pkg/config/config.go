@@ -68,14 +68,21 @@ type Example struct {
 	Output string            `json:"output" yaml:"output"`
 }
 
+// WeightSource defines a weight file or directory to include in the model.
+type WeightSource struct {
+	Source string `json:"source" yaml:"source"`
+	Target string `json:"target,omitempty" yaml:"target,omitempty"`
+}
+
 type Config struct {
 	filename    string
-	Build       *Build       `json:"build" yaml:"build"`
-	Image       string       `json:"image,omitempty" yaml:"image,omitempty"`
-	Predict     string       `json:"predict,omitempty" yaml:"predict"`
-	Train       string       `json:"train,omitempty" yaml:"train,omitempty"`
-	Concurrency *Concurrency `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
-	Environment []string     `json:"environment,omitempty" yaml:"environment,omitempty"`
+	Build       *Build         `json:"build" yaml:"build"`
+	Image       string         `json:"image,omitempty" yaml:"image,omitempty"`
+	Predict     string         `json:"predict,omitempty" yaml:"predict"`
+	Train       string         `json:"train,omitempty" yaml:"train,omitempty"`
+	Concurrency *Concurrency   `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
+	Environment []string       `json:"environment,omitempty" yaml:"environment,omitempty"`
+	Weights     []WeightSource `json:"weights,omitempty" yaml:"weights,omitempty"`
 
 	parsedEnvironment map[string]string
 }
