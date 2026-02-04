@@ -34,6 +34,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       python: ${{ steps.filter.outputs.python }}
       integration: ${{ steps.filter.outputs.integration }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -84,6 +85,13 @@ jobs:
             echo "integration=true" >> $GITHUB_OUTPUT
           else
             echo "integration=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Detect docs changes
+          if echo "$CHANGED" | grep -qE '^(docs/|README\.md)'; then
+            echo "docs=true" >> $GITHUB_OUTPUT
+          else
+            echo "docs=false" >> $GITHUB_OUTPUT
           fi
 
           # Debug output
@@ -185,6 +193,20 @@ jobs:
           cache: false
       - name: Check Python formatting
         run: mise run fmt:python
+
+  check-llm-docs:
+    name: Check LLM docs
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Check llms.txt is up to date
+        run: mise run docs:llm:check
 
 # =============================================================================
 # Lint Checks - Parallel
@@ -440,6 +462,7 @@ jobs:
       - fmt-go
       - fmt-rust
       - fmt-python
+      - check-llm-docs
       - lint-go
       - lint-rust
       - lint-rust-deny
@@ -462,6 +485,7 @@ jobs:
           echo "  fmt-go: ${{ needs.fmt-go.result }}"
           echo "  fmt-rust: ${{ needs.fmt-rust.result }}"
           echo "  fmt-python: ${{ needs.fmt-python.result }}"
+          echo "  check-llm-docs: ${{ needs.check-llm-docs.result }}"
           echo "  lint-go: ${{ needs.lint-go.result }}"
           echo "  lint-rust: ${{ needs.lint-rust.result }}"
           echo "  lint-rust-deny: ${{ needs.lint-rust-deny.result }}"
@@ -481,6 +505,7 @@ jobs:
             "${{ needs.fmt-go.result }}" \
             "${{ needs.fmt-rust.result }}" \
             "${{ needs.fmt-python.result }}" \
+            "${{ needs.check-llm-docs.result }}" \
             "${{ needs.lint-go.result }}" \
             "${{ needs.lint-rust.result }}" \
             "${{ needs.lint-rust-deny.result }}" \
