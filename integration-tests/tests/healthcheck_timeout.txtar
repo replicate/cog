@@ -1,5 +1,5 @@
 # Test healthcheck timeout behavior
-# This tests when healthcheck takes too long (>5 seconds)
+# This tests when sync healthcheck takes too long (>5 seconds)
 
 # Build the image
 cog build -t $TEST_IMAGE
@@ -7,7 +7,15 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Timeout in healthcheck should return UNHEALTHY with timeout message
+# Server should be healthy initially
+curl GET /health-check
+stdout '"status":"READY"'
+
+# Trigger slow healthcheck mode via prediction
+curl POST /predictions '{"input":{"text":"trigger_slow"}}'
+stdout '"status":"succeeded"'
+
+# Now healthcheck should timeout and return UNHEALTHY
 curl GET /health-check
 stdout '"status":"UNHEALTHY"'
 stdout 'user_healthcheck_error'
@@ -19,20 +27,20 @@ build:
 predict: "predict.py:Predictor"
 
 -- predict.py --
-import asyncio
+import time
 from cog import BasePredictor
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
-        self._healthcheck_calls = 0
+        self._slow_mode = False
 
     def predict(self, text: str) -> str:
+        if text == "trigger_slow":
+            self._slow_mode = True
         return f"hello {text}"
     
-    async def healthcheck(self) -> bool:
-        """Healthcheck that times out after startup."""
-        self._healthcheck_calls += 1
-        if self._healthcheck_calls == 1:
-            return True
-        await asyncio.sleep(10)  # Sleep longer than the 5 second timeout
+    def healthcheck(self) -> bool:
+        """Sync healthcheck that times out when triggered."""
+        if self._slow_mode:
+            time.sleep(10)  # Sleep longer than 5s timeout
         return True
