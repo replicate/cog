@@ -245,12 +245,17 @@ jobs:
 
   lint-go:
     name: Lint Go
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
+    needs: [changes, build-sdk]
+    if: needs.changes.outputs.go == 'true' && needs.build-sdk.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+      - name: Download SDK
+        uses: actions/download-artifact@v7
+        with:
+          name: CogPackage
+          path: dist
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
