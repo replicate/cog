@@ -64,39 +64,49 @@ jobs:
           # Get changed files
           CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
 
-          # Detect Go changes
-          if echo "$CHANGED" | grep -qE '^(cmd/|pkg/|go\.(mod|sum)|\.golangci\.yml|Makefile)'; then
+          # CI changes should run everything
+          if echo "$CHANGED" | grep -qE '^\.github/workflows/'; then
+            echo "CI workflow changed - running all jobs"
             echo "go=true" >> $GITHUB_OUTPUT
-          else
-            echo "go=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Detect Rust changes
-          if echo "$CHANGED" | grep -qE '^(crates/|Cargo\.(toml|lock))'; then
             echo "rust=true" >> $GITHUB_OUTPUT
-          else
-            echo "rust=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Detect Python changes
-          if echo "$CHANGED" | grep -qE '^(python/|pyproject\.toml|tox\.ini|\.ruff\.toml)'; then
             echo "python=true" >> $GITHUB_OUTPUT
-          else
-            echo "python=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Detect integration test changes (or if any code changed)
-          if echo "$CHANGED" | grep -qE '^(integration-tests/|cmd/|pkg/|python/|crates/)'; then
             echo "integration=true" >> $GITHUB_OUTPUT
-          else
-            echo "integration=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Detect docs changes
-          if echo "$CHANGED" | grep -qE '^(docs/|README\.md)'; then
             echo "docs=true" >> $GITHUB_OUTPUT
           else
-            echo "docs=false" >> $GITHUB_OUTPUT
+            # Detect Go changes
+            if echo "$CHANGED" | grep -qE '^(cmd/|pkg/|go\.(mod|sum)|\.golangci\.yml|Makefile)'; then
+              echo "go=true" >> $GITHUB_OUTPUT
+            else
+              echo "go=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Detect Rust changes
+            if echo "$CHANGED" | grep -qE '^(crates/|Cargo\.(toml|lock))'; then
+              echo "rust=true" >> $GITHUB_OUTPUT
+            else
+              echo "rust=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Detect Python changes
+            if echo "$CHANGED" | grep -qE '^(python/|pyproject\.toml|tox\.ini|\.ruff\.toml)'; then
+              echo "python=true" >> $GITHUB_OUTPUT
+            else
+              echo "python=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Detect integration test changes (or if any code changed)
+            if echo "$CHANGED" | grep -qE '^(integration-tests/|cmd/|pkg/|python/|crates/)'; then
+              echo "integration=true" >> $GITHUB_OUTPUT
+            else
+              echo "integration=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Detect docs changes
+            if echo "$CHANGED" | grep -qE '^(docs/|README\.md)'; then
+              echo "docs=true" >> $GITHUB_OUTPUT
+            else
+              echo "docs=false" >> $GITHUB_OUTPUT
+            fi
           fi
 
           # Debug output
