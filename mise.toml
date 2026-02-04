@@ -1,3 +1,31 @@
+# =============================================================================
+# Cog Development Tasks
+# =============================================================================
+#
+# Run `mise tasks` to see all available tasks.
+#
+# ## Task Caching
+#
+# Some build tasks use `sources` and `outputs` for caching. When sources haven't
+# changed since the last run, mise skips the task. To force a rebuild:
+#
+#     mise run build:sdk --force
+#     mise run build:coglet:wheel --force
+#
+# Cached tasks:
+#   - build:sdk              - skips if python/**/*.py unchanged
+#   - build:coglet:wheel*    - skips if crates/**/*.rs unchanged  
+#   - generate:go            - skips if dist/cog-*.whl unchanged
+#   - generate:stubs         - skips if coglet-python source unchanged
+#   - generate:compat        - skips if tools/compatgen unchanged
+#   - docs                   - skips if docs/**/*.md unchanged
+#
+# Tasks that always run (no caching):
+#   - fmt:*, lint:*, test:*  - always check current state
+#   - clean:*                - always destructive
+#
+# =============================================================================
+
 experimental_monorepo_root = true
 
 [tools]
@@ -88,6 +116,8 @@ run = "cd crates/coglet-python && maturin develop"
 
 [tasks."build:coglet:wheel"]
 description = "Build coglet Python wheel (native platform)"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
+outputs = ["dist/coglet-*.whl"]
 run = [
   { task = "_setup_dist" },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml",
@@ -95,6 +125,8 @@ run = [
 
 [tasks."build:coglet:wheel:linux-x64"]
 description = "Build coglet Python wheel for Linux x86_64"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
+outputs = ["dist/coglet-*-linux_x86_64.whl"]
 run = [
   { task = "_setup_dist" },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig",
@@ -102,6 +134,8 @@ run = [
 
 [tasks."build:coglet:wheel:linux-arm64"]
 description = "Build coglet Python wheel for Linux ARM64"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
+outputs = ["dist/coglet-*-linux_aarch64.whl"]
 run = [
   { task = "_setup_dist" },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-unknown-linux-gnu --zig",
@@ -109,6 +143,8 @@ run = [
 
 [tasks."build:coglet:wheel:darwin-arm64"]
 description = "Build coglet Python wheel for macOS ARM64"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
+outputs = ["dist/coglet-*-macosx_*_arm64.whl"]
 run = [
   { task = "_setup_dist" },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-apple-darwin",
@@ -116,6 +152,8 @@ run = [
 
 [tasks."build:coglet:wheel:darwin-x64"]
 description = "Build coglet Python wheel for macOS x86_64"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
+outputs = ["dist/coglet-*-macosx_*_x86_64.whl"]
 run = [
   { task = "_setup_dist" },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-apple-darwin",
@@ -131,6 +169,8 @@ run = [
 
 [tasks."build:sdk"]
 description = "Build cog SDK wheel"
+sources = ["python/**/*.py", "pyproject.toml"]
+outputs = ["dist/cog-*.whl"]
 run = [
   { task = "_setup_dist" },
   "uv build --wheel --out-dir=dist .",
@@ -354,16 +394,22 @@ run = [
 
 [tasks."generate:go"]
 description = "Run Go code generation"
+sources = ["dist/cog-*.whl"]
+outputs = ["pkg/wheels/cog-*.whl"]
 run = "go generate ./..."
 
 [tasks."generate:stubs"]
 alias = "stub:generate"
 description = "Generate Python type stubs for coglet"
 depends = ["build:coglet"]
+sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/scripts/generate_stubs.py"]
+outputs = ["crates/coglet-python/coglet.pyi"]
 run = "python crates/coglet-python/scripts/generate_stubs.py -o crates/coglet-python/coglet.pyi"
 
 [tasks."generate:compat"]
 description = "Regenerate CUDA/PyTorch/TensorFlow compatibility matrices"
+sources = ["tools/compatgen/**/*.go"]
+outputs = ["pkg/config/cuda_base_images.json", "pkg/config/torch_compatibility_matrix.json", "pkg/config/tf_compatibility_matrix.json"]
 run = """
 #!/usr/bin/env bash
 set -e
@@ -440,6 +486,8 @@ run = "rm -rf .tox build python/cog.egg-info"
 
 [tasks.docs]
 description = "Build documentation"
+sources = ["docs/**/*.md", "README.md", "CONTRIBUTING.md", "mkdocs.yml"]
+outputs = ["site/**"]
 run = """
 #!/usr/bin/env bash
 set -e
