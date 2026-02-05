@@ -688,3 +688,83 @@ func TestContainsCoglet(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, config.ContainsCoglet())
 }
+
+func TestWeightsWithNameYAML(t *testing.T) {
+	yamlString := `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+weights:
+  - name: model-v1
+    source: file://./weights/model-v1.zip
+    target: "/weights/model-v1"
+  - name: model-v2
+    source: file://./weights/model-v2.zip
+    target: "/weights/model-v2"
+`
+
+	config, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+	require.Len(t, config.Weights, 2)
+
+	require.Equal(t, "model-v1", config.Weights[0].Name)
+	require.Equal(t, "file://./weights/model-v1.zip", config.Weights[0].Source)
+	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
+
+	require.Equal(t, "model-v2", config.Weights[1].Name)
+	require.Equal(t, "file://./weights/model-v2.zip", config.Weights[1].Source)
+	require.Equal(t, "/weights/model-v2", config.Weights[1].Target)
+}
+
+func TestWeightsWithoutNameYAML(t *testing.T) {
+	yamlString := `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+weights:
+  - source: file://./weights/model.zip
+    target: "/weights/model"
+`
+
+	config, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+	require.Len(t, config.Weights, 1)
+
+	require.Equal(t, "", config.Weights[0].Name)
+	require.Equal(t, "file://./weights/model.zip", config.Weights[0].Source)
+	require.Equal(t, "/weights/model", config.Weights[0].Target)
+}
+
+func TestWeightsWithNameJSON(t *testing.T) {
+	jsonString := `{
+	"build": {
+		"python_version": "3.12"
+	},
+	"predict": "predict.py:Predictor",
+	"weights": [
+		{
+			"name": "model-v1",
+			"source": "file://./weights/model-v1.zip",
+			"target": "/weights/model-v1"
+		},
+		{
+			"name": "model-v2",
+			"source": "file://./weights/model-v2.zip",
+			"target": "/weights/model-v2"
+		}
+	]
+}`
+
+	var config Config
+	err := json.Unmarshal([]byte(jsonString), &config)
+	require.NoError(t, err)
+	require.Len(t, config.Weights, 2)
+
+	require.Equal(t, "model-v1", config.Weights[0].Name)
+	require.Equal(t, "file://./weights/model-v1.zip", config.Weights[0].Source)
+	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
+
+	require.Equal(t, "model-v2", config.Weights[1].Name)
+	require.Equal(t, "file://./weights/model-v2.zip", config.Weights[1].Source)
+	require.Equal(t, "/weights/model-v2", config.Weights[1].Target)
+}
