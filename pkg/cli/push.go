@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -111,13 +113,29 @@ func push(cmd *cobra.Command, args []string) error {
 			len(m.WeightsManifest.Files), float64(m.WeightsManifest.TotalSize())/1024/1024)
 	}
 
-	// Push the image
+	// Push the model
 	console.Infof("\nPushing image '%s'...", m.ImageRef())
 
-	pushErr := docker.Push(ctx, m.ImageRef(), src.ProjectDir, dockerClient, docker.BuildInfo{
-		BuildTime: buildDuration,
-		BuildID:   buildID.String(),
-	}, httpClient)
+	var pushErr error
+	if m.ImageFormat == model.FormatBundle {
+		// Bundle format: use resolver.Push which builds OCI index with weights
+		filePaths, err := resolveWeightFilePaths(src)
+		if err != nil {
+			_ = p.PostPush(ctx, pushOpts, err)
+			return fmt.Errorf("failed to resolve weight file paths: %w", err)
+		}
+
+		pushErr = resolver.Push(ctx, m, model.PushOptions{
+			ProjectDir: src.ProjectDir,
+			FilePaths:  filePaths,
+		})
+	} else {
+		// Standalone format: use standard docker push
+		pushErr = docker.Push(ctx, m.ImageRef(), src.ProjectDir, dockerClient, docker.BuildInfo{
+			BuildTime: buildDuration,
+			BuildID:   buildID.String(),
+		}, httpClient)
+	}
 
 	// PostPush: the provider handles formatting errors and showing success messages
 	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {
@@ -131,4 +149,35 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// resolveWeightFilePaths generates a map of weight names to their absolute file paths.
+// This re-runs the weights lock generator to get the file paths, since they're not
+// stored in the lock file itself.
+func resolveWeightFilePaths(src *model.Source) (map[string]string, error) {
+	if src.Config == nil || len(src.Config.Weights) == 0 {
+		return nil, fmt.Errorf("no weights configured in cog.yaml")
+	}
+
+	gen := model.NewWeightsLockGenerator(model.WeightsLockGeneratorOptions{
+		DestPrefix: "/cache",
+	})
+
+	// Use context.Background() since this is a short-lived operation
+	_, filePaths, err := gen.GenerateWithFilePaths(context.Background(), src.ProjectDir, src.Config.Weights)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to absolute paths
+	absFilePaths := make(map[string]string, len(filePaths))
+	for name, path := range filePaths {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path for %s: %w", name, err)
+		}
+		absFilePaths[name] = absPath
+	}
+
+	return absFilePaths, nil
 }
