@@ -1,0 +1,157 @@
+---
+name: Release Build
+
+# Triggered on version tags to build release artifacts and create draft release.
+# A separate person must then publish the draft release to trigger release-publish.yaml.
+#
+# FLOW:
+# 1. Developer pushes tag (e.g., v1.0.0)
+# 2. This workflow builds all artifacts and creates a draft GitHub release
+# 3. Different team member reviews and publishes the draft release
+# 4. release-publish.yaml triggers and publishes to PyPI/crates.io
+#
+# SECURITY:
+# - Tag must be on main branch (verified in verify-tag job)
+# - No secrets needed - only builds artifacts and creates draft
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify-tag:
+    name: Verify tag is on main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag commit is on main branch
+        run: |
+          git fetch origin main
+          TAG_COMMIT="${{ github.sha }}"
+          
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
+            echo "::error::Tag must be created on a commit that is on the main branch"
+            echo "::error::Tag commit: $TAG_COMMIT"
+            echo "::error::This commit is not reachable from origin/main"
+            exit 1
+          fi
+          
+          echo "✓ Tag commit $TAG_COMMIT is on main branch"
+
+  build-sdk:
+    name: Build SDK wheel
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build SDK wheel
+        run: uv build --out-dir dist .
+
+      - name: Upload SDK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-dist
+          path: dist/*
+
+  build-coglet-wheels:
+    name: Build coglet wheel (${{ matrix.target }})
+    needs: verify-tag
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact-suffix: linux-x64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact-suffix: linux-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact-suffix: macos-x64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact-suffix: macos-arm64
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          key: release-${{ matrix.target }}
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build coglet wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ contains(matrix.os, 'ubuntu') && 'auto' || 'off' }}
+          args: --release --out dist -m crates/coglet-python/Cargo.toml
+
+      - name: Upload coglet wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: coglet-wheel-${{ matrix.artifact-suffix }}
+          path: dist/*.whl
+
+  create-draft-release:
+    name: Create draft release
+    needs: [build-sdk, build-coglet-wheels]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Organize artifacts
+        run: |
+          mkdir -p release-assets
+          # SDK
+          cp artifacts/sdk-dist/* release-assets/
+          # Coglet wheels
+          cp artifacts/coglet-wheel-*/*.whl release-assets/
+          
+          echo "Release assets:"
+          ls -la release-assets/
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
