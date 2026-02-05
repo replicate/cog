@@ -243,16 +243,20 @@ python -m pytest tests/ -v
 """
 
 [tasks."test:integration"]
-description = "Run integration tests"
+description = "Run integration tests (skips slow tests by default, set SHORT=0 for full suite)"
 depends = ["build:cog", "build:sdk", "build:coglet:wheel"]
 dir = "integration-tests"
 run = """
 #!/usr/bin/env bash
 set -e
+SHORT_FLAG="-short"
+if [ "${SHORT:-1}" = "0" ]; then
+  SHORT_FLAG=""
+fi
 if [ -n "$1" ]; then
-  go tool gotestsum -- -v -run "TestIntegration/$1" -timeout 30m
+  go tool gotestsum -- -v $SHORT_FLAG -run "TestIntegration/$1" -timeout 30m
 else
-  go tool gotestsum -- -v -parallel ${TEST_PARALLEL:-4} -timeout 30m
+  go tool gotestsum -- -v $SHORT_FLAG -parallel ${TEST_PARALLEL:-4} -timeout 30m
 fi
 """
 
@@ -576,7 +580,7 @@ run = [
 ]
 
 [tasks."ci:test:integration"]
-description = "CI: Run integration tests with GitHub Actions output"
+description = "CI: Run integration tests with GitHub Actions output (full suite)"
 dir = "integration-tests"
 run = """
 #!/usr/bin/env bash
