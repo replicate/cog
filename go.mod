@@ -6,8 +6,8 @@ require (
 	github.com/anaskhan96/soup v1.2.5
 	github.com/aws/aws-sdk-go-v2 v1.39.4
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.88.7
-	github.com/docker/cli v28.3.0+incompatible
-	github.com/docker/docker v28.1.1+incompatible
+	github.com/docker/cli v28.5.2+incompatible
+	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/getkin/kin-openapi v0.133.0
 	github.com/google/go-containerregistry v0.20.5
@@ -16,6 +16,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/moby/buildkit v0.22.0
+	github.com/moby/docker-image-spec v1.3.1
 	github.com/moby/term v0.5.2
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pkg/errors v0.9.1
@@ -198,7 +199,6 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mgechev/revive v1.7.0 // indirect
-	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.1.0 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/patternmatcher v0.6.0 // indirect
