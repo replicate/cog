@@ -179,6 +179,14 @@ func TestGetCogWheelConfig(t *testing.T) {
 			expectedSource: WheelSourcePyPI,
 			expectedVer:    "",
 		},
+		// Snapshot build (goreleaser) defaults to PyPI without version
+		{
+			name:           "snapshot build defaults to PyPI without version",
+			envValue:       "",
+			globalVersion:  "0.16.12-dev+g6793b492",
+			expectedSource: WheelSourcePyPI,
+			expectedVer:    "",
+		},
 		// Explicit pypi override
 		{
 			name:           "explicit pypi",

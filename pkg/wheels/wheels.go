@@ -109,6 +109,13 @@ func findWheelInDist(pattern string) string {
 	return absPath
 }
 
+// isDevVersion returns true if the version is a development/snapshot build.
+// This includes "dev", versions containing "-dev", and versions with "+" (local versions).
+func isDevVersion() bool {
+	v := global.Version
+	return v == "dev" || strings.Contains(v, "-dev") || strings.Contains(v, "+")
+}
+
 // GetCogWheelConfig returns the WheelConfig for the cog SDK based on COG_WHEEL env var.
 //
 // Resolution order:
@@ -116,7 +123,7 @@ func findWheelInDist(pattern string) string {
 //  2. Auto-detect: check dist/cog-*.whl (for development)
 //  3. Default: PyPI
 //
-// For development builds (Version == "dev"), auto-detection is enabled.
+// For development builds (snapshot versions), auto-detection is enabled.
 // For release builds, auto-detection is skipped (always PyPI unless overridden).
 func GetCogWheelConfig() *WheelConfig {
 	// Check explicit env var first
@@ -136,7 +143,7 @@ func GetCogWheelConfig() *WheelConfig {
 	}
 
 	// Auto-detect for dev builds: check dist/ directory
-	if global.Version == "dev" {
+	if isDevVersion() {
 		if path := findWheelInDist("cog-*.whl"); path != "" {
 			return &WheelConfig{Source: WheelSourceFile, Path: path}
 		}
@@ -146,7 +153,7 @@ func GetCogWheelConfig() *WheelConfig {
 	// For release builds, use the matching version
 	// For dev builds where no local wheel found, use latest
 	config := &WheelConfig{Source: WheelSourcePyPI}
-	if global.Version != "dev" {
+	if !isDevVersion() {
 		config.Version = global.Version
 	}
 	return config
@@ -177,7 +184,7 @@ func GetCogletWheelConfig() *WheelConfig {
 	}
 
 	// Auto-detect for dev builds: check dist/ directory
-	if global.Version == "dev" {
+	if isDevVersion() {
 		if path := findWheelInDist("coglet-*.whl"); path != "" {
 			return &WheelConfig{Source: WheelSourceFile, Path: path}
 		}
