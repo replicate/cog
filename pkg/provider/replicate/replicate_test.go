@@ -35,15 +35,6 @@ func TestReplicateProvider_MatchesRegistry(t *testing.T) {
 	require.False(t, p.MatchesRegistry("myregistry.example.com"))
 }
 
-func TestReplicateProvider_PrePush(t *testing.T) {
-	p := New()
-	opts := provider.PushOptions{
-		Image: "r8.im/user/model",
-	}
-	err := p.PrePush(context.Background(), opts)
-	require.NoError(t, err)
-}
-
 func TestReplicateProvider_PostPush(t *testing.T) {
 	p := New()
 	opts := provider.PushOptions{

@@ -79,11 +79,6 @@ func (p *ReplicateProvider) Login(ctx context.Context, opts provider.LoginOption
 	return nil
 }
 
-func (p *ReplicateProvider) PrePush(ctx context.Context, opts provider.PushOptions) error {
-	// All features are supported for Replicate - no validation errors
-	return nil
-}
-
 func (p *ReplicateProvider) PostPush(ctx context.Context, opts provider.PushOptions, pushErr error) error {
 	if pushErr != nil {
 		// Return Replicate-specific error message for repository not found errors

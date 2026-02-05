@@ -70,10 +70,6 @@ func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions)
 	return nil
 }
 
-func (p *GenericProvider) PrePush(ctx context.Context, opts provider.PushOptions) error {
-	return nil
-}
-
 func (p *GenericProvider) PostPush(ctx context.Context, opts provider.PushOptions, pushErr error) error {
 	// No special post-push handling for generic registries
 	// Just show a simple success message if push succeeded
