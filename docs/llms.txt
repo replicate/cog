@@ -446,6 +446,8 @@ Build and push a model to a Docker registry.
 cog push [IMAGE]
 ```
 
+Cog can push to any OCI-compliant container registry. When pushing to Replicate's registry (r8.im), additional features like version tracking are available. For other registries, standard Docker push is used.
+
 **Flags:**
 
 | Flag | Type | Default | Description |
@@ -465,7 +467,15 @@ cog push [IMAGE]
 # Push to Replicate
 cog push r8.im/username/model-name
 
-# Push with separated weights
+# Push to GitHub Container Registry
+docker login ghcr.io
+cog push ghcr.io/your-org/model-name
+
+# Push to Google Container Registry
+docker login gcr.io
+cog push gcr.io/your-project/model-name
+
+# Push with separated weights (Replicate only)
 cog push r8.im/username/model-name --separate-weights
 
 # Push without cache
@@ -2036,7 +2046,6 @@ The `cog.Secret` type is used to signify that an input holds sensitive informati
 like a password or API token.
 
 `cog.Secret` is a type that redacts its contents in string representations to prevent accidental disclosure.
-Its default string representation redacts its contents to prevent accidental disclosure.
 You can access its contents with the `get_secret_value()` method.
 
 ```python
@@ -2400,7 +2409,7 @@ build:
   python_version: "3.11.1"
 ```
 
-Cog supports all active branches of Python: 3.8, 3.9, 3.10, 3.11, 3.12, 3.13. If you don't define a version, Cog will use the latest version of Python 3.12 or a version of Python that is compatible with the versions of PyTorch or TensorFlow you specify.
+Cog supports Python 3.10, 3.11, 3.12, and 3.13. If you don't define a version, Cog will use the latest version of Python 3.13 or a version of Python that is compatible with the versions of PyTorch or TensorFlow you specify.
 
 Note that these are the versions supported **in the Docker container**, not your host machine. You can run any version(s) of Python you wish on your host machine.
 
