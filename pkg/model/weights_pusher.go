@@ -213,14 +213,10 @@ func (p *WeightsPusher) Push(ctx context.Context, opts WeightsPushOptions) (*Wei
 
 			sendProgress(WeightsPushProgress{Name: wf.Name, Complete: size, Total: size, Done: true})
 
-			// Ensure channel is closed even on error
-			select {
-			case <-progressDone:
-				// Already closed by WriteLayer
-			default:
-				close(progressCh)
-				<-progressDone
-			}
+			// Wait for progress goroutine to finish.
+			// Note: remote.WriteLayer closes progressCh when done, so we just wait
+			// for the consumer goroutine to drain and exit.
+			<-progressDone
 
 			digest, _ := layer.Digest()
 			results <- pushResult{name: wf.Name, digest: digest.String(), size: size}
