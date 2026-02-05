@@ -30,6 +30,10 @@ dependencies = [
 
 dynamic = ["version"]
 
+[project.optional-dependencies]
+# Rust-based prediction server (alpha)
+rust = ["coglet>=0.1.0"]
+
 [dependency-groups]
 dev = [
     "build>=1.2.2.post1",
