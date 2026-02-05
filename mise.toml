@@ -226,7 +226,7 @@ fi
 [tasks."test:go"]
 description = "Run Go tests"
 depends = ["generate:go"]
-run = "go tool gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...)"
+run = "gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...)"
 
 [tasks."test:rust"]
 description = "Run Rust workspace tests"
@@ -268,9 +268,9 @@ if [ "${SHORT:-1}" = "0" ]; then
   SHORT_FLAG=""
 fi
 if [ -n "$1" ]; then
-  go tool gotestsum -- -v $SHORT_FLAG -run "TestIntegration/$1" -timeout 30m
+  gotestsum -- -v $SHORT_FLAG -run "TestIntegration/$1" -timeout 30m
 else
-  go tool gotestsum -- -v $SHORT_FLAG -parallel ${TEST_PARALLEL:-4} -timeout 30m
+  gotestsum -- -v $SHORT_FLAG -parallel ${TEST_PARALLEL:-4} -timeout 30m
 fi
 """
 
