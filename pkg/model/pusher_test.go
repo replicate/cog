@@ -32,7 +32,7 @@ func TestImagePusher_Push(t *testing.T) {
 
 		pusher := NewImagePusher(docker)
 		m := &Model{
-			Image:       &Image{Reference: "r8.im/user/model:latest"},
+			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat: FormatStandalone,
 		}
 
@@ -60,7 +60,7 @@ func TestImagePusher_Push(t *testing.T) {
 		docker := &mockDocker{}
 		pusher := NewImagePusher(docker)
 		m := &Model{
-			Image:       &Image{Reference: ""},
+			Image:       &ImageArtifact{Reference: ""},
 			ImageFormat: FormatStandalone,
 		}
 
@@ -79,7 +79,7 @@ func TestImagePusher_Push(t *testing.T) {
 
 		pusher := NewImagePusher(docker)
 		m := &Model{
-			Image:       &Image{Reference: "r8.im/user/model:latest"},
+			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat: FormatStandalone,
 		}
 
@@ -115,7 +115,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		reg := &mockRegistry{}
 		pusher := NewBundlePusher(docker, reg)
 		m := &Model{
-			Image:           &Image{Reference: "r8.im/user/model:latest"},
+			Image:           &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat:     FormatBundle,
 			WeightsManifest: nil,
 		}
@@ -131,7 +131,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		reg := &mockRegistry{}
 		pusher := NewBundlePusher(docker, reg)
 		m := &Model{
-			Image:       &Image{Reference: "r8.im/user/model:latest"},
+			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat: FormatBundle,
 			WeightsManifest: &WeightsManifest{
 				Files: []WeightFile{{Name: "my-weights-v1", Dest: "/weights/weights.bin"}},
@@ -179,7 +179,7 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		pusher := NewBundlePusher(docker, reg)
 		m := &Model{
-			Image:       &Image{Reference: "r8.im/user/model:latest"},
+			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat: FormatBundle,
 			WeightsManifest: &WeightsManifest{
 				ArtifactType: MediaTypeWeightArtifact,
@@ -227,7 +227,7 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		pusher := NewBundlePusher(docker, reg)
 		m := &Model{
-			Image:       &Image{Reference: "r8.im/user/model:latest"},
+			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat: FormatBundle,
 			WeightsManifest: &WeightsManifest{
 				Files: []WeightFile{
@@ -265,7 +265,7 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		pusher := NewBundlePusher(docker, reg)
 		m := &Model{
-			Image:       &Image{Reference: "r8.im/user/model:latest"},
+			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat: FormatBundle,
 			WeightsManifest: &WeightsManifest{
 				Files: []WeightFile{
@@ -308,7 +308,7 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		pusher := NewBundlePusher(docker, reg)
 		m := &Model{
-			Image:       &Image{Reference: "r8.im/user/model:latest"},
+			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat: FormatBundle,
 			WeightsManifest: &WeightsManifest{
 				Files: []WeightFile{
@@ -343,7 +343,7 @@ func TestResolver_Push_SelectsCorrectPusher(t *testing.T) {
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
-			Image:       &Image{Reference: "r8.im/user/model:latest"},
+			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat: FormatStandalone,
 		}
 
@@ -365,7 +365,7 @@ func TestResolver_Push_SelectsCorrectPusher(t *testing.T) {
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
-			Image:       &Image{Reference: "r8.im/user/model:latest"},
+			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat: "", // empty = default to standalone
 		}
 
@@ -383,7 +383,7 @@ func TestResolver_Push_SelectsCorrectPusher(t *testing.T) {
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
-			Image:           &Image{Reference: "r8.im/user/model:latest"},
+			Image:           &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			ImageFormat:     FormatBundle,
 			WeightsManifest: nil, // intentionally nil to trigger error
 		}

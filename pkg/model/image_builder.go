@@ -9,14 +9,10 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 )
 
-// ImageBuilder builds ImageArtifact from ImageSpec.
-// It delegates to a Factory for the actual docker build, then inspects
-// the result to populate the artifact.
-//
-// NOTE: Resolver.Build() does not yet use ImageBuilder — it still calls
-// factory.Build() + docker.Inspect() directly. ImageBuilder exists for
-// symmetry with WeightBuilder and will replace the inline logic when
-// the resolver is refactored to route all specs through builders.
+// ImageBuilder builds an ImageArtifact from an ImageSpec.
+// It delegates to a Factory for the docker build, inspects the result
+// to populate labels and the canonical digest, and returns a fully
+// populated ImageArtifact.
 type ImageBuilder struct {
 	factory Factory
 	docker  command.Command
@@ -35,21 +31,22 @@ func NewImageBuilder(factory Factory, docker command.Command, source *Source, op
 }
 
 // Build builds an ImageArtifact from an ImageSpec.
-// It delegates to the Factory for the docker build, inspects the result,
-// and returns an ImageArtifact with the digest and reference.
+// It delegates to the Factory for the docker build, inspects the result
+// to populate labels and the canonical digest, and returns a fully
+// populated ImageArtifact.
 func (b *ImageBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact, error) {
 	is, ok := spec.(*ImageSpec)
 	if !ok {
 		return nil, fmt.Errorf("image builder: expected *ImageSpec, got %T", spec)
 	}
 
-	// Build the image via the factory
+	// Build the image via the factory (returns partially populated ImageArtifact)
 	img, err := b.factory.Build(ctx, b.source, b.opts)
 	if err != nil {
 		return nil, fmt.Errorf("image build failed: %w", err)
 	}
 
-	// Inspect the built image to get the canonical digest.
+	// Inspect the built image to get labels and canonical digest.
 	// Prefer digest (ID) for stable lookups, fall back to reference.
 	inspectRef := img.Digest
 	if inspectRef == "" {
@@ -61,13 +58,17 @@ func (b *ImageBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact, 
 		return nil, fmt.Errorf("inspect built image: %w", err)
 	}
 
-	// Use the canonical ID from the inspect response
-	digestStr := resp.ID
-	digest, err := v1.NewHash(digestStr)
-	if err != nil {
-		return nil, fmt.Errorf("parse image digest %q: %w", digestStr, err)
-	}
+	// Populate the artifact with inspect results
+	img.name = is.Name()
+	img.Labels = resp.Config.Labels
+	img.Digest = resp.ID
+	img.Source = ImageSourceBuild
 
-	desc := v1.Descriptor{Digest: digest}
-	return NewImageArtifact(is.Name(), desc, img.Reference), nil
+	digest, err := v1.NewHash(resp.ID)
+	if err != nil {
+		return nil, fmt.Errorf("parse image digest %q: %w", resp.ID, err)
+	}
+	img.descriptor = v1.Descriptor{Digest: digest}
+
+	return img, nil
 }

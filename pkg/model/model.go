@@ -8,9 +8,9 @@ import (
 	"github.com/replicate/cog/pkg/config"
 )
 
-// Model represents a Cog model extracted from an Image.
+// Model represents a Cog model extracted from an image.
 type Model struct {
-	Image      *Image         // Underlying OCI image
+	Image      *ImageArtifact // Underlying OCI image
 	Config     *config.Config // Parsed cog.yaml
 	Schema     *openapi3.T    // OpenAPI schema
 	CogVersion string         // Version of cog used to build

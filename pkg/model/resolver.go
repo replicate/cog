@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types/image"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
@@ -137,7 +136,7 @@ func (r *Resolver) InspectByID(ctx context.Context, id string) (*Model, error) {
 	}
 
 	// Use the canonical ID from the response as the reference
-	img := &Image{
+	img := &ImageArtifact{
 		Reference: resp.ID,
 		Digest:    resp.ID,
 		Labels:    resp.Config.Labels,
@@ -211,30 +210,19 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 	opts = opts.WithDefaults(src)
 
-	img, err := r.factory.Build(ctx, src, opts)
+	// Build image artifact via ImageBuilder
+	ib := NewImageBuilder(r.factory, r.docker, src, opts)
+	imageSpec := NewImageSpec("model", opts.ImageName)
+	imgResult, err := ib.Build(ctx, imageSpec)
 	if err != nil {
 		return nil, err
 	}
-
-	// Inspect the built image to get labels.
-	// Prefer using the image digest (ID) for stable lookups,
-	// falling back to tag if Digest is empty (for backwards compatibility
-	// with custom Factory implementations that don't populate Digest).
-	inspectRef := img.Digest
-	if inspectRef == "" {
-		inspectRef = img.Reference
+	ia, ok := imgResult.(*ImageArtifact)
+	if !ok {
+		return nil, fmt.Errorf("unexpected artifact type from image builder: %T", imgResult)
 	}
 
-	resp, err := r.docker.Inspect(ctx, inspectRef)
-	if err != nil {
-		return nil, fmt.Errorf("failed to inspect built image: %w", err)
-	}
-
-	img.Labels = resp.Config.Labels
-	// Use the canonical ID from the response
-	img.Digest = resp.ID
-
-	m, err := r.modelFromImage(img, src.Config)
+	m, err := r.modelFromImage(ia, src.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -245,14 +233,7 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 		m.ImageFormat = FormatStandalone
 	}
 
-	// Populate artifacts: start with the image artifact
-	digest, err := v1.NewHash(img.Digest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse image digest %q: %w", img.Digest, err)
-	}
-	m.Artifacts = []Artifact{
-		NewImageArtifact("model", v1.Descriptor{Digest: digest}, img.Reference),
-	}
+	m.Artifacts = []Artifact{ia}
 
 	// Build weight artifacts if configured
 	lockPath := opts.WeightsLockPath
@@ -306,6 +287,10 @@ func (r *Resolver) pusherFor(format ModelImageFormat) Pusher {
 // BuildBase creates a base image for dev mode (without /src copied).
 // The source directory is expected to be mounted as a volume at runtime.
 // Returns a Model with the built image info and the source config.
+//
+// NOTE: Unlike Build(), this does not use ImageBuilder because base images
+// don't have labels yet (they're added during full builds). The returned
+// ImageArtifact has no labels, no descriptor, and no inspect results.
 func (r *Resolver) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Model, error) {
 	if src == nil {
 		return nil, fmt.Errorf("source is required for BuildBase")
@@ -324,7 +309,7 @@ func (r *Resolver) BuildBase(ctx context.Context, src *Source, opts BuildBaseOpt
 	}
 
 	// For base builds, we don't have labels yet (they're added in full builds).
-	// Return the model with the source config.
+	// Return the model with the source config and the built image.
 	return &Model{
 		Image:  img,
 		Config: src.Config,
@@ -355,9 +340,9 @@ func (r *Resolver) loadRemote(ctx context.Context, ref *ParsedRef, platform *reg
 	return r.modelFromManifest(ref, manifest, ImageSourceRemote)
 }
 
-// modelFromImage creates a Model from Image with a known config (post-build).
+// modelFromImage creates a Model from ImageArtifact with a known config (post-build).
 // Uses the provided config rather than parsing from labels.
-func (r *Resolver) modelFromImage(img *Image, cfg *config.Config) (*Model, error) {
+func (r *Resolver) modelFromImage(img *ImageArtifact, cfg *config.Config) (*Model, error) {
 	schema, err := img.ParsedOpenAPISchema()
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse schema from image labels: %w", err)
@@ -374,7 +359,7 @@ func (r *Resolver) modelFromImage(img *Image, cfg *config.Config) (*Model, error
 // modelFromInspect creates a Model from docker inspect response.
 // Returns ErrNotCogModel if the image is not a valid Cog model.
 func (r *Resolver) modelFromInspect(ref *ParsedRef, resp *image.InspectResponse, source ImageSource) (*Model, error) {
-	img := &Image{
+	img := &ImageArtifact{
 		Reference: ref.String(),
 		Digest:    resp.ID,
 		Labels:    resp.Config.Labels,
@@ -397,7 +382,7 @@ func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.Manifest
 	}
 
 	// Standard image (v1 format)
-	img := &Image{
+	img := &ImageArtifact{
 		Reference: ref.String(),
 		Digest:    manifest.Config, // Config digest serves as image ID
 		Labels:    manifest.Labels,
@@ -421,8 +406,8 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 		return nil, fmt.Errorf("no image manifest found in index %s", ref.Original)
 	}
 
-	// Create Image from the image manifest
-	img := &Image{
+	// Create ImageArtifact from the image manifest
+	img := &ImageArtifact{
 		Reference: ref.String(),
 		Digest:    imgManifest.Digest,
 		Labels:    manifest.Labels, // Labels come from the index inspection
