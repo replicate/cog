@@ -62,6 +62,18 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Update coglet version constraint
+        run: |
+          # Extract version from tag (v0.17.0 -> 0.17.0)
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setting coglet constraint to >=$VERSION,<1.0"
+          
+          # Update pyproject.toml with lockstep version constraint
+          sed -i "s/coglet>=0\.1\.0,<1\.0/coglet>=$VERSION,<1.0/" pyproject.toml
+          
+          # Verify the change
+          grep -A1 'optional-dependencies' pyproject.toml
+
       - name: Build SDK wheel
         run: uv build --out-dir dist .
 
