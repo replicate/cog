@@ -99,14 +99,14 @@ func TestModel_ImageRef(t *testing.T) {
 		{
 			name: "with image reference",
 			model: &Model{
-				Image: &Image{Reference: "r8.im/user/model@sha256:abc123"},
+				Image: &ImageArtifact{Reference: "r8.im/user/model@sha256:abc123"},
 			},
 			expect: "r8.im/user/model@sha256:abc123",
 		},
 		{
 			name: "with empty reference",
 			model: &Model{
-				Image: &Image{Reference: ""},
+				Image: &ImageArtifact{Reference: ""},
 			},
 			expect: "",
 		},

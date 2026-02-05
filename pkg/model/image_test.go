@@ -12,22 +12,22 @@ import (
 func TestImage_IsCogModel(t *testing.T) {
 	tests := []struct {
 		name   string
-		image  *Image
+		image  *ImageArtifact
 		expect bool
 	}{
 		{
 			name:   "nil labels",
-			image:  &Image{Labels: nil},
+			image:  &ImageArtifact{Labels: nil},
 			expect: false,
 		},
 		{
 			name:   "empty labels",
-			image:  &Image{Labels: map[string]string{}},
+			image:  &ImageArtifact{Labels: map[string]string{}},
 			expect: false,
 		},
 		{
 			name: "has cog config label",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelConfig: `{"build": {}}`,
 				},
@@ -36,7 +36,7 @@ func TestImage_IsCogModel(t *testing.T) {
 		},
 		{
 			name: "has other labels but not cog config",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					"some.other.label": "value",
 				},
@@ -45,7 +45,7 @@ func TestImage_IsCogModel(t *testing.T) {
 		},
 		{
 			name: "has cog version but not config",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelVersion: "0.10.0",
 				},
@@ -65,22 +65,22 @@ func TestImage_IsCogModel(t *testing.T) {
 func TestImage_CogVersion(t *testing.T) {
 	tests := []struct {
 		name   string
-		image  *Image
+		image  *ImageArtifact
 		expect string
 	}{
 		{
 			name:   "nil labels",
-			image:  &Image{Labels: nil},
+			image:  &ImageArtifact{Labels: nil},
 			expect: "",
 		},
 		{
 			name:   "empty labels",
-			image:  &Image{Labels: map[string]string{}},
+			image:  &ImageArtifact{Labels: map[string]string{}},
 			expect: "",
 		},
 		{
 			name: "has version label",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelVersion: "0.10.0",
 				},
@@ -89,7 +89,7 @@ func TestImage_CogVersion(t *testing.T) {
 		},
 		{
 			name: "has other labels but not version",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelConfig: `{"build": {}}`,
 				},
@@ -109,17 +109,17 @@ func TestImage_CogVersion(t *testing.T) {
 func TestImage_Config(t *testing.T) {
 	tests := []struct {
 		name   string
-		image  *Image
+		image  *ImageArtifact
 		expect string
 	}{
 		{
 			name:   "nil labels",
-			image:  &Image{Labels: nil},
+			image:  &ImageArtifact{Labels: nil},
 			expect: "",
 		},
 		{
 			name: "has config label",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelConfig: `{"build": {"python_version": "3.11"}}`,
 				},
@@ -139,17 +139,17 @@ func TestImage_Config(t *testing.T) {
 func TestImage_OpenAPISchema(t *testing.T) {
 	tests := []struct {
 		name   string
-		image  *Image
+		image  *ImageArtifact
 		expect string
 	}{
 		{
 			name:   "nil labels",
-			image:  &Image{Labels: nil},
+			image:  &ImageArtifact{Labels: nil},
 			expect: "",
 		},
 		{
 			name: "has openapi schema label",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelOpenAPISchema: `{"openapi": "3.0.0"}`,
 				},
@@ -188,26 +188,26 @@ func TestLabelKeys(t *testing.T) {
 func TestImage_ParsedConfig(t *testing.T) {
 	tests := []struct {
 		name        string
-		image       *Image
+		image       *ImageArtifact
 		expectNil   bool
 		expectErr   bool
 		checkConfig func(t *testing.T, cfg *config.Config)
 	}{
 		{
 			name:      "nil labels returns nil without error",
-			image:     &Image{Labels: nil},
+			image:     &ImageArtifact{Labels: nil},
 			expectNil: true,
 			expectErr: false,
 		},
 		{
 			name:      "empty labels returns nil without error",
-			image:     &Image{Labels: map[string]string{}},
+			image:     &ImageArtifact{Labels: map[string]string{}},
 			expectNil: true,
 			expectErr: false,
 		},
 		{
 			name: "missing config label returns nil without error",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelVersion: "0.10.0",
 				},
@@ -217,7 +217,7 @@ func TestImage_ParsedConfig(t *testing.T) {
 		},
 		{
 			name: "valid config JSON parses correctly",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelConfig: `{"build":{"python_version":"3.12","gpu":true},"predict":"predict.py:Predictor"}`,
 				},
@@ -232,7 +232,7 @@ func TestImage_ParsedConfig(t *testing.T) {
 		},
 		{
 			name: "invalid JSON returns error",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelConfig: `{invalid json`,
 				},
@@ -267,18 +267,18 @@ func TestImage_ParsedConfig(t *testing.T) {
 func TestImage_ToModel(t *testing.T) {
 	tests := []struct {
 		name       string
-		image      *Image
+		image      *ImageArtifact
 		expectErr  error
 		checkModel func(t *testing.T, m *Model)
 	}{
 		{
 			name:      "not a cog model returns ErrNotCogModel",
-			image:     &Image{Labels: map[string]string{}},
+			image:     &ImageArtifact{Labels: map[string]string{}},
 			expectErr: ErrNotCogModel,
 		},
 		{
 			name: "valid cog model with config and schema",
-			image: &Image{
+			image: &ImageArtifact{
 				Reference: "my-image:latest",
 				Digest:    "sha256:abc123",
 				Labels: map[string]string{
@@ -300,7 +300,7 @@ func TestImage_ToModel(t *testing.T) {
 		},
 		{
 			name: "valid cog model without schema",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelConfig:  `{"build":{}}`,
 					LabelVersion: "0.10.0",
@@ -313,7 +313,7 @@ func TestImage_ToModel(t *testing.T) {
 		},
 		{
 			name: "invalid config JSON returns error",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelConfig: `{invalid`,
 				},
@@ -322,7 +322,7 @@ func TestImage_ToModel(t *testing.T) {
 		},
 		{
 			name: "invalid schema JSON returns error",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelConfig:        `{"build":{}}`,
 					LabelOpenAPISchema: `{invalid schema`,
@@ -357,26 +357,26 @@ func TestImage_ToModel(t *testing.T) {
 func TestImage_ParsedOpenAPISchema(t *testing.T) {
 	tests := []struct {
 		name        string
-		image       *Image
+		image       *ImageArtifact
 		expectNil   bool
 		expectErr   bool
 		checkSchema func(t *testing.T, schema *openapi3.T)
 	}{
 		{
 			name:      "nil labels returns nil without error",
-			image:     &Image{Labels: nil},
+			image:     &ImageArtifact{Labels: nil},
 			expectNil: true,
 			expectErr: false,
 		},
 		{
 			name:      "empty labels returns nil without error",
-			image:     &Image{Labels: map[string]string{}},
+			image:     &ImageArtifact{Labels: map[string]string{}},
 			expectNil: true,
 			expectErr: false,
 		},
 		{
 			name: "missing schema label returns nil without error",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelConfig: `{"build":{}}`,
 				},
@@ -386,7 +386,7 @@ func TestImage_ParsedOpenAPISchema(t *testing.T) {
 		},
 		{
 			name: "valid OpenAPI JSON parses correctly",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelOpenAPISchema: `{"openapi":"3.0.2","info":{"title":"Cog","version":"0.1.0"},"paths":{}}`,
 				},
@@ -401,7 +401,7 @@ func TestImage_ParsedOpenAPISchema(t *testing.T) {
 		},
 		{
 			name: "invalid JSON returns error",
-			image: &Image{
+			image: &ImageArtifact{
 				Labels: map[string]string{
 					LabelOpenAPISchema: `{invalid json`,
 				},

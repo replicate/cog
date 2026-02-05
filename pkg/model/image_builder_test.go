@@ -15,8 +15,8 @@ import (
 func TestImageBuilder_HappyPath(t *testing.T) {
 	// Setup mock factory that returns a built image
 	factory := &mockFactory{
-		buildFunc: func(_ context.Context, _ *Source, opts BuildOptions) (*Image, error) {
-			return &Image{
+		buildFunc: func(_ context.Context, _ *Source, opts BuildOptions) (*ImageArtifact, error) {
+			return &ImageArtifact{
 				Reference: opts.ImageName,
 				Digest:    "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				Source:    ImageSourceBuild,
@@ -80,7 +80,7 @@ func TestImageBuilder_ErrorWrongSpecType(t *testing.T) {
 
 func TestImageBuilder_ErrorFactoryBuildFails(t *testing.T) {
 	factory := &mockFactory{
-		buildFunc: func(_ context.Context, _ *Source, _ BuildOptions) (*Image, error) {
+		buildFunc: func(_ context.Context, _ *Source, _ BuildOptions) (*ImageArtifact, error) {
 			return nil, errors.New("docker build failed: out of disk")
 		},
 	}
@@ -97,8 +97,8 @@ func TestImageBuilder_ErrorFactoryBuildFails(t *testing.T) {
 
 func TestImageBuilder_ErrorInspectFails(t *testing.T) {
 	factory := &mockFactory{
-		buildFunc: func(_ context.Context, _ *Source, opts BuildOptions) (*Image, error) {
-			return &Image{
+		buildFunc: func(_ context.Context, _ *Source, opts BuildOptions) (*ImageArtifact, error) {
+			return &ImageArtifact{
 				Reference: opts.ImageName,
 				Digest:    "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				Source:    ImageSourceBuild,

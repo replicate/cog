@@ -317,10 +317,10 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 
 	factory := &mockFactory{
 		name: "test",
-		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
 			buildCalled = true
 			require.Equal(t, "my-built-image", opts.ImageName)
-			return &Image{Reference: opts.ImageName, Source: ImageSourceBuild}, nil
+			return &ImageArtifact{Reference: opts.ImageName, Source: ImageSourceBuild}, nil
 		},
 	}
 
@@ -343,7 +343,7 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 func TestBuildRef_Resolve_BuildError(t *testing.T) {
 	factory := &mockFactory{
 		name: "test",
-		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
 			return nil, errors.New("build failed: missing dependencies")
 		},
 	}

@@ -11,12 +11,12 @@ import (
 // Factory is the build backend interface.
 // Different implementations handle different build strategies.
 type Factory interface {
-	// Build creates a Docker image from source and returns Image metadata.
-	Build(ctx context.Context, src *Source, opts BuildOptions) (*Image, error)
+	// Build creates a Docker image from source and returns ImageArtifact metadata.
+	Build(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error)
 
 	// BuildBase creates a base image for dev mode (without /src copied).
 	// The source directory is expected to be mounted as a volume at runtime.
-	BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Image, error)
+	BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*ImageArtifact, error)
 
 	// Name returns the factory name for logging/debugging.
 	Name() string
@@ -39,7 +39,7 @@ func (f *DockerfileFactory) Name() string {
 }
 
 // Build delegates to the existing image.Build() function.
-func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
 	imageID, err := image.Build(
 		ctx,
 		src.Config,
@@ -64,7 +64,7 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 		return nil, err
 	}
 
-	return &Image{
+	return &ImageArtifact{
 		Reference: opts.ImageName,
 		Digest:    imageID,
 		Source:    ImageSourceBuild,
@@ -72,7 +72,7 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 }
 
 // BuildBase delegates to the existing image.BuildBase() function.
-func (f *DockerfileFactory) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Image, error) {
+func (f *DockerfileFactory) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*ImageArtifact, error) {
 	imageName, err := image.BuildBase(
 		ctx,
 		f.docker,
@@ -89,7 +89,7 @@ func (f *DockerfileFactory) BuildBase(ctx context.Context, src *Source, opts Bui
 		return nil, err
 	}
 
-	return &Image{
+	return &ImageArtifact{
 		Reference: imageName,
 		Source:    ImageSourceBuild,
 	}, nil

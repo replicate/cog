@@ -127,22 +127,22 @@ func (m *mockRegistry) WriteLayer(ctx context.Context, opts registry.WriteLayerO
 // mockFactory implements Factory for testing.
 type mockFactory struct {
 	name          string
-	buildFunc     func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error)
-	buildBaseFunc func(ctx context.Context, src *Source, opts BuildBaseOptions) (*Image, error)
+	buildFunc     func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error)
+	buildBaseFunc func(ctx context.Context, src *Source, opts BuildBaseOptions) (*ImageArtifact, error)
 }
 
-func (f *mockFactory) Build(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+func (f *mockFactory) Build(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
 	if f.buildFunc != nil {
 		return f.buildFunc(ctx, src, opts)
 	}
-	return &Image{Reference: opts.ImageName, Source: ImageSourceBuild}, nil
+	return &ImageArtifact{Reference: opts.ImageName, Source: ImageSourceBuild}, nil
 }
 
-func (f *mockFactory) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Image, error) {
+func (f *mockFactory) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*ImageArtifact, error) {
 	if f.buildBaseFunc != nil {
 		return f.buildBaseFunc(ctx, src, opts)
 	}
-	return &Image{Reference: "cog-base", Source: ImageSourceBuild}, nil
+	return &ImageArtifact{Reference: "cog-base", Source: ImageSourceBuild}, nil
 }
 
 func (f *mockFactory) Name() string {
@@ -1140,8 +1140,8 @@ func TestResolver_Build_PopulatesArtifacts(t *testing.T) {
 	}
 
 	factory := &mockFactory{
-		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
-			return &Image{
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
+			return &ImageArtifact{
 				Reference: opts.ImageName,
 				Digest:    imageDigest,
 				Source:    ImageSourceBuild,
@@ -1190,8 +1190,8 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 	}
 
 	factory := &mockFactory{
-		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
-			return &Image{
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
+			return &ImageArtifact{
 				Reference: opts.ImageName,
 				Digest:    imageDigest,
 				Source:    ImageSourceBuild,
@@ -1267,8 +1267,8 @@ func TestResolver_Build_StandaloneWithWeights(t *testing.T) {
 	}
 
 	factory := &mockFactory{
-		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
-			return &Image{
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
+			return &ImageArtifact{
 				Reference: opts.ImageName,
 				Digest:    imageDigest,
 				Source:    ImageSourceBuild,
