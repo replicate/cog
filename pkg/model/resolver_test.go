@@ -88,6 +88,7 @@ func (m *mockDocker) ContainerStart(ctx context.Context, options command.RunOpti
 type mockRegistry struct {
 	inspectFunc   func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error)
 	getImageFunc  func(ctx context.Context, ref string, platform *registry.Platform) (v1.Image, error)
+	pushImageFunc func(ctx context.Context, ref string, img v1.Image) error
 	pushIndexFunc func(ctx context.Context, ref string, idx v1.ImageIndex) error
 }
 
@@ -110,7 +111,10 @@ func (m *mockRegistry) Exists(ctx context.Context, ref string) (bool, error) {
 }
 
 func (m *mockRegistry) PushImage(ctx context.Context, ref string, img v1.Image) error {
-	panic("not implemented")
+	if m.pushImageFunc != nil {
+		return m.pushImageFunc(ctx, ref, img)
+	}
+	panic("mockRegistry.PushImage not implemented")
 }
 
 func (m *mockRegistry) PushIndex(ctx context.Context, ref string, idx v1.ImageIndex) error {
