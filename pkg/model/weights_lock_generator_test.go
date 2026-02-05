@@ -42,7 +42,7 @@ func TestWeightsLockGenerator_ProcessSingleFile(t *testing.T) {
 	require.Equal(t, "/weights/model.safetensors", wf.Dest)
 	require.Equal(t, int64(len(weightContent)), wf.Size)
 	require.Equal(t, int64(len(weightContent)), wf.SizeUncompressed)
-	require.Equal(t, MediaTypeWeightsLayer, wf.MediaType)
+	require.Equal(t, MediaTypeWeightLayer, wf.MediaType)
 }
 
 func TestWeightsLockGenerator_ProcessDirectory(t *testing.T) {
@@ -81,7 +81,7 @@ func TestWeightsLockGenerator_ProcessDirectory(t *testing.T) {
 	destPaths := make(map[string]bool)
 	for _, wf := range lock.Files {
 		destPaths[wf.Dest] = true
-		require.Equal(t, MediaTypeWeightsLayer, wf.MediaType)
+		require.Equal(t, MediaTypeWeightLayer, wf.MediaType)
 	}
 
 	require.True(t, destPaths["/cache/weights/model.bin"])
@@ -159,6 +159,55 @@ func TestWeightsLockGenerator_DigestCorrectness(t *testing.T) {
 	wf := lock.Files[0]
 	require.Equal(t, expectedDigest, wf.Digest)
 	require.Equal(t, expectedDigest, wf.DigestOriginal)
+}
+
+func TestWeightsLockGenerator_NameFromConfig(t *testing.T) {
+	// When WeightSource.Name is set, it should be used as WeightFile.Name
+	// instead of deriving from the filename.
+	tmpDir := t.TempDir()
+	weightContent := []byte("named weight content")
+	weightFile := filepath.Join(tmpDir, "model-v2.safetensors")
+	err := os.WriteFile(weightFile, weightContent, 0o644)
+	require.NoError(t, err)
+
+	gen := NewWeightsLockGenerator(WeightsLockGeneratorOptions{
+		DestPrefix: "/weights",
+	})
+
+	sources := []config.WeightSource{
+		{Name: "my-model", Source: "model-v2.safetensors"},
+	}
+
+	lock, err := gen.Generate(context.TODO(), tmpDir, sources)
+	require.NoError(t, err)
+	require.Len(t, lock.Files, 1)
+
+	// Name should come from config, not filename derivation
+	require.Equal(t, "my-model", lock.Files[0].Name)
+}
+
+func TestWeightsLockGenerator_NameFallsBackToFilename(t *testing.T) {
+	// When WeightSource.Name is empty, derive from filename (existing behavior).
+	tmpDir := t.TempDir()
+	weightContent := []byte("unnamed weight content")
+	weightFile := filepath.Join(tmpDir, "model-v2.safetensors")
+	err := os.WriteFile(weightFile, weightContent, 0o644)
+	require.NoError(t, err)
+
+	gen := NewWeightsLockGenerator(WeightsLockGeneratorOptions{
+		DestPrefix: "/weights",
+	})
+
+	sources := []config.WeightSource{
+		{Source: "model-v2.safetensors"},
+	}
+
+	lock, err := gen.Generate(context.TODO(), tmpDir, sources)
+	require.NoError(t, err)
+	require.Len(t, lock.Files, 1)
+
+	// Fallback: derive name from filename (strip extension)
+	require.Equal(t, "model-v2", lock.Files[0].Name)
 }
 
 func TestWeightsLockGenerator_FilePaths(t *testing.T) {

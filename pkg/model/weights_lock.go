@@ -55,7 +55,7 @@ func (wl *WeightsLock) Save(path string) error {
 // ToWeightsManifest converts the lockfile to a WeightsManifest.
 func (wl *WeightsLock) ToWeightsManifest() *WeightsManifest {
 	return &WeightsManifest{
-		ArtifactType: MediaTypeWeightsManifest,
+		ArtifactType: MediaTypeWeightArtifact,
 		Created:      wl.Created,
 		Files:        wl.Files,
 	}

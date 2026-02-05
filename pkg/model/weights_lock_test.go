@@ -81,7 +81,7 @@ func TestWeightsLock(t *testing.T) {
 		}
 
 		wm := lock.ToWeightsManifest()
-		require.Equal(t, MediaTypeWeightsManifest, wm.ArtifactType)
+		require.Equal(t, MediaTypeWeightArtifact, wm.ArtifactType)
 		require.Len(t, wm.Files, 1)
 	})
 }

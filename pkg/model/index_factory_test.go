@@ -54,11 +54,11 @@ func TestIndexFactory(t *testing.T) {
 		require.Len(t, manifest.Files, 1)
 		require.NotEmpty(t, manifest.Files[0].Digest)
 		require.NotEmpty(t, manifest.Files[0].DigestOriginal)
-		require.Equal(t, MediaTypeWeightsLayer, manifest.Files[0].MediaType)
+		require.Equal(t, MediaTypeWeightLayer, manifest.Files[0].MediaType)
 
 		artifactType, err := partial.ArtifactType(artifact)
 		require.NoError(t, err)
-		require.Equal(t, MediaTypeWeightsManifest, artifactType)
+		require.Equal(t, MediaTypeWeightArtifact, artifactType)
 	})
 
 	t.Run("build index with image and weights", func(t *testing.T) {
@@ -128,7 +128,7 @@ func TestIndexFactory_BuildWeightsArtifactFromManifest(t *testing.T) {
 
 		// Create a WeightsManifest (instead of WeightsLock)
 		manifest := &WeightsManifest{
-			ArtifactType: MediaTypeWeightsManifest,
+			ArtifactType: MediaTypeWeightArtifact,
 			Created:      time.Now().UTC(),
 			Files: []WeightFile{
 				{
@@ -185,7 +185,7 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 
 		artifactType, err := partial.ArtifactType(artifact)
 		require.NoError(t, err)
-		require.Equal(t, MediaTypeWeightsManifest, artifactType)
+		require.Equal(t, MediaTypeWeightArtifact, artifactType)
 
 		manifest, err := artifact.Manifest()
 		require.NoError(t, err)
@@ -208,7 +208,7 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 			DigestOriginal:   digest,
 			Size:             int64(len(data)),
 			SizeUncompressed: int64(len(data)),
-			MediaType:        MediaTypeWeightsLayer,
+			MediaType:        MediaTypeWeightLayer,
 		}
 
 		builder := NewWeightsArtifactBuilder()
@@ -223,9 +223,9 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		require.Len(t, manifest.Layers, 1)
 
 		layer := manifest.Layers[0]
-		require.Equal(t, types.MediaType(MediaTypeWeightsLayer), layer.MediaType)
-		require.Equal(t, "test.bin", layer.Annotations[AnnotationWeightsName])
-		require.Equal(t, "/cache/test.bin", layer.Annotations[AnnotationWeightsDest])
+		require.Equal(t, types.MediaType(MediaTypeWeightLayer), layer.MediaType)
+		require.Equal(t, "test.bin", layer.Annotations[AnnotationWeightName])
+		require.Equal(t, "/cache/test.bin", layer.Annotations[AnnotationWeightDest])
 	})
 
 	t.Run("add layer with all annotations", func(t *testing.T) {
@@ -244,7 +244,7 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 			DigestOriginal:   digest,
 			Size:             int64(len(data)),
 			SizeUncompressed: int64(len(data)),
-			MediaType:        MediaTypeWeightsLayer,
+			MediaType:        MediaTypeWeightLayer,
 		}
 
 		builder := NewWeightsArtifactBuilder()
@@ -259,10 +259,10 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		require.Len(t, manifest.Layers, 1)
 
 		layer := manifest.Layers[0]
-		require.Equal(t, "llama-3.1-8b-weights", layer.Annotations[AnnotationWeightsName])
-		require.Equal(t, "/cache/model.safetensors", layer.Annotations[AnnotationWeightsDest])
-		require.Equal(t, digest, layer.Annotations[AnnotationWeightsDigestOriginal])
-		require.Equal(t, "16", layer.Annotations[AnnotationWeightsSizeUncompressed])
+		require.Equal(t, "llama-3.1-8b-weights", layer.Annotations[AnnotationWeightName])
+		require.Equal(t, "/cache/model.safetensors", layer.Annotations[AnnotationWeightDest])
+		require.Equal(t, digest, layer.Annotations[AnnotationWeightDigestOriginal])
+		require.Equal(t, "16", layer.Annotations[AnnotationWeightSizeUncompressed])
 	})
 
 	t.Run("add multiple layers", func(t *testing.T) {
@@ -283,7 +283,7 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 			DigestOriginal:   digest1,
 			Size:             int64(len(data1)),
 			SizeUncompressed: int64(len(data1)),
-			MediaType:        MediaTypeWeightsLayer,
+			MediaType:        MediaTypeWeightLayer,
 		}
 		err := builder.AddLayerFromFile(wf1, file1)
 		require.NoError(t, err)
@@ -302,7 +302,7 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 			DigestOriginal:   digest2,
 			Size:             int64(len(data2)),
 			SizeUncompressed: int64(len(data2)),
-			MediaType:        MediaTypeWeightsLayer,
+			MediaType:        MediaTypeWeightLayer,
 		}
 		err = builder.AddLayerFromFile(wf2, file2)
 		require.NoError(t, err)
@@ -314,11 +314,11 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, manifest.Layers, 2)
 
-		require.Equal(t, "layer1.bin", manifest.Layers[0].Annotations[AnnotationWeightsName])
-		require.Equal(t, "/cache/layer1.bin", manifest.Layers[0].Annotations[AnnotationWeightsDest])
+		require.Equal(t, "layer1.bin", manifest.Layers[0].Annotations[AnnotationWeightName])
+		require.Equal(t, "/cache/layer1.bin", manifest.Layers[0].Annotations[AnnotationWeightDest])
 
-		require.Equal(t, "layer2.bin", manifest.Layers[1].Annotations[AnnotationWeightsName])
-		require.Equal(t, "/cache/layer2.bin", manifest.Layers[1].Annotations[AnnotationWeightsDest])
+		require.Equal(t, "layer2.bin", manifest.Layers[1].Annotations[AnnotationWeightName])
+		require.Equal(t, "/cache/layer2.bin", manifest.Layers[1].Annotations[AnnotationWeightDest])
 	})
 
 	t.Run("layer has expected annotations", func(t *testing.T) {
@@ -337,7 +337,7 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 			DigestOriginal:   digest,
 			Size:             int64(len(data)),
 			SizeUncompressed: int64(len(data)),
-			MediaType:        MediaTypeWeightsLayer,
+			MediaType:        MediaTypeWeightLayer,
 		}
 
 		builder := NewWeightsArtifactBuilder()
@@ -352,9 +352,9 @@ func TestWeightsArtifactBuilder(t *testing.T) {
 		require.Len(t, manifest.Layers, 1)
 
 		layer := manifest.Layers[0]
-		require.Equal(t, "test-weight-v1", layer.Annotations[AnnotationWeightsName])
-		require.Equal(t, "/cache/test.bin", layer.Annotations[AnnotationWeightsDest])
-		require.Equal(t, digest, layer.Annotations[AnnotationWeightsDigestOriginal])
+		require.Equal(t, "test-weight-v1", layer.Annotations[AnnotationWeightName])
+		require.Equal(t, "/cache/test.bin", layer.Annotations[AnnotationWeightDest])
+		require.Equal(t, digest, layer.Annotations[AnnotationWeightDigestOriginal])
 	})
 }
 
@@ -392,9 +392,9 @@ func TestWeightsArtifactBuilderFromFiles(t *testing.T) {
 		require.Len(t, manifest.Layers, 1)
 
 		layer := manifest.Layers[0]
-		require.Equal(t, "my-model-v1", layer.Annotations[AnnotationWeightsName])
-		require.Equal(t, "/cache/model.bin", layer.Annotations[AnnotationWeightsDest])
-		require.NotEmpty(t, layer.Annotations[AnnotationWeightsDigestOriginal])
+		require.Equal(t, "my-model-v1", layer.Annotations[AnnotationWeightName])
+		require.Equal(t, "/cache/model.bin", layer.Annotations[AnnotationWeightDest])
+		require.NotEmpty(t, layer.Annotations[AnnotationWeightDigestOriginal])
 	})
 
 	t.Run("resolve file path from map", func(t *testing.T) {

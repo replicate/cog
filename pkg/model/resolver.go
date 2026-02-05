@@ -245,27 +245,40 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 		m.ImageFormat = FormatStandalone
 	}
 
-	// For bundle format, load weights manifest
-	if m.ImageFormat == FormatBundle {
-		lockPath := opts.WeightsLockPath
-		if lockPath == "" {
-			lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
-		}
-
-		lock, err := LoadWeightsLock(lockPath)
-		if err != nil {
-			return nil, fmt.Errorf("bundle format requires weights.lock: %w", err)
-		}
-		m.WeightsManifest = lock.ToWeightsManifest()
-	}
-
-	// Populate artifacts from the built image
+	// Populate artifacts: start with the image artifact
 	digest, err := v1.NewHash(img.Digest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image digest %q: %w", img.Digest, err)
 	}
 	m.Artifacts = []Artifact{
 		NewImageArtifact("model", v1.Descriptor{Digest: digest}, img.Reference),
+	}
+
+	// Build weight artifacts if configured
+	lockPath := opts.WeightsLockPath
+	if lockPath == "" {
+		lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
+	}
+
+	if len(src.Config.Weights) > 0 {
+		wb := NewWeightBuilder(src, m.CogVersion, lockPath)
+		for _, ws := range src.Config.Weights {
+			spec := NewWeightSpec(ws.Name, ws.Source, ws.Target)
+			artifact, buildErr := wb.Build(ctx, spec)
+			if buildErr != nil {
+				return nil, fmt.Errorf("build weight %q: %w", ws.Name, buildErr)
+			}
+			m.Artifacts = append(m.Artifacts, artifact)
+		}
+	}
+
+	// For bundle format, load weights manifest (lockfile created/updated by WeightBuilder above)
+	if m.ImageFormat == FormatBundle {
+		lock, loadErr := LoadWeightsLock(lockPath)
+		if loadErr != nil {
+			return nil, fmt.Errorf("bundle format requires weights.lock: %w", loadErr)
+		}
+		m.WeightsManifest = lock.ToWeightsManifest()
 	}
 
 	return m, nil
