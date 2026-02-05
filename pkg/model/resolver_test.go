@@ -918,11 +918,13 @@ func TestResolver_Pull_LocalInspectRealError(t *testing.T) {
 // =============================================================================
 
 func TestResolver_Build_SetsImageFormat(t *testing.T) {
+	validDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+
 	t.Run("sets standalone format by default", func(t *testing.T) {
 		docker := &mockDocker{
 			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 				return &image.InspectResponse{
-					ID: "sha256:abc123",
+					ID: validDigest,
 					Config: &container.Config{
 						Labels: map[string]string{
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
@@ -954,7 +956,7 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		docker := &mockDocker{
 			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 				return &image.InspectResponse{
-					ID: "sha256:abc123",
+					ID: validDigest,
 					Config: &container.Config{
 						Labels: map[string]string{
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
@@ -999,7 +1001,7 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		docker := &mockDocker{
 			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 				return &image.InspectResponse{
-					ID: "sha256:abc123",
+					ID: validDigest,
 					Config: &container.Config{
 						Labels: map[string]string{
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
@@ -1031,7 +1033,7 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		docker := &mockDocker{
 			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 				return &image.InspectResponse{
-					ID: "sha256:abc123",
+					ID: validDigest,
 					Config: &container.Config{
 						Labels: map[string]string{
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
@@ -1074,6 +1076,56 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		require.Len(t, m.WeightsManifest.Files, 1)
 		require.Equal(t, "my-custom-v1", m.WeightsManifest.Files[0].Name)
 	})
+}
+
+func TestResolver_Build_PopulatesArtifacts(t *testing.T) {
+	imageDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return &image.InspectResponse{
+				ID: imageDigest,
+				Config: &container.Config{
+					Labels: map[string]string{
+						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+						LabelVersion: "0.15.0",
+					},
+				},
+			}, nil
+		},
+	}
+
+	factory := &mockFactory{
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+			return &Image{
+				Reference: opts.ImageName,
+				Digest:    imageDigest,
+				Source:    ImageSourceBuild,
+			}, nil
+		},
+	}
+	resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
+
+	src := &Source{
+		Config:     &config.Config{Build: &config.Build{}},
+		ProjectDir: t.TempDir(),
+	}
+
+	m, err := resolver.Build(context.Background(), src, BuildOptions{
+		ImageName: "test-image:latest",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, m.Artifacts, "Build should populate Artifacts")
+	require.Len(t, m.Artifacts, 1, "should have exactly one artifact (image)")
+
+	// Verify it's an ImageArtifact with correct data
+	imgArtifact := m.GetImageArtifact()
+	require.NotNil(t, imgArtifact, "should contain an ImageArtifact")
+	require.Equal(t, "model", imgArtifact.Name())
+	require.Equal(t, ArtifactTypeImage, imgArtifact.Type())
+	require.Equal(t, "test-image:latest", imgArtifact.Reference)
+	require.Equal(t, imageDigest, imgArtifact.Descriptor().Digest.String())
 }
 
 func TestIndexDetectionHelpers(t *testing.T) {
