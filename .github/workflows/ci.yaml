@@ -379,7 +379,8 @@ jobs:
       - name: Build cog
         run: mise run build:cog
       - name: Test Go
-        run: mise run test:go
+        # Run gotestsum directly (not via mise) for proper signal handling on cancellation
+        run: gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...)
 
   test-rust:
     name: Test Rust
@@ -524,7 +525,9 @@ jobs:
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
-        run: mise run ci:test:integration
+        working-directory: integration-tests
+        # Run gotestsum directly (not via mise) for proper signal handling on cancellation
+        run: gotestsum --format github-actions -- -parallel $TEST_PARALLEL -timeout 30m
 
 # =============================================================================
 # Gate Job - Single required check for branch protection
