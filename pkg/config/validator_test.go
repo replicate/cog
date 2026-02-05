@@ -107,3 +107,49 @@ concurrency: 54`
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "concurrency must be a mapping.")
 }
+
+func TestValidateWeightsWithName(t *testing.T) {
+	config := `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+weights:
+  - name: model-v1
+    source: file://./weights/model-v1.zip
+    target: "/weights/model-v1"
+  - name: model-v2
+    source: file://./weights/model-v2.zip
+    target: "/weights/model-v2"`
+
+	err := Validate(config, "1.0")
+	require.NoError(t, err)
+}
+
+func TestValidateWeightsWithoutName(t *testing.T) {
+	config := `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+weights:
+  - source: file://./weights/model.zip
+    target: "/weights/model"`
+
+	err := Validate(config, "1.0")
+	require.NoError(t, err)
+}
+
+func TestValidateWeightsWithInvalidProperty(t *testing.T) {
+	config := `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+weights:
+  - name: model-v1
+    source: file://./weights/model-v1.zip
+    target: "/weights/model-v1"
+    invalid_property: "should fail"`
+
+	err := Validate(config, "1.0")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Additional property invalid_property is not allowed")
+}
