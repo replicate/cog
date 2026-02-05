@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/replicate/cog/pkg/config"
 )
@@ -12,12 +11,6 @@ type PushOptions struct {
 	Image      string
 	Config     *config.Config
 	ProjectDir string
-
-	// For analytics
-	BuildID string
-
-	// HTTP client for API calls (may be nil for generic provider)
-	HTTPClient *http.Client
 }
 
 type LoginOptions struct {
@@ -36,15 +29,9 @@ type Provider interface {
 	// Login performs provider-specific authentication
 	Login(ctx context.Context, opts LoginOptions) error
 
-	// PrePush is called before pushing
-	// - Validates push options (returns error if unsupported features are used)
-	// - Starts analytics/telemetry
-	// - Any other pre-push setup
-	PrePush(ctx context.Context, opts PushOptions) error
-
 	// PostPush is called after push attempt (success or failure)
-	// - Ends analytics/telemetry
 	// - Shows success message (e.g., Replicate model URL)
+	// - May transform errors into provider-specific messages
 	// - pushErr is nil on success, contains the push error on failure
 	PostPush(ctx context.Context, opts PushOptions, pushErr error) error
 }

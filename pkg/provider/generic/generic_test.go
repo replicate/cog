@@ -38,18 +38,6 @@ func TestGenericProvider_Login(t *testing.T) {
 	t.Skip("Login requires interactive input - test manually")
 }
 
-func TestGenericProvider_PrePush(t *testing.T) {
-	p := New()
-
-	t.Run("basic push succeeds", func(t *testing.T) {
-		opts := provider.PushOptions{
-			Image: "ghcr.io/org/model",
-		}
-		err := p.PrePush(context.Background(), opts)
-		require.NoError(t, err)
-	})
-}
-
 func TestGenericProvider_PostPush(t *testing.T) {
 	p := New()
 

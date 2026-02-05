@@ -77,27 +77,14 @@ func push(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no provider found for image '%s'", imageName)
 	}
 
-	// Build push options
-	buildID, err := uuid.NewV7()
-	if err != nil {
-		// Don't insert build ID but continue anyways
-		console.Debugf("Failed to create build ID %v", err)
-	}
-
 	pushOpts := provider.PushOptions{
 		Image:      imageName,
 		Config:     src.Config,
 		ProjectDir: src.ProjectDir,
-		BuildID:    buildID.String(),
-		HTTPClient: httpClient,
-	}
-
-	// PrePush: validation and setup (analytics start, feature checks)
-	if err := p.PrePush(ctx, pushOpts); err != nil {
-		return err
 	}
 
 	// Build the image
+	buildID, _ := uuid.NewV7()
 	annotations := map[string]string{}
 	if buildID.String() != "" {
 		annotations["run.cog.push_id"] = buildID.String()
@@ -132,8 +119,7 @@ func push(cmd *cobra.Command, args []string) error {
 		BuildID:   buildID.String(),
 	}, httpClient)
 
-	// PostPush: cleanup, analytics end, success/error messages
-	// The provider handles formatting errors and showing success messages
+	// PostPush: the provider handles formatting errors and showing success messages
 	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {
 		return err
 	}
