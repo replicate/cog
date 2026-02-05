@@ -606,7 +606,7 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, location string, totalSize int64, progressCh chan<- v1.Update) (string, error) {
 	// Multipart upload settings:
 	// - Threshold: Use multipart only for blobs larger than 50MB (avoids MPU overhead for smaller files)
-	// - Chunk size: 25MB per chunk (good balance for R2 object store)
+	// - Chunk size: 25MB per chunk (good balance for object stores and typical network conditions)
 	const multipartThreshold = 50 * 1024 * 1024
 	const chunkSize = 25 * 1024 * 1024
 
@@ -722,11 +722,8 @@ func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Clie
 		onRead: func(n int) {
 			uploaded += int64(n)
 			if progressCh != nil {
-				complete := uploaded
 				// Cap at totalSize defensively
-				if complete > totalSize {
-					complete = totalSize
-				}
+				complete := min(uploaded, totalSize)
 				select {
 				case progressCh <- v1.Update{Complete: complete, Total: totalSize}:
 				default:
@@ -766,11 +763,8 @@ func (c *RegistryClient) uploadChunk(ctx context.Context, client *http.Client, l
 			reader: bytes.NewReader(chunk),
 			onRead: func(n int) {
 				chunkUploaded += int64(n)
-				complete := start + chunkUploaded
 				// Cap at totalSize defensively
-				if complete > totalSize {
-					complete = totalSize
-				}
+				complete := min(start+chunkUploaded, totalSize)
 				select {
 				case progressCh <- v1.Update{Complete: complete, Total: totalSize}:
 				default:
