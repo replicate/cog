@@ -12,16 +12,22 @@ name: Release Publish
 # 2. Configure environment protection rules:
 #    - Deployment branches: "Selected branches and tags"
 #    - Add pattern: v* (to restrict to version tags only)
-#    - Optional: Add required reviewers for additional approval
+#    - Required reviewers: Add maintainers (only maintainers can publish)
 #
 # 3. Add secrets to each environment:
 #    - pypi: Uses OIDC (no secret needed with Trusted Publisher)
 #    - crates-io: CARGO_REGISTRY_TOKEN
 #
 # SECURITY:
-# - Publisher must be different from tag author (enforced in verify-publisher job)
+# - Only maintainers can publish releases (via environment protection rules)
 # - Secrets only available for v* tags (via environment branch restrictions)
 # - Cannot be triggered from branches, only from published releases
+#
+# PUBLISH ORDER:
+# 1. coglet → PyPI (must be first, SDK depends on it)
+# 2. coglet → crates.io (can run parallel with SDK)
+# 3. SDK → PyPI (depends on coglet being available)
+# 4. CLI binaries → GitHub Release (no dependencies)
 
 on:
   release:
@@ -36,88 +42,16 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  verify-publisher:
-    name: Verify publisher is not tag author
+  verify-release:
+    name: Verify release tag
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Get tag author
-        id: tag-author
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const tag = context.payload.release.tag_name;
-            
-            // Get the tag reference
-            const ref = await github.rest.git.getRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: `tags/${tag}`
-            });
-            
-            // Get the tag object (for annotated tags) or commit
-            let authorLogin;
-            if (ref.data.object.type === 'tag') {
-              const tagObj = await github.rest.git.getTag({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag_sha: ref.data.object.sha
-              });
-              // For annotated tags, get the tagger
-              // Note: tagger might not have a GitHub login, fall back to commit author
-              const commit = await github.rest.git.getCommit({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                commit_sha: tagObj.data.object.sha
-              });
-              // Try to find the user who pushed the tag via events
-              const events = await github.rest.activity.listRepoEvents({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                per_page: 100
-              });
-              const pushEvent = events.data.find(e => 
-                e.type === 'PushEvent' && 
-                e.payload.ref === `refs/tags/${tag}`
-              );
-              authorLogin = pushEvent?.actor?.login || 'unknown';
-            } else {
-              // Lightweight tag - get commit author
-              const commit = await github.rest.repos.getCommit({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: ref.data.object.sha
-              });
-              authorLogin = commit.data.author?.login || 'unknown';
-            }
-            
-            core.setOutput('tag-author', authorLogin);
-            console.log(`Tag author: ${authorLogin}`);
-
-      - name: Check publisher is different from tag author
-        env:
-          TAG_AUTHOR: ${{ steps.tag-author.outputs.tag-author }}
-          PUBLISHER: ${{ github.event.release.author.login }}
+      - name: Verify valid release tag
         run: |
-          echo "Tag author: $TAG_AUTHOR"
-          echo "Release publisher: $PUBLISHER"
-          
-          if [ "$TAG_AUTHOR" = "$PUBLISHER" ]; then
-            echo "::error::Release cannot be published by the same person who created the tag"
-            echo "::error::Tag author: $TAG_AUTHOR"
-            echo "::error::Publisher: $PUBLISHER"
-            echo "::error::A different team member must publish the release for security"
-            exit 1
-          fi
-          
-          echo "✓ Publisher ($PUBLISHER) is different from tag author ($TAG_AUTHOR)"
-
-      - name: Verify this is not a branch
-        run: |
-          REF="${{ github.event.release.target_commitish }}"
           TAG="${{ github.event.release.tag_name }}"
           
-          # Release must be from a tag, not a branch
+          # Release must be from a valid version tag
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
             echo "::error::Invalid tag format: $TAG"
             echo "::error::Tags must match pattern v*.*.* (e.g., v1.0.0)"
@@ -126,14 +60,33 @@ jobs:
           
           echo "✓ Valid release tag: $TAG"
 
-  publish-pypi-sdk:
-    name: Publish SDK to PyPI
-    needs: verify-publisher
+  # coglet must be published BEFORE SDK because cog[coglet] depends on coglet
+  publish-pypi-coglet:
+    name: Publish coglet to PyPI
+    needs: verify-release
     runs-on: ubuntu-latest
     environment: pypi
     timeout-minutes: 10
     steps:
-      - name: Download SDK from release
+      - name: Download coglet wheels from release
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ github.event.release.tag_name }}
+          fileName: "coglet-*.whl"
+          out-file-path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-pypi-sdk:
+    name: Publish SDK to PyPI
+    # SDK depends on coglet being published first (cog[coglet] requires coglet)
+    needs: publish-pypi-coglet
+    runs-on: ubuntu-latest
+    environment: pypi
+    timeout-minutes: 10
+    steps:
+      - name: Download SDK wheel from release
         uses: robinraju/release-downloader@v1
         with:
           tag: ${{ github.event.release.tag_name }}
@@ -150,26 +103,9 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
-  publish-pypi-coglet:
-    name: Publish coglet to PyPI
-    needs: verify-publisher
-    runs-on: ubuntu-latest
-    environment: pypi
-    timeout-minutes: 10
-    steps:
-      - name: Download coglet wheels from release
-        uses: robinraju/release-downloader@v1
-        with:
-          tag: ${{ github.event.release.tag_name }}
-          fileName: "coglet-*.whl"
-          out-file-path: dist
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-
   publish-crates-io:
     name: Publish coglet to crates.io
-    needs: verify-publisher
+    needs: verify-release
     runs-on: ubuntu-latest
     environment: crates-io
     timeout-minutes: 15
@@ -187,7 +123,7 @@ jobs:
 
   publish-github-release:
     name: Publish CLI binaries
-    needs: verify-publisher
+    needs: verify-release
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -197,13 +133,6 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
-
-      - name: Download SDK wheel for embedding
-        uses: robinraju/release-downloader@v1
-        with:
-          tag: ${{ github.event.release.tag_name }}
-          fileName: "cog-*.whl"
-          out-file-path: dist
 
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
