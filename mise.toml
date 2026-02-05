@@ -44,6 +44,7 @@ cargo-binstall = "1.16.6"
 "cargo:cargo-nextest" = "0.9.120"
 "cargo:maturin" = "1.11.5"
 "aqua:rust-cross/cargo-zigbuild" = "0.20.1"
+"aqua:gotestyourself/gotestsum" = "1.13.0"
 ruff = "0.14.13"
 ty = "0.0.10"
 
@@ -596,11 +597,8 @@ run = [
 [tasks."ci:test:integration"]
 description = "CI: Run integration tests with GitHub Actions output (full suite)"
 dir = "integration-tests"
-run = """
-#!/usr/bin/env bash
-set -e
-go run gotest.tools/gotestsum@latest --format github-actions -- -parallel ${TEST_PARALLEL:-4} -timeout 30m
-"""
+# exec ensures signals (SIGTERM from CI cancellation) go directly to gotestsum
+run = "exec gotestsum --format github-actions -- -parallel ${TEST_PARALLEL:-4} -timeout 30m"
 
 # =============================================================================
 # Publish tasks (future)
