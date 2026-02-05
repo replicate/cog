@@ -7,6 +7,10 @@ version = "0.1.1"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/replicate/cog"
+homepage = "https://cog.run"
+documentation = "https://cog.run/docs"
+keywords = ["machine-learning", "inference", "containers", "prediction"]
+categories = ["development-tools", "web-programming"]
 
 [workspace.dependencies]
 # Async runtime
