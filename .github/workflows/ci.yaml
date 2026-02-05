@@ -9,7 +9,7 @@ on:
 
 # Cancel in-progress runs for PRs, queue for merge group and main
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}-v2
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -359,7 +359,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          trap 'echo "Cancelling..."; kill -- -$$' INT TERM
+          set -m  # job control, ensures script is in its own process group
+          cleanup() {
+            echo "::warning::Cancelling..."
+            kill -TERM -- -$$ 2>/dev/null || true
+            sleep 5
+            kill -KILL -- -$$ 2>/dev/null || true
+          }
+          trap cleanup INT TERM
           gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...) &
           wait $!
 
@@ -454,7 +461,7 @@ jobs:
     name: "Test integration (${{ matrix.runtime }})"
     needs: [changes, build-sdk, build-rust]
     if: |
-      always() &&
+      !cancelled() &&
       needs.changes.outputs.integration == 'true' &&
       (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
       (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
@@ -510,7 +517,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          trap 'echo "Cancelling..."; kill -- -$$' INT TERM
+          set -m  # job control, ensures script is in its own process group
+          cleanup() {
+            echo "::warning::Cancelling..."
+            kill -TERM -- -$$ 2>/dev/null || true
+            sleep 5
+            kill -KILL -- -$$ 2>/dev/null || true
+          }
+          trap cleanup INT TERM
           gotestsum --format github-actions -- -parallel $TEST_PARALLEL -timeout 30m &
           wait $!
 
