@@ -36,6 +36,10 @@ backend = "core:go"
 "platforms.macos-x64" = { checksum = "sha256:e2b5b237f5c262931b8e280ac4b8363f156e19bfad5270c099998932819670b7", url = "https://dl.google.com/go/go1.25.6.darwin-amd64.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:19b4733b727ba5c611b5656187f3ac367d278d64c3d4199a845e39c0fdac5335", url = "https://dl.google.com/go/go1.25.6.windows-amd64.zip"}
 
+[[tools.python]]
+version = "3.12.12"
+backend = "core:python"
+
 [[tools.ruff]]
 version = "0.14.13"
 backend = "aqua:astral-sh/ruff"
