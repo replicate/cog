@@ -26,7 +26,8 @@
 #
 # =============================================================================
 
-experimental_monorepo_root = true
+[monorepo]
+config_roots = ["."]
 
 [tools]
 python = "3.12"  # Required: pyo3 needs Python 3.10+ (abi3-py310)
@@ -232,13 +233,18 @@ description = "Run Python SDK tests"
 run = "uv run tox run -f tests"
 
 [tasks."test:coglet:python"]
-description = "Run coglet Python binding tests"
-depends = ["build:coglet"]
+description = "Run coglet Python binding tests (uses pre-built wheel if available)"
+depends = ["build:coglet:wheel"]
 dir = "crates/coglet-python"
 run = """
 #!/usr/bin/env bash
 set -e
-uv pip install -e . -e ../.. pytest requests
+# Use pre-built wheel from dist/ if available, otherwise editable install
+if ls ../../dist/coglet-*.whl 1>/dev/null 2>&1; then
+  uv pip install ../../dist/coglet-*.whl -e ../.. pytest requests
+else
+  uv pip install -e . -e ../.. pytest requests
+fi
 python -m pytest tests/ -v
 """
 
@@ -334,6 +340,7 @@ run = [
 [tasks."lint:go"]
 alias = "lint:go:check"
 description = "Lint Go code"
+depends = ["generate:go"]
 run = "go tool golangci-lint run ./..."
 
 [tasks."lint:go:fix"]
