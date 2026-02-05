@@ -431,7 +431,7 @@ jobs:
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test Python
-        run: uvx nox -s tests
+        run: uvx nox -s tests -p ${{ matrix.python-version }}
 
   test-coglet-python:
     name: "Test coglet-python (${{ matrix.python-version }})"
