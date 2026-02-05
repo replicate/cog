@@ -33,6 +33,7 @@ config_roots = ["."]
 python = "3.12"  # Required: pyo3 needs Python 3.10+ (abi3-py310)
 go = "latest"
 uv = "0.9.26"
+"pipx:nox" = { version = "2025.11.12", uvx = true, uvx_args = "--python-preference=managed -p 3.13" }
 zig = "0.15.2"
 "rust" = { version = "1.93.0", components = "rustfmt,clippy", targets ="x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
 cargo-binstall = "1.16.6"
@@ -229,8 +230,12 @@ description = "Run Rust workspace tests"
 run = "cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude coglet-python --no-tests=pass"
 
 [tasks."test:python"]
-description = "Run Python SDK tests"
-run = "uv run tox run -f tests"
+description = "Run Python SDK tests (latest supported Python)"
+run = "nox -s tests -p 3.13"
+
+[tasks."test:python:all"]
+description = "Run Python SDK tests on all supported Python versions"
+run = "nox -s tests"
 
 [tasks."test:coglet:python"]
 description = "Run coglet Python binding tests (uses pre-built wheel if available)"
@@ -392,7 +397,7 @@ run = "cargo check --manifest-path crates/Cargo.toml --workspace"
 
 [tasks."typecheck:python"]
 description = "Type check Python code"
-run = "uv run tox run -e typecheck"
+run = "nox -s typecheck"
 
 # =============================================================================
 # Generate tasks

@@ -35,8 +35,6 @@ dev = [
     "build>=1.2.2.post1",
     "ruff",
     "setuptools-scm>=8.2.0",
-    "tox>=4.25.0",
-    "tox-uv>=1.13.1",
 ]
 
 test = [

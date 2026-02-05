@@ -16,17 +16,20 @@ concurrency:
 env:
   # Single source of truth for supported Python versions
   SUPPORTED_PYTHONS: '["3.10", "3.11", "3.12", "3.13"]'
+  # Default Python version for non-matrix jobs
+  PYTHON_VERSION: "3.13"
   # Standard environment
   HYPOTHESIS_PROFILE: ci
   FORCE_COLOR: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
   CARGO_TERM_COLOR: always
-  # Disable Rust toolchain and cargo-binstall in mise - CI uses dedicated actions
+  # Disable Rust toolchain, cargo-binstall, and Python in mise - CI uses dedicated actions
   # for better caching. mise installs tools in parallel, so rust might not be
   # ready when cargo-binstall tries to compile cargo:* tools from source.
   # Using actions guarantees toolchain is ready before mise installs cargo:* tools.
-  MISE_DISABLE_TOOLS: rust,cargo-binstall
+  # Python is managed by astral-sh/setup-uv for version matrix support.
+  MISE_DISABLE_TOOLS: rust,cargo-binstall,python
 
 permissions: {}
 
@@ -93,7 +96,7 @@ jobs:
             fi
 
             # Detect Python changes
-            if echo "$CHANGED" | grep -qE '^(python/|pyproject\.toml|tox\.ini|\.ruff\.toml)'; then
+            if echo "$CHANGED" | grep -qE '^(python/|pyproject\.toml|noxfile\.py|\.ruff\.toml)'; then
               echo "python=true" >> $GITHUB_OUTPUT
             else
               echo "python=false" >> $GITHUB_OUTPUT
@@ -132,6 +135,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
@@ -156,6 +162,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable  # Required for cargo-binstall to find cargo
       - uses: taiki-e/install-action@cargo-binstall
@@ -218,6 +227,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
@@ -320,6 +332,9 @@ jobs:
           path: dist
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
@@ -355,6 +370,9 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
@@ -395,8 +413,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - name: Download SDK
         uses: actions/download-artifact@v7
@@ -405,16 +421,17 @@ jobs:
           path: dist
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v3
-      - name: Compute tox env name
-        run: echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test Python
-        run: uvx --with tox-uv tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-tests
+        run: nox -s tests
 
   test-coglet-python:
     name: "Test coglet-python (${{ matrix.python-version }})"
@@ -446,13 +463,10 @@ jobs:
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: jdx/mise-action@v3
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Create virtual environment
-        run: uv venv --python ${{ matrix.python-version }}
+      - uses: jdx/mise-action@v3
       - name: Test coglet-python bindings
         run: mise run test:coglet:python
 
