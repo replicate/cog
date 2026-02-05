@@ -3,16 +3,33 @@ package integration_test
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/rogpeppe/go-internal/testscript"
 
 	"github.com/replicate/cog/integration-tests/harness"
 )
+
+// TestMain sets up signal handling to force exit on cancellation.
+// Without this, go test ignores SIGTERM and keeps running when CI cancels.
+func TestMain(m *testing.M) {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigCh
+		fmt.Fprintf(os.Stderr, "\nReceived %v, forcing exit...\n", sig)
+		os.Exit(1)
+	}()
+
+	os.Exit(m.Run())
+}
 
 func TestIntegration(t *testing.T) {
 	dir := "tests"
