@@ -35,7 +35,7 @@ python = "3.12"  # Required: pyo3 needs Python 3.10+ (abi3-py310)
 go = "latest"
 uv = "0.9.26"
 "pipx:nox" = { version = "2025.11.12", uvx = true, uvx_args = "--python-preference=managed -p 3.13" }
-zig = "0.15.2"
+"aqua:ziglang/zig" = "0.15.2"
 "rust" = { version = "1.93.0", components = "rustfmt,clippy", targets ="x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
 cargo-binstall = "1.16.6"
 # Cargo tools - use aqua backend where available for faster binary downloads

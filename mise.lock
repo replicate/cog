@@ -42,6 +42,15 @@ backend = "aqua:rust-cross/cargo-zigbuild"
 "platforms.macos-x64" = { checksum = "sha256:d5c7ac2e6f25fb76083dff84640cdf679c5da858b9c97631555c3185be2fbf35", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.apple-darwin.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:b0bb728ba068ee61342f40a2124b3d8d234af8f716dd416b7c1f794dfeb4e478", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.windows-x64.zip"}
 
+[[tools."aqua:ziglang/zig"]]
+version = "0.15.2"
+backend = "aqua:ziglang/zig"
+"platforms.linux-arm64" = { url = "https://ziglang.org/download/0.15.2/zig-aarch64-linux-0.15.2.tar.xz"}
+"platforms.linux-x64" = { url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"}
+"platforms.macos-arm64" = { checksum = "blake3:c7d2fb746701fea2c070f66c29a0300ba42a0d5d2c09c493462b8c0f4f0bd604", url = "https://ziglang.org/download/0.15.2/zig-aarch64-macos-0.15.2.tar.xz"}
+"platforms.macos-x64" = { url = "https://ziglang.org/download/0.15.2/zig-x86_64-macos-0.15.2.tar.xz"}
+"platforms.windows-x64" = { url = "https://ziglang.org/download/0.15.2/zig-x86_64-windows-0.15.2.zip"}
+
 [[tools.cargo-binstall]]
 version = "1.16.6"
 backend = "aqua:cargo-bins/cargo-binstall"
