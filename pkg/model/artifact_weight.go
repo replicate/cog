@@ -16,6 +16,16 @@ const (
 	MediaTypeWeightLayer = "application/vnd.cog.weight.layer.v1"
 	// MediaTypeWeightLayerGzip is the media type for gzip-compressed weight layers.
 	MediaTypeWeightLayerGzip = "application/vnd.cog.weight.layer.v1+gzip"
+	// MediaTypeWeightLayerZstd is the media type for zstd-compressed weight layers (future).
+	MediaTypeWeightLayerZstd = "application/vnd.cog.weight.layer.v1+zstd"
+)
+
+// Annotation keys for weight file layers in OCI manifests.
+const (
+	AnnotationWeightName             = "vnd.cog.weight.name"
+	AnnotationWeightDest             = "vnd.cog.weight.dest"
+	AnnotationWeightDigestOriginal   = "vnd.cog.weight.digest.original"
+	AnnotationWeightSizeUncompressed = "vnd.cog.weight.size.uncompressed"
 )
 
 // WeightSpec declares a weight artifact to be built.

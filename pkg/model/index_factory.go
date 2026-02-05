@@ -124,10 +124,10 @@ func NewWeightsArtifactBuilder() *WeightsArtifactBuilder {
 // The file is read on-demand when the layer is consumed, avoiding loading into memory.
 func (b *WeightsArtifactBuilder) AddLayerFromFile(wf WeightFile, filePath string) error {
 	annotations := map[string]string{
-		AnnotationWeightsName:             wf.Name,
-		AnnotationWeightsDest:             wf.Dest,
-		AnnotationWeightsDigestOriginal:   wf.DigestOriginal,
-		AnnotationWeightsSizeUncompressed: strconv.FormatInt(wf.SizeUncompressed, 10),
+		AnnotationWeightName:             wf.Name,
+		AnnotationWeightDest:             wf.Dest,
+		AnnotationWeightDigestOriginal:   wf.DigestOriginal,
+		AnnotationWeightSizeUncompressed: strconv.FormatInt(wf.SizeUncompressed, 10),
 	}
 
 	layer := &fileBackedLayer{
@@ -206,7 +206,7 @@ type weightsArtifact struct {
 
 // ArtifactType implements the withArtifactType interface used by partial.ArtifactType.
 func (a *weightsArtifact) ArtifactType() (string, error) {
-	return MediaTypeWeightsManifest, nil
+	return MediaTypeWeightArtifact, nil
 }
 
 // AddLayersFromLock adds layers for all files in a WeightsLock.
@@ -239,7 +239,7 @@ func (b *WeightsArtifactBuilder) AddLayersFromLock(ctx context.Context, lock *We
 		wf.DigestOriginal = digest // Same for uncompressed
 		wf.Size = size
 		wf.SizeUncompressed = size
-		wf.MediaType = MediaTypeWeightsLayer // Uncompressed
+		wf.MediaType = MediaTypeWeightLayer // Uncompressed
 
 		if err := b.AddLayerFromFile(*wf, filePath); err != nil {
 			return fmt.Errorf("add layer %s: %w", wf.Name, err)

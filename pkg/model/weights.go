@@ -3,26 +3,6 @@ package model
 
 import "time"
 
-// Media types for weights artifacts.
-const (
-	// MediaTypeWeightsManifest is the artifactType for weights manifests.
-	MediaTypeWeightsManifest = "application/vnd.cog.weights.v1"
-	// MediaTypeWeightsLayerGzip is for gzip-compressed weight layers.
-	MediaTypeWeightsLayerGzip = "application/vnd.cog.weights.layer.v1+gzip"
-	// MediaTypeWeightsLayerZstd is for zstd-compressed weight layers (future).
-	MediaTypeWeightsLayerZstd = "application/vnd.cog.weights.layer.v1+zstd"
-	// MediaTypeWeightsLayer is for uncompressed weight layers.
-	MediaTypeWeightsLayer = "application/vnd.cog.weights.layer.v1"
-)
-
-// Annotation keys for weight file layers.
-const (
-	AnnotationWeightsName             = "vnd.cog.weights.name"
-	AnnotationWeightsDest             = "vnd.cog.weights.dest"
-	AnnotationWeightsDigestOriginal   = "vnd.cog.weights.digest.original"
-	AnnotationWeightsSizeUncompressed = "vnd.cog.weights.size.uncompressed"
-)
-
 // WeightsManifest contains metadata about weight files in a model.
 type WeightsManifest struct {
 	// Digest is the manifest digest (sha256:...).
@@ -79,7 +59,7 @@ type WeightFile struct {
 	Size int64 `json:"size"`
 	// SizeUncompressed is the original size in bytes.
 	SizeUncompressed int64 `json:"sizeUncompressed"`
-	// MediaType is the OCI layer media type (e.g., application/vnd.cog.weights.layer.v1+gzip).
+	// MediaType is the OCI layer media type (e.g., application/vnd.cog.weight.layer.v1+gzip).
 	MediaType string `json:"mediaType"`
 	// ContentType is the file's MIME type (e.g., application/octet-stream).
 	ContentType string `json:"contentType,omitempty"`

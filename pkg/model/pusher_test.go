@@ -182,7 +182,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image:       &Image{Reference: "r8.im/user/model:latest"},
 			ImageFormat: FormatBundle,
 			WeightsManifest: &WeightsManifest{
-				ArtifactType: MediaTypeWeightsManifest,
+				ArtifactType: MediaTypeWeightArtifact,
 				Created:      time.Now().UTC(),
 				Files: []WeightFile{
 					{

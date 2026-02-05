@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -1169,6 +1170,141 @@ func TestResolver_Build_PopulatesArtifacts(t *testing.T) {
 	require.Equal(t, ArtifactTypeImage, imgArtifact.Type())
 	require.Equal(t, "test-image:latest", imgArtifact.Reference)
 	require.Equal(t, imageDigest, imgArtifact.Descriptor().Digest.String())
+}
+
+func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
+	imageDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return &image.InspectResponse{
+				ID: imageDigest,
+				Config: &container.Config{
+					Labels: map[string]string{
+						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+						LabelVersion: "0.15.0",
+					},
+				},
+			}, nil
+		},
+	}
+
+	factory := &mockFactory{
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+			return &Image{
+				Reference: opts.ImageName,
+				Digest:    imageDigest,
+				Source:    ImageSourceBuild,
+			}, nil
+		},
+	}
+	resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
+
+	// Create a temp directory with a real weight file
+	dir := t.TempDir()
+	weightContent := []byte("test weight for resolver build")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.safetensors"), weightContent, 0o644))
+
+	src := &Source{
+		Config: &config.Config{
+			Build: &config.Build{},
+			Weights: []config.WeightSource{
+				{Name: "my-model", Source: "model.safetensors", Target: "/srv/weights/model.safetensors"},
+			},
+		},
+		ProjectDir: dir,
+	}
+
+	m, err := resolver.Build(context.Background(), src, BuildOptions{
+		ImageName:   "test-image:latest",
+		ImageFormat: FormatBundle,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, m.Artifacts)
+
+	// Should have 2 artifacts: 1 image + 1 weight
+	require.Len(t, m.Artifacts, 2, "should have image + weight artifacts")
+
+	// Verify image artifact
+	imgArtifact := m.GetImageArtifact()
+	require.NotNil(t, imgArtifact)
+	require.Equal(t, "model", imgArtifact.Name())
+
+	// Verify weight artifact
+	weightArtifacts := m.WeightArtifacts()
+	require.Len(t, weightArtifacts, 1)
+	wa := weightArtifacts[0]
+	require.Equal(t, "my-model", wa.Name())
+	require.Equal(t, ArtifactTypeWeight, wa.Type())
+	require.Equal(t, "/srv/weights/model.safetensors", wa.Target)
+	require.Equal(t, filepath.Join(dir, "model.safetensors"), wa.FilePath)
+
+	// Weight config should be populated
+	require.Equal(t, "1.0", wa.Config.SchemaVersion)
+	require.Equal(t, "my-model", wa.Config.Name)
+	require.Equal(t, "/srv/weights/model.safetensors", wa.Config.Target)
+	require.False(t, wa.Config.Created.IsZero())
+}
+
+func TestResolver_Build_StandaloneWithWeights(t *testing.T) {
+	// Weights configured but format is standalone (not bundle).
+	// Weight artifacts should still be built, but no lockfile-to-manifest conversion.
+	imageDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return &image.InspectResponse{
+				ID: imageDigest,
+				Config: &container.Config{
+					Labels: map[string]string{
+						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+						LabelVersion: "0.15.0",
+					},
+				},
+			}, nil
+		},
+	}
+
+	factory := &mockFactory{
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+			return &Image{
+				Reference: opts.ImageName,
+				Digest:    imageDigest,
+				Source:    ImageSourceBuild,
+			}, nil
+		},
+	}
+	resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.bin"), []byte("standalone weights"), 0o644))
+
+	src := &Source{
+		Config: &config.Config{
+			Build: &config.Build{},
+			Weights: []config.WeightSource{
+				{Name: "my-model", Source: "model.bin", Target: "/weights/model.bin"},
+			},
+		},
+		ProjectDir: dir,
+	}
+
+	m, err := resolver.Build(context.Background(), src, BuildOptions{
+		ImageName: "test-image:latest",
+		// No ImageFormat specified — defaults to standalone
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, FormatStandalone, m.ImageFormat)
+
+	// Should have 2 artifacts: image + weight
+	require.Len(t, m.Artifacts, 2)
+	require.NotNil(t, m.GetImageArtifact())
+	require.Len(t, m.WeightArtifacts(), 1)
+
+	// WeightsManifest should NOT be set (standalone format)
+	require.Nil(t, m.WeightsManifest)
 }
 
 func TestIndexDetectionHelpers(t *testing.T) {
