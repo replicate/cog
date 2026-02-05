@@ -32,7 +32,8 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 # Rust-based prediction server (alpha)
-rust = ["coglet>=0.1.0"]
+# Lower bound ensures SDK shim compatibility; upper bound allows breaking changes at major version
+coglet = ["coglet>=0.1.0,<1.0"]
 
 [dependency-groups]
 dev = [
