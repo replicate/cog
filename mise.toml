@@ -15,7 +15,6 @@
 # Cached tasks:
 #   - build:sdk              - skips if python/**/*.py unchanged
 #   - build:coglet:wheel*    - skips if crates/**/*.rs unchanged  
-#   - generate:go            - skips if dist/cog-*.whl unchanged
 #   - generate:stubs         - skips if coglet-python source unchanged
 #   - generate:compat        - skips if tools/compatgen unchanged
 #   - docs                   - skips if docs/**/*.md unchanged
@@ -101,7 +100,6 @@ echo "Installed cog to $PREFIX/bin/cog"
 
 [tasks."build:cog"]
 description = "Build cog CLI (development)"
-depends = ["generate:go"]
 run = """
 #!/usr/bin/env bash
 set -e
@@ -114,7 +112,6 @@ fi
 
 [tasks."build:cog:release"]
 description = "Build cog CLI (release)"
-depends = ["generate:go"]
 run = "go run github.com/goreleaser/goreleaser/v2@latest build --clean --single-target --id cog --output cog"
 
 [tasks."build:rust"]
@@ -225,7 +222,6 @@ fi
 
 [tasks."test:go"]
 description = "Run Go tests"
-depends = ["generate:go"]
 run = "gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...)"
 
 [tasks."test:rust"]
@@ -342,7 +338,6 @@ run = [
 [tasks."lint:go"]
 alias = "lint:go:check"
 description = "Lint Go code"
-depends = ["generate:go"]
 run = "go tool golangci-lint run ./..."
 
 [tasks."lint:go:fix"]
@@ -403,15 +398,8 @@ run = "nox -s typecheck"
 [tasks.generate]
 description = "Run all code generation"
 run = [
-  { tasks = ["generate:go", "generate:stubs"] },
+  { tasks = ["generate:stubs"] },
 ]
-
-[tasks."generate:go"]
-description = "Run Go code generation (embeds SDK wheel)"
-depends = ["build:sdk"]
-sources = ["dist/cog-*.whl"]
-outputs = ["pkg/wheels/cog-*.whl"]
-run = "go generate ./..."
 
 [tasks."generate:stubs"]
 alias = "stub:generate"
