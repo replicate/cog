@@ -302,7 +302,7 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
-				ID: "sha256:built123",
+				ID: "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{

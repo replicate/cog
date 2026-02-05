@@ -573,6 +573,7 @@ func TestResolver_Inspect_InvalidConfigJSON(t *testing.T) {
 							LabelConfig: `{invalid json`,
 						},
 					},
+					},
 				},
 			}, nil
 		},
@@ -601,6 +602,7 @@ func TestResolver_Inspect_NoConfigLabel_ReturnsErrNotCogModel(t *testing.T) {
 							LabelVersion: "0.10.0",
 						},
 					},
+					},
 				},
 			}, nil
 		},
@@ -628,6 +630,7 @@ func TestResolver_Inspect_NotCogModel(t *testing.T) {
 							// No Cog labels at all - just some random image
 							"maintainer": "someone@example.com",
 						},
+					},
 					},
 				},
 			}, nil
@@ -717,6 +720,7 @@ func TestResolver_InspectByID_NotCogModel(t *testing.T) {
 							// No Cog labels
 							"maintainer": "someone",
 						},
+					},
 					},
 				},
 			}, nil
@@ -856,6 +860,7 @@ func TestResolver_Pull_NotCogModel(t *testing.T) {
 							"some.label": "value",
 						},
 					},
+					},
 				},
 			}, nil
 		},
@@ -867,6 +872,7 @@ func TestResolver_Pull_NotCogModel(t *testing.T) {
 						Labels: map[string]string{
 							"some.label": "value",
 						},
+					},
 					},
 				},
 			}, nil
@@ -950,17 +956,18 @@ func TestResolver_Pull_LocalInspectRealError(t *testing.T) {
 // =============================================================================
 
 func TestResolver_Build_SetsImageFormat(t *testing.T) {
+	validDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+
 	t.Run("sets standalone format by default", func(t *testing.T) {
 		docker := &mockDocker{
 			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 				return &image.InspectResponse{
-					ID: "sha256:abc123",
+					ID: validDigest,
 					Config: &dockerspec.DockerOCIImageConfig{
 						ImageConfig: ocispec.ImageConfig{
 							Labels: map[string]string{
-								LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-								LabelVersion: "0.10.0",
-							},
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
 						},
 					},
 				}, nil
@@ -988,13 +995,12 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		docker := &mockDocker{
 			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 				return &image.InspectResponse{
-					ID: "sha256:abc123",
+					ID: validDigest,
 					Config: &dockerspec.DockerOCIImageConfig{
 						ImageConfig: ocispec.ImageConfig{
 							Labels: map[string]string{
-								LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-								LabelVersion: "0.10.0",
-							},
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
 						},
 					},
 				}, nil
@@ -1035,13 +1041,12 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		docker := &mockDocker{
 			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 				return &image.InspectResponse{
-					ID: "sha256:abc123",
+					ID: validDigest,
 					Config: &dockerspec.DockerOCIImageConfig{
 						ImageConfig: ocispec.ImageConfig{
 							Labels: map[string]string{
-								LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-								LabelVersion: "0.10.0",
-							},
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
 						},
 					},
 				}, nil
@@ -1069,13 +1074,12 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		docker := &mockDocker{
 			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 				return &image.InspectResponse{
-					ID: "sha256:abc123",
+					ID: validDigest,
 					Config: &dockerspec.DockerOCIImageConfig{
 						ImageConfig: ocispec.ImageConfig{
 							Labels: map[string]string{
-								LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-								LabelVersion: "0.10.0",
-							},
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
 						},
 					},
 				}, nil
@@ -1114,6 +1118,57 @@ func TestResolver_Build_SetsImageFormat(t *testing.T) {
 		require.Len(t, m.WeightsManifest.Files, 1)
 		require.Equal(t, "my-custom-v1", m.WeightsManifest.Files[0].Name)
 	})
+}
+
+func TestResolver_Build_PopulatesArtifacts(t *testing.T) {
+	imageDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return &image.InspectResponse{
+				ID: imageDigest,
+				Config: &dockerspec.DockerOCIImageConfig{
+					ImageConfig: ocispec.ImageConfig{
+						Labels: map[string]string{
+						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+						LabelVersion: "0.15.0",
+					},
+				},
+			}, nil
+		},
+	}
+
+	factory := &mockFactory{
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+			return &Image{
+				Reference: opts.ImageName,
+				Digest:    imageDigest,
+				Source:    ImageSourceBuild,
+			}, nil
+		},
+	}
+	resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
+
+	src := &Source{
+		Config:     &config.Config{Build: &config.Build{}},
+		ProjectDir: t.TempDir(),
+	}
+
+	m, err := resolver.Build(context.Background(), src, BuildOptions{
+		ImageName: "test-image:latest",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, m.Artifacts, "Build should populate Artifacts")
+	require.Len(t, m.Artifacts, 1, "should have exactly one artifact (image)")
+
+	// Verify it's an ImageArtifact with correct data
+	imgArtifact := m.GetImageArtifact()
+	require.NotNil(t, imgArtifact, "should contain an ImageArtifact")
+	require.Equal(t, "model", imgArtifact.Name())
+	require.Equal(t, ArtifactTypeImage, imgArtifact.Type())
+	require.Equal(t, "test-image:latest", imgArtifact.Reference)
+	require.Equal(t, imageDigest, imgArtifact.Descriptor().Digest.String())
 }
 
 func TestIndexDetectionHelpers(t *testing.T) {

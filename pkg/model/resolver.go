@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types/image"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
@@ -256,6 +257,15 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 			return nil, fmt.Errorf("bundle format requires weights.lock: %w", err)
 		}
 		m.WeightsManifest = lock.ToWeightsManifest()
+	}
+
+	// Populate artifacts from the built image
+	digest, err := v1.NewHash(img.Digest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image digest %q: %w", img.Digest, err)
+	}
+	m.Artifacts = []Artifact{
+		NewImageArtifact("model", v1.Descriptor{Digest: digest}, img.Reference),
 	}
 
 	return m, nil

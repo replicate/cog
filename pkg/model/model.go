@@ -24,6 +24,10 @@ type Model struct {
 	// Bundle-specific fields (nil for standalone)
 	Index           *Index           // OCI Image Index (populated when inspecting bundle)
 	WeightsManifest *WeightsManifest // Weight file metadata (populated for bundles)
+
+	// Artifacts is the collection of all artifacts produced by building this model.
+	// Populated by Resolver.Build(). Contains ImageArtifact and WeightArtifact instances.
+	Artifacts []Artifact
 }
 
 // HasGPU returns true if the model requires GPU.
@@ -50,4 +54,37 @@ func (m *Model) ImageRef() string {
 // IsBundle returns true if this model uses the bundle format (OCI Index with weights).
 func (m *Model) IsBundle() bool {
 	return m.ImageFormat == FormatBundle
+}
+
+// GetImageArtifact returns the first ImageArtifact from the artifacts collection,
+// or nil if none exists.
+func (m *Model) GetImageArtifact() *ImageArtifact {
+	for _, a := range m.Artifacts {
+		if ia, ok := a.(*ImageArtifact); ok {
+			return ia
+		}
+	}
+	return nil
+}
+
+// WeightArtifacts returns all WeightArtifact instances from the artifacts collection.
+func (m *Model) WeightArtifacts() []*WeightArtifact {
+	var weights []*WeightArtifact
+	for _, a := range m.Artifacts {
+		if wa, ok := a.(*WeightArtifact); ok {
+			weights = append(weights, wa)
+		}
+	}
+	return weights
+}
+
+// ArtifactsByType returns all artifacts matching the given type.
+func (m *Model) ArtifactsByType(t ArtifactType) []Artifact {
+	var result []Artifact
+	for _, a := range m.Artifacts {
+		if a.Type() == t {
+			result = append(result, a)
+		}
+	}
+	return result
 }

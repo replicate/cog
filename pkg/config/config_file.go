@@ -51,6 +51,7 @@ type mountFile struct {
 
 // weightFile represents a weight source configuration.
 type weightFile struct {
+	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
 	Source string `json:"source" yaml:"source"`
 	Target string `json:"target,omitempty" yaml:"target,omitempty"`
 }
