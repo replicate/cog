@@ -2,6 +2,10 @@
 version = "0.19.0"
 backend = "aqua:EmbarkStudios/cargo-deny"
 
+[[tools."aqua:gotestyourself/gotestsum"]]
+version = "1.13.0"
+backend = "aqua:gotestyourself/gotestsum"
+
 [[tools."aqua:mitsuhiko/insta"]]
 version = "1.46.0"
 backend = "aqua:mitsuhiko/insta"
