@@ -465,14 +465,14 @@ func (g *StandardGenerator) installCog() (string, error) {
 	}
 
 	// Determine which wheel to install based on COG_WHEEL env var
-	wheelConfig := wheels.GetWheelConfig()
+	wheelConfig := wheels.GetCogWheelConfig()
 
 	var installLines string
 	var err error
 
 	switch wheelConfig.Source {
-	case wheels.WheelSourceEmbedded:
-		installLines, err = g.installEmbeddedCogWheel()
+	case wheels.WheelSourcePyPI:
+		installLines, err = g.installCogFromPyPI(wheelConfig)
 	case wheels.WheelSourceURL:
 		installLines, err = g.installWheelFromURL(wheelConfig.URL)
 	case wheels.WheelSourceFile:
@@ -485,34 +485,28 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", err
 	}
 
-	// Optionally install Rust coglet wheel alongside cog
-	// This allows testing the Rust HTTP server implementation
-	if rustWheelPath := os.Getenv("COGLET_RUST_WHEEL"); rustWheelPath != "" {
-		rustInstall, err := g.installRustCogletWheel(rustWheelPath)
+	// Optionally install coglet wheel alongside cog
+	if cogletConfig := wheels.GetCogletWheelConfig(); cogletConfig != nil {
+		cogletInstall, err := g.installCogletWheel(cogletConfig)
 		if err != nil {
-			return "", fmt.Errorf("failed to install Rust coglet wheel: %w", err)
+			return "", fmt.Errorf("failed to install coglet wheel: %w", err)
 		}
-		if rustInstall != "" {
-			installLines += "\n" + rustInstall
+		if cogletInstall != "" {
+			installLines += "\n" + cogletInstall
 		}
 	}
 
 	return installLines, nil
 }
 
-// installEmbeddedCogWheel installs the embedded cog wheel
-func (g *StandardGenerator) installEmbeddedCogWheel() (string, error) {
-	filename, data := wheels.ReadCogWheel()
-	lines, containerPath, err := g.writeTemp(filename, data)
-	if err != nil {
-		return "", err
-	}
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir"
-	pipInstallLine += " " + containerPath
+// installCogFromPyPI installs the cog SDK from PyPI
+func (g *StandardGenerator) installCogFromPyPI(config *wheels.WheelConfig) (string, error) {
+	packageSpec := config.PyPIPackageURL("cog")
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + packageSpec
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
-	lines = append(lines, CFlags, pipInstallLine, "ENV CFLAGS=")
+	lines := []string{CFlags, pipInstallLine, "ENV CFLAGS="}
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -584,13 +578,46 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// installRustCogletWheel installs the Rust coglet wheel from a local file as an additional package
-// This is used to test the Rust HTTP server implementation alongside the Python cog wheel
-func (g *StandardGenerator) installRustCogletWheel(path string) (string, error) {
-	// Read the Rust coglet wheel file
+// installCogletWheel installs the coglet wheel based on the provided config
+func (g *StandardGenerator) installCogletWheel(config *wheels.WheelConfig) (string, error) {
+	switch config.Source {
+	case wheels.WheelSourcePyPI:
+		return g.installCogletFromPyPI(config)
+	case wheels.WheelSourceURL:
+		return g.installCogletFromURL(config.URL)
+	case wheels.WheelSourceFile:
+		return g.installCogletFromFile(config.Path)
+	default:
+		return "", fmt.Errorf("unknown coglet wheel source: %v", config.Source)
+	}
+}
+
+// installCogletFromPyPI installs coglet from PyPI
+func (g *StandardGenerator) installCogletFromPyPI(config *wheels.WheelConfig) (string, error) {
+	packageSpec := config.PyPIPackageURL("coglet")
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + packageSpec
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+	lines := []string{CFlags, pipInstallLine, "ENV CFLAGS="}
+	return strings.Join(lines, "\n"), nil
+}
+
+// installCogletFromURL installs coglet from a URL
+func (g *StandardGenerator) installCogletFromURL(url string) (string, error) {
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + url
+	if g.strip {
+		pipInstallLine += " && " + StripDebugSymbolsCommand
+	}
+	lines := []string{CFlags, pipInstallLine, "ENV CFLAGS="}
+	return strings.Join(lines, "\n"), nil
+}
+
+// installCogletFromFile installs coglet from a local wheel file
+func (g *StandardGenerator) installCogletFromFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to read Rust coglet wheel %s: %w", path, err)
+		return "", fmt.Errorf("failed to read coglet wheel %s: %w", path, err)
 	}
 
 	filename := filepath.Base(path)
@@ -599,7 +626,6 @@ func (g *StandardGenerator) installRustCogletWheel(path string) (string, error) 
 		return "", err
 	}
 
-	// Install the Rust coglet wheel as an additional package (don't uninstall cog)
 	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
