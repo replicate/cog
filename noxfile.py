@@ -1,7 +1,6 @@
 """Nox sessions for cog Python SDK testing."""
 
 import glob
-import os
 
 import nox
 
@@ -31,15 +30,15 @@ TEST_DEPS = [
 def _install_package(session: nox.Session) -> None:
     """Install the package, using pre-built wheel if available."""
     wheels = glob.glob("dist/cog-*.whl")
-    if wheels and os.environ.get("CI"):
-        # In CI, use pre-built wheel
+    if wheels:
+        # Use pre-built wheel if available
         session.install(wheels[0])
     else:
-        # Local dev: editable install
+        # Editable install
         session.install("-e", ".")
 
 
-@nox.session(python=PYTHON_VERSIONS if not os.environ.get("CI") else False)
+@nox.session(python=PYTHON_VERSIONS)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
     _install_package(session)
@@ -54,7 +53,7 @@ def tests(session: nox.Session) -> None:
     )
 
 
-@nox.session(python=PYTHON_DEFAULT if not os.environ.get("CI") else False)
+@nox.session(python=PYTHON_DEFAULT)
 def typecheck(session: nox.Session) -> None:
     """Run type checking with pyright."""
     _install_package(session)
