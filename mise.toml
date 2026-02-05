@@ -244,6 +244,7 @@ python -m pytest tests/ -v
 
 [tasks."test:integration"]
 description = "Run integration tests"
+depends = ["build:cog", "build:sdk", "build:coglet:wheel"]
 dir = "integration-tests"
 run = """
 #!/usr/bin/env bash
@@ -339,6 +340,7 @@ go tool golangci-lint run ./...
 
 [tasks."lint:go:fix"]
 description = "Fix Go lint issues (limited auto-fix)"
+depends = ["generate:go"]
 run = "go tool golangci-lint run --fix ./..."
 
 # Rust linting
@@ -382,6 +384,7 @@ run = [
 
 [tasks."typecheck:go"]
 description = "Type check Go code (via go vet)"
+depends = ["generate:go"]
 run = "go vet ./..."
 
 [tasks."typecheck:rust"]
@@ -403,7 +406,8 @@ run = [
 ]
 
 [tasks."generate:go"]
-description = "Run Go code generation"
+description = "Run Go code generation (embeds SDK wheel)"
+depends = ["build:sdk"]
 sources = ["dist/cog-*.whl"]
 outputs = ["pkg/wheels/cog-*.whl"]
 run = "go generate ./..."
