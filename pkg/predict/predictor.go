@@ -80,12 +80,12 @@ func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout tim
 
 	p.containerID, err = docker.RunDaemon(ctx, p.dockerClient, p.runOptions, logsWriter)
 	if err != nil {
-		return fmt.Errorf("Failed to start container: %w", err)
+		return fmt.Errorf("failed to start container: %w", err)
 	}
 
 	p.port, err = docker.GetHostPortForContainer(ctx, p.dockerClient, p.containerID, containerPort)
 	if err != nil {
-		return fmt.Errorf("Failed to determine container port: %w", err)
+		return fmt.Errorf("failed to determine container port: %w", err)
 	}
 
 	go func() {
@@ -106,17 +106,17 @@ func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Dura
 	start := time.Now()
 	for {
 		if time.Since(start) > timeout {
-			return fmt.Errorf("Timed out")
+			return fmt.Errorf("timed out")
 		}
 
 		time.Sleep(100 * time.Millisecond)
 
 		cont, err := p.dockerClient.ContainerInspect(ctx, p.containerID)
 		if err != nil {
-			return fmt.Errorf("Failed to get container status: %w", err)
+			return fmt.Errorf("failed to get container status: %w", err)
 		}
 		if cont.State != nil && (cont.State.Status == "exited" || cont.State.Status == "dead") {
-			return fmt.Errorf("Container exited unexpectedly")
+			return fmt.Errorf("container exited unexpectedly")
 		}
 
 		healthcheck, err := func() (*HealthcheckResponse, error) {

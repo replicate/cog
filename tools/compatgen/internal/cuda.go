@@ -35,7 +35,7 @@ func fetchCUDABaseImageTags(url string) ([]string, error) {
 
 	resp, err := soup.Get(url)
 	if err != nil {
-		return tags, fmt.Errorf("Failed to download %s: %w", url, err)
+		return tags, fmt.Errorf("failed to download %s: %w", url, err)
 	}
 
 	var results struct {
@@ -45,7 +45,7 @@ func fetchCUDABaseImageTags(url string) ([]string, error) {
 		} `json:"results"`
 	}
 	if err := json.Unmarshal([]byte(resp), &results); err != nil {
-		return tags, fmt.Errorf("Failed parse CUDA images json: %w", err)
+		return tags, fmt.Errorf("failed to parse CUDA images json: %w", err)
 	}
 
 	for _, result := range results.Results {
@@ -73,7 +73,7 @@ func fetchCUDABaseImageTags(url string) ([]string, error) {
 func parseCUDABaseImage(tag string) (*config.CUDABaseImage, error) {
 	parts := strings.Split(tag, "-")
 	if len(parts) != 4 {
-		return nil, fmt.Errorf("Tag must be in the format <cudaVersion>-cudnn<cudnnVersion>-{devel,runtime}-ubuntu<ubuntuVersion>. Invalid tag: %s", tag)
+		return nil, fmt.Errorf("tag must be in the format <cudaVersion>-cudnn<cudnnVersion>-{devel,runtime}-ubuntu<ubuntuVersion>, invalid tag: %s", tag)
 	}
 
 	return &config.CUDABaseImage{

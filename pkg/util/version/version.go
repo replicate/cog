@@ -23,18 +23,18 @@ func NewVersion(s string) (version *Version, err error) {
 	version = new(Version)
 	version.Major, err = strconv.Atoi(parts[0])
 	if err != nil {
-		return nil, fmt.Errorf("Invalid major version %s: %w", parts[0], err)
+		return nil, fmt.Errorf("invalid major version %s: %w", parts[0], err)
 	}
 	if len(parts) >= 2 {
 		version.Minor, err = strconv.Atoi(parts[1])
 		if err != nil {
-			return nil, fmt.Errorf("Invalid minor version %s: %w", parts[1], err)
+			return nil, fmt.Errorf("invalid minor version %s: %w", parts[1], err)
 		}
 	}
 	if len(parts) >= 3 {
 		patch, err := strconv.Atoi(parts[2])
 		if err != nil {
-			return nil, fmt.Errorf("Invalid patch version %s: %w", parts[2], err)
+			return nil, fmt.Errorf("invalid patch version %s: %w", parts[2], err)
 		}
 		// We assign a pointer here to handle cases where the patch version is not
 		// explicitly assigned and we need to compare versions without patches to

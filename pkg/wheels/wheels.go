@@ -1,3 +1,4 @@
+// Package wheels provides configuration for sourcing cog and coglet wheels.
 package wheels
 
 import (

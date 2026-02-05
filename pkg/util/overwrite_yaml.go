@@ -29,7 +29,7 @@ func OverwriteYAML(sourceYaml []byte, destinationYaml []byte) ([]byte, error) {
 
 func traverseAndCompare(sourceNode, destinationNode *yaml.Node, path string) error {
 	if sourceNode.Kind != destinationNode.Kind {
-		return fmt.Errorf("Type mismatch at %s: %s vs %s\n", path, nodeKindToString(sourceNode.Kind), nodeKindToString(destinationNode.Kind))
+		return fmt.Errorf("type mismatch at %s: %s vs %s", path, nodeKindToString(sourceNode.Kind), nodeKindToString(destinationNode.Kind))
 	}
 	sourceNode.LineComment = destinationNode.LineComment
 	sourceNode.HeadComment = destinationNode.HeadComment

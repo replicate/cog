@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	ErrorFailedToSplitDataURL = errors.New("Failed to split data URL into 2 parts")
+	ErrorFailedToSplitDataURL = errors.New("failed to split data URL into 2 parts")
 )
 
 func Exists(path string) (bool, error) {
@@ -26,7 +26,7 @@ func Exists(path string) (bool, error) {
 	} else if os.IsNotExist(err) {
 		return false, nil
 	} else {
-		return false, fmt.Errorf("Failed to determine if %s exists: %w", path, err)
+		return false, fmt.Errorf("failed to determine if %s exists: %w", path, err)
 	}
 }
 
@@ -56,13 +56,13 @@ func IsExecutable(path string) bool {
 func CopyFile(src string, dest string) error {
 	in, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("Failed to open %s while copying to %s: %w", src, dest, err)
+		return fmt.Errorf("failed to open %s while copying to %s: %w", src, dest, err)
 	}
 	defer in.Close()
 
 	out, err := os.Create(dest)
 	if err != nil {
-		return fmt.Errorf("Failed to create %s while copying %s: %w", dest, src, err)
+		return fmt.Errorf("failed to create %s while copying %s: %w", dest, src, err)
 	}
 	defer out.Close()
 

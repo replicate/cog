@@ -16,7 +16,6 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
-	dc "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
@@ -55,14 +54,14 @@ func NewClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 	// adds (a tiny biy of) overead. swap this with a handle that'll lazily initialize a client and ping for health.
 	// ditto for fetching registry credentials.
 
-	dockerClientOpts := []dc.Opt{
-		dc.WithTLSClientConfigFromEnv(),
-		dc.WithVersionFromEnv(),
-		dc.WithAPIVersionNegotiation(),
-		dc.WithHost(clientOptions.host),
+	dockerClientOpts := []client.Opt{
+		client.WithTLSClientConfigFromEnv(),
+		client.WithVersionFromEnv(),
+		client.WithAPIVersionNegotiation(),
+		client.WithHost(clientOptions.host),
 	}
 
-	client, err := dc.NewClientWithOpts(dockerClientOpts...)
+	client, err := client.NewClientWithOpts(dockerClientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating docker client: %w", err)
 	}
@@ -86,7 +85,7 @@ func NewClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 }
 
 type apiClient struct {
-	client     *dc.Client
+	client     *client.Client
 	authConfig map[string]registry.AuthConfig
 }
 
@@ -422,7 +421,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 		if err != nil {
 			return "", err
 		}
-		hostCfg.Resources.DeviceRequests = []container.DeviceRequest{deviceRequest}
+		hostCfg.DeviceRequests = []container.DeviceRequest{deviceRequest}
 	}
 
 	// Configure port bindings

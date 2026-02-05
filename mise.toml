@@ -25,6 +25,8 @@
 #
 # =============================================================================
 
+experimental_monorepo_root = true
+
 [monorepo]
 config_roots = ["."]
 
@@ -44,6 +46,7 @@ cargo-binstall = "1.16.6"
 "cargo:maturin" = "1.11.5"
 "aqua:rust-cross/cargo-zigbuild" = "0.20.1"
 "aqua:gotestyourself/gotestsum" = "1.13.0"
+"aqua:golangci/golangci-lint" = "2.8.0"
 ruff = "0.14.13"
 ty = "0.0.10"
 
@@ -338,11 +341,11 @@ run = [
 [tasks."lint:go"]
 alias = "lint:go:check"
 description = "Lint Go code"
-run = "go tool golangci-lint run ./..."
+run = "golangci-lint run ./..."
 
 [tasks."lint:go:fix"]
 description = "Fix Go lint issues (limited auto-fix)"
-run = "go tool golangci-lint run --fix ./..."
+run = "golangci-lint run --fix ./..."
 
 # Rust linting
 [tasks."lint:rust"]

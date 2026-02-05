@@ -28,7 +28,8 @@ env:
   # ready when cargo-binstall tries to compile cargo:* tools from source.
   # Using actions guarantees toolchain is ready before mise installs cargo:* tools.
   # Python is managed by astral-sh/setup-uv for version matrix support.
-  MISE_DISABLE_TOOLS: rust,cargo-binstall,python
+  # golangci-lint is managed by golangci/golangci-lint-action for caching.
+  MISE_DISABLE_TOOLS: rust,cargo-binstall,python,golangci-lint
 
 permissions: {}
 
