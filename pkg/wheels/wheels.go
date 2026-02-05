@@ -72,9 +72,7 @@ func ParseWheelValue(value string) *WheelConfig {
 		return &WheelConfig{Source: WheelSourcePyPI}
 	}
 	if strings.HasPrefix(strings.ToLower(value), "pypi:") {
-		version := strings.TrimPrefix(value, "pypi:")
-		version = strings.TrimPrefix(version, "PyPI:")
-		version = strings.TrimPrefix(value[5:], "") // preserve original case after colon
+		// Extract version after "pypi:" prefix, preserving original case
 		return &WheelConfig{Source: WheelSourcePyPI, Version: value[5:]}
 	}
 

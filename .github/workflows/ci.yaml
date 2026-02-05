@@ -270,8 +270,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Lint Go
-        run: go tool golangci-lint run ./...
+      - uses: golangci/golangci-lint-action@v8
 
   lint-rust:
     name: Lint Rust

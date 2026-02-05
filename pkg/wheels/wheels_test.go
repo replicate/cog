@@ -245,10 +245,10 @@ func TestGetCogWheelConfigAutoDetect(t *testing.T) {
 	// Create a temp directory with a wheel file
 	tmpDir := t.TempDir()
 	distDir := filepath.Join(tmpDir, "dist")
-	require.NoError(t, os.MkdirAll(distDir, 0755))
+	require.NoError(t, os.MkdirAll(distDir, 0o755))
 
 	wheelPath := filepath.Join(distDir, "cog-0.1.0-py3-none-any.whl")
-	require.NoError(t, os.WriteFile(wheelPath, []byte("fake wheel content"), 0644))
+	require.NoError(t, os.WriteFile(wheelPath, []byte("fake wheel content"), 0o644))
 
 	// Change to temp dir
 	origDir, err := os.Getwd()
