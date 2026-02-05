@@ -4,7 +4,6 @@ on:
   merge_group:
   push:
     branches: [main]
-    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
   pull_request:
   workflow_dispatch:
 
@@ -128,7 +127,7 @@ jobs:
   build-sdk:
     name: Build SDK
     needs: changes
-    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true' || github.ref_type == 'tag'
+    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -155,7 +154,7 @@ jobs:
   build-rust:
     name: Build coglet wheel
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.integration == 'true' || github.ref_type == 'tag'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -632,34 +631,4 @@ jobs:
           version: '~> v2'
           args: check
 
-# =============================================================================
-# Release - Only on tags
-# =============================================================================
 
-  release:
-    name: Release
-    needs: ci-complete
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Download artifacts
-        uses: actions/download-artifact@v7
-        with:
-          path: dist
-          merge-multiple: true
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: '~> v2'
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
