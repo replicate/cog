@@ -1,12 +1,15 @@
 package registry
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -387,6 +390,8 @@ func isRetryableError(err error) bool {
 
 // WriteLayer pushes a single layer with retry and optional progress reporting.
 // This implements retry at the application level with callbacks for CLI feedback.
+// Unlike the standard remote.WriteLayer, this implementation performs multipart uploads
+// using Content-Range headers to upload the blob in chunks.
 func (c *RegistryClient) WriteLayer(ctx context.Context, opts WriteLayerOptions) error {
 	parsedRepo, err := name.NewRepository(opts.Repo, name.Insecure)
 	if err != nil {
@@ -410,18 +415,8 @@ func (c *RegistryClient) WriteLayer(ctx context.Context, opts WriteLayerOptions)
 		default:
 		}
 
-		// Build remote options for this attempt
-		remoteOpts := []remote.Option{
-			remote.WithContext(ctx),
-			remote.WithAuthFromKeychain(authn.DefaultKeychain),
-		}
-
-		if opts.ProgressCh != nil {
-			remoteOpts = append(remoteOpts, remote.WithProgress(opts.ProgressCh))
-		}
-
-		// Attempt the push
-		err := remote.WriteLayer(parsedRepo, opts.Layer, remoteOpts...)
+		// Attempt the push using custom multipart upload
+		err := c.writeLayerMultipart(ctx, parsedRepo, opts)
 		if err == nil {
 			return nil // Success
 		}
@@ -472,6 +467,395 @@ func (c *RegistryClient) WriteLayer(ctx context.Context, opts WriteLayerOptions)
 	}
 
 	return fmt.Errorf("pushing layer to %s (after %d attempts): %w", opts.Repo, backoff.Steps, lastErr)
+}
+
+// writeLayerMultipart uploads a layer using multipart uploads with Content-Range headers.
+// This is a custom implementation that supports chunked uploads compatible with the
+// server-side code provided.
+func (c *RegistryClient) writeLayerMultipart(ctx context.Context, repo name.Repository, opts WriteLayerOptions) error {
+	// Get layer metadata
+	digest, err := opts.Layer.Digest()
+	if err != nil {
+		return fmt.Errorf("getting layer digest: %w", err)
+	}
+
+	size, err := opts.Layer.Size()
+	if err != nil {
+		return fmt.Errorf("getting layer size: %w", err)
+	}
+
+	// Create authenticated HTTP client
+	auth, err := authn.Resolve(ctx, authn.DefaultKeychain, repo)
+	if err != nil {
+		return fmt.Errorf("resolving auth: %w", err)
+	}
+
+	scopes := []string{repo.Scope(transport.PushScope)}
+	tr, err := transport.NewWithContext(ctx, repo.Registry, auth, http.DefaultTransport, scopes)
+	if err != nil {
+		return fmt.Errorf("creating transport: %w", err)
+	}
+
+	client := &http.Client{Transport: tr}
+
+	// Check if blob already exists
+	exists, err := c.checkBlobExists(ctx, client, repo, digest)
+	if err != nil {
+		return fmt.Errorf("checking blob existence: %w", err)
+	}
+	if exists {
+		if opts.ProgressCh != nil {
+			opts.ProgressCh <- v1.Update{Complete: size, Total: size}
+		}
+		return nil
+	}
+
+	// Initiate upload
+	location, err := c.initiateUpload(ctx, client, repo)
+	if err != nil {
+		return fmt.Errorf("initiating upload: %w", err)
+	}
+
+	// Upload the blob in chunks
+	finalLocation, err := c.uploadBlobChunks(ctx, client, repo, opts.Layer, location, size, opts.ProgressCh)
+	if err != nil {
+		return fmt.Errorf("uploading blob chunks: %w", err)
+	}
+
+	// Commit the upload using the final location (which contains updated state hash)
+	err = c.commitUpload(ctx, client, finalLocation, digest)
+	if err != nil {
+		return fmt.Errorf("committing upload: %w", err)
+	}
+
+	return nil
+}
+
+// checkBlobExists checks if a blob already exists in the repository.
+func (c *RegistryClient) checkBlobExists(ctx context.Context, client *http.Client, repo name.Repository, digest v1.Hash) (bool, error) {
+	u := url.URL{
+		Scheme: repo.Scheme(),
+		Host:   repo.RegistryStr(),
+		Path:   fmt.Sprintf("/v2/%s/blobs/%s", repo.RepositoryStr(), digest.String()),
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u.String(), nil)
+	if err != nil {
+		return false, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if err := transport.CheckError(resp, http.StatusOK, http.StatusNotFound); err != nil {
+		return false, err
+	}
+
+	return resp.StatusCode == http.StatusOK, nil
+}
+
+// initiateUpload initiates a blob upload and returns the upload location URL.
+func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client, repo name.Repository) (string, error) {
+	u := url.URL{
+		Scheme: repo.Scheme(),
+		Host:   repo.RegistryStr(),
+		Path:   fmt.Sprintf("/v2/%s/blobs/uploads/", repo.RepositoryStr()),
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if err := transport.CheckError(resp, http.StatusAccepted); err != nil {
+		return "", err
+	}
+
+	loc := resp.Header.Get("Location")
+	if loc == "" {
+		return "", errors.New("missing Location header in initiate upload response")
+	}
+
+	// Resolve relative URLs
+	locURL, err := url.Parse(loc)
+	if err != nil {
+		return "", fmt.Errorf("parsing location URL: %w", err)
+	}
+
+	baseURL := url.URL{
+		Scheme: repo.Scheme(),
+		Host:   repo.RegistryStr(),
+	}
+
+	return baseURL.ResolveReference(locURL).String(), nil
+}
+
+// uploadBlobChunks uploads a blob using either multipart or single-part upload depending on server support.
+// The repo parameter is needed to restart the upload session if multipart fails.
+// Returns the final upload location URL which must be used for committing the upload.
+func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, location string, totalSize int64, progressCh chan<- v1.Update) (string, error) {
+	// Multipart upload settings:
+	// - Threshold: Use multipart only for blobs larger than 50MB (avoids MPU overhead for smaller files)
+	// - Chunk size: 25MB per chunk (good balance for object stores and typical network conditions)
+	const multipartThreshold = 50 * 1024 * 1024
+	const chunkSize = 25 * 1024 * 1024
+
+	if totalSize > multipartThreshold {
+		finalLocation, newLocation, fallback, err := c.tryMultipartWithFallback(ctx, client, repo, layer, location, totalSize, chunkSize, progressCh)
+		if err != nil {
+			return "", err
+		}
+		if !fallback {
+			return finalLocation, nil
+		}
+		// Multipart not supported, continue with single-part using the new location
+		location = newLocation
+	}
+
+	// Single-part upload for small blobs or servers that don't support multipart
+	blob, err := layer.Compressed()
+	if err != nil {
+		return "", fmt.Errorf("getting compressed blob: %w", err)
+	}
+	defer blob.Close()
+
+	err = c.uploadBlobSingle(ctx, client, location, blob, totalSize, progressCh)
+	if err != nil {
+		return "", err
+	}
+	return location, nil
+}
+
+// tryMultipartWithFallback attempts multipart upload and handles fallback if not supported.
+// Returns (finalLocation, newLocation, fallback, error):
+//   - If multipart succeeds: (finalLocation, "", false, nil)
+//   - If multipart not supported: ("", newLocation, true, nil) - caller should use single-part with newLocation
+//   - If error: ("", "", false, error)
+func (c *RegistryClient) tryMultipartWithFallback(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, location string, totalSize int64, chunkSize int64, progressCh chan<- v1.Update) (finalLocation string, newLocation string, fallback bool, err error) {
+	blob, err := layer.Compressed()
+	if err != nil {
+		return "", "", false, fmt.Errorf("getting compressed blob: %w", err)
+	}
+	defer blob.Close()
+
+	finalLocation, err = c.tryMultipartUpload(ctx, client, location, blob, totalSize, chunkSize, progressCh)
+	if err == nil {
+		return finalLocation, "", false, nil
+	}
+
+	// Check if error indicates multipart not supported
+	var transportErr *transport.Error
+	if errors.As(err, &transportErr) && (transportErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
+		transportErr.StatusCode == http.StatusBadRequest) {
+		// Multipart not supported - restart upload session for single-part fallback
+		newLocation, err = c.initiateUpload(ctx, client, repo)
+		if err != nil {
+			return "", "", false, fmt.Errorf("restarting upload after multipart failure: %w", err)
+		}
+		return "", newLocation, true, nil
+	}
+
+	return "", "", false, err
+}
+
+// tryMultipartUpload attempts to upload using Content-Range headers.
+// Returns the final location or an error.
+func (c *RegistryClient) tryMultipartUpload(ctx context.Context, client *http.Client, location string, blob io.Reader, totalSize int64, chunkSize int64, progressCh chan<- v1.Update) (string, error) {
+	var uploaded int64
+	buffer := make([]byte, chunkSize)
+	currentLocation := location
+
+	for uploaded < totalSize {
+		// Read the next chunk
+		n, err := io.ReadFull(blob, buffer)
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+			return "", fmt.Errorf("reading blob: %w", err)
+		}
+		if n == 0 {
+			break
+		}
+
+		chunk := buffer[:n]
+		start := uploaded
+		end := uploaded + int64(n) - 1 // Range is inclusive
+
+		// Upload the chunk with Content-Range (progress is reported within uploadChunk)
+		newLocation, err := c.uploadChunk(ctx, client, currentLocation, chunk, start, end, totalSize, progressCh)
+		if err != nil {
+			return "", err
+		}
+
+		// Update location for next chunk (server may change it)
+		if newLocation != "" {
+			currentLocation = newLocation
+		}
+
+		uploaded += int64(n)
+
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+	}
+
+	return currentLocation, nil
+}
+
+// uploadBlobSingle uploads the entire blob in one request without Content-Range headers.
+func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Client, location string, blob io.Reader, totalSize int64, progressCh chan<- v1.Update) error {
+	// Wrap the reader to report progress
+	var uploaded int64
+	reader := &progressReader{
+		reader: blob,
+		onRead: func(n int) {
+			uploaded += int64(n)
+			if progressCh != nil {
+				// Cap at totalSize defensively
+				complete := min(uploaded, totalSize)
+				select {
+				case progressCh <- v1.Update{Complete: complete, Total: totalSize}:
+				default:
+					// Don't block if channel is full
+				}
+			}
+		},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, location, reader)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.ContentLength = totalSize
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	return transport.CheckError(resp, http.StatusAccepted, http.StatusNoContent, http.StatusCreated)
+}
+
+// uploadChunk uploads a single chunk of a blob with Content-Range header.
+// Returns the new location URL if the server returns one.
+// If progressCh is provided, progress updates are sent as bytes are uploaded.
+// Progress updates occur approximately every 32-64KB based on HTTP client buffer size.
+func (c *RegistryClient) uploadChunk(ctx context.Context, client *http.Client, location string, chunk []byte, start, end int64, totalSize int64, progressCh chan<- v1.Update) (string, error) {
+	// Wrap the chunk reader to report progress as bytes are written
+	var reader io.Reader
+	if progressCh != nil {
+		var chunkUploaded int64
+		reader = &progressReader{
+			reader: bytes.NewReader(chunk),
+			onRead: func(n int) {
+				chunkUploaded += int64(n)
+				// Cap at totalSize defensively
+				complete := min(start+chunkUploaded, totalSize)
+				select {
+				case progressCh <- v1.Update{Complete: complete, Total: totalSize}:
+				default:
+					// Don't block if channel is full
+				}
+			},
+		}
+	} else {
+		reader = bytes.NewReader(chunk)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, location, reader)
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Content-Length", strconv.FormatInt(int64(len(chunk)), 10))
+	req.Header.Set("Content-Range", fmt.Sprintf("%d-%d", start, end))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if err := transport.CheckError(resp, http.StatusAccepted, http.StatusNoContent, http.StatusCreated); err != nil {
+		return "", err
+	}
+
+	// Get the new location for the next chunk
+	newLocation := resp.Header.Get("Location")
+	if newLocation != "" {
+		// Resolve relative URLs
+		locURL, err := url.Parse(newLocation)
+		if err != nil {
+			return "", fmt.Errorf("parsing location URL: %w", err)
+		}
+
+		// Parse the original location to get the base URL
+		origURL, err := url.Parse(location)
+		if err != nil {
+			return "", fmt.Errorf("parsing original location URL: %w", err)
+		}
+
+		return origURL.ResolveReference(locURL).String(), nil
+	}
+
+	return "", nil
+}
+
+// progressReader wraps an io.Reader to report progress.
+type progressReader struct {
+	reader io.Reader
+	onRead func(int)
+}
+
+func (pr *progressReader) Read(p []byte) (int, error) {
+	n, err := pr.reader.Read(p)
+	if n > 0 {
+		pr.onRead(n)
+	}
+	return n, err
+}
+
+// commitUpload finalizes the upload by sending a PUT request with the digest.
+func (c *RegistryClient) commitUpload(ctx context.Context, client *http.Client, location string, digest v1.Hash) error {
+	u, err := url.Parse(location)
+	if err != nil {
+		return fmt.Errorf("parsing location URL: %w", err)
+	}
+
+	// Add digest query parameter
+	q := u.Query()
+	q.Set("digest", digest.String())
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	return transport.CheckError(resp, http.StatusCreated)
 }
 
 // pickDefaultImage selects an image from a manifest index to use for fetching labels.
