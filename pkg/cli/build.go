@@ -8,10 +8,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
@@ -64,16 +62,8 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := http.ProvideHTTPClient(ctx, dockerClient)
-	if err != nil {
-		return err
-	}
-	logClient := coglog.NewClient(client)
-	logCtx := logClient.StartBuild()
-
 	src, err := model.NewSource(configFilename)
 	if err != nil {
-		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
 
@@ -87,19 +77,16 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 
 	err = config.ValidateModelPythonVersion(src.Config)
 	if err != nil {
-		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
 
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, nil))
 	if err != nil {
-		logClient.EndBuild(ctx, err, logCtx)
 		return err
 	}
 
 	console.Infof("\nImage built as %s", m.ImageRef())
-	logClient.EndBuild(ctx, nil, logCtx)
 
 	return nil
 }

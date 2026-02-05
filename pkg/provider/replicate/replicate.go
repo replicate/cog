@@ -11,12 +11,9 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"sync"
-	"time"
 
 	"golang.org/x/term"
 
-	"github.com/replicate/cog/pkg/coglog"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/global"
@@ -25,13 +22,7 @@ import (
 )
 
 // ReplicateProvider handles Replicate's r8.im registry
-type ReplicateProvider struct {
-	// Analytics state (protected by mutex for thread safety)
-	mu        sync.Mutex
-	logClient *coglog.Client
-	logCtx    coglog.PushLogContext
-	started   time.Time
-}
+type ReplicateProvider struct{}
 
 // New creates a new ReplicateProvider
 func New() *ReplicateProvider {
@@ -89,30 +80,11 @@ func (p *ReplicateProvider) Login(ctx context.Context, opts provider.LoginOption
 }
 
 func (p *ReplicateProvider) PrePush(ctx context.Context, opts provider.PushOptions) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	// All features are supported for Replicate - no validation errors
-
-	// Start analytics
-	if opts.HTTPClient != nil {
-		p.logClient = coglog.NewClient(opts.HTTPClient)
-		p.logCtx = p.logClient.StartPush()
-		p.started = time.Now()
-	}
-
 	return nil
 }
 
 func (p *ReplicateProvider) PostPush(ctx context.Context, opts provider.PushOptions, pushErr error) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// End analytics
-	if p.logClient != nil {
-		p.logClient.EndPush(ctx, pushErr, p.logCtx)
-	}
-
 	if pushErr != nil {
 		// Return Replicate-specific error message for repository not found errors
 		if command.IsNotFoundError(pushErr) {
