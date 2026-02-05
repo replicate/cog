@@ -356,8 +356,12 @@ jobs:
           go-version-file: go.mod
       - uses: jdx/mise-action@v3
       - name: Test Go
-        # Run gotestsum directly (not via mise) for proper signal handling on cancellation
-        run: gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...)
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'echo "Cancelling..."; kill -- -$$' INT TERM
+          gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...) &
+          wait $!
 
   test-rust:
     name: Test Rust
@@ -503,8 +507,12 @@ jobs:
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
         working-directory: integration-tests
-        # Run gotestsum directly (not via mise) for proper signal handling on cancellation
-        run: gotestsum --format github-actions -- -parallel $TEST_PARALLEL -timeout 30m
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'echo "Cancelling..."; kill -- -$$' INT TERM
+          gotestsum --format github-actions -- -parallel $TEST_PARALLEL -timeout 30m &
+          wait $!
 
 # =============================================================================
 # Gate Job - Single required check for branch protection
