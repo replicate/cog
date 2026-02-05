@@ -15,17 +15,73 @@ Documentation for the CLI and SDK is available by reading ./docs/llms.txt.
 
 ## Development Commands
 
-The main development commands are defined in `Makefile` and the `script/` directory. Here are the key commands:
+Development tasks are managed with [mise](https://mise.jdx.dev/). Run `mise tasks` to see all available tasks.
 
-- `script/setup` - Sets up the development environment (installs dependencies, sets up Python virtualenv)
-- `script/format` - Formats Go and Python code
-- `script/lint` - Runs linters for Go and Python code
+### Quick Reference
+
+| Task | Description |
+|------|-------------|
+| `mise run fmt` | Check formatting (all languages) |
+| `mise run fmt:fix` | Fix formatting (all languages) |
+| `mise run lint` | Run linters (all languages) |
+| `mise run lint:fix` | Fix lint issues (all languages) |
+| `mise run test:go` | Run Go tests |
+| `mise run test:rust` | Run Rust tests |
+| `mise run test:python` | Run Python tests |
+| `mise run test:integration` | Run integration tests |
+| `mise run build:cog` | Build cog CLI binary |
+| `mise run build:coglet` | Build coglet wheel (dev) |
+| `mise run build:sdk` | Build SDK wheel |
+
+### Task Naming Convention
+
+Tasks follow a consistent naming pattern:
+
+- **Language-based tasks** for fmt/lint/test/typecheck: `task:go`, `task:rust`, `task:python`
+- **Component-based tasks** for build: `build:cog`, `build:coglet`, `build:sdk`
+- **Check vs Fix**: `fmt` and `lint` default to check mode (non-destructive); use `:fix` suffix to auto-fix
+
+### All Tasks by Category
+
+**Format:**
+- `mise run fmt` / `mise run fmt:check` - Check all (alias)
+- `mise run fmt:fix` - Fix all
+- `mise run fmt:go` / `mise run fmt:rust` / `mise run fmt:python` - Per-language
+
+**Lint:**
+- `mise run lint` / `mise run lint:check` - Check all (alias)
+- `mise run lint:fix` - Fix all
+- `mise run lint:go` / `mise run lint:rust` / `mise run lint:python` - Per-language
+- `mise run lint:rust:deny` - Check Rust licenses/advisories
+
+**Test:**
+- `mise run test:go` - Go unit tests
+- `mise run test:rust` - Rust unit tests
+- `mise run test:python` - Python unit tests (via tox)
+- `mise run test:coglet:python` - Coglet Python binding tests
+- `mise run test:integration` - Integration tests
+
+**Build:**
+- `mise run build:cog` - Build cog CLI (development)
+- `mise run build:cog:release` - Build cog CLI (release)
+- `mise run build:coglet` - Build coglet wheel (dev install)
+- `mise run build:coglet:wheel` - Build coglet wheel (native platform)
+- `mise run build:coglet:wheel:linux-x64` - Build for Linux x86_64
+- `mise run build:coglet:wheel:linux-arm64` - Build for Linux ARM64
+- `mise run build:sdk` - Build SDK wheel
+
+**Other:**
+- `mise run typecheck` - Type check all languages
+- `mise run generate` - Run code generation
+- `mise run clean` - Clean all build artifacts
+- `mise run docs` - Build documentation
+- `mise run docs:serve` - Serve docs locally
 
 ## Code Style Guidelines
 
 ### Go
 - **Imports**: Organize in three groups separated by blank lines: (1) Standard library, (2) Third-party packages, (3) Internal packages (`github.com/replicate/cog/pkg/...`)
-- **Formatting**: Use `goimports` (via `script/format` or `make fmt`)
+- **Formatting**: Use `mise run fmt:go:fix`
 - **Linting**: Must pass golangci-lint with: errcheck, gocritic, gosec, govet, ineffassign, misspell, revive, staticcheck, unused
 - **Error Handling**: Return errors as values; use `pkg/errors.CodedError` for user-facing errors with error codes
 - **Naming**: CamelCase for exported, camelCase for unexported
@@ -44,18 +100,18 @@ import (
 
 ### Python
 - **Imports**: Automatically organized by ruff/isort (stdlib → third-party → local)
-- **Formatting**: Use `ruff format` (via `script/format`)
+- **Formatting**: Use `mise run fmt:python:fix`
 - **Linting**: Must pass ruff checks: E (pycodestyle), F (Pyflakes), I (isort), W (warnings), S (bandit), B (bugbear), ANN (annotations)
 - **Type Annotations**: Required on all function signatures; use `typing_extensions` for compatibility; avoid `Any` where possible
 - **Error Handling**: Raise exceptions with descriptive messages; avoid generic exception catching
 - **Naming**: snake_case for functions/variables/modules, PascalCase for classes
 - **Testing**: Use pytest with fixtures; async tests with pytest-asyncio
-- **Compatibility**: Must support Python 3.10-3.13 and both Pydantic 1.x and 2.x (test with tox)
+- **Compatibility**: Must support Python 3.10-3.13
 
 ### Rust
-- **Formatting**: Use `cargo fmt`
-- **Linting**: Must pass `cargo clippy`
-- **Dependencies**: Audited with `cargo-deny` (see `crates/deny.toml`)
+- **Formatting**: Use `mise run fmt:rust:fix`
+- **Linting**: Must pass `mise run lint:rust` (clippy)
+- **Dependencies**: Audited with `cargo-deny` (see `crates/deny.toml`); run `mise run lint:rust:deny`
 - **Error Handling**: Use `thiserror` for typed errors, `anyhow` for application errors
 - **Naming**: snake_case for functions/variables, PascalCase for types
 - **Testing**: Use `cargo test`; snapshot tests use `insta`
@@ -66,16 +122,17 @@ The CLI code is in the `cmd/cog/` and `pkg/` directories. Support tooling is in 
 
 The main commands for working on the CLI are:
 - `go run ./cmd/cog` - Runs the Cog CLI directly from source (requires wheel to be built first)
-- `make cog` - Builds the Cog CLI binary, embedding the Python wheel
+- `mise run build:cog` - Builds the Cog CLI binary, embedding the Python wheel
 - `make install` - Builds and installs the Cog CLI binary to `/usr/local/bin`, or to a custom path with `make install PREFIX=/custom/path`
-- `make test-go` - Runs all Go unit tests
+- `mise run test:go` - Runs all Go unit tests
 - `go test ./pkg/...` - Runs tests directly with `go test`
 
 ## Working on the Python SDK
 The Python SDK is developed in the `python/cog/` directory. It uses `uv` for virtual environments and `tox` for testing across multiple Python versions.
 
 The main commands for working on the SDK are:
-- `make wheel` - Rebuilds the Python wheel from the `python/` directory
+- `mise run build:sdk` - Builds the Python wheel
+- `mise run test:python` - Runs Python tests across all supported versions
 
 ## Working on Coglet (Rust)
 Coglet is the Rust-based prediction server that runs inside Cog containers, handling HTTP requests, worker process management, and prediction execution.
@@ -87,37 +144,35 @@ The code is in the `crates/` directory:
 For detailed architecture documentation, see `crates/README.md` and `crates/coglet/README.md`.
 
 The main commands for working on Coglet are:
-- `cargo build` - Build the Rust crates (run from `crates/` directory)
-- `cargo test` - Run Rust unit tests
-- `cargo clippy` - Run linter
-- `cargo fmt` - Format code
+- `mise run build:coglet` - Build and install coglet wheel for development
+- `mise run test:rust` - Run Rust unit tests
+- `mise run lint:rust` - Run clippy linter
+- `mise run fmt:rust:fix` - Format code
 
 ### Testing
 Go code is tested using the built-in `go test` framework:
 - `go test ./pkg/... -run <name>` - Runs specific Go tests by name
-- `script/test-go` - Runs all Go unit tests
+- `mise run test:go` - Runs all Go unit tests
 
-Python code is tested using `tox`, which allows testing across multiple Python versions and configurations. The `tox.ini` file defines different environments for testing, such as `py313-pydantic2-tests` for Python 3.13 with Pydantic 2.
+Python code is tested using `tox`, which allows testing across multiple Python versions and configurations:
+- `mise run test:python` - Runs all Python unit tests
+- `uv run tox -e py312-tests -- python/tests/server/test_http.py::test_openapi_specification_with_yield` - Runs a specific Python test
 
-These commands are used to run Python tests:
-- `script/test-python` - Runs all Python unit tests
-- `uv run tox -e py312-pydantic2-tests -- python/tests/server/test_http.py::test_openapi_specification_with_yield` - Runs a specific Python test with a specific Pydantic version
+The integration test suite in `integration-tests/` tests the end-to-end functionality of the Cog CLI and Python SDK using Go's testscript framework:
+- `mise run test:integration` - Runs the integration tests
+- `mise run test:integration string_predictor` - Runs a specific integration test
 
-The integration test suite in `integration-tests/` tests the end-to-end functionality of the Cog CLI and Python SDK using Go's testscript framework.
-- `make test-integration` - Runs the integration tests, which require the Cog CLI binary to be built first.
-- `cd integration-tests && go test -v -run TestIntegration/string_predictor` - Runs a specific integration test.
-
-The integration tests require a built Cog binary, which defaults to the first `cog` in `PATH`. Run tests against a specific binary with the `COG_BINARY` environment variable. For example, to build cog and run integration tests:
+The integration tests require a built Cog binary, which defaults to the first `cog` in `PATH`. Run tests against a specific binary with the `COG_BINARY` environment variable:
 ```bash
 make install PREFIX=./cog
-COG_BINARY=./cog/cog make test-integration
+COG_BINARY=./cog/cog mise run test:integration
 ```
 
 ### Development Workflow
-1. Run `script/setup` for initial dev environment setup
-2. Run `make wheel` to rebuild the Python wheel after making changes to the `./python` directory
-3. Run `script/format` to format both go and python code
-4. Run `script/lint` to check code quality
+1. Run `mise install` to set up the development environment
+2. Run `mise run build:sdk` after making changes to the `./python` directory
+3. Run `mise run fmt:fix` to format code
+4. Run `mise run lint` to check code quality
 5. Read the `./docs` directory and make sure the documentation is up to date
 
 ## Architecture
@@ -148,7 +203,7 @@ See `crates/README.md` for detailed architecture documentation.
 ### Key Design Patterns
 1. **Embedded Python Wheel**: The Go binary embeds the Python wheel at build time (`pkg/dockerfile/embed/`)
 2. **Docker SDK Integration**: Uses Docker Go SDK for container operations
-3. **Type Safety**: Pydantic for Python type validation, strongly typed Go interfaces
+3. **Type Safety**: Dataclasses for Python type validation, strongly typed Go interfaces
 4. **Compatibility Matrix**: Automated CUDA/PyTorch/TensorFlow compatibility management
 
 For comprehensive architecture documentation, see [`architecture/`](./architecture/00-overview.md).
@@ -163,9 +218,9 @@ For comprehensive architecture documentation, see [`architecture/`](./architectu
 
 ### Modifying Python SDK behavior
 1. Edit files in `python/cog/`
-2. Run `make wheel` to rebuild embedded wheel
-3. Test with `make test-python`
-4. Integration test with `make test-integration`
+2. Run `mise run build:sdk` to rebuild wheel
+3. Test with `mise run test:python`
+4. Integration test with `mise run test:integration`
 
 ### Updating ML framework compatibility
 1. See `tools/compatgen/` for compatibility matrix generation
@@ -182,11 +237,11 @@ For comprehensive architecture documentation, see [`architecture/`](./architectu
 - `python/cog/base_predictor.py` - Predictor interface
 - `crates/Cargo.toml` - Rust workspace configuration
 - `crates/README.md` - Coglet architecture overview
+- `mise.toml` - Task definitions for development workflow
 
 ## Testing Philosophy
 - Unit tests for individual components (Go and Python)
 - Integration tests for end-to-end workflows
 - Tests use real Docker operations (no mocking Docker API)
-- Always run `make wheel` after making Python changes before testing Go code
-- Both Pydantic 1.x and 2.x must pass tests (use appropriate tox environments)
+- Always run `mise run build:sdk` after making Python changes before testing Go code
 - Python 3.10-3.13 compatibility is required

@@ -93,43 +93,53 @@ Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the fu
 
 ## Development environment
 
-We use the ["scripts to rule them all"](https://github.blog/engineering/engineering-principles/scripts-to-rule-them-all/) philosophy to manage common tasks across the project. These are mostly backed by a Makefile that contains the implementation.
+Development tasks are managed with [mise](https://mise.jdx.dev/). Run `mise tasks` to see all available tasks.
 
-You'll need the following dependencies installed to build Cog locally:
-- [mise](https://mise.jdx.dev/getting-started.html): Manages Go and uv (which in turn manages Python)
+### Prerequisites
+
+- [mise](https://mise.jdx.dev/getting-started.html): Manages Go, Rust, Python, and other tools
 - [Docker](https://docs.docker.com/desktop) or [OrbStack](https://orbstack.dev)
 
-Set up your development environment:
+### Setup
 
-    script/setup
+```sh
+# Trust the mise configuration and install tools
+mise trust
+mise install
 
-Once you have Go installed you can install the cog binary by running:
+# Create Python virtualenv and install dependencies
+uv venv
+uv sync --all-groups
+```
 
-    make install PREFIX=$(go env GOPATH)
+### Common tasks
 
-This installs the `cog` binary to `$GOPATH/bin/cog`.
+```sh
+# Build cog binary
+mise run build:cog
 
-To run ALL the tests:
+# Install cog to $GOPATH/bin
+make install PREFIX=$(go env GOPATH)
 
-    script/test-all
+# Run all tests
+mise run test:go
+mise run test:python
+mise run test:rust
 
-To run per-language tests (forwards arguments to test runner):
+# Run specific tests
+mise run test:go -- ./pkg/config
+uv run tox -e py312-tests -- python/tests/server/test_http.py -k test_name
 
-    script/test-python --no-cov python/tests/cog/test_files.py -k test_put_file_to_signed_endpoint_with_location
+# Format code (all languages)
+mise run fmt:fix
 
-    script/test-go ./pkg/config
+# Lint code (all languages)
+mise run lint
+```
 
-The project is formatted by goimports and ruff. To format the source code, run:
+Run `mise tasks` for the complete list of available tasks.
 
-    script/format
-
-To run code linting across all files:
-
-    script/lint
-
-For more information check the Makefile targets for more specific commands.
-
-If you encounter any errors, see the troubleshooting section below?
+If you encounter any errors, see the troubleshooting section below.
 
 ## Project structure
 
@@ -157,12 +167,12 @@ To regenerate the compatibility matrices, run:
 
 ```sh
 # Regenerate all matrices
-script/generate-compat
+mise run generate:compat
 
 # Or regenerate specific matrices
-script/generate-compat cuda
-script/generate-compat torch
-script/generate-compat tensorflow
+mise run generate:compat cuda
+mise run generate:compat torch
+mise run generate:compat tensorflow
 ```
 
 The generated files are:
@@ -187,23 +197,25 @@ There are a few concepts used throughout Cog that might be helpful to understand
 **To run the entire test suite:**
 
 ```sh
-script/test # see also: make test
+mise run test:go
+mise run test:python
+mise run test:rust
 ```
 
 **To run just the Go unit tests:**
 
 ```sh
-script/test-go # see also: make test-go
+mise run test:go
 ```
 
 **To run just the Python tests:**
 
 ```sh
-script/test-python # see also: make test-python
+mise run test:python
 ```
 
 > [!INFO]
-> This runs the Python test suite using the default Python version. To run a more comprehensive test across multiple Python versions, use `make test-python`.
+> This runs the Python test suite across all supported Python versions (3.10-3.13) using tox.
 
 ### Integration Tests
 
@@ -211,16 +223,16 @@ Integration tests are in `integration-tests/` using [testscript](https://pkg.go.
 
 ```sh
 # Run all integration tests
-make test-integration
+mise run test:integration
+
+# Run a specific test
+mise run test:integration string_predictor
 
 # Run fast tests only (skip slow GPU/framework tests)
 cd integration-tests && go test -short -v
 
-# Run a specific test
-cd integration-tests && go test -v -run TestIntegration/string_predictor
-
 # Run with a custom cog binary
-COG_BINARY=/path/to/cog make test-integration
+COG_BINARY=/path/to/cog mise run test:integration
 ```
 
 ### Writing Integration Tests
@@ -349,7 +361,7 @@ See existing tests in `integration-tests/tests/`, especially `setup_subprocess_*
 To run the docs website server locally:
 
 ```sh
-make run-docs-server
+mise run docs:serve
 ```
 
 ## Publishing a release

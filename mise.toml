@@ -1,16 +1,50 @@
-experimental_monorepo_root = true
+# =============================================================================
+# Cog Development Tasks
+# =============================================================================
+#
+# Run `mise tasks` to see all available tasks.
+#
+# ## Task Caching
+#
+# Some build tasks use `sources` and `outputs` for caching. When sources haven't
+# changed since the last run, mise skips the task. To force a rebuild:
+#
+#     mise run build:sdk --force
+#     mise run build:coglet:wheel --force
+#
+# Cached tasks:
+#   - build:sdk              - skips if python/**/*.py unchanged
+#   - build:coglet:wheel*    - skips if crates/**/*.rs unchanged  
+#   - generate:go            - skips if dist/cog-*.whl unchanged
+#   - generate:stubs         - skips if coglet-python source unchanged
+#   - generate:compat        - skips if tools/compatgen unchanged
+#   - docs                   - skips if docs/**/*.md unchanged
+#
+# Tasks that always run (no caching):
+#   - fmt:*, lint:*, test:*  - always check current state
+#   - clean:*                - always destructive
+#
+# =============================================================================
+
+[monorepo]
+config_roots = ["."]
 
 [tools]
+python = "3.12"  # Required: pyo3 needs Python 3.10+ (abi3-py310)
 go = "latest"
 uv = "0.9.26"
+"pipx:nox" = { version = "2025.11.12", uvx = true, uvx_args = "--python-preference=managed -p 3.13" }
 zig = "0.15.2"
-"rust" = { version = "1.93.0", components = "rustfmt,clippy" }
+"rust" = { version = "1.93.0", components = "rustfmt,clippy", targets ="x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
 cargo-binstall = "1.16.6"
-"cargo:cargo-deny" = "0.19.0"
-"cargo:cargo-insta" = "1.46.0"
+# Cargo tools - use aqua backend where available for faster binary downloads
+# and better security (cosign/SLSA verification). Remaining cargo: tools use binstall.
+"aqua:EmbarkStudios/cargo-deny" = "0.19.0"
+"aqua:mitsuhiko/insta" = "1.46.0"
 "cargo:cargo-nextest" = "0.9.120"
 "cargo:maturin" = "1.11.5"
-"cargo:cargo-zigbuild" = "0.20.1"
+"aqua:rust-cross/cargo-zigbuild" = "0.20.1"
+"aqua:gotestyourself/gotestsum" = "1.13.0"
 ruff = "0.14.13"
 ty = "0.0.10"
 
@@ -18,135 +52,566 @@ ty = "0.0.10"
 _.path = "./bin"
 _.file = [".env"]
 _.python.venv = ".venv"
+# Set CARGO_HOME for local dev to avoid "undefined" directory issues.
+# Only override if not already set (e.g. by CI or user).
+CARGO_HOME = '{% if env.CARGO_HOME is undefined or env.CARGO_HOME == "undefined" or env.CARGO_HOME == "" %}{{config_root}}/.cargo-home{% else %}{{env.CARGO_HOME}}{% endif %}'
 
 [settings]
 lockfile = true
 experimental = true
 
-# Go integration tests
-[tasks.test-integration]
-description = "Run Go integration tests with optional filter"
-dir = "integration-tests"
+# =============================================================================
+# Helper tasks (hidden)
+# =============================================================================
+
+[tasks._setup_dist]
+hide = true
+quiet = true
+description = "Create dist directory"
+run = "mkdir -p dist"
+
+[tasks._clean_dist]
+hide = true
+quiet = true
+description = "Clean dist directory"
+run = "rm -f dist/cog-*.whl dist/cog-*.tar.gz dist/coglet-*.whl"
+
+# =============================================================================
+# Build tasks
+# =============================================================================
+
+[tasks.build]
+alias = "build:all"
+description = "Build all components"
+run = [
+  { tasks = ["build:cog", "build:coglet", "build:sdk"] },
+]
+
+[tasks.install]
+description = "Build and install cog CLI to /usr/local/bin (or PREFIX)"
+depends = ["build:cog"]
 run = """
 #!/usr/bin/env bash
-if [ -n "$1" ]; then
-  go test -v -run "TestIntegration/$1" -timeout 10m
+set -e
+PREFIX="${PREFIX:-/usr/local}"
+install -d "$PREFIX/bin"
+install -m 0755 cog "$PREFIX/bin/cog"
+echo "Installed cog to $PREFIX/bin/cog"
+"""
+
+[tasks."build:cog"]
+description = "Build cog CLI (development)"
+depends = ["generate:go"]
+run = """
+#!/usr/bin/env bash
+set -e
+if git name-rev --name-only --tags HEAD | grep -qFx undefined; then
+  GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --snapshot --single-target --id cog --output cog
 else
-  go test -v -timeout 10m
+  GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --auto-snapshot --single-target --id cog --output cog
 fi
 """
 
-# Rust build tasks
+[tasks."build:cog:release"]
+description = "Build cog CLI (release)"
+depends = ["generate:go"]
+run = "go run github.com/goreleaser/goreleaser/v2@latest build --clean --single-target --id cog --output cog"
+
 [tasks."build:rust"]
-description = "Build Rust crates (excludes coglet-python, use build:coglet for that)"
-run = "cargo build --manifest-path crates/Cargo.toml"
+description = "Build Rust workspace"
+run = "cargo build --manifest-path crates/Cargo.toml --workspace"
 
 [tasks."build:rust:release"]
-description = "Build Rust crates release (excludes coglet-python)"
-run = "cargo build --manifest-path crates/Cargo.toml --release"
+description = "Build Rust workspace (release)"
+run = "cargo build --manifest-path crates/Cargo.toml --workspace --release"
 
 [tasks."build:coglet"]
-description = "Build coglet Python wheel (development, requires maturin)"
+description = "Build coglet Python wheel (development, local install)"
 run = "cd crates/coglet-python && maturin develop"
 
 [tasks."build:coglet:wheel"]
-description = "Build coglet Python wheel for development (native platform only)"
-run = "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml"
+description = "Build coglet Python wheel (native platform)"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
+outputs = ["dist/coglet-*.whl"]
+run = [
+  { task = "_setup_dist" },
+  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml",
+]
 
-[tasks."build:coglet:wheel:linux"]
-description = "Build coglet Python wheel for Linux x86_64 (uses zig for cross-compilation)"
-run = "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig"
+[tasks."build:coglet:wheel:linux-x64"]
+description = "Build coglet Python wheel for Linux x86_64"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
+outputs = ["dist/coglet-*-linux_x86_64.whl"]
+run = [
+  { task = "_setup_dist" },
+  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig",
+]
+
+[tasks."build:coglet:wheel:linux-arm64"]
+description = "Build coglet Python wheel for Linux ARM64"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
+outputs = ["dist/coglet-*-linux_aarch64.whl"]
+run = [
+  { task = "_setup_dist" },
+  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-unknown-linux-gnu --zig",
+]
+
+[tasks."build:coglet:wheel:darwin-arm64"]
+description = "Build coglet Python wheel for macOS ARM64"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
+outputs = ["dist/coglet-*-macosx_*_arm64.whl"]
+run = [
+  { task = "_setup_dist" },
+  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-apple-darwin",
+]
+
+[tasks."build:coglet:wheel:darwin-x64"]
+description = "Build coglet Python wheel for macOS x86_64"
+sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
+outputs = ["dist/coglet-*-macosx_*_x86_64.whl"]
+run = [
+  { task = "_setup_dist" },
+  "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-apple-darwin",
+]
 
 [tasks."build:coglet:wheel:all"]
-description = "Build coglet Python wheels for all platforms (Linux x86_64 + macOS)"
+description = "Build coglet Python wheels for all platforms"
+run = [
+  { task = "_setup_dist" },
+  { tasks = ["build:coglet:wheel:linux-x64", "build:coglet:wheel:linux-arm64"] },
+  { task = "build:coglet:wheel" },
+]
+
+[tasks."build:sdk"]
+description = "Build cog SDK wheel"
+sources = ["python/**/*.py", "pyproject.toml"]
+outputs = ["dist/cog-*.whl"]
+run = [
+  { task = "_setup_dist" },
+  "uv build --wheel --out-dir=dist .",
+]
+
+[tasks."build:sdk:sdist"]
+description = "Build cog SDK source distribution"
+run = [
+  { task = "_setup_dist" },
+  "uv build --sdist --out-dir=dist .",
+]
+
+[tasks."build:wheels"]
+description = "Build all wheels (coglet + sdk)"
+run = [
+  { task = "_clean_dist" },
+  { task = "_setup_dist" },
+  { tasks = ["build:coglet:wheel:all", "build:sdk"] },
+]
+
+# =============================================================================
+# Test tasks
+# =============================================================================
+
+[tasks.test]
+description = "Run all unit tests (set INTEGRATION_TESTS=1 to include integration)"
 run = """
-maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig
-maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml
+#!/usr/bin/env bash
+set -e
+mise run test:go
+mise run test:rust
+mise run test:python
+if [ "${INTEGRATION_TESTS:-}" = "1" ]; then
+  mise run test:integration
+fi
 """
 
-# To build aarch64-linux, first run: rustup target add aarch64-unknown-linux-gnu
-[tasks."build:coglet:wheel:all-arch"]
-description = "Build coglet wheels for all platforms including aarch64-linux (requires rustup target)"
-run = """
-maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig
-maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-unknown-linux-gnu --zig
-maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml
-"""
+[tasks."test:go"]
+description = "Run Go tests"
+depends = ["generate:go"]
+run = "gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...)"
 
-# Rust test tasks
 [tasks."test:rust"]
-description = "Run Rust tests with nextest (excludes coglet-python)"
+description = "Run Rust workspace tests"
 run = "cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude coglet-python --no-tests=pass"
 
-[tasks."test:coglet-python"]
-description = "Run coglet-python Python tests"
-depends = ["build:coglet"]
+[tasks."test:python"]
+description = "Run Python SDK tests (latest supported Python)"
+run = "nox -s tests -p 3.13"
+
+[tasks."test:python:all"]
+description = "Run Python SDK tests on all supported Python versions"
+run = "nox -s tests"
+
+[tasks."test:coglet:python"]
+description = "Run coglet Python binding tests (latest Python)"
+depends = ["build:coglet:wheel"]
+run = "nox -s coglet -p 3.13"
+
+[tasks."test:coglet:python:all"]
+description = "Run coglet Python binding tests on all supported Python versions"
+depends = ["build:coglet:wheel"]
+run = "nox -s coglet"
+
+[tasks."test:integration"]
+description = "Run integration tests (skips slow tests by default, set SHORT=0 for full suite)"
+depends = ["build:cog", "build:sdk", "build:coglet:wheel"]
+dir = "integration-tests"
+run = """
+#!/usr/bin/env bash
+set -e
+SHORT_FLAG="-short"
+if [ "${SHORT:-1}" = "0" ]; then
+  SHORT_FLAG=""
+fi
+if [ -n "$1" ]; then
+  gotestsum -- -v $SHORT_FLAG -run "TestIntegration/$1" -timeout 30m
+else
+  gotestsum -- -v $SHORT_FLAG -parallel ${TEST_PARALLEL:-4} -timeout 30m
+fi
+"""
+
+# =============================================================================
+# Format tasks
+# =============================================================================
+
+[tasks.fmt]
+alias = ["format", "fmt:check", "format:check"]
+description = "Check formatting for all languages (non-destructive)"
+run = [
+  { tasks = ["fmt:go", "fmt:rust", "fmt:python"] },
+]
+
+[tasks."fmt:fix"]
+alias = "format:fix"
+description = "Fix formatting for all languages"
+run = [
+  { tasks = ["fmt:go:fix", "fmt:rust:fix", "fmt:python:fix"] },
+]
+
+# Go formatting
+[tasks."fmt:go"]
+alias = "fmt:go:check"
+description = "Check Go formatting"
+run = """
+#!/usr/bin/env bash
+set -e
+go tool goimports -d .
+test -z "$(go tool goimports -l .)"
+"""
+
+[tasks."fmt:go:fix"]
+description = "Fix Go formatting"
+run = "go tool goimports -w -d ."
+
+# Rust formatting
+[tasks."fmt:rust"]
+alias = "fmt:rust:check"
+description = "Check Rust formatting"
+run = "cargo fmt --manifest-path crates/Cargo.toml --all -- --check"
+
+[tasks."fmt:rust:fix"]
+description = "Fix Rust formatting"
+run = "cargo fmt --manifest-path crates/Cargo.toml --all"
+
+# Python formatting
+[tasks."fmt:python"]
+alias = "fmt:python:check"
+description = "Check Python formatting"
+run = "ruff format --check ."
+
+[tasks."fmt:python:fix"]
+description = "Fix Python formatting"
+run = "ruff format ."
+
+# =============================================================================
+# Lint tasks
+# =============================================================================
+
+[tasks.lint]
+alias = "lint:check"
+description = "Run linters for all languages (non-destructive)"
+run = [
+  { tasks = ["lint:go", "lint:rust", "lint:python"] },
+]
+
+[tasks."lint:fix"]
+description = "Fix lint issues for all languages"
+run = [
+  { tasks = ["lint:go:fix", "lint:rust:fix", "lint:python:fix"] },
+]
+
+# Go linting
+[tasks."lint:go"]
+alias = "lint:go:check"
+description = "Lint Go code"
+depends = ["generate:go"]
+run = "go tool golangci-lint run ./..."
+
+[tasks."lint:go:fix"]
+description = "Fix Go lint issues (limited auto-fix)"
+run = "go tool golangci-lint run --fix ./..."
+
+# Rust linting
+[tasks."lint:rust"]
+alias = ["lint:rust:check", "lint:rust:clippy"]
+description = "Lint Rust code (clippy)"
+run = "cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings"
+
+[tasks."lint:rust:deny"]
+description = "Check Rust licenses and advisories"
+run = "cargo deny --manifest-path crates/Cargo.toml check"
+
+[tasks."lint:rust:fix"]
+description = "Fix Rust lint issues"
+run = "cargo clippy --manifest-path crates/Cargo.toml --workspace --fix --allow-dirty -- -D warnings"
+
+# Python linting
+[tasks."lint:python"]
+alias = "lint:python:check"
+description = "Lint Python code"
+run = """
+#!/usr/bin/env bash
+set -e
+ruff check .
+mise run typecheck:python
+"""
+
+[tasks."lint:python:fix"]
+description = "Fix Python lint issues"
+run = "ruff check --fix ."
+
+# =============================================================================
+# Typecheck tasks
+# =============================================================================
+
+[tasks.typecheck]
+description = "Run type checking for all languages"
+run = [
+  { tasks = ["typecheck:rust", "typecheck:python"] },
+]
+
+[tasks."typecheck:rust"]
+description = "Type check Rust code (cargo check)"
+run = "cargo check --manifest-path crates/Cargo.toml --workspace"
+
+[tasks."typecheck:python"]
+description = "Type check Python code"
+run = "nox -s typecheck"
+
+# =============================================================================
+# Generate tasks
+# =============================================================================
+
+[tasks.generate]
+description = "Run all code generation"
+run = [
+  { tasks = ["generate:go", "generate:stubs"] },
+]
+
+[tasks."generate:go"]
+description = "Run Go code generation (embeds SDK wheel)"
+depends = ["build:sdk"]
+sources = ["dist/cog-*.whl"]
+outputs = ["pkg/wheels/cog-*.whl"]
+run = "go generate ./..."
+
+[tasks."generate:stubs"]
+alias = "stub:generate"
+description = "Generate Python type stubs for coglet"
+sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml"]
+outputs = ["crates/coglet-python/coglet.pyi"]
+dir = "crates/coglet-python"
+run = "cargo run --bin stub_gen"
+
+[tasks."generate:compat"]
+description = "Regenerate CUDA/PyTorch/TensorFlow compatibility matrices"
+sources = ["tools/compatgen/**/*.go"]
+outputs = ["pkg/config/cuda_base_images.json", "pkg/config/torch_compatibility_matrix.json", "pkg/config/tf_compatibility_matrix.json"]
+run = """
+#!/usr/bin/env bash
+set -e
+target="${1:-all}"
+case "$target" in
+  cuda)
+    echo "Generating CUDA base images..."
+    go run ./tools/compatgen/main.go cuda -o pkg/config/cuda_base_images.json
+    ;;
+  torch)
+    echo "Generating PyTorch compatibility matrix..."
+    go run ./tools/compatgen/main.go torch -o pkg/config/torch_compatibility_matrix.json
+    ;;
+  tensorflow|tf)
+    echo "Generating TensorFlow compatibility matrix..."
+    go run ./tools/compatgen/main.go tensorflow -o pkg/config/tf_compatibility_matrix.json
+    ;;
+  all)
+    echo "Generating CUDA base images..."
+    go run ./tools/compatgen/main.go cuda -o pkg/config/cuda_base_images.json
+    echo "Generating PyTorch compatibility matrix..."
+    go run ./tools/compatgen/main.go torch -o pkg/config/torch_compatibility_matrix.json
+    echo "Generating TensorFlow compatibility matrix..."
+    go run ./tools/compatgen/main.go tensorflow -o pkg/config/tf_compatibility_matrix.json
+    ;;
+  *)
+    echo "Unknown target: $target"
+    echo "Usage: mise run generate:compat [cuda|torch|tensorflow|all]"
+    exit 1
+    ;;
+esac
+echo "Done."
+"""
+
+# =============================================================================
+# Stub tasks
+# =============================================================================
+
+[tasks."stub:check"]
+description = "Check that coglet Python stubs are up to date"
 dir = "crates/coglet-python"
 run = """
 #!/usr/bin/env bash
 set -e
-
-echo "==> Running coglet-python tests"
-uv pip install -e . -e ../.. pytest requests
-python -m pytest tests/ -v
+# Generate to temp file and compare
+cargo run --bin stub_gen 2>/dev/null
+if ! git diff --quiet coglet.pyi; then
+  echo "ERROR: Stubs are out of date. Run 'mise run generate:stubs' to update."
+  git diff coglet.pyi
+  exit 1
+fi
+echo "Stubs are up to date."
 """
 
-# Rust formatting and linting
-[tasks."fmt:rust"]
-description = "Format Rust code"
-run = "cargo fmt --manifest-path crates/Cargo.toml --all"
-
-[tasks."fmt:rust:check"]
-description = "Check Rust formatting"
-run = "cargo fmt --manifest-path crates/Cargo.toml --all -- --check"
-
-[tasks.clippy]
-description = "Run clippy lints on all crates"
-run = "cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings"
-
-[tasks.deny]
-description = "Check licenses and advisories with cargo-deny"
-run = "cargo deny --manifest-path crates/Cargo.toml check"
-
-# Stub generation for coglet-python
-[tasks."stubs:generate"]
-description = "Generate type stubs for coglet-python (requires build:coglet first)"
-depends = ["build:coglet"]
-run = "python crates/coglet-python/scripts/generate_stubs.py -o crates/coglet-python/coglet.pyi"
-
-[tasks."stubs:check"]
-description = "Check that coglet-python stubs are up to date"
-depends = ["build:coglet"]
-run = "python crates/coglet-python/scripts/generate_stubs.py --check"
-
-[tasks."stubs:typecheck"]
+[tasks."stub:typecheck"]
 description = "Type-check coglet stubs with ty"
 run = "ty check crates/coglet-python/coglet.pyi"
 
-# CI-oriented tasks
-[tasks."ci:rust"]
-description = "Run all Rust CI checks (fmt, clippy, test)"
+# =============================================================================
+# Clean tasks
+# =============================================================================
+
+[tasks.clean]
+description = "Clean all build artifacts"
+run = [
+  { tasks = ["clean:go", "clean:rust", "clean:python"] },
+  { task = "_clean_dist" },
+]
+
+[tasks."clean:go"]
+description = "Clean Go build artifacts"
+run = "rm -f cog base-image"
+
+[tasks."clean:rust"]
+description = "Clean Rust build artifacts"
+run = "cd crates && cargo clean"
+
+[tasks."clean:python"]
+description = "Clean Python build artifacts"
+run = "rm -rf .tox build python/cog.egg-info"
+
+# =============================================================================
+# Docs tasks
+# =============================================================================
+
+[tasks.docs]
+description = "Build documentation"
+sources = ["docs/**/*.md", "README.md", "CONTRIBUTING.md", "mkdocs.yml"]
+outputs = ["site/**"]
 run = """
 #!/usr/bin/env bash
 set -e
-echo "==> Checking Rust formatting..."
-cargo fmt --manifest-path crates/Cargo.toml --all -- --check
-echo "==> Running clippy..."
-cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
-echo "==> Running tests (excluding coglet-python which requires Python)..."
-cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude coglet-python --no-tests=pass
-echo "==> All Rust CI checks passed!"
+uv pip install mkdocs-material
+sed 's/docs\\///g' README.md > ./docs/README.md
+cp CONTRIBUTING.md ./docs/
+mkdocs build
 """
 
-[tasks."ci:coglet"]
-description = "Run all coglet CI checks (build, stubs, typecheck)"
-depends = ["build:coglet"]
+[tasks."docs:serve"]
+description = "Serve documentation locally"
 run = """
 #!/usr/bin/env bash
 set -e
-echo "==> Checking stubs are up to date..."
-python crates/coglet-python/scripts/generate_stubs.py --check
-echo "==> Type-checking stubs..."
-ty check crates/coglet-python/coglet.pyi
-echo "==> All coglet CI checks passed!"
+uv pip install mkdocs-material
+sed 's/docs\\///g' README.md > ./docs/README.md
+cp CONTRIBUTING.md ./docs/
+mkdocs serve
+"""
+
+[tasks."docs:llm"]
+description = "Update LLM documentation (llms.txt)"
+sources = ["README.md", "docs/*.md"]
+outputs = ["docs/llms.txt"]
+run = """
+#!/usr/bin/env bash
+set -e
+# Concatenate README (minus contributors section) + all docs into llms.txt
+# Use sed to remove the last line (the ## Contributors heading itself)
+(sed '/## Contributors/q' README.md | sed '$d'; for file in docs/*.md; do [ "$file" != "docs/llms.txt" ] && [ -f "$file" ] && echo -e "\n\n---\n\n" && cat "$file"; done) > docs/llms.txt
+echo "Updated docs/llms.txt"
+"""
+
+[tasks."docs:llm:check"]
+description = "Check that llms.txt is up to date"
+run = """
+#!/usr/bin/env bash
+set -e
+tmpfile=$(mktemp)
+trap 'rm -f "$tmpfile"' EXIT
+# Generate to temp file and compare
+(sed '/## Contributors/q' README.md | sed '$d'; for file in docs/*.md; do [ "$file" != "docs/llms.txt" ] && [ -f "$file" ] && echo -e "\n\n---\n\n" && cat "$file"; done) > "$tmpfile"
+if ! diff -q "$tmpfile" docs/llms.txt > /dev/null 2>&1; then
+  echo "ERROR: docs/llms.txt is out of date. Run 'mise run docs:llm' to update."
+  exit 1
+fi
+echo "docs/llms.txt is up to date"
+"""
+
+# =============================================================================
+# CI tasks - granular for parallel execution and caching
+# =============================================================================
+
+# Build tasks (run first to produce artifacts)
+[tasks."ci:build"]
+description = "CI: Build all artifacts"
+run = [
+  { tasks = ["ci:build:sdk", "ci:build:coglet"] },
+]
+
+[tasks."ci:build:sdk"]
+description = "CI: Build SDK wheel and sdist"
+run = [
+  { task = "_setup_dist" },
+  "uv build --out-dir=dist .",
+]
+
+[tasks."ci:build:coglet"]
+description = "CI: Build coglet wheel"
+run = [
+  { task = "_setup_dist" },
+  { task = "build:coglet:wheel:linux-x64" },
+]
+
+[tasks."ci:test:integration"]
+description = "CI: Run integration tests with GitHub Actions output (full suite)"
+dir = "integration-tests"
+# exec ensures signals (SIGTERM from CI cancellation) go directly to gotestsum
+run = "exec gotestsum --format github-actions -- -parallel ${TEST_PARALLEL:-4} -timeout 30m"
+
+# =============================================================================
+# Publish tasks (future)
+# =============================================================================
+
+[tasks."publish:coglet"]
+description = "Publish coglet to PyPI"
+run = """
+#!/usr/bin/env bash
+set -e
+echo "TODO: Implement coglet PyPI publish"
+echo "Wheels in dist/: $(ls dist/coglet-*.whl 2>/dev/null || echo 'none')"
+"""
+
+[tasks."publish:sdk"]
+description = "Publish cog SDK to PyPI"
+run = """
+#!/usr/bin/env bash
+set -e
+echo "TODO: Implement SDK PyPI publish"
+echo "Wheels in dist/: $(ls dist/cog-*.whl 2>/dev/null || echo 'none')"
 """

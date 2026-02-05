@@ -49,9 +49,6 @@ linters-settings:
   gosec:
     excludes:
       - G306 # Expect WriteFile permissions to be 0600 or less
-  govet:
-    # report about shadowed variables
-    check-shadowing: false
   misspell:
     # Correct spellings using locale preferences for US or UK.
     # Default is to use a neutral variety of English.

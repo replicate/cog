@@ -8,159 +8,475 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Cancel in-progress runs for PRs, queue for merge group and main
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
+  # Single source of truth for supported Python versions
+  SUPPORTED_PYTHONS: '["3.10", "3.11", "3.12", "3.13"]'
+  # Default Python version for non-matrix jobs
+  PYTHON_VERSION: "3.13"
+  # Standard environment
   HYPOTHESIS_PROFILE: ci
   FORCE_COLOR: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
+  CARGO_TERM_COLOR: always
+  # Disable Rust toolchain, cargo-binstall, and Python in mise - CI uses dedicated actions
+  # for better caching. mise installs tools in parallel, so rust might not be
+  # ready when cargo-binstall tries to compile cargo:* tools from source.
+  # Using actions guarantees toolchain is ready before mise installs cargo:* tools.
+  # Python is managed by astral-sh/setup-uv for version matrix support.
+  MISE_DISABLE_TOOLS: rust,cargo-binstall,python
 
 permissions: {}
 
+# =============================================================================
+# Change Detection
+# =============================================================================
+
 jobs:
-  build-python:
-    name: Build & verify python package
+  changes:
+    name: Detect changes
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      rust: ${{ steps.filter.outputs.rust }}
+      python: ${{ steps.filter.outputs.python }}
+      integration: ${{ steps.filter.outputs.integration }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # needed for setuptools_scm version determination
+          fetch-depth: 0
+
+      - name: Detect changed paths
+        id: filter
+        run: |
+          # For PRs, compare against base; for pushes, compare against previous commit
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            # Handle initial push (no before)
+            if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+              BASE="HEAD~1"
+            fi
+          fi
+
+          echo "Comparing $BASE..HEAD"
+
+          # Get changed files
+          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
+
+          # CI/tooling changes should run everything
+          if echo "$CHANGED" | grep -qE '^(\.github/workflows/|mise\.toml)'; then
+            echo "CI/tooling changed - running all jobs"
+            echo "go=true" >> $GITHUB_OUTPUT
+            echo "rust=true" >> $GITHUB_OUTPUT
+            echo "python=true" >> $GITHUB_OUTPUT
+            echo "integration=true" >> $GITHUB_OUTPUT
+            echo "docs=true" >> $GITHUB_OUTPUT
+          else
+            # Detect Go changes
+            if echo "$CHANGED" | grep -qE '^(cmd/|pkg/|go\.(mod|sum)|\.golangci\.yml|Makefile)'; then
+              echo "go=true" >> $GITHUB_OUTPUT
+            else
+              echo "go=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Detect Rust changes
+            if echo "$CHANGED" | grep -qE '^(crates/|Cargo\.(toml|lock))'; then
+              echo "rust=true" >> $GITHUB_OUTPUT
+            else
+              echo "rust=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Detect Python changes
+            if echo "$CHANGED" | grep -qE '^(python/|pyproject\.toml|noxfile\.py|\.ruff\.toml)'; then
+              echo "python=true" >> $GITHUB_OUTPUT
+            else
+              echo "python=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Detect integration test changes (or if any code changed)
+            if echo "$CHANGED" | grep -qE '^(integration-tests/|cmd/|pkg/|python/|crates/)'; then
+              echo "integration=true" >> $GITHUB_OUTPUT
+            else
+              echo "integration=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Detect docs changes
+            if echo "$CHANGED" | grep -qE '^(docs/|README\.md)'; then
+              echo "docs=true" >> $GITHUB_OUTPUT
+            else
+              echo "docs=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          # Debug output
+          echo "Changed files:"
+          echo "$CHANGED" | head -50
+
+# =============================================================================
+# Build Stage - Produces artifacts for downstream jobs
+# =============================================================================
+
+  build-sdk:
+    name: Build SDK
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v3
         with:
           cache: false
-      # Build cog package (wheel + sdist)
-      - name: Build cog package
-        run: uv build --out-dir=dist .
-      - name: Upload cog package
+      - name: Build SDK
+        run: mise run ci:build:sdk
+      - name: Upload SDK package
         uses: actions/upload-artifact@v6
         with:
           name: CogPackage
           path: dist/cog-*
-      # Build Rust coglet wheel
-      - name: Check Rust formatting
-        run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
-      - name: Run clippy
-        run: cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
-      - name: Build Rust coglet wheel (ABI3)
-        run: mise run build:coglet:wheel:linux
-      - name: Upload Rust coglet wheel
+
+  build-rust:
+    name: Build coglet wheel
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.integration == 'true' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable  # Required for cargo-binstall to find cargo
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Build coglet wheel (ABI3)
+        run: mise run ci:build:coglet
+      - name: Upload coglet wheel
         uses: actions/upload-artifact@v6
         with:
           name: CogletRustWheel
           path: dist/coglet-*-cp310-abi3-*.whl
 
-  lint:
-    name: Lint
-    needs: build-python
-    runs-on: ubuntu-latest-8-cores
-    timeout-minutes: 30
+# =============================================================================
+# Format Checks - Fast, parallel
+# =============================================================================
+
+  fmt-go:
+    name: Format Go
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Download built wheels
-        uses: actions/download-artifact@v7
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Extract source distribution
-        run: tar xf dist/*.tar.gz --strip-components=1
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v3
         with:
           cache: false
-      - name: Lint
-        run: make lint
+      - name: Check Go formatting
+        run: mise run fmt:go
 
-  test:
-    name: "Test Results"
-    needs:
-      - test-go
-      - test-python
-      - test-coglet-python
-      - test-integration
+  fmt-rust:
+    name: Format Rust
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
-      - name: Check test status
-        run: echo "All tests passed successfully!"
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      # No mise needed - rustfmt comes with toolchain
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
+
+  fmt-python:
+    name: Format Python
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Check Python formatting
+        run: mise run fmt:python
+
+  check-llm-docs:
+    name: Check LLM docs
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Check llms.txt is up to date
+        run: mise run docs:llm:check
+
+# =============================================================================
+# Lint Checks - Parallel
+# =============================================================================
+
+  lint-go:
+    name: Lint Go
+    needs: [changes, build-sdk]
+    if: needs.changes.outputs.go == 'true' && needs.build-sdk.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download SDK
+        uses: actions/download-artifact@v7
+        with:
+          name: CogPackage
+          path: dist
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Lint Go
+        run: mise run lint:go
+
+  lint-rust:
+    name: Lint Rust
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # No mise needed - clippy comes with toolchain
+      - name: Lint Rust (clippy)
+        run: cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
+
+  lint-rust-deny:
+    name: Lint Rust (deny)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable  # Required for cargo-binstall to find cargo
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Check licenses and advisories
+        run: mise run lint:rust:deny
+
+  lint-python:
+    name: Lint Python
+    needs: [changes, build-sdk]
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 15
+    steps:
+      - name: Download SDK
+        uses: actions/download-artifact@v7
+        with:
+          name: CogPackage
+          path: dist
+      - name: Extract source distribution
+        run: tar xf dist/*.tar.gz --strip-components=1
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Lint Python
+        run: mise run lint:python
+
+# =============================================================================
+# Test Jobs
+# =============================================================================
 
   test-go:
-    name: "Test Go"
-    needs: build-python
+    name: "Test Go (${{ matrix.platform }})"
+    needs: [changes, build-sdk]
+    if: |
+      always() &&
+      needs.changes.outputs.go == 'true' &&
+      (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped')
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-runners-and-hardware-resources
         platform: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # needed for goreleaser version determination
-      - name: Download built wheels
+          fetch-depth: 0
+      - name: Download artifacts
         uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v3
-      - name: Build
-        run: make cog
-      - name: Test
-        run: make test-go
+      - name: Build cog
+        run: mise run build:cog
+      - name: Test Go
+        run: mise run test:go
+
+  test-rust:
+    name: Test Rust
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable  # Required for cargo-binstall to find cargo
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Test Rust
+        run: mise run test:rust
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
-    needs: build-python
+    needs: [changes, build-sdk]
+    if: needs.changes.outputs.python == 'true' && needs.build-sdk.result == 'success'
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
     steps:
-      - name: Download built wheels
+      - name: Download SDK
         uses: actions/download-artifact@v7
         with:
+          name: CogPackage
           path: dist
-          merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v3
-      - name: Compute tox env name
-        run: echo TOX_PYTHON=py$(echo "${{ matrix.python-version }}" | tr -d .) >>$GITHUB_ENV
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
-      - name: Test
-        run: uvx --with tox-uv tox run --installpkg dist/cog-*.whl -e ${{ env.TOX_PYTHON }}-tests
+      - name: Test Python
+        run: uvx nox -s tests -p ${{ matrix.python-version }}
 
   test-coglet-python:
-    name: "Test Coglet Python bindings"
-    needs: build-python
+    name: "Test coglet-python (${{ matrix.python-version }})"
+    needs: [changes, build-rust]
+    if: |
+      always() &&
+      (needs.changes.outputs.rust == 'true' || needs.changes.outputs.python == 'true') &&
+      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Download built wheels
+      - name: Download coglet wheel
         uses: actions/download-artifact@v7
         with:
+          name: CogletRustWheel
           path: dist
-          merge-multiple: true
-      - uses: jdx/mise-action@v3
-      - name: Create virtual environment
-        run: uv venv
+        if: needs.build-rust.result == 'success'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable  # Required for cargo-binstall to find cargo
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
-      - name: Test coglet Python bindings
-        run: mise test:coglet-python
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Test coglet-python bindings
+        run: uvx nox -s coglet -p ${{ matrix.python-version }}
 
-  # Go-based integration tests using testscript framework
   test-integration:
     name: "Test integration (${{ matrix.runtime }})"
-    needs:
-      - build-python
+    needs: [changes, build-sdk, build-rust]
+    if: |
+      always() &&
+      needs.changes.outputs.integration == 'true' &&
+      (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
+      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
@@ -173,59 +489,147 @@ jobs:
           fetch-depth: 0
       - name: Login to Docker Hub
         uses: docker/login-action@v3
-        # Skip Docker Hub login for forked PRs (secrets not available)
         if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
         with:
           registry: index.docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Download built wheels
+      - name: Download artifacts
         uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: |
             go.sum
             integration-tests/go.sum
+      - uses: jdx/mise-action@v3
       - name: Build cog binary
-        run: make cog
+        run: mise run build:cog
       - name: Set wheels for runtime
         run: |
-          # Set COGLET_RUST_WHEEL for rust runtime
           if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
-            RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl | head -1)
-            echo "Found Rust coglet wheel: $RUST_WHEEL"
-            echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+            RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl 2>/dev/null | head -1)
+            if [ -n "$RUST_WHEEL" ]; then
+              echo "Found Rust coglet wheel: $RUST_WHEEL"
+              echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+            fi
           fi
       - name: Run integration tests
         env:
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
-        run: make test-integration
+        run: mise run ci:test:integration
+
+# =============================================================================
+# Gate Job - Single required check for branch protection
+# =============================================================================
+
+  ci-complete:
+    name: CI Complete
+    needs:
+      - changes
+      - build-sdk
+      - build-rust
+      - fmt-go
+      - fmt-rust
+      - fmt-python
+      - check-llm-docs
+      - lint-go
+      - lint-rust
+      - lint-rust-deny
+      - lint-python
+      - test-go
+      - test-rust
+      - test-python
+      - test-coglet-python
+      - test-integration
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check job results
+        run: |
+          echo "Job results:"
+          echo "  changes: ${{ needs.changes.result }}"
+          echo "  build-sdk: ${{ needs.build-sdk.result }}"
+          echo "  build-rust: ${{ needs.build-rust.result }}"
+          echo "  fmt-go: ${{ needs.fmt-go.result }}"
+          echo "  fmt-rust: ${{ needs.fmt-rust.result }}"
+          echo "  fmt-python: ${{ needs.fmt-python.result }}"
+          echo "  check-llm-docs: ${{ needs.check-llm-docs.result }}"
+          echo "  lint-go: ${{ needs.lint-go.result }}"
+          echo "  lint-rust: ${{ needs.lint-rust.result }}"
+          echo "  lint-rust-deny: ${{ needs.lint-rust-deny.result }}"
+          echo "  lint-python: ${{ needs.lint-python.result }}"
+          echo "  test-go: ${{ needs.test-go.result }}"
+          echo "  test-rust: ${{ needs.test-rust.result }}"
+          echo "  test-python: ${{ needs.test-python.result }}"
+          echo "  test-coglet-python: ${{ needs.test-coglet-python.result }}"
+          echo "  test-integration: ${{ needs.test-integration.result }}"
+
+          # Fail if any job failed (skipped is OK)
+          FAILED=false
+          for result in \
+            "${{ needs.changes.result }}" \
+            "${{ needs.build-sdk.result }}" \
+            "${{ needs.build-rust.result }}" \
+            "${{ needs.fmt-go.result }}" \
+            "${{ needs.fmt-rust.result }}" \
+            "${{ needs.fmt-python.result }}" \
+            "${{ needs.check-llm-docs.result }}" \
+            "${{ needs.lint-go.result }}" \
+            "${{ needs.lint-rust.result }}" \
+            "${{ needs.lint-rust-deny.result }}" \
+            "${{ needs.lint-python.result }}" \
+            "${{ needs.test-go.result }}" \
+            "${{ needs.test-rust.result }}" \
+            "${{ needs.test-python.result }}" \
+            "${{ needs.test-coglet-python.result }}" \
+            "${{ needs.test-integration.result }}"
+          do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              FAILED=true
+            fi
+          done
+
+          if [ "$FAILED" = "true" ]; then
+            echo "::error::Some jobs failed or were cancelled"
+            exit 1
+          fi
+
+          echo "All CI checks passed!"
+
+# =============================================================================
+# Release - Only on tags
+# =============================================================================
 
   release:
-    name: "Release"
-    needs:
-      - test-go
-      - test-python
-      - test-integration
+    name: Release
+    needs: ci-complete
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # needed for goreleaser version determination
-      - name: Download built wheels
+          fetch-depth: 0
+      - name: Download artifacts
         uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v3
       - uses: goreleaser/goreleaser-action@v6
         with:

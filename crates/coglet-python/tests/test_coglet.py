@@ -1,11 +1,9 @@
 """Tests for coglet Python bindings."""
 
-import json
 import queue
 import re
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path

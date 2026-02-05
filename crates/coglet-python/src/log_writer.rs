@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::*;
 
 use coglet_core::bridge::protocol::{ControlResponse, LogSource};
 use coglet_core::worker::SlotSender;
@@ -254,7 +255,8 @@ fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
 /// Uses line buffering: accumulates writes until a newline is received, then
 /// emits complete lines. This coalesces Python's print() which does separate
 /// writes for content and newline.
-#[pyclass]
+#[gen_stub_pyclass]
+#[pyclass(module = "coglet")]
 pub struct SlotLogWriter {
     /// Which stream this captures (stdout or stderr).
     source: LogSource,
@@ -267,6 +269,7 @@ pub struct SlotLogWriter {
     line_buffer: Mutex<String>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl SlotLogWriter {
     /// Write data, routing to the appropriate destination.

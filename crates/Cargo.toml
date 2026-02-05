@@ -38,6 +38,7 @@ anyhow = "1"
 # Python bindings
 pyo3 = { version = "0.27", features = ["auto-initialize", "abi3-py310"] }
 pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
+pyo3-stub-gen = "0.18"
 
 # Testing
 insta = { version = "1", features = ["json"] }
