@@ -261,25 +261,17 @@ jobs:
 
   lint-go:
     name: Lint Go
-    needs: [changes, build-sdk]
-    if: needs.changes.outputs.go == 'true' && needs.build-sdk.result == 'success'
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - name: Download SDK
-        uses: actions/download-artifact@v7
+      - uses: actions/setup-go@v6
         with:
-          name: CogPackage
-          path: dist
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
-        with:
-          cache: false
+          go-version-file: go.mod
       - name: Lint Go
-        run: mise run lint:go
+        run: go tool golangci-lint run ./...
 
   lint-rust:
     name: Lint Rust
@@ -349,11 +341,8 @@ jobs:
 
   test-go:
     name: "Test Go (${{ matrix.platform }})"
-    needs: [changes, build-sdk]
-    if: |
-      always() &&
-      needs.changes.outputs.go == 'true' &&
-      (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped')
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -362,22 +351,10 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
-          fetch-depth: 0
-      - name: Download artifacts
-        uses: actions/download-artifact@v7
-        with:
-          path: dist
-          merge-multiple: true
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
+          go-version-file: go.mod
       - uses: jdx/mise-action@v3
-      - name: Build cog
-        run: mise run build:cog
       - name: Test Go
         # Run gotestsum directly (not via mise) for proper signal handling on cancellation
         run: gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...)
