@@ -59,3 +59,18 @@ def typecheck(session: nox.Session) -> None:
     _install_package(session)
     session.install("pyright==1.1.375")
     session.run("pyright", *session.posargs)
+
+
+@nox.session(name="coglet", python=PYTHON_VERSIONS)
+def coglet_tests(session: nox.Session) -> None:
+    """Run coglet-python binding tests."""
+    # Install coglet wheel if available, otherwise editable
+    coglet_wheels = glob.glob("dist/coglet-*.whl")
+    if coglet_wheels:
+        session.install(coglet_wheels[0])
+    else:
+        session.install("-e", "crates/coglet-python")
+    # Install cog SDK (editable for local dev)
+    _install_package(session)
+    session.install("pytest", "requests")
+    session.run("pytest", "crates/coglet-python/tests", "-v", *session.posargs)

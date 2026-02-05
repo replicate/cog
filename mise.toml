@@ -241,20 +241,14 @@ description = "Run Python SDK tests on all supported Python versions"
 run = "nox -s tests"
 
 [tasks."test:coglet:python"]
-description = "Run coglet Python binding tests (uses pre-built wheel if available)"
+description = "Run coglet Python binding tests (latest Python)"
 depends = ["build:coglet:wheel"]
-dir = "crates/coglet-python"
-run = """
-#!/usr/bin/env bash
-set -e
-# Use pre-built wheel from dist/ if available, otherwise editable install
-if ls ../../dist/coglet-*.whl 1>/dev/null 2>&1; then
-  uv pip install ../../dist/coglet-*.whl -e ../.. pytest requests
-else
-  uv pip install -e . -e ../.. pytest requests
-fi
-python -m pytest tests/ -v
-"""
+run = "nox -s coglet -p 3.13"
+
+[tasks."test:coglet:python:all"]
+description = "Run coglet Python binding tests on all supported Python versions"
+depends = ["build:coglet:wheel"]
+run = "nox -s coglet"
 
 [tasks."test:integration"]
 description = "Run integration tests (skips slow tests by default, set SHORT=0 for full suite)"

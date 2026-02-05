@@ -466,9 +466,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: jdx/mise-action@v3
       - name: Test coglet-python bindings
-        run: mise run test:coglet:python
+        run: uvx nox -s coglet -p ${{ matrix.python-version }}
 
   test-integration:
     name: "Test integration (${{ matrix.runtime }})"
