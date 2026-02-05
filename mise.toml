@@ -330,17 +330,10 @@ run = [
 [tasks."lint:go"]
 alias = "lint:go:check"
 description = "Lint Go code"
-depends = ["generate:go"]
-run = """
-#!/usr/bin/env bash
-set -e
-go vet ./...
-go tool golangci-lint run ./...
-"""
+run = "go tool golangci-lint run ./..."
 
 [tasks."lint:go:fix"]
 description = "Fix Go lint issues (limited auto-fix)"
-depends = ["generate:go"]
 run = "go tool golangci-lint run --fix ./..."
 
 # Rust linting
@@ -379,13 +372,8 @@ run = "ruff check --fix ."
 [tasks.typecheck]
 description = "Run type checking for all languages"
 run = [
-  { tasks = ["typecheck:go", "typecheck:rust", "typecheck:python"] },
+  { tasks = ["typecheck:rust", "typecheck:python"] },
 ]
-
-[tasks."typecheck:go"]
-description = "Type check Go code (via go vet)"
-depends = ["generate:go"]
-run = "go vet ./..."
 
 [tasks."typecheck:rust"]
 description = "Type check Rust code (cargo check)"
