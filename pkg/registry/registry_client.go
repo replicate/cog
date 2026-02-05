@@ -604,52 +604,68 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 // The repo parameter is needed to restart the upload session if multipart fails.
 // Returns the final upload location URL which must be used for committing the upload.
 func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, location string, totalSize int64, progressCh chan<- v1.Update) (string, error) {
-	// Get the compressed blob reader
+	// Multipart upload settings:
+	// - Threshold: Use multipart only for blobs larger than 50MB (avoids MPU overhead for smaller files)
+	// - Chunk size: 25MB per chunk (good balance for R2 object store)
+	const multipartThreshold = 50 * 1024 * 1024
+	const chunkSize = 25 * 1024 * 1024
+
+	if totalSize > multipartThreshold {
+		finalLocation, newLocation, fallback, err := c.tryMultipartWithFallback(ctx, client, repo, layer, location, totalSize, chunkSize, progressCh)
+		if err != nil {
+			return "", err
+		}
+		if !fallback {
+			return finalLocation, nil
+		}
+		// Multipart not supported, continue with single-part using the new location
+		location = newLocation
+	}
+
+	// Single-part upload for small blobs or servers that don't support multipart
 	blob, err := layer.Compressed()
 	if err != nil {
 		return "", fmt.Errorf("getting compressed blob: %w", err)
 	}
 	defer blob.Close()
 
-	// Try multipart upload first, fall back to single-part if not supported
-	// Chunk size: 25MB for multipart uploads
-	const chunkSize = 25 * 1024 * 1024
-	tryMultipart := totalSize > chunkSize // Only try multipart for large blobs
-
-	if tryMultipart {
-		finalLocation, err := c.tryMultipartUpload(ctx, client, location, blob, totalSize, chunkSize, progressCh)
-		if err == nil {
-			return finalLocation, nil
-		}
-
-		// Check if error indicates multipart not supported
-		var transportErr *transport.Error
-		if errors.As(err, &transportErr) && (transportErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
-			transportErr.StatusCode == http.StatusBadRequest) {
-			// Multipart not supported - restart upload session and use single-part
-			newLocation, err := c.initiateUpload(ctx, client, repo)
-			if err != nil {
-				return "", fmt.Errorf("restarting upload after multipart failure: %w", err)
-			}
-			location = newLocation
-
-			// Reset blob reader
-			blob, err = layer.Compressed()
-			if err != nil {
-				return "", fmt.Errorf("getting compressed blob for retry: %w", err)
-			}
-			defer blob.Close()
-		} else {
-			return "", err
-		}
-	}
-
-	// Single-part upload for small blobs or servers that don't support multipart
 	err = c.uploadBlobSingle(ctx, client, location, blob, totalSize, progressCh)
 	if err != nil {
 		return "", err
 	}
 	return location, nil
+}
+
+// tryMultipartWithFallback attempts multipart upload and handles fallback if not supported.
+// Returns (finalLocation, newLocation, fallback, error):
+//   - If multipart succeeds: (finalLocation, "", false, nil)
+//   - If multipart not supported: ("", newLocation, true, nil) - caller should use single-part with newLocation
+//   - If error: ("", "", false, error)
+func (c *RegistryClient) tryMultipartWithFallback(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, location string, totalSize int64, chunkSize int64, progressCh chan<- v1.Update) (finalLocation string, newLocation string, fallback bool, err error) {
+	blob, err := layer.Compressed()
+	if err != nil {
+		return "", "", false, fmt.Errorf("getting compressed blob: %w", err)
+	}
+	defer blob.Close()
+
+	finalLocation, err = c.tryMultipartUpload(ctx, client, location, blob, totalSize, chunkSize, progressCh)
+	if err == nil {
+		return finalLocation, "", false, nil
+	}
+
+	// Check if error indicates multipart not supported
+	var transportErr *transport.Error
+	if errors.As(err, &transportErr) && (transportErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
+		transportErr.StatusCode == http.StatusBadRequest) {
+		// Multipart not supported - restart upload session for single-part fallback
+		newLocation, err = c.initiateUpload(ctx, client, repo)
+		if err != nil {
+			return "", "", false, fmt.Errorf("restarting upload after multipart failure: %w", err)
+		}
+		return "", newLocation, true, nil
+	}
+
+	return "", "", false, err
 }
 
 // tryMultipartUpload attempts to upload using Content-Range headers.
