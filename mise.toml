@@ -29,6 +29,7 @@
 experimental_monorepo_root = true
 
 [tools]
+python = "3.12"  # Required: pyo3 needs Python 3.10+ (abi3-py310)
 go = "latest"
 uv = "0.9.26"
 zig = "0.15.2"
@@ -75,10 +76,23 @@ run = "rm -f dist/cog-*.whl dist/cog-*.tar.gz dist/coglet-*.whl"
 # =============================================================================
 
 [tasks.build]
+alias = "build:all"
 description = "Build all components"
 run = [
   { tasks = ["build:cog", "build:coglet", "build:sdk"] },
 ]
+
+[tasks.install]
+description = "Build and install cog CLI to /usr/local/bin (or PREFIX)"
+depends = ["build:cog"]
+run = """
+#!/usr/bin/env bash
+set -e
+PREFIX="${PREFIX:-/usr/local}"
+install -d "$PREFIX/bin"
+install -m 0755 cog "$PREFIX/bin/cog"
+echo "Installed cog to $PREFIX/bin/cog"
+"""
 
 [tasks."build:cog"]
 description = "Build cog CLI (development)"

@@ -69,9 +69,9 @@ jobs:
           # Get changed files
           CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
 
-          # CI changes should run everything
-          if echo "$CHANGED" | grep -qE '^\.github/workflows/'; then
-            echo "CI workflow changed - running all jobs"
+          # CI/tooling changes should run everything
+          if echo "$CHANGED" | grep -qE '^(\.github/workflows/|mise\.toml)'; then
+            echo "CI/tooling changed - running all jobs"
             echo "go=true" >> $GITHUB_OUTPUT
             echo "rust=true" >> $GITHUB_OUTPUT
             echo "python=true" >> $GITHUB_OUTPUT
