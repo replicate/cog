@@ -44,6 +44,8 @@ cargo-binstall = "1.16.6"
 "aqua:mitsuhiko/insta" = "1.46.0"
 "cargo:cargo-nextest" = "0.9.120"
 "cargo:maturin" = "1.11.5"
+"aqua:rust-lang/rustup" = "latest"
+"aqua:rust-lang/rustup/rustup-init" = "latest"
 "aqua:rust-cross/cargo-zigbuild" = "0.20.1"
 "aqua:gotestyourself/gotestsum" = "1.13.0"
 "aqua:golangci/golangci-lint" = "2.8.0"
@@ -54,9 +56,6 @@ ty = "0.0.10"
 _.path = "./bin"
 _.file = [".env"]
 _.python.venv = ".venv"
-# Set CARGO_HOME for local dev to avoid "undefined" directory issues.
-# Only override if not already set (e.g. by CI or user).
-CARGO_HOME = '{% if env.CARGO_HOME is undefined or env.CARGO_HOME == "undefined" or env.CARGO_HOME == "" %}{{config_root}}/.cargo-home{% else %}{{env.CARGO_HOME}}{% endif %}'
 
 [settings]
 lockfile = true
