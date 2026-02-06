@@ -18,11 +18,6 @@ type Model struct {
 	// Index is the OCI Image Index (populated when inspecting a pushed model).
 	Index *Index
 
-	// WeightsManifest contains weight file metadata.
-	// Deprecated: Use WeightArtifacts() instead. Kept for backwards compatibility
-	// with existing code that reads weights metadata from labels.
-	WeightsManifest *WeightsManifest
-
 	// TODO(md): OCIIndex is a temporary gate. When true, Push() creates an OCI
 	// Image Index with weight artifacts. When false, Push() does a plain docker push.
 	// Remove this field once index pushes are validated with all registries.

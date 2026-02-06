@@ -51,12 +51,3 @@ func (wl *WeightsLock) Save(path string) error {
 	}
 	return nil
 }
-
-// ToWeightsManifest converts the lockfile to a WeightsManifest.
-func (wl *WeightsLock) ToWeightsManifest() *WeightsManifest {
-	return &WeightsManifest{
-		ArtifactType: MediaTypeWeightArtifact,
-		Created:      wl.Created,
-		Files:        wl.Files,
-	}
-}
