@@ -7,7 +7,6 @@ import (
 
 	"github.com/replicate/go/uuid"
 
-	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/provider"
 	"github.com/replicate/cog/pkg/provider/setup"
@@ -48,11 +47,6 @@ func push(cmd *cobra.Command, args []string) error {
 	setup.Init()
 
 	dockerClient, err := docker.NewClient(ctx)
-	if err != nil {
-		return err
-	}
-
-	httpClient, err := http.ProvideHTTPClient(ctx, dockerClient)
 	if err != nil {
 		return err
 	}
