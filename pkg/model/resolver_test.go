@@ -1059,6 +1059,7 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 
 	m, err := resolver.Build(context.Background(), src, BuildOptions{
 		ImageName: "test-image:latest",
+		OCIIndex:  true,
 	})
 
 	require.NoError(t, err)
@@ -1131,10 +1132,12 @@ func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
 
 	m, err := resolver.Build(context.Background(), src, BuildOptions{
 		ImageName: "test-image:latest",
+		OCIIndex:  true,
 	})
 
 	require.NoError(t, err)
 	require.True(t, m.IsBundle())
+	require.True(t, m.OCIIndex)
 
 	// Should have 2 artifacts: image + weight
 	require.Len(t, m.Artifacts, 2)

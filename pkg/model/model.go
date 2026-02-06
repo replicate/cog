@@ -23,6 +23,11 @@ type Model struct {
 	// with existing code that reads weights metadata from labels.
 	WeightsManifest *WeightsManifest
 
+	// TODO(md): OCIIndex is a temporary gate. When true, Push() creates an OCI
+	// Image Index with weight artifacts. When false, Push() does a plain docker push.
+	// Remove this field once index pushes are validated with all registries.
+	OCIIndex bool
+
 	// Artifacts is the collection of all artifacts produced by building this model.
 	// Populated by Resolver.Build(). Contains ImageArtifact and WeightArtifact instances.
 	Artifacts []Artifact

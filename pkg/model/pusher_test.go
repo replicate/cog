@@ -412,7 +412,54 @@ func TestBundlePusher_Push(t *testing.T) {
 // =============================================================================
 
 func TestResolver_Push(t *testing.T) {
-	t.Run("always produces an OCI index", func(t *testing.T) {
+	t.Run("default uses docker push", func(t *testing.T) {
+		var dockerPushed bool
+		docker := &mockDocker{
+			pushFunc: func(ctx context.Context, ref string) error {
+				dockerPushed = true
+				return nil
+			},
+		}
+		reg := &mockRegistry{}
+		resolver := NewResolver(docker, reg)
+
+		m := &Model{
+			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
+			Artifacts: []Artifact{
+				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
+			},
+		}
+
+		err := resolver.Push(context.Background(), m, PushOptions{})
+		require.NoError(t, err)
+		require.True(t, dockerPushed, "standalone should use docker push")
+	})
+
+	t.Run("OCIIndex false uses docker push", func(t *testing.T) {
+		var dockerPushed bool
+		docker := &mockDocker{
+			pushFunc: func(ctx context.Context, ref string) error {
+				dockerPushed = true
+				return nil
+			},
+		}
+		reg := &mockRegistry{}
+		resolver := NewResolver(docker, reg)
+
+		m := &Model{
+			// OCIIndex not set (false by default)
+			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
+			Artifacts: []Artifact{
+				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
+			},
+		}
+
+		err := resolver.Push(context.Background(), m, PushOptions{})
+		require.NoError(t, err)
+		require.True(t, dockerPushed, "default format should use docker push")
+	})
+
+	t.Run("OCIIndex true produces an OCI index", func(t *testing.T) {
 		var indexPushed bool
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error { return nil },
@@ -433,7 +480,8 @@ func TestResolver_Push(t *testing.T) {
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
-			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
+			OCIIndex: true,
+			Image:    &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
 			},
@@ -441,15 +489,31 @@ func TestResolver_Push(t *testing.T) {
 
 		err := resolver.Push(context.Background(), m, PushOptions{})
 		require.NoError(t, err)
-		require.True(t, indexPushed, "should push an OCI index even without weights")
+		require.True(t, indexPushed, "OCIIndex=true should push an OCI index")
 	})
 
-	t.Run("returns error when no image artifact", func(t *testing.T) {
+	t.Run("standalone returns error when image nil", func(t *testing.T) {
 		docker := &mockDocker{}
 		reg := &mockRegistry{}
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
+			Image:     nil,
+			Artifacts: []Artifact{},
+		}
+
+		err := resolver.Push(context.Background(), m, PushOptions{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "artifact is nil")
+	})
+
+	t.Run("OCIIndex true returns error when no image artifact", func(t *testing.T) {
+		docker := &mockDocker{}
+		reg := &mockRegistry{}
+		resolver := NewResolver(docker, reg)
+
+		m := &Model{
+			OCIIndex:  true,
 			Image:     nil,
 			Artifacts: []Artifact{},
 		}
