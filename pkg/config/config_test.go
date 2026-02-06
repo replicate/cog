@@ -161,7 +161,7 @@ func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
 			PythonRequirements: "requirements.txt",
 		},
 	}
-	err := config.ValidateAndComplete("")
+	err := config.Complete("")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Only one of python_packages or python_requirements can be set in your cog.yaml, not both")
 }
@@ -181,7 +181,7 @@ foo==1.0.0`), 0o644)
 			PythonRequirements: "requirements.txt",
 		},
 	}
-	err = config.ValidateAndComplete(tmpDir)
+	err = config.Complete(tmpDir)
 	require.NoError(t, err)
 	require.Equal(t, "11.0", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
@@ -211,7 +211,7 @@ foo==1.0.0`), 0o644)
 			PythonRequirements: "requirements.txt",
 		},
 	}
-	err = config.ValidateAndComplete(tmpDir)
+	err = config.Complete(tmpDir)
 	require.NoError(t, err)
 	require.Equal(t, "11.6", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
@@ -246,7 +246,7 @@ flask>0.4
 			PythonRequirements: "requirements.txt",
 		},
 	}
-	err = config.ValidateAndComplete(tmpDir)
+	err = config.Complete(tmpDir)
 	require.NoError(t, err)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
@@ -271,7 +271,7 @@ func TestValidateAndCompleteCUDAForAllTF(t *testing.T) {
 			},
 		}
 
-		err := config.ValidateAndComplete("")
+		err := config.Complete("")
 		require.NoError(t, err)
 		assertMinorVersion(t, compat.CUDA, config.Build.CUDA)
 		require.Equal(t, compat.CuDNN, config.Build.CuDNN)
@@ -290,7 +290,7 @@ func TestValidateAndCompleteCUDAForAllTorch(t *testing.T) {
 			},
 		}
 
-		err := config.ValidateAndComplete("")
+		err := config.Complete("")
 		require.NoError(t, err)
 		if compat.CUDA == nil {
 			require.Equal(t, "", config.Build.CUDA)
@@ -321,7 +321,7 @@ func TestValidateAndCompleteCUDAForSelectedTorch(t *testing.T) {
 				},
 			},
 		}
-		err := config.ValidateAndComplete("")
+		err := config.Complete("")
 		require.NoError(t, err)
 		require.Equal(t, tt.cuda, config.Build.CUDA)
 		require.Equal(t, tt.cuDNN, config.Build.CuDNN)
@@ -344,7 +344,7 @@ func TestUnsupportedTorch(t *testing.T) {
 			},
 		},
 	}
-	err = config.ValidateAndComplete("")
+	err = config.Complete("")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Cog doesn't know what CUDA version is compatible with torch==0.4.1.")
 
@@ -358,7 +358,7 @@ func TestUnsupportedTorch(t *testing.T) {
 			},
 		},
 	}
-	err = config.ValidateAndComplete("")
+	err = config.Complete("")
 	require.NoError(t, err)
 	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
@@ -381,7 +381,7 @@ func TestUnsupportedTensorflow(t *testing.T) {
 			},
 		},
 	}
-	err = config.ValidateAndComplete("")
+	err = config.Complete("")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Cog doesn't know what CUDA version is compatible with tensorflow==0.4.1.")
 
@@ -395,7 +395,7 @@ func TestUnsupportedTensorflow(t *testing.T) {
 			},
 		},
 	}
-	err = config.ValidateAndComplete("")
+	err = config.Complete("")
 	require.NoError(t, err)
 	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
@@ -415,7 +415,7 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 			CUDA: "11.8",
 		},
 	}
-	err := config.ValidateAndComplete("")
+	err := config.Complete("")
 	require.NoError(t, err)
 	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
@@ -444,7 +444,7 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 			CUDA: "11.8",
 		},
 	}
-	err := config.ValidateAndComplete("")
+	err := config.Complete("")
 	require.NoError(t, err)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
@@ -469,7 +469,7 @@ func TestPythonPackagesForArchTensorflowGPU(t *testing.T) {
 			CUDA: "11.8",
 		},
 	}
-	err := config.ValidateAndComplete("")
+	err := config.Complete("")
 	require.NoError(t, err)
 	assertMinorVersion(t, "11.8", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
@@ -499,7 +499,7 @@ func TestPythonPackagesBothTorchAndTensorflow(t *testing.T) {
 			CUDA: "12.3",
 		},
 	}
-	err := config.ValidateAndComplete("")
+	err := config.Complete("")
 	require.NoError(t, err)
 	require.Equal(t, "12.3", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
@@ -523,7 +523,7 @@ func TestCUDABaseImageTag(t *testing.T) {
 		},
 	}
 
-	err := config.ValidateAndComplete("")
+	err := config.Complete("")
 	require.NoError(t, err)
 
 	imageTag, err := config.CUDABaseImageTag()
@@ -647,7 +647,7 @@ func TestTorchWithExistingExtraIndexURL(t *testing.T) {
 			CUDA: "11.6.2",
 		},
 	}
-	err := config.ValidateAndComplete("")
+	err := config.Complete("")
 	require.NoError(t, err)
 	require.Equal(t, "11.6.2", config.Build.CUDA)
 
@@ -660,8 +660,20 @@ torch==1.12.1`
 
 func TestBlankBuild(t *testing.T) {
 	// Naively, this turns into nil, so make sure it's a real build object
-	config, err := FromYAML([]byte(`build:`))
+	// Write a temp file
+	dir := t.TempDir()
+	configPath := path.Join(dir, "cog.yaml")
+	err := os.WriteFile(configPath, []byte(`build:`), 0o644)
 	require.NoError(t, err)
+
+	cfgFile, err := Parse(configPath)
+	require.NoError(t, err)
+	// Note: `build:` by itself in YAML parses to Build: nil (empty map becomes nil pointer)
+	// The completion step should create a default Build
+
+	config, err := configFileToConfig(cfgFile, "cog.yaml")
+	require.NoError(t, err)
+	require.NoError(t, config.Complete(dir))
 	require.NotNil(t, config.Build)
 	require.Equal(t, false, config.Build.GPU)
 }
@@ -677,7 +689,7 @@ func TestPythonRequirementsForArchWithAddedPackage(t *testing.T) {
 			CUDA: "11.6.2",
 		},
 	}
-	err := config.ValidateAndComplete("")
+	err := config.Complete("")
 	require.NoError(t, err)
 	require.Equal(t, "11.6.2", config.Build.CUDA)
 	requirements, err := config.PythonRequirementsForArch("", "", []string{
@@ -696,7 +708,12 @@ build:
   run:
   - command: "echo 'Hello, World!'"
 `
-	_, err := FromYAML([]byte(yamlString))
+	dir := t.TempDir()
+	configPath := path.Join(dir, "cog.yaml")
+	err := os.WriteFile(configPath, []byte(yamlString), 0o644)
+	require.NoError(t, err)
+
+	_, err = Parse(configPath)
 	require.NoError(t, err)
 }
 
@@ -722,7 +739,7 @@ func TestAbsolutePathInPythonRequirements(t *testing.T) {
 			PythonRequirements: requirementsFilePath,
 		},
 	}
-	err = config.ValidateAndComplete(dir)
+	err = config.Complete(dir)
 	require.NoError(t, err)
 	torchVersion, ok := config.TorchVersion()
 	require.Equal(t, torchVersion, "2.5.0")
@@ -738,7 +755,7 @@ func TestContainsCoglet(t *testing.T) {
 			},
 		},
 	}
-	err := config.ValidateAndComplete("")
+	err := config.Complete("")
 	require.NoError(t, err)
 	require.True(t, config.ContainsCoglet())
 }

@@ -36,9 +36,16 @@ func newDebugCommand() *cobra.Command {
 func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	cfg, projectDir, err := config.GetConfig(configFilename)
+	result, err := config.Load(configFilename)
 	if err != nil {
 		return err
+	}
+	cfg := result.Config
+	projectDir := result.RootDir
+
+	// Display any deprecation warnings
+	for _, w := range result.Warnings {
+		console.Warnf("%s", w.Error())
 	}
 
 	dockerClient, err := docker.NewClient(ctx)
