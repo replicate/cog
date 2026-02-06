@@ -258,12 +258,15 @@ func ValidateModelPythonVersion(cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("invalid Python version format: %w", err)
 	}
-	if major < MinimumMajorPythonVersion || (major >= MinimumMajorPythonVersion &&
+	if major < MinimumMajorPythonVersion || (major == MinimumMajorPythonVersion &&
 		minor < MinimumMinorPythonVersion) {
 		return fmt.Errorf("minimum supported Python version is %d.%d. requested %s",
 			MinimumMajorPythonVersion, MinimumMinorPythonVersion, version)
 	}
-	if cfg.Concurrency != nil && cfg.Concurrency.Max > 1 && minor < MinimumMinorPythonVersionForConcurrency {
+	// Only check minor version for concurrency if major version is the minimum (3)
+	// For major > 3, any minor version would be acceptable
+	if cfg.Concurrency != nil && cfg.Concurrency.Max > 1 &&
+		major == MinimumMajorPythonVersion && minor < MinimumMinorPythonVersionForConcurrency {
 		return fmt.Errorf("when concurrency.max is set, minimum supported Python version is %d.%d. requested %s",
 			MinimumMajorPythonVersion, MinimumMinorPythonVersionForConcurrency, version)
 	}
@@ -276,7 +279,7 @@ func ValidateModelPythonVersion(cfg *Config) error {
 func (c *Config) Complete(projectDir string) error {
 	// Validate mutual exclusion of python_packages and python_requirements
 	if len(c.Build.PythonPackages) > 0 && c.Build.PythonRequirements != "" {
-		return fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both")
+		return fmt.Errorf("only one of python_packages or python_requirements can be set in your cog.yaml, not both")
 	}
 
 	// Load python_requirements into memory to simplify reading it multiple times
@@ -444,11 +447,11 @@ func validateCudaVersion(cudaVersion string) error {
 
 	major, err := strconv.Atoi(parts[0])
 	if err != nil {
-		return fmt.Errorf("Invalid major version in CUDA version %q", cudaVersion)
+		return fmt.Errorf("invalid major version in CUDA version %q", cudaVersion)
 	}
 
 	if major < MinimumMajorCudaVersion {
-		return fmt.Errorf("Minimum supported CUDA version is %d. requested %q", MinimumMajorCudaVersion, cudaVersion)
+		return fmt.Errorf("minimum supported CUDA version is %d, requested %q", MinimumMajorCudaVersion, cudaVersion)
 	}
 	return nil
 }
@@ -463,7 +466,7 @@ func (c *Config) validateAndCompleteCUDA() error {
 	if c.Build.CUDA != "" && c.Build.CuDNN != "" {
 		compatibleCuDNNs := compatibleCuDNNsForCUDA(c.Build.CUDA)
 		if !sliceContains(compatibleCuDNNs, c.Build.CuDNN) {
-			return fmt.Errorf(`The specified CUDA version %s is not compatible with CuDNN %s.
+			return fmt.Errorf(`the specified CUDA version %s is not compatible with CuDNN %s.
 Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(compatibleCuDNNs, ","))
 		}
 	}
@@ -484,7 +487,7 @@ Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(co
 		switch {
 		case c.Build.CUDA == "":
 			if tfCuDNN == "" {
-				return fmt.Errorf("Cog doesn't know what CUDA version is compatible with tensorflow==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://www.tensorflow.org/", tfVersion)
+				return fmt.Errorf("cog doesn't know what CUDA version is compatible with tensorflow==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://www.tensorflow.org/", tfVersion)
 			}
 			console.Debugf("Setting CUDA to version %s from Tensorflow version", tfCUDA)
 			c.Build.CUDA = tfCUDA
@@ -507,14 +510,14 @@ Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(co
 			console.Debugf("Setting CuDNN to version %s", c.Build.CUDA)
 		case tfCuDNN != c.Build.CuDNN:
 			console.Warnf("Cog doesn't know if cuDNN %s is compatible with Tensorflow %s. This might cause CUDA problems.", c.Build.CuDNN, tfVersion)
-			return fmt.Errorf(`The specified cuDNN version %s is not compatible with tensorflow==%s.
+			return fmt.Errorf(`the specified cuDNN version %s is not compatible with tensorflow==%s.
 Compatible cuDNN version is: %s`, c.Build.CuDNN, tfVersion, tfCuDNN)
 		}
 	case torchVersion != "":
 		switch {
 		case c.Build.CUDA == "":
 			if len(torchCUDAs) == 0 {
-				return fmt.Errorf("Cog doesn't know what CUDA version is compatible with torch==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://pytorch.org/", torchVersion)
+				return fmt.Errorf("cog doesn't know what CUDA version is compatible with torch==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://pytorch.org/", torchVersion)
 			}
 			c.Build.CUDA = latestCUDAFrom(torchCUDAs)
 			console.Debugf("Setting CUDA to version %s from Torch version", c.Build.CUDA)

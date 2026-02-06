@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/replicate/cog/pkg/errors"
@@ -42,7 +41,7 @@ func loadFromDir(dir string, configFilename string) (*LoadResult, error) {
 		configFilename = "cog.yaml"
 	}
 
-	configPath := path.Join(dir, configFilename)
+	configPath := filepath.Join(dir, configFilename)
 
 	// Parse
 	cfgFile, err := parse(configPath)
@@ -90,10 +89,10 @@ func GetProjectDir(configFilename string) (string, error) {
 
 // Given a directory, find the cog config file in that directory
 func findConfigPathInDirectory(dir string, configFilename string) (configPath string, err error) {
-	filePath := path.Join(dir, configFilename)
+	filePath := filepath.Join(dir, configFilename)
 	exists, err := files.Exists(filePath)
 	if err != nil {
-		return "", fmt.Errorf("Failed to scan directory %s for %s: %s", dir, filePath, err)
+		return "", fmt.Errorf("failed to scan directory %s for %s: %w", dir, filePath, err)
 	} else if exists {
 		return filePath, nil
 	}

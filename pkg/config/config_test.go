@@ -163,7 +163,7 @@ func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
 	}
 	err := config.Complete("")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "Only one of python_packages or python_requirements can be set in your cog.yaml, not both")
+	require.Contains(t, err.Error(), "only one of python_packages or python_requirements can be set in your cog.yaml, not both")
 }
 
 func TestPythonRequirementsResolvesPythonPackagesAndCudaVersions(t *testing.T) {
@@ -346,7 +346,7 @@ func TestUnsupportedTorch(t *testing.T) {
 	}
 	err = config.Complete("")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "Cog doesn't know what CUDA version is compatible with torch==0.4.1.")
+	require.Contains(t, err.Error(), "cog doesn't know what CUDA version is compatible with torch==0.4.1.")
 
 	config = &Config{
 		Build: &Build{
@@ -383,7 +383,7 @@ func TestUnsupportedTensorflow(t *testing.T) {
 	}
 	err = config.Complete("")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "Cog doesn't know what CUDA version is compatible with tensorflow==0.4.1.")
+	require.Contains(t, err.Error(), "cog doesn't know what CUDA version is compatible with tensorflow==0.4.1.")
 
 	config = &Config{
 		Build: &Build{
