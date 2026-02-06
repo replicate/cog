@@ -48,6 +48,28 @@ jobs:
           
           echo "✓ Tag commit $TAG_COMMIT is on main branch"
 
+      - name: Verify coglet version matches tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          
+          # Get version from Cargo.toml
+          CARGO_VERSION=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          
+          echo "Tag version: $VERSION"
+          echo "Cargo.toml version: $CARGO_VERSION"
+          
+          if [[ "$CARGO_VERSION" != "$VERSION" ]]; then
+            echo ""
+            echo "::error::Version mismatch! crates/Cargo.toml has version $CARGO_VERSION but tag is $TAG"
+            echo "::error::"
+            echo "::error::To fix: Run the 'Version Bump' workflow to create a PR, or manually update crates/Cargo.toml"
+            echo "::error::Then delete this tag, merge the version bump, and re-tag."
+            exit 1
+          fi
+          
+          echo "✓ Coglet version $CARGO_VERSION matches tag $TAG"
+
   build-sdk:
     name: Build SDK wheel
     needs: verify-tag

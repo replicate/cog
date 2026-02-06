@@ -48,6 +48,8 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       integration: ${{ steps.filter.outputs.integration }}
       docs: ${{ steps.filter.outputs.docs }}
+      version_only: ${{ steps.filter.outputs.version_only }}
+      version_changed: ${{ steps.filter.outputs.version_changed }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -71,9 +73,50 @@ jobs:
 
           # Get changed files
           CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
+          
+          # Check if coglet version changed
+          VERSION_CHANGED="false"
+          if echo "$CHANGED" | grep -qE '^crates/Cargo\.toml$'; then
+            # Check if only the version line changed
+            if git diff "$BASE" HEAD -- crates/Cargo.toml | grep -qE '^\+version = '; then
+              VERSION_CHANGED="true"
+              echo "Coglet version changed"
+            fi
+          fi
+          echo "version_changed=$VERSION_CHANGED" >> $GITHUB_OUTPUT
+          
+          # Check if ONLY the version changed (version bump PR)
+          # This is true if crates/Cargo.toml is the only file and only version line changed
+          VERSION_ONLY="false"
+          if [ "$VERSION_CHANGED" = "true" ]; then
+            FILE_COUNT=$(echo "$CHANGED" | grep -c . || echo "0")
+            if [ "$FILE_COUNT" = "1" ]; then
+              # Only crates/Cargo.toml changed, check if only version line changed
+              # Get actual diff lines (excluding +++ and --- headers)
+              DIFF_CONTENT=$(git diff "$BASE" HEAD -- crates/Cargo.toml | grep -E '^[+-]' | grep -v '^[+-]{3}')
+              # Should be exactly: -version = "old" and +version = "new"
+              MINUS_LINES=$(echo "$DIFF_CONTENT" | grep -c '^-' || echo "0")
+              PLUS_LINES=$(echo "$DIFF_CONTENT" | grep -c '^\+' || echo "0")
+              VERSION_MINUS=$(echo "$DIFF_CONTENT" | grep -c '^-version = ' || echo "0")
+              VERSION_PLUS=$(echo "$DIFF_CONTENT" | grep -c '^\+version = ' || echo "0")
+              
+              if [ "$MINUS_LINES" = "1" ] && [ "$PLUS_LINES" = "1" ] && \
+                 [ "$VERSION_MINUS" = "1" ] && [ "$VERSION_PLUS" = "1" ]; then
+                VERSION_ONLY="true"
+                echo "Version-only change detected - skipping heavy CI"
+              fi
+            fi
+          fi
+          echo "version_only=$VERSION_ONLY" >> $GITHUB_OUTPUT
 
-          # CI/tooling changes should run everything
-          if echo "$CHANGED" | grep -qE '^(\.github/workflows/|mise\.toml)'; then
+          # CI/tooling changes should run everything (unless version-only)
+          if [ "$VERSION_ONLY" = "true" ]; then
+            echo "go=false" >> $GITHUB_OUTPUT
+            echo "rust=false" >> $GITHUB_OUTPUT
+            echo "python=false" >> $GITHUB_OUTPUT
+            echo "integration=false" >> $GITHUB_OUTPUT
+            echo "docs=false" >> $GITHUB_OUTPUT
+          elif echo "$CHANGED" | grep -qE '^(\.github/workflows/|mise\.toml)'; then
             echo "CI/tooling changed - running all jobs"
             echo "go=true" >> $GITHUB_OUTPUT
             echo "rust=true" >> $GITHUB_OUTPUT
@@ -120,6 +163,64 @@ jobs:
           # Debug output
           echo "Changed files:"
           echo "$CHANGED" | head -50
+
+# =============================================================================
+# Version Check - Validates coglet version changes
+# =============================================================================
+
+  version-check:
+    name: Validate coglet version
+    needs: changes
+    if: needs.changes.outputs.version_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate version
+        run: |
+          # Get version from Cargo.toml
+          VERSION=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "Coglet version: $VERSION"
+          
+          # Validate semver format
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid version format: $VERSION"
+            echo "::error::Expected semver format: MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-prerelease"
+            exit 1
+          fi
+          echo "✓ Valid semver format"
+          
+          # Check version doesn't already exist as a tag
+          if git tag -l "v$VERSION" | grep -q .; then
+            echo "::error::Tag v$VERSION already exists!"
+            echo "::error::Cannot set version to an already-released version."
+            exit 1
+          fi
+          echo "✓ Version not yet released"
+          
+          # Get the highest existing stable version tag
+          HIGHEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -v '-' | sed 's/^v//' | sort -V | tail -1)
+          if [ -n "$HIGHEST_TAG" ]; then
+            echo "Highest released version: $HIGHEST_TAG"
+            
+            # Check it's not a downgrade (using sort -V for proper semver comparison)
+            BASE_VERSION="${VERSION%%-*}"
+            SORTED_HIGHEST=$(printf '%s\n%s' "$HIGHEST_TAG" "$BASE_VERSION" | sort -V | tail -1)
+            if [ "$SORTED_HIGHEST" = "$HIGHEST_TAG" ] && [ "$HIGHEST_TAG" != "$BASE_VERSION" ]; then
+              echo "::error::Cannot downgrade version from $HIGHEST_TAG to $VERSION"
+              echo "::error::New version must be greater than the highest released version."
+              exit 1
+            fi
+            echo "✓ Version is not a downgrade"
+          else
+            echo "No existing version tags found"
+          fi
+          
+          echo ""
+          echo "✓ Version $VERSION is valid for release"
 
 # =============================================================================
 # Build Stage - Produces artifacts for downstream jobs
