@@ -17,6 +17,9 @@ env:
   SUPPORTED_PYTHONS: '["3.10", "3.11", "3.12", "3.13"]'
   # Default Python version for non-matrix jobs
   PYTHON_VERSION: "3.13"
+  # Number of runners to shard integration tests across (per runtime)
+  # Slow tests ([short] skip) are distributed round-robin first, then fast tests fill in
+  NUM_IT_RUNNER_SHARDS: "4"
   # Standard environment
   HYPOTHESIS_PROFILE: ci
   FORCE_COLOR: "1"
@@ -558,12 +561,100 @@ jobs:
       - name: Test coglet-python bindings
         run: uvx nox -s coglet -p ${{ matrix.python-version }}
 
+  # Compute integration test shards dynamically.
+  # Slow tests (tagged with [short] skip) are distributed round-robin first,
+  # then remaining tests fill in. This ensures slow tests don't pile up on one runner.
+  integration-shards:
+    name: Compute test shards
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.shard.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compute shards
+        id: shard
+        run: |
+          NUM_SHARDS=${{ env.NUM_IT_RUNNER_SHARDS }}
+          
+          # Find unconditionally skipped tests (bare "skip" without condition brackets)
+          # These are disabled tests that shouldn't affect shard distribution
+          SKIPPED_TESTS=$(grep -rl '^skip ' integration-tests/tests/*.txtar | \
+            xargs -I{} basename {} .txtar | sort || echo "")
+          
+          # Identify slow tests (have [short] skip marker), excluding unconditionally skipped
+          SLOW_TESTS=$(grep -rl '\[short\] skip' integration-tests/tests/*.txtar | \
+            xargs -I{} basename {} .txtar | sort)
+          if [ -n "$SKIPPED_TESTS" ]; then
+            SLOW_TESTS=$(comm -23 <(echo "$SLOW_TESTS") <(echo "$SKIPPED_TESTS"))
+          fi
+          
+          # All tests
+          ALL_TESTS=$(ls integration-tests/tests/*.txtar | \
+            xargs -I{} basename {} .txtar | sort)
+          
+          # Fast tests = all - slow (skipped tests end up here but run instantly)
+          FAST_TESTS=$(comm -23 <(echo "$ALL_TESTS") <(echo "$SLOW_TESTS"))
+          
+          # Distribute slow tests round-robin across shards
+          declare -a SHARDS
+          for i in $(seq 0 $((NUM_SHARDS - 1))); do
+            SHARDS[$i]=""
+          done
+          
+          idx=0
+          while IFS= read -r test; do
+            [ -z "$test" ] && continue
+            if [ -n "${SHARDS[$idx]}" ]; then
+              SHARDS[$idx]="${SHARDS[$idx]}|${test}"
+            else
+              SHARDS[$idx]="$test"
+            fi
+            idx=$(( (idx + 1) % NUM_SHARDS ))
+          done <<< "$SLOW_TESTS"
+          
+          # Distribute fast tests round-robin across shards
+          while IFS= read -r test; do
+            [ -z "$test" ] && continue
+            if [ -n "${SHARDS[$idx]}" ]; then
+              SHARDS[$idx]="${SHARDS[$idx]}|${test}"
+            else
+              SHARDS[$idx]="$test"
+            fi
+            idx=$(( (idx + 1) % NUM_SHARDS ))
+          done <<< "$FAST_TESTS"
+          
+          # Build JSON array of shard objects
+          JSON="["
+          for i in $(seq 0 $((NUM_SHARDS - 1))); do
+            PATTERN="${SHARDS[$i]}"
+            COUNT=$(echo "$PATTERN" | tr '|' '\n' | wc -l | tr -d ' ')
+            [ $i -gt 0 ] && JSON="${JSON},"
+            JSON="${JSON}{\"index\":$i,\"pattern\":\"${PATTERN}\",\"count\":$COUNT}"
+          done
+          JSON="${JSON}]"
+          
+          echo "shards=$JSON" >> "$GITHUB_OUTPUT"
+          
+          # Debug output
+          echo "Shard distribution:"
+          for i in $(seq 0 $((NUM_SHARDS - 1))); do
+            COUNT=$(echo "${SHARDS[$i]}" | tr '|' '\n' | wc -l | tr -d ' ')
+            SLOW_COUNT=$(echo "${SHARDS[$i]}" | tr '|' '\n' | while read t; do
+              echo "$SLOW_TESTS" | grep -q "^${t}$" && echo "$t"
+            done | wc -l | tr -d ' ')
+            echo "  Shard $i: $COUNT tests ($SLOW_COUNT slow)"
+          done
+
   test-integration:
-    name: "Test integration (${{ matrix.runtime }})"
-    needs: [changes, build-sdk, build-rust]
+    name: "Test integration (${{ matrix.runtime }}, shard ${{ matrix.shard.index }})"
+    needs: [changes, build-sdk, build-rust, integration-shards]
     if: |
       !cancelled() &&
       needs.changes.outputs.integration == 'true' &&
+      needs.integration-shards.result == 'success' &&
       (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
       (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     runs-on: ubuntu-latest-16-cores
@@ -572,6 +663,7 @@ jobs:
       fail-fast: false
       matrix:
         runtime: [cog, cog-rust]
+        shard: ${{ fromJSON(needs.integration-shards.outputs.shards) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -605,7 +697,7 @@ jobs:
           if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
             echo "COGLET_WHEEL=dist" >> $GITHUB_ENV
           fi
-      - name: Run integration tests
+      - name: Run integration tests (shard ${{ matrix.shard.index }}, ${{ matrix.shard.count }} tests)
         env:
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
@@ -622,7 +714,16 @@ jobs:
             kill -KILL -- -$$ 2>/dev/null || true
           }
           trap cleanup INT TERM
-          gotestsum --format github-actions -- -parallel $TEST_PARALLEL -timeout 30m &
+          
+          # Build -run regex from shard pattern
+          # Pattern is "test1|test2|test3" - wrap each in TestIntegration/<name>/
+          RUN_PATTERN="${{ matrix.shard.pattern }}"
+          echo "Running tests matching: $RUN_PATTERN"
+          
+          gotestsum --format github-actions -- \
+            -parallel $TEST_PARALLEL \
+            -timeout 30m \
+            -run "TestIntegration/($RUN_PATTERN)/" &
           wait $!
 
 # =============================================================================
@@ -633,6 +734,7 @@ jobs:
     name: CI Complete
     needs:
       - changes
+      - version-check
       - build-sdk
       - build-rust
       - fmt-go
@@ -647,6 +749,7 @@ jobs:
       - test-rust
       - test-python
       - test-coglet-python
+      - integration-shards
       - test-integration
     if: always()
     runs-on: ubuntu-latest
@@ -670,6 +773,7 @@ jobs:
           echo "  test-rust: ${{ needs.test-rust.result }}"
           echo "  test-python: ${{ needs.test-python.result }}"
           echo "  test-coglet-python: ${{ needs.test-coglet-python.result }}"
+          echo "  integration-shards: ${{ needs.integration-shards.result }}"
           echo "  test-integration: ${{ needs.test-integration.result }}"
 
           # Fail if any job failed (skipped is OK)
@@ -690,6 +794,7 @@ jobs:
             "${{ needs.test-rust.result }}" \
             "${{ needs.test-python.result }}" \
             "${{ needs.test-coglet-python.result }}" \
+            "${{ needs.integration-shards.result }}" \
             "${{ needs.test-integration.result }}"
           do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
