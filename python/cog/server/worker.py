@@ -799,7 +799,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         done = Done(event_type="healthcheck")
         self._healthcheck_sync(done)
         try:
-            redirector.drain(timeout=10)
+            # Short drain timeout for healthcheck - if the healthcheck timed out,
+            # an orphaned thread may still hold the stream, so don't block long.
+            redirector.drain(timeout=1)
         except TimeoutError:
             pass
         self._events.send(Envelope(event=done, tag=tag))
@@ -859,7 +861,9 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         await self._healthcheck_async(done)
 
         try:
-            redirector.drain(timeout=10)
+            # Short drain timeout for healthcheck - if the healthcheck timed out,
+            # an orphaned thread may still hold the stream, so don't block long.
+            redirector.drain(timeout=1)
         except TimeoutError:
             pass
         self._events.send(Envelope(event=done, tag=tag))
