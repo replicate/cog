@@ -86,10 +86,11 @@ func (m *mockDocker) ContainerStart(ctx context.Context, options command.RunOpti
 
 // mockRegistry implements registry.Client for testing.
 type mockRegistry struct {
-	inspectFunc   func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error)
-	getImageFunc  func(ctx context.Context, ref string, platform *registry.Platform) (v1.Image, error)
-	pushImageFunc func(ctx context.Context, ref string, img v1.Image) error
-	pushIndexFunc func(ctx context.Context, ref string, idx v1.ImageIndex) error
+	inspectFunc       func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error)
+	getImageFunc      func(ctx context.Context, ref string, platform *registry.Platform) (v1.Image, error)
+	getDescriptorFunc func(ctx context.Context, ref string) (v1.Descriptor, error)
+	pushImageFunc     func(ctx context.Context, ref string, img v1.Image) error
+	pushIndexFunc     func(ctx context.Context, ref string, idx v1.ImageIndex) error
 }
 
 func (m *mockRegistry) Inspect(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error) {
@@ -104,6 +105,13 @@ func (m *mockRegistry) GetImage(ctx context.Context, ref string, platform *regis
 		return m.getImageFunc(ctx, ref, platform)
 	}
 	panic("mockRegistry.GetImage not implemented")
+}
+
+func (m *mockRegistry) GetDescriptor(ctx context.Context, ref string) (v1.Descriptor, error) {
+	if m.getDescriptorFunc != nil {
+		return m.getDescriptorFunc(ctx, ref)
+	}
+	return v1.Descriptor{}, errors.New("mockRegistry.GetDescriptor not implemented")
 }
 
 func (m *mockRegistry) Exists(ctx context.Context, ref string) (bool, error) {
