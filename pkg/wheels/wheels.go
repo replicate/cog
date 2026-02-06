@@ -2,7 +2,9 @@
 package wheels
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -88,24 +90,94 @@ func ParseWheelValue(value string) *WheelConfig {
 		return &WheelConfig{Source: WheelSourceFile, Path: "dist"}
 	}
 
-	// Treat everything else as a file path
-	return &WheelConfig{Source: WheelSourceFile, Path: value}
+	// Treat everything else as a file path - resolve to absolute path
+	absPath, err := filepath.Abs(value)
+	if err != nil {
+		// If we can't resolve, use the original path
+		absPath = value
+	}
+	return &WheelConfig{Source: WheelSourceFile, Path: absPath}
+}
+
+// getRepoRoot returns the root of the repository.
+// It checks (in order):
+//  1. REPO_ROOT environment variable (set by mise)
+//  2. git rev-parse --show-toplevel
+//
+// Returns an error if neither method succeeds.
+func getRepoRoot() (string, error) {
+	// Check REPO_ROOT env var first (set by mise)
+	if repoRoot := os.Getenv("REPO_ROOT"); repoRoot != "" {
+		return repoRoot, nil
+	}
+
+	// Fall back to git
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		// Check if git command exists
+		if execErr, ok := err.(*exec.Error); ok && execErr.Err == exec.ErrNotFound {
+			return "", fmt.Errorf("cannot locate repository root: git is not installed and REPO_ROOT is not set\n\nSet REPO_ROOT environment variable or run from within a git repository")
+		}
+		// git command exists but we're not in a repo
+		return "", fmt.Errorf("cannot locate repository root: not inside a git repository and REPO_ROOT is not set\n\nSet REPO_ROOT environment variable or run from within a git repository")
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // findWheelInDist looks for a wheel file matching the pattern in the dist/ directory.
-// Returns the absolute path to the wheel if found, empty string otherwise.
-func findWheelInDist(pattern string) string {
-	distDir := "dist"
-	matches, err := filepath.Glob(filepath.Join(distDir, pattern))
-	if err != nil || len(matches) == 0 {
-		return ""
+// Returns the absolute path to the wheel if found.
+// Checks multiple locations: ./dist, <repo-root>/dist
+func findWheelInDist(pattern string, envVar string) (string, error) {
+	// First try ./dist in current directory
+	matches, _ := filepath.Glob(filepath.Join("dist", pattern))
+	if len(matches) > 0 {
+		absPath, err := filepath.Abs(matches[0])
+		if err != nil {
+			return matches[0], nil
+		}
+		return absPath, nil
 	}
-	// Return the first match (there should typically be only one)
-	absPath, err := filepath.Abs(matches[0])
+
+	// Try repo root dist/
+	repoRoot, err := getRepoRoot()
 	if err != nil {
+		return "", err
+	}
+
+	distDir := filepath.Join(repoRoot, "dist")
+	matches, _ = filepath.Glob(filepath.Join(distDir, pattern))
+	if len(matches) > 0 {
+		return matches[0], nil
+	}
+
+	return "", fmt.Errorf("%s=dist: no wheel matching '%s' found in %s\n\nTo build the wheel, run: mise run build:sdk (for cog) or mise run build:coglet (for coglet)", envVar, pattern, distDir)
+}
+
+// findWheelInDistSilent is like findWheelInDist but returns empty string instead of error.
+// Used for auto-detection where missing wheel is not an error.
+func findWheelInDistSilent(pattern string) string {
+	// First try ./dist in current directory
+	matches, _ := filepath.Glob(filepath.Join("dist", pattern))
+	if len(matches) > 0 {
+		absPath, _ := filepath.Abs(matches[0])
+		if absPath != "" {
+			return absPath
+		}
 		return matches[0]
 	}
-	return absPath
+
+	// Try repo root dist/
+	repoRoot, err := getRepoRoot()
+	if err != nil {
+		return ""
+	}
+
+	matches, _ = filepath.Glob(filepath.Join(repoRoot, "dist", pattern))
+	if len(matches) > 0 {
+		return matches[0]
+	}
+	return ""
 }
 
 // isDevVersion returns true if the version is a development/snapshot build.
@@ -124,27 +196,30 @@ func isDevVersion() bool {
 //
 // For development builds (snapshot versions), auto-detection is enabled.
 // For release builds, auto-detection is skipped (always PyPI unless overridden).
-func GetCogWheelConfig() *WheelConfig {
+func GetCogWheelConfig() (*WheelConfig, error) {
 	// Check explicit env var first
 	if config := ParseWheelValue(os.Getenv(CogWheelEnvVar)); config != nil {
 		// Handle "dist" keyword - resolve to actual path
 		if config.Source == WheelSourceFile && config.Path == "dist" {
-			path := findWheelInDist("cog-*.whl")
-			if path == "" {
-				// Explicit dist requested but not found - this is an error condition
-				// Return the config anyway, caller will handle the missing file error
-				config.Path = "dist/cog-*.whl"
-			} else {
-				config.Path = path
+			path, err := findWheelInDist("cog-*.whl", CogWheelEnvVar)
+			if err != nil {
+				return nil, err
+			}
+			config.Path = path
+		}
+		// Verify file path exists
+		if config.Source == WheelSourceFile && config.Path != "" {
+			if _, err := os.Stat(config.Path); os.IsNotExist(err) {
+				return nil, fmt.Errorf("%s: wheel file not found: %s", CogWheelEnvVar, config.Path)
 			}
 		}
-		return config
+		return config, nil
 	}
 
 	// Auto-detect for dev builds: check dist/ directory
 	if isDevVersion() {
-		if path := findWheelInDist("cog-*.whl"); path != "" {
-			return &WheelConfig{Source: WheelSourceFile, Path: path}
+		if path := findWheelInDistSilent("cog-*.whl"); path != "" {
+			return &WheelConfig{Source: WheelSourceFile, Path: path}, nil
 		}
 	}
 
@@ -155,42 +230,42 @@ func GetCogWheelConfig() *WheelConfig {
 	if !isDevVersion() {
 		config.Version = global.Version
 	}
-	return config
+	return config, nil
 }
 
 // GetCogletWheelConfig returns the WheelConfig for coglet based on COGLET_WHEEL env var.
 //
-// Resolution order:
-//  1. COGLET_WHEEL env var (if set, explicit override)
-//  2. Auto-detect: check dist/coglet-*.whl (for development)
-//  3. Default: nil (coglet is optional, not installed by default)
+// Coglet is always opt-in via COGLET_WHEEL env var. Supported values:
+//   - "dist" - Use local dist/ directory
+//   - "pypi" or "pypi:version" - Install from PyPI
+//   - URL or file path - Direct wheel location
 //
-// Returns nil if coglet should not be installed.
-func GetCogletWheelConfig() *WheelConfig {
-	// Check explicit env var first
-	if config := ParseWheelValue(os.Getenv(CogletWheelEnvVar)); config != nil {
-		// Handle "dist" keyword - resolve to actual path
-		if config.Source == WheelSourceFile && config.Path == "dist" {
-			path := findWheelInDist("coglet-*.whl")
-			if path == "" {
-				// Explicit dist requested but not found - this is an error condition
-				config.Path = "dist/coglet-*.whl"
-			} else {
-				config.Path = path
-			}
-		}
-		return config
+// Returns nil, nil if coglet should not be installed (default).
+// Returns nil, error if configuration is invalid.
+func GetCogletWheelConfig() (*WheelConfig, error) {
+	// Coglet is opt-in only via explicit env var
+	config := ParseWheelValue(os.Getenv(CogletWheelEnvVar))
+	if config == nil {
+		return nil, nil
 	}
 
-	// Auto-detect for dev builds: check dist/ directory
-	if isDevVersion() {
-		if path := findWheelInDist("coglet-*.whl"); path != "" {
-			return &WheelConfig{Source: WheelSourceFile, Path: path}
+	// Handle "dist" keyword - resolve to actual path
+	if config.Source == WheelSourceFile && config.Path == "dist" {
+		path, err := findWheelInDist("coglet-*.whl", CogletWheelEnvVar)
+		if err != nil {
+			return nil, err
+		}
+		config.Path = path
+	}
+
+	// Verify file path exists
+	if config.Source == WheelSourceFile && config.Path != "" {
+		if _, err := os.Stat(config.Path); os.IsNotExist(err) {
+			return nil, fmt.Errorf("%s: wheel file not found: %s", CogletWheelEnvVar, config.Path)
 		}
 	}
 
-	// Default: no coglet (it's optional)
-	return nil
+	return config, nil
 }
 
 // PyPIPackageURL returns the pip install specifier for a PyPI package.

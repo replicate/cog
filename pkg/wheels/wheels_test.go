@@ -120,7 +120,7 @@ func TestParseWheelValue(t *testing.T) {
 			input: "./dist/wheel.whl",
 			expected: &WheelConfig{
 				Source: WheelSourceFile,
-				Path:   "./dist/wheel.whl",
+				// Path will be converted to absolute
 			},
 		},
 		{
@@ -128,7 +128,7 @@ func TestParseWheelValue(t *testing.T) {
 			input: "path/to/wheel.whl",
 			expected: &WheelConfig{
 				Source: WheelSourceFile,
-				Path:   "path/to/wheel.whl",
+				// Path will be converted to absolute
 			},
 		},
 	}
@@ -142,7 +142,12 @@ func TestParseWheelValue(t *testing.T) {
 				require.NotNil(t, result)
 				require.Equal(t, tt.expected.Source, result.Source)
 				require.Equal(t, tt.expected.URL, result.URL)
-				require.Equal(t, tt.expected.Path, result.Path)
+				// For relative paths, just verify they're converted to absolute
+				if tt.expected.Path == "" && result.Source == WheelSourceFile {
+					require.True(t, filepath.IsAbs(result.Path), "path should be absolute: %s", result.Path)
+				} else {
+					require.Equal(t, tt.expected.Path, result.Path)
+				}
 				require.Equal(t, tt.expected.Version, result.Version)
 			}
 		})
@@ -153,6 +158,17 @@ func TestGetCogWheelConfig(t *testing.T) {
 	// Save and restore global.Version
 	origVersion := global.Version
 	defer func() { global.Version = origVersion }()
+
+	// Create temp dir for file path tests and to avoid auto-detect from repo root
+	tmpDir := t.TempDir()
+	wheelFile := filepath.Join(tmpDir, "custom.whl")
+	require.NoError(t, os.WriteFile(wheelFile, []byte("fake wheel"), 0o600))
+
+	// Change to temp dir to prevent auto-detection from repo dist/
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { require.NoError(t, os.Chdir(origDir)) }()
 
 	tests := []struct {
 		name           string
@@ -171,7 +187,7 @@ func TestGetCogWheelConfig(t *testing.T) {
 			expectedSource: WheelSourcePyPI,
 			expectedVer:    "0.12.0",
 		},
-		// Dev build defaults to PyPI (no local wheel)
+		// Dev build defaults to PyPI (no local wheel in this temp dir)
 		{
 			name:           "dev build defaults to PyPI without version",
 			envValue:       "",
@@ -210,13 +226,13 @@ func TestGetCogWheelConfig(t *testing.T) {
 			expectedSource: WheelSourceURL,
 			expectedURL:    "https://example.com/custom.whl",
 		},
-		// File path override
+		// File path override (use the real temp file)
 		{
 			name:           "file path override",
-			envValue:       "/custom/path/wheel.whl",
+			envValue:       wheelFile,
 			globalVersion:  "0.12.0",
 			expectedSource: WheelSourceFile,
-			expectedPath:   "/custom/path/wheel.whl",
+			expectedPath:   wheelFile,
 		},
 	}
 
@@ -227,7 +243,8 @@ func TestGetCogWheelConfig(t *testing.T) {
 				t.Setenv(CogWheelEnvVar, tt.envValue)
 			}
 
-			result := GetCogWheelConfig()
+			result, err := GetCogWheelConfig()
+			require.NoError(t, err)
 			require.NotNil(t, result)
 			require.Equal(t, tt.expectedSource, result.Source)
 			require.Equal(t, tt.expectedURL, result.URL)
@@ -235,6 +252,16 @@ func TestGetCogWheelConfig(t *testing.T) {
 			require.Equal(t, tt.expectedVer, result.Version)
 		})
 	}
+}
+
+func TestGetCogWheelConfigErrors(t *testing.T) {
+	// Test error cases for wheel config
+	t.Run("file not found", func(t *testing.T) {
+		t.Setenv(CogWheelEnvVar, "/nonexistent/path/wheel.whl")
+		_, err := GetCogWheelConfig()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "wheel file not found")
+	})
 }
 
 func TestGetCogWheelConfigAutoDetect(t *testing.T) {
@@ -258,14 +285,16 @@ func TestGetCogWheelConfigAutoDetect(t *testing.T) {
 
 	// Test auto-detection in dev mode
 	global.Version = "dev"
-	result := GetCogWheelConfig()
+	result, err := GetCogWheelConfig()
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, WheelSourceFile, result.Source)
 	require.Contains(t, result.Path, "cog-0.1.0-py3-none-any.whl")
 
 	// Test that release mode does NOT auto-detect
 	global.Version = "0.12.0"
-	result = GetCogWheelConfig()
+	result, err = GetCogWheelConfig()
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, WheelSourcePyPI, result.Source)
 	require.Equal(t, "0.12.0", result.Version)
@@ -331,7 +360,8 @@ func TestGetCogletWheelConfig(t *testing.T) {
 				t.Setenv(CogletWheelEnvVar, tt.envValue)
 			}
 
-			result := GetCogletWheelConfig()
+			result, err := GetCogletWheelConfig()
+			require.NoError(t, err)
 			if tt.expectedNil {
 				require.Nil(t, result)
 				return

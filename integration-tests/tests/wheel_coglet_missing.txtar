@@ -1,0 +1,22 @@
+# Test COGLET_WHEEL=dist gives clear error when coglet wheel not found
+#
+# This test verifies that when COGLET_WHEEL=dist is set but no coglet wheel
+# exists in the dist/ directory, a clear error message is shown.
+
+env COG_WHEEL=dist
+env COGLET_WHEEL=dist
+! cog build -t $TEST_IMAGE
+stderr 'COGLET_WHEEL=dist: no wheel matching'
+stderr 'coglet-'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

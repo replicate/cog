@@ -499,14 +499,10 @@ jobs:
       - uses: jdx/mise-action@v3
       - name: Build cog binary
         run: mise run build:cog
-      - name: Set wheels for runtime
+      - name: Set runtime environment
         run: |
           if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
-            RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl 2>/dev/null | head -1)
-            if [ -n "$RUST_WHEEL" ]; then
-              echo "Found Rust coglet wheel: $RUST_WHEEL"
-              echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
-            fi
+            echo "COGLET_WHEEL=dist" >> $GITHUB_ENV
           fi
       - name: Run integration tests
         env:

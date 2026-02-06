@@ -75,8 +75,8 @@ func (c *PtyRunCommand) Run(ts *testscript.TestScript, neg bool, args []string) 
 	if v := ts.Getenv("COG_WHEEL"); v != "" {
 		cmd.Env = append(cmd.Env, "COG_WHEEL="+v)
 	}
-	if v := ts.Getenv("COGLET_RUST_WHEEL"); v != "" {
-		cmd.Env = append(cmd.Env, "COGLET_RUST_WHEEL="+v)
+	if v := ts.Getenv("COGLET_WHEEL"); v != "" {
+		cmd.Env = append(cmd.Env, "COGLET_WHEEL="+v)
 	}
 
 	// Start command with PTY
