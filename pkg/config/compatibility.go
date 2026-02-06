@@ -256,7 +256,7 @@ func versionGreater(a string, b string) (bool, error) {
 	return aVer.Greater(bVer), nil
 }
 
-func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
+func cudaBaseImageFor(cuda string, cuDNN string) (string, error) {
 	var images []CUDABaseImage
 	for _, image := range CUDABaseImages {
 		if version.Matches(cuda, image.CUDA) && image.CuDNN == cuDNN {

@@ -7,8 +7,8 @@ import (
 )
 
 func TestValidateConfigFile(t *testing.T) {
-	cfg := &ConfigFile{
-		Build: &BuildFile{
+	cfg := &configFile{
+		Build: &buildFile{
 			GPU:           boolPtr(true),
 			PythonVersion: strPtr("3.10"),
 			PythonPackages: []string{
@@ -23,8 +23,8 @@ func TestValidateConfigFile(t *testing.T) {
 }
 
 func TestValidateConfigFileSuccess(t *testing.T) {
-	cfg := &ConfigFile{
-		Build: &BuildFile{
+	cfg := &configFile{
+		Build: &buildFile{
 			GPU: boolPtr(true),
 			SystemPackages: []string{
 				"libgl1-mesa-glx",
@@ -42,8 +42,8 @@ func TestValidateConfigFileSuccess(t *testing.T) {
 }
 
 func TestValidateConfigFilePythonVersionNumerical(t *testing.T) {
-	cfg := &ConfigFile{
-		Build: &BuildFile{
+	cfg := &configFile{
+		Build: &buildFile{
 			GPU: boolPtr(true),
 			SystemPackages: []string{
 				"libgl1-mesa-glx",
@@ -61,8 +61,8 @@ func TestValidateConfigFilePythonVersionNumerical(t *testing.T) {
 }
 
 func TestValidateConfigFileNullListsAllowed(t *testing.T) {
-	cfg := &ConfigFile{
-		Build: &BuildFile{
+	cfg := &configFile{
+		Build: &buildFile{
 			GPU:            boolPtr(true),
 			PythonVersion:  strPtr("3.10"),
 			SystemPackages: nil,
@@ -77,8 +77,8 @@ func TestValidateConfigFileNullListsAllowed(t *testing.T) {
 
 func TestValidateConfigFilePredictFormat(t *testing.T) {
 	// Valid predict format
-	cfg := &ConfigFile{
-		Build: &BuildFile{
+	cfg := &configFile{
+		Build: &buildFile{
 			PythonVersion: strPtr("3.10"),
 		},
 		Predict: strPtr("predict.py:Predictor"),
@@ -95,8 +95,8 @@ func TestValidateConfigFilePredictFormat(t *testing.T) {
 }
 
 func TestValidateConfigFileConcurrencyType(t *testing.T) {
-	cfg := &ConfigFile{
-		Build: &BuildFile{
+	cfg := &configFile{
+		Build: &buildFile{
 			GPU:           boolPtr(true),
 			CUDA:          strPtr("11.8"),
 			PythonVersion: strPtr("3.11"),
@@ -105,7 +105,7 @@ func TestValidateConfigFileConcurrencyType(t *testing.T) {
 			},
 		},
 		Predict: strPtr("predict.py:Predictor"),
-		Concurrency: &ConcurrencyFile{
+		Concurrency: &concurrencyFile{
 			Max: intPtr(5),
 		},
 	}
@@ -115,8 +115,8 @@ func TestValidateConfigFileConcurrencyType(t *testing.T) {
 }
 
 func TestValidateConfigFileDeprecatedPythonPackages(t *testing.T) {
-	cfg := &ConfigFile{
-		Build: &BuildFile{
+	cfg := &configFile{
+		Build: &buildFile{
 			PythonVersion: strPtr("3.10"),
 			PythonPackages: []string{
 				"torch==1.8.1",
@@ -131,8 +131,8 @@ func TestValidateConfigFileDeprecatedPythonPackages(t *testing.T) {
 }
 
 func TestValidateConfigFileDeprecatedPreInstall(t *testing.T) {
-	cfg := &ConfigFile{
-		Build: &BuildFile{
+	cfg := &configFile{
+		Build: &buildFile{
 			PythonVersion: strPtr("3.10"),
 			PreInstall: []string{
 				"echo hello",

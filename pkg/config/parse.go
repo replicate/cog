@@ -16,7 +16,7 @@ import (
 // parse reads and parses a cog.yaml file into a ConfigFile.
 // This only does YAML parsing - no validation or defaults.
 // Returns ParseError if the file cannot be read or parsed.
-func parse(filename string) (*ConfigFile, error) {
+func parse(filename string) (*configFile, error) {
 	exists, err := files.Exists(filename)
 	if err != nil {
 		return nil, &ParseError{Filename: filename, Err: err}
@@ -37,10 +37,10 @@ func parse(filename string) (*ConfigFile, error) {
 	return parseBytes(contents, filename)
 }
 
-// parseBytes parses YAML content into a ConfigFile.
+// parseBytes parses YAML content into a configFile.
 // The filename is used for error messages only.
-func parseBytes(contents []byte, filename string) (*ConfigFile, error) {
-	cfg := &ConfigFile{}
+func parseBytes(contents []byte, filename string) (*configFile, error) {
+	cfg := &configFile{}
 
 	if len(contents) == 0 {
 		// Empty file is valid, returns empty config
@@ -80,7 +80,7 @@ func FromYAML(contents []byte) (*Config, error) {
 
 // configFileToConfig converts a ConfigFile to a Config without running completion logic.
 // This is the minimal conversion used by FromYAML for test compatibility.
-func configFileToConfig(cfg *ConfigFile, filename string) (*Config, error) {
+func configFileToConfig(cfg *configFile, filename string) (*Config, error) {
 	config := &Config{
 		filename: filename,
 		Build:    &Build{},

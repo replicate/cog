@@ -6,17 +6,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/xeipuuv/gojsonschema"
 
 	"github.com/replicate/cog/pkg/requirements"
-)
-
-const (
-	schemaVersion = "1.0"
 )
 
 //go:embed data/config_schema_v1.0.json
@@ -52,10 +48,10 @@ func WithStrictDeprecations() ValidateOption {
 	}
 }
 
-// ValidateConfigFile checks a ConfigFile for errors.
+// ValidateConfigFile checks a configFile for errors.
 // Returns all validation errors and deprecation warnings.
 // Does not mutate the input.
-func ValidateConfigFile(cfg *ConfigFile, opts ...ValidateOption) *ValidationResult {
+func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResult {
 	options := &validateOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -90,7 +86,7 @@ func ValidateConfigFile(cfg *ConfigFile, opts ...ValidateOption) *ValidationResu
 }
 
 // validateSchema validates the config against the JSON schema.
-func validateSchema(cfg *ConfigFile) error {
+func validateSchema(cfg *configFile) error {
 	schemaLoader := gojsonschema.NewStringLoader(string(schemaV1))
 	dataLoader := gojsonschema.NewGoLoader(cfg)
 
@@ -109,7 +105,7 @@ func validateSchema(cfg *ConfigFile) error {
 }
 
 // validatePredict validates the predict field.
-func validatePredict(cfg *ConfigFile, result *ValidationResult) {
+func validatePredict(cfg *configFile, result *ValidationResult) {
 	if cfg.Predict == nil || *cfg.Predict == "" {
 		return
 	}
@@ -125,7 +121,7 @@ func validatePredict(cfg *ConfigFile, result *ValidationResult) {
 }
 
 // validateTrain validates the train field.
-func validateTrain(cfg *ConfigFile, result *ValidationResult) {
+func validateTrain(cfg *configFile, result *ValidationResult) {
 	if cfg.Train == nil || *cfg.Train == "" {
 		return
 	}
@@ -141,7 +137,7 @@ func validateTrain(cfg *ConfigFile, result *ValidationResult) {
 }
 
 // validateBuild validates the build configuration.
-func validateBuild(cfg *ConfigFile, opts *validateOptions, result *ValidationResult) {
+func validateBuild(cfg *configFile, opts *validateOptions, result *ValidationResult) {
 	if cfg.Build == nil {
 		return
 	}
@@ -259,7 +255,7 @@ func validateCUDAVersion(cudaVersion string) error {
 func validateRequirementsFile(reqPath string, opts *validateOptions) error {
 	fullPath := reqPath
 	if !strings.HasPrefix(reqPath, "/") && opts.projectDir != "" {
-		fullPath = path.Join(opts.projectDir, reqPath)
+		fullPath = filepath.Join(opts.projectDir, reqPath)
 	}
 
 	if opts.requirementsFS != nil {
@@ -287,7 +283,7 @@ func validateRequirementsFile(reqPath string, opts *validateOptions) error {
 }
 
 // validateGPUConfig validates GPU-specific configuration like CUDA/CuDNN compatibility.
-func validateGPUConfig(cfg *ConfigFile, opts *validateOptions, result *ValidationResult) {
+func validateGPUConfig(cfg *configFile, opts *validateOptions, result *ValidationResult) {
 	build := cfg.Build
 	if build == nil {
 		return
@@ -331,7 +327,7 @@ func validateGPUConfig(cfg *ConfigFile, opts *validateOptions, result *Validatio
 func loadRequirementsForValidation(reqPath string, opts *validateOptions) []string {
 	fullPath := reqPath
 	if !strings.HasPrefix(reqPath, "/") && opts.projectDir != "" {
-		fullPath = path.Join(opts.projectDir, reqPath)
+		fullPath = filepath.Join(opts.projectDir, reqPath)
 	}
 
 	if opts.requirementsFS != nil {
@@ -364,38 +360,22 @@ func parseRequirementsContent(content string) []string {
 }
 
 // validateFrameworkCompatibility checks torch/tensorflow compatibility with CUDA.
-func validateFrameworkCompatibility(cfg *ConfigFile, reqs []string, result *ValidationResult) {
+func validateFrameworkCompatibility(cfg *configFile, reqs []string, result *ValidationResult) {
 	// This is a simplified version - the full logic is in Complete()
-	// Here we just check for obvious errors
+	// Here we just check for obvious errors.
+	// Note: torch compatibility is checked in Complete() where it can emit warnings.
+	// We only validate TensorFlow here since it has stricter requirements.
 
 	build := cfg.Build
 	if build == nil {
 		return
 	}
 
-	torchVersion := findPackageVersion(reqs, "torch")
 	tfVersion := findPackageVersion(reqs, "tensorflow")
 
-	// If CUDA is specified, warn about potential incompatibilities
+	// If CUDA is specified, check TensorFlow compatibility
 	if build.CUDA != nil && *build.CUDA != "" {
 		cuda := *build.CUDA
-
-		if torchVersion != "" {
-			torchCUDAs, _ := cudasFromTorch(torchVersion)
-			if len(torchCUDAs) > 0 {
-				found := false
-				for _, tc := range torchCUDAs {
-					if strings.HasPrefix(cuda, strings.Split(tc, ".")[0]) {
-						found = true
-						break
-					}
-				}
-				if !found {
-					// This is a warning, not an error, because it might still work
-					// The actual error handling is in Complete()
-				}
-			}
-		}
 
 		if tfVersion != "" {
 			tfCUDA, _, _ := cudaFromTF(tfVersion)
@@ -427,7 +407,7 @@ func findPackageVersion(reqs []string, name string) string {
 }
 
 // validateEnvironment validates environment variables.
-func validateEnvironment(cfg *ConfigFile, result *ValidationResult) {
+func validateEnvironment(cfg *configFile, result *ValidationResult) {
 	if len(cfg.Environment) == 0 {
 		return
 	}
@@ -442,7 +422,7 @@ func validateEnvironment(cfg *ConfigFile, result *ValidationResult) {
 }
 
 // validateConcurrency validates concurrency settings.
-func validateConcurrency(cfg *ConfigFile, result *ValidationResult) {
+func validateConcurrency(cfg *configFile, result *ValidationResult) {
 	if cfg.Concurrency == nil || cfg.Concurrency.Max == nil {
 		return
 	}
@@ -459,10 +439,11 @@ func validateConcurrency(cfg *ConfigFile, result *ValidationResult) {
 	// Check Python version requirement for concurrency
 	if max > 1 && cfg.Build != nil && cfg.Build.PythonVersion != nil {
 		pyVersion := *cfg.Build.PythonVersion
-		parts := strings.SplitN(pyVersion, ".", 3)
-		if len(parts) >= 2 {
-			minor, err := strconv.Atoi(parts[1])
-			if err == nil && minor < MinimumMinorPythonVersionForConcurrency {
+		major, minor, err := splitPythonVersion(pyVersion)
+		if err == nil {
+			// Only check minor version if major version is the minimum (3)
+			// For major > 3, any minor version would be acceptable
+			if major == MinimumMajorPythonVersion && minor < MinimumMinorPythonVersionForConcurrency {
 				result.AddError(&ValidationError{
 					Field:   "concurrency.max",
 					Value:   fmt.Sprintf("%d", max),
@@ -474,7 +455,7 @@ func validateConcurrency(cfg *ConfigFile, result *ValidationResult) {
 }
 
 // checkDeprecatedFields checks for deprecated fields and adds warnings.
-func checkDeprecatedFields(cfg *ConfigFile, result *ValidationResult) {
+func checkDeprecatedFields(cfg *configFile, result *ValidationResult) {
 	if cfg.Build == nil {
 		return
 	}

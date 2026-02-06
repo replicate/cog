@@ -62,11 +62,6 @@ type Concurrency struct {
 	Max int `json:"max,omitempty" yaml:"max"`
 }
 
-type Example struct {
-	Input  map[string]string `json:"input" yaml:"input"`
-	Output string            `json:"output" yaml:"output"`
-}
-
 // WeightSource defines a weight file or directory to include in the model.
 type WeightSource struct {
 	Source string `json:"source" yaml:"source"`
@@ -177,7 +172,7 @@ func (r *RunItem) UnmarshalJSON(data []byte) error {
 }
 
 func (c *Config) CUDABaseImageTag() (string, error) {
-	return CUDABaseImageFor(c.Build.CUDA, c.Build.CuDNN)
+	return cudaBaseImageFor(c.Build.CUDA, c.Build.CuDNN)
 }
 
 func (c *Config) TorchVersion() (string, bool) {
@@ -441,7 +436,7 @@ func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage s
 	return pkgWithVersion, findLinksList, extraIndexURLs, nil
 }
 
-func ValidateCudaVersion(cudaVersion string) error {
+func validateCudaVersion(cudaVersion string) error {
 	parts := strings.Split(cudaVersion, ".")
 	if len(parts) < 2 {
 		return fmt.Errorf("CUDA version %q must include both major and minor versions", cudaVersion)
@@ -460,7 +455,7 @@ func ValidateCudaVersion(cudaVersion string) error {
 
 func (c *Config) validateAndCompleteCUDA() error {
 	if c.Build.CUDA != "" {
-		if err := ValidateCudaVersion(c.Build.CUDA); err != nil {
+		if err := validateCudaVersion(c.Build.CUDA); err != nil {
 			return err
 		}
 	}

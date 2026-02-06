@@ -123,7 +123,7 @@ func TestValidateCudaVersion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateCudaVersion(tc.input)
+			err := validateCudaVersion(tc.input)
 			if tc.expectedErr {
 				require.Error(t, err)
 			} else {
