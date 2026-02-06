@@ -111,7 +111,7 @@ vet:
 
 .PHONY: generate
 generate:
-	mise run generate:go
+	mise run generate
 
 .PHONY: gen-mocks
 gen-mocks:
