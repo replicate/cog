@@ -32,28 +32,6 @@ type PushOptions struct {
 }
 
 // =============================================================================
-// ImagePusher - pushes standalone images
-// =============================================================================
-
-// ImagePusher pushes standalone images using docker push.
-type ImagePusher struct {
-	docker command.Command
-}
-
-// NewImagePusher creates a new ImagePusher.
-func NewImagePusher(docker command.Command) *ImagePusher {
-	return &ImagePusher{docker: docker}
-}
-
-// Push pushes the model image to a registry.
-func (p *ImagePusher) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	if m.Image == nil || m.Image.Reference == "" {
-		return fmt.Errorf("model has no image reference")
-	}
-	return p.docker.Push(ctx, m.Image.Reference)
-}
-
-// =============================================================================
 // BundlePusher - pushes OCI Index with image + weights
 // =============================================================================
 
