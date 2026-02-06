@@ -92,6 +92,26 @@ func TestValidateNullListsAllowed(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidateEnvironmentWithSpaces(t *testing.T) {
+	config := `build:
+  python_version: "3.10"
+environment:
+  - "COG_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"`
+
+	err := Validate(config, "1.0")
+	require.NoError(t, err)
+}
+
+func TestValidateEnvironmentWithEmptyValue(t *testing.T) {
+	config := `build:
+  python_version: "3.10"
+environment:
+  - "MY_VAR="`
+
+	err := Validate(config, "1.0")
+	require.NoError(t, err)
+}
+
 func TestValidateOutputsPropertyFromTypeError(t *testing.T) {
 	config := `build:
   gpu: true
