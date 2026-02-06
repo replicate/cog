@@ -364,7 +364,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 
 	// Build environment from testscript
 	var env []string
-	for _, key := range []string{"HOME", "PATH", "COG_NO_UPDATE_CHECK", "COG_WHEEL", "COGLET_WHEEL", "RUST_LOG", "BUILDKIT_PROGRESS", "TEST_IMAGE"} {
+	for _, key := range []string{"HOME", "PATH", "REPO_ROOT", "COG_NO_UPDATE_CHECK", "COG_WHEEL", "COGLET_WHEEL", "RUST_LOG", "BUILDKIT_PROGRESS", "TEST_IMAGE"} {
 		if val := ts.Getenv(key); val != "" {
 			env = append(env, fmt.Sprintf("%s=%s", key, val))
 		}

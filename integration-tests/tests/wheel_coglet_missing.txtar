@@ -1,13 +1,13 @@
-# Test COGLET_WHEEL=dist gives clear error when coglet wheel not found
+# Test COGLET_WHEEL with non-existent path gives clear error
 #
-# This test verifies that when COGLET_WHEEL=dist is set but no coglet wheel
-# exists in the dist/ directory, a clear error message is shown.
+# This test verifies that when COGLET_WHEEL points to a non-existent file,
+# a clear error message is shown.
 
 env COG_WHEEL=dist
-env COGLET_WHEEL=dist
+env COGLET_WHEEL=/nonexistent/path/coglet.whl
 ! cog build -t $TEST_IMAGE
-stderr 'COGLET_WHEEL=dist: no wheel matching'
-stderr 'coglet-'
+stderr 'wheel file not found'
+stderr '/nonexistent/path/coglet.whl'
 
 -- cog.yaml --
 build:
