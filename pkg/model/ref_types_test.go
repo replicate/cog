@@ -297,7 +297,7 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
-				ID: "sha256:built123",
+				ID: "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				Config: &container.Config{
 					Labels: map[string]string{
 						LabelVersion: "0.11.0",
@@ -310,10 +310,10 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 
 	factory := &mockFactory{
 		name: "test",
-		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
 			buildCalled = true
 			require.Equal(t, "my-built-image", opts.ImageName)
-			return &Image{Reference: opts.ImageName, Source: ImageSourceBuild}, nil
+			return &ImageArtifact{Reference: opts.ImageName, Source: ImageSourceBuild}, nil
 		},
 	}
 
@@ -336,7 +336,7 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 func TestBuildRef_Resolve_BuildError(t *testing.T) {
 	factory := &mockFactory{
 		name: "test",
-		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
 			return nil, errors.New("build failed: missing dependencies")
 		},
 	}

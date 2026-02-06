@@ -41,15 +41,14 @@ type BuildOptions struct {
 	// DockerfileFile is a custom Dockerfile path.
 	DockerfileFile string
 
-	// ImageFormat specifies the desired OCI format for the built image.
-	// FormatStandalone (default): Traditional single OCI image
-	// FormatBundle: OCI Image Index with weights artifact (requires weights.lock)
-	ImageFormat ModelImageFormat
-
 	// WeightsLockPath is the path to weights.lock file.
-	// Only used when ImageFormat == FormatBundle.
 	// Default: weights.lock in project directory.
 	WeightsLockPath string
+
+	// TODO(md): OCIIndex is a temporary gate. When true, builds produce weight
+	// artifacts and pushes create an OCI Image Index. Set via COG_OCI_INDEX=1.
+	// Remove this field once index pushes are validated with all registries.
+	OCIIndex bool
 }
 
 // WithDefaults returns a copy of BuildOptions with defaults applied from Source.

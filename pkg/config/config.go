@@ -70,6 +70,7 @@ type Example struct {
 
 // WeightSource defines a weight file or directory to include in the model.
 type WeightSource struct {
+	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
 	Source string `json:"source" yaml:"source"`
 	Target string `json:"target,omitempty" yaml:"target,omitempty"`
 }

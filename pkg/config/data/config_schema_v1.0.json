@@ -224,6 +224,10 @@
         "required": ["source"],
         "additionalProperties": false,
         "properties": {
+          "name": {
+            "type": "string",
+            "description": "A unique identifier for this weight entry."
+          },
           "source": {
             "type": "string",
             "description": "Path to a weight file or directory (relative to cog.yaml)."

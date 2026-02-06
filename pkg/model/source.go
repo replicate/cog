@@ -25,3 +25,24 @@ func NewSource(configPath string) (*Source, error) {
 func NewSourceFromConfig(cfg *config.Config, projectDir string) *Source {
 	return &Source{Config: cfg, ProjectDir: projectDir}
 }
+
+// ArtifactSpecs returns the artifact declarations derived from this source.
+// Always produces at least one ImageSpec. Produces a WeightSpec for each
+// weight declared in the config. Returns nil if Config is nil.
+func (s *Source) ArtifactSpecs() []ArtifactSpec {
+	if s.Config == nil {
+		return nil
+	}
+
+	var specs []ArtifactSpec
+
+	// Always have an image artifact
+	specs = append(specs, NewImageSpec("model", s.Config.Image))
+
+	// Add weight specs from config
+	for _, w := range s.Config.Weights {
+		specs = append(specs, NewWeightSpec(w.Name, w.Source, w.Target))
+	}
+
+	return specs
+}

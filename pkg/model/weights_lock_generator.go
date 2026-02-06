@@ -76,7 +76,7 @@ func (g *WeightsLockGenerator) GenerateWithFilePaths(ctx context.Context, projec
 					return fmt.Errorf("compute relative path: %w", err)
 				}
 
-				wf, err := g.processFile(ctx, path, relPath, "")
+				wf, err := g.processFile(ctx, path, relPath, "", "")
 				if err != nil {
 					return err
 				}
@@ -90,7 +90,7 @@ func (g *WeightsLockGenerator) GenerateWithFilePaths(ctx context.Context, projec
 			}
 		} else {
 			// Process single file
-			wf, err := g.processFile(ctx, sourcePath, src.Source, src.Target)
+			wf, err := g.processFile(ctx, sourcePath, src.Source, src.Target, src.Name)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -109,7 +109,9 @@ func (g *WeightsLockGenerator) GenerateWithFilePaths(ctx context.Context, projec
 }
 
 // processFile creates a WeightFile entry for a single file.
-func (g *WeightsLockGenerator) processFile(ctx context.Context, absPath, relPath, customTarget string) (*WeightFile, error) {
+// If configName is non-empty, it is used as the weight name; otherwise the name
+// is derived from the filename (basename without extension).
+func (g *WeightsLockGenerator) processFile(ctx context.Context, absPath, relPath, customTarget, configName string) (*WeightFile, error) {
 	// TODO: it would be better if we could cancel during a copy op
 	select {
 	case <-ctx.Done():
@@ -132,14 +134,15 @@ func (g *WeightsLockGenerator) processFile(ctx context.Context, absPath, relPath
 	}
 	digest := "sha256:" + hex.EncodeToString(hash.Sum(nil))
 
-	// Compute name (filename without extension)
-	var (
-		baseName = filepath.Base(relPath)
-		name     = strings.TrimSuffix(baseName, filepath.Ext(baseName))
+	// Use config name if provided, otherwise derive from filename
+	name := configName
+	if name == "" {
+		baseName := filepath.Base(relPath)
+		name = strings.TrimSuffix(baseName, filepath.Ext(baseName))
+	}
 
-		// Compute dest path
-		dest = customTarget
-	)
+	// Compute dest path
+	var dest = customTarget
 
 	if dest == "" {
 		dest = filepath.Join(g.opts.DestPrefix, relPath)
@@ -154,6 +157,6 @@ func (g *WeightsLockGenerator) processFile(ctx context.Context, absPath, relPath
 		DigestOriginal:   digest,
 		Size:             size,
 		SizeUncompressed: size,
-		MediaType:        MediaTypeWeightsLayer,
+		MediaType:        MediaTypeWeightLayer,
 	}, nil
 }
