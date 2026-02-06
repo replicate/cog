@@ -31,7 +31,7 @@ experimental_monorepo_root = true
 config_roots = ["."]
 
 [tools]
-python = "3.12"  # Required: pyo3 needs Python 3.10+ (abi3-py310)
+
 go = "latest"
 uv = "0.9.26"
 "pipx:nox" = { version = "2025.11.12", uvx = true, uvx_args = "--python-preference=managed -p 3.13" }
@@ -126,7 +126,7 @@ run = "cargo build --manifest-path crates/Cargo.toml --workspace --release"
 
 [tasks."build:coglet"]
 description = "Build coglet Python wheel (development, local install)"
-run = "cd crates/coglet-python && maturin develop"
+run = "cd crates/coglet-python && uv run maturin develop"
 
 [tasks."build:coglet:wheel"]
 description = "Build coglet Python wheel (native platform)"
