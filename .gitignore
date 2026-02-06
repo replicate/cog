@@ -55,4 +55,3 @@ target
 /.cargo-home/**
 /.rustup
 /.rustup/**
-.coverage

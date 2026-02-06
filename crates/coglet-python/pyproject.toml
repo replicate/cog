@@ -4,36 +4,18 @@ build-backend = "maturin"
 
 [project]
 name = "coglet"
-description = "High-performance Rust prediction server for Cog ML models"
-readme = "README.md"
-license = {text = "Apache-2.0"}
+description = "Rust execution engine for cog models"
 requires-python = ">=3.10"
-authors = [
-    {name = "Replicate", email = "team@replicate.com"},
-]
-keywords = ["machine-learning", "inference", "cog", "prediction"]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
-    "Operating System :: MacOS",
-    "Operating System :: POSIX :: Linux",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dynamic = ["version"]
 dependencies = []
-
-[project.urls]
-Homepage = "https://cog.run"
-Documentation = "https://cog.run/docs"
-Repository = "https://github.com/replicate/cog"
-Issues = "https://github.com/replicate/cog/issues"
 
 [project.optional-dependencies]
 test = [
