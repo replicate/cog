@@ -15,7 +15,6 @@
 # Cached tasks:
 #   - build:sdk              - skips if python/**/*.py unchanged
 #   - build:coglet:wheel*    - skips if crates/**/*.rs unchanged  
-#   - generate:go            - skips if dist/cog-*.whl unchanged
 #   - generate:stubs         - skips if coglet-python source unchanged
 #   - generate:compat        - skips if tools/compatgen unchanged
 #   - docs                   - skips if docs/**/*.md unchanged
@@ -26,15 +25,17 @@
 #
 # =============================================================================
 
+experimental_monorepo_root = true
+
 [monorepo]
 config_roots = ["."]
 
 [tools]
-python = "3.12"  # Required: pyo3 needs Python 3.10+ (abi3-py310)
+
 go = "latest"
 uv = "0.9.26"
 "pipx:nox" = { version = "2025.11.12", uvx = true, uvx_args = "--python-preference=managed -p 3.13" }
-zig = "0.15.2"
+"aqua:ziglang/zig" = "0.15.2"
 "rust" = { version = "1.93.0", components = "rustfmt,clippy", targets ="x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
 cargo-binstall = "1.16.6"
 # Cargo tools - use aqua backend where available for faster binary downloads
@@ -43,8 +44,11 @@ cargo-binstall = "1.16.6"
 "aqua:mitsuhiko/insta" = "1.46.0"
 "cargo:cargo-nextest" = "0.9.120"
 "cargo:maturin" = "1.11.5"
+"aqua:rust-lang/rustup" = "latest"
+"aqua:rust-lang/rustup/rustup-init" = "latest"
 "aqua:rust-cross/cargo-zigbuild" = "0.20.1"
 "aqua:gotestyourself/gotestsum" = "1.13.0"
+"aqua:golangci/golangci-lint" = "2.8.0"
 ruff = "0.14.13"
 ty = "0.0.10"
 
@@ -52,9 +56,8 @@ ty = "0.0.10"
 _.path = "./bin"
 _.file = [".env"]
 _.python.venv = ".venv"
-# Set CARGO_HOME for local dev to avoid "undefined" directory issues.
-# Only override if not already set (e.g. by CI or user).
-CARGO_HOME = '{% if env.CARGO_HOME is undefined or env.CARGO_HOME == "undefined" or env.CARGO_HOME == "" %}{{config_root}}/.cargo-home{% else %}{{env.CARGO_HOME}}{% endif %}'
+# Set REPO_ROOT only if not already set (e.g., by CI)
+REPO_ROOT = "{{env.REPO_ROOT | default(value=config_root)}}"
 
 [settings]
 lockfile = true
@@ -101,7 +104,6 @@ echo "Installed cog to $PREFIX/bin/cog"
 
 [tasks."build:cog"]
 description = "Build cog CLI (development)"
-depends = ["generate:go"]
 run = """
 #!/usr/bin/env bash
 set -e
@@ -114,7 +116,6 @@ fi
 
 [tasks."build:cog:release"]
 description = "Build cog CLI (release)"
-depends = ["generate:go"]
 run = "go run github.com/goreleaser/goreleaser/v2@latest build --clean --single-target --id cog --output cog"
 
 [tasks."build:rust"]
@@ -127,7 +128,7 @@ run = "cargo build --manifest-path crates/Cargo.toml --workspace --release"
 
 [tasks."build:coglet"]
 description = "Build coglet Python wheel (development, local install)"
-run = "cd crates/coglet-python && maturin develop"
+run = "cd crates/coglet-python && uv run maturin develop"
 
 [tasks."build:coglet:wheel"]
 description = "Build coglet Python wheel (native platform)"
@@ -225,7 +226,6 @@ fi
 
 [tasks."test:go"]
 description = "Run Go tests"
-depends = ["generate:go"]
 run = "gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...)"
 
 [tasks."test:rust"]
@@ -342,12 +342,11 @@ run = [
 [tasks."lint:go"]
 alias = "lint:go:check"
 description = "Lint Go code"
-depends = ["generate:go"]
-run = "go tool golangci-lint run ./..."
+run = "golangci-lint run ./..."
 
 [tasks."lint:go:fix"]
 description = "Fix Go lint issues (limited auto-fix)"
-run = "go tool golangci-lint run --fix ./..."
+run = "golangci-lint run --fix ./..."
 
 # Rust linting
 [tasks."lint:rust"]
@@ -403,15 +402,8 @@ run = "nox -s typecheck"
 [tasks.generate]
 description = "Run all code generation"
 run = [
-  { tasks = ["generate:go", "generate:stubs"] },
+  { tasks = ["generate:stubs"] },
 ]
-
-[tasks."generate:go"]
-description = "Run Go code generation (embeds SDK wheel)"
-depends = ["build:sdk"]
-sources = ["dist/cog-*.whl"]
-outputs = ["pkg/wheels/cog-*.whl"]
-run = "go generate ./..."
 
 [tasks."generate:stubs"]
 alias = "stub:generate"

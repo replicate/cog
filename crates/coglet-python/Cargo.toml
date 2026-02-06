@@ -3,6 +3,7 @@ name = "coglet-python"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false  # Published to PyPI as 'coglet' wheel, not crates.io
 
 [lib]
 name = "coglet"

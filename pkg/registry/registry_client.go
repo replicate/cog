@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
+//nolint:staticcheck // ST1012: exported API, renaming would be breaking change
 var NotFoundError = errors.New("image reference not found")
 
 type RegistryClient struct{}
@@ -49,7 +50,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 		return nil, fmt.Errorf("fetching descriptor: %w", err)
 	}
 
-	mediaType := desc.Descriptor.MediaType
+	mediaType := desc.MediaType
 
 	if platform == nil {
 		switch mediaType {
@@ -169,7 +170,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 	}
 	result := &ManifestResult{
 		SchemaVersion: manifest.SchemaVersion,
-		MediaType:     string(manifestDesc.Descriptor.MediaType),
+		MediaType:     string(manifestDesc.MediaType),
 		Config:        manifest.Config.Digest.String(),
 		Labels:        configFile.Config.Labels,
 	}
@@ -193,7 +194,7 @@ func (c *RegistryClient) GetImage(ctx context.Context, imageRef string, platform
 		return nil, fmt.Errorf("fetching descriptor: %w", err)
 	}
 
-	mediaType := desc.Descriptor.MediaType
+	mediaType := desc.MediaType
 
 	// If no platform is specified and it's a single image, return it directly
 	if platform == nil {
