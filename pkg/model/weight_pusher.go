@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -18,6 +19,37 @@ import (
 	"github.com/replicate/cog/pkg/registry"
 )
 
+// WeightPushProgress reports progress for a weight artifact upload.
+type WeightPushProgress struct {
+	// Complete is the number of bytes uploaded so far.
+	Complete int64
+	// Total is the total number of bytes to upload.
+	Total int64
+}
+
+// WeightPushOptions configures optional behavior for WeightPusher.Push.
+type WeightPushOptions struct {
+	// ProgressFn is an optional callback for reporting upload progress.
+	ProgressFn func(WeightPushProgress)
+	// RetryFn is an optional callback for reporting retry attempts.
+	// Return false to abort the retry.
+	RetryFn func(WeightRetryEvent) bool
+}
+
+// WeightRetryEvent reports a retry attempt for a weight file upload.
+type WeightRetryEvent struct {
+	// Name identifies which file is being retried.
+	Name string
+	// Attempt is the current retry attempt number (1-indexed).
+	Attempt int
+	// MaxAttempts is the maximum number of retry attempts.
+	MaxAttempts int
+	// Err is the error that caused the retry.
+	Err error
+	// NextRetryIn is the duration until the next retry attempt.
+	NextRetryIn time.Duration
+}
+
 // WeightPushResult contains the result of pushing a single weight artifact.
 type WeightPushResult struct {
 	// Descriptor is the OCI descriptor for the pushed weight manifest.
@@ -25,8 +57,9 @@ type WeightPushResult struct {
 }
 
 // WeightPusher pushes a WeightArtifact as a proper OCI artifact manifest
-// with config blob and tarball layers. This replaces the broken fileBackedLayer
-// approach that fails on Docker Hub with 400 Bad Request.
+// with config blob and tarball layers. The layer blob is pushed via
+// registry.WriteLayer (which supports multipart uploads, progress, and retry),
+// followed by the manifest via PushImage.
 type WeightPusher struct {
 	registry registry.Client
 }
@@ -37,8 +70,10 @@ func NewWeightPusher(reg registry.Client) *WeightPusher {
 }
 
 // Push pushes a WeightArtifact to the registry as an OCI artifact manifest.
+// The layer blob is pushed first via WriteLayer (multipart uploads, progress, retry),
+// then the manifest is pushed via PushImage.
 // Returns the descriptor of the pushed manifest.
-func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightArtifact) (*WeightPushResult, error) {
+func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightArtifact, opts ...WeightPushOptions) (*WeightPushResult, error) {
 	if artifact == nil {
 		return nil, fmt.Errorf("artifact is nil")
 	}
@@ -46,18 +81,89 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 		return nil, fmt.Errorf("repo is required")
 	}
 
+	// Merge options (use first if provided)
+	var opt WeightPushOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
 	// Verify the weight file exists
 	if _, err := os.Stat(artifact.FilePath); err != nil {
 		return nil, fmt.Errorf("weight file %q: %w", artifact.FilePath, err)
 	}
 
-	// Build the OCI artifact image
+	// Build the OCI artifact image (config blob + tarball layer)
 	img, err := buildWeightImage(artifact)
 	if err != nil {
 		return nil, fmt.Errorf("build weight image: %w", err)
 	}
 
-	// Push to registry
+	// Extract the layer to push via WriteLayer (gets multipart + progress + retry)
+	layers, err := img.Layers()
+	if err != nil {
+		return nil, fmt.Errorf("get image layers: %w", err)
+	}
+	if len(layers) != 1 {
+		return nil, fmt.Errorf("expected 1 layer, got %d", len(layers))
+	}
+	layer := layers[0]
+
+	// Set up progress channel if callback is provided
+	var progressCh chan v1.Update
+	var progressDone chan struct{}
+	if opt.ProgressFn != nil {
+		progressCh = make(chan v1.Update, 100)
+		progressDone = make(chan struct{})
+		go func() {
+			defer close(progressDone)
+			for update := range progressCh {
+				opt.ProgressFn(WeightPushProgress{
+					Complete: update.Complete,
+					Total:    update.Total,
+				})
+			}
+		}()
+	}
+
+	// Build retry configuration if callback is provided
+	var retryConfig *registry.RetryConfig
+	if opt.RetryFn != nil {
+		retryConfig = &registry.RetryConfig{
+			OnRetry: func(event registry.RetryEvent) bool {
+				return opt.RetryFn(WeightRetryEvent{
+					Name:        artifact.Name(),
+					Attempt:     event.Attempt,
+					MaxAttempts: event.MaxAttempts,
+					Err:         event.Err,
+					NextRetryIn: event.NextRetryIn,
+				})
+			},
+		}
+	}
+
+	// 1. Push layer blob via WriteLayer (multipart uploads, progress, retry)
+	writeErr := p.registry.WriteLayer(ctx, registry.WriteLayerOptions{
+		Repo:       repo,
+		Layer:      layer,
+		ProgressCh: progressCh,
+		Retry:      retryConfig,
+	})
+
+	// Close the progress channel ourselves — WriteLayer sends to it but does not close it.
+	// This unblocks the goroutine's `range progressCh` loop so it can exit cleanly.
+	if progressCh != nil {
+		close(progressCh)
+	}
+	if progressDone != nil {
+		<-progressDone
+	}
+
+	if writeErr != nil {
+		return nil, fmt.Errorf("push weight layer: %w", writeErr)
+	}
+
+	// 2. Push manifest via PushImage (small payload, no progress needed).
+	// The layer blob is already in the registry, so PushImage will skip re-uploading it.
 	if err := p.registry.PushImage(ctx, repo, img); err != nil {
 		return nil, fmt.Errorf("push weight manifest: %w", err)
 	}

@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/registry"
 )
 
 func TestWeightPusher_Push_ReturnsErrorForNilArtifact(t *testing.T) {
@@ -212,6 +215,141 @@ func TestWeightPusher_Push_ReturnsErrorForEmptyRepo(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "repo is required")
+}
+
+func TestWeightPusher_Push_ReportsProgressViaWriteLayer(t *testing.T) {
+	dir := t.TempDir()
+	weightPath := filepath.Join(dir, "model.bin")
+	require.NoError(t, os.WriteFile(weightPath, []byte("test weight data for progress tracking"), 0o644))
+
+	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
+		SchemaVersion: "1.0",
+		CogVersion:    "0.15.0",
+		Name:          "model-v1",
+		Target:        "/weights/model.bin",
+		Created:       time.Now().UTC(),
+	})
+
+	// Track progress updates received via callback
+	var (
+		mu       sync.Mutex
+		progress []WeightPushProgress
+	)
+
+	// Mock WriteLayer to simulate progress updates (caller owns closing the channel)
+	reg := &mockRegistry{
+		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
+			// Simulate progress updates like the real registry client
+			if opts.ProgressCh != nil {
+				opts.ProgressCh <- v1.Update{Complete: 500, Total: 1000}
+				opts.ProgressCh <- v1.Update{Complete: 1000, Total: 1000}
+			}
+			return nil
+		},
+		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
+			return nil
+		},
+	}
+
+	pusher := NewWeightPusher(reg)
+	result, err := pusher.Push(context.Background(), "r8.im/user/model", artifact, WeightPushOptions{
+		ProgressFn: func(p WeightPushProgress) {
+			mu.Lock()
+			defer mu.Unlock()
+			progress = append(progress, p)
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// Verify we received progress updates
+	mu.Lock()
+	defer mu.Unlock()
+	require.GreaterOrEqual(t, len(progress), 2, "should receive at least 2 progress updates")
+
+	// Verify progress updates contain expected values
+	require.Equal(t, int64(500), progress[0].Complete)
+	require.Equal(t, int64(1000), progress[0].Total)
+	require.Equal(t, int64(1000), progress[1].Complete)
+	require.Equal(t, int64(1000), progress[1].Total)
+}
+
+func TestWeightPusher_Push_ForwardsRetryCallback(t *testing.T) {
+	dir := t.TempDir()
+	weightPath := filepath.Join(dir, "model.bin")
+	require.NoError(t, os.WriteFile(weightPath, []byte("test weight data"), 0o644))
+
+	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
+		SchemaVersion: "1.0",
+		CogVersion:    "0.15.0",
+		Name:          "model-v1",
+		Target:        "/weights/model.bin",
+		Created:       time.Now().UTC(),
+	})
+
+	// Mock WriteLayer to capture the retry config and invoke it
+	var retryEvents []WeightRetryEvent
+	reg := &mockRegistry{
+		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
+			// Simulate the registry invoking the retry callback
+			if opts.Retry != nil && opts.Retry.OnRetry != nil {
+				opts.Retry.OnRetry(registry.RetryEvent{
+					Attempt:     1,
+					MaxAttempts: 3,
+					Err:         fmt.Errorf("connection reset"),
+					NextRetryIn: 2 * time.Second,
+				})
+			}
+			return nil
+		},
+		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
+			return nil
+		},
+	}
+
+	pusher := NewWeightPusher(reg)
+	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact, WeightPushOptions{
+		RetryFn: func(event WeightRetryEvent) bool {
+			retryEvents = append(retryEvents, event)
+			return true
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, retryEvents, 1)
+	require.Equal(t, "model-v1", retryEvents[0].Name)
+	require.Equal(t, 1, retryEvents[0].Attempt)
+	require.Equal(t, 3, retryEvents[0].MaxAttempts)
+	require.Contains(t, retryEvents[0].Err.Error(), "connection reset")
+	require.Equal(t, 2*time.Second, retryEvents[0].NextRetryIn)
+}
+
+func TestWeightPusher_Push_WriteLayerErrorReported(t *testing.T) {
+	dir := t.TempDir()
+	weightPath := filepath.Join(dir, "model.bin")
+	require.NoError(t, os.WriteFile(weightPath, []byte("test"), 0o644))
+
+	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
+		SchemaVersion: "1.0",
+		CogVersion:    "0.15.0",
+		Name:          "model-v1",
+		Target:        "/weights/model.bin",
+		Created:       time.Now().UTC(),
+	})
+
+	reg := &mockRegistry{
+		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
+			return fmt.Errorf("upload failed: 503 Service Unavailable")
+		},
+	}
+
+	pusher := NewWeightPusher(reg)
+	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "push weight layer")
+	require.Contains(t, err.Error(), "503 Service Unavailable")
 }
 
 func TestWeightPusher_Push_PropagatesContextCancellation(t *testing.T) {

@@ -91,6 +91,7 @@ type mockRegistry struct {
 	getDescriptorFunc func(ctx context.Context, ref string) (v1.Descriptor, error)
 	pushImageFunc     func(ctx context.Context, ref string, img v1.Image) error
 	pushIndexFunc     func(ctx context.Context, ref string, idx v1.ImageIndex) error
+	writeLayerFunc    func(ctx context.Context, opts registry.WriteLayerOptions) error
 }
 
 func (m *mockRegistry) Inspect(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error) {
@@ -133,6 +134,10 @@ func (m *mockRegistry) PushIndex(ctx context.Context, ref string, idx v1.ImageIn
 }
 
 func (m *mockRegistry) WriteLayer(ctx context.Context, opts registry.WriteLayerOptions) error {
+	if m.writeLayerFunc != nil {
+		return m.writeLayerFunc(ctx, opts)
+	}
+	// Default: no-op. The caller (WeightPusher) owns closing ProgressCh.
 	return nil
 }
 
