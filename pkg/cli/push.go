@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"context"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -108,9 +106,11 @@ func push(cmd *cobra.Command, args []string) error {
 	buildDuration := time.Since(startBuildTime)
 
 	// Log weights info for bundle format
-	if m.ImageFormat == model.FormatBundle && m.WeightsManifest != nil {
-		console.Infof("\nBundle format: %d weight files (%.2f MB)",
-			len(m.WeightsManifest.Files), float64(m.WeightsManifest.TotalSize())/1024/1024)
+	if m.ImageFormat == model.FormatBundle {
+		weights := m.WeightArtifacts()
+		if len(weights) > 0 {
+			console.Infof("\nBundle format: %d weight artifact(s)", len(weights))
+		}
 	}
 
 	// Push the model
@@ -118,17 +118,9 @@ func push(cmd *cobra.Command, args []string) error {
 
 	var pushErr error
 	if m.ImageFormat == model.FormatBundle {
-		// Bundle format: use resolver.Push which builds OCI index with weights
-		filePaths, err := resolveWeightFilePaths(src)
-		if err != nil {
-			_ = p.PostPush(ctx, pushOpts, err)
-			return fmt.Errorf("failed to resolve weight file paths: %w", err)
-		}
-
-		pushErr = resolver.Push(ctx, m, model.PushOptions{
-			ProjectDir: src.ProjectDir,
-			FilePaths:  filePaths,
-		})
+		// Bundle format: push image + weights + OCI index via resolver
+		// Model.Artifacts carries everything needed — no FilePaths required
+		pushErr = resolver.Push(ctx, m, model.PushOptions{})
 	} else {
 		// Standalone format: use standard docker push
 		pushErr = docker.Push(ctx, m.ImageRef(), src.ProjectDir, dockerClient, docker.BuildInfo{
@@ -149,35 +141,4 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-// resolveWeightFilePaths generates a map of weight names to their absolute file paths.
-// This re-runs the weights lock generator to get the file paths, since they're not
-// stored in the lock file itself.
-func resolveWeightFilePaths(src *model.Source) (map[string]string, error) {
-	if src.Config == nil || len(src.Config.Weights) == 0 {
-		return nil, fmt.Errorf("no weights configured in cog.yaml")
-	}
-
-	gen := model.NewWeightsLockGenerator(model.WeightsLockGeneratorOptions{
-		DestPrefix: "/cache",
-	})
-
-	// Use context.Background() since this is a short-lived operation
-	_, filePaths, err := gen.GenerateWithFilePaths(context.Background(), src.ProjectDir, src.Config.Weights)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to absolute paths
-	absFilePaths := make(map[string]string, len(filePaths))
-	for name, path := range filePaths {
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get absolute path for %s: %w", name, err)
-		}
-		absFilePaths[name] = absPath
-	}
-
-	return absFilePaths, nil
 }
