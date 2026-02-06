@@ -3,6 +3,7 @@ module github.com/replicate/cog
 go 1.25
 
 require (
+	github.com/alecthomas/kong v1.13.0
 	github.com/anaskhan96/soup v1.2.5
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
