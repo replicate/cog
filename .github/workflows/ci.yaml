@@ -29,7 +29,7 @@ env:
   # Using actions guarantees toolchain is ready before mise installs cargo:* tools.
   # Python is managed by astral-sh/setup-uv for version matrix support.
   # golangci-lint is managed by golangci/golangci-lint-action for caching.
-  MISE_DISABLE_TOOLS: rust,cargo-binstall,python,golangci-lint
+  MISE_DISABLE_TOOLS: rust,rustup,rustup-init,cargo-binstall,python,golangci-lint
 
 permissions: {}
 
