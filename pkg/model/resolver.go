@@ -227,15 +227,16 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 		return nil, err
 	}
 
+	m.OCIIndex = opts.OCIIndex
 	m.Artifacts = []Artifact{ia}
 
-	// Build weight artifacts if configured
+	// Build weight artifacts if OCI index mode is enabled
 	lockPath := opts.WeightsLockPath
 	if lockPath == "" {
 		lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
 	}
 
-	if len(src.Config.Weights) > 0 {
+	if opts.OCIIndex && len(src.Config.Weights) > 0 {
 		wb := NewWeightBuilder(src, m.CogVersion, lockPath)
 		for _, ws := range src.Config.Weights {
 			spec := NewWeightSpec(ws.Name, ws.Source, ws.Target)
@@ -257,11 +258,16 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	return m, nil
 }
 
-// Push pushes a Model to a container registry as an OCI Image Index.
-// The index contains the model image and any weight artifacts.
-// Models without weights produce a single-entry index.
+// Push pushes a Model to a container registry.
+// TODO(md): The OCIIndex gate is temporary. When true, pushes an OCI Image Index
+// with weight artifacts. When false, does a plain docker push. Remove the gate
+// once index pushes are validated with all registries.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	pusher := NewBundlePusher(r.docker, r.registry)
+	if m.OCIIndex {
+		pusher := NewBundlePusher(r.docker, r.registry)
+		return pusher.Push(ctx, m, opts)
+	}
+	pusher := NewImagePusher(r.docker)
 	return pusher.Push(ctx, m, opts)
 }
 
