@@ -666,7 +666,7 @@ func TestBlankBuild(t *testing.T) {
 	err := os.WriteFile(configPath, []byte(`build:`), 0o644)
 	require.NoError(t, err)
 
-	cfgFile, err := Parse(configPath)
+	cfgFile, err := parse(configPath)
 	require.NoError(t, err)
 	// Note: `build:` by itself in YAML parses to Build: nil (empty map becomes nil pointer)
 	// The completion step should create a default Build
@@ -713,12 +713,12 @@ build:
 	err := os.WriteFile(configPath, []byte(yamlString), 0o644)
 	require.NoError(t, err)
 
-	_, err = Parse(configPath)
+	_, err = parse(configPath)
 	require.NoError(t, err)
 }
 
 func TestConfigMarshal(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := defaultConfig()
 	data, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 	require.Equal(t, `build:

@@ -33,11 +33,11 @@ func Load(configFilename string) (*LoadResult, error) {
 		return nil, err
 	}
 
-	return LoadFromDir(rootDir, configFilename)
+	return loadFromDir(rootDir, configFilename)
 }
 
-// LoadFromDir loads a config from a specific directory.
-func LoadFromDir(dir string, configFilename string) (*LoadResult, error) {
+// loadFromDir loads a config from a specific directory.
+func loadFromDir(dir string, configFilename string) (*LoadResult, error) {
 	if configFilename == "" {
 		configFilename = "cog.yaml"
 	}
@@ -45,7 +45,7 @@ func LoadFromDir(dir string, configFilename string) (*LoadResult, error) {
 	configPath := path.Join(dir, configFilename)
 
 	// Parse
-	cfgFile, err := Parse(configPath)
+	cfgFile, err := parse(configPath)
 	if err != nil {
 		return nil, err
 	}
@@ -77,13 +77,6 @@ func LoadFromDir(dir string, configFilename string) (*LoadResult, error) {
 		Warnings: warnings,
 		RootDir:  dir,
 	}, nil
-}
-
-// LoadFile loads a specific config file by path.
-func LoadFile(filepath string) (*LoadResult, error) {
-	dir := path.Dir(filepath)
-	filename := path.Base(filepath)
-	return LoadFromDir(dir, filename)
 }
 
 // Returns the project's root directory, or the directory specified by the --project-dir flag

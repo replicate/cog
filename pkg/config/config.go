@@ -93,7 +93,7 @@ func (c *Config) Filename() string {
 	return c.filename
 }
 
-func DefaultConfig() *Config {
+func defaultConfig() *Config {
 	return &Config{
 		Build: &Build{
 			GPU:           false,

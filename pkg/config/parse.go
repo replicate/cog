@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -13,30 +12,11 @@ import (
 
 // maxSearchDepth limits how far up the directory tree we search for config files.
 // This is defined in load.go for backwards compatibility.
-// const maxSearchDepth = 100
 
-// FindConfigFile searches for a config file (typically cog.yaml) in the given directory
-// and parent directories. Returns the directory containing the config file.
-func FindConfigFile(dir string, configFilename string) (string, error) {
-	if configFilename == "" {
-		configFilename = "cog.yaml"
-	}
-	return findProjectRootDir(dir, configFilename)
-}
-
-// FindConfigFileFromCwd searches for a config file starting from the current working directory.
-func FindConfigFileFromCwd(configFilename string) (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	return FindConfigFile(cwd, configFilename)
-}
-
-// Parse reads and parses a cog.yaml file into a ConfigFile.
+// parse reads and parses a cog.yaml file into a ConfigFile.
 // This only does YAML parsing - no validation or defaults.
 // Returns ParseError if the file cannot be read or parsed.
-func Parse(filename string) (*ConfigFile, error) {
+func parse(filename string) (*ConfigFile, error) {
 	exists, err := files.Exists(filename)
 	if err != nil {
 		return nil, &ParseError{Filename: filename, Err: err}
@@ -54,12 +34,12 @@ func Parse(filename string) (*ConfigFile, error) {
 		return nil, &ParseError{Filename: filename, Err: err}
 	}
 
-	return ParseBytes(contents, filename)
+	return parseBytes(contents, filename)
 }
 
-// ParseBytes parses YAML content into a ConfigFile.
+// parseBytes parses YAML content into a ConfigFile.
 // The filename is used for error messages only.
-func ParseBytes(contents []byte, filename string) (*ConfigFile, error) {
+func parseBytes(contents []byte, filename string) (*ConfigFile, error) {
 	cfg := &ConfigFile{}
 
 	if len(contents) == 0 {
@@ -77,15 +57,6 @@ func ParseBytes(contents []byte, filename string) (*ConfigFile, error) {
 	return cfg, nil
 }
 
-// ParseReader parses from an io.Reader (useful for testing).
-func ParseReader(r io.Reader, filename string) (*ConfigFile, error) {
-	contents, err := io.ReadAll(r)
-	if err != nil {
-		return nil, &ParseError{Filename: filename, Err: err}
-	}
-	return ParseBytes(contents, filename)
-}
-
 // Note: findProjectRootDir and findConfigPathInDirectory are defined in load.go
 // for backwards compatibility. The new API uses FindConfigFile which wraps them.
 
@@ -97,7 +68,7 @@ func ParseReader(r io.Reader, filename string) (*ConfigFile, error) {
 // Note: This function skips validation since it has no project directory context.
 // The Complete() method will validate requirements files exist when called.
 func FromYAML(contents []byte) (*Config, error) {
-	cfgFile, err := ParseBytes(contents, "cog.yaml")
+	cfgFile, err := parseBytes(contents, "cog.yaml")
 	if err != nil {
 		return nil, err
 	}
