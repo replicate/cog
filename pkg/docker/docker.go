@@ -10,12 +10,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
-	"github.com/docker/docker/client"
 	dc "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -110,7 +110,7 @@ func (c *apiClient) Pull(ctx context.Context, imageRef string, force bool) (*ima
 		Platform: "linux/amd64",
 	})
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if errdefs.IsNotFound(err) {
 			return nil, &command.NotFoundError{Ref: imageRef, Object: "image"}
 		}
 		return nil, fmt.Errorf("failed to pull image %q: %w", imageRef, err)
@@ -136,7 +136,7 @@ func (c *apiClient) ContainerStop(ctx context.Context, containerID string) error
 		Timeout: ptr.To(3),
 	})
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if errdefs.IsNotFound(err) {
 			return &command.NotFoundError{Ref: containerID, Object: "container"}
 		}
 		return fmt.Errorf("failed to stop container %q: %w", containerID, err)
@@ -149,7 +149,7 @@ func (c *apiClient) ContainerInspect(ctx context.Context, containerID string) (*
 
 	resp, err := c.client.ContainerInspect(ctx, containerID)
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if errdefs.IsNotFound(err) {
 			return nil, &command.NotFoundError{Ref: containerID, Object: "container"}
 		}
 		return nil, fmt.Errorf("failed to inspect container %q: %w", containerID, err)
@@ -172,7 +172,7 @@ func (c *apiClient) ContainerLogs(ctx context.Context, containerID string, w io.
 		Follow:     true,
 	})
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if errdefs.IsNotFound(err) {
 			return &command.NotFoundError{Ref: containerID, Object: "container"}
 		}
 		return fmt.Errorf("failed to get container logs for %q: %w", containerID, err)
@@ -271,7 +271,7 @@ func (c *apiClient) Inspect(ctx context.Context, ref string) (*image.InspectResp
 	inspect, err := c.client.ImageInspect(ctx, ref)
 
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if errdefs.IsNotFound(err) {
 			return nil, &command.NotFoundError{Ref: ref, Object: "image"}
 		}
 		return nil, fmt.Errorf("error inspecting image: %w", err)
