@@ -20,6 +20,8 @@ type IndexBuilder struct {
 type weightDescEntry struct {
 	descriptor  v1.Descriptor
 	imageDigest string
+	name        string
+	target      string
 }
 
 // NewIndexBuilder creates a new index builder.
@@ -35,10 +37,13 @@ func (b *IndexBuilder) SetImageDescriptor(desc v1.Descriptor, platform *v1.Platf
 
 // AddWeightDescriptor adds a weight manifest descriptor.
 // imageDigest is the digest of the model image, used in the reference annotation.
-func (b *IndexBuilder) AddWeightDescriptor(desc v1.Descriptor, imageDigest string) {
+// name and target are optional weight metadata for index annotations.
+func (b *IndexBuilder) AddWeightDescriptor(desc v1.Descriptor, imageDigest, name, target string) {
 	b.weightDescriptors = append(b.weightDescriptors, weightDescEntry{
 		descriptor:  desc,
 		imageDigest: imageDigest,
+		name:        name,
+		target:      target,
 	})
 }
 
@@ -70,6 +75,12 @@ func (b *IndexBuilder) BuildFromDescriptors() (v1.ImageIndex, error) {
 		}
 		if entry.imageDigest != "" {
 			annotations[AnnotationReferenceDigest] = entry.imageDigest
+		}
+		if entry.name != "" {
+			annotations[AnnotationWeightName] = entry.name
+		}
+		if entry.target != "" {
+			annotations[AnnotationWeightDest] = entry.target
 		}
 
 		idx = mutate.AppendManifests(idx, mutate.IndexAddendum{

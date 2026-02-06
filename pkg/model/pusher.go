@@ -21,10 +21,12 @@ type Pusher interface {
 // PushOptions configures push behavior.
 type PushOptions struct {
 	// ProjectDir is the base directory for resolving weight file paths.
+	//
 	// Deprecated: Artifacts carry their own file paths.
 	ProjectDir string
 
 	// FilePaths maps weight name identifiers to their file paths.
+	//
 	// Deprecated: Use Model.Artifacts instead — WeightArtifact carries FilePath.
 	FilePaths map[string]string
 
@@ -101,8 +103,9 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 		Architecture: platform.Architecture,
 		Variant:      platform.Variant,
 	})
-	for _, wr := range weightResults {
-		builder.AddWeightDescriptor(wr.Descriptor, imgDesc.Digest.String())
+	for i, wr := range weightResults {
+		builder.AddWeightDescriptor(wr.Descriptor, imgDesc.Digest.String(),
+			weightArtifacts[i].Name(), weightArtifacts[i].Target)
 	}
 
 	idx, err := builder.BuildFromDescriptors()
@@ -119,7 +122,7 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 }
 
 // pushWeightsConcurrently pushes all weight artifacts and returns their results.
-// If any weight push fails, remaining pushes are cancelled and the first error is returned.
+// If any weight push fails, remaining pushes are canceled and the first error is returned.
 func (p *BundlePusher) pushWeightsConcurrently(ctx context.Context, repo string, weights []*WeightArtifact) ([]*WeightPushResult, error) {
 	// Create cancellable context so we can stop remaining pushes on first error
 	ctx, cancel := context.WithCancel(ctx)
@@ -148,7 +151,7 @@ func (p *BundlePusher) pushWeightsConcurrently(ctx context.Context, repo string,
 		close(results)
 	}()
 
-	// Drain all results, cancelling on first error
+	// Drain all results, canceling on first error
 	ordered := make([]*WeightPushResult, len(weights))
 	var firstErr error
 	for r := range results {

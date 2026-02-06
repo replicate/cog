@@ -29,7 +29,7 @@ func TestIndexBuilder_BuildFromDescriptors(t *testing.T) {
 
 		builder := NewIndexBuilder()
 		builder.SetImageDescriptor(imgDesc, &v1.Platform{OS: "linux", Architecture: "amd64"})
-		builder.AddWeightDescriptor(weightDesc, imgDesc.Digest.String())
+		builder.AddWeightDescriptor(weightDesc, imgDesc.Digest.String(), "model-v1", "/cache/model.safetensors")
 
 		idx, err := builder.BuildFromDescriptors()
 		require.NoError(t, err)
@@ -51,6 +51,8 @@ func TestIndexBuilder_BuildFromDescriptors(t *testing.T) {
 		require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.Architecture)
 		require.Equal(t, AnnotationValueWeights, idxManifest.Manifests[1].Annotations[AnnotationReferenceType])
 		require.Equal(t, imgDesc.Digest.String(), idxManifest.Manifests[1].Annotations[AnnotationReferenceDigest])
+		require.Equal(t, "model-v1", idxManifest.Manifests[1].Annotations[AnnotationWeightName])
+		require.Equal(t, "/cache/model.safetensors", idxManifest.Manifests[1].Annotations[AnnotationWeightDest])
 	})
 
 	t.Run("builds index with multiple weight descriptors", func(t *testing.T) {
@@ -72,8 +74,8 @@ func TestIndexBuilder_BuildFromDescriptors(t *testing.T) {
 
 		builder := NewIndexBuilder()
 		builder.SetImageDescriptor(imgDesc, &v1.Platform{OS: "linux", Architecture: "amd64"})
-		builder.AddWeightDescriptor(weight1, imgDesc.Digest.String())
-		builder.AddWeightDescriptor(weight2, imgDesc.Digest.String())
+		builder.AddWeightDescriptor(weight1, imgDesc.Digest.String(), "weight-1", "/weights/w1.bin")
+		builder.AddWeightDescriptor(weight2, imgDesc.Digest.String(), "weight-2", "/weights/w2.bin")
 
 		idx, err := builder.BuildFromDescriptors()
 		require.NoError(t, err)
