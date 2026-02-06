@@ -649,11 +649,11 @@ func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Clie
 	}
 	defer blob.Close()
 
-	err = c.uploadBlobSingle(ctx, client, location, blob, totalSize, progressCh)
+	finalLocation, err := c.uploadBlobSingle(ctx, client, location, blob, totalSize, progressCh)
 	if err != nil {
 		return "", err
 	}
-	return location, nil
+	return finalLocation, nil
 }
 
 // tryMultipartWithFallback attempts multipart upload and handles fallback if not supported.
@@ -734,7 +734,7 @@ func (c *RegistryClient) tryMultipartUpload(ctx context.Context, client *http.Cl
 }
 
 // uploadBlobSingle uploads the entire blob in one request without Content-Range headers.
-func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Client, location string, blob io.Reader, totalSize int64, progressCh chan<- v1.Update) error {
+func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Client, location string, blob io.Reader, totalSize int64, progressCh chan<- v1.Update) (string, error) {
 	// Wrap the reader to report progress
 	var uploaded int64
 	reader := &progressReader{
@@ -755,7 +755,7 @@ func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Clie
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, location, reader)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -763,11 +763,27 @@ func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Clie
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
-	return transport.CheckError(resp, http.StatusAccepted, http.StatusNoContent, http.StatusCreated)
+	if err := transport.CheckError(resp, http.StatusAccepted, http.StatusNoContent, http.StatusCreated); err != nil {
+		return "", err
+	}
+
+	// Return the updated Location header — the registry includes upload state
+	// that commitUpload needs for the final PUT.
+	if loc := resp.Header.Get("Location"); loc != "" {
+		locURL, parseErr := url.Parse(loc)
+		if parseErr == nil {
+			baseURL := url.URL{Scheme: "http", Host: req.URL.Host}
+			if req.URL.Scheme != "" {
+				baseURL.Scheme = req.URL.Scheme
+			}
+			return baseURL.ResolveReference(locURL).String(), nil
+		}
+	}
+	return location, nil
 }
 
 // uploadChunk uploads a single chunk of a blob with Content-Range header.

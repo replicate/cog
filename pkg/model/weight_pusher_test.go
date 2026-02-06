@@ -61,14 +61,17 @@ func TestWeightPusher_Push_PushesCorrectOCIArtifact(t *testing.T) {
 		Created:       created,
 	}
 
-	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.safetensors", cfg)
+	desc := v1.Descriptor{
+		Digest: v1.Hash{Algorithm: "sha256", Hex: "aabbccddee112233445566778899aabb00112233445566778899aabbccddeeff"},
+	}
+	artifact := NewWeightArtifact("model-v1", desc, weightPath, "/weights/model.safetensors", cfg)
 
 	// Capture what gets pushed
-	var pushedRef string
+	var pushedRefs []string
 	var pushedImg v1.Image
 	reg := &mockRegistry{
 		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
-			pushedRef = ref
+			pushedRefs = append(pushedRefs, ref)
 			pushedImg = img
 			return nil
 		},
@@ -80,8 +83,9 @@ func TestWeightPusher_Push_PushesCorrectOCIArtifact(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Verify the image was pushed to the correct repo
-	require.Equal(t, "r8.im/user/model", pushedRef)
+	// Verify the image was pushed with a single combined tag
+	require.Len(t, pushedRefs, 1)
+	require.Equal(t, "r8.im/user/model:weights-model-v1-aabbccddee11", pushedRefs[0])
 	require.NotNil(t, pushedImg)
 
 	// Verify manifest structure

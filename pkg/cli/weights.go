@@ -151,12 +151,16 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("To push weights, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog weights push registry.example.com/your-username/model-name'")
 	}
 
-	// Parse repository from image name (strip tag if present)
-	ref, err := name.ParseReference(imageName, name.Insecure)
+	// Parse as repository only — reject tags/digests since weight tags are auto-generated.
+	parsedRepo, err := name.NewRepository(imageName, name.Insecure)
 	if err != nil {
-		return fmt.Errorf("invalid image reference %q: %w", imageName, err)
+		// NewRepository fails for inputs with :tag or @digest — check if it's a valid ref
+		if ref, refErr := name.ParseReference(imageName, name.Insecure); refErr == nil {
+			return fmt.Errorf("image reference %q includes a tag or digest — provide only the repository (e.g., %q)", imageName, ref.Context().Name())
+		}
+		return fmt.Errorf("invalid repository %q: %w", imageName, err)
 	}
-	repo := ref.Context().Name()
+	repo := parsedRepo.Name()
 
 	if len(cfg.Weights) == 0 {
 		return fmt.Errorf("no weights defined in %s", configFilename)
@@ -205,6 +209,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 	// Push each weight artifact concurrently
 	type pushResult struct {
 		name string
+		ref  string
 		size int64
 		err  error
 	}
@@ -223,7 +228,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 
 			artName := wa.Name()
 
-			_, pushErr := pusher.Push(ctx, repo, wa, model.WeightPushOptions{
+			result, pushErr := pusher.Push(ctx, repo, wa, model.WeightPushOptions{
 				ProgressFn: func(p model.WeightPushProgress) {
 					tracker.clearRetrying(artName)
 					if p.Total > 0 {
@@ -247,7 +252,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 				results <- pushResult{name: artName, err: pushErr}
 			} else {
 				tracker.setComplete(artName)
-				results <- pushResult{name: artName, size: wa.Descriptor().Size}
+				results <- pushResult{name: artName, ref: result.Ref, size: wa.Descriptor().Size}
 			}
 		}(wa)
 	}
@@ -260,11 +265,13 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 	// Collect results
 	var totalSize int64
 	var errorCount int
+	refs := make(map[string]string) // name -> ref
 	for r := range results {
 		if r.err != nil {
 			errorCount++
 		} else {
 			totalSize += r.size
+			refs[r.name] = r.ref
 		}
 	}
 
@@ -272,7 +279,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 	cancelDisplay()
 	<-displayDone
 
-	tracker.printFinalStatus()
+	tracker.printFinalStatus(refs)
 
 	if errorCount > 0 {
 		return fmt.Errorf("failed to push %d/%d weight files", errorCount, len(artifacts))
@@ -454,7 +461,7 @@ func (pt *progressTracker) formatProgressLine(f fileProgress) string {
 		name, bar, percent, formatSize(f.complete), formatSize(f.total))
 }
 
-func (pt *progressTracker) printFinalStatus() {
+func (pt *progressTracker) printFinalStatus(refs map[string]string) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -477,6 +484,8 @@ func (pt *progressTracker) printFinalStatus() {
 	for _, f := range sortedFiles {
 		if f.err != nil {
 			console.Warnf("  %s: FAILED - %v", f.name, f.err)
+		} else if ref, ok := refs[f.name]; ok {
+			console.Infof("  %s: %s", f.name, ref)
 		} else {
 			console.Infof("  %s: %s", f.name, formatSize(f.total))
 		}

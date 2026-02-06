@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,6 +53,8 @@ type WeightRetryEvent struct {
 
 // WeightPushResult contains the result of pushing a single weight artifact.
 type WeightPushResult struct {
+	// Ref is the full image reference for the pushed weight manifest (e.g., "registry/repo:weights-name-abc123").
+	Ref string
 	// Descriptor is the OCI descriptor for the pushed weight manifest.
 	Descriptor v1.Descriptor
 }
@@ -162,10 +165,17 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 		return nil, fmt.Errorf("push weight layer: %w", writeErr)
 	}
 
-	// 2. Push manifest via PushImage (small payload, no progress needed).
+	// 2. Push manifest via PushImage with a single tag combining name and digest.
 	// The layer blob is already in the registry, so PushImage will skip re-uploading it.
-	if err := p.registry.PushImage(ctx, repo, img); err != nil {
-		return nil, fmt.Errorf("push weight manifest: %w", err)
+	// Tag format: :weights-<name>-<12chars> (e.g., :weights-model-v1-383d1f4afa43)
+	//
+	// We use the artifact's descriptor digest (original file hash from the lock file),
+	// NOT the tarball layer digest. This ensures that `weights inspect` can look up the tag
+	// using the same digest stored in weights.lock, independent of the transport format.
+	tag := WeightTag(artifact.Name(), artifact.Descriptor().Digest.String())
+	ref := repo + ":" + tag
+	if err := p.registry.PushImage(ctx, ref, img); err != nil {
+		return nil, fmt.Errorf("push weight manifest (%s): %w", tag, err)
 	}
 
 	// Build result descriptor from the pushed image
@@ -174,7 +184,7 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 		return nil, fmt.Errorf("compute manifest descriptor: %w", err)
 	}
 
-	return &WeightPushResult{Descriptor: desc}, nil
+	return &WeightPushResult{Ref: ref, Descriptor: desc}, nil
 }
 
 // buildWeightImage creates an OCI artifact image with a config blob (WeightConfig JSON)
@@ -324,4 +334,26 @@ func (w *weightManifestImage) RawManifest() ([]byte, error) {
 	})
 
 	return w.rawManifest, w.rawManifestErr
+}
+
+// =============================================================================
+// Weight tag helpers
+// =============================================================================
+
+const weightTagPrefix = "weights-"
+
+// WeightTag returns the tag for a weight manifest combining name and digest.
+// The digest should be in "sha256:abc123..." format.
+// Returns e.g., "weights-model-v1-abc123def456" (12-char hex suffix).
+// Falls back to "weights-<name>" if digest is empty or invalid.
+func WeightTag(name, digest string) string {
+	_, hex, ok := strings.Cut(digest, ":")
+	if !ok || hex == "" {
+		return weightTagPrefix + name
+	}
+	short := hex
+	if len(short) > 12 {
+		short = short[:12]
+	}
+	return weightTagPrefix + name + "-" + short
 }

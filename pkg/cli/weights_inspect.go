@@ -1,17 +1,25 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 )
+
+// localWeight tracks the local state of a weight from cog.yaml + weights.lock.
+type localWeight struct {
+	target   string
+	source   string
+	lockFile *model.WeightFile
+}
 
 // WeightsInspectOutput is the structured output for cog weights inspect --json.
 type WeightsInspectOutput struct {
@@ -35,11 +43,22 @@ type WeightLocalState struct {
 	FileExists bool   `json:"fileExists"`
 }
 
-// WeightRemoteState represents the remote state of a weight from the registry.
-type WeightRemoteState struct {
+// WeightRemoteLayer represents a single layer in a remote weight manifest.
+type WeightRemoteLayer struct {
 	Digest    string `json:"digest"`
 	Size      int64  `json:"size"`
 	MediaType string `json:"mediaType"`
+}
+
+// WeightRemoteState represents the remote state of a weight from the registry.
+type WeightRemoteState struct {
+	Ref              string              `json:"ref"`
+	Tag              string              `json:"tag"`
+	Digest           string              `json:"digest"`
+	Size             int64               `json:"size"`
+	MediaType        string              `json:"mediaType"`
+	Layers           []WeightRemoteLayer `json:"layers,omitempty"`
+	MatchedByContent bool                `json:"matchedByContent,omitempty"`
 }
 
 func newWeightsInspectCommand() *cobra.Command {
@@ -74,11 +93,6 @@ func weightsInspectCommand(cmd *cobra.Command, args []string, jsonOutput bool) e
 	// lockErr is OK — lockfile may not exist yet
 
 	// Build local weight map: name -> (lockfile entry, source file path)
-	type localWeight struct {
-		target   string
-		source   string
-		lockFile *model.WeightFile
-	}
 	localWeights := make(map[string]*localWeight)
 	for _, w := range src.Config.Weights {
 		lw := &localWeight{
@@ -98,44 +112,22 @@ func weightsInspectCommand(cmd *cobra.Command, args []string, jsonOutput bool) e
 		}
 	}
 
-	// 2. Resolve remote state
-	ref, err := model.ParseRef(args[0])
+	// 2. Resolve remote state — accept repo only (tags are auto-generated for weights).
+	parsedRepo, err := name.NewRepository(args[0], name.Insecure)
 	if err != nil {
-		return err
+		if ref, refErr := name.ParseReference(args[0], name.Insecure); refErr == nil {
+			return fmt.Errorf("image reference %q includes a tag or digest — provide only the repository (e.g., %q)", args[0], ref.Context().Name())
+		}
+		return fmt.Errorf("invalid repository %q: %w", args[0], err)
 	}
-
-	dockerClient, err := docker.NewClient(ctx)
-	if err != nil {
-		return err
-	}
+	repo := parsedRepo.Name()
 
 	regClient := registry.NewRegistryClient()
-	resolver := model.NewResolver(dockerClient, regClient)
-
-	// Remote inspect may fail (model not pushed yet) — that's OK
-	var remoteWeights map[string]*WeightRemoteState
-	m, remoteErr := resolver.Inspect(ctx, ref, model.RemoteOnly())
-	if remoteErr == nil && m.Index != nil {
-		remoteWeights = make(map[string]*WeightRemoteState)
-		for _, im := range m.Index.Manifests {
-			if im.Type != model.ManifestTypeWeights {
-				continue
-			}
-			wName := im.Annotations[model.AnnotationWeightName]
-			if wName == "" {
-				continue
-			}
-			remoteWeights[wName] = &WeightRemoteState{
-				Digest:    im.Digest,
-				Size:      im.Size,
-				MediaType: im.MediaType,
-			}
-		}
-	}
+	remoteWeights := resolveWeightsByTag(ctx, repo, localWeights, regClient)
 
 	// 3. Build comparison
 	out := &WeightsInspectOutput{
-		Reference: ref.String(),
+		Reference: repo,
 	}
 
 	// Track which remote weights we've matched
@@ -167,7 +159,7 @@ func weightsInspectCommand(cmd *cobra.Command, args []string, jsonOutput bool) e
 				matchedRemote[w.Name] = true
 				entry.Remote = remote
 
-				if lw.lockFile.Digest == remote.Digest {
+				if remote.MatchedByContent || lw.lockFile.Digest == remote.Digest {
 					entry.Status = "synced"
 				} else {
 					entry.Status = "digest-mismatch"
@@ -203,11 +195,77 @@ func weightsInspectCommand(cmd *cobra.Command, args []string, jsonOutput bool) e
 	return nil
 }
 
+// resolveWeightsByTag checks for each local weight's tag in the registry.
+// This is the fallback path when no OCI index exists (e.g., after `cog weights push`
+// but before `cog push`).
+//
+// It looks up the combined tag :weights-<name>-<shortdigest> which encodes both
+// the weight name and its content digest. A match means the exact content is synced.
+func resolveWeightsByTag(ctx context.Context, repo string, localWeights map[string]*localWeight, reg registry.Client) map[string]*WeightRemoteState {
+	result := make(map[string]*WeightRemoteState)
+	for weightName, lw := range localWeights {
+		if lw.lockFile == nil {
+			continue
+		}
+
+		tag := model.WeightTag(weightName, lw.lockFile.Digest)
+		tagRef := repo + ":" + tag
+
+		// Use GetImage to fetch the full manifest (not just HEAD) so we can read layer sizes.
+		img, err := reg.GetImage(ctx, tagRef, nil)
+		if err != nil {
+			continue
+		}
+
+		manifest, err := img.Manifest()
+		if err != nil {
+			continue
+		}
+
+		digest, err := img.Digest()
+		if err != nil {
+			continue
+		}
+
+		rawManifest, err := img.RawManifest()
+		if err != nil {
+			continue
+		}
+
+		state := &WeightRemoteState{
+			Ref:              tagRef,
+			Tag:              tag,
+			Digest:           digest.String(),
+			Size:             int64(len(rawManifest)),
+			MediaType:        string(manifest.MediaType),
+			MatchedByContent: true,
+		}
+
+		for _, layer := range manifest.Layers {
+			state.Layers = append(state.Layers, WeightRemoteLayer{
+				Digest:    layer.Digest.String(),
+				Size:      layer.Size,
+				MediaType: string(layer.MediaType),
+			})
+		}
+
+		result[weightName] = state
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 func printWeightsInspectText(out *WeightsInspectOutput) {
 	fmt.Printf("Weights for: %s\n\n", out.Reference)
 
 	for _, w := range out.Weights {
-		fmt.Printf("  %s\n", w.Name)
+		if w.Remote != nil && w.Remote.Tag != "" {
+			fmt.Printf("  %s  :%s\n", w.Name, w.Remote.Tag)
+		} else {
+			fmt.Printf("  %s\n", w.Name)
+		}
 		fmt.Printf("    Status:  %s", w.Status)
 
 		switch w.Status {
@@ -231,7 +289,9 @@ func printWeightsInspectText(out *WeightsInspectOutput) {
 		}
 
 		if w.Remote != nil {
-			fmt.Printf("    Remote:  %s (%s)\n", w.Remote.Digest, formatSize(w.Remote.Size))
+			for _, layer := range w.Remote.Layers {
+				fmt.Printf("    Layer:   %s (%s)\n", layer.Digest, formatSize(layer.Size))
+			}
 		} else {
 			fmt.Println("    Remote:  -")
 		}

@@ -1,0 +1,66 @@
+# Test weights push and inspect lifecycle against a local registry.
+# Verifies: cog weights build -> cog weights push -> cog weights inspect (synced).
+
+[short] skip 'requires local registry'
+
+# Start test registry
+registry-start
+
+# Create weight files (small, deterministic)
+mkdir weights
+exec sh -c 'dd if=/dev/zero bs=512 count=1 2>/dev/null | tr "\0" "A" > weights/model-a.bin'
+exec sh -c 'dd if=/dev/zero bs=512 count=1 2>/dev/null | tr "\0" "B" > weights/model-b.bin'
+
+# Step 1: Build weights.lock
+cog weights build
+stderr 'Generated weights.lock'
+stderr '2 file'
+exists weights.lock
+
+# Verify lock file structure
+exec grep -q '"name": "alpha"' weights.lock
+exec grep -q '"name": "beta"' weights.lock
+exec grep -q '"digest": "sha256:' weights.lock
+
+# Step 2: Push weights to local registry (repo only, no tag)
+cog weights push $TEST_REGISTRY/test/weights-model
+stderr 'Pushed 2 weight artifact'
+# Push output should show the full ref for each weight
+stderr 'weights-alpha-'
+stderr 'weights-beta-'
+
+# Verify tags with :tag are rejected
+! cog weights push $TEST_REGISTRY/test/weights-model:v1
+stderr 'includes a tag or digest'
+
+# Step 3: Inspect — both weights should be synced
+cog weights inspect $TEST_REGISTRY/test/weights-model --json
+stdout '"status": "synced"'
+! stdout '"status": "local-only"'
+! stdout '"status": "digest-mismatch"'
+# Inspect should show the ref and layers for each weight
+stdout '"ref":'
+stdout '"layers":'
+
+# Verify tags with :tag are rejected for inspect too
+! cog weights inspect $TEST_REGISTRY/test/weights-model:v1
+stderr 'includes a tag or digest'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+weights:
+  - name: alpha
+    source: weights/model-a.bin
+    target: /weights/model-a.bin
+  - name: beta
+    source: weights/model-b.bin
+    target: /weights/model-b.bin
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

@@ -138,7 +138,9 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.safetensors", WeightConfig{
+				NewWeightArtifact("model-v1", v1.Descriptor{
+					Digest: v1.Hash{Algorithm: "sha256", Hex: "aabbccddee112233445566778899aabb"},
+				}, weightPath, "/weights/model.safetensors", WeightConfig{
 					SchemaVersion: "1.0",
 					CogVersion:    "0.15.0",
 					Name:          "model-v1",
@@ -157,12 +159,12 @@ func TestBundlePusher_Push(t *testing.T) {
 		// Verify the call sequence:
 		// 1. Push image via docker
 		// 2. Get image descriptor from registry (lightweight HEAD)
-		// 3. Push weight via registry
+		// 3. Push weight via registry (single combined tag)
 		// 4. Push OCI index to registry
 		require.Len(t, callOrder, 4)
 		require.Equal(t, "docker:push:r8.im/user/model:latest", callOrder[0])
 		require.Equal(t, "registry:getDescriptor:r8.im/user/model:latest", callOrder[1])
-		require.Equal(t, "registry:pushImage:r8.im/user/model", callOrder[2]) // repo, no tag
+		require.Equal(t, "registry:pushImage:r8.im/user/model:weights-model-v1-aabbccddee11", callOrder[2])
 		require.Equal(t, "registry:pushIndex:r8.im/user/model:latest", callOrder[3])
 	})
 
@@ -389,11 +391,15 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact("w1", v1.Descriptor{}, weight1Path, "/weights/model1.bin", WeightConfig{
+				NewWeightArtifact("w1", v1.Descriptor{
+					Digest: v1.Hash{Algorithm: "sha256", Hex: "aaaa111122223333444455556666777788889999aaaabbbbccccddddeeee0000"},
+				}, weight1Path, "/weights/model1.bin", WeightConfig{
 					SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "w1",
 					Target: "/weights/model1.bin", Created: time.Now().UTC(),
 				}),
-				NewWeightArtifact("w2", v1.Descriptor{}, weight2Path, "/weights/model2.bin", WeightConfig{
+				NewWeightArtifact("w2", v1.Descriptor{
+					Digest: v1.Hash{Algorithm: "sha256", Hex: "bbbb111122223333444455556666777788889999aaaabbbbccccddddeeee0000"},
+				}, weight2Path, "/weights/model2.bin", WeightConfig{
 					SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "w2",
 					Target: "/weights/model2.bin", Created: time.Now().UTC(),
 				}),
@@ -403,7 +409,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		err := pusher.Push(context.Background(), m, PushOptions{})
 
 		require.NoError(t, err)
-		require.Equal(t, int32(2), pushedWeightCount.Load()) // both weights pushed
+		require.Equal(t, int32(2), pushedWeightCount.Load()) // both weights pushed (1 tag each)
 	})
 }
 
