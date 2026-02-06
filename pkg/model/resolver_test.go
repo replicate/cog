@@ -194,6 +194,7 @@ func TestResolver_Inspect_LocalOnly_Found(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.10.0",
 						},
@@ -330,6 +331,7 @@ func TestResolver_Inspect_PreferLocal_FoundLocally(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.9.0",
 						},
@@ -463,6 +465,7 @@ func TestResolver_Inspect_PreferRemote_Fallback(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.10.0",
 						},
@@ -552,6 +555,7 @@ func TestResolver_Inspect_ParsesConfigFromLabels(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"gpu":true,"python_version":"3.12"},"predict":"predict.py:Predictor"}`,
 							LabelVersion: "0.11.0",
 						},
@@ -583,9 +587,9 @@ func TestResolver_Inspect_InvalidConfigJSON(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig: `{invalid json`,
 						},
-					},
 					},
 				},
 			}, nil
@@ -611,10 +615,10 @@ func TestResolver_Inspect_NoConfigLabel_ReturnsErrNotCogModel(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							// No LabelConfig - just version label
 							LabelVersion: "0.10.0",
 						},
-					},
 					},
 				},
 			}, nil
@@ -640,10 +644,10 @@ func TestResolver_Inspect_NotCogModel(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							// No Cog labels at all - just some random image
 							"maintainer": "someone@example.com",
 						},
-					},
 					},
 				},
 			}, nil
@@ -671,6 +675,7 @@ func TestResolver_InspectByID_Found(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.10.0",
 						},
@@ -704,6 +709,7 @@ func TestResolver_InspectByID_FullSHA(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.10.0",
 						},
@@ -730,10 +736,10 @@ func TestResolver_InspectByID_NotCogModel(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							// No Cog labels
 							"maintainer": "someone",
 						},
-					},
 					},
 				},
 			}, nil
@@ -777,6 +783,7 @@ func TestResolver_Pull_AlreadyLocal(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"gpu":false}}`,
 							LabelVersion: "0.10.0",
 						},
@@ -819,6 +826,7 @@ func TestResolver_Pull_NotLocal_PullsAndReturns(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"gpu":true}}`,
 							LabelVersion: "0.10.0",
 						},
@@ -833,6 +841,7 @@ func TestResolver_Pull_NotLocal_PullsAndReturns(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"gpu":true}}`,
 							LabelVersion: "0.10.0",
 						},
@@ -869,10 +878,10 @@ func TestResolver_Pull_NotCogModel(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							// Not a Cog model
 							"some.label": "value",
 						},
-					},
 					},
 				},
 			}, nil
@@ -883,9 +892,9 @@ func TestResolver_Pull_NotCogModel(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							"some.label": "value",
 						},
-					},
 					},
 				},
 			}, nil
@@ -968,169 +977,41 @@ func TestResolver_Pull_LocalInspectRealError(t *testing.T) {
 // Build tests
 // =============================================================================
 
-func TestResolver_Build_SetsImageFormat(t *testing.T) {
+func TestResolver_Build_NoWeightsManifestWithoutWeights(t *testing.T) {
 	validDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 
-	t.Run("sets standalone format by default", func(t *testing.T) {
-		docker := &mockDocker{
-			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
-				return &image.InspectResponse{
-					ID: validDigest,
-					Config: &dockerspec.DockerOCIImageConfig{
-						ImageConfig: ocispec.ImageConfig{
-							Labels: map[string]string{
+	docker := &mockDocker{
+		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
+			return &image.InspectResponse{
+				ID: validDigest,
+				Config: &dockerspec.DockerOCIImageConfig{
+					ImageConfig: ocispec.ImageConfig{
+						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.10.0",
 						},
 					},
-				}, nil
-			},
-		}
+				},
+			}, nil
+		},
+	}
 
-		factory := &mockFactory{}
-		resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
+	factory := &mockFactory{}
+	resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
 
-		src := &Source{
-			Config:     &config.Config{Build: &config.Build{}},
-			ProjectDir: t.TempDir(),
-		}
+	src := &Source{
+		Config:     &config.Config{Build: &config.Build{}},
+		ProjectDir: t.TempDir(),
+	}
 
-		m, err := resolver.Build(context.Background(), src, BuildOptions{
-			ImageName: "test-image",
-		})
-
-		require.NoError(t, err)
-		require.Equal(t, FormatStandalone, m.ImageFormat)
-		require.Nil(t, m.WeightsManifest)
+	m, err := resolver.Build(context.Background(), src, BuildOptions{
+		ImageName: "test-image",
 	})
 
-	t.Run("sets bundle format when specified", func(t *testing.T) {
-		docker := &mockDocker{
-			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
-				return &image.InspectResponse{
-					ID: validDigest,
-					Config: &dockerspec.DockerOCIImageConfig{
-						ImageConfig: ocispec.ImageConfig{
-							Labels: map[string]string{
-							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-							LabelVersion: "0.10.0",
-						},
-					},
-				}, nil
-			},
-		}
-
-		factory := &mockFactory{}
-		resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
-
-		// Create weights.lock file
-		dir := t.TempDir()
-		lock := &WeightsLock{
-			Version: "1",
-			Files: []WeightFile{
-				{Name: "my-model-v1", Dest: "/cache/model.bin"},
-			},
-		}
-		require.NoError(t, lock.Save(filepath.Join(dir, WeightsLockFilename)))
-
-		src := &Source{
-			Config:     &config.Config{Build: &config.Build{}},
-			ProjectDir: dir,
-		}
-
-		m, err := resolver.Build(context.Background(), src, BuildOptions{
-			ImageName:   "test-image",
-			ImageFormat: FormatBundle,
-		})
-
-		require.NoError(t, err)
-		require.Equal(t, FormatBundle, m.ImageFormat)
-		require.NotNil(t, m.WeightsManifest)
-		require.Len(t, m.WeightsManifest.Files, 1)
-		require.Equal(t, "my-model-v1", m.WeightsManifest.Files[0].Name)
-	})
-
-	t.Run("returns error for bundle format without weights.lock", func(t *testing.T) {
-		docker := &mockDocker{
-			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
-				return &image.InspectResponse{
-					ID: validDigest,
-					Config: &dockerspec.DockerOCIImageConfig{
-						ImageConfig: ocispec.ImageConfig{
-							Labels: map[string]string{
-							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-							LabelVersion: "0.10.0",
-						},
-					},
-				}, nil
-			},
-		}
-
-		factory := &mockFactory{}
-		resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
-
-		src := &Source{
-			Config:     &config.Config{Build: &config.Build{}},
-			ProjectDir: t.TempDir(), // No weights.lock
-		}
-
-		_, err := resolver.Build(context.Background(), src, BuildOptions{
-			ImageName:   "test-image",
-			ImageFormat: FormatBundle,
-		})
-
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "bundle format requires weights.lock")
-	})
-
-	t.Run("uses custom weights lock path", func(t *testing.T) {
-		docker := &mockDocker{
-			inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
-				return &image.InspectResponse{
-					ID: validDigest,
-					Config: &dockerspec.DockerOCIImageConfig{
-						ImageConfig: ocispec.ImageConfig{
-							Labels: map[string]string{
-							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-							LabelVersion: "0.10.0",
-						},
-					},
-				}, nil
-			},
-		}
-
-		factory := &mockFactory{}
-		resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
-
-		// Create weights.lock file in a different location
-		dir := t.TempDir()
-		customDir := t.TempDir()
-		customLockPath := filepath.Join(customDir, "custom.lock")
-		lock := &WeightsLock{
-			Version: "1",
-			Files: []WeightFile{
-				{Name: "my-custom-v1", Dest: "/cache/custom.bin"},
-			},
-		}
-		require.NoError(t, lock.Save(customLockPath))
-
-		src := &Source{
-			Config:     &config.Config{Build: &config.Build{}},
-			ProjectDir: dir,
-		}
-
-		m, err := resolver.Build(context.Background(), src, BuildOptions{
-			ImageName:       "test-image",
-			ImageFormat:     FormatBundle,
-			WeightsLockPath: customLockPath,
-		})
-
-		require.NoError(t, err)
-		require.Equal(t, FormatBundle, m.ImageFormat)
-		require.NotNil(t, m.WeightsManifest)
-		require.Len(t, m.WeightsManifest.Files, 1)
-		require.Equal(t, "my-custom-v1", m.WeightsManifest.Files[0].Name)
-	})
+	require.NoError(t, err)
+	require.Nil(t, m.WeightsManifest)
+	require.False(t, m.IsBundle())
 }
 
 func TestResolver_Build_PopulatesArtifacts(t *testing.T) {
@@ -1143,8 +1024,10 @@ func TestResolver_Build_PopulatesArtifacts(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
-						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-						LabelVersion: "0.15.0",
+
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.15.0",
+						},
 					},
 				},
 			}, nil
@@ -1191,10 +1074,13 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
 				ID: imageDigest,
-				Config: &container.Config{
-					Labels: map[string]string{
-						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-						LabelVersion: "0.15.0",
+				Config: &dockerspec.DockerOCIImageConfig{
+					ImageConfig: ocispec.ImageConfig{
+						Labels: map[string]string{
+
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.15.0",
+						},
 					},
 				},
 			}, nil
@@ -1228,8 +1114,7 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 	}
 
 	m, err := resolver.Build(context.Background(), src, BuildOptions{
-		ImageName:   "test-image:latest",
-		ImageFormat: FormatBundle,
+		ImageName: "test-image:latest",
 	})
 
 	require.NoError(t, err)
@@ -1259,19 +1144,20 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 	require.False(t, wa.Config.Created.IsZero())
 }
 
-func TestResolver_Build_StandaloneWithWeights(t *testing.T) {
-	// Weights configured but format is standalone (not bundle).
-	// Weight artifacts should still be built, but no lockfile-to-manifest conversion.
+func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
 	imageDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
 				ID: imageDigest,
-				Config: &container.Config{
-					Labels: map[string]string{
-						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-						LabelVersion: "0.15.0",
+				Config: &dockerspec.DockerOCIImageConfig{
+					ImageConfig: ocispec.ImageConfig{
+						Labels: map[string]string{
+
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.15.0",
+						},
 					},
 				},
 			}, nil
@@ -1290,7 +1176,7 @@ func TestResolver_Build_StandaloneWithWeights(t *testing.T) {
 	resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.bin"), []byte("standalone weights"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.bin"), []byte("test weights"), 0o644))
 
 	src := &Source{
 		Config: &config.Config{
@@ -1304,19 +1190,18 @@ func TestResolver_Build_StandaloneWithWeights(t *testing.T) {
 
 	m, err := resolver.Build(context.Background(), src, BuildOptions{
 		ImageName: "test-image:latest",
-		// No ImageFormat specified — defaults to standalone
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, FormatStandalone, m.ImageFormat)
+	require.True(t, m.IsBundle())
 
 	// Should have 2 artifacts: image + weight
 	require.Len(t, m.Artifacts, 2)
 	require.NotNil(t, m.GetImageArtifact())
 	require.Len(t, m.WeightArtifacts(), 1)
 
-	// WeightsManifest should NOT be set (standalone format)
-	require.Nil(t, m.WeightsManifest)
+	// WeightsManifest should be populated (for backwards compatibility)
+	require.NotNil(t, m.WeightsManifest)
 }
 
 func TestIndexDetectionHelpers(t *testing.T) {

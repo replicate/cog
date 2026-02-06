@@ -105,7 +105,6 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 		Annotations:      map[string]string{"key": "value"},
 		SchemaFile:       "/path/to/schema.json",
 		DockerfileFile:   "/path/to/Dockerfile",
-		ImageFormat:      FormatBundle,
 		WeightsLockPath:  "/path/to/weights.lock",
 	}
 
@@ -124,37 +123,12 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 	require.Equal(t, map[string]string{"key": "value"}, result.Annotations)
 	require.Equal(t, "/path/to/schema.json", result.SchemaFile)
 	require.Equal(t, "/path/to/Dockerfile", result.DockerfileFile)
-	require.Equal(t, FormatBundle, result.ImageFormat)
 	require.Equal(t, "/path/to/weights.lock", result.WeightsLockPath)
 }
 
-func TestBuildOptionsImageFormat(t *testing.T) {
-	t.Run("bundle format", func(t *testing.T) {
-		opts := BuildOptions{
-			ImageFormat: FormatBundle,
-		}
-		require.Equal(t, FormatBundle, opts.ImageFormat)
-	})
-
-	t.Run("standalone format", func(t *testing.T) {
-		opts := BuildOptions{
-			ImageFormat: FormatStandalone,
-		}
-		require.Equal(t, FormatStandalone, opts.ImageFormat)
-	})
-
-	t.Run("default format is empty (standalone)", func(t *testing.T) {
-		opts := BuildOptions{}
-		require.Equal(t, ModelImageFormat(""), opts.ImageFormat)
-		// Empty string is treated as standalone
-		require.False(t, opts.ImageFormat.IsValid())
-	})
-
-	t.Run("weights lock path", func(t *testing.T) {
-		opts := BuildOptions{
-			ImageFormat:     FormatBundle,
-			WeightsLockPath: "/custom/weights.lock",
-		}
-		require.Equal(t, "/custom/weights.lock", opts.WeightsLockPath)
-	})
+func TestBuildOptions_WeightsLockPath(t *testing.T) {
+	opts := BuildOptions{
+		WeightsLockPath: "/custom/weights.lock",
+	}
+	require.Equal(t, "/custom/weights.lock", opts.WeightsLockPath)
 }

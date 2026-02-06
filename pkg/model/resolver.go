@@ -227,12 +227,6 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 		return nil, err
 	}
 
-	// Set image format from build options
-	m.ImageFormat = opts.ImageFormat
-	if m.ImageFormat == "" {
-		m.ImageFormat = FormatStandalone
-	}
-
 	m.Artifacts = []Artifact{ia}
 
 	// Build weight artifacts if configured
@@ -251,13 +245,11 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 			}
 			m.Artifacts = append(m.Artifacts, artifact)
 		}
-	}
 
-	// For bundle format, load weights manifest (lockfile created/updated by WeightBuilder above)
-	if m.ImageFormat == FormatBundle {
+		// Load weights manifest for backwards compatibility
 		lock, loadErr := LoadWeightsLock(lockPath)
 		if loadErr != nil {
-			return nil, fmt.Errorf("bundle format requires weights.lock: %w", loadErr)
+			return nil, fmt.Errorf("load weights.lock: %w", loadErr)
 		}
 		m.WeightsManifest = lock.ToWeightsManifest()
 	}
@@ -265,23 +257,12 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	return m, nil
 }
 
-// Push pushes a Model to a container registry.
-// The push strategy is determined by Model.ImageFormat:
-// - FormatStandalone (or empty): Standard docker push
-// - FormatBundle: Push image, build index with weights, push index
+// Push pushes a Model to a container registry as an OCI Image Index.
+// The index contains the model image and any weight artifacts.
+// Models without weights produce a single-entry index.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	pusher := r.pusherFor(m.ImageFormat)
+	pusher := NewBundlePusher(r.docker, r.registry)
 	return pusher.Push(ctx, m, opts)
-}
-
-// pusherFor returns the appropriate Pusher for the given format.
-func (r *Resolver) pusherFor(format ModelImageFormat) Pusher {
-	switch format {
-	case FormatBundle:
-		return NewBundlePusher(r.docker, r.registry)
-	default:
-		return NewImagePusher(r.docker)
-	}
 }
 
 // BuildBase creates a base image for dev mode (without /src copied).
@@ -393,7 +374,6 @@ func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.Manifest
 	if err != nil {
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
-	m.ImageFormat = FormatStandalone
 	return m, nil
 }
 
@@ -424,8 +404,6 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
 
-	// Set bundle format fields
-	m.ImageFormat = FormatBundle
 	m.Index = &Index{
 		Digest:    ref.String(), // The index reference
 		Reference: ref.String(),

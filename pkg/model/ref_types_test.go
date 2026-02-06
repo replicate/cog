@@ -128,6 +128,7 @@ func TestTagRef_Resolve_Success(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.10.0",
 						},
@@ -196,6 +197,7 @@ func TestLocalRef_Resolve_Success(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.9.0",
 						},
@@ -306,6 +308,7 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelVersion: "0.11.0",
 							LabelConfig:  `{"build":{"gpu":true}}`,
 						},
