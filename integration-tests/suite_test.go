@@ -64,7 +64,7 @@ func TestIntegration(t *testing.T) {
 // condition provides custom conditions for testscript.
 // Supported conditions:
 //   - linux/linux_amd64/amd64: platform guards for specialized tests.
-//   - coglet_rust: true when COGLET_RUST_WHEEL is set (Rust server configuration)
+//   - coglet_rust: true when COGLET_WHEEL is set (Rust server configuration)
 //
 // Note: testscript has built-in support for [short] which checks testing.Short().
 func condition(cond string) (bool, error) {
@@ -74,7 +74,7 @@ func condition(cond string) (bool, error) {
 		cond = cond[1:]
 	}
 
-	rustWheelSet := os.Getenv("COGLET_RUST_WHEEL") != ""
+	cogletWheelSet := os.Getenv("COGLET_WHEEL") != ""
 
 	var value bool
 	switch cond {
@@ -85,7 +85,7 @@ func condition(cond string) (bool, error) {
 	case "linux_amd64":
 		value = runtime.GOOS == "linux" && runtime.GOARCH == "amd64"
 	case "coglet_rust":
-		value = rustWheelSet
+		value = cogletWheelSet
 	default:
 		return false, fmt.Errorf("unknown condition: %s", cond)
 	}

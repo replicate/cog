@@ -547,7 +547,7 @@ func checkCompatibleDockerIgnore(dir string) error {
 		return nil
 	}
 	if matcher.MatchesPath(".cog") {
-		return errors.New("The .cog tmp path cannot be ignored by docker in .dockerignore.")
+		return errors.New("The .cog tmp path cannot be ignored by docker in .dockerignore")
 	}
 	return nil
 }

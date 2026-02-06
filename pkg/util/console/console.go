@@ -79,7 +79,7 @@ func (c *Console) Fatalf(msg string, v ...interface{}) {
 func (c *Console) Output(s string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	fmt.Fprintln(os.Stdout, s)
+	_, _ = fmt.Fprintln(os.Stdout, s)
 }
 
 func (c *Console) log(level Level, msg string) {

@@ -48,11 +48,6 @@ The primary CI workflow that runs on all PRs and pushes to main.
                           ┌───────────────┐
                           │  ci-complete  │  ← Branch protection requires this
                           └───────────────┘
-                                  │
-                                  ▼ (on tag)
-                          ┌───────────────┐
-                          │    release    │
-                          └───────────────┘
 ```
 
 #### Jobs
@@ -75,7 +70,6 @@ The primary CI workflow that runs on all PRs and pushes to main.
 | `test-coglet-python` | rust or python changed | build-rust | Test coglet bindings (matrix: 3.10-3.13) |
 | `test-integration` | any changed | build-sdk, build-rust | Integration tests (matrix: cog, cog-rust) |
 | `ci-complete` | Always | all jobs | Gate job for branch protection |
-| `release` | Tag push | ci-complete | Create GitHub release |
 
 #### Python Version Matrix
 
@@ -163,3 +157,156 @@ Settings > Branches > main > Require status checks:
 ```
 
 Skipped jobs (from path filtering) are treated as passing by the gate job.
+
+## Release Workflow
+
+Releases use a two-workflow system with manual approval via draft releases.
+
+### Release Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           1. DEVELOPER PUSHES TAG                            │
+│                              git tag v1.0.0 && git push --tags               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         release-build.yaml (automatic)                       │
+│                                                                              │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                   │
+│  │ verify-tag   │───▶│  build-sdk   │───▶│create-draft- │                   │
+│  │(must be main)│    │  (wheel)     │    │   release    │                   │
+│  └──────────────┘    └──────────────┘    └──────────────┘                   │
+│                             │                    ▲                           │
+│                             │    ┌───────────────┘                           │
+│                             ▼    │                                           │
+│                      ┌──────────────┐                                        │
+│                      │build-coglet- │  (4 platforms: linux x64/arm64,       │
+│                      │   wheels     │   macos x64/arm64)                     │
+│                      └──────────────┘                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                          Creates DRAFT GitHub Release
+                          with all wheel artifacts
+                                        │
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    2. MAINTAINER PUBLISHES DRAFT RELEASE                     │
+│                       (manual approval via GitHub UI)                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       release-publish.yaml (automatic)                       │
+│                                                                              │
+│  ┌──────────────┐                                                           │
+│  │verify-release│                                                           │
+│  │  (tag fmt)   │                                                           │
+│  └──────┬───────┘                                                           │
+│         │                                                                    │
+│         ├─────────────────┬─────────────────┬─────────────────┐             │
+│         ▼                 ▼                 ▼                 ▼             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│  │publish-pypi- │  │publish-pypi- │  │publish-crates│  │publish-github│    │
+│  │   coglet     │  │     sdk      │  │     -io      │  │   -release   │    │
+│  │   (PyPI)     │  │   (PyPI)     │  │  (crates.io) │  │  (goreleaser)│    │
+│  └──────┬───────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
+│         │                 ▲                                                  │
+│         └─────────────────┘                                                  │
+│         (SDK waits for coglet - cog[coglet] depends on coglet)              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Workflows
+
+#### `release-build.yaml`
+
+Triggered by version tags (`v*.*.*`). Builds artifacts and creates a draft release.
+
+| Job | Purpose |
+|-----|---------|
+| `verify-tag` | Ensures tag is on main branch |
+| `build-sdk` | Build cog SDK wheel and sdist |
+| `build-coglet-wheels` | Build coglet wheels (4 platforms) |
+| `create-draft-release` | Create draft GitHub release with all artifacts |
+
+**Security**: No secrets required - only builds artifacts.
+
+#### `release-publish.yaml`
+
+Triggered when a draft release is published. Publishes to PyPI and crates.io.
+
+| Job | Depends on | Purpose |
+|-----|------------|---------|
+| `verify-release` | - | Validate tag format |
+| `publish-pypi-coglet` | verify-release | Publish coglet to PyPI |
+| `publish-pypi-sdk` | publish-pypi-coglet | Publish SDK to PyPI (after coglet) |
+| `publish-crates-io` | verify-release | Publish coglet crate |
+| `publish-github-release` | verify-release | Build and attach CLI binaries |
+
+**Security**: 
+- Secrets only available via GitHub environment protection rules
+- Environments restricted to `v*` tags only
+- Only maintainers can publish draft releases
+
+### Package Versioning
+
+All packages use the same version from the git tag:
+- **cog SDK**: `cog==1.0.0` (PyPI)
+- **coglet**: `coglet==1.0.0` (PyPI + crates.io)
+- **CLI**: `cog v1.0.0` (GitHub Release)
+
+The SDK's optional dependency `cog[coglet]` requires `coglet>=0.1.0,<1.0` to ensure compatibility.
+
+### SDK Wheel Sourcing
+
+The CLI installs the cog SDK from PyPI at container build time:
+
+| Scenario | COG_WHEEL env var | Behavior |
+|----------|-------------------|----------|
+| Released CLI | (unset) | Install `cog==<version>` from PyPI |
+| Dev CLI (in repo) | (unset) | Auto-detect `dist/cog-*.whl` if present, else PyPI |
+| Force PyPI | `pypi` | Install latest from PyPI |
+| Specific version | `pypi:0.12.0` | Install `cog==0.12.0` from PyPI |
+| Local wheel | `/path/to/cog.whl` | Install from local file |
+| Force dist | `dist` | Install from `dist/` (error if missing) |
+
+Same pattern for `COGLET_WHEEL` (but coglet is optional by default).
+
+### GitHub Environment Setup
+
+1. Create environments in **Settings → Environments**:
+   - `pypi` - For PyPI publishing (uses OIDC, no secrets needed)
+   - `crates-io` - For crates.io publishing
+
+2. Configure protection rules for each environment:
+   - **Deployment branches**: "Selected branches and tags"
+   - **Add pattern**: `v*` (restricts to version tags)
+   - **Required reviewers**: Add maintainers
+
+3. Add secrets:
+   - `crates-io`: `CARGO_REGISTRY_TOKEN`
+
+### Performing a Release
+
+```bash
+# 1. Ensure you're on main with latest changes
+git checkout main
+git pull
+
+# 2. Create and push tag
+git tag v1.0.0
+git push origin v1.0.0
+
+# 3. Wait for release-build.yaml to complete
+#    This creates a draft release with all artifacts
+
+# 4. Review the draft release in GitHub UI
+#    - Check artifacts are present
+#    - Review auto-generated release notes
+
+# 5. Publish the draft release
+#    - Click "Publish release" in GitHub UI
+#    - This triggers release-publish.yaml
+```
