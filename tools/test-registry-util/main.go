@@ -157,7 +157,7 @@ func runAndInit(ctx context.Context, dstDir string) error {
 			continue
 		}
 
-		var idx v1.ImageIndex = mutate.IndexMediaType(empty.Index, types.OCIImageIndex) // start empty
+		idx := mutate.IndexMediaType(empty.Index, types.OCIImageIndex) // start empty
 
 		for _, platStr := range src.Platforms {
 			osArch := strings.SplitN(platStr, "/", 2)
@@ -277,10 +277,10 @@ func catalog(ctx context.Context, addr string) error {
 
 			repoTag := fmt.Sprintf("%s:%s", ref.Context().RepositoryStr(), ref.Identifier())
 
-			switch mt := desc.Descriptor.MediaType; mt {
+			switch mt := desc.MediaType; mt {
 			case types.OCIImageIndex, types.DockerManifestList:
 
-				fmt.Printf("%s %s\n  index -> %s\n", repoTag, mt, desc.Descriptor.Digest)
+				fmt.Printf("%s %s\n  index -> %s\n", repoTag, mt, desc.Digest)
 
 				idx, _ := desc.ImageIndex()
 				im, _ := idx.IndexManifest()
@@ -292,7 +292,7 @@ func catalog(ctx context.Context, addr string) error {
 				}
 
 			default: // single‑platform image
-				fmt.Printf("%s %s\n  single platform image -> %s\n", repoTag, mt, desc.Descriptor.Digest)
+				fmt.Printf("%s %s\n  single platform image -> %s\n", repoTag, mt, desc.Digest)
 			}
 		}
 	}

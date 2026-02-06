@@ -1,0 +1,32 @@
+# Test wheel resolution from environment variables
+#
+# This test verifies that COG_WHEEL and COGLET_WHEEL environment variables
+# correctly resolve wheel paths, including:
+# - COG_WHEEL=dist (uses git repo root to find dist/)
+# - Relative paths resolved to absolute
+# - Clear errors when wheel not found
+#
+# Note: Tests run from a temp directory, so "dist" keyword uses git introspection
+# to find the repo root's dist/ directory.
+
+# Test 1: COG_WHEEL=dist finds wheel via git repo root
+env COG_WHEEL=dist
+cog build -t $TEST_IMAGE
+stderr 'Using local cog wheel:'
+
+# Test 2: Relative path that doesn't exist gives clear error  
+env COG_WHEEL=./nonexistent/wheel.whl
+! cog build -t $TEST_IMAGE
+stderr 'wheel file not found'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

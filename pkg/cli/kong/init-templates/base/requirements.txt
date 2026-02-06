@@ -1,0 +1,23 @@
+# This is a normal Python requirements.txt file.
+
+# You can add dependencies directly from PyPI:
+# 
+# numpy==1.26.4
+# torch==2.2.1
+# torchvision==0.17.1
+
+
+# You can also add Git repos as dependencies, but you'll need to add git to the system_packages list in cog.yaml:
+# 
+# build:
+#   system_packages:
+#     - "git"
+# 
+# Then you can use a URL like this:
+# 
+# git+https://github.com/huggingface/transformers
+
+
+# You can also pin Git repos to a specific commit:
+# 
+# git+https://github.com/huggingface/transformers@2d1602a

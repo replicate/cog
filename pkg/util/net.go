@@ -21,7 +21,7 @@ func PickFreePort(minPort, maxPort int) (int, error) {
 		p := rng.Intn(maxPort-minPort+1) + minPort
 		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
 		if err == nil {
-			l.Close()
+			_ = l.Close()
 			return p, nil // looks free
 		}
 	}
