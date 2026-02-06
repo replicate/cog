@@ -1,14 +1,8 @@
 [package]
 name = "coglet"
-description = "High-performance prediction server for Cog ML models"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-repository.workspace = true
-homepage.workspace = true
-documentation.workspace = true
-keywords.workspace = true
-categories.workspace = true
 
 [dependencies]
 # Async runtime

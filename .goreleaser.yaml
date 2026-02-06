@@ -2,6 +2,7 @@ version: 2
 before:
   hooks:
     - go mod tidy
+    - go generate ./pkg/wheels/...
 dist: ./dist/go
 env:
   - CGO_ENABLED=0
@@ -29,8 +30,8 @@ builds:
     ldflags:
       - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
 archives:
-  - formats: [binary]
-    ids:
+  - format: binary
+    builds:
       - cog # for now we only release cog
     name_template: >-
       {{ .Binary }}_

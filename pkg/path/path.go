@@ -11,7 +11,9 @@ func TrimExt(s string) string {
 }
 
 func IsExtInteger(ext string) bool {
-	ext = strings.TrimPrefix(ext, ".")
+	if strings.HasPrefix(ext, ".") {
+		ext = ext[1:]
+	}
 	_, err := strconv.Atoi(ext)
 	return err == nil
 }

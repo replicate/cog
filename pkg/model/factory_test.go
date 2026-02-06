@@ -23,7 +23,7 @@ func TestDockerfileFactory_ImplementsInterface(t *testing.T) {
 	registry := registrytest.NewMockRegistryClient()
 
 	// Verify that DockerfileFactory implements the Factory interface
-	var _ = NewDockerfileFactory(docker, registry)
+	var _ Factory = NewDockerfileFactory(docker, registry)
 }
 
 func TestDefaultFactory_ReturnsDockerfileFactory(t *testing.T) {

@@ -17,7 +17,6 @@ type Pusher interface {
 // PushOptions configures push behavior.
 type PushOptions struct {
 	// ProjectDir is the base directory for resolving weight file paths.
-	//
 	// Deprecated: Use FilePaths instead.
 	ProjectDir string
 

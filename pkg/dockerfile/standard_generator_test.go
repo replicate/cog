@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/registry/registrytest"
+	"github.com/replicate/cog/pkg/wheels"
 )
 
 func testTini() string {
@@ -28,14 +29,21 @@ ENTRYPOINT ["/sbin/tini", "--"]
 `
 }
 
-func testInstallCog(stripped bool) string {
+func getWheelName() string {
+	filename, _ := wheels.ReadCogWheel()
+	return filename
+}
+
+func testInstallCog(relativeTmpDir string, stripped bool) string {
+	wheel := getWheelName()
 	strippedCall := ""
 	if stripped {
 		strippedCall += " && find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 	}
-	return fmt.Sprintf(`ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir cog%s
-ENV CFLAGS=`, strippedCall)
+	return fmt.Sprintf(`COPY %s/%s /tmp/%s
+ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir /tmp/%s%s
+ENV CFLAGS=`, relativeTmpDir, wheel, wheel, wheel, strippedCall)
 }
 
 func testInstallPython(version string) string {
@@ -96,7 +104,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + testInstallCog(gen.strip) + `
+` + testTini() + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
@@ -133,7 +141,7 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + testInstallPython("3.12") + "RUN rm -rf /usr/bin/python3 && ln -s `realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3" + `
-` + testInstallCog(gen.strip) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
@@ -182,7 +190,7 @@ COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 ENV CFLAGS=
-` + testInstallCog(gen.strip) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
 WORKDIR /src
@@ -239,7 +247,7 @@ COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 ENV CFLAGS=
-` + testInstallCog(gen.strip) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
 WORKDIR /src
@@ -286,7 +294,7 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-` + testInstallCog(gen.strip) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
 WORKDIR /src
@@ -403,7 +411,7 @@ COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 ENV CFLAGS=
-` + testInstallCog(gen.strip) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
 COPY --from=weights --link /src/checkpoints /src/checkpoints
@@ -477,7 +485,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + testInstallCog(gen.strip) + `
+` + testTini() + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
@@ -509,7 +517,7 @@ predict: predict.py:Predictor
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
-` + testInstallCog(gen.strip) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 WORKDIR /src
 EXPOSE 5000
 CMD ["python", "-m", "cog.server.http"]
@@ -549,7 +557,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-` + testInstallCog(gen.strip) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
@@ -606,7 +614,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.11-torch%s
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-`+testInstallCog(gen.strip)+`
+`+testInstallCog(gen.relativeTmpDir, gen.strip)+`
 COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
@@ -662,7 +670,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-` + testInstallCog(gen.strip) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
@@ -717,7 +725,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-` + testInstallCog(gen.strip) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
@@ -807,7 +815,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
-` + testInstallCog(gen.strip) + `
+` + testInstallCog(gen.relativeTmpDir, gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
@@ -887,7 +895,7 @@ coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha
 }
 
 func TestCOGWheelDefault(t *testing.T) {
-	// Default behavior should install cog from PyPI
+	// Default behavior should use embedded cog wheel
 	tmpDir := t.TempDir()
 
 	yaml := `
@@ -908,13 +916,16 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain pip install cog from PyPI
-	require.Contains(t, actual, "pip install --no-cache-dir cog")
+	// Should contain the embedded cog wheel install (versioned filename like cog-0.x.x-py3-none-any.whl)
+	require.Contains(t, actual, "/tmp/cog-")
+	require.Contains(t, actual, ".whl")
+	// Should NOT contain coglet-specific env vars
+	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
 
-func TestCOGWheelEnvPyPI(t *testing.T) {
-	// COG_WHEEL=pypi should install from PyPI
-	t.Setenv("COG_WHEEL", "pypi")
+func TestCOGWheelEnvCog(t *testing.T) {
+	// COG_WHEEL=cog should use embedded cog wheel
+	t.Setenv("COG_WHEEL", "cog")
 
 	tmpDir := t.TempDir()
 
@@ -936,41 +947,16 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain pip install cog from PyPI
-	require.Contains(t, actual, "pip install --no-cache-dir cog")
-}
-
-func TestCOGWheelEnvPyPIWithVersion(t *testing.T) {
-	// COG_WHEEL=pypi:0.12.0 should install specific version from PyPI
-	t.Setenv("COG_WHEEL", "pypi:0.12.0")
-
-	tmpDir := t.TempDir()
-
-	yaml := `
-build:
-  gpu: false
-  python_version: "3.11"
-predict: predict.py:Predictor
-`
-	conf, err := config.FromYAML([]byte(yaml))
-	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
-
-	command := dockertest.NewMockCommand()
-	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
-	require.NoError(t, err)
-
-	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
-	require.NoError(t, err)
-
-	// Should contain pip install cog==0.12.0 from PyPI
-	require.Contains(t, actual, "pip install --no-cache-dir cog==0.12.0")
+	// Should contain the embedded cog wheel install (versioned filename like cog-0.x.x-py3-none-any.whl)
+	require.Contains(t, actual, "/tmp/cog-")
+	require.Contains(t, actual, ".whl")
+	// Should NOT contain coglet-specific env vars
+	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
 
 func TestCOGWheelEnvURL(t *testing.T) {
 	// COG_WHEEL=https://... should install from URL
-	customURL := "https://example.com/custom-wheel-0.1.0.whl"
+	customURL := "https://example.com/custom-coglet-0.1.0.whl"
 	t.Setenv("COG_WHEEL", customURL)
 
 	tmpDir := t.TempDir()
@@ -995,6 +981,40 @@ predict: predict.py:Predictor
 
 	// Should contain pip install from custom URL
 	require.Contains(t, actual, "pip install --no-cache-dir "+customURL)
+	// Since URL contains "coglet", should also have env vars
+	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
+	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
+}
+
+func TestCOGWheelEnvURLNonCoglet(t *testing.T) {
+	// COG_WHEEL=https://... with non-coglet URL should NOT set coglet env vars
+	customURL := "https://example.com/custom-runtime-0.1.0.whl"
+	t.Setenv("COG_WHEEL", customURL)
+
+	tmpDir := t.TempDir()
+
+	yaml := `
+build:
+  gpu: false
+  python_version: "3.11"
+predict: predict.py:Predictor
+`
+	conf, err := config.FromYAML([]byte(yaml))
+	require.NoError(t, err)
+	require.NoError(t, conf.ValidateAndComplete(""))
+
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
+	require.NoError(t, err)
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	// Should contain pip install from custom URL
+	require.Contains(t, actual, "pip install --no-cache-dir "+customURL)
+	// Should NOT contain coglet-specific env vars
+	require.NotContains(t, actual, "R8_COG_VERSION=coglet")
 }
 
 func TestCOGWheelEnvFile(t *testing.T) {
@@ -1002,7 +1022,7 @@ func TestCOGWheelEnvFile(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a mock wheel file
-	wheelPath := filepath.Join(tmpDir, "test-cog-0.1.0-py3-none-any.whl")
+	wheelPath := filepath.Join(tmpDir, "test-coglet-0.1.0-py3-none-any.whl")
 	err := os.WriteFile(wheelPath, []byte("mock wheel content"), 0o644)
 	require.NoError(t, err)
 
@@ -1026,6 +1046,9 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain pip install from temp path (copied into container)
-	require.Contains(t, actual, "pip install --no-cache-dir /tmp/test-cog-0.1.0-py3-none-any.whl")
+	// Should contain pip install from temp path
+	require.Contains(t, actual, "pip install --no-cache-dir /tmp/test-coglet-0.1.0-py3-none-any.whl")
+	// Since filename contains "coglet", should also have env vars
+	require.Contains(t, actual, "ENV R8_COG_VERSION=coglet")
+	require.Contains(t, actual, "ENV R8_PYTHON_VERSION=3.11")
 }

@@ -113,8 +113,8 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 	var content []byte
 
 	// Special handling for specific template files
-	switch filename {
-	case "AGENTS.md":
+	switch {
+	case filename == "AGENTS.md":
 		// Try to download from Replicate docs
 		downloadedContent, err := downloadAgentsFile()
 		if err != nil {

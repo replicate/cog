@@ -4,12 +4,13 @@ on:
   merge_group:
   push:
     branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
   pull_request:
   workflow_dispatch:
 
 # Cancel in-progress runs for PRs, queue for merge group and main
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}-v2
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -17,9 +18,6 @@ env:
   SUPPORTED_PYTHONS: '["3.10", "3.11", "3.12", "3.13"]'
   # Default Python version for non-matrix jobs
   PYTHON_VERSION: "3.13"
-  # Number of runners to shard integration tests across (per runtime)
-  # Slow tests ([short] skip) are distributed round-robin first, then fast tests fill in
-  NUM_IT_RUNNER_SHARDS: "4"
   # Standard environment
   HYPOTHESIS_PROFILE: ci
   FORCE_COLOR: "1"
@@ -31,8 +29,7 @@ env:
   # ready when cargo-binstall tries to compile cargo:* tools from source.
   # Using actions guarantees toolchain is ready before mise installs cargo:* tools.
   # Python is managed by astral-sh/setup-uv for version matrix support.
-  # golangci-lint is managed by golangci/golangci-lint-action for caching.
-  MISE_DISABLE_TOOLS: rust,rustup,rustup-init,cargo-binstall,python,golangci-lint
+  MISE_DISABLE_TOOLS: rust,cargo-binstall,python
 
 permissions: {}
 
@@ -51,8 +48,6 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       integration: ${{ steps.filter.outputs.integration }}
       docs: ${{ steps.filter.outputs.docs }}
-      version_only: ${{ steps.filter.outputs.version_only }}
-      version_changed: ${{ steps.filter.outputs.version_changed }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -76,50 +71,9 @@ jobs:
 
           # Get changed files
           CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
-          
-          # Check if coglet version changed
-          VERSION_CHANGED="false"
-          if echo "$CHANGED" | grep -qE '^crates/Cargo\.toml$'; then
-            # Check if only the version line changed
-            if git diff "$BASE" HEAD -- crates/Cargo.toml | grep -qE '^\+version = '; then
-              VERSION_CHANGED="true"
-              echo "Coglet version changed"
-            fi
-          fi
-          echo "version_changed=$VERSION_CHANGED" >> $GITHUB_OUTPUT
-          
-          # Check if ONLY the version changed (version bump PR)
-          # This is true if crates/Cargo.toml is the only file and only version line changed
-          VERSION_ONLY="false"
-          if [ "$VERSION_CHANGED" = "true" ]; then
-            FILE_COUNT=$(echo "$CHANGED" | grep -c . || echo "0")
-            if [ "$FILE_COUNT" = "1" ]; then
-              # Only crates/Cargo.toml changed, check if only version line changed
-              # Get actual diff lines (excluding +++ and --- headers)
-              DIFF_CONTENT=$(git diff "$BASE" HEAD -- crates/Cargo.toml | grep -E '^[+-]' | grep -v '^[+-]{3}')
-              # Should be exactly: -version = "old" and +version = "new"
-              MINUS_LINES=$(echo "$DIFF_CONTENT" | grep -c '^-' || echo "0")
-              PLUS_LINES=$(echo "$DIFF_CONTENT" | grep -c '^\+' || echo "0")
-              VERSION_MINUS=$(echo "$DIFF_CONTENT" | grep -c '^-version = ' || echo "0")
-              VERSION_PLUS=$(echo "$DIFF_CONTENT" | grep -c '^\+version = ' || echo "0")
-              
-              if [ "$MINUS_LINES" = "1" ] && [ "$PLUS_LINES" = "1" ] && \
-                 [ "$VERSION_MINUS" = "1" ] && [ "$VERSION_PLUS" = "1" ]; then
-                VERSION_ONLY="true"
-                echo "Version-only change detected - skipping heavy CI"
-              fi
-            fi
-          fi
-          echo "version_only=$VERSION_ONLY" >> $GITHUB_OUTPUT
 
-          # CI/tooling changes should run everything (unless version-only)
-          if [ "$VERSION_ONLY" = "true" ]; then
-            echo "go=false" >> $GITHUB_OUTPUT
-            echo "rust=false" >> $GITHUB_OUTPUT
-            echo "python=false" >> $GITHUB_OUTPUT
-            echo "integration=false" >> $GITHUB_OUTPUT
-            echo "docs=false" >> $GITHUB_OUTPUT
-          elif echo "$CHANGED" | grep -qE '^(\.github/workflows/|mise\.toml)'; then
+          # CI/tooling changes should run everything
+          if echo "$CHANGED" | grep -qE '^(\.github/workflows/|mise\.toml)'; then
             echo "CI/tooling changed - running all jobs"
             echo "go=true" >> $GITHUB_OUTPUT
             echo "rust=true" >> $GITHUB_OUTPUT
@@ -168,71 +122,13 @@ jobs:
           echo "$CHANGED" | head -50
 
 # =============================================================================
-# Version Check - Validates coglet version changes
-# =============================================================================
-
-  version-check:
-    name: Validate coglet version
-    needs: changes
-    if: needs.changes.outputs.version_changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Validate version
-        run: |
-          # Get version from Cargo.toml
-          VERSION=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "Coglet version: $VERSION"
-          
-          # Validate semver format
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-            echo "::error::Invalid version format: $VERSION"
-            echo "::error::Expected semver format: MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-prerelease"
-            exit 1
-          fi
-          echo "✓ Valid semver format"
-          
-          # Check version doesn't already exist as a tag
-          if git tag -l "v$VERSION" | grep -q .; then
-            echo "::error::Tag v$VERSION already exists!"
-            echo "::error::Cannot set version to an already-released version."
-            exit 1
-          fi
-          echo "✓ Version not yet released"
-          
-          # Get the highest existing stable version tag
-          HIGHEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -v '-' | sed 's/^v//' | sort -V | tail -1)
-          if [ -n "$HIGHEST_TAG" ]; then
-            echo "Highest released version: $HIGHEST_TAG"
-            
-            # Check it's not a downgrade (using sort -V for proper semver comparison)
-            BASE_VERSION="${VERSION%%-*}"
-            SORTED_HIGHEST=$(printf '%s\n%s' "$HIGHEST_TAG" "$BASE_VERSION" | sort -V | tail -1)
-            if [ "$SORTED_HIGHEST" = "$HIGHEST_TAG" ] && [ "$HIGHEST_TAG" != "$BASE_VERSION" ]; then
-              echo "::error::Cannot downgrade version from $HIGHEST_TAG to $VERSION"
-              echo "::error::New version must be greater than the highest released version."
-              exit 1
-            fi
-            echo "✓ Version is not a downgrade"
-          else
-            echo "No existing version tags found"
-          fi
-          
-          echo ""
-          echo "✓ Version $VERSION is valid for release"
-
-# =============================================================================
 # Build Stage - Produces artifacts for downstream jobs
 # =============================================================================
 
   build-sdk:
     name: Build SDK
     needs: changes
-    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true'
+    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -259,7 +155,7 @@ jobs:
   build-rust:
     name: Build coglet wheel
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.integration == 'true'
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.integration == 'true' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -366,16 +262,25 @@ jobs:
 
   lint-go:
     name: Lint Go
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
+    needs: [changes, build-sdk]
+    if: needs.changes.outputs.go == 'true' && needs.build-sdk.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - name: Download SDK
+        uses: actions/download-artifact@v7
         with:
-          go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v8
+          name: CogPackage
+          path: dist
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: jdx/mise-action@v3
+        with:
+          cache: false
+      - name: Lint Go
+        run: mise run lint:go
 
   lint-rust:
     name: Lint Rust
@@ -445,8 +350,11 @@ jobs:
 
   test-go:
     name: "Test Go (${{ matrix.platform }})"
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
+    needs: [changes, build-sdk]
+    if: |
+      always() &&
+      needs.changes.outputs.go == 'true' &&
+      (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped')
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -455,24 +363,24 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          fetch-depth: 0
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v3
+      - name: Build cog
+        run: mise run build:cog
       - name: Test Go
-        shell: bash
-        run: |
-          set -euo pipefail
-          set -m  # job control, ensures script is in its own process group
-          cleanup() {
-            echo "::warning::Cancelling..."
-            kill -TERM -- -$$ 2>/dev/null || true
-            sleep 5
-            kill -KILL -- -$$ 2>/dev/null || true
-          }
-          trap cleanup INT TERM
-          gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...) &
-          wait $!
+        run: mise run test:go
 
   test-rust:
     name: Test Rust
@@ -561,100 +469,12 @@ jobs:
       - name: Test coglet-python bindings
         run: uvx nox -s coglet -p ${{ matrix.python-version }}
 
-  # Compute integration test shards dynamically.
-  # Slow tests (tagged with [short] skip) are distributed round-robin first,
-  # then remaining tests fill in. This ensures slow tests don't pile up on one runner.
-  integration-shards:
-    name: Compute test shards
-    needs: changes
-    if: needs.changes.outputs.integration == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      shards: ${{ steps.shard.outputs.shards }}
-    steps:
-      - uses: actions/checkout@v6
-      - name: Compute shards
-        id: shard
-        run: |
-          NUM_SHARDS=${{ env.NUM_IT_RUNNER_SHARDS }}
-          
-          # Find unconditionally skipped tests (bare "skip" without condition brackets)
-          # These are disabled tests that shouldn't affect shard distribution
-          SKIPPED_TESTS=$(grep -rl '^skip ' integration-tests/tests/*.txtar | \
-            xargs -I{} basename {} .txtar | sort || echo "")
-          
-          # Identify slow tests (have [short] skip marker), excluding unconditionally skipped
-          SLOW_TESTS=$(grep -rl '\[short\] skip' integration-tests/tests/*.txtar | \
-            xargs -I{} basename {} .txtar | sort)
-          if [ -n "$SKIPPED_TESTS" ]; then
-            SLOW_TESTS=$(comm -23 <(echo "$SLOW_TESTS") <(echo "$SKIPPED_TESTS"))
-          fi
-          
-          # All tests
-          ALL_TESTS=$(ls integration-tests/tests/*.txtar | \
-            xargs -I{} basename {} .txtar | sort)
-          
-          # Fast tests = all - slow (skipped tests end up here but run instantly)
-          FAST_TESTS=$(comm -23 <(echo "$ALL_TESTS") <(echo "$SLOW_TESTS"))
-          
-          # Distribute slow tests round-robin across shards
-          declare -a SHARDS
-          for i in $(seq 0 $((NUM_SHARDS - 1))); do
-            SHARDS[$i]=""
-          done
-          
-          idx=0
-          while IFS= read -r test; do
-            [ -z "$test" ] && continue
-            if [ -n "${SHARDS[$idx]}" ]; then
-              SHARDS[$idx]="${SHARDS[$idx]}|${test}"
-            else
-              SHARDS[$idx]="$test"
-            fi
-            idx=$(( (idx + 1) % NUM_SHARDS ))
-          done <<< "$SLOW_TESTS"
-          
-          # Distribute fast tests round-robin across shards
-          while IFS= read -r test; do
-            [ -z "$test" ] && continue
-            if [ -n "${SHARDS[$idx]}" ]; then
-              SHARDS[$idx]="${SHARDS[$idx]}|${test}"
-            else
-              SHARDS[$idx]="$test"
-            fi
-            idx=$(( (idx + 1) % NUM_SHARDS ))
-          done <<< "$FAST_TESTS"
-          
-          # Build JSON array of shard objects
-          JSON="["
-          for i in $(seq 0 $((NUM_SHARDS - 1))); do
-            PATTERN="${SHARDS[$i]}"
-            COUNT=$(echo "$PATTERN" | tr '|' '\n' | wc -l | tr -d ' ')
-            [ $i -gt 0 ] && JSON="${JSON},"
-            JSON="${JSON}{\"index\":$i,\"pattern\":\"${PATTERN}\",\"count\":$COUNT}"
-          done
-          JSON="${JSON}]"
-          
-          echo "shards=$JSON" >> "$GITHUB_OUTPUT"
-          
-          # Debug output
-          echo "Shard distribution:"
-          for i in $(seq 0 $((NUM_SHARDS - 1))); do
-            COUNT=$(echo "${SHARDS[$i]}" | tr '|' '\n' | wc -l | tr -d ' ')
-            SLOW_COUNT=$(echo "${SHARDS[$i]}" | tr '|' '\n' | while read t; do
-              echo "$SLOW_TESTS" | grep -q "^${t}$" && echo "$t"
-            done | wc -l | tr -d ' ')
-            echo "  Shard $i: $COUNT tests ($SLOW_COUNT slow)"
-          done
-
   test-integration:
-    name: "Test integration (${{ matrix.runtime }}, shard ${{ matrix.shard.index }})"
-    needs: [changes, build-sdk, build-rust, integration-shards]
+    name: "Test integration (${{ matrix.runtime }})"
+    needs: [changes, build-sdk, build-rust]
     if: |
-      !cancelled() &&
+      always() &&
       needs.changes.outputs.integration == 'true' &&
-      needs.integration-shards.result == 'success' &&
       (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
       (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     runs-on: ubuntu-latest-16-cores
@@ -663,7 +483,6 @@ jobs:
       fail-fast: false
       matrix:
         runtime: [cog, cog-rust]
-        shard: ${{ fromJSON(needs.integration-shards.outputs.shards) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -692,39 +511,21 @@ jobs:
       - uses: jdx/mise-action@v3
       - name: Build cog binary
         run: mise run build:cog
-      - name: Set runtime environment
+      - name: Set wheels for runtime
         run: |
           if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
-            echo "COGLET_WHEEL=dist" >> $GITHUB_ENV
+            RUST_WHEEL=$(ls dist/coglet-*-cp310-abi3-*.whl 2>/dev/null | head -1)
+            if [ -n "$RUST_WHEEL" ]; then
+              echo "Found Rust coglet wheel: $RUST_WHEEL"
+              echo "COGLET_RUST_WHEEL=${PWD}/${RUST_WHEEL}" >> $GITHUB_ENV
+            fi
           fi
-      - name: Run integration tests (shard ${{ matrix.shard.index }}, ${{ matrix.shard.count }} tests)
+      - name: Run integration tests
         env:
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
-        working-directory: integration-tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          set -m  # job control, ensures script is in its own process group
-          cleanup() {
-            echo "::warning::Cancelling..."
-            kill -TERM -- -$$ 2>/dev/null || true
-            sleep 5
-            kill -KILL -- -$$ 2>/dev/null || true
-          }
-          trap cleanup INT TERM
-          
-          # Build -run regex from shard pattern
-          # Pattern is "test1|test2|test3" - wrap each in TestIntegration/<name>/
-          RUN_PATTERN="${{ matrix.shard.pattern }}"
-          echo "Running tests matching: $RUN_PATTERN"
-          
-          gotestsum --format github-actions -- \
-            -parallel $TEST_PARALLEL \
-            -timeout 30m \
-            -run "TestIntegration/($RUN_PATTERN)/" &
-          wait $!
+        run: mise run ci:test:integration
 
 # =============================================================================
 # Gate Job - Single required check for branch protection
@@ -734,7 +535,6 @@ jobs:
     name: CI Complete
     needs:
       - changes
-      - version-check
       - build-sdk
       - build-rust
       - fmt-go
@@ -749,7 +549,6 @@ jobs:
       - test-rust
       - test-python
       - test-coglet-python
-      - integration-shards
       - test-integration
     if: always()
     runs-on: ubuntu-latest
@@ -773,7 +572,6 @@ jobs:
           echo "  test-rust: ${{ needs.test-rust.result }}"
           echo "  test-python: ${{ needs.test-python.result }}"
           echo "  test-coglet-python: ${{ needs.test-coglet-python.result }}"
-          echo "  integration-shards: ${{ needs.integration-shards.result }}"
           echo "  test-integration: ${{ needs.test-integration.result }}"
 
           # Fail if any job failed (skipped is OK)
@@ -794,7 +592,6 @@ jobs:
             "${{ needs.test-rust.result }}" \
             "${{ needs.test-python.result }}" \
             "${{ needs.test-coglet-python.result }}" \
-            "${{ needs.integration-shards.result }}" \
             "${{ needs.test-integration.result }}"
           do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
@@ -810,29 +607,33 @@ jobs:
           echo "All CI checks passed!"
 
 # =============================================================================
-# Release Validation - Dry-run checks (PRs and main)
+# Release - Only on tags
 # =============================================================================
 
-  release-dry-run:
-    name: Release Dry Run
+  release:
+    name: Release
     needs: ci-complete
-    if: "!startsWith(github.ref, 'refs/tags/')"
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
         with:
-          workspaces: crates -> target
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Check coglet crates.io publish
-        run: cargo publish --dry-run -p coglet --manifest-path crates/Cargo.toml
+          path: dist
+          merge-multiple: true
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: jdx/mise-action@v3
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
-          args: check
-
-
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
