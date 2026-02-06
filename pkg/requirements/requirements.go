@@ -139,7 +139,7 @@ func SplitPinnedPythonRequirement(requirement string) (name string, version stri
 
 	matches := pinnedPackageRe.FindAllStringSubmatch(requirement, -1)
 	if matches == nil {
-		return "", "", nil, nil, fmt.Errorf("package %s is not in the expected format", requirement)
+		return "", "", nil, nil, fmt.Errorf("Package %s is not in the expected format", requirement)
 	}
 
 	nameFound := false
@@ -170,7 +170,7 @@ func SplitPinnedPythonRequirement(requirement string) (name string, version stri
 	}
 
 	if !nameFound || !versionFound {
-		return "", "", nil, nil, fmt.Errorf("package name or version is missing in %s", requirement)
+		return "", "", nil, nil, fmt.Errorf("Package name or version is missing in %s", requirement)
 	}
 
 	return name, version, findLinks, extraIndexURLs, nil

@@ -19,7 +19,7 @@ func WaitForPort(port int, timeout time.Duration) error {
 
 		now := time.Now()
 		if now.Sub(start) > timeout {
-			return fmt.Errorf("timed out")
+			return fmt.Errorf("Timed out")
 		}
 
 		time.Sleep(100 * time.Millisecond)
@@ -32,7 +32,7 @@ func WaitForHTTPOK(url string, timeout time.Duration) error {
 	for {
 		now := time.Now()
 		if now.Sub(start) > timeout {
-			return fmt.Errorf("timed out")
+			return fmt.Errorf("Timed out")
 		}
 
 		time.Sleep(100 * time.Millisecond)

@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	ErrInvalidRange = errors.New("invalid byte range provided for file")
+	ErrInvalidRange = errors.New("Invalid byte range provided for file")
 )
 
 func SHA256HashFile(path string) (string, error) {

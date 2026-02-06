@@ -19,7 +19,7 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-var ErrorBadPytorchFormat = errors.New("the pytorch version format could not be parsed")
+var ErrorBadPytorchFormat = errors.New("The pytorch version format could not be parsed.")
 
 func FetchTorchCompatibilityMatrix() ([]config.TorchCompatibility, error) {
 	compats := []config.TorchCompatibility{}

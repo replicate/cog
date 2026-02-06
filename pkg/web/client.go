@@ -486,7 +486,7 @@ func codeFileName(cogConfig *config.Config, isPredict bool) (string, error) {
 	}
 
 	if len(stubComponents) < 2 {
-		return "", errors.New("code stub components has less than 2 entries")
+		return "", errors.New("Code stub components has less than 2 entries.")
 	}
 
 	return stubComponents[0], nil

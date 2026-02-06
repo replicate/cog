@@ -165,7 +165,7 @@ func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if len(flagsSet) > 1 {
-		return fmt.Errorf("the flags %s are mutually exclusive: you can only set one of them", strings.Join(flagsSet, " and "))
+		return fmt.Errorf("The flags %s are mutually exclusive: you can only set one of them.", strings.Join(flagsSet, " and "))
 	}
 	return nil
 }
