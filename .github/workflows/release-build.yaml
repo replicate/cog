@@ -168,6 +168,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
+          enable-cache: false
 
       - name: Build coglet wheel
         uses: PyO3/maturin-action@v1
