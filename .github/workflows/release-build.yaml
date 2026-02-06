@@ -130,21 +130,27 @@ jobs:
   build-coglet-wheels:
     name: Build coglet wheel (${{ matrix.target }})
     needs: verify-tag
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
             artifact-suffix: linux-x64
             manylinux: auto
-          - target: aarch64-unknown-linux-gnu
+            zig: true
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
             artifact-suffix: linux-arm64
             manylinux: auto
-          - target: aarch64-apple-darwin
+            zig: true
+          - os: macos-14
+            target: aarch64-apple-darwin
             artifact-suffix: macos-arm64
             manylinux: "off"
+            zig: false
     steps:
       - uses: actions/checkout@v6
         with:
@@ -168,7 +174,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          args: --release --out dist -m crates/coglet-python/Cargo.toml --zig
+          args: --release --out dist -m crates/coglet-python/Cargo.toml ${{ matrix.zig && '--zig' || '' }}
 
       - name: Upload coglet wheel
         uses: actions/upload-artifact@v6
