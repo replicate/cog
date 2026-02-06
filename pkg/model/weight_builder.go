@@ -10,8 +10,6 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
-// NOTE: hashFile is defined in index_factory.go and reused here.
-
 // WeightBuilder builds WeightArtifact from WeightSpec.
 // It hashes the source file, creates a WeightConfig, and manages a lockfile as build cache.
 type WeightBuilder struct {

@@ -247,12 +247,6 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 			m.Artifacts = append(m.Artifacts, artifact)
 		}
 
-		// Load weights manifest for backwards compatibility
-		lock, loadErr := LoadWeightsLock(lockPath)
-		if loadErr != nil {
-			return nil, fmt.Errorf("load weights.lock: %w", loadErr)
-		}
-		m.WeightsManifest = lock.ToWeightsManifest()
 	}
 
 	return m, nil
@@ -437,16 +431,6 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 			im.Type = ManifestTypeImage
 		}
 		m.Index.Manifests[i] = im
-	}
-
-	// Find and populate weights manifest info
-	weightsManifest := findWeightsManifest(manifest.Manifests)
-	if weightsManifest != nil {
-		m.WeightsManifest = &WeightsManifest{
-			Digest: weightsManifest.Digest,
-			// Note: Full weights file metadata would require fetching the weights manifest
-			// For now, we just record that weights exist
-		}
 	}
 
 	return m, nil

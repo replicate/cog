@@ -1010,8 +1010,8 @@ func TestResolver_Build_NoWeightsManifestWithoutWeights(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Nil(t, m.WeightsManifest)
 	require.False(t, m.IsBundle())
+	require.Empty(t, m.WeightArtifacts())
 }
 
 func TestResolver_Build_PopulatesArtifacts(t *testing.T) {
@@ -1203,8 +1203,8 @@ func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
 	require.NotNil(t, m.GetImageArtifact())
 	require.Len(t, m.WeightArtifacts(), 1)
 
-	// WeightsManifest should be populated (for backwards compatibility)
-	require.NotNil(t, m.WeightsManifest)
+	// Weight artifacts should be populated
+	require.Len(t, m.WeightArtifacts(), 1)
 }
 
 func TestIndexDetectionHelpers(t *testing.T) {
