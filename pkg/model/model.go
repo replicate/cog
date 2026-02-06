@@ -15,15 +15,13 @@ type Model struct {
 	Schema     *openapi3.T    // OpenAPI schema
 	CogVersion string         // Version of cog used to build
 
-	// ImageFormat describes the OCI structure.
-	// Set at build time, determines push strategy.
-	// FormatStandalone (default): Traditional single OCI image
-	// FormatBundle: OCI Image Index with image + weights artifact
-	ImageFormat ModelImageFormat
+	// Index is the OCI Image Index (populated when inspecting a pushed model).
+	Index *Index
 
-	// Bundle-specific fields (nil for standalone)
-	Index           *Index           // OCI Image Index (populated when inspecting bundle)
-	WeightsManifest *WeightsManifest // Weight file metadata (populated for bundles)
+	// WeightsManifest contains weight file metadata.
+	// Deprecated: Use WeightArtifacts() instead. Kept for backwards compatibility
+	// with existing code that reads weights metadata from labels.
+	WeightsManifest *WeightsManifest
 
 	// Artifacts is the collection of all artifacts produced by building this model.
 	// Populated by Resolver.Build(). Contains ImageArtifact and WeightArtifact instances.
@@ -51,9 +49,9 @@ func (m *Model) ImageRef() string {
 	return m.Image.Reference
 }
 
-// IsBundle returns true if this model uses the bundle format (OCI Index with weights).
+// IsBundle returns true if this model has weight artifacts.
 func (m *Model) IsBundle() bool {
-	return m.ImageFormat == FormatBundle
+	return len(m.WeightArtifacts()) > 0
 }
 
 // GetImageArtifact returns the first ImageArtifact from the artifacts collection,

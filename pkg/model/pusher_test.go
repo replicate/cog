@@ -35,22 +35,43 @@ func TestBundlePusher_Push(t *testing.T) {
 		require.Contains(t, err.Error(), "no image artifact")
 	})
 
-	t.Run("returns error when no weight artifacts in model", func(t *testing.T) {
-		docker := &mockDocker{}
-		reg := &mockRegistry{}
+	t.Run("pushes image-only model as single-entry index", func(t *testing.T) {
+		docker := &mockDocker{
+			pushFunc: func(ctx context.Context, ref string) error { return nil },
+		}
+
+		imgDesc := v1.Descriptor{
+			MediaType: types.OCIManifestSchema1,
+			Size:      1234,
+			Digest:    v1.Hash{Algorithm: "sha256", Hex: "imgonly"},
+		}
+
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				return imgDesc, nil
+			},
+			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
+				// Verify index has exactly 1 entry (image only, no weights)
+				idxManifest, err := idx.IndexManifest()
+				require.NoError(t, err)
+				require.Len(t, idxManifest.Manifests, 1)
+				require.Equal(t, imgDesc.Digest, idxManifest.Manifests[0].Digest)
+				require.Equal(t, "linux", idxManifest.Manifests[0].Platform.OS)
+				return nil
+			},
+		}
+
 		pusher := NewBundlePusher(docker, reg)
 		m := &Model{
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
-				&ImageArtifact{Reference: "r8.im/user/model:latest"},
-				// no weight artifacts
+				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
+				// no weight artifacts — image-only model
 			},
 		}
 
 		err := pusher.Push(context.Background(), m, PushOptions{})
-
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "no weight artifacts")
+		require.NoError(t, err)
 	})
 
 	t.Run("full push flow succeeds with single weight", func(t *testing.T) {
@@ -114,8 +135,7 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		pusher := NewBundlePusher(docker, reg)
 		m := &Model{
-			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
-			ImageFormat: FormatBundle,
+			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
 				NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.safetensors", WeightConfig{
@@ -391,66 +411,50 @@ func TestBundlePusher_Push(t *testing.T) {
 // Resolver.Push tests
 // =============================================================================
 
-func TestResolver_Push_SelectsCorrectPusher(t *testing.T) {
-	t.Run("uses ImagePusher for standalone format", func(t *testing.T) {
-		var pushedRef string
+func TestResolver_Push(t *testing.T) {
+	t.Run("always produces an OCI index", func(t *testing.T) {
+		var indexPushed bool
 		docker := &mockDocker{
-			pushFunc: func(ctx context.Context, ref string) error {
-				pushedRef = ref
+			pushFunc: func(ctx context.Context, ref string) error { return nil },
+		}
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				return v1.Descriptor{
+					MediaType: types.OCIManifestSchema1,
+					Size:      100,
+					Digest:    v1.Hash{Algorithm: "sha256", Hex: "abc"},
+				}, nil
+			},
+			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
+				indexPushed = true
 				return nil
 			},
 		}
-		reg := &mockRegistry{}
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
-			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
-			ImageFormat: FormatStandalone,
-		}
-
-		err := resolver.Push(context.Background(), m, PushOptions{})
-
-		require.NoError(t, err)
-		require.Equal(t, "r8.im/user/model:latest", pushedRef)
-	})
-
-	t.Run("uses ImagePusher for empty format (default)", func(t *testing.T) {
-		var pushedRef string
-		docker := &mockDocker{
-			pushFunc: func(ctx context.Context, ref string) error {
-				pushedRef = ref
-				return nil
+			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
+			Artifacts: []Artifact{
+				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
 			},
 		}
-		reg := &mockRegistry{}
-		resolver := NewResolver(docker, reg)
-
-		m := &Model{
-			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
-			ImageFormat: "", // empty = default to standalone
-		}
 
 		err := resolver.Push(context.Background(), m, PushOptions{})
-
 		require.NoError(t, err)
-		require.Equal(t, "r8.im/user/model:latest", pushedRef)
+		require.True(t, indexPushed, "should push an OCI index even without weights")
 	})
 
-	t.Run("uses BundlePusher for bundle format", func(t *testing.T) {
-		// BundlePusher now requires artifacts, so we expect an error
-		// if we don't provide them (this tests that it's selected)
+	t.Run("returns error when no image artifact", func(t *testing.T) {
 		docker := &mockDocker{}
 		reg := &mockRegistry{}
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
-			Image:       &ImageArtifact{Reference: "r8.im/user/model:latest"},
-			ImageFormat: FormatBundle,
-			Artifacts:   []Artifact{}, // empty artifacts to trigger error
+			Image:     nil,
+			Artifacts: []Artifact{},
 		}
 
 		err := resolver.Push(context.Background(), m, PushOptions{})
-
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no image artifact")
 	})

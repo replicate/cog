@@ -2,19 +2,19 @@ package cli
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/go/uuid"
 
-	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/http"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/provider"
 	"github.com/replicate/cog/pkg/provider/setup"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+
+	"github.com/replicate/cog/pkg/docker"
 )
 
 func newPushCommand() *cobra.Command {
@@ -90,7 +90,6 @@ func push(cmd *cobra.Command, args []string) error {
 		annotations["run.cog.push_id"] = buildID.String()
 	}
 
-	startBuildTime := time.Now()
 	regClient := registry.NewRegistryClient()
 	resolver := model.NewResolver(dockerClient, regClient)
 
@@ -103,31 +102,15 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	buildDuration := time.Since(startBuildTime)
-
-	// Log weights info for bundle format
-	if m.ImageFormat == model.FormatBundle {
-		weights := m.WeightArtifacts()
-		if len(weights) > 0 {
-			console.Infof("\nBundle format: %d weight artifact(s)", len(weights))
-		}
+	// Log weights info
+	weights := m.WeightArtifacts()
+	if len(weights) > 0 {
+		console.Infof("\n%d weight artifact(s)", len(weights))
 	}
 
-	// Push the model
+	// Push the model as an OCI index
 	console.Infof("\nPushing image '%s'...", m.ImageRef())
-
-	var pushErr error
-	if m.ImageFormat == model.FormatBundle {
-		// Bundle format: push image + weights + OCI index via resolver
-		// Model.Artifacts carries everything needed — no FilePaths required
-		pushErr = resolver.Push(ctx, m, model.PushOptions{})
-	} else {
-		// Standalone format: use standard docker push
-		pushErr = docker.Push(ctx, m.ImageRef(), src.ProjectDir, dockerClient, docker.BuildInfo{
-			BuildTime: buildDuration,
-			BuildID:   buildID.String(),
-		}, httpClient)
-	}
+	pushErr := resolver.Push(ctx, m, model.PushOptions{})
 
 	// PostPush: the provider handles formatting errors and showing success messages
 	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {

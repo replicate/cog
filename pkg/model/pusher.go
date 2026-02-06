@@ -65,9 +65,6 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	}
 
 	weightArtifacts := m.WeightArtifacts()
-	if len(weightArtifacts) == 0 {
-		return fmt.Errorf("no weight artifacts in model")
-	}
 
 	// Derive repo from image reference (strip tag/digest for weight pushes)
 	repo := repoFromReference(imgArtifact.Reference)
@@ -83,10 +80,13 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 		return fmt.Errorf("get image descriptor: %w", err)
 	}
 
-	// 3. Push weight artifacts concurrently
-	weightResults, err := p.pushWeightsConcurrently(ctx, repo, weightArtifacts)
-	if err != nil {
-		return err
+	// 3. Push weight artifacts concurrently (if any)
+	var weightResults []*WeightPushResult
+	if len(weightArtifacts) > 0 {
+		weightResults, err = p.pushWeightsConcurrently(ctx, repo, weightArtifacts)
+		if err != nil {
+			return err
+		}
 	}
 
 	// 4. Build OCI index from pushed descriptors
