@@ -34,41 +34,63 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify tag commit is on main branch
-        run: |
-          git fetch origin main
-          TAG_COMMIT="${{ github.sha }}"
-          
-          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
-            echo "::error::Tag must be created on a commit that is on the main branch"
-            echo "::error::Tag commit: $TAG_COMMIT"
-            echo "::error::This commit is not reachable from origin/main"
-            exit 1
-          fi
-          
-          echo "✓ Tag commit $TAG_COMMIT is on main branch"
-
-      - name: Verify coglet version matches tag
+      - name: Verify tag and version
         run: |
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
+          TAG_COMMIT="${{ github.sha }}"
           
           # Get version from Cargo.toml
           CARGO_VERSION=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           
+          echo "Tag: $TAG"
           echo "Tag version: $VERSION"
           echo "Cargo.toml version: $CARGO_VERSION"
+          echo "Commit: $TAG_COMMIT"
+          echo ""
           
+          # Check Cargo.toml matches tag
           if [[ "$CARGO_VERSION" != "$VERSION" ]]; then
-            echo ""
             echo "::error::Version mismatch! crates/Cargo.toml has version $CARGO_VERSION but tag is $TAG"
             echo "::error::"
             echo "::error::To fix: Run the 'Version Bump' workflow to create a PR, or manually update crates/Cargo.toml"
             echo "::error::Then delete this tag, merge the version bump, and re-tag."
             exit 1
           fi
+          echo "✓ Cargo.toml version matches tag"
           
-          echo "✓ Coglet version $CARGO_VERSION matches tag $TAG"
+          # Check branch rules based on release type
+          if [[ "$VERSION" == *-* ]]; then
+            # Pre-release: must be on prerelease/* branch
+            echo "Pre-release detected, verifying prerelease/* branch..."
+            
+            git fetch origin 'refs/heads/prerelease/*:refs/remotes/origin/prerelease/*' 2>/dev/null || true
+            PRERELEASE_BRANCH=$(git branch -r --contains "$TAG_COMMIT" 2>/dev/null | grep 'origin/prerelease/' | head -1 | xargs || echo "")
+            
+            if [ -z "$PRERELEASE_BRANCH" ]; then
+              echo "::error::Pre-release tags must be on a prerelease/* branch"
+              echo "::error::Tag $TAG is not reachable from any prerelease/* branch"
+              echo "::error::"
+              echo "::error::To fix: Create a branch like 'prerelease/0.17' and tag from there"
+              exit 1
+            fi
+            
+            echo "✓ Pre-release tag is on branch: $PRERELEASE_BRANCH"
+          else
+            # Stable release: must be on main
+            echo "Stable release detected, verifying main branch..."
+            
+            git fetch origin main
+            if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
+              echo "::error::Stable release tags must be on the main branch"
+              echo "::error::Tag commit $TAG_COMMIT is not reachable from origin/main"
+              echo "::error::"
+              echo "::error::To fix: Merge to main first, then tag"
+              exit 1
+            fi
+            
+            echo "✓ Stable release tag is on main branch"
+          fi
 
   build-sdk:
     name: Build SDK wheel
