@@ -182,8 +182,8 @@ Releases use a two-workflow system with manual approval via draft releases.
 │                             │    ┌───────────────┘                           │
 │                             ▼    │                                           │
 │                      ┌──────────────┐                                        │
-│                      │build-coglet- │  (4 platforms: linux x64/arm64,       │
-│                      │   wheels     │   macos x64/arm64)                     │
+│                      │build-coglet- │  (3 platforms: linux x64/arm64,       │
+│                      │   wheels     │   macos arm64; all via zig)            │
 │                      └──────────────┘                                        │
 └─────────────────────────────────────────────────────────────────────────────┘
                                         │
@@ -228,7 +228,7 @@ Triggered by version tags (`v*.*.*`). Builds artifacts and creates a draft relea
 |-----|---------|
 | `verify-tag` | Ensures tag is on main branch |
 | `build-sdk` | Build cog SDK wheel and sdist |
-| `build-coglet-wheels` | Build coglet wheels (4 platforms) |
+| `build-coglet-wheels` | Build coglet wheels (3 platforms via zig cross-compile) |
 | `create-draft-release` | Create draft GitHub release with all artifacts |
 
 **Security**: No secrets required - only builds artifacts.
