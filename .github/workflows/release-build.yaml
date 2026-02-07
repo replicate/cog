@@ -130,7 +130,7 @@ jobs:
       - name: Build SDK wheel
         run: |
           echo "Building SDK with version: $SETUPTOOLS_SCM_PRETEND_VERSION"
-          uv build --out-dir dist .
+          uv build --wheel --out-dir dist .
         env:
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.pep440 }}
 
@@ -200,31 +200,42 @@ jobs:
     name: Create draft release
     needs: [build-sdk, build-coglet-wheels]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Download all artifacts
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # Goreleaser creates draft release with Go CLI binaries
+      - name: Build CLI and create draft release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Append Python wheels to the draft release
+      - name: Download all wheel artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Organize artifacts
+      - name: Upload wheels to release
         run: |
-          mkdir -p release-assets
-          # SDK
-          cp artifacts/sdk-dist/* release-assets/
-          # Coglet wheels
-          cp artifacts/coglet-wheel-*/*.whl release-assets/
+          TAG="${{ github.ref_name }}"
+          
+          echo "Uploading SDK artifacts..."
+          gh release upload "$TAG" artifacts/sdk-dist/* --clobber
+          
+          echo "Uploading coglet wheels..."
+          gh release upload "$TAG" artifacts/coglet-wheel-*/*.whl --clobber
           
           echo "Release assets:"
-          ls -la release-assets/
-
-      - name: Create draft release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          generate_release_notes: true
-          files: release-assets/*
+          gh release view "$TAG" --json assets --jq '.assets[].name'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
