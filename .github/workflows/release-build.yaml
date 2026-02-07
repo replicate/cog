@@ -229,11 +229,19 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           
-          echo "Uploading SDK artifacts..."
-          gh release upload "$TAG" artifacts/sdk-dist/* --clobber
+          # Collect all wheels
+          mkdir -p release-wheels
+          cp artifacts/sdk-dist/*.whl release-wheels/
+          cp artifacts/coglet-wheel-*/*.whl release-wheels/
           
-          echo "Uploading coglet wheels..."
-          gh release upload "$TAG" artifacts/coglet-wheel-*/*.whl --clobber
+          # Generate checksums for wheels
+          cd release-wheels
+          sha256sum *.whl > wheel-checksums.txt
+          cat wheel-checksums.txt
+          cd ..
+          
+          echo "Uploading wheels and checksums..."
+          gh release upload "$TAG" release-wheels/* --clobber
           
           echo "Release assets:"
           gh release view "$TAG" --json assets --jq '.assets[].name'
