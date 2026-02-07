@@ -400,6 +400,24 @@ func TestPyPIPackageURL(t *testing.T) {
 			packageName: "coglet",
 			expected:    "coglet==0.1.0",
 		},
+		{
+			name:        "alpha pre-release converted to PEP 440",
+			config:      &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0-alpha1"},
+			packageName: "cog",
+			expected:    "cog==0.17.0a1",
+		},
+		{
+			name:        "beta pre-release converted to PEP 440",
+			config:      &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0-beta2"},
+			packageName: "cog",
+			expected:    "cog==0.17.0b2",
+		},
+		{
+			name:        "rc pre-release converted to PEP 440",
+			config:      &WheelConfig{Source: WheelSourcePyPI, Version: "1.0.0-rc1"},
+			packageName: "cog",
+			expected:    "cog==1.0.0rc1",
+		},
 	}
 
 	for _, tt := range tests {
