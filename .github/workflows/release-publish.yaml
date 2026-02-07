@@ -27,7 +27,7 @@ name: Release Publish
 # 1. coglet → PyPI (must be first, SDK depends on it)
 # 2. coglet → crates.io (can run parallel with SDK)
 # 3. SDK → PyPI (depends on coglet being available)
-# 4. CLI binaries → GitHub Release (no dependencies)
+# Note: CLI binaries are already on the release (built by release-build.yaml)
 
 on:
   release:
@@ -93,13 +93,6 @@ jobs:
           fileName: "cog-*.whl"
           out-file-path: dist
 
-      - name: Download SDK sdist from release
-        uses: robinraju/release-downloader@v1
-        with:
-          tag: ${{ github.event.release.tag_name }}
-          fileName: "cog-*.tar.gz"
-          out-file-path: dist
-
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
@@ -121,28 +114,4 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  publish-github-release:
-    name: Publish CLI binaries
-    needs: verify-release
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.release.tag_name }}
-          fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
-
-      - name: Run goreleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: '~> v2'
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
