@@ -46,3 +46,6 @@ pyo3-stub-gen = "0.18"
 
 # Testing
 insta = { version = "1", features = ["json"] }
+
+[profile.release]
+lto = true
