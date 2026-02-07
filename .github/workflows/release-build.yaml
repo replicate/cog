@@ -234,13 +234,15 @@ jobs:
           cp artifacts/sdk-dist/*.whl release-wheels/
           cp artifacts/coglet-wheel-*/*.whl release-wheels/
           
-          # Generate checksums for wheels
+          # Download goreleaser's checksums.txt and append wheel checksums
+          gh release download "$TAG" -p checksums.txt -D release-wheels
           cd release-wheels
-          sha256sum *.whl > wheel-checksums.txt
-          cat wheel-checksums.txt
+          sha256sum *.whl >> checksums.txt
+          echo "Checksums:"
+          cat checksums.txt
           cd ..
           
-          echo "Uploading wheels and checksums..."
+          echo "Uploading wheels and updated checksums..."
           gh release upload "$TAG" release-wheels/* --clobber
           
           echo "Release assets:"
