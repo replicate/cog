@@ -1,16 +1,19 @@
 ---
 name: PyPI package
 
-# Publishes the cog SDK to PyPI after coglet is published.
-# Triggered by release-publish.yaml completing successfully.
+# Publishes the cog SDK to PyPI.
+# Called by release-publish.yaml after coglet is published.
 #
-# TODO: Merge this back into release-publish.yaml once the PyPI
+# TODO: Merge back into release-publish.yaml once PyPI
 # Trusted Publisher config is updated to use that filename.
 
 on:
-  workflow_run:
-    workflows: ["Release Publish"]
-    types: [completed]
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v0.17.0)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -23,27 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     timeout-minutes: 10
-    if: github.event.workflow_run.conclusion == 'success'
     steps:
-      - name: Get release tag
-        id: tag
-        run: |
-          # Get the tag from the triggering workflow run
-          # workflow_run.head_branch contains the tag for tag-triggered workflows
-          TAG="${{ github.event.workflow_run.head_branch }}"
-          
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "::error::Not a release tag: $TAG"
-            exit 1
-          fi
-          
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Release tag: $TAG"
-
       - name: Download SDK wheel from release
         uses: robinraju/release-downloader@v1
         with:
-          tag: ${{ steps.tag.outputs.tag }}
+          tag: ${{ inputs.tag }}
           fileName: "cog-*.whl"
           out-file-path: dist
 
