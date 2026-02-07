@@ -18,8 +18,7 @@ name: Release Publish
 #    - Deployment branches: "Selected branches and tags"
 #    - Add pattern: v* (to restrict to version tags only)
 #
-# 3. Add secrets:
-#    - crates-io: CARGO_REGISTRY_TOKEN
+# 3. crates-io uses Trusted Publishing (OIDC via rust-lang/crates-io-auth-action)
 
 on:
   release:
@@ -75,6 +74,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: crates-io
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -82,10 +84,13 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
       - name: Publish to crates.io
         run: cargo publish -p coglet --manifest-path crates/Cargo.toml
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   # SDK must be published after coglet (cog[coglet] depends on coglet)
   # Uses pypi-package.yaml to match PyPI Trusted Publisher config
