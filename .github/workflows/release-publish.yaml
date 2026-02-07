@@ -92,11 +92,5 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-  # SDK must be published after coglet (cog[coglet] depends on coglet)
-  # Uses pypi-package.yaml to match PyPI Trusted Publisher config
-  publish-pypi-sdk:
-    name: Publish SDK to PyPI
-    needs: publish-pypi-coglet
-    uses: ./.github/workflows/pypi-package.yaml
-    with:
-      tag: ${{ github.event.release.tag_name }}
+  # SDK publishing is handled by pypi-package.yaml (separate workflow,
+  # same release trigger). It polls PyPI for coglet before publishing.
