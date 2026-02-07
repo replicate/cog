@@ -80,7 +80,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
@@ -116,7 +116,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
@@ -161,7 +161,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
@@ -217,7 +217,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
@@ -269,7 +269,7 @@ build:
     - "cowsay moo"
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
@@ -307,7 +307,7 @@ build:
   python_requirements: "my-requirements.txt"
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(tmpDir))
+	require.NoError(t, conf.Complete(tmpDir))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
@@ -363,7 +363,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
@@ -462,7 +462,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
@@ -496,7 +496,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("", "3.12", ""))
@@ -535,7 +535,7 @@ build:
 predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("", "3.12", ""))
@@ -589,7 +589,7 @@ predict: predict.py:Predictor
 `, torchVersion)
 		conf, err := config.FromYAML([]byte(yaml))
 		require.NoError(t, err)
-		require.NoError(t, conf.ValidateAndComplete(""))
+		require.NoError(t, conf.Complete(""))
 		client.AddMockImage(BaseImageName("11.8", "3.11", torchVersion))
 		gen, err := NewStandardGenerator(conf, tmpDir, command, client, true)
 		require.NoError(t, err)
@@ -648,7 +648,7 @@ predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
@@ -702,7 +702,7 @@ predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
@@ -757,7 +757,7 @@ predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
@@ -791,7 +791,7 @@ predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
@@ -849,7 +849,7 @@ predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
@@ -898,7 +898,7 @@ predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
@@ -926,7 +926,7 @@ predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
@@ -954,7 +954,7 @@ predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
@@ -983,7 +983,7 @@ predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
@@ -1016,7 +1016,7 @@ predict: predict.py:Predictor
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
-	require.NoError(t, conf.ValidateAndComplete(""))
+	require.NoError(t, conf.Complete(""))
 
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()

@@ -213,7 +213,7 @@ func (g *BaseImageGenerator) makeConfig() (*config.Config, error) {
 			CUDA:           g.cudaVersion,
 		},
 	}
-	if err := conf.ValidateAndComplete(""); err != nil {
+	if err := conf.Complete(""); err != nil {
 		return nil, err
 	}
 	return conf, nil

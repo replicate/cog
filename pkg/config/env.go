@@ -5,14 +5,14 @@ import (
 	"strings"
 )
 
-// EnvironmentVariableDenyList is a list of environment variable patterns that are
+// environmentVariableDenyList is a list of environment variable patterns that are
 // used internally during build or runtime and thus not allowed to be set by the user.
 // There are ways around this restriction, but it's likely to cause unexpected behavior
 // and hard to debug issues. So on Cog's predict-build-push happy path, we don't allow
 // these to be set.
 // This list may change at any time. For more context, see:
 // https://github.com/replicate/cog/pull/2274/#issuecomment-2831823185
-var EnvironmentVariableDenyList = []string{
+var environmentVariableDenyList = []string{
 	// paths
 	"PATH",
 	"LD_LIBRARY_PATH",
@@ -38,7 +38,7 @@ var EnvironmentVariableDenyList = []string{
 // validateEnvName checks if the given environment variable name is allowed.
 // Returns an error if the name matches any of the restricted patterns.
 func validateEnvName(name string) error {
-	for _, pattern := range EnvironmentVariableDenyList {
+	for _, pattern := range environmentVariableDenyList {
 		// Check for exact match
 		if pattern == name {
 			return fmt.Errorf("environment variable %q is not allowed", name)

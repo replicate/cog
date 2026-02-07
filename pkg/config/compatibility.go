@@ -82,15 +82,15 @@ func (i *CUDABaseImage) ImageTag() string {
 	return "nvidia/cuda:" + i.Tag
 }
 
-//go:embed cuda_base_images.json
+//go:embed cuda_compatibility.json
 var cudaBaseImagesData []byte
 var CUDABaseImages []CUDABaseImage
 
-//go:embed tf_compatibility_matrix.json
+//go:embed tf_compatibility.json
 var tfCompatibilityMatrixData []byte
 var TFCompatibilityMatrix []TFCompatibility
 
-//go:embed torch_compatibility_matrix.json
+//go:embed torch_compatibility.json
 var torchCompatibilityMatrixData []byte
 var TorchCompatibilityMatrix []TorchCompatibility
 
@@ -256,7 +256,7 @@ func versionGreater(a string, b string) (bool, error) {
 	return aVer.Greater(bVer), nil
 }
 
-func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
+func cudaBaseImageFor(cuda string, cuDNN string) (string, error) {
 	var images []CUDABaseImage
 	for _, image := range CUDABaseImages {
 		if version.Matches(cuda, image.CUDA) && image.CuDNN == cuDNN {

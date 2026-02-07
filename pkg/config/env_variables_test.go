@@ -119,7 +119,7 @@ func TestEnvironmentConfig(t *testing.T) {
 	})
 
 	t.Run("EnforceDenyList", func(t *testing.T) {
-		for _, pattern := range EnvironmentVariableDenyList {
+		for _, pattern := range environmentVariableDenyList {
 			// test that exact matches are rejected
 			t.Run(fmt.Sprintf("Rejects %q", pattern), func(t *testing.T) {
 				input := fmt.Sprintf("%s=VALUE", pattern)

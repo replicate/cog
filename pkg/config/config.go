@@ -2,9 +2,7 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -30,10 +28,11 @@ var (
 // TODO(andreas): suggest valid torchvision versions (e.g. if the user wants to use 0.8.0, suggest 0.8.1)
 
 const (
-	MinimumMajorPythonVersion               int = 3
-	MinimumMinorPythonVersion               int = 10
-	MinimumMinorPythonVersionForConcurrency int = 11
-	MinimumMajorCudaVersion                 int = 11
+	MinimumMajorPythonVersion               int    = 3
+	MinimumMinorPythonVersion               int    = 10
+	MinimumMinorPythonVersionForConcurrency int    = 11
+	MinimumMajorCudaVersion                 int    = 11
+	DefaultPythonVersion                    string = "3.13"
 )
 
 type RunItem struct {
@@ -63,11 +62,6 @@ type Concurrency struct {
 	Max int `json:"max,omitempty" yaml:"max"`
 }
 
-type Example struct {
-	Input  map[string]string `json:"input" yaml:"input"`
-	Output string            `json:"output" yaml:"output"`
-}
-
 // WeightSource defines a weight file or directory to include in the model.
 type WeightSource struct {
 	Source string `json:"source" yaml:"source"`
@@ -94,7 +88,7 @@ func (c *Config) Filename() string {
 	return c.filename
 }
 
-func DefaultConfig() *Config {
+func defaultConfig() *Config {
 	return &Config{
 		Build: &Build{
 			GPU:           false,
@@ -177,25 +171,8 @@ func (r *RunItem) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func FromYAML(contents []byte) (*Config, error) {
-	config := DefaultConfig()
-	if err := yaml.Unmarshal(contents, config); err != nil {
-		return nil, fmt.Errorf("Failed to parse config yaml: %w", err)
-	}
-	// Everything assumes Build is not nil
-	if len(contents) != 0 && config.Build != nil {
-		err := Validate(string(contents), "")
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		config.Build = DefaultConfig().Build
-	}
-	return config, nil
-}
-
 func (c *Config) CUDABaseImageTag() (string, error) {
-	return CUDABaseImageFor(c.Build.CUDA, c.Build.CuDNN)
+	return cudaBaseImageFor(c.Build.CUDA, c.Build.CuDNN)
 }
 
 func (c *Config) TorchVersion() (string, bool) {
@@ -281,77 +258,56 @@ func ValidateModelPythonVersion(cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("invalid Python version format: %w", err)
 	}
-	if major < MinimumMajorPythonVersion || (major >= MinimumMajorPythonVersion &&
+	if major < MinimumMajorPythonVersion || (major == MinimumMajorPythonVersion &&
 		minor < MinimumMinorPythonVersion) {
 		return fmt.Errorf("minimum supported Python version is %d.%d. requested %s",
 			MinimumMajorPythonVersion, MinimumMinorPythonVersion, version)
 	}
-	if cfg.Concurrency != nil && cfg.Concurrency.Max > 1 && minor < MinimumMinorPythonVersionForConcurrency {
+	// Only check minor version for concurrency if major version is the minimum (3)
+	// For major > 3, any minor version would be acceptable
+	if cfg.Concurrency != nil && cfg.Concurrency.Max > 1 &&
+		major == MinimumMajorPythonVersion && minor < MinimumMinorPythonVersionForConcurrency {
 		return fmt.Errorf("when concurrency.max is set, minimum supported Python version is %d.%d. requested %s",
 			MinimumMajorPythonVersion, MinimumMinorPythonVersionForConcurrency, version)
 	}
 	return nil
 }
 
-func (c *Config) ValidateAndComplete(projectDir string) error {
-	// TODO(andreas): validate that torch/torchvision/torchaudio are compatible
-	// TODO(andreas): warn if user specifies tensorflow-gpu instead of tensorflow
-	// TODO(andreas): use pypi api to validate that all python versions exist
-
-	errs := []error{}
-
-	err := ValidateConfig(c, "")
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	if c.Predict != "" {
-		if len(strings.Split(c.Predict, ".py:")) != 2 {
-			errs = append(errs, fmt.Errorf("'predict' in cog.yaml must be in the form 'predict.py:Predictor"))
-		}
-	}
-
-	if len(c.Build.PythonPackages) > 0 {
-		console.Warn("`python_packages` in cog.yaml is deprecated and will be removed in future versions, use `python_requirements` instead.")
-		if c.Build.PythonRequirements != "" {
-			errs = append(errs, fmt.Errorf("Only one of python_packages or python_requirements can be set in your cog.yaml, not both"))
-		}
-	}
-
-	if len(c.Build.PreInstall) > 0 {
-		console.Warn("`pre_install` in cog.yaml is deprecated and will be removed in future versions.")
+// Complete performs CUDA resolution, requirements loading, and environment loading for a Config.
+// Use this when building a Config struct directly (not from YAML).
+// For configs loaded from YAML, use Load() instead which handles validation and completion.
+func (c *Config) Complete(projectDir string) error {
+	// Validate mutual exclusion of python_packages and python_requirements
+	if len(c.Build.PythonPackages) > 0 && c.Build.PythonRequirements != "" {
+		return fmt.Errorf("only one of python_packages or python_requirements can be set in your cog.yaml, not both")
 	}
 
 	// Load python_requirements into memory to simplify reading it multiple times
 	if c.Build.PythonRequirements != "" {
 		requirementsFilePath := c.Build.PythonRequirements
 		if !strings.HasPrefix(requirementsFilePath, "/") {
-			requirementsFilePath = path.Join(projectDir, c.Build.PythonRequirements)
+			requirementsFilePath = filepath.Join(projectDir, c.Build.PythonRequirements)
 		}
-		c.Build.pythonRequirementsContent, err = requirements.ReadRequirements(requirementsFilePath)
+		reqs, err := requirements.ReadRequirements(requirementsFilePath)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("Failed to open python_requirements file: %w", err))
+			return fmt.Errorf("failed to open python_requirements file: %w", err)
 		}
-	}
-
-	// Backwards compatibility
-	if len(c.Build.PythonPackages) > 0 {
+		c.Build.pythonRequirementsContent = reqs
+	} else if len(c.Build.PythonPackages) > 0 {
+		// Backwards compatibility: if using deprecated python_packages, populate requirements content
 		c.Build.pythonRequirementsContent = c.Build.PythonPackages
 	}
 
+	// Resolve CUDA/CuDNN versions if GPU is enabled
 	if c.Build.GPU {
 		if err := c.validateAndCompleteCUDA(); err != nil {
-			errs = append(errs, err)
+			return err
 		}
 	}
 
-	// parse and validate environment variables
+	// Parse and validate environment variables
 	if err := c.loadEnvironment(); err != nil {
-		errs = append(errs, err)
-	}
-
-	if len(errs) > 0 {
-		return errors.Join(errs...)
+		return err
 	}
 
 	return nil
@@ -483,7 +439,7 @@ func (c *Config) pythonPackageForArch(pkg, goos, goarch string) (actualPackage s
 	return pkgWithVersion, findLinksList, extraIndexURLs, nil
 }
 
-func ValidateCudaVersion(cudaVersion string) error {
+func validateCudaVersion(cudaVersion string) error {
 	parts := strings.Split(cudaVersion, ".")
 	if len(parts) < 2 {
 		return fmt.Errorf("CUDA version %q must include both major and minor versions", cudaVersion)
@@ -491,18 +447,18 @@ func ValidateCudaVersion(cudaVersion string) error {
 
 	major, err := strconv.Atoi(parts[0])
 	if err != nil {
-		return fmt.Errorf("Invalid major version in CUDA version %q", cudaVersion)
+		return fmt.Errorf("invalid major version in CUDA version %q", cudaVersion)
 	}
 
 	if major < MinimumMajorCudaVersion {
-		return fmt.Errorf("Minimum supported CUDA version is %d. requested %q", MinimumMajorCudaVersion, cudaVersion)
+		return fmt.Errorf("minimum supported CUDA version is %d, requested %q", MinimumMajorCudaVersion, cudaVersion)
 	}
 	return nil
 }
 
 func (c *Config) validateAndCompleteCUDA() error {
 	if c.Build.CUDA != "" {
-		if err := ValidateCudaVersion(c.Build.CUDA); err != nil {
+		if err := validateCudaVersion(c.Build.CUDA); err != nil {
 			return err
 		}
 	}
@@ -510,7 +466,7 @@ func (c *Config) validateAndCompleteCUDA() error {
 	if c.Build.CUDA != "" && c.Build.CuDNN != "" {
 		compatibleCuDNNs := compatibleCuDNNsForCUDA(c.Build.CUDA)
 		if !sliceContains(compatibleCuDNNs, c.Build.CuDNN) {
-			return fmt.Errorf(`The specified CUDA version %s is not compatible with CuDNN %s.
+			return fmt.Errorf(`the specified CUDA version %s is not compatible with CuDNN %s.
 Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(compatibleCuDNNs, ","))
 		}
 	}
@@ -531,7 +487,7 @@ Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(co
 		switch {
 		case c.Build.CUDA == "":
 			if tfCuDNN == "" {
-				return fmt.Errorf("Cog doesn't know what CUDA version is compatible with tensorflow==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://www.tensorflow.org/", tfVersion)
+				return fmt.Errorf("cog doesn't know what CUDA version is compatible with tensorflow==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://www.tensorflow.org/", tfVersion)
 			}
 			console.Debugf("Setting CUDA to version %s from Tensorflow version", tfCUDA)
 			c.Build.CUDA = tfCUDA
@@ -554,14 +510,14 @@ Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(co
 			console.Debugf("Setting CuDNN to version %s", c.Build.CUDA)
 		case tfCuDNN != c.Build.CuDNN:
 			console.Warnf("Cog doesn't know if cuDNN %s is compatible with Tensorflow %s. This might cause CUDA problems.", c.Build.CuDNN, tfVersion)
-			return fmt.Errorf(`The specified cuDNN version %s is not compatible with tensorflow==%s.
+			return fmt.Errorf(`the specified cuDNN version %s is not compatible with tensorflow==%s.
 Compatible cuDNN version is: %s`, c.Build.CuDNN, tfVersion, tfCuDNN)
 		}
 	case torchVersion != "":
 		switch {
 		case c.Build.CUDA == "":
 			if len(torchCUDAs) == 0 {
-				return fmt.Errorf("Cog doesn't know what CUDA version is compatible with torch==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://pytorch.org/", torchVersion)
+				return fmt.Errorf("cog doesn't know what CUDA version is compatible with torch==%s. You might need to upgrade Cog: https://github.com/replicate/cog#upgrade\n\nIf that doesn't work, you need to set the 'cuda' option in cog.yaml to set what version to use. You might be able to find this out from https://pytorch.org/", torchVersion)
 			}
 			c.Build.CUDA = latestCUDAFrom(torchCUDAs)
 			console.Debugf("Setting CUDA to version %s from Torch version", c.Build.CUDA)
