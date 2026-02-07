@@ -49,6 +49,7 @@ changelog:
       - "^docs:"
       - "^test:"
 release:
+  draft: true
   # If set to auto, will mark the release as not ready for production
   # in case there is an indicator for this in the tag e.g. v1.0.0-alpha
   # If set to true, will mark the release as not ready for production.
