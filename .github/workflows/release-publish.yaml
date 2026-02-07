@@ -1,33 +1,20 @@
 ---
 name: Release Publish
 
-# Triggered when a draft release is published (manual approval step)
-# The release-build workflow creates draft releases on tag push.
+# Publishes coglet to PyPI and crates.io when a release is published.
+# SDK publishing is handled by pypi-package.yaml (triggered after this completes).
 #
 # REQUIRED GITHUB CONFIGURATION:
 # 1. Create environments in Settings → Environments:
-#    - "pypi": For PyPI publishing
+#    - "pypi": For PyPI publishing (Trusted Publisher for coglet)
 #    - "crates-io": For crates.io publishing
 #
 # 2. Configure environment protection rules:
 #    - Deployment branches: "Selected branches and tags"
 #    - Add pattern: v* (to restrict to version tags only)
-#    - Required reviewers: Add maintainers (only maintainers can publish)
 #
-# 3. Add secrets to each environment:
-#    - pypi: Uses OIDC (no secret needed with Trusted Publisher)
+# 3. Add secrets:
 #    - crates-io: CARGO_REGISTRY_TOKEN
-#
-# SECURITY:
-# - Only maintainers can publish releases (via environment protection rules)
-# - Secrets only available for v* tags (via environment branch restrictions)
-# - Cannot be triggered from branches, only from published releases
-#
-# PUBLISH ORDER:
-# 1. coglet → PyPI (must be first, SDK depends on it)
-# 2. coglet → crates.io (can run parallel with SDK)
-# 3. SDK → PyPI (depends on coglet being available)
-# Note: CLI binaries are already on the release (built by release-build.yaml)
 
 on:
   release:
@@ -60,7 +47,6 @@ jobs:
           
           echo "✓ Valid release tag: $TAG"
 
-  # coglet must be published BEFORE SDK because cog[coglet] depends on coglet
   publish-pypi-coglet:
     name: Publish coglet to PyPI
     needs: verify-release
@@ -73,24 +59,6 @@ jobs:
         with:
           tag: ${{ github.event.release.tag_name }}
           fileName: "coglet-*.whl"
-          out-file-path: dist
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-
-  publish-pypi-sdk:
-    name: Publish SDK to PyPI
-    # SDK depends on coglet being published first (cog[coglet] requires coglet)
-    needs: publish-pypi-coglet
-    runs-on: ubuntu-latest
-    environment: pypi
-    timeout-minutes: 10
-    steps:
-      - name: Download SDK wheel from release
-        uses: robinraju/release-downloader@v1
-        with:
-          tag: ${{ github.event.release.tag_name }}
-          fileName: "cog-*.whl"
           out-file-path: dist
 
       - name: Publish to PyPI
@@ -113,5 +81,3 @@ jobs:
         run: cargo publish -p coglet --manifest-path crates/Cargo.toml
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-
