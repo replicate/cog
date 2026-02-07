@@ -6,10 +6,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/replicate/cog/pkg/global"
 )
+
+var semverPreReleaseRe = regexp.MustCompile(`-alpha(\d+)|-beta(\d+)|-rc(\d+)`)
 
 // WheelSource represents the source type for the wheel to install
 type WheelSource int
@@ -316,12 +319,25 @@ func GetCogletWheelConfig(targetArch string) (*WheelConfig, error) {
 	return config, nil
 }
 
+// SemverToPEP440 converts a semver pre-release version to PEP 440 format.
+// e.g. "0.17.0-alpha1" -> "0.17.0a1", "0.17.0-beta2" -> "0.17.0b2", "0.17.0-rc1" -> "0.17.0rc1"
+// Stable versions pass through unchanged: "0.17.0" -> "0.17.0"
+func SemverToPEP440(version string) string {
+	return semverPreReleaseRe.ReplaceAllStringFunc(version, func(match string) string {
+		match = strings.TrimPrefix(match, "-")
+		match = strings.Replace(match, "alpha", "a", 1)
+		match = strings.Replace(match, "beta", "b", 1)
+		// rc stays as rc in PEP 440
+		return match
+	})
+}
+
 // PyPIPackageURL returns the pip install specifier for a PyPI package.
 // If version is empty, returns just the package name (latest).
-// Otherwise returns "package==version".
+// Otherwise returns "package==version" with the version converted to PEP 440.
 func (c *WheelConfig) PyPIPackageURL(packageName string) string {
 	if c.Version == "" {
 		return packageName
 	}
-	return packageName + "==" + c.Version
+	return packageName + "==" + SemverToPEP440(c.Version)
 }
