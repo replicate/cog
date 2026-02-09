@@ -1,3 +1,4 @@
+//nolint:staticcheck // container.NetworkSettingsBase deprecated but Ports field moving to NetworkSettings in docker v29
 package docker
 
 import (

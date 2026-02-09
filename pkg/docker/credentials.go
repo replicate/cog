@@ -94,7 +94,6 @@ func tryLoadAuthForHost(ctx context.Context, conf *configfile.ConfigFile, host s
 			Username:      auth.Username,
 			Password:      auth.Password,
 			Auth:          auth.Auth,
-			Email:         auth.Email,
 			ServerAddress: host,
 			IdentityToken: auth.IdentityToken,
 			RegistryToken: auth.RegistryToken,
