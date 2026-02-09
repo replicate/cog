@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
@@ -14,7 +15,6 @@ import (
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
 	"github.com/replicate/cog/pkg/weights"
 	"github.com/replicate/cog/pkg/wheels"
@@ -400,8 +400,9 @@ func (g *StandardGenerator) aptInstalls() (string, error) {
 	}
 
 	if g.IsUsingCogBaseImage() {
-		packages = slices.FilterString(packages, func(pkg string) bool {
-			return !slices.ContainsString(baseImageSystemPackages, pkg)
+		// Filter out packages that are already in the base image
+		packages = slices.DeleteFunc(slices.Clone(packages), func(pkg string) bool {
+			return slices.Contains(baseImageSystemPackages, pkg)
 		})
 	}
 

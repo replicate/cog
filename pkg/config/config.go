@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	slices0 "slices"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -13,7 +13,6 @@ import (
 
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util/console"
-	"github.com/replicate/cog/pkg/util/slices"
 	"github.com/replicate/cog/pkg/util/version"
 )
 
@@ -435,7 +434,7 @@ func (c *Config) validateAndCompleteCUDA() error {
 
 	if c.Build.CUDA != "" && c.Build.CuDNN != "" {
 		compatibleCuDNNs := compatibleCuDNNsForCUDA(c.Build.CUDA)
-		if !sliceContains(compatibleCuDNNs, c.Build.CuDNN) {
+		if !slices.Contains(compatibleCuDNNs, c.Build.CuDNN) {
 			return fmt.Errorf(`the specified CUDA version %s is not compatible with CuDNN %s.
 Compatible CuDNN versions are: %s`, c.Build.CUDA, c.Build.CuDNN, strings.Join(compatibleCuDNNs, ","))
 		}
@@ -491,7 +490,7 @@ Compatible cuDNN version is: %s`, c.Build.CuDNN, tfVersion, tfCuDNN)
 			}
 			c.Build.CUDA = latestCUDAFrom(torchCUDAs)
 			console.Debugf("Setting CUDA to version %s from Torch version", c.Build.CUDA)
-		case len(slices.FilterString(torchCUDAs, func(torchCUDA string) bool { return version.EqualMinor(torchCUDA, c.Build.CUDA) })) == 0:
+		case !slices.ContainsFunc(torchCUDAs, func(torchCUDA string) bool { return version.EqualMinor(torchCUDA, c.Build.CUDA) }):
 			// TODO: can we suggest a CUDA version known to be compatible?
 			console.Warnf("Cog doesn't know if CUDA %s is compatible with PyTorch %s. This might cause CUDA problems.", c.Build.CUDA, torchVersion)
 			if len(torchCUDAs) > 0 {
@@ -525,10 +524,6 @@ Compatible cuDNN version is: %s`, c.Build.CuDNN, tfVersion, tfCuDNN)
 
 func (c *Config) RequirementsFile(projectDir string) string {
 	return filepath.Join(projectDir, c.Build.PythonRequirements)
-}
-
-func sliceContains(slice []string, s string) bool {
-	return slices0.Contains(slice, s)
 }
 
 func (c *Config) ParsedEnvironment() map[string]string {
