@@ -104,7 +104,7 @@ func findConfigPathInDirectory(dir string, configFilename string) (configPath st
 // The project root is defined as the directory housing a `cog.yaml` file.
 func findProjectRootDir(startDir string, configFilename string) (string, error) {
 	dir := startDir
-	for i := 0; i < maxSearchDepth; i++ {
+	for range maxSearchDepth {
 		switch _, err := findConfigPathInDirectory(dir, configFilename); {
 		case err != nil && !errors.IsConfigNotFound(err):
 			return "", err

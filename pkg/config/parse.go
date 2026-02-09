@@ -10,9 +10,6 @@ import (
 	"github.com/replicate/cog/pkg/util/files"
 )
 
-// maxSearchDepth limits how far up the directory tree we search for config files.
-// This is defined in load.go for backwards compatibility.
-
 // parse reads and parses a cog.yaml file into a ConfigFile.
 // This only does YAML parsing - no validation or defaults.
 // Returns ParseError if the file cannot be read or parsed.
@@ -56,9 +53,6 @@ func parseBytes(contents []byte, filename string) (*configFile, error) {
 
 	return cfg, nil
 }
-
-// Note: findProjectRootDir and findConfigPathInDirectory are defined in load.go
-// for backwards compatibility. The new API uses FindConfigFile which wraps them.
 
 // FromYAML parses YAML content into an uncompleted Config.
 // This is a convenience function primarily for testing.

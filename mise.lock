@@ -25,10 +25,6 @@ backend = "aqua:gotestyourself/gotestsum"
 "platforms.macos-x64" = { checksum = "sha256:99529350f4c7b780b1efc543ca0d9721b09f0a4228f0efa9281261f58fefa05a", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_darwin_amd64.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:fd5a6dc69e46a0970593e70d85a7e75f16714e9c61d6d72ccc324eb82df5bb8a", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_windows_amd64.tar.gz"}
 
-[[tools."aqua:gotestyourself/gotestsum"]]
-version = "1.13.0"
-backend = "aqua:gotestyourself/gotestsum"
-
 [[tools."aqua:mitsuhiko/insta"]]
 version = "1.46.0"
 backend = "aqua:mitsuhiko/insta"
