@@ -223,7 +223,7 @@ func parsePreviousTorchVersionsCode(code string, compats []config.TorchCompatibi
 	var cuda *string
 	skipSection := false
 
-	for _, line := range strings.Split(code, "\n") {
+	for line := range strings.SplitSeq(code, "\n") {
 		// Set section
 		if strings.HasPrefix(line, "#") {
 			skipSection = false
@@ -422,7 +422,7 @@ func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
 
 		// 310 -> 3.10
 		pythonVersion = pythonVersion[:1] + "." + pythonVersion[1:]
-		if minor := strings.TrimPrefix(pythonVersion, "3."); minor != pythonVersion {
+		if minor, ok := strings.CutPrefix(pythonVersion, "3."); ok {
 			minorInt, err := strconv.Atoi(minor)
 			if err != nil {
 				return nil, fmt.Errorf("invalid python version %q: %w", pythonVersion, err)

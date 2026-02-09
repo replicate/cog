@@ -221,10 +221,7 @@ func generateRandomFile(path string, size int64, rng *rand.Rand) error {
 	remaining := size
 
 	for remaining > 0 {
-		toWrite := remaining
-		if toWrite > chunkSize {
-			toWrite = chunkSize
-		}
+		toWrite := min(remaining, chunkSize)
 
 		// Fill chunk with random data
 		_, _ = rng.Read(chunk[:toWrite])

@@ -14,7 +14,7 @@
 #
 # Cached tasks:
 #   - build:sdk              - skips if python/**/*.py unchanged
-#   - build:coglet:wheel*    - skips if crates/**/*.rs unchanged  
+#   - build:coglet:wheel*    - skips if crates/**/*.rs unchanged
 #   - generate:stubs         - skips if coglet-python source unchanged
 #   - generate:compat        - skips if tools/compatgen unchanged
 #   - docs                   - skips if docs/**/*.md unchanged
@@ -31,12 +31,11 @@ experimental_monorepo_root = true
 config_roots = ["."]
 
 [tools]
-
-go = "latest"
+go = "1.25"
 uv = "0.9.26"
 "pipx:nox" = { version = "2025.11.12", uvx = true, uvx_args = "--python-preference=managed -p 3.13" }
 "aqua:ziglang/zig" = "0.15.2"
-"rust" = { version = "1.93.0", components = "rustfmt,clippy", targets ="x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
+"rust" = { version = "1.93.0", components = "rustfmt,clippy", targets = "x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
 cargo-binstall = "1.16.6"
 # Cargo tools - use aqua backend where available for faster binary downloads
 # and better security (cosign/SLSA verification). Remaining cargo: tools use binstall.
@@ -408,7 +407,10 @@ run = [
 [tasks."generate:stubs"]
 alias = "stub:generate"
 description = "Generate Python type stubs for coglet"
-sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml"]
+sources = [
+  "crates/coglet-python/src/**/*.rs",
+  "crates/coglet-python/Cargo.toml"
+]
 outputs = ["crates/coglet-python/coglet.pyi"]
 dir = "crates/coglet-python"
 run = "cargo run --bin stub_gen"
@@ -416,7 +418,11 @@ run = "cargo run --bin stub_gen"
 [tasks."generate:compat"]
 description = "Regenerate CUDA/PyTorch/TensorFlow compatibility matrices"
 sources = ["tools/compatgen/**/*.go"]
-outputs = ["pkg/config/cuda_base_images.json", "pkg/config/torch_compatibility_matrix.json", "pkg/config/tf_compatibility_matrix.json"]
+outputs = [
+  "pkg/config/cuda_base_images.json",
+  "pkg/config/torch_compatibility_matrix.json",
+  "pkg/config/tf_compatibility_matrix.json"
+]
 run = """
 #!/usr/bin/env bash
 set -e

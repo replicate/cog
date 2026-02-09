@@ -3,6 +3,7 @@ package weights
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -103,12 +104,7 @@ func isCodeFile(path string) bool {
 func isGitFile(path string) bool {
 	dir, _ := filepath.Split(path)
 	folders := strings.Split(filepath.Clean(dir), string(filepath.Separator))
-	for _, folder := range folders {
-		if folder == ".git" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(folders, ".git")
 }
 
 // filterDirsContainingCode filters out directories that contain code files.

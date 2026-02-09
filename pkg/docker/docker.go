@@ -608,9 +608,9 @@ func parseGPURequest(opts command.RunOptions) (container.DeviceRequest, error) {
 		// Check if it's a number
 		if count, err := strconv.Atoi(opts.GPUs); err == nil {
 			deviceRequest.Count = count
-		} else if strings.HasPrefix(opts.GPUs, "device=") {
+		} else if after, ok := strings.CutPrefix(opts.GPUs, "device="); ok {
 			// Handle device=0,1 format
-			devices := strings.TrimPrefix(opts.GPUs, "device=")
+			devices := after
 			deviceRequest.DeviceIDs = strings.Split(devices, ",")
 		} else {
 			// Invalid GPU specification, return nil to indicate no GPU access

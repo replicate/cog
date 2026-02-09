@@ -2,21 +2,17 @@ package slices
 
 import (
 	"reflect"
+	"slices"
 	"sort"
 )
 
 // ContainsString checks if a []string slice contains a query string
 func ContainsString(strings []string, query string) bool {
-	for _, s := range strings {
-		if s == query {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(strings, query)
 }
 
 // ContainsAnyString checks if an []interface{} slice contains a query string
-func ContainsAnyString(strings interface{}, query interface{}) bool {
+func ContainsAnyString(strings any, query any) bool {
 	return ContainsString(StringSlice(strings), query.(string))
 }
 
@@ -31,7 +27,7 @@ func FilterString(ss []string, test func(string) bool) (ret []string) {
 }
 
 // StringSlice converts an []interface{} slice to a []string slice
-func StringSlice(strings interface{}) []string {
+func StringSlice(strings any) []string {
 	if reflect.TypeOf(strings).Kind() != reflect.Slice {
 		panic("strings is not a slice")
 	}
@@ -44,7 +40,7 @@ func StringSlice(strings interface{}) []string {
 }
 
 // StringKeys returns the keys from a map[string]interface{} as a sorted []string slice
-func StringKeys(m interface{}) []string {
+func StringKeys(m any) []string {
 	keys := []string{}
 	v := reflect.ValueOf(m)
 	if v.Kind() == reflect.Map {

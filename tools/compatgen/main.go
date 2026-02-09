@@ -20,7 +20,7 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			target := args[0]
 
-			var v interface{}
+			var v any
 			var err error
 
 			switch target {

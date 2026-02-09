@@ -6,7 +6,7 @@ import (
 )
 
 type PipeFunc func() (io.ReadCloser, error)
-type LogFunc func(args ...interface{})
+type LogFunc func(args ...any)
 
 func PipeTo(pf PipeFunc, lf LogFunc) (done chan struct{}, err error) {
 	done = make(chan struct{})
