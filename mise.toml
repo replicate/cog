@@ -181,7 +181,15 @@ sources = ["python/**/*.py", "pyproject.toml"]
 outputs = ["dist/cog-*.whl"]
 run = [
   { task = "_setup_dist" },
-  "uv build --wheel --out-dir=dist .",
+  """
+#!/usr/bin/env bash
+set -euo pipefail
+# Version from Cargo.toml, converted to PEP 440
+RAW=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\\(.*\\)"/\\1/')
+export SETUPTOOLS_SCM_PRETEND_VERSION=$(echo "$RAW" | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/')
+echo "Building SDK wheel: $SETUPTOOLS_SCM_PRETEND_VERSION"
+uv build --wheel --out-dir=dist .
+""",
 ]
 
 [tasks."build:sdk:sdist"]
@@ -572,10 +580,18 @@ run = [
 ]
 
 [tasks."ci:build:sdk"]
-description = "CI: Build SDK wheel and sdist"
+description = "CI: Build SDK wheel"
 run = [
   { task = "_setup_dist" },
-  "uv build --out-dir=dist .",
+  """
+#!/usr/bin/env bash
+set -euo pipefail
+# Version from Cargo.toml, converted to PEP 440
+RAW=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\\(.*\\)"/\\1/')
+export SETUPTOOLS_SCM_PRETEND_VERSION=$(echo "$RAW" | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/')
+echo "Building SDK wheel: $SETUPTOOLS_SCM_PRETEND_VERSION"
+uv build --wheel --out-dir=dist .
+""",
 ]
 
 [tasks."ci:build:coglet"]

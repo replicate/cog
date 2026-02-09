@@ -12,7 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/global"
 )
 
-var semverPreReleaseRe = regexp.MustCompile(`-alpha(\d+)|-beta(\d+)|-rc(\d+)`)
+var semverPreReleaseRe = regexp.MustCompile(`-alpha(\d+)|-beta(\d+)|-rc(\d+)|-dev(\d*)`)
 
 // WheelSource represents the source type for the wheel to install
 type WheelSource int
@@ -290,7 +290,8 @@ func GetCogletWheelConfig() (*WheelConfig, error) {
 }
 
 // SemverToPEP440 converts a semver pre-release version to PEP 440 format.
-// e.g. "0.17.0-alpha1" -> "0.17.0a1", "0.17.0-beta2" -> "0.17.0b2", "0.17.0-rc1" -> "0.17.0rc1"
+// e.g. "0.17.0-alpha1" -> "0.17.0a1", "0.17.0-beta2" -> "0.17.0b2",
+// "0.17.0-rc1" -> "0.17.0rc1", "0.17.0-dev1" -> "0.17.0.dev1"
 // Stable versions pass through unchanged: "0.17.0" -> "0.17.0"
 func SemverToPEP440(version string) string {
 	return semverPreReleaseRe.ReplaceAllStringFunc(version, func(match string) string {
@@ -298,6 +299,10 @@ func SemverToPEP440(version string) string {
 		match = strings.Replace(match, "alpha", "a", 1)
 		match = strings.Replace(match, "beta", "b", 1)
 		// rc stays as rc in PEP 440
+		// dev -> .dev (PEP 440 uses dot separator)
+		if strings.HasPrefix(match, "dev") {
+			return "." + match
+		}
 		return match
 	})
 }

@@ -390,6 +390,12 @@ func TestPyPIPackageURL(t *testing.T) {
 			packageName: "cog",
 			expected:    "cog==1.0.0rc1",
 		},
+		{
+			name:        "dev pre-release converted to PEP 440",
+			config:      &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0-dev1"},
+			packageName: "cog",
+			expected:    "cog==0.17.0.dev1",
+		},
 	}
 
 	for _, tt := range tests {
