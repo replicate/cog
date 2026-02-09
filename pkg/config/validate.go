@@ -427,17 +427,17 @@ func validateConcurrency(cfg *configFile, result *ValidationResult) {
 		return
 	}
 
-	max := *cfg.Concurrency.Max
-	if max < 1 {
+	maxConcurrency := *cfg.Concurrency.Max
+	if maxConcurrency < 1 {
 		result.AddError(&ValidationError{
 			Field:   "concurrency.max",
-			Value:   fmt.Sprintf("%d", max),
+			Value:   fmt.Sprintf("%d", maxConcurrency),
 			Message: "must be at least 1",
 		})
 	}
 
 	// Check Python version requirement for concurrency
-	if max > 1 && cfg.Build != nil && cfg.Build.PythonVersion != nil {
+	if maxConcurrency > 1 && cfg.Build != nil && cfg.Build.PythonVersion != nil {
 		pyVersion := *cfg.Build.PythonVersion
 		major, minor, err := splitPythonVersion(pyVersion)
 		if err == nil {
@@ -446,7 +446,7 @@ func validateConcurrency(cfg *configFile, result *ValidationResult) {
 			if major == MinimumMajorPythonVersion && minor < MinimumMinorPythonVersionForConcurrency {
 				result.AddError(&ValidationError{
 					Field:   "concurrency.max",
-					Value:   fmt.Sprintf("%d", max),
+					Value:   fmt.Sprintf("%d", maxConcurrency),
 					Message: fmt.Sprintf("concurrency requires Python %d.%d or higher", MinimumMajorPythonVersion, MinimumMinorPythonVersionForConcurrency),
 				})
 			}

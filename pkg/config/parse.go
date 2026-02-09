@@ -150,10 +150,7 @@ func configFileToConfig(cfg *configFile, filename string) (*Config, error) {
 	if len(cfg.Weights) > 0 {
 		config.Weights = make([]WeightSource, len(cfg.Weights))
 		for i, w := range cfg.Weights {
-			config.Weights[i] = WeightSource{
-				Source: w.Source,
-				Target: w.Target,
-			}
+			config.Weights[i] = WeightSource(w)
 		}
 	}
 

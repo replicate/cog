@@ -1,7 +1,7 @@
 # Test that Python 3.9 is deprecated and build fails with appropriate error
 # Build should fail with deprecation error
 ! cog build -t $TEST_IMAGE
-stderr 'minimum supported Python version is 3.10. requested 3.9'
+stderr 'invalid build.python_version "3.9": minimum supported Python version is 3.10'
 
 -- cog.yaml --
 build:

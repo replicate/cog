@@ -75,11 +75,6 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(src.ProjectDir)
 	}
 
-	err = config.ValidateModelPythonVersion(src.Config)
-	if err != nil {
-		return err
-	}
-
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, nil))
 	if err != nil {

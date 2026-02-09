@@ -250,29 +250,6 @@ func splitPythonVersion(version string) (major int, minor int, err error) {
 	return major, minor, nil
 }
 
-func ValidateModelPythonVersion(cfg *Config) error {
-	version := cfg.Build.PythonVersion
-
-	// we check for minimum supported here
-	major, minor, err := splitPythonVersion(version)
-	if err != nil {
-		return fmt.Errorf("invalid Python version format: %w", err)
-	}
-	if major < MinimumMajorPythonVersion || (major == MinimumMajorPythonVersion &&
-		minor < MinimumMinorPythonVersion) {
-		return fmt.Errorf("minimum supported Python version is %d.%d. requested %s",
-			MinimumMajorPythonVersion, MinimumMinorPythonVersion, version)
-	}
-	// Only check minor version for concurrency if major version is the minimum (3)
-	// For major > 3, any minor version would be acceptable
-	if cfg.Concurrency != nil && cfg.Concurrency.Max > 1 &&
-		major == MinimumMajorPythonVersion && minor < MinimumMinorPythonVersionForConcurrency {
-		return fmt.Errorf("when concurrency.max is set, minimum supported Python version is %d.%d. requested %s",
-			MinimumMajorPythonVersion, MinimumMinorPythonVersionForConcurrency, version)
-	}
-	return nil
-}
-
 // Complete performs CUDA resolution, requirements loading, and environment loading for a Config.
 // Use this when building a Config struct directly (not from YAML).
 // For configs loaded from YAML, use Load() instead which handles validation and completion.
