@@ -106,5 +106,12 @@ jobs:
           fileName: "cog-*.whl"
           out-file-path: dist
 
+      - name: Download SDK sdist from release
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ github.event.release.tag_name }}
+          fileName: "cog-*.tar.gz"
+          out-file-path: dist
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
