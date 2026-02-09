@@ -275,6 +275,19 @@ func (h *Harness) Setup(env *testscript.Env) error {
 		env.Setenv("RUST_LOG", rustLog)
 	}
 
+	// Propagate SSL/TLS cert environment for corporate proxies (e.g. Cloudflare WARP)
+	if sslCertFile := os.Getenv("SSL_CERT_FILE"); sslCertFile != "" {
+		env.Setenv("SSL_CERT_FILE", sslCertFile)
+	}
+	if requestsCA := os.Getenv("REQUESTS_CA_BUNDLE"); requestsCA != "" {
+		env.Setenv("REQUESTS_CA_BUNDLE", requestsCA)
+	}
+
+	// Propagate COG_CA_CERT for CA certificate injection into Docker images
+	if cogCACert := os.Getenv("COG_CA_CERT"); cogCACert != "" {
+		env.Setenv("COG_CA_CERT", cogCACert)
+	}
+
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)

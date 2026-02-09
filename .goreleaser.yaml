@@ -5,6 +5,10 @@ before:
 dist: ./dist/go
 env:
   - CGO_ENABLED=0
+  # COG_VERSION is set by mise build:cog from Cargo.toml (single source of truth).
+  # For tagged releases, goreleaser derives Version from the tag and COG_VERSION is unused in ldflags.
+  # For snapshot builds, COG_VERSION overrides the git-derived version.
+  - COG_VERSION={{ if index .Env "COG_VERSION" }}{{ .Env.COG_VERSION }}{{ else }}{{ .Version }}{{ end }}
 builds:
   - binary: cog
     id: cog
@@ -16,7 +20,7 @@ builds:
       - arm64
     main: ./cmd/cog
     ldflags:
-      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{ .Env.COG_VERSION }} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
   - binary: base-image
     id: base-image
     goos:
@@ -27,7 +31,7 @@ builds:
       - arm64
     main: ./cmd/base-image
     ldflags:
-      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{ .Env.COG_VERSION }} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
 archives:
   - formats: [binary]
     ids:
@@ -41,7 +45,7 @@ archives:
 checksum:
   name_template: "checksums.txt"
 snapshot:
-  version_template: "{{ incpatch .Version }}-dev+g{{ .ShortCommit }}{{ if .IsGitDirty }}.d{{ .Now.Format \"20060102\" }}{{ end }}"
+  version_template: "{{ .Env.COG_VERSION }}-dev+g{{ .ShortCommit }}{{ if .IsGitDirty }}.d{{ .Now.Format \"20060102\" }}{{ end }}"
 changelog:
   sort: asc
   filters:
