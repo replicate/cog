@@ -19,7 +19,6 @@ func TestWeightsLock(t *testing.T) {
 				{
 					"name": "model.safetensors",
 					"dest": "/cache/model.safetensors",
-					"source": "file://./weights/model.safetensors",
 					"digestOriginal": "sha256:abc123",
 					"digest": "sha256:def456",
 					"size": 1000,

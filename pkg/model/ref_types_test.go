@@ -158,10 +158,12 @@ func TestTagRef_Resolve_FallsBackToLocal(t *testing.T) {
 			localCalled = true
 			return &image.InspectResponse{
 				ID: "sha256:local123",
-				Config: &container.Config{
-					Labels: map[string]string{
-						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-						LabelVersion: "0.10.0",
+				Config: &dockerspec.DockerOCIImageConfig{
+					ImageConfig: ocispec.ImageConfig{
+						Labels: map[string]string{
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
+						},
 					},
 				},
 			}, nil

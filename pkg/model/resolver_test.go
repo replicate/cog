@@ -38,7 +38,7 @@ func (m *mockDocker) Pull(ctx context.Context, ref string, force bool) (*image.I
 	if m.pullFunc != nil {
 		return m.pullFunc(ctx, ref, force)
 	}
-	panic("pullFunc not implemented")
+	return nil, errors.New("mockDocker.Pull not implemented")
 }
 
 func (m *mockDocker) Push(ctx context.Context, ref string) error {
@@ -105,7 +105,7 @@ func (m *mockRegistry) GetImage(ctx context.Context, ref string, platform *regis
 	if m.getImageFunc != nil {
 		return m.getImageFunc(ctx, ref, platform)
 	}
-	panic("mockRegistry.GetImage not implemented")
+	return nil, errors.New("mockRegistry.GetImage not implemented")
 }
 
 func (m *mockRegistry) GetDescriptor(ctx context.Context, ref string) (v1.Descriptor, error) {
@@ -116,21 +116,21 @@ func (m *mockRegistry) GetDescriptor(ctx context.Context, ref string) (v1.Descri
 }
 
 func (m *mockRegistry) Exists(ctx context.Context, ref string) (bool, error) {
-	panic("not implemented")
+	return false, errors.New("mockRegistry.Exists not implemented")
 }
 
 func (m *mockRegistry) PushImage(ctx context.Context, ref string, img v1.Image) error {
 	if m.pushImageFunc != nil {
 		return m.pushImageFunc(ctx, ref, img)
 	}
-	panic("mockRegistry.PushImage not implemented")
+	return errors.New("mockRegistry.PushImage not implemented")
 }
 
 func (m *mockRegistry) PushIndex(ctx context.Context, ref string, idx v1.ImageIndex) error {
 	if m.pushIndexFunc != nil {
 		return m.pushIndexFunc(ctx, ref, idx)
 	}
-	panic("mockRegistry.PushIndex not implemented")
+	return errors.New("mockRegistry.PushIndex not implemented")
 }
 
 func (m *mockRegistry) WriteLayer(ctx context.Context, opts registry.WriteLayerOptions) error {
