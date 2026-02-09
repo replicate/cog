@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/replicate/cog/pkg/global"
 )
 
 func TestWheelSourceString(t *testing.T) {
@@ -155,10 +153,6 @@ func TestParseWheelValue(t *testing.T) {
 }
 
 func TestGetCogWheelConfig(t *testing.T) {
-	// Save and restore global.Version
-	origVersion := global.Version
-	defer func() { global.Version = origVersion }()
-
 	// Create temp dir for file path tests and to avoid auto-detect from repo root
 	tmpDir := t.TempDir()
 	wheelFile := filepath.Join(tmpDir, "custom.whl")
@@ -188,18 +182,18 @@ func TestGetCogWheelConfig(t *testing.T) {
 			expectedSource: WheelSourcePyPI,
 			expectedVer:    "0.12.0",
 		},
-		// Dev build defaults to PyPI (no local wheel in this temp dir)
+		// Dev build with explicit pypi (auto-detection tested separately in TestGetCogWheelConfigAutoDetect)
 		{
 			name:           "dev build defaults to PyPI without version",
-			envValue:       "",
+			envValue:       "pypi",
 			globalVersion:  "dev",
 			expectedSource: WheelSourcePyPI,
 			expectedVer:    "",
 		},
-		// Snapshot build (goreleaser) defaults to PyPI without version
+		// Snapshot build with explicit pypi
 		{
 			name:           "snapshot build defaults to PyPI without version",
-			envValue:       "",
+			envValue:       "pypi",
 			globalVersion:  "0.16.12-dev+g6793b492",
 			expectedSource: WheelSourcePyPI,
 			expectedVer:    "",
@@ -239,12 +233,7 @@ func TestGetCogWheelConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			global.Version = tt.globalVersion
-			if tt.envValue != "" {
-				t.Setenv(CogWheelEnvVar, tt.envValue)
-			}
-
-			result, err := GetCogWheelConfig()
+			result, err := ResolveCogWheel(tt.envValue, tt.globalVersion)
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			require.Equal(t, tt.expectedSource, result.Source)
@@ -266,10 +255,6 @@ func TestGetCogWheelConfigErrors(t *testing.T) {
 }
 
 func TestGetCogWheelConfigAutoDetect(t *testing.T) {
-	// Save and restore global.Version
-	origVersion := global.Version
-	defer func() { global.Version = origVersion }()
-
 	// Create a temp directory with a wheel file
 	tmpDir := t.TempDir()
 	distDir := filepath.Join(tmpDir, "dist")
@@ -285,16 +270,14 @@ func TestGetCogWheelConfigAutoDetect(t *testing.T) {
 	defer func() { require.NoError(t, os.Chdir(origDir)) }()
 
 	// Test auto-detection in dev mode
-	global.Version = "dev"
-	result, err := GetCogWheelConfig()
+	result, err := ResolveCogWheel("", "dev")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, WheelSourceFile, result.Source)
 	require.Contains(t, result.Path, "cog-0.1.0-py3-none-any.whl")
 
 	// Test that release mode does NOT auto-detect
-	global.Version = "0.12.0"
-	result, err = GetCogWheelConfig()
+	result, err = ResolveCogWheel("", "0.12.0")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, WheelSourcePyPI, result.Source)
@@ -302,18 +285,6 @@ func TestGetCogWheelConfigAutoDetect(t *testing.T) {
 }
 
 func TestGetCogletWheelConfig(t *testing.T) {
-	// Save and restore global.Version
-	origVersion := global.Version
-	defer func() { global.Version = origVersion }()
-
-	// Change to temp dir and clear REPO_ROOT to prevent auto-detection from repo dist/
-	tmpDir := t.TempDir()
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(tmpDir))
-	defer func() { require.NoError(t, os.Chdir(origDir)) }()
-	t.Setenv("REPO_ROOT", "")
-
 	tests := []struct {
 		name           string
 		envValue       string
@@ -365,12 +336,7 @@ func TestGetCogletWheelConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			global.Version = tt.globalVersion
-			if tt.envValue != "" {
-				t.Setenv(CogletWheelEnvVar, tt.envValue)
-			}
-
-			result, err := GetCogletWheelConfig()
+			result, err := ResolveCogletWheel(tt.envValue, tt.globalVersion)
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			require.Equal(t, tt.expectedSource, result.Source)
