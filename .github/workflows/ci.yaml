@@ -699,8 +699,10 @@ jobs:
       - uses: jdx/mise-action@v3
       - name: Build cog binary
         run: mise run build:cog
-      - name: Set runtime environment
+      - name: Set wheel environment
         run: |
+          # Use locally-built wheels, not PyPI (version may not be published yet)
+          echo "COG_WHEEL=dist" >> $GITHUB_ENV
           if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
             echo "COGLET_WHEEL=dist" >> $GITHUB_ENV
           fi
