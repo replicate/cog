@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util/console"
@@ -107,7 +107,7 @@ func (r *RunItem) UnmarshalYAML(unmarshal func(any) error) error {
 	switch v := commandOrMap.(type) {
 	case string:
 		r.Command = v
-	case map[any]any:
+	case map[string]any:
 		var data []byte
 		var err error
 

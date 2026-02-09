@@ -9,7 +9,7 @@ import (
 
 	"github.com/hashicorp/go-version"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestValidateCudaVersion(t *testing.T) {
