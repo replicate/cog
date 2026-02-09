@@ -16,6 +16,7 @@ linters:
     - govet
     - ineffassign
     - misspell
+    - modernize
     - revive
     - staticcheck
     - unconvert
