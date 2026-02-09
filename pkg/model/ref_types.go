@@ -23,8 +23,8 @@ func (r *Resolver) Resolve(ctx context.Context, ref Ref) (*Model, error) {
 // =============================================================================
 
 // TagRef resolves an image by tag or digest reference.
-// It uses the default Load behavior: try local docker daemon first,
-// then fall back to remote registry if not found locally.
+// It uses the default Load behavior: try remote registry first,
+// then fall back to local docker daemon if not found remotely.
 type TagRef struct {
 	Parsed *ParsedRef
 }
@@ -40,7 +40,7 @@ func FromTag(ref string) (*TagRef, error) {
 }
 
 func (t *TagRef) resolve(ctx context.Context, r *Resolver) (*Model, error) {
-	// Use default Inspect behavior (PreferLocal)
+	// Use default Inspect behavior (PreferRemote)
 	return r.Inspect(ctx, t.Parsed)
 }
 

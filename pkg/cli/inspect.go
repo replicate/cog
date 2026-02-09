@@ -25,6 +25,7 @@ type InspectOutput struct {
 
 // InspectIndex represents an OCI index in inspect output.
 type InspectIndex struct {
+	Reference string            `json:"reference"`
 	Digest    string            `json:"digest"`
 	MediaType string            `json:"mediaType"`
 	Manifests []InspectManifest `json:"manifests"`
@@ -134,6 +135,7 @@ func buildInspectOutput(ctx context.Context, reference string, m *model.Model, r
 	if m.Index != nil {
 		out.Type = "index"
 		idx := &InspectIndex{
+			Reference: m.Index.Reference,
 			Digest:    m.Index.Digest,
 			MediaType: m.Index.MediaType,
 		}
@@ -320,7 +322,7 @@ func streamRaw(ctx context.Context, reference string, m *model.Model, reg regist
 func printInspectText(out *InspectOutput) {
 	fmt.Printf("Model: %s\n", out.Reference)
 	if out.Type == "index" {
-		fmt.Println("Type:  OCI Index (bundle)")
+		fmt.Println("Type:  Model Bundle (OCI Index)")
 	} else {
 		fmt.Println("Type:  Image")
 	}
@@ -328,7 +330,23 @@ func printInspectText(out *InspectOutput) {
 	fmt.Println()
 
 	if out.Index != nil {
-		fmt.Printf("Index: %s (%s)\n", out.Index.Digest, out.Index.MediaType)
+		// Build the digest reference: repo@sha256:...
+		digestRef := out.Index.Digest
+		if out.Index.Reference != "" && out.Index.Digest != "" {
+			// Extract repo from the reference (strip tag/digest)
+			repo := out.Index.Reference
+			if idx := strings.LastIndex(repo, ":"); idx != -1 {
+				// Only strip if it looks like a tag (no @)
+				if !strings.Contains(repo[idx:], "@") {
+					repo = repo[:idx]
+				}
+			}
+			digestRef = repo + "@" + out.Index.Digest
+		}
+		fmt.Printf("Index: %s\n", digestRef)
+		fmt.Printf("  Tag:       %s\n", out.Reference)
+		fmt.Printf("  Digest:    %s\n", out.Index.Digest)
+		fmt.Printf("  MediaType: %s\n", out.Index.MediaType)
 		fmt.Printf("  Manifests: %d\n", len(out.Index.Manifests))
 		fmt.Println()
 
@@ -357,7 +375,17 @@ func printManifestText(m InspectManifest, indent string) {
 	}
 
 	fmt.Printf("%s  Digest: %s\n", indent, m.Digest)
-	fmt.Printf("%s  Size:   %s\n", indent, formatSize(m.Size))
+
+	// Show manifest size + total layer size if layers are available
+	if len(m.Layers) > 0 {
+		var layerTotal int64
+		for _, l := range m.Layers {
+			layerTotal += l.Size
+		}
+		fmt.Printf("%s  Size:   %s (Layers: %s)\n", indent, formatSize(m.Size), formatSize(layerTotal))
+	} else {
+		fmt.Printf("%s  Size:   %s\n", indent, formatSize(m.Size))
+	}
 
 	if m.Target != "" {
 		fmt.Printf("%s  Target: %s\n", indent, m.Target)

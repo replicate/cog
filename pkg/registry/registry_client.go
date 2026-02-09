@@ -66,10 +66,13 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 			result := &ManifestResult{
 				SchemaVersion: indexManifest.SchemaVersion,
 				MediaType:     string(mediaType),
+				Digest:        desc.Digest.String(),
 			}
 			for _, m := range indexManifest.Manifests {
 				result.Manifests = append(result.Manifests, PlatformManifest{
 					Digest:       m.Digest.String(),
+					MediaType:    string(m.MediaType),
+					Size:         m.Size,
 					OS:           m.Platform.OS,
 					Architecture: m.Platform.Architecture,
 					Variant:      m.Platform.Variant,
@@ -105,6 +108,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 			result := &ManifestResult{
 				SchemaVersion: manifest.SchemaVersion,
 				MediaType:     string(mediaType),
+				Digest:        desc.Digest.String(),
 				Config:        manifest.Config.Digest.String(),
 				Labels:        configFile.Config.Labels,
 			}
@@ -171,6 +175,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 	result := &ManifestResult{
 		SchemaVersion: manifest.SchemaVersion,
 		MediaType:     string(manifestDesc.MediaType),
+		Digest:        manifestDesc.Digest.String(),
 		Config:        manifest.Config.Digest.String(),
 		Labels:        configFile.Config.Labels,
 	}
@@ -333,7 +338,11 @@ func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.Image
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
 	}
 
-	if err := remote.WriteIndex(parsedRef, idx, opts...); err != nil {
+	// Use remote.Put instead of remote.WriteIndex because all child manifests
+	// (image + weights) are already pushed to the registry. WriteIndex would
+	// try to recursively resolve and push children via idx.Image(), which fails
+	// for our descriptor-only index. Put just writes the index manifest.
+	if err := remote.Put(parsedRef, idx, opts...); err != nil {
 		return fmt.Errorf("pushing index %s: %w", ref, err)
 	}
 
@@ -626,9 +635,9 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, location string, totalSize int64, progressCh chan<- v1.Update) (string, error) {
 	// Multipart upload settings:
 	// - Threshold: Use multipart only for blobs larger than 50MB (avoids MPU overhead for smaller files)
-	// - Chunk size: 25MB per chunk (good balance for object stores and typical network conditions)
+	// - Chunk size: 256MB per chunk (large chunks reduce HTTP round-trips for multi-GB weight files)
 	const multipartThreshold = 50 * 1024 * 1024
-	const chunkSize = 25 * 1024 * 1024
+	const chunkSize = 256 * 1024 * 1024
 
 	if totalSize > multipartThreshold {
 		finalLocation, newLocation, fallback, err := c.tryMultipartWithFallback(ctx, client, repo, layer, location, totalSize, chunkSize, progressCh)

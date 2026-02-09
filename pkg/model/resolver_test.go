@@ -98,7 +98,7 @@ func (m *mockRegistry) Inspect(ctx context.Context, ref string, platform *regist
 	if m.inspectFunc != nil {
 		return m.inspectFunc(ctx, ref, platform)
 	}
-	return nil, errors.New("not implemented")
+	return nil, registry.NotFoundError
 }
 
 func (m *mockRegistry) GetImage(ctx context.Context, ref string, platform *registry.Platform) (v1.Image, error) {
@@ -356,7 +356,7 @@ func TestResolver_Inspect_PreferLocal_FoundLocally(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	model, err := resolver.Inspect(context.Background(), ref) // default is PreferLocal
+	model, err := resolver.Inspect(context.Background(), ref, PreferLocal())
 
 	require.NoError(t, err)
 	require.True(t, localCalled, "should try local first")
@@ -391,7 +391,7 @@ func TestResolver_Inspect_PreferLocal_Fallback(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	model, err := resolver.Inspect(context.Background(), ref) // default is PreferLocal
+	model, err := resolver.Inspect(context.Background(), ref, PreferLocal())
 
 	require.NoError(t, err)
 	require.True(t, localCalled, "should try local first")
@@ -416,7 +416,7 @@ func TestResolver_Inspect_PreferLocal_NoFallbackOnRealError(t *testing.T) {
 	ref, err := ParseRef("my-image:latest")
 	require.NoError(t, err)
 
-	_, err = resolver.Inspect(context.Background(), ref)
+	_, err = resolver.Inspect(context.Background(), ref, PreferLocal())
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to inspect local image")

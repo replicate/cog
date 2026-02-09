@@ -25,7 +25,7 @@ type options struct {
 }
 
 func defaultOptions() *options {
-	return &options{preferLocal: true}
+	return &options{} // Default: preferRemote (try registry first, fall back to local)
 }
 
 // LocalOnly loads only from the local docker daemon.
@@ -48,7 +48,17 @@ func RemoteOnly() Option {
 	}
 }
 
+// PreferLocal tries local docker daemon first, falls back to remote on not-found.
+func PreferLocal() Option {
+	return func(o *options) {
+		o.preferLocal = true
+		o.localOnly = false
+		o.remoteOnly = false
+	}
+}
+
 // PreferRemote tries remote registry first, falls back to local on not-found.
+// This is the default behavior.
 func PreferRemote() Option {
 	return func(o *options) {
 		o.preferLocal = false
@@ -405,7 +415,7 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 	}
 
 	m.Index = &Index{
-		Digest:    ref.String(), // The index reference
+		Digest:    manifest.Digest, // Content-addressable digest from registry
 		Reference: ref.String(),
 		MediaType: manifest.MediaType,
 		Manifests: make([]IndexManifest, len(manifest.Manifests)),
@@ -415,6 +425,8 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 	for i, pm := range manifest.Manifests {
 		im := IndexManifest{
 			Digest:      pm.Digest,
+			MediaType:   pm.MediaType,
+			Size:        pm.Size,
 			Annotations: pm.Annotations,
 		}
 		if pm.OS != "" {

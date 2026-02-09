@@ -193,8 +193,14 @@ func buildWeightImage(artifact *WeightArtifact) (v1.Image, error) {
 	// 1. Create the base image with OCI manifest media type
 	img := mutate.MediaType(empty.Image, types.OCIManifestSchema1)
 
-	// 2. Create tarball layer from the weight file
-	layer, err := tarball.LayerFromFile(artifact.FilePath, tarball.WithMediaType(types.MediaType(MediaTypeWeightLayer)))
+	// 2. Create tarball layer from the weight file.
+	// WithCompressedCaching memoizes the compressed output so that Digest() and
+	// Compressed() see identical bytes. Without this, gzip non-determinism between
+	// separate passes causes DIGEST_INVALID errors on large uploads.
+	layer, err := tarball.LayerFromFile(artifact.FilePath,
+		tarball.WithMediaType(types.MediaType(MediaTypeWeightLayer)),
+		tarball.WithCompressedCaching,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create tarball layer: %w", err)
 	}

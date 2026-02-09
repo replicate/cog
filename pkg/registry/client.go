@@ -16,6 +16,8 @@ type Platform struct {
 
 type PlatformManifest struct {
 	Digest       string
+	MediaType    string
+	Size         int64
 	OS           string
 	Architecture string
 	Variant      string
