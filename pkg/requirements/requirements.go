@@ -92,7 +92,7 @@ func scanLinesWithContinuations(data []byte, atEOF bool) (advance int, token []b
 
 	var line []byte
 	start := 0
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		if data[i] == '\n' {
 			end := i
 			if end > 0 && data[end-1] == '\r' {
