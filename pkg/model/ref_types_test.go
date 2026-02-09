@@ -5,8 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
@@ -124,10 +125,12 @@ func TestTagRef_Resolve_Success(t *testing.T) {
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
 				ID: "sha256:abc123",
-				Config: &container.Config{
-					Labels: map[string]string{
-						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-						LabelVersion: "0.10.0",
+				Config: &dockerspec.DockerOCIImageConfig{
+					ImageConfig: ocispec.ImageConfig{
+						Labels: map[string]string{
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
+						},
 					},
 				},
 			}, nil
@@ -190,10 +193,12 @@ func TestLocalRef_Resolve_Success(t *testing.T) {
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
 				ID: "sha256:local123",
-				Config: &container.Config{
-					Labels: map[string]string{
-						LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-						LabelVersion: "0.9.0",
+				Config: &dockerspec.DockerOCIImageConfig{
+					ImageConfig: ocispec.ImageConfig{
+						Labels: map[string]string{
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.9.0",
+						},
 					},
 				},
 			}, nil
@@ -298,10 +303,12 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
 				ID: "sha256:built123",
-				Config: &container.Config{
-					Labels: map[string]string{
-						LabelVersion: "0.11.0",
-						LabelConfig:  `{"build":{"gpu":true}}`,
+				Config: &dockerspec.DockerOCIImageConfig{
+					ImageConfig: ocispec.ImageConfig{
+						Labels: map[string]string{
+							LabelVersion: "0.11.0",
+							LabelConfig:  `{"build":{"gpu":true}}`,
+						},
 					},
 				},
 			}, nil
@@ -392,10 +399,14 @@ func TestResolver_Resolve_DispatchesCorrectly(t *testing.T) {
 					localCalled = true
 					return &image.InspectResponse{
 						ID: "sha256:test",
-						Config: &container.Config{Labels: map[string]string{
-							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-							LabelVersion: "0.10.0",
-						}},
+						Config: &dockerspec.DockerOCIImageConfig{
+							ImageConfig: ocispec.ImageConfig{
+								Labels: map[string]string{
+									LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+									LabelVersion: "0.10.0",
+								},
+							},
+						},
 					}, nil
 				},
 			}
