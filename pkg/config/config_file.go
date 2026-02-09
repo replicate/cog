@@ -62,8 +62,8 @@ type concurrencyFile struct {
 
 // UnmarshalYAML implements custom YAML unmarshaling for runItemFile
 // to support both string and object forms.
-func (r *runItemFile) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var commandOrMap interface{}
+func (r *runItemFile) UnmarshalYAML(unmarshal func(any) error) error {
+	var commandOrMap any
 	if err := unmarshal(&commandOrMap); err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func (r *runItemFile) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	switch v := commandOrMap.(type) {
 	case string:
 		r.Command = v
-	case map[interface{}]interface{}:
+	case map[any]any:
 		var data []byte
 		var err error
 
@@ -111,7 +111,7 @@ func (r *runItemFile) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // UnmarshalJSON implements custom JSON unmarshaling for runItemFile
 // to support both string and object forms.
 func (r *runItemFile) UnmarshalJSON(data []byte) error {
-	var commandOrMap interface{}
+	var commandOrMap any
 	if err := json.Unmarshal(data, &commandOrMap); err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (r *runItemFile) UnmarshalJSON(data []byte) error {
 	switch v := commandOrMap.(type) {
 	case string:
 		r.Command = v
-	case map[string]interface{}:
+	case map[string]any:
 		aux := struct {
 			Command string `json:"command"`
 			Mounts  []struct {

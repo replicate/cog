@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -294,13 +295,7 @@ func validateGPUConfig(cfg *configFile, opts *validateOptions, result *Validatio
 		cuda := *build.CUDA
 		cudnn := *build.CuDNN
 		compatibleCuDNNs := compatibleCuDNNsForCUDA(cuda)
-		found := false
-		for _, c := range compatibleCuDNNs {
-			if c == cudnn {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(compatibleCuDNNs, cudnn)
 		if !found && len(compatibleCuDNNs) > 0 {
 			result.AddError(&CompatibilityError{
 				Component1: "CUDA",

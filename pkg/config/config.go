@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	slices0 "slices"
 	"strconv"
 	"strings"
 
@@ -97,8 +98,8 @@ func defaultConfig() *Config {
 	}
 }
 
-func (r *RunItem) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var commandOrMap interface{}
+func (r *RunItem) UnmarshalYAML(unmarshal func(any) error) error {
+	var commandOrMap any
 	if err := unmarshal(&commandOrMap); err != nil {
 		return err
 	}
@@ -106,7 +107,7 @@ func (r *RunItem) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	switch v := commandOrMap.(type) {
 	case string:
 		r.Command = v
-	case map[interface{}]interface{}:
+	case map[any]any:
 		var data []byte
 		var err error
 
@@ -136,7 +137,7 @@ func (r *RunItem) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 func (r *RunItem) UnmarshalJSON(data []byte) error {
-	var commandOrMap interface{}
+	var commandOrMap any
 	if err := json.Unmarshal(data, &commandOrMap); err != nil {
 		return err
 	}
@@ -144,7 +145,7 @@ func (r *RunItem) UnmarshalJSON(data []byte) error {
 	switch v := commandOrMap.(type) {
 	case string:
 		r.Command = v
-	case map[string]interface{}:
+	case map[string]any:
 		aux := struct {
 			Command string `json:"command"`
 			Mounts  []struct {
@@ -535,12 +536,7 @@ func (c *Config) RequirementsFile(projectDir string) string {
 }
 
 func sliceContains(slice []string, s string) bool {
-	for _, el := range slice {
-		if el == s {
-			return true
-		}
-	}
-	return false
+	return slices0.Contains(slice, s)
 }
 
 func (c *Config) ParsedEnvironment() map[string]string {
