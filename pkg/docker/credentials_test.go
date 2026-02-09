@@ -140,7 +140,6 @@ func TestTryLoadAuthForHost(t *testing.T) {
 					Username: "testuser",
 					Password: "testpass",
 					Auth:     "dGVzdHVzZXI6dGVzdHBhc3M=",
-					Email:    "test@example.com",
 				},
 			},
 		}
@@ -151,7 +150,6 @@ func TestTryLoadAuthForHost(t *testing.T) {
 		assert.Equal(t, "testuser", auth.Username)
 		assert.Equal(t, "testpass", auth.Password)
 		assert.Equal(t, "dGVzdHVzZXI6dGVzdHBhc3M=", auth.Auth)
-		assert.Equal(t, "test@example.com", auth.Email)
 		assert.Equal(t, "registry.example.com", auth.ServerAddress)
 	})
 
