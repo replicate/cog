@@ -189,25 +189,19 @@ func findWheelInDistSilent(pattern string, platformTag string) string {
 	return ""
 }
 
-// isDevVersion returns true if the version is a development/snapshot build.
-// This includes "dev", versions containing "-dev", and versions with "+" (local versions).
-func isDevVersion() bool {
-	v := global.Version
-	return v == "dev" || strings.Contains(v, "-dev") || strings.Contains(v, "+")
-}
-
-// GetCogWheelConfig returns the WheelConfig for the cog SDK based on COG_WHEEL env var.
+// ResolveCogWheel resolves the WheelConfig for the cog SDK.
+//
+// Parameters:
+//   - envValue: value of COG_WHEEL env var (empty string if not set)
+//   - version: the CLI version (e.g. "dev", "0.17.0", "0.17.0-alpha1")
 //
 // Resolution order:
-//  1. COG_WHEEL env var (if set, explicit override)
-//  2. Auto-detect: check dist/cog-*.whl (for development)
-//  3. Default: PyPI
-//
-// For development builds (snapshot versions), auto-detection is enabled.
-// For release builds, auto-detection is skipped (always PyPI unless overridden).
-func GetCogWheelConfig() (*WheelConfig, error) {
+//  1. envValue (if non-empty, explicit override)
+//  2. Auto-detect: check dist/cog-*.whl (for development builds only)
+//  3. Default: PyPI (with version pin for release builds)
+func ResolveCogWheel(envValue string, version string) (*WheelConfig, error) {
 	// Check explicit env var first
-	if config := ParseWheelValue(os.Getenv(CogWheelEnvVar)); config != nil {
+	if config := ParseWheelValue(envValue); config != nil {
 		// Handle "dist" keyword - resolve to actual path
 		if config.Source == WheelSourceFile && config.Path == "dist" {
 			path, err := findWheelInDist("cog-*.whl", CogWheelEnvVar, "")
@@ -225,8 +219,10 @@ func GetCogWheelConfig() (*WheelConfig, error) {
 		return config, nil
 	}
 
+	isDev := version == "dev" || strings.Contains(version, "-dev") || strings.Contains(version, "+")
+
 	// Auto-detect for dev builds: check dist/ directory
-	if isDevVersion() {
+	if isDev {
 		if path := findWheelInDistSilent("cog-*.whl", ""); path != "" {
 			return &WheelConfig{Source: WheelSourceFile, Path: path}, nil
 		}
@@ -236,8 +232,8 @@ func GetCogWheelConfig() (*WheelConfig, error) {
 	// For release builds, use the matching version
 	// For dev builds where no local wheel found, use latest
 	config := &WheelConfig{Source: WheelSourcePyPI}
-	if !isDevVersion() {
-		config.Version = global.Version
+	if !isDev {
+		config.Version = version
 	}
 	return config, nil
 }
@@ -271,22 +267,27 @@ func filterWheelsByPlatform(matches []string, platformTag string) []string {
 	return filtered
 }
 
-// GetCogletWheelConfig returns the WheelConfig for coglet based on COGLET_WHEEL env var.
+// GetCogWheelConfig is a convenience wrapper that reads COG_WHEEL from the environment
+// and version from global.Version.
+func GetCogWheelConfig() (*WheelConfig, error) {
+	return ResolveCogWheel(os.Getenv(CogWheelEnvVar), global.Version)
+}
+
+// ResolveCogletWheel resolves the WheelConfig for coglet.
 //
 // targetArch is the GOARCH of the Docker build target (e.g. "amd64", "arm64").
 // It is used to select the correct platform-specific wheel from dist/.
 //
 // Resolution order:
-//  1. COGLET_WHEEL env var (if set, explicit override)
-//  2. Auto-detect: check dist/coglet-*.whl (for development)
-//  3. Default: PyPI
+//  1. envValue (COGLET_WHEEL) if non-empty — explicit override
+//  2. Auto-detect: check dist/coglet-*.whl (for development builds)
+//  3. Default: PyPI (with version pinned for release builds)
 //
-// Returns nil only on error. Coglet is always installed.
-func GetCogletWheelConfig(targetArch string) (*WheelConfig, error) {
+// Coglet is always required. Returns a valid config or an error.
+func ResolveCogletWheel(envValue string, version string, targetArch string) (*WheelConfig, error) {
 	platformTag := wheelPlatformTag(targetArch)
-
 	// Check explicit env var first
-	if config := ParseWheelValue(os.Getenv(CogletWheelEnvVar)); config != nil {
+	if config := ParseWheelValue(envValue); config != nil {
 		// Handle "dist" keyword - resolve to actual path
 		if config.Source == WheelSourceFile && config.Path == "dist" {
 			path, err := findWheelInDist("coglet-*.whl", CogletWheelEnvVar, platformTag)
@@ -304,8 +305,10 @@ func GetCogletWheelConfig(targetArch string) (*WheelConfig, error) {
 		return config, nil
 	}
 
+	isDev := version == "dev" || strings.Contains(version, "-dev") || strings.Contains(version, "+")
+
 	// Auto-detect for dev builds: check dist/ directory
-	if isDevVersion() {
+	if isDev {
 		if path := findWheelInDistSilent("coglet-*.whl", platformTag); path != "" {
 			return &WheelConfig{Source: WheelSourceFile, Path: path}, nil
 		}
@@ -313,8 +316,8 @@ func GetCogletWheelConfig(targetArch string) (*WheelConfig, error) {
 
 	// Default: PyPI
 	config := &WheelConfig{Source: WheelSourcePyPI}
-	if !isDevVersion() {
-		config.Version = global.Version
+	if !isDev {
+		config.Version = version
 	}
 	return config, nil
 }
