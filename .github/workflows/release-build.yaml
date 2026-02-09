@@ -130,7 +130,7 @@ jobs:
       - name: Build SDK wheel
         run: |
           echo "Building SDK with version: $SETUPTOOLS_SCM_PRETEND_VERSION"
-          uv build --wheel --out-dir dist .
+          uv build --out-dir dist .
         env:
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.pep440 }}
 
@@ -242,13 +242,13 @@ jobs:
           
           # Collect all wheels
           mkdir -p release-wheels
-          cp artifacts/sdk-dist/*.whl release-wheels/
+          cp artifacts/sdk-dist/* release-wheels/
           cp artifacts/coglet-wheel-*/*.whl release-wheels/
           
           # Download goreleaser's checksums.txt and append wheel checksums
           gh release download "$TAG" -p checksums.txt -D release-wheels
           cd release-wheels
-          sha256sum *.whl >> checksums.txt
+          sha256sum *.whl *.tar.gz >> checksums.txt
           echo "Checksums:"
           cat checksums.txt
           cd ..
