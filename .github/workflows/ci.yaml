@@ -471,7 +471,7 @@ jobs:
             kill -KILL -- -$$ 2>/dev/null || true
           }
           trap cleanup INT TERM
-          gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...) &
+          gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./... | grep -v /integration-tests/) &
           wait $!
 
   test-rust:
@@ -686,9 +686,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache-dependency-path: |
-            go.sum
-            integration-tests/go.sum
+          cache-dependency-path: go.sum
       - uses: jdx/mise-action@v3
       - name: Build cog binary
         run: mise run build:cog
@@ -702,7 +700,6 @@ jobs:
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
-        working-directory: integration-tests
         shell: bash
         run: |
           set -euo pipefail
@@ -723,7 +720,8 @@ jobs:
           gotestsum --format github-actions -- \
             -parallel $TEST_PARALLEL \
             -timeout 30m \
-            -run "TestIntegration/($RUN_PATTERN)/" &
+            -run "TestIntegration/($RUN_PATTERN)/" \
+            ./integration-tests/... &
           wait $!
 
 # =============================================================================

@@ -226,7 +226,7 @@ fi
 
 [tasks."test:go"]
 description = "Run Go tests"
-run = "gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...)"
+run = "gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./... | grep -v /integration-tests/)"
 
 [tasks."test:rust"]
 description = "Run Rust workspace tests"
@@ -253,7 +253,6 @@ run = "nox -s coglet"
 [tasks."test:integration"]
 description = "Run integration tests (skips slow tests by default, set SHORT=0 for full suite)"
 depends = ["build:cog", "build:sdk", "build:coglet:wheel"]
-dir = "integration-tests"
 run = """
 #!/usr/bin/env bash
 set -e
@@ -262,9 +261,9 @@ if [ "${SHORT:-1}" = "0" ]; then
   SHORT_FLAG=""
 fi
 if [ -n "$1" ]; then
-  gotestsum -- -v $SHORT_FLAG -run "TestIntegration/$1" -timeout 30m
+  gotestsum -- -v $SHORT_FLAG -run "TestIntegration/$1" -timeout 30m ./integration-tests/...
 else
-  gotestsum -- -v $SHORT_FLAG -parallel ${TEST_PARALLEL:-4} -timeout 30m
+  gotestsum -- -v $SHORT_FLAG -parallel ${TEST_PARALLEL:-4} -timeout 30m ./integration-tests/...
 fi
 """
 
@@ -582,9 +581,8 @@ run = [
 
 [tasks."ci:test:integration"]
 description = "CI: Run integration tests with GitHub Actions output (full suite)"
-dir = "integration-tests"
 # exec ensures signals (SIGTERM from CI cancellation) go directly to gotestsum
-run = "exec gotestsum --format github-actions -- -parallel ${TEST_PARALLEL:-4} -timeout 30m"
+run = "exec gotestsum --format github-actions -- -parallel ${TEST_PARALLEL:-4} -timeout 30m ./integration-tests/..."
 
 # =============================================================================
 # Publish tasks (future)
