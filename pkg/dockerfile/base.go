@@ -187,7 +187,7 @@ func (g *BaseImageGenerator) GenerateDockerfile(ctx context.Context) (string, er
 		return "", err
 	}
 
-	generator, err := NewGenerator(conf, "", g.command, g.client, false)
+	generator, err := NewGenerator(conf, "", "", g.command, g.client, false)
 	if err != nil {
 		return "", err
 	}
@@ -213,7 +213,7 @@ func (g *BaseImageGenerator) makeConfig() (*config.Config, error) {
 			CUDA:           g.cudaVersion,
 		},
 	}
-	if err := conf.ValidateAndComplete(""); err != nil {
+	if err := conf.Complete(""); err != nil {
 		return nil, err
 	}
 	return conf, nil

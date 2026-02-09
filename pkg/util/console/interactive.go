@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
-
-	"github.com/replicate/cog/pkg/util/slices"
 )
 
 type Interactive struct {
@@ -18,7 +17,7 @@ type Interactive struct {
 }
 
 func (i Interactive) Read() (string, error) {
-	if i.Default != "" && i.Options != nil && !slices.ContainsString(i.Options, i.Default) {
+	if i.Default != "" && i.Options != nil && !slices.Contains(i.Options, i.Default) {
 		panic("Default is not an option")
 	}
 
@@ -64,7 +63,7 @@ func (i Interactive) Read() (string, error) {
 		}
 
 		if i.Options != nil {
-			if !slices.ContainsString(i.Options, text) {
+			if !slices.Contains(i.Options, text) {
 				Warnf("%s is not a valid option", text)
 				continue
 			}

@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -36,9 +38,35 @@ func newDebugCommand() *cobra.Command {
 func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	cfg, projectDir, err := config.GetConfig(configFilename)
+	// Find the root project directory
+	rootDir, err := config.GetProjectDir(configFilename)
 	if err != nil {
 		return err
+	}
+
+	configPath := filepath.Join(rootDir, configFilename)
+
+	f, err := os.Open(configPath)
+	if err != nil {
+		return &config.ParseError{Filename: configFilename, Err: err}
+	}
+
+	result, err := config.Load(f, rootDir)
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+
+	_ = f.Close()
+
+	var (
+		cfg        = result.Config
+		projectDir = result.RootDir
+	)
+
+	// Display any deprecation warnings
+	for _, w := range result.Warnings {
+		console.Warnf("%s", w.Error())
 	}
 
 	dockerClient, err := docker.NewClient(ctx)
@@ -47,7 +75,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	}
 
 	client := registry.NewRegistryClient()
-	generator, err := dockerfile.NewGenerator(cfg, projectDir, dockerClient, client, true)
+	generator, err := dockerfile.NewGenerator(cfg, projectDir, configFilename, dockerClient, client, true)
 	if err != nil {
 		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}
