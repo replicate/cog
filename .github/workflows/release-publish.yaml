@@ -7,7 +7,7 @@ name: Release Publish
 # PUBLISH ORDER:
 # 1. coglet → PyPI (must be first, SDK depends on it)
 # 2. coglet → crates.io (parallel with coglet PyPI)
-# 3. SDK → PyPI (after coglet, via pypi-package.yaml reusable workflow)
+# 3. SDK → PyPI (after coglet is on PyPI)
 #
 # REQUIRED GITHUB CONFIGURATION:
 # 1. Create environments in Settings → Environments:
@@ -92,5 +92,19 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-  # SDK publishing is handled by pypi-package.yaml (separate workflow,
-  # same release trigger). It polls PyPI for coglet before publishing.
+  publish-pypi-sdk:
+    name: Publish SDK to PyPI
+    needs: publish-pypi-coglet
+    runs-on: ubuntu-latest
+    environment: pypi
+    timeout-minutes: 10
+    steps:
+      - name: Download SDK wheel from release
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ github.event.release.tag_name }}
+          fileName: "cog-*.whl"
+          out-file-path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

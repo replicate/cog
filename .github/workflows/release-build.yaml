@@ -210,6 +210,17 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Check for existing draft release
+        run: |
+          TAG="${{ github.ref_name }}"
+          if gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null | grep -q true; then
+            echo "::error::Draft release for $TAG already exists. Delete it before re-running."
+            echo "::error::Run: gh release delete $TAG --yes"
+            exit 1
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Goreleaser creates draft release with Go CLI binaries
       - name: Build CLI and create draft release
         uses: goreleaser/goreleaser-action@v6
