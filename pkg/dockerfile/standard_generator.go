@@ -49,8 +49,9 @@ const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete &
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
 
 type StandardGenerator struct {
-	Config *config.Config
-	Dir    string
+	Config         *config.Config
+	Dir            string
+	ConfigFilename string // Base filename like "cog.yaml" or "my-config.yaml"
 
 	// these are here to make this type testable
 	GOOS   string
@@ -77,7 +78,7 @@ type StandardGenerator struct {
 	requiresCog                bool
 }
 
-func NewStandardGenerator(config *config.Config, dir string, command command.Command, client registry.Client, requiresCog bool) (*StandardGenerator, error) {
+func NewStandardGenerator(config *config.Config, dir string, configFilename string, command command.Command, client registry.Client, requiresCog bool) (*StandardGenerator, error) {
 	tmpDir, err := dockercontext.BuildTempDir(dir)
 	if err != nil {
 		return nil, err
@@ -88,9 +89,15 @@ func NewStandardGenerator(config *config.Config, dir string, command command.Com
 		return nil, err
 	}
 
+	// Default to "cog.yaml" if not specified
+	if configFilename == "" {
+		configFilename = "cog.yaml"
+	}
+
 	return &StandardGenerator{
 		Config:           config,
 		Dir:              dir,
+		ConfigFilename:   configFilename,
 		GOOS:             runtime.GOOS,
 		GOARCH:           runtime.GOOS,
 		tmpDir:           tmpDir,
@@ -287,11 +294,11 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Con
 }
 
 func (g *StandardGenerator) cpCogYaml() string {
-	if filepath.Base(g.Config.Filename()) == "cog.yaml" {
+	if g.ConfigFilename == "" || g.ConfigFilename == "cog.yaml" {
 		return ""
 	}
 	// Absolute filename doesn't work anyway, so it's always relative
-	return fmt.Sprintf("RUN cp %s /src/cog.yaml", filepath.Join("/src", g.Config.Filename()))
+	return fmt.Sprintf("RUN cp %s /src/cog.yaml", filepath.Join("/src", g.ConfigFilename))
 }
 
 func (g *StandardGenerator) generateForWeights() (string, []string, []string, error) {

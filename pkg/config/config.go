@@ -70,7 +70,6 @@ type WeightSource struct {
 }
 
 type Config struct {
-	filename    string
 	Build       *Build         `json:"build" yaml:"build"`
 	Image       string         `json:"image,omitempty" yaml:"image,omitempty"`
 	Predict     string         `json:"predict,omitempty" yaml:"predict"`
@@ -80,13 +79,6 @@ type Config struct {
 	Weights     []WeightSource `json:"weights,omitempty" yaml:"weights,omitempty"`
 
 	parsedEnvironment map[string]string
-}
-
-func (c *Config) Filename() string {
-	if c.filename == "" {
-		return "cog.yaml"
-	}
-	return c.filename
 }
 
 func defaultConfig() *Config {

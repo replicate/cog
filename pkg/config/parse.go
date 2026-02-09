@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -10,10 +11,22 @@ import (
 	"github.com/replicate/cog/pkg/util/files"
 )
 
-// parse reads and parses a cog.yaml file into a ConfigFile.
+// parse reads and parses YAML content from an io.Reader into a configFile.
+// This only does YAML parsing - no validation or defaults.
+// Returns ParseError if the content cannot be read or parsed.
+func parse(r io.Reader) (*configFile, error) {
+	contents, err := io.ReadAll(r)
+	if err != nil {
+		return nil, &ParseError{Err: err}
+	}
+
+	return parseBytes(contents)
+}
+
+// parseFile reads and parses a cog.yaml file into a configFile.
 // This only does YAML parsing - no validation or defaults.
 // Returns ParseError if the file cannot be read or parsed.
-func parse(filename string) (*configFile, error) {
+func parseFile(filename string) (*configFile, error) {
 	exists, err := files.Exists(filename)
 	if err != nil {
 		return nil, &ParseError{Filename: filename, Err: err}
@@ -26,17 +39,27 @@ func parse(filename string) (*configFile, error) {
 		}
 	}
 
-	contents, err := os.ReadFile(filename)
+	f, err := os.Open(filename)
 	if err != nil {
 		return nil, &ParseError{Filename: filename, Err: err}
 	}
+	defer f.Close()
 
-	return parseBytes(contents, filename)
+	cfg, err := parse(f)
+	if err != nil {
+		// Add filename context to the error
+		if parseErr, ok := err.(*ParseError); ok {
+			parseErr.Filename = filename
+			return nil, parseErr
+		}
+		return nil, &ParseError{Filename: filename, Err: err}
+	}
+
+	return cfg, nil
 }
 
 // parseBytes parses YAML content into a configFile.
-// The filename is used for error messages only.
-func parseBytes(contents []byte, filename string) (*configFile, error) {
+func parseBytes(contents []byte) (*configFile, error) {
 	cfg := &configFile{}
 
 	if len(contents) == 0 {
@@ -46,8 +69,7 @@ func parseBytes(contents []byte, filename string) (*configFile, error) {
 
 	if err := yaml.Unmarshal(contents, cfg); err != nil {
 		return nil, &ParseError{
-			Filename: filename,
-			Err:      fmt.Errorf("invalid YAML: %w", err),
+			Err: fmt.Errorf("invalid YAML: %w", err),
 		}
 	}
 
@@ -57,27 +79,26 @@ func parseBytes(contents []byte, filename string) (*configFile, error) {
 // FromYAML parses YAML content into an uncompleted Config.
 // This is a convenience function primarily for testing.
 // Callers should call Complete() on the returned config to resolve CUDA versions etc.
-// For production code, use Load() or LoadFromDir() which handles validation and completion.
+// For production code, use Load() which handles validation and completion.
 //
 // Note: This function skips validation since it has no project directory context.
 // The Complete() method will validate requirements files exist when called.
 func FromYAML(contents []byte) (*Config, error) {
-	cfgFile, err := parseBytes(contents, "cog.yaml")
+	cfgFile, err := parseBytes(contents)
 	if err != nil {
 		return nil, err
 	}
 
 	// Convert to Config struct without completion or validation
 	// The caller should call Complete() with the appropriate project dir
-	return configFileToConfig(cfgFile, "cog.yaml")
+	return configFileToConfig(cfgFile)
 }
 
 // configFileToConfig converts a ConfigFile to a Config without running completion logic.
 // This is the minimal conversion used by FromYAML for test compatibility.
-func configFileToConfig(cfg *configFile, filename string) (*Config, error) {
+func configFileToConfig(cfg *configFile) (*Config, error) {
 	config := &Config{
-		filename: filename,
-		Build:    &Build{},
+		Build: &Build{},
 	}
 
 	if cfg.Build != nil {

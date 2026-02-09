@@ -42,6 +42,7 @@ func Build(
 	cfg *config.Config,
 	dir,
 	imageName string,
+	configFilename string,
 	secrets []string,
 	noCache,
 	separateWeights bool,
@@ -97,7 +98,7 @@ func Build(
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
-		generator, err := dockerfile.NewGenerator(cfg, dir, dockerCommand, client, true)
+		generator, err := dockerfile.NewGenerator(cfg, dir, configFilename, dockerCommand, client, true)
 		if err != nil {
 			return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}
@@ -337,13 +338,13 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 	return imageID, nil
 }
 
-func BuildBase(ctx context.Context, dockerClient command.Command, cfg *config.Config, dir string, useCudaBaseImage string, useCogBaseImage *bool, progressOutput string, client registry.Client, requiresCog bool) (string, error) {
+func BuildBase(ctx context.Context, dockerClient command.Command, cfg *config.Config, dir string, configFilename string, useCudaBaseImage string, useCogBaseImage *bool, progressOutput string, client registry.Client, requiresCog bool) (string, error) {
 	// TODO: better image management so we don't eat up disk space
 	// https://github.com/replicate/cog/issues/80
 	imageName := config.BaseDockerImageName(dir)
 
 	console.Info("Building Docker image from environment in cog.yaml...")
-	generator, err := dockerfile.NewGenerator(cfg, dir, dockerClient, client, requiresCog)
+	generator, err := dockerfile.NewGenerator(cfg, dir, configFilename, dockerClient, client, requiresCog)
 	if err != nil {
 		return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}

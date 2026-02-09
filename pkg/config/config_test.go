@@ -595,12 +595,12 @@ func TestBlankBuild(t *testing.T) {
 	err := os.WriteFile(configPath, []byte(`build:`), 0o644)
 	require.NoError(t, err)
 
-	cfgFile, err := parse(configPath)
+	cfgFile, err := parseFile(configPath)
 	require.NoError(t, err)
 	// Note: `build:` by itself in YAML parses to Build: nil (empty map becomes nil pointer)
 	// The completion step should create a default Build
 
-	config, err := configFileToConfig(cfgFile, "cog.yaml")
+	config, err := configFileToConfig(cfgFile)
 	require.NoError(t, err)
 	require.NoError(t, config.Complete(dir))
 	require.NotNil(t, config.Build)
@@ -642,7 +642,7 @@ build:
 	err := os.WriteFile(configPath, []byte(yamlString), 0o644)
 	require.NoError(t, err)
 
-	_, err = parse(configPath)
+	_, err = parseFile(configPath)
 	require.NoError(t, err)
 }
 

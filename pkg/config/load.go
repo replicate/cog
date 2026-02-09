@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -18,39 +19,19 @@ type LoadResult struct {
 	RootDir  string
 }
 
-// Load finds, parses, validates, and completes a config.
-// This is the main entry point for most callers using the new API.
+// Load parses, validates, and completes a config from an io.Reader.
+// The projectDir is used for validation (checking that referenced files exist)
+// and for completion (resolving CUDA versions, loading requirements files, etc.).
 // Always returns warnings if present, even on success.
-func Load(configFilename string) (*LoadResult, error) {
-	if configFilename == "" {
-		configFilename = "cog.yaml"
-	}
-
-	// Find the root project directory
-	rootDir, err := GetProjectDir(configFilename)
-	if err != nil {
-		return nil, err
-	}
-
-	return loadFromDir(rootDir, configFilename)
-}
-
-// loadFromDir loads a config from a specific directory.
-func loadFromDir(dir string, configFilename string) (*LoadResult, error) {
-	if configFilename == "" {
-		configFilename = "cog.yaml"
-	}
-
-	configPath := filepath.Join(dir, configFilename)
-
+func Load(r io.Reader, projectDir string) (*LoadResult, error) {
 	// Parse
-	cfgFile, err := parse(configPath)
+	cfgFile, err := parse(r)
 	if err != nil {
 		return nil, err
 	}
 
 	// Validate
-	validationResult := ValidateConfigFile(cfgFile, WithProjectDir(dir))
+	validationResult := ValidateConfigFile(cfgFile, WithProjectDir(projectDir))
 
 	// Collect warnings
 	warnings := validationResult.Warnings
@@ -61,25 +42,30 @@ func loadFromDir(dir string, configFilename string) (*LoadResult, error) {
 	}
 
 	// Convert to Config struct
-	config, err := configFileToConfig(cfgFile, configFilename)
+	config, err := configFileToConfig(cfgFile)
 	if err != nil {
 		return nil, err
 	}
 
 	// Complete (resolve CUDA, load requirements, etc.)
-	if err := config.Complete(dir); err != nil {
+	if err := config.Complete(projectDir); err != nil {
 		return nil, err
 	}
 
 	return &LoadResult{
 		Config:   config,
 		Warnings: warnings,
-		RootDir:  dir,
+		RootDir:  projectDir,
 	}, nil
 }
 
-// Returns the project's root directory, or the directory specified by the --project-dir flag
+// GetProjectDir returns the project's root directory by searching for
+// the config file starting from the current working directory.
 func GetProjectDir(configFilename string) (string, error) {
+	if configFilename == "" {
+		configFilename = "cog.yaml"
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
@@ -87,7 +73,7 @@ func GetProjectDir(configFilename string) (string, error) {
 	return findProjectRootDir(cwd, configFilename)
 }
 
-// Given a directory, find the cog config file in that directory
+// findConfigPathInDirectory checks if the config file exists in the given directory.
 func findConfigPathInDirectory(dir string, configFilename string) (configPath string, err error) {
 	filePath := filepath.Join(dir, configFilename)
 	exists, err := files.Exists(filePath)
@@ -100,7 +86,7 @@ func findConfigPathInDirectory(dir string, configFilename string) (configPath st
 	return "", errors.ConfigNotFound(fmt.Sprintf("%s not found in %s", configFilename, dir))
 }
 
-// Walk up the directory tree to find the root of the project.
+// findProjectRootDir walks up the directory tree to find the root of the project.
 // The project root is defined as the directory housing a `cog.yaml` file.
 func findProjectRootDir(startDir string, configFilename string) (string, error) {
 	dir := startDir
