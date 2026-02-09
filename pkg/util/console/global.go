@@ -49,27 +49,27 @@ func Fatal(msg string) {
 }
 
 // Debug level message.
-func Debugf(msg string, v ...interface{}) {
+func Debugf(msg string, v ...any) {
 	ConsoleInstance.Debugf(msg, v...)
 }
 
 // Info level message.
-func Infof(msg string, v ...interface{}) {
+func Infof(msg string, v ...any) {
 	ConsoleInstance.Infof(msg, v...)
 }
 
 // Warn level message.
-func Warnf(msg string, v ...interface{}) {
+func Warnf(msg string, v ...any) {
 	ConsoleInstance.Warnf(msg, v...)
 }
 
 // Error level message.
-func Errorf(msg string, v ...interface{}) {
+func Errorf(msg string, v ...any) {
 	ConsoleInstance.Errorf(msg, v...)
 }
 
 // Fatal level message.
-func Fatalf(msg string, v ...interface{}) {
+func Fatalf(msg string, v ...any) {
 	ConsoleInstance.Fatalf(msg, v...)
 }
 

@@ -9,7 +9,7 @@ import (
 
 	"github.com/hashicorp/go-version"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestValidateCudaVersion(t *testing.T) {
@@ -650,8 +650,9 @@ func TestConfigMarshal(t *testing.T) {
 	cfg := defaultConfig()
 	data, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
+	// yaml v4 uses 4-space indentation by default
 	require.Equal(t, `build:
-  python_version: "3.13"
+    python_version: "3.13"
 predict: ""
 `, string(data))
 }

@@ -3,7 +3,7 @@ package util
 import (
 	"fmt"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func OverwriteYAML(sourceYaml []byte, destinationYaml []byte) ([]byte, error) {
@@ -84,12 +84,9 @@ func traverseAndCompare(sourceNode, destinationNode *yaml.Node, path string) err
 		sourceLen := len(sourceNode.Content)
 		destinationLen := len(destinationNode.Content)
 
-		maxLen := sourceLen
-		if destinationLen > maxLen {
-			maxLen = destinationLen
-		}
+		maxLen := max(destinationLen, sourceLen)
 
-		for i := 0; i < maxLen; i++ {
+		for i := range maxLen {
 			childPath := fmt.Sprintf("%s[%d]", path, i)
 
 			if i >= destinationLen {

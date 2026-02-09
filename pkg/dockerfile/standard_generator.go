@@ -307,25 +307,26 @@ func (g *StandardGenerator) generateForWeights() (string, []string, []string, er
 		return "", nil, nil, err
 	}
 	// generate dockerfile to store these model weights files
-	dockerfileContents := `#syntax=docker/dockerfile:1.4
+	var dockerfileContents strings.Builder
+	dockerfileContents.WriteString(`#syntax=docker/dockerfile:1.4
 FROM scratch
-`
+`)
 	for _, p := range append(modelDirs, modelFiles...) {
-		dockerfileContents += fmt.Sprintf("\nCOPY %s %s", p, path.Join("/src", p))
+		dockerfileContents.WriteString(fmt.Sprintf("\nCOPY %s %s", p, path.Join("/src", p)))
 	}
 
-	return dockerfileContents, modelDirs, modelFiles, nil
+	return dockerfileContents.String(), modelDirs, modelFiles, nil
 }
 
 func makeDockerignoreForWeights(dirs, files []string) string {
-	var contents string
+	var contents strings.Builder
 	for _, p := range dirs {
-		contents += fmt.Sprintf("%[1]s\n%[1]s/**/*\n", p)
+		contents.WriteString(fmt.Sprintf("%[1]s\n%[1]s/**/*\n", p))
 	}
 	for _, p := range files {
-		contents += fmt.Sprintf("%[1]s\n", p)
+		contents.WriteString(fmt.Sprintf("%[1]s\n", p))
 	}
-	return DockerignoreHeader + contents
+	return DockerignoreHeader + contents.String()
 }
 
 func (g *StandardGenerator) Cleanup() error {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 )
 
 // configFile represents the raw cog.yaml as written by users.
@@ -71,7 +71,7 @@ func (r *runItemFile) UnmarshalYAML(unmarshal func(any) error) error {
 	switch v := commandOrMap.(type) {
 	case string:
 		r.Command = v
-	case map[any]any:
+	case map[string]any:
 		var data []byte
 		var err error
 
