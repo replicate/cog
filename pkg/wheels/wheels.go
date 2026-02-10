@@ -235,36 +235,44 @@ func GetCogWheelConfig() (*WheelConfig, error) {
 
 // GetCogletWheelConfig returns the WheelConfig for coglet based on COGLET_WHEEL env var.
 //
-// Coglet is always opt-in via COGLET_WHEEL env var. Supported values:
-//   - "dist" - Use local dist/ directory
-//   - "pypi" or "pypi:version" - Install from PyPI
-//   - URL or file path - Direct wheel location
+// Resolution order:
+//  1. COGLET_WHEEL env var (if set, explicit override)
+//  2. Auto-detect: check dist/coglet-*.whl (for development)
+//  3. Default: PyPI
 //
-// Returns nil, nil if coglet should not be installed (default).
-// Returns nil, error if configuration is invalid.
+// Returns nil only on error. Coglet is always installed.
 func GetCogletWheelConfig() (*WheelConfig, error) {
-	// Coglet is opt-in only via explicit env var
-	config := ParseWheelValue(os.Getenv(CogletWheelEnvVar))
-	if config == nil {
-		return nil, nil
-	}
-
-	// Handle "dist" keyword - resolve to actual path
-	if config.Source == WheelSourceFile && config.Path == "dist" {
-		path, err := findWheelInDist("coglet-*.whl", CogletWheelEnvVar)
-		if err != nil {
-			return nil, err
+	// Check explicit env var first
+	if config := ParseWheelValue(os.Getenv(CogletWheelEnvVar)); config != nil {
+		// Handle "dist" keyword - resolve to actual path
+		if config.Source == WheelSourceFile && config.Path == "dist" {
+			path, err := findWheelInDist("coglet-*.whl", CogletWheelEnvVar)
+			if err != nil {
+				return nil, err
+			}
+			config.Path = path
 		}
-		config.Path = path
+		// Verify file path exists
+		if config.Source == WheelSourceFile && config.Path != "" {
+			if _, err := os.Stat(config.Path); os.IsNotExist(err) {
+				return nil, fmt.Errorf("%s: wheel file not found: %s", CogletWheelEnvVar, config.Path)
+			}
+		}
+		return config, nil
 	}
 
-	// Verify file path exists
-	if config.Source == WheelSourceFile && config.Path != "" {
-		if _, err := os.Stat(config.Path); os.IsNotExist(err) {
-			return nil, fmt.Errorf("%s: wheel file not found: %s", CogletWheelEnvVar, config.Path)
+	// Auto-detect for dev builds: check dist/ directory
+	if isDevVersion() {
+		if path := findWheelInDistSilent("coglet-*.whl"); path != "" {
+			return &WheelConfig{Source: WheelSourceFile, Path: path}, nil
 		}
 	}
 
+	// Default: PyPI
+	config := &WheelConfig{Source: WheelSourcePyPI}
+	if !isDevVersion() {
+		config.Version = global.Version
+	}
 	return config, nil
 }
 

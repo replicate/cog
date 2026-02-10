@@ -498,27 +498,25 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", err
 	}
 
-	// Optionally install coglet wheel alongside cog
+	// Install coglet wheel alongside cog
 	cogletConfig, err := wheels.GetCogletWheelConfig()
 	if err != nil {
 		return "", err
 	}
-	if cogletConfig != nil {
-		switch cogletConfig.Source {
-		case wheels.WheelSourcePyPI:
-			console.Infof("Using coglet from PyPI: %s", cogletConfig.PyPIPackageURL("coglet"))
-		case wheels.WheelSourceURL:
-			console.Infof("Using coglet wheel from URL: %s", cogletConfig.URL)
-		case wheels.WheelSourceFile:
-			console.Infof("Using local coglet wheel: %s", cogletConfig.Path)
-		}
-		cogletInstall, err := g.installCogletWheel(cogletConfig)
-		if err != nil {
-			return "", fmt.Errorf("failed to install coglet wheel: %w", err)
-		}
-		if cogletInstall != "" {
-			installLines += "\n" + cogletInstall
-		}
+	switch cogletConfig.Source {
+	case wheels.WheelSourcePyPI:
+		console.Infof("Using coglet from PyPI: %s", cogletConfig.PyPIPackageURL("coglet"))
+	case wheels.WheelSourceURL:
+		console.Infof("Using coglet wheel from URL: %s", cogletConfig.URL)
+	case wheels.WheelSourceFile:
+		console.Infof("Using local coglet wheel: %s", cogletConfig.Path)
+	}
+	cogletInstall, err := g.installCogletWheel(cogletConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to install coglet wheel: %w", err)
+	}
+	if cogletInstall != "" {
+		installLines += "\n" + cogletInstall
 	}
 
 	return installLines, nil

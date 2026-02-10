@@ -309,24 +309,25 @@ func TestGetCogletWheelConfig(t *testing.T) {
 		name           string
 		envValue       string
 		globalVersion  string
-		expectedNil    bool
 		expectedSource WheelSource
 		expectedPath   string
 		expectedURL    string
 		expectedVer    string
 	}{
-		// Default: coglet not installed
+		// Default: coglet from PyPI (release build)
 		{
-			name:          "default returns nil (coglet optional)",
-			envValue:      "",
-			globalVersion: "0.12.0",
-			expectedNil:   true,
+			name:           "release default uses PyPI with version",
+			envValue:       "",
+			globalVersion:  "0.12.0",
+			expectedSource: WheelSourcePyPI,
+			expectedVer:    "0.12.0",
 		},
 		{
-			name:          "dev mode default returns nil",
-			envValue:      "",
-			globalVersion: "dev",
-			expectedNil:   true,
+			name:           "dev default uses PyPI latest",
+			envValue:       "",
+			globalVersion:  "dev",
+			expectedSource: WheelSourcePyPI,
+			expectedVer:    "",
 		},
 		// Explicit pypi
 		{
@@ -362,10 +363,6 @@ func TestGetCogletWheelConfig(t *testing.T) {
 
 			result, err := GetCogletWheelConfig()
 			require.NoError(t, err)
-			if tt.expectedNil {
-				require.Nil(t, result)
-				return
-			}
 			require.NotNil(t, result)
 			require.Equal(t, tt.expectedSource, result.Source)
 			require.Equal(t, tt.expectedURL, result.URL)

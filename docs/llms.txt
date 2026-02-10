@@ -12,7 +12,7 @@ You can deploy your packaged model to your own infrastructure, or to [Replicate]
 
 - ✅ **Define the inputs and outputs for your model with standard Python.** Then, Cog generates an OpenAPI schema and validates the inputs and outputs.
 
-- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API. Two runtime implementations available: FastAPI (default) and Rust/Axum (experimental, faster).
+- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
 
 - 🥞 **Automatic queue worker.** Long-running deep learning models or batch processing is best architected with a queue. Cog models do this out of the box. Redis is currently supported, with more in the pipeline.
 
@@ -608,6 +608,490 @@ cog run -e CUDA_VISIBLE_DEVICES=0 -e BATCH_SIZE=32 python train.py
 ---
 
 
+# Contributing guide
+
+## Making a contribution
+
+### Signing your work
+
+Each commit you contribute to Cog must be signed off (not to be confused with **[signing](https://git-scm.com/book/en/v2/Git-Tools-Signing-Your-Work)**). It certifies that you wrote the patch, or have the right to contribute it. It is called the [Developer Certificate of Origin](https://developercertificate.org/) and was originally developed for the Linux kernel.
+
+If you can certify the following:
+
+```
+By making a contribution to this project, I certify that:
+
+(a) The contribution was created in whole or in part by me and I
+    have the right to submit it under the open source license
+    indicated in the file; or
+
+(b) The contribution is based upon previous work that, to the best
+    of my knowledge, is covered under an appropriate open source
+    license and I have the right under that license to submit that
+    work with modifications, whether created in whole or in part
+    by me, under the same open source license (unless I am
+    permitted to submit under a different license), as indicated
+    in the file; or
+
+(c) The contribution was provided directly to me by some other
+    person who certified (a), (b) or (c) and I have not modified
+    it.
+
+(d) I understand and agree that this project and the contribution
+    are public and that a record of the contribution (including all
+    personal information I submit with it, including my sign-off) is
+    maintained indefinitely and may be redistributed consistent with
+    this project or the open source license(s) involved.
+```
+
+Then add this line to each of your Git commit messages, with your name and email:
+
+```
+Signed-off-by: Sam Smith <sam.smith@example.com>
+```
+
+### How to sign off your commits
+
+If you're using the `git` CLI, you can sign a commit by passing the `-s` option: `git commit -s -m "Reticulate splines"`
+
+You can also create a git hook which will sign off all your commits automatically. Using hooks also allows you to sign off commits when using non-command-line tools like GitHub Desktop or VS Code.
+
+First, create the hook file and make it executable:
+
+```sh
+cd your/checkout/of/cog
+touch .git/hooks/prepare-commit-msg
+chmod +x .git/hooks/prepare-commit-msg
+```
+
+Then paste the following into the file:
+
+```
+#!/bin/sh
+
+NAME=$(git config user.name)
+EMAIL=$(git config user.email)
+
+if [ -z "$NAME" ]; then
+    echo "empty git config user.name"
+    exit 1
+fi
+
+if [ -z "$EMAIL" ]; then
+    echo "empty git config user.email"
+    exit 1
+fi
+
+git interpret-trailers --if-exists doNothing --trailer \
+    "Signed-off-by: $NAME <$EMAIL>" \
+    --in-place "$1"
+```
+
+### Acknowledging contributions
+
+We welcome contributions from everyone, and consider all forms of contribution equally valuable. This includes code, bug reports, feature requests, and documentation. We use [All Contributors](https://allcontributors.org/) to maintain a list of all the people who have contributed to Cog.
+
+To acknowledge a contribution, add a comment to an issue or pull request in the following format:
+
+```
+@allcontributors please add @username for doc,code,ideas
+```
+
+A bot will automatically open a pull request to add the contributor to the project README.
+
+Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the full list at [allcontributors.org/docs/en/emoji-key](https://allcontributors.org/docs/en/emoji-key)
+
+## Development environment
+
+Development tasks are managed with [mise](https://mise.jdx.dev/). Run `mise tasks` to see all available tasks.
+
+### Prerequisites
+
+- [mise](https://mise.jdx.dev/getting-started.html): Manages Go, Rust, Python, and other tools
+- [Docker](https://docs.docker.com/desktop) or [OrbStack](https://orbstack.dev)
+
+### Setup
+
+```sh
+# Trust the mise configuration and install tools
+mise trust
+mise install
+
+# Create Python virtualenv and install dependencies
+uv venv
+uv sync --all-groups
+```
+
+### Common tasks
+
+```sh
+# Build cog binary
+mise run build:cog
+
+# Install cog to $GOPATH/bin
+make install PREFIX=$(go env GOPATH)
+
+# Run all tests
+mise run test:go
+mise run test:python
+mise run test:rust
+
+# Run specific tests
+mise run test:go -- ./pkg/config
+uv run tox -e py312-tests -- python/tests/server/test_http.py -k test_name
+
+# Format code (all languages)
+mise run fmt:fix
+
+# Lint code (all languages)
+mise run lint
+```
+
+Run `mise tasks` for the complete list of available tasks.
+
+If you encounter any errors, see the troubleshooting section below.
+
+## Project structure
+
+As much as possible, this is attempting to follow the [Standard Go Project Layout](https://github.com/golang-standards/project-layout).
+
+- `cmd/` - The root `cog` command.
+- `pkg/cli/` - CLI commands.
+- `pkg/config` - Everything `cog.yaml` related.
+- `pkg/docker/` - Low-level interface for Docker commands.
+- `pkg/dockerfile/` - Creates Dockerfiles.
+- `pkg/image/` - Creates and manipulates Cog Docker images.
+- `pkg/predict/` - Runs predictions on models.
+- `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
+- `python/` - The Cog Python library.
+- `integration-tests/` - Go-based integration tests using testscript.
+- `tools/compatgen/` - Tool for generating CUDA/PyTorch/TensorFlow compatibility matrices.
+
+For deeper architectural understanding, see the [architecture documentation](./architecture/00-overview.md).
+
+## Updating compatibility matrices
+
+The CUDA base images and framework compatibility matrices in `pkg/config/` are checked into source control and only need to be regenerated when adding support for new versions of CUDA, PyTorch, or TensorFlow.
+
+To regenerate the compatibility matrices, run:
+
+```sh
+# Regenerate all matrices
+mise run generate:compat
+
+# Or regenerate specific matrices
+mise run generate:compat cuda
+mise run generate:compat torch
+mise run generate:compat tensorflow
+```
+
+The generated files are:
+- `pkg/config/cuda_base_images.json` - Available NVIDIA CUDA base images
+- `pkg/config/torch_compatibility_matrix.json` - PyTorch/CUDA/Python compatibility
+- `pkg/config/tf_compatibility_matrix.json` - TensorFlow/CUDA/Python compatibility
+
+## CI tool dependencies
+
+Development tools are managed in **two places** that must be kept in sync:
+
+1. **`mise.toml`** — Tool versions for local development (uses aqua backend for prebuilt binaries)
+2. **`.github/workflows/ci.yaml`** — Tool installation for CI (uses dedicated GitHub Actions)
+
+CI deliberately avoids aqua downloads from GitHub Releases to prevent transient 502 failures. Instead, it uses dedicated actions (`taiki-e/install-action`, `go install`, `PyO3/maturin-action`, etc.) that are more reliable.
+
+Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
+
+**When updating a tool version**, update both:
+- The version in `mise.toml` (for local dev)
+- The corresponding version pin in `.github/workflows/ci.yaml` (for CI)
+
+See the [CI Tool Dependencies section in AGENTS.md](./AGENTS.md#ci-tool-dependencies) for the full mapping of tools to their CI installation methods.
+
+## Concepts
+
+There are a few concepts used throughout Cog that might be helpful to understand.
+
+- **Config**: The `cog.yaml` file.
+- **Image**: Represents a built Docker image that serves the Cog API, containing a **model**.
+- **Input**: Input from a **prediction**, as key/value JSON object.
+- **Model**: A user's machine learning model, consisting of code and weights.
+- **Output**: Output from a **prediction**, as arbitrarily complex JSON object.
+- **Prediction**: A single run of the model, that takes **input** and produces **output**.
+- **Predictor**: Defines how Cog runs **predictions** on a **model**.
+
+## Running tests
+
+**To run the entire test suite:**
+
+```sh
+mise run test:go
+mise run test:python
+mise run test:rust
+```
+
+**To run just the Go unit tests:**
+
+```sh
+mise run test:go
+```
+
+**To run just the Python tests:**
+
+```sh
+mise run test:python
+```
+
+> [!INFO]
+> This runs the Python test suite across all supported Python versions (3.10-3.13) using tox.
+
+### Integration Tests
+
+Integration tests are in `integration-tests/` using [testscript](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript). Each test is a self-contained `.txtar` file in `integration-tests/tests/`, with some specialized tests as Go test functions in subpackages.
+
+```sh
+# Run all integration tests
+mise run test:integration
+
+# Run a specific test
+mise run test:integration string_predictor
+
+# Run fast tests only (skip slow GPU/framework tests)
+cd integration-tests && go test -short -v
+
+# Run with a custom cog binary
+COG_BINARY=/path/to/cog mise run test:integration
+```
+
+### Writing Integration Tests
+
+When adding new functionality, add integration tests in `integration-tests/tests/`. They are:
+- Self-contained (embedded fixtures in `.txtar` files)
+- Faster to run (parallel execution with automatic cleanup)
+- Easier to read and write (simple command script format)
+
+Example test structure:
+
+```txtar
+# Test string predictor
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
+```
+
+For testing `cog serve`, use `cog serve` and the `curl` command:
+
+```txtar
+cog build -t $TEST_IMAGE
+cog serve
+curl POST /predictions '{"input":{"s":"test"}}'
+stdout '"output":"hello test"'
+```
+
+#### Advanced Test Commands
+
+For tests that require subprocess initialization or async operations, use `retry-curl`:
+
+**`retry-curl` - HTTP request with automatic retries:**
+
+```txtar
+# Make HTTP request with retry logic (useful for subprocess initialization delays)
+# retry-curl [method] [path] [body] [max-attempts] [retry-delay]
+retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
+stdout '"output":"hello test"'
+```
+
+**Example: Testing predictor with subprocess in setup**
+
+```txtar
+cog build -t $TEST_IMAGE
+cog serve
+
+# Use generous retries since setup spawns a background process
+retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
+stdout '"output":"hello test"'
+
+-- predict.py --
+class Predictor(BasePredictor):
+    def setup(self):
+        self.process = subprocess.Popen(["./background.sh"])
+    
+    def predict(self, s: str) -> str:
+        return "hello " + s
+```
+
+#### Test Conditions
+
+Use conditions to control when tests run based on environment:
+
+**`[short]` - Skip slow tests in short mode:**
+
+```txtar
+[short] skip 'requires GPU or long build time'
+
+cog build -t $TEST_IMAGE
+# ... rest of test
+```
+
+Run with `go test -short` to skip these tests.
+
+**`[linux]` / `[!linux]` - Platform-specific tests:**
+
+```txtar
+[!linux] skip 'requires Linux'
+
+# Linux-specific test
+cog build -t $TEST_IMAGE
+```
+
+**`[amd64]` / `[!amd64]` - Architecture-specific tests:**
+
+```txtar
+[!amd64] skip 'requires amd64 architecture'
+
+# amd64-specific test
+cog build -t $TEST_IMAGE
+```
+
+**`[linux_amd64]` - Combined platform and architecture:**
+
+```txtar
+[!linux_amd64] skip 'requires Linux on amd64'
+
+# Test that requires both Linux and amd64
+cog build -t $TEST_IMAGE
+```
+
+**Combining conditions:**
+
+Conditions can be negated with `!`. Examples:
+- `[short]` - True when `go test -short` is used (skip this test in short mode)
+- `[!short]` - True when NOT running with `-short` flag (only run this in full test mode)
+- `[!linux]` - True when NOT on Linux
+- `[linux_amd64]` - True when on Linux AND amd64
+
+See existing tests in `integration-tests/tests/`, especially `setup_subprocess_*.txtar`, for more examples.
+
+## Running the docs server
+
+To run the docs website server locally:
+
+```sh
+mise run docs:serve
+```
+
+## Publishing a release
+
+This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new annotated git tag.
+
+### Choose a version number
+
+> Deciding what the annotated git tag should be requires some interpretation. Cog generally follows [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html), and since the major version
+> is `0`, the rules get [a bit more loose](https://semver.org/spec/v2.0.0.html#spec-item-4). Broadly speaking, the rules for when to increment the patch version still hold, but
+> backward-incompatible changes **will not** require incrementing the major version. In this way, the minor version may be incremented whether the changes are additive or
+> subtractive. This all changes once the major version is incremented to `1`.
+
+### Set up GPG signing (macOS)
+
+Before creating a signed tag, you'll need to set up GPG signing. On macOS, install GPG using Homebrew:
+
+```bash
+brew install gnupg
+```
+
+Generate a GPG key for signing:
+
+```bash
+gpg --quick-generate-key "Your Name <your.email@example.com>" ed25519 default 0
+```
+
+Configure Git to use your GPG key:
+
+```bash
+# Get your key ID
+gpg --list-secret-keys --keyid-format=long
+```
+
+This will show output like:
+```
+sec   ed25519/ABC123DEF456 2024-01-15 [SC]
+      ABC123DEF4567890ABCDEF1234567890ABCDEF12
+uid                 [ultimate] Your Name <your.email@example.com>
+```
+
+The key ID is the part after `ed25519/` (in this example, `ABC123DEF456`).
+
+```bash
+# Configure Git (replace YOUR_KEY_ID with your actual key ID)
+git config --global user.signingkey YOUR_KEY_ID
+git config --global commit.gpgsign true
+```
+### Create a prerelease (optional)
+
+Prereleases are a useful way to give testers a way to try out new versions of Cog without affecting the documented `latest` download URL which people normally use to install Cog.
+
+To publish a prerelease version, append a [SemVer prerelease identifer](https://semver.org/#spec-item-9) like `-alpha` or `-beta` to the git tag name. Goreleaser will detect this and mark it as a prerelease in GitHub Releases.
+
+    git checkout some-prerelease-branch
+    git fetch --all --tags
+    git tag -a v0.1.0-alpha -m "Prerelease v0.1.0"
+    git push --tags
+
+### Create a release
+
+Run these commands to publish a new release `v0.13.12` referencing commit `fabdadbead`:
+
+    git checkout main
+    git fetch --all --tags
+    git tag --sign --annotate --message 'Release v0.13.12' v0.13.12 fabdadbead
+    git push origin v0.13.12
+
+Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/actions) to monitor the release process.
+
+
+### Get team approval for the PyPI package
+
+The release workflow will halt until another member of the team approves the release.
+
+Ping someone on the team to review and approve the release.
+
+### Convert your git tag to a GitHub release
+
+Once the release is published, convert your git tag to a proper GitHub release:
+
+1. Visit [github.com/replicate/cog/tags](https://github.com/replicate/cog/tags)
+2. Click on your tag
+3. Click "Create release from tag"
+4. Add release notes and publish the release
+
+
+## Troubleshooting
+
+### `cog command not found`
+
+The compiled `cog` binary will be installed in `$GOPATH/bin/cog`, e.g. `~/go/bin/cog`. Make sure that Golang's bin directory is present on your system PATH by adding it to your shell config (`.bashrc`, `.zshrc`, etc):
+
+    export PATH=~/go/bin:$PATH
+
+---
+
+Still having trouble? Please [open an issue](https://github.com/replicate/cog/issues) on GitHub.
+
+
+---
+
+
 # Deploy models with Cog
 
 Cog containers are Docker containers that serve an HTTP server 
@@ -742,26 +1226,21 @@ The `dist` option searches for wheels in:
 
 ### `COGLET_WHEEL`
 
-Controls which coglet wheel is installed in the Docker image. Coglet is the experimental Rust-based prediction server that provides faster, more stable request handling.
+Controls which coglet wheel is installed in the Docker image. Coglet is the Rust-based prediction server.
 
 **Supported values:** Same as `COG_WHEEL`
 
-**Default behavior:** Coglet is **not installed** unless explicitly enabled via this variable.
+**Default behavior:** For development builds, auto-detects a wheel in `dist/`. For release builds, installs the matching version from PyPI. Can be overridden with an explicit value.
 
 **Examples:**
 
 ```console
-# Use coglet from PyPI
-$ COGLET_WHEEL=pypi cog build
-
 # Use local development wheel
 $ COGLET_WHEEL=dist cog build
 
-# Use specific version
+# Use specific version from PyPI
 $ COGLET_WHEEL=pypi:0.1.0 cog build
 ```
-
-When coglet is installed, it is used automatically at runtime - no additional configuration is needed.
 
 ## Runtime variables
 
@@ -1212,14 +1691,6 @@ Those are the basics! Next, you might want to take a look at:
 
 When you run a Docker image built by Cog, 
 it serves an HTTP API for making predictions.
-
-> [!NOTE]
-> Cog has two runtime implementations:
-> - **Default (Python)**: Uses FastAPI/Uvicorn
-> - **FFI (Rust)**: Uses Axum with PyO3 (experimental, faster, more stable)
-> 
-> Enable the FFI runtime by setting `USE_COGLET=1` environment variable.
-> Both expose the same HTTP API. See [architecture docs](../architecture/) for details.
 
 The server supports both synchronous and asynchronous prediction creation:
 
@@ -2138,6 +2609,281 @@ test1
 test2
 ```
 - Note the repeated inputs with the same name "paths" which constitute the list
+
+
+---
+
+
+# Cog: Containers for machine learning
+
+Cog is an open-source tool that lets you package machine learning models in a standard, production-ready container.
+
+You can deploy your packaged model to your own infrastructure, or to [Replicate](https://replicate.com/).
+
+## Highlights
+
+- 📦 **Docker containers without the pain.** Writing your own `Dockerfile` can be a bewildering process. With Cog, you define your environment with a [simple configuration file](#how-it-works) and it generates a Docker image with all the best practices: Nvidia base images, efficient caching of dependencies, installing specific Python versions, sensible environment variable defaults, and so on.
+
+- 🤬️ **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will set it all up correctly for you.
+
+- ✅ **Define the inputs and outputs for your model with standard Python.** Then, Cog generates an OpenAPI schema and validates the inputs and outputs.
+
+- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
+
+- 🥞 **Automatic queue worker.** Long-running deep learning models or batch processing is best architected with a queue. Cog models do this out of the box. Redis is currently supported, with more in the pipeline.
+
+- ☁️ **Cloud storage.** Files can be read and written directly to Amazon S3 and Google Cloud Storage. (Coming soon.)
+
+- 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
+
+## How it works
+
+Define the Docker environment your model runs in with `cog.yaml`:
+
+```yaml
+build:
+  gpu: true
+  system_packages:
+    - "libgl1-mesa-glx"
+    - "libglib2.0-0"
+  python_version: "3.12"
+  python_packages:
+    - "torch==2.3"
+predict: "predict.py:Predictor"
+```
+
+Define how predictions are run on your model with `predict.py`:
+
+```python
+from cog import BasePredictor, Input, Path
+import torch
+
+class Predictor(BasePredictor):
+    def setup(self):
+        """Load the model into memory to make running multiple predictions efficient"""
+        self.model = torch.load("./weights.pth")
+
+    # The arguments and types the model takes as input
+    def predict(self,
+          image: Path = Input(description="Grayscale input image")
+    ) -> Path:
+        """Run a single prediction on the model"""
+        processed_image = preprocess(image)
+        output = self.model(processed_image)
+        return postprocess(output)
+```
+
+In the above we accept a path to the image as an input, and return a path to our transformed image after running it through our model.
+
+Now, you can run predictions on this model:
+
+```console
+$ cog predict -i image=@input.jpg
+--> Building Docker image...
+--> Running Prediction...
+--> Output written to output.jpg
+```
+
+Or, build a Docker image for deployment:
+
+```console
+$ cog build -t my-colorization-model
+--> Building Docker image...
+--> Built my-colorization-model:latest
+
+$ docker run -d -p 5000:5000 --gpus all my-colorization-model
+
+$ curl http://localhost:5000/predictions -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"image": "https://.../input.jpg"}}'
+```
+
+Or, combine build and run via the `serve` command:
+
+```console
+$ cog serve -p 8080
+
+$ curl http://localhost:8080/predictions -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"image": "https://.../input.jpg"}}'
+```
+
+<!-- NOTE (bfirsh): Development environment instructions intentionally left out of readme for now, so as not to confuse the "ship a model to production" message.
+
+In development, you can also run arbitrary commands inside the Docker environment:
+
+```console
+$ cog run python train.py
+...
+```
+
+Or, [spin up a Jupyter notebook](notebooks.md):
+
+```console
+$ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
+```
+-->
+
+## Why are we building this?
+
+It's really hard for researchers to ship machine learning models to production.
+
+Part of the solution is Docker, but it is so complex to get it to work: Dockerfiles, pre-/post-processing, Flask servers, CUDA versions. More often than not the researcher has to sit down with an engineer to get the damn thing deployed.
+
+[Andreas](https://github.com/andreasjansson) and [Ben](https://github.com/bfirsh) created Cog. Andreas used to work at Spotify, where he built tools for building and deploying ML models with Docker. Ben worked at Docker, where he created [Docker Compose](https://github.com/docker/compose).
+
+We realized that, in addition to Spotify, other companies were also using Docker to build and deploy machine learning models. [Uber](https://eng.uber.com/michelangelo-pyml/) and others have built similar systems. So, we're making an open source version so other people can do this too.
+
+Hit us up if you're interested in using it or want to collaborate with us. [We're on Discord](https://discord.gg/replicate) or email us at [team@replicate.com](mailto:team@replicate.com).
+
+## Prerequisites
+
+- **macOS, Linux or Windows 11**. Cog works on macOS, Linux and Windows 11 with [WSL 2](wsl2/wsl2.md)
+- **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog. If you install Docker Engine instead of Docker Desktop, you will need to [install Buildx](https://docs.docker.com/build/architecture/#buildx) as well.
+
+## Install
+
+If you're using macOS, you can install Cog using Homebrew:
+
+```console
+brew install cog
+```
+
+You can also download and install the latest release using our 
+[install script](https://cog.run/install):
+
+```sh
+# bash, zsh, and other shells
+sh <(curl -fsSL https://cog.run/install.sh)
+
+# fish shell
+sh (curl -fsSL https://cog.run/install.sh | psub)
+
+# download with wget and run in a separate command
+wget -qO- https://cog.run/install.sh
+sh ./install.sh
+```
+
+You can manually install the latest release of Cog directly from GitHub 
+by running the following commands in a terminal:
+
+```console
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
+sudo chmod +x /usr/local/bin/cog
+```
+
+Alternatively, you can build Cog from source and install it with these commands:
+
+```console
+make
+sudo make install
+```
+
+Or if you are on docker:
+
+```
+RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
+```
+
+## Upgrade
+
+If you're using macOS and you previously installed Cog with Homebrew, run the following:
+
+```console
+brew upgrade cog
+```
+
+Otherwise, you can upgrade to the latest version by running the same commands you used to install it.
+
+## Next steps
+
+- [Get started with an example model](getting-started.md)
+- [Get started with your own model](getting-started-own-model.md)
+- [Using Cog with notebooks](notebooks.md)
+- [Using Cog with Windows 11](wsl2/wsl2.md)
+- [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
+- [Deploy models with Cog](deploy.md)
+- [`cog.yaml` reference](yaml.md) to learn how to define your model's environment
+- [Prediction interface reference](python.md) to learn how the `Predictor` interface works
+- [Training interface reference](training.md) to learn how to add a fine-tuning API to your model
+- [HTTP API reference](http.md) to learn how to use the HTTP API that models serve
+
+## Need help?
+
+[Join us in #cog on Discord.](https://discord.gg/replicate)
+
+## Contributors ✨
+
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://fir.sh/"><img src="https://avatars.githubusercontent.com/u/40906?v=4?s=100" width="100px;" alt="Ben Firshman"/><br /><sub><b>Ben Firshman</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bfirsh" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=bfirsh" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://replicate.ai/"><img src="https://avatars.githubusercontent.com/u/713993?v=4?s=100" width="100px;" alt="Andreas Jansson"/><br /><sub><b>Andreas Jansson</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=andreasjansson" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=andreasjansson" title="Documentation">📖</a> <a href="#maintenance-andreasjansson" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://zeke.sikelianos.com/"><img src="https://avatars.githubusercontent.com/u/2289?v=4?s=100" width="100px;" alt="Zeke Sikelianos"/><br /><sub><b>Zeke Sikelianos</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=zeke" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=zeke" title="Documentation">📖</a> <a href="#tool-zeke" title="Tools">🔧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://rory.bio/"><img src="https://avatars.githubusercontent.com/u/9436784?v=4?s=100" width="100px;" alt="Rory Byrne"/><br /><sub><b>Rory Byrne</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=synek" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=synek" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=synek" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/hangtwenty"><img src="https://avatars.githubusercontent.com/u/2420688?v=4?s=100" width="100px;" alt="Michael Floering"/><br /><sub><b>Michael Floering</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=hangtwenty" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=hangtwenty" title="Documentation">📖</a> <a href="#ideas-hangtwenty" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://bencevans.io/"><img src="https://avatars.githubusercontent.com/u/638535?v=4?s=100" width="100px;" alt="Ben Evans"/><br /><sub><b>Ben Evans</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bencevans" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://shashank.pw/"><img src="https://avatars.githubusercontent.com/u/778870?v=4?s=100" width="100px;" alt="shashank agarwal"/><br /><sub><b>shashank agarwal</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=imshashank" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=imshashank" title="Documentation">📖</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://victorxlr.me/"><img src="https://avatars.githubusercontent.com/u/22397950?v=4?s=100" width="100px;" alt="VictorXLR"/><br /><sub><b>VictorXLR</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=VictorXLR" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=VictorXLR" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=VictorXLR" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://annahung31.github.io/"><img src="https://avatars.githubusercontent.com/u/39179888?v=4?s=100" width="100px;" alt="hung anna"/><br /><sub><b>hung anna</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aannahung31" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://notes.variogr.am/"><img src="https://avatars.githubusercontent.com/u/76612?v=4?s=100" width="100px;" alt="Brian Whitman"/><br /><sub><b>Brian Whitman</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Abwhitman" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/JimothyJohn"><img src="https://avatars.githubusercontent.com/u/24216724?v=4?s=100" width="100px;" alt="JimothyJohn"/><br /><sub><b>JimothyJohn</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3AJimothyJohn" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ericguizzo"><img src="https://avatars.githubusercontent.com/u/26746670?v=4?s=100" width="100px;" alt="ericguizzo"/><br /><sub><b>ericguizzo</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aericguizzo" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://www.dominicbaggott.com"><img src="https://avatars.githubusercontent.com/u/74812?v=4?s=100" width="100px;" alt="Dominic Baggott"/><br /><sub><b>Dominic Baggott</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=evilstreak" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=evilstreak" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/dashstander"><img src="https://avatars.githubusercontent.com/u/7449128?v=4?s=100" width="100px;" alt="Dashiell Stander"/><br /><sub><b>Dashiell Stander</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Adashstander" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=dashstander" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=dashstander" title="Tests">⚠️</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Hurricane-eye"><img src="https://avatars.githubusercontent.com/u/31437546?v=4?s=100" width="100px;" alt="Shuwei Liang"/><br /><sub><b>Shuwei Liang</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3AHurricane-eye" title="Bug reports">🐛</a> <a href="#question-Hurricane-eye" title="Answering Questions">💬</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ericallam"><img src="https://avatars.githubusercontent.com/u/534?v=4?s=100" width="100px;" alt="Eric Allam"/><br /><sub><b>Eric Allam</b></sub></a><br /><a href="#ideas-ericallam" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://perdomo.me"><img src="https://avatars.githubusercontent.com/u/178474?v=4?s=100" width="100px;" alt="Iván Perdomo"/><br /><sub><b>Iván Perdomo</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aiperdomo" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://charlesfrye.github.io"><img src="https://avatars.githubusercontent.com/u/10442975?v=4?s=100" width="100px;" alt="Charles Frye"/><br /><sub><b>Charles Frye</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=charlesfrye" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/phamquiluan"><img src="https://avatars.githubusercontent.com/u/24642166?v=4?s=100" width="100px;" alt="Luan Pham"/><br /><sub><b>Luan Pham</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aphamquiluan" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=phamquiluan" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/TommyDew42"><img src="https://avatars.githubusercontent.com/u/46992350?v=4?s=100" width="100px;" alt="TommyDew"/><br /><sub><b>TommyDew</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=TommyDew42" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://m4ke.org"><img src="https://avatars.githubusercontent.com/u/27?v=4?s=100" width="100px;" alt="Jesse Andrews"/><br /><sub><b>Jesse Andrews</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=anotherjesse" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=anotherjesse" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=anotherjesse" title="Tests">⚠️</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://whiteink.com"><img src="https://avatars.githubusercontent.com/u/3602?v=4?s=100" width="100px;" alt="Nick Stenning"/><br /><sub><b>Nick Stenning</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Documentation">📖</a> <a href="#design-nickstenning" title="Design">🎨</a> <a href="#infra-nickstenning" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://merrell.io/"><img src="https://avatars.githubusercontent.com/u/14996837?v=4?s=100" width="100px;" alt="Justin Merrell"/><br /><sub><b>Justin Merrell</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=justinmerrell" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ruriky"><img src="https://avatars.githubusercontent.com/u/19946546?v=4?s=100" width="100px;" alt="Rurik Ylä-Onnenvuori"/><br /><sub><b>Rurik Ylä-Onnenvuori</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aruriky" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://www.youka.club/"><img src="https://avatars.githubusercontent.com/u/59315275?v=4?s=100" width="100px;" alt="Youka"/><br /><sub><b>Youka</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Ayoukaclub" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/afiaka87"><img src="https://avatars.githubusercontent.com/u/3994972?v=4?s=100" width="100px;" alt="Clay Mullis"/><br /><sub><b>Clay Mullis</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=afiaka87" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/mattt"><img src="https://avatars.githubusercontent.com/u/7659?v=4?s=100" width="100px;" alt="Mattt"/><br /><sub><b>Mattt</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=mattt" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=mattt" title="Documentation">📖</a> <a href="#infra-mattt" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Juneezee"><img src="https://avatars.githubusercontent.com/u/20135478?v=4?s=100" width="100px;" alt="Eng Zer Jun"/><br /><sub><b>Eng Zer Jun</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=Juneezee" title="Tests">⚠️</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/bbedward"><img src="https://avatars.githubusercontent.com/u/550752?v=4?s=100" width="100px;" alt="BB"/><br /><sub><b>BB</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bbedward" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/williamluer"><img src="https://avatars.githubusercontent.com/u/85975676?v=4?s=100" width="100px;" alt="williamluer"/><br /><sub><b>williamluer</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=williamluer" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://sirupsen.com"><img src="https://avatars.githubusercontent.com/u/97400?v=4?s=100" width="100px;" alt="Simon Eskildsen"/><br /><sub><b>Simon Eskildsen</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=sirupsen" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://erbridge.co.uk"><img src="https://avatars.githubusercontent.com/u/1027364?v=4?s=100" width="100px;" alt="F"/><br /><sub><b>F</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aerbridge" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=erbridge" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/philandstuff"><img src="https://avatars.githubusercontent.com/u/581269?v=4?s=100" width="100px;" alt="Philip Potter"/><br /><sub><b>Philip Potter</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aphilandstuff" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=philandstuff" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/joannejchen"><img src="https://avatars.githubusercontent.com/u/33409024?v=4?s=100" width="100px;" alt="Joanne Chen"/><br /><sub><b>Joanne Chen</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=joannejchen" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://technillogue.github.io"><img src="https://avatars.githubusercontent.com/u/945691?v=4?s=100" width="100px;" alt="technillogue"/><br /><sub><b>technillogue</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=technillogue" title="Code">💻</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="http://aroncarroll.com"><img src="https://avatars.githubusercontent.com/u/47144?v=4?s=100" width="100px;" alt="Aron Carroll"/><br /><sub><b>Aron Carroll</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=aron" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=aron" title="Code">💻</a> <a href="#ideas-aron" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Theodotus1243"><img src="https://avatars.githubusercontent.com/u/32220358?v=4?s=100" width="100px;" alt="Bohdan Mykhailenko"/><br /><sub><b>Bohdan Mykhailenko</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=Theodotus1243" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/issues?q=author%3ATheodotus1243" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/one1zero1one"><img src="https://avatars.githubusercontent.com/u/724604?v=4?s=100" width="100px;" alt="Daniel Radu"/><br /><sub><b>Daniel Radu</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=one1zero1one" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/issues?q=author%3Aone1zero1one" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Etelis"><img src="https://avatars.githubusercontent.com/u/92247226?v=4?s=100" width="100px;" alt="Itay Etelis"/><br /><sub><b>Itay Etelis</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=Etelis" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://www.wavefunction.dev"><img src="https://avatars.githubusercontent.com/u/54407820?v=4?s=100" width="100px;" alt="Gennaro Schiano"/><br /><sub><b>Gennaro Schiano</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=gschian0" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://andreknoerig.de"><img src="https://avatars.githubusercontent.com/u/481350?v=4?s=100" width="100px;" alt="André Knörig"/><br /><sub><b>André Knörig</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=aknoerig" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://condense.live"><img src="https://avatars.githubusercontent.com/u/24726?v=4?s=100" width="100px;" alt="Dan Fairs"/><br /><sub><b>Dan Fairs</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=danfairs" title="Code">💻</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
 
 
 ---

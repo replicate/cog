@@ -680,7 +680,7 @@ jobs:
           done
 
   test-integration:
-    name: "Test integration (${{ matrix.runtime }}, shard ${{ matrix.shard.index }})"
+    name: "Test integration (shard ${{ matrix.shard.index }})"
     needs: [changes, build-cog, build-sdk, build-rust, integration-shards]
     if: |
       !cancelled() &&
@@ -694,7 +694,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog-rust]
         shard: ${{ fromJSON(needs.integration-shards.outputs.shards) }}
     steps:
       - uses: actions/checkout@v6
@@ -723,11 +722,6 @@ jobs:
       # gotestsum via Go module proxy (not GitHub Releases) for reliability
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@v1.13.0
-      - name: Set runtime environment
-        run: |
-          if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
-            echo "COGLET_WHEEL=dist" >> $GITHUB_ENV
-          fi
       - name: Run integration tests (shard ${{ matrix.shard.index }}, ${{ matrix.shard.count }} tests)
         env:
           COG_BINARY: ./cog
