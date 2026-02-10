@@ -537,8 +537,8 @@ run = """
 #!/usr/bin/env bash
 set -e
 # Concatenate README (minus contributors section) + all docs into llms.txt
-# Use sed to remove the last line (the ## Contributors heading itself)
-(sed '/## Contributors/q' README.md | sed '$d'; for file in docs/*.md; do [ "$file" != "docs/llms.txt" ] && [ -f "$file" ] && printf '\n\n---\n\n' && cat "$file"; done) > docs/llms.txt
+# Use awk instead of sed for cross-platform compatibility (BSD sed vs GNU sed)
+(awk '/^## Contributors/{exit} {print}' README.md; for file in docs/*.md; do [ -f "$file" ] && printf '\n\n---\n\n' && cat "$file"; done) > docs/llms.txt
 echo "Updated docs/llms.txt"
 """
 
@@ -550,7 +550,7 @@ set -e
 tmpfile=$(mktemp)
 trap 'rm -f "$tmpfile"' EXIT
 # Generate to temp file and compare
-(sed '/## Contributors/q' README.md | sed '$d'; for file in docs/*.md; do [ "$file" != "docs/llms.txt" ] && [ -f "$file" ] && printf '\n\n---\n\n' && cat "$file"; done) > "$tmpfile"
+(awk '/^## Contributors/{exit} {print}' README.md; for file in docs/*.md; do [ -f "$file" ] && printf '\n\n---\n\n' && cat "$file"; done) > "$tmpfile"
 if ! diff -q "$tmpfile" docs/llms.txt > /dev/null 2>&1; then
   echo "ERROR: docs/llms.txt is out of date. Run 'mise run docs:llm' to update."
   exit 1
