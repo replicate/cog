@@ -538,7 +538,8 @@ run = """
 set -e
 # Concatenate README (minus contributors section) + all docs into llms.txt
 # Use awk instead of sed for cross-platform compatibility (BSD sed vs GNU sed)
-(awk '/^## Contributors/{exit} {print}' README.md; for file in docs/*.md; do [ -f "$file" ] && printf '\n\n---\n\n' && cat "$file"; done) > docs/llms.txt
+# Only include git-tracked files (docs/ may contain mkdocs-generated copies of CONTRIBUTING.md, README.md)
+(awk '/^## Contributors/{exit} {print}' README.md; for file in $(git ls-files 'docs/*.md'); do printf '\n\n---\n\n' && cat "$file"; done) > docs/llms.txt
 echo "Updated docs/llms.txt"
 """
 
@@ -550,7 +551,8 @@ set -e
 tmpfile=$(mktemp)
 trap 'rm -f "$tmpfile"' EXIT
 # Generate to temp file and compare
-(awk '/^## Contributors/{exit} {print}' README.md; for file in docs/*.md; do [ -f "$file" ] && printf '\n\n---\n\n' && cat "$file"; done) > "$tmpfile"
+# Only include git-tracked files (docs/ may contain mkdocs-generated copies of CONTRIBUTING.md, README.md)
+(awk '/^## Contributors/{exit} {print}' README.md; for file in $(git ls-files 'docs/*.md'); do printf '\n\n---\n\n' && cat "$file"; done) > "$tmpfile"
 if ! diff -q "$tmpfile" docs/llms.txt > /dev/null 2>&1; then
   echo "ERROR: docs/llms.txt is out of date. Run 'mise run docs:llm' to update."
   exit 1
