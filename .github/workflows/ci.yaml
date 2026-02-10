@@ -528,8 +528,11 @@ jobs:
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
-    needs: [changes, build-sdk]
-    if: needs.changes.outputs.python == 'true' && needs.build-sdk.result == 'success'
+    needs: [changes, build-sdk, build-rust]
+    if: |
+      needs.changes.outputs.python == 'true' &&
+      needs.build-sdk.result == 'success' &&
+      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     strategy:
@@ -537,11 +540,11 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - name: Download SDK
+      - name: Download artifacts
         uses: actions/download-artifact@v7
         with:
-          name: CogPackage
           path: dist
+          merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: astral-sh/setup-uv@v6
