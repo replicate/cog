@@ -104,15 +104,7 @@ echo "Installed cog to $PREFIX/bin/cog"
 
 [tasks."build:cog"]
 description = "Build cog CLI (development)"
-run = """
-#!/usr/bin/env bash
-set -e
-if git name-rev --name-only --tags HEAD | grep -qFx undefined; then
-  GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --snapshot --single-target --id cog --output cog
-else
-  GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --auto-snapshot --single-target --id cog --output cog
-fi
-"""
+run = "GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --snapshot --single-target --id cog --output cog"
 
 [tasks."build:cog:release"]
 description = "Build cog CLI (release)"
