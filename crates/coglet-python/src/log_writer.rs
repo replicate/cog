@@ -256,7 +256,7 @@ fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
 /// emits complete lines. This coalesces Python's print() which does separate
 /// writes for content and newline.
 #[gen_stub_pyclass]
-#[pyclass(module = "coglet")]
+#[pyclass(name = "_SlotLogWriter", module = "coglet")]
 pub struct SlotLogWriter {
     /// Which stream this captures (stdout or stderr).
     source: LogSource,
