@@ -14,12 +14,11 @@ import (
 	"github.com/moby/term"
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
-
-var weightsDest string
 
 func newWeightsCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -30,6 +29,7 @@ func newWeightsCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newWeightsBuildCommand())
+	cmd.AddCommand(newWeightsInspectCommand())
 	cmd.AddCommand(newWeightsPushCommand())
 	return cmd
 }
@@ -44,7 +44,6 @@ and generates a weights.lock file containing metadata (digests, sizes) for each 
 		RunE: weightsBuildCommand,
 	}
 
-	cmd.Flags().StringVar(&weightsDest, "dest", "/cache/", "Container path prefix for weights")
 	addConfigFlag(cmd)
 	return cmd
 }
@@ -57,40 +56,42 @@ func weightsBuildCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
 
-	var (
-		cfg        = src.Config
-		projectDir = src.ProjectDir
-	)
-
-	if len(cfg.Weights) == 0 {
+	if len(src.Config.Weights) == 0 {
 		return fmt.Errorf("no weights defined in %s", configFilename)
 	}
 
-	console.Infof("Processing %d weight source(s)...", len(cfg.Weights))
-
-	gen := model.NewWeightsLockGenerator(model.WeightsLockGeneratorOptions{
-		DestPrefix: weightsDest,
-	})
-
-	lock, err := gen.Generate(ctx, projectDir, cfg.Weights)
-	if err != nil {
-		return fmt.Errorf("failed to generate weights lock: %w", err)
+	// Extract weight specs from the source
+	var weightSpecs []*model.WeightSpec
+	for _, spec := range src.ArtifactSpecs() {
+		if ws, ok := spec.(*model.WeightSpec); ok {
+			weightSpecs = append(weightSpecs, ws)
+		}
 	}
 
-	lockPath := filepath.Join(projectDir, model.WeightsLockFilename)
-	if err := lock.Save(lockPath); err != nil {
-		return fmt.Errorf("failed to save weights.lock: %w", err)
-	}
+	console.Infof("Processing %d weight source(s)...", len(weightSpecs))
 
-	// Print summary
+	lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
+	builder := model.NewWeightBuilder(src, global.Version, lockPath)
+
+	// Build each weight artifact (hashes file, updates lockfile)
 	var totalSize int64
-	for _, f := range lock.Files {
-		totalSize += f.Size
-		console.Infof("  %s -> %s (%s)", f.Name, f.Dest, formatSize(f.Size))
+	for _, ws := range weightSpecs {
+		artifact, buildErr := builder.Build(ctx, ws)
+		if buildErr != nil {
+			return fmt.Errorf("failed to build weight %q: %w", ws.Name(), buildErr)
+		}
+
+		wa, ok := artifact.(*model.WeightArtifact)
+		if !ok {
+			return fmt.Errorf("unexpected artifact type %T for weight %q", artifact, ws.Name())
+		}
+		size := wa.Descriptor().Size
+		totalSize += size
+		console.Infof("  %s -> %s (%s)", wa.Name(), wa.Target, formatSize(size))
 	}
 
 	console.Infof("\nGenerated %s with %d file(s) (%s total)",
-		model.WeightsLockFilename, len(lock.Files), formatSize(totalSize))
+		model.WeightsLockFilename, len(weightSpecs), formatSize(totalSize))
 
 	return nil
 }
@@ -139,10 +140,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
 
-	var (
-		cfg        = src.Config
-		projectDir = src.ProjectDir
-	)
+	cfg := src.Config
 
 	// Determine image name
 	imageName := cfg.Image
@@ -153,52 +151,52 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("To push weights, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog weights push registry.example.com/your-username/model-name'")
 	}
 
-	// Parse repository from image name (strip tag if present)
-	ref, err := name.ParseReference(imageName, name.Insecure)
+	// Parse as repository only — reject tags/digests since weight tags are auto-generated.
+	parsedRepo, err := name.NewRepository(imageName, name.Insecure)
 	if err != nil {
-		return fmt.Errorf("invalid image reference %q: %w", imageName, err)
+		// NewRepository fails for inputs with :tag or @digest — check if it's a valid ref
+		if ref, refErr := name.ParseReference(imageName, name.Insecure); refErr == nil {
+			return fmt.Errorf("image reference %q includes a tag or digest — provide only the repository (e.g., %q)", imageName, ref.Context().Name())
+		}
+		return fmt.Errorf("invalid repository %q: %w", imageName, err)
 	}
-	repo := ref.Context().Name()
+	repo := parsedRepo.Name()
 
-	// Check weights.lock exists
-	lockPath := filepath.Join(projectDir, model.WeightsLockFilename)
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
-		return fmt.Errorf("weights.lock not found; run 'cog weights build' first")
-	}
-
-	// Load weights.lock
-	lock, err := model.LoadWeightsLock(lockPath)
-	if err != nil {
-		return fmt.Errorf("failed to load weights.lock: %w", err)
-	}
-
-	if len(lock.Files) == 0 {
-		return fmt.Errorf("weights.lock contains no files")
-	}
-
-	// Generate filePaths map from weights config
 	if len(cfg.Weights) == 0 {
 		return fmt.Errorf("no weights defined in %s", configFilename)
 	}
 
-	gen := model.NewWeightsLockGenerator(model.WeightsLockGeneratorOptions{
-		DestPrefix: weightsDest,
-	})
+	// Build weight artifacts (reads lockfile as cache, hashes files)
+	lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
+	builder := model.NewWeightBuilder(src, global.Version, lockPath)
 
-	_, filePaths, err := gen.GenerateWithFilePaths(ctx, projectDir, cfg.Weights)
-	if err != nil {
-		return fmt.Errorf("failed to resolve weight files: %w", err)
+	var artifacts []*model.WeightArtifact
+	for _, spec := range src.ArtifactSpecs() {
+		ws, ok := spec.(*model.WeightSpec)
+		if !ok {
+			continue
+		}
+		artifact, buildErr := builder.Build(ctx, ws)
+		if buildErr != nil {
+			return fmt.Errorf("failed to build weight %q: %w", ws.Name(), buildErr)
+		}
+		wa, ok := artifact.(*model.WeightArtifact)
+		if !ok {
+			return fmt.Errorf("unexpected artifact type %T for weight %q", artifact, ws.Name())
+		}
+		artifacts = append(artifacts, wa)
 	}
 
-	// Push weight files as layers concurrently with progress tracking
-	console.Infof("Pushing %d weight file(s) to %s...", len(lock.Files), repo)
+	if len(artifacts) == 0 {
+		return fmt.Errorf("no weight artifacts to push")
+	}
+
+	console.Infof("Pushing %d weight file(s) to %s...", len(artifacts), repo)
 
 	var (
-		regClient = registry.NewRegistryClient()
-		pusher    = model.NewWeightsPusher(regClient)
-		tracker   = newProgressTracker(lock.Files)
-
-		// Start progress display in background
+		regClient                 = registry.NewRegistryClient()
+		pusher                    = model.NewWeightPusher(regClient)
+		tracker                   = newProgressTracker(artifacts)
 		displayCtx, cancelDisplay = context.WithCancel(ctx)
 		displayDone               = make(chan struct{})
 	)
@@ -208,74 +206,87 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		tracker.displayLoop(displayCtx)
 	}()
 
-	// Set up progress callback to update the tracker
-	progressFn := func(p model.WeightsPushProgress) {
-		if p.Done {
-			if p.Err != nil {
-				tracker.setError(p.Name, p.Err)
+	// Push each weight artifact concurrently
+	type pushResult struct {
+		name string
+		ref  string
+		size int64
+		err  error
+	}
+
+	const maxConcurrency = 4
+	sem := make(chan struct{}, maxConcurrency)
+	results := make(chan pushResult, len(artifacts))
+	var wg sync.WaitGroup
+
+	for _, wa := range artifacts {
+		wg.Add(1)
+		go func(wa *model.WeightArtifact) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			artName := wa.Name()
+
+			result, pushErr := pusher.Push(ctx, repo, wa, model.WeightPushOptions{
+				ProgressFn: func(p model.WeightPushProgress) {
+					tracker.clearRetrying(artName)
+					if p.Total > 0 {
+						tracker.setTotal(artName, p.Total)
+					}
+					tracker.update(artName, p.Complete, p.Total)
+				},
+				RetryFn: func(event model.WeightRetryEvent) bool {
+					tracker.setRetrying(event.Name, event.Attempt, event.MaxAttempts, event.NextRetryIn, event.Err)
+					if !tracker.isTTY {
+						console.Warnf("  %s: retrying (%d/%d) in %s: %v",
+							event.Name, event.Attempt, event.MaxAttempts,
+							event.NextRetryIn.Round(time.Second), event.Err)
+					}
+					return true
+				},
+			})
+
+			if pushErr != nil {
+				tracker.setError(artName, pushErr)
+				results <- pushResult{name: artName, err: pushErr}
 			} else {
-				tracker.setComplete(p.Name)
+				tracker.setComplete(artName)
+				results <- pushResult{name: artName, ref: result.Ref, size: wa.Descriptor().Size}
 			}
-			return
-		}
-
-		// Clear retry status when we receive progress (upload is in progress)
-		tracker.clearRetrying(p.Name)
-
-		if p.Total > 0 {
-			tracker.setTotal(p.Name, p.Total)
-		}
-		tracker.update(p.Name, p.Complete, p.Total)
+		}(wa)
 	}
 
-	// Set up retry callback to show retry status in CLI
-	retryFn := func(event model.WeightsRetryEvent) bool {
-		tracker.setRetrying(event.Name, event.Attempt, event.MaxAttempts, event.NextRetryIn, event.Err)
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 
-		// In non-TTY mode, print a message about the retry
-		if !tracker.isTTY {
-			console.Warnf("  %s: retrying (%d/%d) in %s: %v",
-				event.Name, event.Attempt, event.MaxAttempts,
-				event.NextRetryIn.Round(time.Second), event.Err)
+	// Collect results
+	var totalSize int64
+	var errorCount int
+	refs := make(map[string]string) // name -> ref
+	for r := range results {
+		if r.err != nil {
+			errorCount++
+		} else {
+			totalSize += r.size
+			refs[r.name] = r.ref
 		}
-
-		return true // Always continue retrying
 	}
-
-	// Push weights using the model layer
-	result, err := pusher.Push(ctx, model.WeightsPushOptions{
-		Repo:       repo,
-		Lock:       lock,
-		FilePaths:  filePaths,
-		ProgressFn: progressFn,
-		RetryFn:    retryFn,
-	})
 
 	// Stop progress display
 	cancelDisplay()
 	<-displayDone
 
-	// Print final status for each file
-	tracker.printFinalStatus()
-
-	if err != nil {
-		return fmt.Errorf("failed to push weights: %w", err)
-	}
-
-	// Count errors from results
-	var errorCount int
-	for _, f := range result.Files {
-		if f.Err != nil {
-			errorCount++
-		}
-	}
+	tracker.printFinalStatus(refs)
 
 	if errorCount > 0 {
-		return fmt.Errorf("failed to push %d/%d weight files", errorCount, len(lock.Files))
+		return fmt.Errorf("failed to push %d/%d weight files", errorCount, len(artifacts))
 	}
 
-	console.Infof("\nPushed %d weight blobs to %s", len(lock.Files), repo)
-	console.Infof("Total: %s", formatSize(result.TotalSize))
+	console.Infof("\nPushed %d weight artifact(s) to %s", len(artifacts), repo)
+	console.Infof("Total: %s", formatSize(totalSize))
 
 	return nil
 }
@@ -299,18 +310,18 @@ type fileProgress struct {
 	retryInfo string // Human-readable retry status
 }
 
-func newProgressTracker(files []model.WeightFile) *progressTracker {
+func newProgressTracker(artifacts []*model.WeightArtifact) *progressTracker {
 	pt := &progressTracker{
-		files:   make([]fileProgress, len(files)),
-		fileMap: make(map[string]int, len(files)),
+		files:   make([]fileProgress, len(artifacts)),
+		fileMap: make(map[string]int, len(artifacts)),
 		isTTY:   term.IsTerminal(os.Stderr.Fd()),
 	}
-	for i, f := range files {
+	for i, a := range artifacts {
 		pt.files[i] = fileProgress{
-			name:  f.Name,
-			total: f.Size, // Initial estimate from lock file
+			name:  a.Name(),
+			total: a.Descriptor().Size, // Initial estimate from build
 		}
-		pt.fileMap[f.Name] = i
+		pt.fileMap[a.Name()] = i
 	}
 	return pt
 }
@@ -450,7 +461,7 @@ func (pt *progressTracker) formatProgressLine(f fileProgress) string {
 		name, bar, percent, formatSize(f.complete), formatSize(f.total))
 }
 
-func (pt *progressTracker) printFinalStatus() {
+func (pt *progressTracker) printFinalStatus(refs map[string]string) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
@@ -473,6 +484,8 @@ func (pt *progressTracker) printFinalStatus() {
 	for _, f := range sortedFiles {
 		if f.err != nil {
 			console.Warnf("  %s: FAILED - %v", f.name, f.err)
+		} else if ref, ok := refs[f.name]; ok {
+			console.Infof("  %s: %s", f.name, ref)
 		} else {
 			console.Infof("  %s: %s", f.name, formatSize(f.total))
 		}

@@ -16,6 +16,8 @@ type Platform struct {
 
 type PlatformManifest struct {
 	Digest       string
+	MediaType    string
+	Size         int64
 	OS           string
 	Architecture string
 	Variant      string
@@ -66,6 +68,11 @@ type Client interface {
 	Inspect(ctx context.Context, imageRef string, platform *Platform) (*ManifestResult, error)
 	GetImage(ctx context.Context, imageRef string, platform *Platform) (v1.Image, error)
 	Exists(ctx context.Context, imageRef string) (bool, error)
+
+	// GetDescriptor returns the OCI descriptor for an image reference without downloading
+	// the full image. This is a lightweight HEAD request useful for building OCI indexes
+	// from already-pushed manifests.
+	GetDescriptor(ctx context.Context, imageRef string) (v1.Descriptor, error)
 
 	// Write methods for OCI index support
 	PushImage(ctx context.Context, ref string, img v1.Image) error

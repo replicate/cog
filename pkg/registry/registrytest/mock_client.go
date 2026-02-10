@@ -45,6 +45,10 @@ func (c *MockRegistryClient) PushIndex(ctx context.Context, ref string, idx v1.I
 	return nil
 }
 
+func (c *MockRegistryClient) GetDescriptor(ctx context.Context, imageRef string) (v1.Descriptor, error) {
+	return v1.Descriptor{}, nil
+}
+
 func (c *MockRegistryClient) WriteLayer(ctx context.Context, opts registry.WriteLayerOptions) error {
 	return nil
 }

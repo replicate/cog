@@ -128,6 +128,7 @@ func TestTagRef_Resolve_Success(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.10.0",
 						},
@@ -148,26 +149,30 @@ func TestTagRef_Resolve_Success(t *testing.T) {
 	require.Equal(t, "0.10.0", model.CogVersion)
 }
 
-func TestTagRef_Resolve_FallsBackToRemote(t *testing.T) {
+func TestTagRef_Resolve_FallsBackToLocal(t *testing.T) {
 	localCalled := false
 	remoteCalled := false
 
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			localCalled = true
-			return nil, errors.New("No such image")
+			return &image.InspectResponse{
+				ID: "sha256:local123",
+				Config: &dockerspec.DockerOCIImageConfig{
+					ImageConfig: ocispec.ImageConfig{
+						Labels: map[string]string{
+							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
+							LabelVersion: "0.10.0",
+						},
+					},
+				},
+			}, nil
 		},
 	}
 	reg := &mockRegistry{
 		inspectFunc: func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error) {
 			remoteCalled = true
-			return &registry.ManifestResult{
-				SchemaVersion: 2,
-				Labels: map[string]string{
-					LabelConfig:  `{"build":{"python_version":"3.11"}}`,
-					LabelVersion: "0.10.0",
-				},
-			}, nil
+			return nil, registry.NotFoundError
 		},
 	}
 
@@ -179,9 +184,9 @@ func TestTagRef_Resolve_FallsBackToRemote(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, model)
-	require.True(t, localCalled, "TagRef should try local first")
-	require.True(t, remoteCalled, "TagRef should fall back to remote")
-	require.Equal(t, ImageSourceRemote, model.Image.Source)
+	require.True(t, remoteCalled, "TagRef should try remote first")
+	require.True(t, localCalled, "TagRef should fall back to local")
+	require.Equal(t, ImageSourceLocal, model.Image.Source)
 }
 
 // =============================================================================
@@ -196,6 +201,7 @@ func TestLocalRef_Resolve_Success(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.9.0",
 						},
@@ -302,10 +308,11 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 	docker := &mockDocker{
 		inspectFunc: func(ctx context.Context, ref string) (*image.InspectResponse, error) {
 			return &image.InspectResponse{
-				ID: "sha256:built123",
+				ID: "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
+
 							LabelVersion: "0.11.0",
 							LabelConfig:  `{"build":{"gpu":true}}`,
 						},
@@ -317,10 +324,10 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 
 	factory := &mockFactory{
 		name: "test",
-		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
 			buildCalled = true
 			require.Equal(t, "my-built-image", opts.ImageName)
-			return &Image{Reference: opts.ImageName, Source: ImageSourceBuild}, nil
+			return &ImageArtifact{Reference: opts.ImageName, Source: ImageSourceBuild}, nil
 		},
 	}
 
@@ -343,7 +350,7 @@ func TestBuildRef_Resolve_Success(t *testing.T) {
 func TestBuildRef_Resolve_BuildError(t *testing.T) {
 	factory := &mockFactory{
 		name: "test",
-		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*Image, error) {
+		buildFunc: func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
 			return nil, errors.New("build failed: missing dependencies")
 		},
 	}
@@ -379,7 +386,7 @@ func TestResolver_Resolve_DispatchesCorrectly(t *testing.T) {
 				r, _ := FromTag("my-image:latest")
 				return r
 			}(),
-			expectLocal: true, // TagRef tries local first by default
+			expectLocal: true, // TagRef tries remote first, falls back to local
 		},
 		{
 			name: "LocalRef dispatches to local only",

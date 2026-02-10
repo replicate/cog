@@ -67,10 +67,13 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 			result := &ManifestResult{
 				SchemaVersion: indexManifest.SchemaVersion,
 				MediaType:     string(mediaType),
+				Digest:        desc.Digest.String(),
 			}
 			for _, m := range indexManifest.Manifests {
 				result.Manifests = append(result.Manifests, PlatformManifest{
 					Digest:       m.Digest.String(),
+					MediaType:    string(m.MediaType),
+					Size:         m.Size,
 					OS:           m.Platform.OS,
 					Architecture: m.Platform.Architecture,
 					Variant:      m.Platform.Variant,
@@ -106,6 +109,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 			result := &ManifestResult{
 				SchemaVersion: manifest.SchemaVersion,
 				MediaType:     string(mediaType),
+				Digest:        desc.Digest.String(),
 				Config:        manifest.Config.Digest.String(),
 				Labels:        configFile.Config.Labels,
 			}
@@ -172,6 +176,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 	result := &ManifestResult{
 		SchemaVersion: manifest.SchemaVersion,
 		MediaType:     string(manifestDesc.MediaType),
+		Digest:        manifestDesc.Digest.String(),
 		Config:        manifest.Config.Digest.String(),
 		Labels:        configFile.Config.Labels,
 	}
@@ -256,6 +261,25 @@ func (c *RegistryClient) GetImage(ctx context.Context, imageRef string, platform
 	return manifestDesc.Image()
 }
 
+// GetDescriptor returns the OCI descriptor for an image reference using a HEAD request.
+// This is lightweight — it does not download the full manifest or image layers.
+func (c *RegistryClient) GetDescriptor(ctx context.Context, imageRef string) (v1.Descriptor, error) {
+	ref, err := name.ParseReference(imageRef, name.Insecure)
+	if err != nil {
+		return v1.Descriptor{}, fmt.Errorf("parsing reference: %w", err)
+	}
+
+	desc, err := remote.Head(ref,
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+	)
+	if err != nil {
+		return v1.Descriptor{}, fmt.Errorf("head request for %s: %w", imageRef, err)
+	}
+
+	return *desc, nil
+}
+
 func (c *RegistryClient) Exists(ctx context.Context, imageRef string) (bool, error) {
 	if _, err := c.Inspect(ctx, imageRef, nil); err != nil {
 		if errors.Is(err, NotFoundError) {
@@ -313,7 +337,11 @@ func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.Image
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
 	}
 
-	if err := remote.WriteIndex(parsedRef, idx, opts...); err != nil {
+	// Use remote.Put instead of remote.WriteIndex because all child manifests
+	// (image + weights) are already pushed to the registry. WriteIndex would
+	// try to recursively resolve and push children via idx.Image(), which fails
+	// for our descriptor-only index. Put just writes the index manifest.
+	if err := remote.Put(parsedRef, idx, opts...); err != nil {
 		return fmt.Errorf("pushing index %s: %w", ref, err)
 	}
 
@@ -606,9 +634,9 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, location string, totalSize int64, progressCh chan<- v1.Update) (string, error) {
 	// Multipart upload settings:
 	// - Threshold: Use multipart only for blobs larger than 50MB (avoids MPU overhead for smaller files)
-	// - Chunk size: 25MB per chunk (good balance for object stores and typical network conditions)
+	// - Chunk size: 256MB per chunk (large chunks reduce HTTP round-trips for multi-GB weight files)
 	const multipartThreshold = 50 * 1024 * 1024
-	const chunkSize = 25 * 1024 * 1024
+	const chunkSize = 256 * 1024 * 1024
 
 	if totalSize > multipartThreshold {
 		finalLocation, newLocation, fallback, err := c.tryMultipartWithFallback(ctx, client, repo, layer, location, totalSize, chunkSize, progressCh)
@@ -629,11 +657,11 @@ func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Clie
 	}
 	defer blob.Close()
 
-	err = c.uploadBlobSingle(ctx, client, location, blob, totalSize, progressCh)
+	finalLocation, err := c.uploadBlobSingle(ctx, client, location, blob, totalSize, progressCh)
 	if err != nil {
 		return "", err
 	}
-	return location, nil
+	return finalLocation, nil
 }
 
 // tryMultipartWithFallback attempts multipart upload and handles fallback if not supported.
@@ -714,7 +742,7 @@ func (c *RegistryClient) tryMultipartUpload(ctx context.Context, client *http.Cl
 }
 
 // uploadBlobSingle uploads the entire blob in one request without Content-Range headers.
-func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Client, location string, blob io.Reader, totalSize int64, progressCh chan<- v1.Update) error {
+func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Client, location string, blob io.Reader, totalSize int64, progressCh chan<- v1.Update) (string, error) {
 	// Wrap the reader to report progress
 	var uploaded int64
 	reader := &progressReader{
@@ -735,7 +763,7 @@ func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Clie
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, location, reader)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -743,11 +771,27 @@ func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Clie
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
-	return transport.CheckError(resp, http.StatusAccepted, http.StatusNoContent, http.StatusCreated)
+	if err := transport.CheckError(resp, http.StatusAccepted, http.StatusNoContent, http.StatusCreated); err != nil {
+		return "", err
+	}
+
+	// Return the updated Location header — the registry includes upload state
+	// that commitUpload needs for the final PUT.
+	if loc := resp.Header.Get("Location"); loc != "" {
+		locURL, parseErr := url.Parse(loc)
+		if parseErr == nil {
+			baseURL := url.URL{Scheme: "http", Host: req.URL.Host}
+			if req.URL.Scheme != "" {
+				baseURL.Scheme = req.URL.Scheme
+			}
+			return baseURL.ResolveReference(locURL).String(), nil
+		}
+	}
+	return location, nil
 }
 
 // uploadChunk uploads a single chunk of a blob with Content-Range header.

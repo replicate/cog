@@ -1011,16 +1011,15 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 			Digest:           digest, // Same as original since we're not compressing
 			Size:             size,
 			SizeUncompressed: size,
-			// MediaType indicates gzip but data is uncompressed for test simplicity.
-			// Production code should validate/compress accordingly.
-			MediaType:   "application/vnd.cog.weights.layer.v1+gzip",
+			// MediaType matches production WeightBuilder output (uncompressed).
+			MediaType:   "application/vnd.cog.weight.layer.v1",
 			ContentType: "application/octet-stream",
 		})
 	}
 
 	// Create weights.lock
 	lock := mockWeightsLock{
-		Version: "1",
+		Version: "1.0",
 		Created: time.Now().UTC(),
 		Files:   files,
 	}

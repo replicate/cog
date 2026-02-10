@@ -19,7 +19,6 @@ func TestWeightsLock(t *testing.T) {
 				{
 					"name": "model.safetensors",
 					"dest": "/cache/model.safetensors",
-					"source": "file://./weights/model.safetensors",
 					"digestOriginal": "sha256:abc123",
 					"digest": "sha256:def456",
 					"size": 1000,
@@ -71,17 +70,4 @@ func TestWeightsLock(t *testing.T) {
 		require.Len(t, loaded.Files, 1)
 	})
 
-	t.Run("to weights manifest", func(t *testing.T) {
-		lock := &WeightsLock{
-			Version: "1",
-			Created: time.Date(2026, 1, 30, 12, 0, 0, 0, time.UTC),
-			Files: []WeightFile{
-				{Name: "model.safetensors", Dest: "/cache/model.safetensors"},
-			},
-		}
-
-		wm := lock.ToWeightsManifest()
-		require.Equal(t, MediaTypeWeightsManifest, wm.ArtifactType)
-		require.Len(t, wm.Files, 1)
-	})
 }

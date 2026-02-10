@@ -25,7 +25,7 @@ type options struct {
 }
 
 func defaultOptions() *options {
-	return &options{preferLocal: true}
+	return &options{} // Default: preferRemote (try registry first, fall back to local)
 }
 
 // LocalOnly loads only from the local docker daemon.
@@ -48,7 +48,17 @@ func RemoteOnly() Option {
 	}
 }
 
+// PreferLocal tries local docker daemon first, falls back to remote on not-found.
+func PreferLocal() Option {
+	return func(o *options) {
+		o.preferLocal = true
+		o.localOnly = false
+		o.remoteOnly = false
+	}
+}
+
 // PreferRemote tries remote registry first, falls back to local on not-found.
+// This is the default behavior.
 func PreferRemote() Option {
 	return func(o *options) {
 		o.preferLocal = false
@@ -136,7 +146,7 @@ func (r *Resolver) InspectByID(ctx context.Context, id string) (*Model, error) {
 	}
 
 	// Use the canonical ID from the response as the reference
-	img := &Image{
+	img := &ImageArtifact{
 		Reference: resp.ID,
 		Digest:    resp.ID,
 		Labels:    resp.Config.Labels,
@@ -210,79 +220,68 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 	opts = opts.WithDefaults(src)
 
-	img, err := r.factory.Build(ctx, src, opts)
+	// Build image artifact via ImageBuilder
+	ib := NewImageBuilder(r.factory, r.docker, src, opts)
+	imageSpec := NewImageSpec("model", opts.ImageName)
+	imgResult, err := ib.Build(ctx, imageSpec)
+	if err != nil {
+		return nil, err
+	}
+	ia, ok := imgResult.(*ImageArtifact)
+	if !ok {
+		return nil, fmt.Errorf("unexpected artifact type from image builder: %T", imgResult)
+	}
+
+	m, err := r.modelFromImage(ia, src.Config)
 	if err != nil {
 		return nil, err
 	}
 
-	// Inspect the built image to get labels.
-	// Prefer using the image digest (ID) for stable lookups,
-	// falling back to tag if Digest is empty (for backwards compatibility
-	// with custom Factory implementations that don't populate Digest).
-	inspectRef := img.Digest
-	if inspectRef == "" {
-		inspectRef = img.Reference
+	m.OCIIndex = opts.OCIIndex
+	m.Artifacts = []Artifact{ia}
+
+	// Build weight artifacts if OCI index mode is enabled
+	lockPath := opts.WeightsLockPath
+	if lockPath == "" {
+		lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
 	}
 
-	resp, err := r.docker.Inspect(ctx, inspectRef)
-	if err != nil {
-		return nil, fmt.Errorf("failed to inspect built image: %w", err)
-	}
-
-	img.Labels = resp.Config.Labels
-	// Use the canonical ID from the response
-	img.Digest = resp.ID
-
-	m, err := r.modelFromImage(img, src.Config)
-	if err != nil {
-		return nil, err
-	}
-
-	// Set image format from build options
-	m.ImageFormat = opts.ImageFormat
-	if m.ImageFormat == "" {
-		m.ImageFormat = FormatStandalone
-	}
-
-	// For bundle format, load weights manifest
-	if m.ImageFormat == FormatBundle {
-		lockPath := opts.WeightsLockPath
-		if lockPath == "" {
-			lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
+	if opts.OCIIndex && len(src.Config.Weights) > 0 {
+		wb := NewWeightBuilder(src, m.CogVersion, lockPath)
+		for _, ws := range src.Config.Weights {
+			spec := NewWeightSpec(ws.Name, ws.Source, ws.Target)
+			artifact, buildErr := wb.Build(ctx, spec)
+			if buildErr != nil {
+				return nil, fmt.Errorf("build weight %q: %w", ws.Name, buildErr)
+			}
+			m.Artifacts = append(m.Artifacts, artifact)
 		}
 
-		lock, err := LoadWeightsLock(lockPath)
-		if err != nil {
-			return nil, fmt.Errorf("bundle format requires weights.lock: %w", err)
-		}
-		m.WeightsManifest = lock.ToWeightsManifest()
 	}
 
 	return m, nil
 }
 
 // Push pushes a Model to a container registry.
-// The push strategy is determined by Model.ImageFormat:
-// - FormatStandalone (or empty): Standard docker push
-// - FormatBundle: Push image, build index with weights, push index
+// TODO(md): The OCIIndex gate is temporary. When true, pushes an OCI Image Index
+// with weight artifacts. When false, does a plain docker push. Remove the gate
+// once index pushes are validated with all registries.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	pusher := r.pusherFor(m.ImageFormat)
-	return pusher.Push(ctx, m, opts)
-}
-
-// pusherFor returns the appropriate Pusher for the given format.
-func (r *Resolver) pusherFor(format ModelImageFormat) Pusher {
-	switch format {
-	case FormatBundle:
-		return NewBundlePusher(r.docker, r.registry)
-	default:
-		return NewImagePusher(r.docker)
+	if m.OCIIndex {
+		pusher := NewBundlePusher(r.docker, r.registry)
+		return pusher.Push(ctx, m, opts)
 	}
+	pusher := NewImagePusher(r.docker)
+	return pusher.Push(ctx, m, opts)
 }
 
 // BuildBase creates a base image for dev mode (without /src copied).
 // The source directory is expected to be mounted as a volume at runtime.
 // Returns a Model with the built image info and the source config.
+//
+// NOTE: Unlike Build(), this does not use ImageBuilder because base images
+// don't have labels yet (they're added during full builds). The returned
+// ImageArtifact has no labels, no descriptor, and no inspect results.
 func (r *Resolver) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Model, error) {
 	if src == nil {
 		return nil, fmt.Errorf("source is required for BuildBase")
@@ -301,7 +300,7 @@ func (r *Resolver) BuildBase(ctx context.Context, src *Source, opts BuildBaseOpt
 	}
 
 	// For base builds, we don't have labels yet (they're added in full builds).
-	// Return the model with the source config.
+	// Return the model with the source config and the built image.
 	return &Model{
 		Image:  img,
 		Config: src.Config,
@@ -332,9 +331,9 @@ func (r *Resolver) loadRemote(ctx context.Context, ref *ParsedRef, platform *reg
 	return r.modelFromManifest(ref, manifest, ImageSourceRemote)
 }
 
-// modelFromImage creates a Model from Image with a known config (post-build).
+// modelFromImage creates a Model from ImageArtifact with a known config (post-build).
 // Uses the provided config rather than parsing from labels.
-func (r *Resolver) modelFromImage(img *Image, cfg *config.Config) (*Model, error) {
+func (r *Resolver) modelFromImage(img *ImageArtifact, cfg *config.Config) (*Model, error) {
 	schema, err := img.ParsedOpenAPISchema()
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse schema from image labels: %w", err)
@@ -351,7 +350,7 @@ func (r *Resolver) modelFromImage(img *Image, cfg *config.Config) (*Model, error
 // modelFromInspect creates a Model from docker inspect response.
 // Returns ErrNotCogModel if the image is not a valid Cog model.
 func (r *Resolver) modelFromInspect(ref *ParsedRef, resp *image.InspectResponse, source ImageSource) (*Model, error) {
-	img := &Image{
+	img := &ImageArtifact{
 		Reference: ref.String(),
 		Digest:    resp.ID,
 		Labels:    resp.Config.Labels,
@@ -374,7 +373,7 @@ func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.Manifest
 	}
 
 	// Standard image (v1 format)
-	img := &Image{
+	img := &ImageArtifact{
 		Reference: ref.String(),
 		Digest:    manifest.Config, // Config digest serves as image ID
 		Labels:    manifest.Labels,
@@ -385,7 +384,6 @@ func (r *Resolver) modelFromManifest(ref *ParsedRef, manifest *registry.Manifest
 	if err != nil {
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
-	m.ImageFormat = FormatStandalone
 	return m, nil
 }
 
@@ -398,8 +396,8 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 		return nil, fmt.Errorf("no image manifest found in index %s", ref.Original)
 	}
 
-	// Create Image from the image manifest
-	img := &Image{
+	// Create ImageArtifact from the image manifest
+	img := &ImageArtifact{
 		Reference: ref.String(),
 		Digest:    imgManifest.Digest,
 		Labels:    manifest.Labels, // Labels come from the index inspection
@@ -416,10 +414,8 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
 
-	// Set bundle format fields
-	m.ImageFormat = FormatBundle
 	m.Index = &Index{
-		Digest:    ref.String(), // The index reference
+		Digest:    manifest.Digest, // Content-addressable digest from registry
 		Reference: ref.String(),
 		MediaType: manifest.MediaType,
 		Manifests: make([]IndexManifest, len(manifest.Manifests)),
@@ -429,6 +425,8 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 	for i, pm := range manifest.Manifests {
 		im := IndexManifest{
 			Digest:      pm.Digest,
+			MediaType:   pm.MediaType,
+			Size:        pm.Size,
 			Annotations: pm.Annotations,
 		}
 		if pm.OS != "" {
@@ -445,16 +443,6 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 			im.Type = ManifestTypeImage
 		}
 		m.Index.Manifests[i] = im
-	}
-
-	// Find and populate weights manifest info
-	weightsManifest := findWeightsManifest(manifest.Manifests)
-	if weightsManifest != nil {
-		m.WeightsManifest = &WeightsManifest{
-			Digest: weightsManifest.Digest,
-			// Note: Full weights file metadata would require fetching the weights manifest
-			// For now, we just record that weights exist
-		}
 	}
 
 	return m, nil

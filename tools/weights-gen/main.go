@@ -288,6 +288,6 @@ func processFile(path, baseDir, destPrefix string) (*model.WeightFile, error) {
 		DigestOriginal:   digest,
 		Size:             size,
 		SizeUncompressed: size,
-		MediaType:        model.MediaTypeWeightsLayer,
+		MediaType:        model.MediaTypeWeightLayer,
 	}, nil
 }

@@ -4,6 +4,10 @@ package model
 import (
 	"context"
 	"fmt"
+	"sync"
+
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
@@ -18,12 +22,12 @@ type Pusher interface {
 type PushOptions struct {
 	// ProjectDir is the base directory for resolving weight file paths.
 	//
-	// Deprecated: Use FilePaths instead.
+	// Deprecated: Artifacts carry their own file paths.
 	ProjectDir string
 
 	// FilePaths maps weight name identifiers to their file paths.
-	// Required when Model.ImageFormat == FormatBundle.
-	// Keys are weight names (e.g., "model-v1"), values are absolute file paths.
+	//
+	// Deprecated: Use Model.Artifacts instead — WeightArtifact carries FilePath.
 	FilePaths map[string]string
 
 	// Platform specifies the target platform for bundle indexes.
@@ -32,86 +36,148 @@ type PushOptions struct {
 }
 
 // =============================================================================
-// ImagePusher - pushes standalone images
-// =============================================================================
-
-// ImagePusher pushes standalone images using docker push.
-type ImagePusher struct {
-	docker command.Command
-}
-
-// NewImagePusher creates a new ImagePusher.
-func NewImagePusher(docker command.Command) *ImagePusher {
-	return &ImagePusher{docker: docker}
-}
-
-// Push pushes the model image to a registry.
-func (p *ImagePusher) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	if m.Image == nil || m.Image.Reference == "" {
-		return fmt.Errorf("model has no image reference")
-	}
-	return p.docker.Push(ctx, m.Image.Reference)
-}
-
-// =============================================================================
 // BundlePusher - pushes OCI Index with image + weights
 // =============================================================================
 
-// BundlePusher pushes bundles (OCI Index with image + weights).
+// BundlePusher pushes bundles (OCI Index with image + weight artifacts).
+// It orchestrates ImagePusher and WeightPusher, then assembles the OCI index
+// from the pushed manifest descriptors.
 type BundlePusher struct {
-	docker   command.Command
-	registry registry.Client
+	imagePusher  *ImagePusher
+	weightPusher *WeightPusher
+	registry     registry.Client
 }
 
 // NewBundlePusher creates a new BundlePusher.
 func NewBundlePusher(docker command.Command, reg registry.Client) *BundlePusher {
-	return &BundlePusher{docker: docker, registry: reg}
+	return &BundlePusher{
+		imagePusher:  NewImagePusher(docker),
+		weightPusher: NewWeightPusher(reg),
+		registry:     reg,
+	}
 }
 
-// Push pushes the model as an OCI Index with weights artifact.
+// Push pushes the model as an OCI Index with weight artifacts.
+// It reads Model.Artifacts to find the image and weight artifacts to push.
 func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	if m.Image == nil || m.Image.Reference == "" {
-		return fmt.Errorf("model has no image reference")
-	}
-	if m.WeightsManifest == nil {
-		return fmt.Errorf("bundle format requires WeightsManifest")
-	}
-	if len(opts.FilePaths) == 0 {
-		return fmt.Errorf("bundle push requires FilePaths for weight files")
+	// Extract artifacts from model
+	imgArtifact := m.GetImageArtifact()
+	if imgArtifact == nil {
+		return fmt.Errorf("no image artifact in model")
 	}
 
-	// 1. Build weights artifact from manifest
-	factory := NewIndexFactory()
-	weightsArtifact, err := factory.BuildWeightsArtifactFromManifest(ctx, m.WeightsManifest, opts.FilePaths)
+	weightArtifacts := m.WeightArtifacts()
+
+	// Derive repo from image reference (strip tag/digest for weight pushes)
+	repo := repoFromReference(imgArtifact.Reference)
+
+	// 1. Push image via docker
+	if err := p.imagePusher.PushArtifact(ctx, imgArtifact); err != nil {
+		return fmt.Errorf("push image %q: %w", imgArtifact.Reference, err)
+	}
+
+	// 2. Get image manifest descriptor (lightweight HEAD request)
+	imgDesc, err := p.registry.GetDescriptor(ctx, imgArtifact.Reference)
 	if err != nil {
-		return fmt.Errorf("build weights artifact: %w", err)
+		return fmt.Errorf("get image descriptor: %w", err)
 	}
 
-	// 2. Push model image to registry via docker
-	if err := p.docker.Push(ctx, m.Image.Reference); err != nil {
-		return fmt.Errorf("push model image: %w", err)
+	// 3. Push weight artifacts concurrently (if any)
+	var weightResults []*WeightPushResult
+	if len(weightArtifacts) > 0 {
+		weightResults, err = p.pushWeightsConcurrently(ctx, repo, weightArtifacts)
+		if err != nil {
+			return err
+		}
 	}
 
-	// 3. Fetch pushed image from registry to get v1.Image for index building
-	modelImg, err := p.registry.GetImage(ctx, m.Image.Reference, nil)
-	if err != nil {
-		return fmt.Errorf("fetch pushed image: %w", err)
-	}
-
-	// 4. Build OCI index combining image + weights
+	// 4. Build OCI index from pushed descriptors
 	platform := opts.Platform
 	if platform == nil {
 		platform = &Platform{OS: "linux", Architecture: "amd64"}
 	}
-	idx, err := factory.BuildIndex(ctx, modelImg, weightsArtifact, platform)
+
+	builder := NewIndexBuilder()
+	builder.SetImageDescriptor(imgDesc, &v1.Platform{
+		OS:           platform.OS,
+		Architecture: platform.Architecture,
+		Variant:      platform.Variant,
+	})
+	for i, wr := range weightResults {
+		builder.AddWeightDescriptor(wr.Descriptor, imgDesc.Digest.String(),
+			weightArtifacts[i].Name(), weightArtifacts[i].Target)
+	}
+
+	idx, err := builder.BuildFromDescriptors()
 	if err != nil {
 		return fmt.Errorf("build OCI index: %w", err)
 	}
 
 	// 5. Push OCI index (overwrites the tag with the index)
-	if err := p.registry.PushIndex(ctx, m.Image.Reference, idx); err != nil {
+	if err := p.registry.PushIndex(ctx, imgArtifact.Reference, idx); err != nil {
 		return fmt.Errorf("push OCI index: %w", err)
 	}
 
 	return nil
+}
+
+// pushWeightsConcurrently pushes all weight artifacts and returns their results.
+// If any weight push fails, remaining pushes are canceled and the first error is returned.
+func (p *BundlePusher) pushWeightsConcurrently(ctx context.Context, repo string, weights []*WeightArtifact) ([]*WeightPushResult, error) {
+	// Create cancellable context so we can stop remaining pushes on first error
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type indexedResult struct {
+		index  int
+		result *WeightPushResult
+		err    error
+	}
+
+	results := make(chan indexedResult, len(weights))
+	var wg sync.WaitGroup
+
+	for i, wa := range weights {
+		wg.Add(1)
+		go func(idx int, artifact *WeightArtifact) {
+			defer wg.Done()
+			result, err := p.weightPusher.Push(ctx, repo, artifact)
+			results <- indexedResult{index: idx, result: result, err: err}
+		}(i, wa)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Drain all results, canceling on first error
+	ordered := make([]*WeightPushResult, len(weights))
+	var firstErr error
+	for r := range results {
+		if r.err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("push weight %q: %w", weights[r.index].Name(), r.err)
+			cancel() // Signal remaining goroutines to stop
+		}
+		if r.err == nil {
+			ordered[r.index] = r.result
+		}
+	}
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	return ordered, nil
+}
+
+// repoFromReference extracts the repository (without tag or digest) from an image reference.
+// "r8.im/user/model:latest" -> "r8.im/user/model"
+// "r8.im/user/model@sha256:abc" -> "r8.im/user/model"
+// "localhost:5000/model:latest" -> "localhost:5000/model"
+func repoFromReference(ref string) string {
+	parsed, err := name.ParseReference(ref, name.Insecure)
+	if err != nil {
+		return ref // fallback: return as-is if unparseable
+	}
+	return parsed.Context().String()
 }
