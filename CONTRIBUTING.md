@@ -180,6 +180,23 @@ The generated files are:
 - `pkg/config/torch_compatibility_matrix.json` - PyTorch/CUDA/Python compatibility
 - `pkg/config/tf_compatibility_matrix.json` - TensorFlow/CUDA/Python compatibility
 
+## CI tool dependencies
+
+Development tools are managed in **two places** that must be kept in sync:
+
+1. **`mise.toml`** — Tool versions for local development (uses aqua backend for prebuilt binaries)
+2. **`.github/workflows/ci.yaml`** — Tool installation for CI (uses dedicated GitHub Actions)
+
+CI deliberately avoids aqua downloads from GitHub Releases to prevent transient 502 failures. Instead, it uses dedicated actions (`taiki-e/install-action`, `go install`, `PyO3/maturin-action`, etc.) that are more reliable.
+
+Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
+
+**When updating a tool version**, update both:
+- The version in `mise.toml` (for local dev)
+- The corresponding version pin in `.github/workflows/ci.yaml` (for CI)
+
+See the [CI Tool Dependencies section in AGENTS.md](./AGENTS.md#ci-tool-dependencies) for the full mapping of tools to their CI installation methods.
+
 ## Concepts
 
 There are a few concepts used throughout Cog that might be helpful to understand.
