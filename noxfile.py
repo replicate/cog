@@ -20,12 +20,16 @@ TEST_DEPS = [
 
 
 def _install_coglet(session: nox.Session) -> None:
-    """Install coglet wheel (required dependency)."""
+    """Install coglet wheel (required dependency).
+
+    Falls back to PyPI with --prerelease=allow since coglet
+    may only have pre-release versions available.
+    """
     coglet_wheels = glob.glob("dist/coglet-*.whl")
     if coglet_wheels:
         session.install(coglet_wheels[0])
     else:
-        session.install("coglet")
+        session.install("--prerelease=allow", "coglet")
 
 
 def _install_package(session: nox.Session) -> None:
