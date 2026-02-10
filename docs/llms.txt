@@ -200,7 +200,6 @@ Otherwise, you can upgrade to the latest version by running the same commands yo
 
 ---
 
-
 # CLI
 
 Cog provides a command-line interface for building, running, and deploying machine learning models.
@@ -606,7 +605,6 @@ cog run -e CUDA_VISIBLE_DEVICES=0 -e BATCH_SIZE=32 python train.py
 
 
 ---
-
 
 # Contributing guide
 
@@ -1091,7 +1089,6 @@ Still having trouble? Please [open an issue](https://github.com/replicate/cog/is
 
 ---
 
-
 # Deploy models with Cog
 
 Cog containers are Docker containers that serve an HTTP server 
@@ -1180,7 +1177,6 @@ to serve Cog on an IPv6 address, run:
 
 ---
 
-
 # Environment variables
 
 This guide lists the environment variables that change how Cog functions.
@@ -1258,7 +1254,6 @@ $ COG_NO_UPDATE_CHECK=1 cog build  # runs without automatic update check
 
 
 ---
-
 
 # Getting started with your own model
 
@@ -1420,7 +1415,6 @@ Next, you might want to take a look at:
 
 
 ---
-
 
 # Getting started
 
@@ -1681,7 +1675,6 @@ Those are the basics! Next, you might want to take a look at:
 
 
 ---
-
 
 # HTTP API
 
@@ -2069,7 +2062,6 @@ def predict(image: Path) -> Path:
 
 ---
 
-
 # Notebooks
 
 Cog plays nicely with Jupyter notebooks.
@@ -2119,7 +2111,6 @@ class Predictor(BasePredictor):
 
 ---
 
-
 # Private package registry
 
 This guide describes how to build a Docker image with Cog that fetches Python packages from a private registry during setup.
@@ -2165,7 +2156,6 @@ Using a secret mount allows the private registry credentials to be securely pass
 
 
 ---
-
 
 # Prediction interface reference
 
@@ -2613,7 +2603,6 @@ test2
 
 ---
 
-
 # Cog: Containers for machine learning
 
 Cog is an open-source tool that lets you package machine learning models in a standard, production-ready container.
@@ -2888,14 +2877,12 @@ This project follows the [all-contributors](https://github.com/all-contributors/
 
 ---
 
-
 # Redis queue API
 
 > **Note:** The redis queue API is no longer supported and has been removed from Cog.
 
 
 ---
-
 
 # Training interface reference
 
@@ -3027,7 +3014,6 @@ cog predict -e COG_WEIGHTS=https://replicate.delivery/pbxt/xyz/weights.tar -i pr
 
 
 ---
-
 
 # `cog.yaml` reference
 
