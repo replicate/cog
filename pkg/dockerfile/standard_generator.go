@@ -76,6 +76,11 @@ type StandardGenerator struct {
 	command                    command.Command
 	client                     registry.Client
 	requiresCog                bool
+
+	// Optional overrides for wheel configs (used by tests for deterministic output).
+	// When nil, auto-detection is used (env var → dist/ → PyPI).
+	cogWheelConfig    *wheels.WheelConfig
+	cogletWheelConfig *wheels.WheelConfig
 }
 
 func NewStandardGenerator(config *config.Config, dir string, configFilename string, command command.Command, client registry.Client, requiresCog bool) (*StandardGenerator, error) {
@@ -473,10 +478,16 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", nil
 	}
 
-	// Determine which wheel to install based on COG_WHEEL env var
-	wheelConfig, err := wheels.GetCogWheelConfig()
-	if err != nil {
-		return "", err
+	// Use override if set, otherwise auto-detect via env var / dist / PyPI
+	var wheelConfig *wheels.WheelConfig
+	var err error
+	if g.cogWheelConfig != nil {
+		wheelConfig = g.cogWheelConfig
+	} else {
+		wheelConfig, err = wheels.GetCogWheelConfig()
+		if err != nil {
+			return "", err
+		}
 	}
 
 	var installLines string
@@ -499,9 +510,14 @@ func (g *StandardGenerator) installCog() (string, error) {
 	}
 
 	// Install coglet wheel alongside cog
-	cogletConfig, err := wheels.GetCogletWheelConfig()
-	if err != nil {
-		return "", err
+	var cogletConfig *wheels.WheelConfig
+	if g.cogletWheelConfig != nil {
+		cogletConfig = g.cogletWheelConfig
+	} else {
+		cogletConfig, err = wheels.GetCogletWheelConfig()
+		if err != nil {
+			return "", err
+		}
 	}
 	switch cogletConfig.Source {
 	case wheels.WheelSourcePyPI:

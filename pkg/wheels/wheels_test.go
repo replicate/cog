@@ -164,11 +164,12 @@ func TestGetCogWheelConfig(t *testing.T) {
 	wheelFile := filepath.Join(tmpDir, "custom.whl")
 	require.NoError(t, os.WriteFile(wheelFile, []byte("fake wheel"), 0o600))
 
-	// Change to temp dir to prevent auto-detection from repo dist/
+	// Change to temp dir and clear REPO_ROOT to prevent auto-detection from repo dist/
 	origDir, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(tmpDir))
 	defer func() { require.NoError(t, os.Chdir(origDir)) }()
+	t.Setenv("REPO_ROOT", "")
 
 	tests := []struct {
 		name           string
@@ -305,6 +306,14 @@ func TestGetCogletWheelConfig(t *testing.T) {
 	origVersion := global.Version
 	defer func() { global.Version = origVersion }()
 
+	// Change to temp dir and clear REPO_ROOT to prevent auto-detection from repo dist/
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { require.NoError(t, os.Chdir(origDir)) }()
+	t.Setenv("REPO_ROOT", "")
+
 	tests := []struct {
 		name           string
 		envValue       string
@@ -323,7 +332,7 @@ func TestGetCogletWheelConfig(t *testing.T) {
 			expectedVer:    "0.12.0",
 		},
 		{
-			name:           "dev default uses PyPI latest",
+			name:           "dev default falls back to PyPI without version",
 			envValue:       "",
 			globalVersion:  "dev",
 			expectedSource: WheelSourcePyPI,
