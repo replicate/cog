@@ -428,15 +428,9 @@ fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
     m.add_function(wrap_pyfunction!(_run_worker, m)?)?;
 
-    // Audit hook helpers for stdout/stderr protection (internal use by audit hook)
-    m.add_function(wrap_pyfunction!(audit::_is_slot_log_writer, m)?)?;
-    m.add_function(wrap_pyfunction!(audit::_is_tee_writer, m)?)?;
-    m.add_function(wrap_pyfunction!(audit::_get_inner_writer, m)?)?;
-    m.add_function(wrap_pyfunction!(audit::_create_tee_writer, m)?)?;
-
     // Export classes (needed for isinstance checks in audit hook)
     m.add_class::<log_writer::SlotLogWriter>()?;
-    m.add_class::<audit::TeeWriter>()?;
+    m.add_class::<audit::_TeeWriter>()?;
 
     Ok(())
 }
