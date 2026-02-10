@@ -49,6 +49,10 @@ CLAUDE.local.md
 mise.local.toml
 mise.local.lock
 
+# Built extension modules
+*.so
+*.pyd
+
 # Ignore rust specific build artifacts
 target
 /.cargo-home

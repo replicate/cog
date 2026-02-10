@@ -463,7 +463,14 @@ async fn run_worker_with_init() -> Result<(), String> {
 // =============================================================================
 
 #[pymodule]
+#[pyo3(name = "_impl")]
 fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Control what `from ._impl import *` exports into coglet/__init__.py
+    m.add(
+        "__all__",
+        vec!["__version__", "__build__", "server", "_sdk"],
+    )?;
+
     // Static metadata
     m.add("__version__", env!("COGLET_PEP440_VERSION"))?;
     m.add("__build__", BuildInfo::new())?;

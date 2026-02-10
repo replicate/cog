@@ -43,6 +43,9 @@ test = [
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+# The .so is named _impl; maturin generates coglet/__init__.py that re-exports
+# via "from ._impl import *". We control what * exports via __all__ in Rust.
+module-name = "coglet._impl"
 # Use manylinux2014 (glibc 2.17) for compatibility with Python 3.10+ base images
 compatibility = "manylinux2014"
 
