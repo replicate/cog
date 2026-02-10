@@ -53,7 +53,6 @@ impl BuildInfo {
 }
 
 impl BuildInfo {
-    #[allow(dead_code)] // wired up in upcoming module init rewrite
     fn new() -> Self {
         Self {
             version: env!("COGLET_PEP440_VERSION").to_string(),
@@ -68,8 +67,7 @@ fn set_active() {
     ACTIVE.store(true, Ordering::SeqCst);
 }
 
-#[gen_stub_pyfunction]
-#[pyfunction]
+/// Read the `active` flag. Exposed via `__getattr__` as a property-like attribute.
 fn active() -> bool {
     ACTIVE.load(Ordering::SeqCst)
 }
@@ -417,20 +415,75 @@ async fn run_worker_with_init() -> Result<(), String> {
         .map_err(|e| format!("Worker error: {}", e))
 }
 
+// =============================================================================
+// Module-level attribute protocol (__getattr__, __dir__, __setattr__)
+// =============================================================================
+
+/// Module `__getattr__` — intercepts attribute access for property-like attrs.
+///
+/// - `coglet.active` → reads the ACTIVE flag (no parens needed)
+/// - `coglet.__build__` → returns the frozen BuildInfo instance
+#[pyfunction]
+fn __getattr__(py: Python<'_>, name: &str) -> PyResult<Py<PyAny>> {
+    match name {
+        "active" => Ok(pyo3::types::PyBool::new(py, active())
+            .to_owned()
+            .unbind()
+            .into()),
+        "__build__" => {
+            let module = py.import("coglet")?;
+            // BuildInfo is stored as _build_info on the module to avoid recursion
+            module.getattr("_build_info").map(|v| v.unbind())
+        }
+        _ => Err(pyo3::exceptions::PyAttributeError::new_err(format!(
+            "module 'coglet' has no attribute '{name}'"
+        ))),
+    }
+}
+
+/// Module `__dir__` — controls what `dir(coglet)` returns.
+///
+/// Only the public API is listed.
+#[pyfunction]
+fn __dir__() -> Vec<&'static str> {
+    vec!["__version__", "__build__", "active", "serve"]
+}
+
+/// Module `__setattr__` — blocks writes to the module to prevent accidental mutation.
+///
+/// Registered LAST in module init so it doesn't prevent our own setup.
+#[pyfunction]
+fn __setattr__(name: &str, _value: &Bound<'_, PyAny>) -> PyResult<()> {
+    Err(pyo3::exceptions::PyAttributeError::new_err(format!(
+        "cannot set '{name}' on module 'coglet'"
+    )))
+}
+
 #[pymodule]
 fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Version from Cargo.toml
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    // PEP 440 version (e.g. "0.17.0a2" instead of "0.17.0-alpha.2")
+    m.add("__version__", env!("COGLET_PEP440_VERSION"))?;
+
+    // Build metadata (stored as _build_info, exposed via __getattr__ as __build__)
+    m.add("_build_info", BuildInfo::new())?;
 
     // Core functions
-    m.add_function(wrap_pyfunction!(active, m)?)?;
     m.add_function(wrap_pyfunction!(serve, m)?)?;
+
+    // Internal functions (prefixed with _)
     m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
     m.add_function(wrap_pyfunction!(_run_worker, m)?)?;
 
-    // Export classes (needed for isinstance checks in audit hook)
+    // Internal classes (prefixed with _)
     m.add_class::<log_writer::SlotLogWriter>()?;
     m.add_class::<audit::_TeeWriter>()?;
+
+    // Module attribute protocol
+    m.add_function(wrap_pyfunction!(__getattr__, m)?)?;
+    m.add_function(wrap_pyfunction!(__dir__, m)?)?;
+
+    // __setattr__ registered LAST — blocks writes after setup is complete
+    m.add_function(wrap_pyfunction!(__setattr__, m)?)?;
 
     Ok(())
 }
