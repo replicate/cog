@@ -26,13 +26,17 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
   CARGO_TERM_COLOR: always
-  # Disable Rust toolchain, cargo-binstall, and Python in mise - CI uses dedicated actions
-  # for better caching. mise installs tools in parallel, so rust might not be
-  # ready when cargo-binstall tries to compile cargo:* tools from source.
-  # Using actions guarantees toolchain is ready before mise installs cargo:* tools.
-  # Python is managed by astral-sh/setup-uv for version matrix support.
-  # golangci-lint is managed by golangci/golangci-lint-action for caching.
-  MISE_DISABLE_TOOLS: rust,rustup,rustup-init,cargo-binstall,python,golangci-lint
+  # Disable tools in mise that CI installs via dedicated GitHub Actions for
+  # better reliability (avoids transient GitHub Releases 502s from aqua downloads),
+  # better caching, and guaranteed tool ordering.
+  # - Rust toolchain: dtolnay/rust-toolchain
+  # - cargo-binstall: taiki-e/install-action
+  # - Python: astral-sh/setup-uv
+  # - golangci-lint: golangci/golangci-lint-action
+  # - gotestsum: go install (uses Go module proxy, not GitHub Releases)
+  # - cargo-deny, cargo-nextest: taiki-e/install-action
+  # - zig, cargo-zigbuild, maturin, cargo-insta: not needed in CI (maturin-action bundles zig)
+  MISE_DISABLE_TOOLS: rust,rustup,rustup-init,cargo-binstall,python,golangci-lint,gotestsum,cargo-deny,cargo-insta,cargo-nextest,zig,cargo-zigbuild,maturin
 
 permissions: {}
 
@@ -270,17 +274,17 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable  # Required for cargo-binstall to find cargo
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: jdx/mise-action@v3
-        with:
-          cache: false
+      # No mise needed - maturin-action bundles maturin and zig
       - name: Build coglet wheel (ABI3)
-        run: mise run ci:build:coglet
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64-unknown-linux-gnu
+          args: --release --out dist -m crates/coglet-python/Cargo.toml
+          manylinux: auto
       - name: Upload coglet wheel
         uses: actions/upload-artifact@v6
         with:
@@ -405,13 +409,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable  # Required for cargo-binstall to find cargo
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: taiki-e/install-action@v2
         with:
-          cache: false
+          tool: cargo-deny@0.19.0
+      # No mise needed - cargo-deny installed via taiki-e
       - name: Check licenses and advisories
-        run: mise run lint:rust:deny
+        run: cargo deny --manifest-path crates/Cargo.toml check
 
   lint-python:
     name: Lint Python
@@ -458,7 +461,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - uses: jdx/mise-action@v3
+      # gotestsum via Go module proxy (not GitHub Releases) for reliability
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.13.0
       - name: Test Go
         shell: bash
         run: |
@@ -483,17 +488,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable  # Required for cargo-binstall to find cargo
-      - uses: taiki-e/install-action@cargo-binstall
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.120
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: jdx/mise-action@v3
-        with:
-          cache: false
+      # No mise needed - cargo-nextest installed via taiki-e
       - name: Test Rust
-        run: mise run test:rust
+        run: cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude coglet-python --no-tests=pass
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
@@ -689,6 +693,9 @@ jobs:
           cache-dependency-path: |
             go.sum
             integration-tests/go.sum
+      # gotestsum via Go module proxy (not GitHub Releases) for reliability
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.13.0
       - uses: jdx/mise-action@v3
       - name: Build cog binary
         run: mise run build:cog
