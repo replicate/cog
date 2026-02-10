@@ -120,7 +120,7 @@ func buildCogBinary() (string, error) {
 
 	if len(cogWheelExists) == 0 || len(cogletWheelExists) == 0 {
 		fmt.Println("Building Python wheels...")
-		if err := runCommand(repoRoot, "make", "wheel"); err != nil {
+		if err := runCommand(repoRoot, "mise", "run", "build:wheels"); err != nil {
 			return "", fmt.Errorf("failed to build wheels: %w", err)
 		}
 
