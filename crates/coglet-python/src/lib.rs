@@ -480,6 +480,14 @@ fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // _sdk submodule — internal Python runtime integration classes
     let sdk = PyModule::new(py, "_sdk")?;
+    sdk.setattr(
+        "__doc__",
+        "Internal SDK runtime integration for coglet.\n\
+         \n\
+         This submodule contains Rust-backed classes that integrate coglet with\n\
+         the Python runtime (I/O routing, audit hooks, log streaming). These are\n\
+         implementation details used by the cog SDK — not part of the public API.",
+    )?;
     sdk.add_class::<log_writer::SlotLogWriter>()?;
     sdk.add_class::<audit::_TeeWriter>()?;
     m.add_submodule(&sdk)?;
