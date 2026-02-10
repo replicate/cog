@@ -8,8 +8,95 @@ import threading
 import time
 from pathlib import Path
 
+import coglet
 import pytest
 import requests
+
+# =============================================================================
+# Module structure tests (no server needed)
+# =============================================================================
+
+
+class TestModuleStructure:
+    """Tests for coglet module public API and structure."""
+
+    def test_version_is_pep440(self) -> None:
+        """__version__ must be a valid PEP 440 version string."""
+        # PEP 440: N.N.N, N.N.NaN, N.N.NbN, N.N.NrcN, N.N.N.devN, etc.
+        assert re.match(
+            r"^\d+\.\d+\.\d+(\.dev\d+|a\d+|b\d+|rc\d+)?(\+.+)?$",
+            coglet.__version__,
+        ), f"Not PEP 440: {coglet.__version__!r}"
+
+    def test_version_is_str(self) -> None:
+        assert isinstance(coglet.__version__, str)
+
+    def test_build_info_exists(self) -> None:
+        build = coglet.__build__
+        assert hasattr(build, "version")
+        assert hasattr(build, "git_sha")
+        assert hasattr(build, "build_time")
+        assert hasattr(build, "rustc_version")
+
+    def test_build_info_fields_are_strings(self) -> None:
+        build = coglet.__build__
+        assert isinstance(build.version, str)
+        assert isinstance(build.git_sha, str)
+        assert isinstance(build.build_time, str)
+        assert isinstance(build.rustc_version, str)
+
+    def test_build_info_version_matches_module_version(self) -> None:
+        assert coglet.__build__.version == coglet.__version__
+
+    def test_build_info_repr(self) -> None:
+        r = repr(coglet.__build__)
+        assert r.startswith("BuildInfo(")
+        assert "version=" in r
+        assert "git_sha=" in r
+
+    def test_build_info_frozen(self) -> None:
+        with pytest.raises(AttributeError):
+            coglet.__build__.version = "hacked"  # type: ignore[misc]
+
+    def test_server_exists(self) -> None:
+        assert hasattr(coglet, "server")
+
+    def test_server_active_is_false(self) -> None:
+        """Outside a worker subprocess, active should be False."""
+        assert coglet.server.active is False
+
+    def test_server_active_is_property(self) -> None:
+        """active should be a property (no parens needed), not callable."""
+        assert isinstance(coglet.server.active, bool)
+
+    def test_server_frozen(self) -> None:
+        with pytest.raises(AttributeError):
+            coglet.server.foo = "bar"  # type: ignore[attr-defined]
+
+    def test_server_active_not_settable(self) -> None:
+        with pytest.raises(AttributeError):
+            coglet.server.active = True  # type: ignore[misc]
+
+    def test_server_repr(self) -> None:
+        assert repr(coglet.server) == "coglet.server"
+
+    def test_sdk_submodule_exists(self) -> None:
+        assert hasattr(coglet, "_sdk")
+
+    def test_sdk_has_slot_log_writer(self) -> None:
+        assert hasattr(coglet._sdk, "_SlotLogWriter")
+
+    def test_sdk_has_tee_writer(self) -> None:
+        assert hasattr(coglet._sdk, "_TeeWriter")
+
+    def test_all_excludes_internals(self) -> None:
+        """__all__ should only list public API."""
+        assert "__version__" in coglet.__all__
+        assert "__build__" in coglet.__all__
+        assert "server" in coglet.__all__
+        # _sdk should not be in __all__ (underscore = private)
+        assert "_sdk" not in coglet.__all__
+        assert "_impl" not in coglet.__all__
 
 
 @pytest.fixture
