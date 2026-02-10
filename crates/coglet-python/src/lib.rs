@@ -27,6 +27,43 @@ use coglet_core::{
 /// Global flag: true when running inside a worker subprocess.
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 
+/// Frozen build metadata exposed as `coglet.__build__`.
+#[gen_stub_pyclass]
+#[pyclass(name = "BuildInfo", module = "coglet", frozen)]
+pub struct BuildInfo {
+    #[pyo3(get)]
+    version: String,
+    #[pyo3(get)]
+    git_sha: String,
+    #[pyo3(get)]
+    build_time: String,
+    #[pyo3(get)]
+    rustc_version: String,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl BuildInfo {
+    fn __repr__(&self) -> String {
+        format!(
+            "BuildInfo(version='{}', git_sha='{}', build_time='{}', rustc_version='{}')",
+            self.version, self.git_sha, self.build_time, self.rustc_version
+        )
+    }
+}
+
+impl BuildInfo {
+    #[allow(dead_code)] // wired up in upcoming module init rewrite
+    fn new() -> Self {
+        Self {
+            version: env!("COGLET_PEP440_VERSION").to_string(),
+            git_sha: env!("COGLET_GIT_SHA").to_string(),
+            build_time: env!("COGLET_BUILD_TIME").to_string(),
+            rustc_version: env!("COGLET_RUSTC_VERSION").to_string(),
+        }
+    }
+}
+
 fn set_active() {
     ACTIVE.store(true, Ordering::SeqCst);
 }
