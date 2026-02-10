@@ -133,7 +133,7 @@ class CogletServer:
         cmd = [
             sys.executable,
             "-c",
-            f"import coglet; coglet.serve('{self.predictor_path}:Predictor', port={self.requested_port})",
+            f"import coglet; coglet.server.serve('{self.predictor_path}:Predictor', port={self.requested_port})",
         ]
         self.process = subprocess.Popen(
             cmd,

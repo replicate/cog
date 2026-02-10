@@ -188,7 +188,7 @@ pub struct SimpleSpawner;
 impl WorkerSpawner for SimpleSpawner {
     fn spawn(&self, _config: &WorkerSpawnConfig) -> Result<Child, SpawnError> {
         let child = Command::new("python")
-            .args(["-c", "import coglet; coglet._run_worker()"])
+            .args(["-c", "import coglet; coglet.server._run_worker()"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())

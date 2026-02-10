@@ -67,11 +67,6 @@ fn set_active() {
     ACTIVE.store(true, Ordering::SeqCst);
 }
 
-/// Read the `active` flag. Exposed via `__getattr__` as a property-like attribute.
-fn active() -> bool {
-    ACTIVE.load(Ordering::SeqCst)
-}
-
 /// Initialize tracing with COG_LOG and LOG_FORMAT support.
 /// Returns optional receiver for draining setup logs.
 fn init_tracing(
@@ -169,10 +164,97 @@ fn read_max_concurrency(py: Python<'_>) -> usize {
     }
 }
 
-#[gen_stub_pyfunction]
-#[pyfunction]
-#[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
-fn serve(
+// =============================================================================
+// coglet.server — frozen Server object with serve() and active property
+// =============================================================================
+
+/// The coglet prediction server.
+///
+/// Access via `coglet.server`. Frozen — attributes cannot be set or deleted.
+///
+/// - `coglet.server.active` — `True` when running inside a worker subprocess
+/// - `coglet.server.serve(...)` — start the HTTP prediction server (blocking)
+#[gen_stub_pyclass]
+#[pyclass(name = "Server", module = "coglet", frozen)]
+pub struct CogletServer {}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl CogletServer {
+    /// `True` when running inside a coglet worker subprocess.
+    #[getter]
+    fn active(&self) -> bool {
+        ACTIVE.load(Ordering::SeqCst)
+    }
+
+    /// Start the HTTP prediction server. Blocks until shutdown.
+    #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
+    fn serve(
+        &self,
+        py: Python<'_>,
+        predictor_ref: Option<String>,
+        host: String,
+        port: u16,
+        await_explicit_shutdown: bool,
+        is_train: bool,
+    ) -> PyResult<()> {
+        serve_impl(
+            py,
+            predictor_ref,
+            host,
+            port,
+            await_explicit_shutdown,
+            is_train,
+        )
+    }
+
+    /// Worker subprocess entry point. Called by the orchestrator.
+    ///
+    /// Sets the active flag, installs log writers and audit hooks,
+    /// then enters the worker event loop.
+    #[pyo3(name = "_run_worker", signature = ())]
+    fn run_worker(&self, py: Python<'_>) -> PyResult<()> {
+        set_active();
+
+        // Install SlotLogWriters for ContextVar-based log routing
+        log_writer::install_slot_log_writers(py)?;
+
+        // Install audit hook to protect stdout/stderr from user replacement
+        if let Err(e) = audit::install_audit_hook(py) {
+            warn!(error = %e, "Failed to install audit hook, stdout/stderr protection disabled");
+        }
+
+        // Install signal handler for cancellation
+        if let Err(e) = cancel::install_signal_handler(py) {
+            warn!(error = %e, "Failed to install signal handler, cancellation may not work");
+        }
+
+        info!(target: "coglet::worker", "Worker subprocess starting, waiting for Init message");
+
+        py.detach(|| {
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
+            rt.block_on(async {
+                run_worker_with_init()
+                    .await
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            })
+        })
+    }
+
+    /// Returns `True` if the current thread is in a cancelable predict call.
+    #[pyo3(name = "_is_cancelable")]
+    fn is_cancelable(&self) -> bool {
+        cancel::is_cancelable()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        "coglet.server"
+    }
+}
+
+fn serve_impl(
     py: Python<'_>,
     predictor_ref: Option<String>,
     host: String,
@@ -308,45 +390,6 @@ fn serve_subprocess(
     })
 }
 
-#[gen_stub_pyfunction]
-#[pyfunction]
-fn _is_cancelable() -> bool {
-    cancel::is_cancelable()
-}
-
-#[gen_stub_pyfunction]
-#[pyfunction]
-#[pyo3(signature = ())]
-fn _run_worker(py: Python<'_>) -> PyResult<()> {
-    set_active();
-
-    // Install SlotLogWriters for ContextVar-based log routing
-    log_writer::install_slot_log_writers(py)?;
-
-    // Install audit hook to protect stdout/stderr from user replacement
-    if let Err(e) = audit::install_audit_hook(py) {
-        warn!(error = %e, "Failed to install audit hook, stdout/stderr protection disabled");
-    }
-
-    // Install signal handler for cancellation
-    if let Err(e) = cancel::install_signal_handler(py) {
-        warn!(error = %e, "Failed to install signal handler, cancellation may not work");
-    }
-
-    info!(target: "coglet::worker", "Worker subprocess starting, waiting for Init message");
-
-    py.detach(|| {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-
-        rt.block_on(async {
-            run_worker_with_init()
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    })
-}
-
 async fn run_worker_with_init() -> Result<(), String> {
     use coglet_core::bridge::codec::JsonCodec;
     use coglet_core::bridge::protocol::ControlRequest;
@@ -416,74 +459,23 @@ async fn run_worker_with_init() -> Result<(), String> {
 }
 
 // =============================================================================
-// Module-level attribute protocol (__getattr__, __dir__, __setattr__)
+// Module init
 // =============================================================================
 
-/// Module `__getattr__` — intercepts attribute access for property-like attrs.
-///
-/// - `coglet.active` → reads the ACTIVE flag (no parens needed)
-/// - `coglet.__build__` → returns the frozen BuildInfo instance
-#[pyfunction]
-fn __getattr__(py: Python<'_>, name: &str) -> PyResult<Py<PyAny>> {
-    match name {
-        "active" => Ok(pyo3::types::PyBool::new(py, active())
-            .to_owned()
-            .unbind()
-            .into()),
-        "__build__" => {
-            let module = py.import("coglet")?;
-            // BuildInfo is stored as _build_info on the module to avoid recursion
-            module.getattr("_build_info").map(|v| v.unbind())
-        }
-        _ => Err(pyo3::exceptions::PyAttributeError::new_err(format!(
-            "module 'coglet' has no attribute '{name}'"
-        ))),
-    }
-}
-
-/// Module `__dir__` — controls what `dir(coglet)` returns.
-///
-/// Only the public API is listed.
-#[pyfunction]
-fn __dir__() -> Vec<&'static str> {
-    vec!["__version__", "__build__", "active", "serve"]
-}
-
-/// Module `__setattr__` — blocks writes to the module to prevent accidental mutation.
-///
-/// Registered LAST in module init so it doesn't prevent our own setup.
-#[pyfunction]
-fn __setattr__(name: &str, _value: &Bound<'_, PyAny>) -> PyResult<()> {
-    Err(pyo3::exceptions::PyAttributeError::new_err(format!(
-        "cannot set '{name}' on module 'coglet'"
-    )))
-}
-
 #[pymodule]
-fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // PEP 440 version (e.g. "0.17.0a2" instead of "0.17.0-alpha.2")
+fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Static metadata
     m.add("__version__", env!("COGLET_PEP440_VERSION"))?;
+    m.add("__build__", BuildInfo::new())?;
 
-    // Build metadata (stored as _build_info, exposed via __getattr__ as __build__)
-    m.add("_build_info", BuildInfo::new())?;
+    // Frozen server object
+    m.add("server", CogletServer {})?;
 
-    // Core functions
-    m.add_function(wrap_pyfunction!(serve, m)?)?;
-
-    // Internal functions (prefixed with _)
-    m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
-    m.add_function(wrap_pyfunction!(_run_worker, m)?)?;
-
-    // Internal classes (prefixed with _)
-    m.add_class::<log_writer::SlotLogWriter>()?;
-    m.add_class::<audit::_TeeWriter>()?;
-
-    // Module attribute protocol
-    m.add_function(wrap_pyfunction!(__getattr__, m)?)?;
-    m.add_function(wrap_pyfunction!(__dir__, m)?)?;
-
-    // __setattr__ registered LAST — blocks writes after setup is complete
-    m.add_function(wrap_pyfunction!(__setattr__, m)?)?;
+    // _sdk submodule — internal Python runtime integration classes
+    let sdk = PyModule::new(py, "_sdk")?;
+    sdk.add_class::<log_writer::SlotLogWriter>()?;
+    sdk.add_class::<audit::_TeeWriter>()?;
+    m.add_submodule(&sdk)?;
 
     Ok(())
 }

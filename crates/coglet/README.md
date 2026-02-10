@@ -120,7 +120,7 @@ Parent-side worker lifecycle management.
 spawn_worker(config)
     │
     ├─▶ Create Unix socket transport (N slots)
-    ├─▶ Spawn: python -c "import coglet; coglet._run_worker()"
+     ├─▶ Spawn: python -c "import coglet; coglet.server._run_worker()"
     ├─▶ Send Init message via stdin
     ├─▶ Wait for worker to connect sockets
     ├─▶ Wait for Ready message (with timeout)

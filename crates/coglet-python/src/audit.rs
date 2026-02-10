@@ -211,7 +211,7 @@ pub(crate) fn get_inner_writer(py: Python<'_>, tee: &Bound<'_, PyAny>) -> PyResu
 /// - inner: Our _SlotLogWriter for slot-based log routing
 /// - user_stream: The stream user code tried to install
 #[gen_stub_pyclass]
-#[pyclass(name = "_TeeWriter", module = "coglet")]
+#[pyclass(name = "_TeeWriter", module = "coglet._sdk")]
 pub struct _TeeWriter {
     /// Our _SlotLogWriter (does ContextVar-based routing)
     #[pyo3(get)]
