@@ -10,6 +10,7 @@
 //! - Call task.cancel() when cancel requested
 //! - Python raises asyncio.CancelledError
 
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::prelude::*;
@@ -17,6 +18,27 @@ use pyo3::prelude::*;
 /// Global flag indicating if a sync prediction is currently cancelable.
 /// Only set to true while inside predict() for sync predictors.
 static CANCELABLE: AtomicBool = AtomicBool::new(false);
+
+/// CancelationException class, stored once at startup.
+static CANCELATION_EXCEPTION: OnceLock<Py<PyAny>> = OnceLock::new();
+
+/// SIGUSR1 signal handler implemented in Rust.
+///
+/// Raises CancelationException if we're currently inside a cancelable predict().
+#[pyfunction]
+fn _sigusr1_handler(_signum: i32, _frame: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    if is_cancelable() {
+        if let Some(exc) = CANCELATION_EXCEPTION.get() {
+            Python::attach(|py| Err(PyErr::from_value(exc.bind(py).clone())))
+        } else {
+            Err(pyo3::exceptions::PyRuntimeError::new_err(
+                "CancelationException not initialized",
+            ))
+        }
+    } else {
+        Ok(())
+    }
+}
 
 /// Install the SIGUSR1 signal handler for sync predictor cancellation.
 ///
@@ -35,28 +57,12 @@ pub fn install_signal_handler(py: Python<'_>) -> PyResult<()> {
         exception_class.call1(("CancelationException",))?
     };
 
-    // Store the exception class in the coglet module for the handler to use
-    let coglet_module = py.import("coglet")?;
-    coglet_module.setattr("_CancelationException", &cancel_exc)?;
+    // Store in Rust static (no module setattr needed)
+    let _ = CANCELATION_EXCEPTION.set(cancel_exc.unbind());
 
-    // Create the signal handler as a Python function
-    // We use exec to define a function that can be used as a signal handler
-    let globals = pyo3::types::PyDict::new(py);
-    globals.set_item("coglet", coglet_module)?;
-
-    let handler_code = c"
-def _sigusr1_handler(signum, frame):
-    if coglet._is_cancelable():
-        raise coglet._CancelationException()
-";
-    py.run(handler_code, Some(&globals), None)?;
-
-    let handler = globals.get_item("_sigusr1_handler")?.ok_or_else(|| {
-        pyo3::exceptions::PyRuntimeError::new_err("Failed to create signal handler")
-    })?;
-
-    // Install the handler for SIGUSR1
+    // Install the Rust handler for SIGUSR1
     let sigusr1 = signal.getattr("SIGUSR1")?;
+    let handler = wrap_pyfunction!(_sigusr1_handler, py)?;
     signal.call_method1("signal", (sigusr1, handler))?;
 
     tracing::debug!("Installed SIGUSR1 signal handler for sync cancellation");
