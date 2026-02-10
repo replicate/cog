@@ -226,7 +226,7 @@ fi
 
 [tasks."test:go"]
 description = "Run Go tests"
-run = "gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./... | grep -v /integration-tests/)"
+run = "gotestsum -- -short -timeout 1200s -parallel 5 ./..."
 
 [tasks."test:rust"]
 description = "Run Rust workspace tests"
@@ -261,9 +261,9 @@ if [ "${SHORT:-1}" = "0" ]; then
   SHORT_FLAG=""
 fi
 if [ -n "$1" ]; then
-  gotestsum -- -v $SHORT_FLAG -run "TestIntegration/$1" -timeout 30m ./integration-tests/...
+  gotestsum -- -tags integration -v $SHORT_FLAG -run "TestIntegration/$1" -timeout 30m ./integration-tests/...
 else
-  gotestsum -- -v $SHORT_FLAG -parallel ${TEST_PARALLEL:-4} -timeout 30m ./integration-tests/...
+  gotestsum -- -tags integration -v $SHORT_FLAG -parallel ${TEST_PARALLEL:-4} -timeout 30m ./integration-tests/...
 fi
 """
 
@@ -582,7 +582,7 @@ run = [
 [tasks."ci:test:integration"]
 description = "CI: Run integration tests with GitHub Actions output (full suite)"
 # exec ensures signals (SIGTERM from CI cancellation) go directly to gotestsum
-run = "exec gotestsum --format github-actions -- -parallel ${TEST_PARALLEL:-4} -timeout 30m ./integration-tests/..."
+run = "exec gotestsum --format github-actions -- -tags integration -parallel ${TEST_PARALLEL:-4} -timeout 30m ./integration-tests/..."
 
 # =============================================================================
 # Publish tasks (future)

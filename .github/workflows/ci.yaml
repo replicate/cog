@@ -476,7 +476,7 @@ jobs:
             kill -KILL -- -$$ 2>/dev/null || true
           }
           trap cleanup INT TERM
-          gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./... | grep -v /integration-tests/) &
+          gotestsum -- -short -timeout 1200s -parallel 5 ./... &
           wait $!
 
   test-rust:
@@ -725,6 +725,7 @@ jobs:
           echo "Running tests matching: $RUN_PATTERN"
           
           gotestsum --format github-actions -- \
+            -tags integration \
             -parallel $TEST_PARALLEL \
             -timeout 30m \
             -run "TestIntegration/($RUN_PATTERN)/" \
