@@ -36,7 +36,7 @@ env:
   # - gotestsum: go install (uses Go module proxy, not GitHub Releases)
   # - cargo-deny, cargo-nextest: taiki-e/install-action
   # - zig, cargo-zigbuild, maturin, cargo-insta: not needed in CI (maturin-action bundles zig)
-  MISE_DISABLE_TOOLS: rust,rustup,rustup-init,cargo-binstall,python,golangci-lint,gotestsum,cargo-deny,cargo-insta,cargo-nextest,zig,cargo-zigbuild,maturin
+  MISE_DISABLE_TOOLS: rust,rustup,rustup-init,cargo-binstall,python,golangci-lint,gotestsum,cargo-deny,cargo-insta,cargo-nextest,cargo:cargo-nextest,zig,cargo-zigbuild,maturin,cargo:maturin
 
 permissions: {}
 
@@ -290,6 +290,33 @@ jobs:
         with:
           name: CogletRustWheel
           path: dist/coglet-*-cp310-abi3-*.whl
+
+  build-cog:
+    name: Build cog CLI
+    needs: changes
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Build cog binary
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: build --clean --snapshot --single-target --id cog --output cog
+        env:
+          GOFLAGS: -buildvcs=false
+      - name: Upload cog binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: CogBinary
+          path: cog
 
 # =============================================================================
 # Format Checks - Fast, parallel
@@ -654,11 +681,12 @@ jobs:
 
   test-integration:
     name: "Test integration (${{ matrix.runtime }}, shard ${{ matrix.shard.index }})"
-    needs: [changes, build-sdk, build-rust, integration-shards]
+    needs: [changes, build-cog, build-sdk, build-rust, integration-shards]
     if: |
       !cancelled() &&
       needs.changes.outputs.integration == 'true' &&
       needs.integration-shards.result == 'success' &&
+      (needs.build-cog.result == 'success' || needs.build-cog.result == 'skipped') &&
       (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
       (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     runs-on: ubuntu-latest-16-cores
@@ -684,21 +712,17 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
+      - name: Install cog binary
+        run: |
+          cp dist/cog ./cog
+          chmod +x ./cog
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache-dependency-path: |
-            go.sum
-            integration-tests/go.sum
+          cache-dependency-path: go.sum
       # gotestsum via Go module proxy (not GitHub Releases) for reliability
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@v1.13.0
-      - uses: jdx/mise-action@v3
-      - name: Build cog binary
-        run: mise run build:cog
       - name: Set runtime environment
         run: |
           if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
@@ -742,6 +766,7 @@ jobs:
     needs:
       - changes
       - version-check
+      - build-cog
       - build-sdk
       - build-rust
       - fmt-go
