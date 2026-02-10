@@ -97,7 +97,7 @@ HTTP Request                     Parent Process                    Worker Subpro
 ## Startup Sequence
 
 ```
-1. coglet.serve() called from Python
+1. coglet.server.serve() called from Python
    │
    ├─▶ Start HTTP server immediately (health returns STARTING until ready)
    │
@@ -105,7 +105,7 @@ HTTP Request                     Parent Process                    Worker Subpro
        │
        ├─▶ Create slot transport (Unix sockets)
        │
-       ├─▶ Spawn worker: python -c "import coglet; coglet._run_worker()"
+        ├─▶ Spawn worker: python -c "import coglet; coglet.server._run_worker()"
        │
        ├─▶ Send Init message (predictor_ref, num_slots, transport_info)
        │     │

@@ -286,7 +286,7 @@ crates/coglet/src/
 └── version.rs                # VersionInfo
 
 crates/coglet-python/src/
-└── lib.rs                    # PyO3 bindings (coglet.serve())
+└── lib.rs                    # PyO3 bindings (coglet.server.serve())
 ```
 
 ## Invocation Path
@@ -305,7 +305,7 @@ How coglet gets invoked when running a Cog container:
 │                                                                             │
 │   if USE_COGLET env var:                                                    │
 │       import coglet                                                         │
-│       coglet.serve(predictor_ref, port=5000)  ──────────────────────────┐   │
+│       coglet.server.serve(predictor_ref, port=5000)  ──────────────────┐   │
 │   else:                                                                 │   │
 │       # original Python FastAPI server                                  │   │
 │       uvicorn.run(app, port=5000)                                       │   │

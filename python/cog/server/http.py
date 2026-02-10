@@ -831,7 +831,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
         log.info("Using Rust coglet server")
-        coglet.serve(  # type: ignore[attr-defined]
+        coglet.server.serve(  # type: ignore[attr-defined]
             predictor_ref=predictor_ref,
             host=args.host,
             port=port,

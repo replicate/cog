@@ -54,8 +54,13 @@ where
         event.record(&mut visitor);
         let message = visitor.message;
 
-        // Never ship codec logs over IPC - creates feedback loop when encoding WorkerLog messages
-        if !target.starts_with("coglet::bridge::codec") {
+        // Targets excluded from IPC:
+        // - coglet::bridge::codec: feedback loop when encoding WorkerLog messages
+        // - coglet::worker_local: diagnostics that must stay on the worker process
+        let is_local_only = target.starts_with("coglet::bridge::codec")
+            || target.starts_with("coglet::worker_local");
+
+        if !is_local_only {
             let _ = self.tx.try_send(ControlResponse::WorkerLog {
                 target: target.to_string(),
                 level: level.to_string(),
@@ -63,14 +68,23 @@ where
             });
         }
 
+        // Write to preserved stderr (fd 101) for:
+        // - worker_local targets (always, these are worker-only diagnostics)
+        // - all targets when RUST_WORKER_DIRECT_LOG=1 is set
         if let Some(ref fd) = self.direct_log_fd
             && let Ok(mut file) = fd.lock()
         {
-            let _ = writeln!(
-                file,
-                "worker_direct_log::{} [{}] {}",
-                target, level, message
-            );
+            let _ = writeln!(file, "worker::{} [{}] {}", target, level, message);
+        } else if is_local_only {
+            // No direct_log_fd but this is a local-only event — write to fd 101 directly.
+            // Safety: fd 101 is the preserved original stderr from fd_redirect.
+            #[cfg(unix)]
+            {
+                use std::os::unix::io::FromRawFd;
+                let mut file = unsafe { std::fs::File::from_raw_fd(101) };
+                let _ = writeln!(file, "worker::{} [{}] {}", target, level, message);
+                std::mem::forget(file); // Don't close fd 101
+            }
         }
     }
 }

@@ -3,15 +3,10 @@
 
 import builtins
 import typing
-__all__ = [
-    "SlotLogWriter",
-    "TeeWriter",
-    "active",
-    "serve",
-]
+__all__ = []
 
 @typing.final
-class SlotLogWriter:
+class _SlotLogWriter:
     r"""
     A Python file-like object that routes writes via the prediction_id ContextVar.
     
@@ -93,7 +88,7 @@ class SlotLogWriter:
         r"""
         Close the stream.
         """
-    def __enter__(self) -> SlotLogWriter:
+    def __enter__(self) -> _SlotLogWriter:
         r"""
         Context manager enter.
         """
@@ -103,18 +98,17 @@ class SlotLogWriter:
         """
 
 @typing.final
-class TeeWriter:
+class _TeeWriter:
     r"""
-    TeeWriter that sends writes to both our slot routing and user's stream.
+    Tee writer that sends writes to both our slot routing and user's stream.
     
-    This is a PyO3 class that wraps two writers:
-    - inner: Our SlotLogWriter for slot routing
+    - inner: Our _SlotLogWriter for slot-based log routing
     - user_stream: The stream user code tried to install
     """
     @property
     def inner(self) -> typing.Any:
         r"""
-        Our SlotLogWriter (does ContextVar-based routing)
+        Our _SlotLogWriter (does ContextVar-based routing)
         """
     @property
     def user_stream(self) -> typing.Any:
@@ -135,7 +129,7 @@ class TeeWriter:
     def encoding(self) -> typing.Optional[builtins.str]: ...
     @property
     def newlines(self) -> typing.Optional[builtins.str]: ...
-    def __new__(cls, inner: typing.Any, user_stream: typing.Any, name: builtins.str) -> TeeWriter: ...
+    def __new__(cls, inner: typing.Any, user_stream: typing.Any, name: builtins.str) -> _TeeWriter: ...
     def write(self, data: builtins.str) -> builtins.int:
         r"""
         Write to both streams.
@@ -150,34 +144,6 @@ class TeeWriter:
     def isatty(self) -> builtins.bool: ...
     def fileno(self) -> builtins.int: ...
     def close(self) -> None: ...
-    def __enter__(self) -> TeeWriter: ...
+    def __enter__(self) -> _TeeWriter: ...
     def __exit__(self, _exc_type: typing.Optional[typing.Any], _exc_val: typing.Optional[typing.Any], _exc_tb: typing.Optional[typing.Any]) -> builtins.bool: ...
-
-def _create_tee_writer(inner: typing.Any, user_stream: typing.Any, name: builtins.str) -> TeeWriter:
-    r"""
-    Create a TeeWriter that wraps our SlotLogWriter and user's stream.
-    """
-
-def _get_inner_writer(tee: typing.Any) -> typing.Any:
-    r"""
-    Get the inner SlotLogWriter from a TeeWriter.
-    """
-
-def _is_cancelable() -> builtins.bool: ...
-
-def _is_slot_log_writer(value: typing.Any) -> builtins.bool:
-    r"""
-    Check if a value is a SlotLogWriter (our core writer).
-    """
-
-def _is_tee_writer(value: typing.Any) -> builtins.bool:
-    r"""
-    Check if a value is a TeeWriter.
-    """
-
-def _run_worker() -> None: ...
-
-def active() -> builtins.bool: ...
-
-def serve(predictor_ref: typing.Optional[builtins.str] = None, host: builtins.str = '0.0.0.0', port: builtins.int = 5000, await_explicit_shutdown: builtins.bool = False, is_train: builtins.bool = False) -> None: ...
 

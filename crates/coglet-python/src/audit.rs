@@ -3,146 +3,217 @@
 //! Uses sys.addaudithook to intercept operations that could interfere with
 //! our runtime machinery. The hook cannot be removed once added.
 //!
-//! ## Protection levels:
+//! ## Protection: sys.stdout/stderr (Tee pattern)
 //!
-//! ### sys.stdout/stderr (Tee pattern)
-//! If user code replaces stdout/stderr, we wrap their replacement in a TeeWriter
+//! If user code replaces stdout/stderr, we wrap their replacement in a _TeeWriter
 //! that sends data to BOTH our slot routing AND their stream. User's code works
 //! as they expect, but we still get our logs.
 //!
-//! If they replace again, we unwrap the inner SlotLogWriter and re-tee with
-//! the new stream. No nested TeeWriters.
-//!
-//! ### ContextVar (Hard guard)  
-//! Our slot routing ContextVar is critical infrastructure. If user code tries
-//! to access or modify it, we raise an exception. No tampering allowed.
+//! If they replace again, we unwrap the inner _SlotLogWriter from the current
+//! _TeeWriter and re-tee with the new stream. No nested _TeeWriters.
 
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 use pyo3_stub_gen::derive::*;
 
 /// Whether the audit hook has been installed.
 static HOOK_INSTALLED: AtomicBool = AtomicBool::new(false);
 
-/// Reference to sys module for comparison in hook.
+/// Re-entrancy guard for the audit hook.
+/// Prevents infinite recursion when the hook itself sets sys.stdout/stderr.
+static IN_HOOK: AtomicBool = AtomicBool::new(false);
+
+/// Serializes stream replacement so concurrent threads don't race
+/// on the read-current → create-tee → set-new sequence.
+static STREAM_LOCK: Mutex<()> = Mutex::new(());
+
+/// Reference to sys module for identity comparison in hook.
 static SYS_MODULE: OnceLock<Py<PyAny>> = OnceLock::new();
 
-/// Reference to our SlotLogWriter class for isinstance checks.
+/// Reference to our _SlotLogWriter class for isinstance checks.
 static SLOT_LOG_WRITER_TYPE: OnceLock<Py<PyAny>> = OnceLock::new();
 
 /// Install the audit hook. Called once at worker startup.
 ///
-/// The hook intercepts:
-/// - object.__setattr__ on sys module for stdout/stderr
-/// - (future) other sensitive operations
+/// The hook intercepts object.__setattr__ on sys for stdout/stderr.
 pub fn install_audit_hook(py: Python<'_>) -> PyResult<()> {
     if HOOK_INSTALLED.swap(true, Ordering::SeqCst) {
-        // Already installed
         return Ok(());
     }
 
-    // Store sys module reference for comparison
+    // Store sys module reference for identity comparison
     let sys = py.import("sys")?;
     let _ = SYS_MODULE.set(sys.as_any().clone().unbind());
 
-    // Store our SlotLogWriter type for isinstance checks
-    // We need to get this from the coglet module
+    // Store our _SlotLogWriter type for isinstance checks
     if let Ok(coglet) = py.import("coglet")
-        && let Ok(writer_type) = coglet.getattr("SlotLogWriter")
+        && let Ok(writer_type) = coglet.getattr("_SlotLogWriter")
     {
         let _ = SLOT_LOG_WRITER_TYPE.set(writer_type.unbind());
     }
 
-    // Define the audit hook in Python
-    // We use exec because the hook needs to be a Python callable
-    let hook_code = r#"
-import sys
-
-def _coglet_audit_hook(event, args):
-    """
-    Audit hook that protects coglet runtime objects.
-    
-    This hook cannot be removed once installed.
-    """
-    if event == "object.__setattr__":
-        obj, name, value = args
-        
-        # Check if setting stdout or stderr on sys module
-        if obj is sys and name in ("stdout", "stderr"):
-            _coglet_handle_stream_replacement(name, value)
-
-def _coglet_handle_stream_replacement(name, value):
-    """
-    Handle user code replacing sys.stdout or sys.stderr.
-    
-    We wrap their replacement in a TeeWriter so data goes to both
-    our slot routing AND their stream.
-    
-    If they replace again, we unwrap to get our SlotLogWriter and re-tee
-    with the new stream. No nested TeeWriters.
-    """
-    import coglet
-    
-    # Check if value is already our SlotLogWriter
-    # If so, this is us setting up - no need to wrap
-    if hasattr(coglet, '_is_slot_log_writer') and coglet._is_slot_log_writer(value):
-        return
-    
-    # Check if value is already a TeeWriter - this shouldn't happen
-    # but if it does, we don't wrap TeeWriter in TeeWriter
-    if hasattr(coglet, '_is_tee_writer') and coglet._is_tee_writer(value):
-        return
-    
-    # Get current writer
-    current = getattr(sys, name)
-    
-    # Find our SlotLogWriter - either it IS current, or it's inside a TeeWriter
-    slot_writer = None
-    if hasattr(coglet, '_is_slot_log_writer') and coglet._is_slot_log_writer(current):
-        slot_writer = current
-    elif hasattr(coglet, '_get_inner_writer') and coglet._is_tee_writer(current):
-        # Current is a TeeWriter, get the inner SlotLogWriter
-        slot_writer = coglet._get_inner_writer(current)
-    
-    if slot_writer is None:
-        # We don't have a SlotLogWriter installed - nothing to protect
-        return
-    
-    # Create TeeWriter with our SlotLogWriter and their new stream
-    if hasattr(coglet, '_create_tee_writer'):
-        tee = coglet._create_tee_writer(slot_writer, value, name)
-        # Replace with tee instead of their value
-        # Schedule the fix to avoid infinite recursion (we're inside setattr)
-        def _fix():
-            setattr(sys, name, tee)
-        import threading
-        threading.Timer(0, _fix).start()
-
-# Install the hook
-sys.addaudithook(_coglet_audit_hook)
-"#;
-
-    let globals = PyDict::new(py);
-    let builtins = py.import("builtins")?;
-    let exec_fn = builtins.getattr("exec")?;
-    exec_fn.call1((hook_code, &globals))?;
+    // Register the Rust audit hook callable
+    let hook = wrap_pyfunction!(_coglet_audit_hook, py)?;
+    sys.call_method1("addaudithook", (hook,))?;
 
     tracing::debug!("Installed audit hook for runtime protection");
     Ok(())
 }
 
-/// TeeWriter that sends writes to both our slot routing and user's stream.
+/// Audit hook implemented in Rust.
 ///
-/// This is a PyO3 class that wraps two writers:
-/// - inner: Our SlotLogWriter for slot routing
+/// Intercepts `object.__setattr__` events on `sys` for stdout/stderr.
+/// Uses an AtomicBool re-entrancy guard instead of deferred threading.Timer.
+#[pyfunction]
+fn _coglet_audit_hook(py: Python<'_>, event: &str, args: &Bound<'_, PyAny>) -> PyResult<()> {
+    if event != "object.__setattr__" {
+        return Ok(());
+    }
+
+    // Re-entrancy guard: skip if we're already inside the hook
+    // (because we're setting sys.stdout/stderr ourselves).
+    if IN_HOOK.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    // args is (obj, name, value)
+    let obj = args.get_item(0)?;
+    let name: String = args.get_item(1)?.extract()?;
+
+    if name != "stdout" && name != "stderr" {
+        return Ok(());
+    }
+
+    // Check if obj is the sys module (identity comparison)
+    let Some(sys_ref) = SYS_MODULE.get() else {
+        return Ok(());
+    };
+    if !obj.is(sys_ref.bind(py)) {
+        return Ok(());
+    }
+
+    let value = args.get_item(2)?;
+    handle_stream_replacement(py, &name, &value)?;
+
+    Ok(())
+}
+
+/// Handle user code replacing sys.stdout or sys.stderr.
+///
+/// If the new value is already our _SlotLogWriter, this is our own setup — skip.
+/// Otherwise, find our _SlotLogWriter from the current stream (direct or inside
+/// a _TeeWriter), and wrap the user's new stream in a fresh _TeeWriter.
+fn handle_stream_replacement(py: Python<'_>, name: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
+    // If value is our _SlotLogWriter, this is us installing — skip
+    if is_slot_log_writer(py, value) {
+        return Ok(());
+    }
+
+    // Serialize the read-current → create-tee → set-new sequence.
+    // Without this, two threads replacing stdout simultaneously could race
+    // and one tee gets silently dropped.
+    // The lock protects no data (just `()`), so poisoned is safe to recover.
+    let _lock = STREAM_LOCK.lock().unwrap_or_else(|poisoned| {
+        tracing::warn!(
+            target: "coglet::worker_local",
+            "stream lock was poisoned (a thread panicked during stream replacement) — \
+             recovering, but log routing may be inconsistent"
+        );
+        poisoned.into_inner()
+    });
+
+    // Get current writer from sys
+    let sys = py.import("sys")?;
+    let current = sys.getattr(name)?;
+
+    // Find our _SlotLogWriter — either it IS current, or it's inside a _TeeWriter
+    let slot_writer = if is_slot_log_writer(py, &current) {
+        Some(current.clone().unbind())
+    } else if is_tee_writer(&current) {
+        get_inner_writer(py, &current).ok()
+    } else {
+        None
+    };
+
+    let Some(slot_writer) = slot_writer else {
+        // No _SlotLogWriter installed — nothing to protect
+        return Ok(());
+    };
+
+    // Create new _TeeWriter wrapping our _SlotLogWriter and user's stream
+    let tee = _TeeWriter::new(slot_writer, value.clone().unbind(), name.to_string());
+    let tee_obj = tee.into_pyobject(py)?;
+
+    // Set under re-entrancy guard to prevent hook from re-triggering
+    IN_HOOK.store(true, Ordering::SeqCst);
+    let result = sys.setattr(name, tee_obj);
+    IN_HOOK.store(false, Ordering::SeqCst);
+
+    result
+}
+
+// ============================================================================
+// Type checks — pub(crate) only, not exported to Python
+// ============================================================================
+
+/// Check if a value is a _SlotLogWriter.
+pub(crate) fn is_slot_log_writer(py: Python<'_>, value: &Bound<'_, PyAny>) -> bool {
+    if let Some(writer_type) = SLOT_LOG_WRITER_TYPE.get()
+        && let Ok(true) = value.is_instance(writer_type.bind(py))
+    {
+        return true;
+    }
+
+    // Fallback: check by class name (handles cross-module edge cases)
+    if let Ok(type_name) = value.get_type().name() {
+        return type_name == "_SlotLogWriter";
+    }
+
+    false
+}
+
+/// Check if a value is a _TeeWriter.
+pub(crate) fn is_tee_writer(value: &Bound<'_, PyAny>) -> bool {
+    if value.is_instance_of::<_TeeWriter>() {
+        return true;
+    }
+
+    if let Ok(type_name) = value.get_type().name() {
+        return type_name == "_TeeWriter";
+    }
+
+    false
+}
+
+/// Get the inner _SlotLogWriter from a _TeeWriter.
+pub(crate) fn get_inner_writer(py: Python<'_>, tee: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    if let Ok(tee_writer) = tee.extract::<PyRef<'_, _TeeWriter>>() {
+        return Ok(tee_writer.inner.clone_ref(py));
+    }
+
+    if let Ok(inner) = tee.getattr("inner") {
+        return Ok(inner.unbind());
+    }
+
+    Err(pyo3::exceptions::PyTypeError::new_err(
+        "Expected _TeeWriter with inner attribute",
+    ))
+}
+
+// ============================================================================
+// _TeeWriter — private pyclass
+// ============================================================================
+
+/// Tee writer that sends writes to both our slot routing and user's stream.
+///
+/// - inner: Our _SlotLogWriter for slot-based log routing
 /// - user_stream: The stream user code tried to install
 #[gen_stub_pyclass]
-#[pyclass(module = "coglet")]
-pub struct TeeWriter {
-    /// Our SlotLogWriter (does ContextVar-based routing)
+#[pyclass(name = "_TeeWriter", module = "coglet._sdk")]
+pub struct _TeeWriter {
+    /// Our _SlotLogWriter (does ContextVar-based routing)
     #[pyo3(get)]
     inner: Py<PyAny>,
     /// User's replacement stream
@@ -158,7 +229,7 @@ pub struct TeeWriter {
 
 #[gen_stub_pymethods]
 #[pymethods]
-impl TeeWriter {
+impl _TeeWriter {
     #[new]
     fn new(inner: Py<PyAny>, user_stream: Py<PyAny>, name: String) -> Self {
         Self {
@@ -175,14 +246,12 @@ impl TeeWriter {
             return Ok(data.len());
         }
 
-        // Write to our routing first (this goes to slot socket during predictions)
         if let Err(e) = self.inner.call_method1(py, "write", (data,)) {
-            tracing::warn!(error = %e, "TeeWriter: failed to write to inner");
+            tracing::warn!(error = %e, "_TeeWriter: failed to write to inner");
         }
 
-        // Write to user's stream (this is what they expect)
         if let Err(e) = self.user_stream.call_method1(py, "write", (data,)) {
-            tracing::warn!(error = %e, "TeeWriter: failed to write to user stream");
+            tracing::warn!(error = %e, "_TeeWriter: failed to write to user stream");
         }
 
         Ok(data.len())
@@ -208,13 +277,11 @@ impl TeeWriter {
     }
 
     fn isatty(&self, py: Python<'_>) -> PyResult<bool> {
-        // Delegate to user stream
         let result = self.user_stream.call_method0(py, "isatty")?;
         result.extract(py)
     }
 
     fn fileno(&self, py: Python<'_>) -> PyResult<i32> {
-        // Delegate to user stream (they may need FD operations)
         let result = self.user_stream.call_method0(py, "fileno")?;
         result.extract(py)
     }
@@ -248,74 +315,4 @@ impl TeeWriter {
     fn newlines(&self) -> Option<String> {
         None
     }
-}
-
-/// Check if a value is a SlotLogWriter (our core writer).
-#[gen_stub_pyfunction]
-#[pyfunction]
-pub fn _is_slot_log_writer(py: Python<'_>, value: &Bound<'_, PyAny>) -> bool {
-    // Check by type reference
-    if let Some(writer_type) = SLOT_LOG_WRITER_TYPE.get()
-        && let Ok(true) = value.is_instance(writer_type.bind(py))
-    {
-        return true;
-    }
-
-    // Fallback to class name
-    if let Ok(type_name) = value.get_type().name()
-        && type_name == "SlotLogWriter"
-    {
-        return true;
-    }
-
-    false
-}
-
-/// Check if a value is a TeeWriter.
-#[gen_stub_pyfunction]
-#[pyfunction]
-pub fn _is_tee_writer(_py: Python<'_>, value: &Bound<'_, PyAny>) -> bool {
-    if value.is_instance_of::<TeeWriter>() {
-        return true;
-    }
-
-    // Fallback to class name
-    if let Ok(type_name) = value.get_type().name()
-        && type_name == "TeeWriter"
-    {
-        return true;
-    }
-
-    false
-}
-
-/// Get the inner SlotLogWriter from a TeeWriter.
-#[gen_stub_pyfunction]
-#[pyfunction]
-pub fn _get_inner_writer(py: Python<'_>, tee: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-    // Try to extract as TeeWriter
-    if let Ok(tee_writer) = tee.extract::<PyRef<'_, TeeWriter>>() {
-        return Ok(tee_writer.inner.clone_ref(py));
-    }
-
-    // Fallback: try to get .inner attribute
-    if let Ok(inner) = tee.getattr("inner") {
-        return Ok(inner.unbind());
-    }
-
-    Err(pyo3::exceptions::PyTypeError::new_err(
-        "Expected TeeWriter with inner attribute",
-    ))
-}
-
-/// Create a TeeWriter that wraps our SlotLogWriter and user's stream.
-#[gen_stub_pyfunction]
-#[pyfunction]
-pub fn _create_tee_writer(
-    _py: Python<'_>,
-    inner: Py<PyAny>,
-    user_stream: Py<PyAny>,
-    name: String,
-) -> PyResult<TeeWriter> {
-    Ok(TeeWriter::new(inner, user_stream, name))
 }

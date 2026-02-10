@@ -27,14 +27,44 @@ use coglet_core::{
 /// Global flag: true when running inside a worker subprocess.
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 
-fn set_active() {
-    ACTIVE.store(true, Ordering::SeqCst);
+/// Frozen build metadata exposed as `coglet.__build__`.
+#[gen_stub_pyclass]
+#[pyclass(name = "BuildInfo", module = "coglet", frozen)]
+pub struct BuildInfo {
+    #[pyo3(get)]
+    version: String,
+    #[pyo3(get)]
+    git_sha: String,
+    #[pyo3(get)]
+    build_time: String,
+    #[pyo3(get)]
+    rustc_version: String,
 }
 
-#[gen_stub_pyfunction]
-#[pyfunction]
-fn active() -> bool {
-    ACTIVE.load(Ordering::SeqCst)
+#[gen_stub_pymethods]
+#[pymethods]
+impl BuildInfo {
+    fn __repr__(&self) -> String {
+        format!(
+            "BuildInfo(version='{}', git_sha='{}', build_time='{}', rustc_version='{}')",
+            self.version, self.git_sha, self.build_time, self.rustc_version
+        )
+    }
+}
+
+impl BuildInfo {
+    fn new() -> Self {
+        Self {
+            version: env!("COGLET_PEP440_VERSION").to_string(),
+            git_sha: env!("COGLET_GIT_SHA").to_string(),
+            build_time: env!("COGLET_BUILD_TIME").to_string(),
+            rustc_version: env!("COGLET_RUSTC_VERSION").to_string(),
+        }
+    }
+}
+
+fn set_active() {
+    ACTIVE.store(true, Ordering::SeqCst);
 }
 
 /// Initialize tracing with COG_LOG and LOG_FORMAT support.
@@ -134,10 +164,97 @@ fn read_max_concurrency(py: Python<'_>) -> usize {
     }
 }
 
-#[gen_stub_pyfunction]
-#[pyfunction]
-#[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
-fn serve(
+// =============================================================================
+// coglet.server — frozen Server object with serve() and active property
+// =============================================================================
+
+/// The coglet prediction server.
+///
+/// Access via `coglet.server`. Frozen — attributes cannot be set or deleted.
+///
+/// - `coglet.server.active` — `True` when running inside a worker subprocess
+/// - `coglet.server.serve(...)` — start the HTTP prediction server (blocking)
+#[gen_stub_pyclass]
+#[pyclass(name = "Server", module = "coglet", frozen)]
+pub struct CogletServer {}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl CogletServer {
+    /// `True` when running inside a coglet worker subprocess.
+    #[getter]
+    fn active(&self) -> bool {
+        ACTIVE.load(Ordering::SeqCst)
+    }
+
+    /// Start the HTTP prediction server. Blocks until shutdown.
+    #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
+    fn serve(
+        &self,
+        py: Python<'_>,
+        predictor_ref: Option<String>,
+        host: String,
+        port: u16,
+        await_explicit_shutdown: bool,
+        is_train: bool,
+    ) -> PyResult<()> {
+        serve_impl(
+            py,
+            predictor_ref,
+            host,
+            port,
+            await_explicit_shutdown,
+            is_train,
+        )
+    }
+
+    /// Worker subprocess entry point. Called by the orchestrator.
+    ///
+    /// Sets the active flag, installs log writers and audit hooks,
+    /// then enters the worker event loop.
+    #[pyo3(name = "_run_worker", signature = ())]
+    fn run_worker(&self, py: Python<'_>) -> PyResult<()> {
+        set_active();
+
+        // Install SlotLogWriters for ContextVar-based log routing
+        log_writer::install_slot_log_writers(py)?;
+
+        // Install audit hook to protect stdout/stderr from user replacement
+        if let Err(e) = audit::install_audit_hook(py) {
+            warn!(error = %e, "Failed to install audit hook, stdout/stderr protection disabled");
+        }
+
+        // Install signal handler for cancellation
+        if let Err(e) = cancel::install_signal_handler(py) {
+            warn!(error = %e, "Failed to install signal handler, cancellation may not work");
+        }
+
+        info!(target: "coglet::worker", "Worker subprocess starting, waiting for Init message");
+
+        py.detach(|| {
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
+            rt.block_on(async {
+                run_worker_with_init()
+                    .await
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            })
+        })
+    }
+
+    /// Returns `True` if the current thread is in a cancelable predict call.
+    #[pyo3(name = "_is_cancelable")]
+    fn is_cancelable(&self) -> bool {
+        cancel::is_cancelable()
+    }
+
+    fn __repr__(&self) -> &'static str {
+        "coglet.server"
+    }
+}
+
+fn serve_impl(
     py: Python<'_>,
     predictor_ref: Option<String>,
     host: String,
@@ -273,45 +390,6 @@ fn serve_subprocess(
     })
 }
 
-#[gen_stub_pyfunction]
-#[pyfunction]
-fn _is_cancelable() -> bool {
-    cancel::is_cancelable()
-}
-
-#[gen_stub_pyfunction]
-#[pyfunction]
-#[pyo3(signature = ())]
-fn _run_worker(py: Python<'_>) -> PyResult<()> {
-    set_active();
-
-    // Install SlotLogWriters for ContextVar-based log routing
-    log_writer::install_slot_log_writers(py)?;
-
-    // Install audit hook to protect stdout/stderr from user replacement
-    if let Err(e) = audit::install_audit_hook(py) {
-        warn!(error = %e, "Failed to install audit hook, stdout/stderr protection disabled");
-    }
-
-    // Install signal handler for cancellation
-    if let Err(e) = cancel::install_signal_handler(py) {
-        warn!(error = %e, "Failed to install signal handler, cancellation may not work");
-    }
-
-    info!(target: "coglet::worker", "Worker subprocess starting, waiting for Init message");
-
-    py.detach(|| {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-
-        rt.block_on(async {
-            run_worker_with_init()
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    })
-}
-
 async fn run_worker_with_init() -> Result<(), String> {
     use coglet_core::bridge::codec::JsonCodec;
     use coglet_core::bridge::protocol::ControlRequest;
@@ -380,26 +458,39 @@ async fn run_worker_with_init() -> Result<(), String> {
         .map_err(|e| format!("Worker error: {}", e))
 }
 
+// =============================================================================
+// Module init
+// =============================================================================
+
 #[pymodule]
-fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Version from Cargo.toml
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+#[pyo3(name = "_impl")]
+fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Control what `from ._impl import *` exports into coglet/__init__.py
+    m.add(
+        "__all__",
+        vec!["__version__", "__build__", "server", "_sdk"],
+    )?;
 
-    // Core functions
-    m.add_function(wrap_pyfunction!(active, m)?)?;
-    m.add_function(wrap_pyfunction!(serve, m)?)?;
-    m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
-    m.add_function(wrap_pyfunction!(_run_worker, m)?)?;
+    // Static metadata
+    m.add("__version__", env!("COGLET_PEP440_VERSION"))?;
+    m.add("__build__", BuildInfo::new())?;
 
-    // Audit hook helpers for stdout/stderr protection (internal use by audit hook)
-    m.add_function(wrap_pyfunction!(audit::_is_slot_log_writer, m)?)?;
-    m.add_function(wrap_pyfunction!(audit::_is_tee_writer, m)?)?;
-    m.add_function(wrap_pyfunction!(audit::_get_inner_writer, m)?)?;
-    m.add_function(wrap_pyfunction!(audit::_create_tee_writer, m)?)?;
+    // Frozen server object
+    m.add("server", CogletServer {})?;
 
-    // Export classes (needed for isinstance checks in audit hook)
-    m.add_class::<log_writer::SlotLogWriter>()?;
-    m.add_class::<audit::TeeWriter>()?;
+    // _sdk submodule — internal Python runtime integration classes
+    let sdk = PyModule::new(py, "_sdk")?;
+    sdk.setattr(
+        "__doc__",
+        "Internal SDK runtime integration for coglet.\n\
+         \n\
+         This submodule contains Rust-backed classes that integrate coglet with\n\
+         the Python runtime (I/O routing, audit hooks, log streaming). These are\n\
+         implementation details used by the cog SDK — not part of the public API.",
+    )?;
+    sdk.add_class::<log_writer::SlotLogWriter>()?;
+    sdk.add_class::<audit::_TeeWriter>()?;
+    m.add_submodule(&sdk)?;
 
     Ok(())
 }

@@ -1,5 +1,7 @@
 //! Python predictor loading and invocation.
 
+use std::sync::OnceLock;
+
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -8,6 +10,69 @@ use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 use crate::cancel;
 use crate::input::{self, InputProcessor, PreparedInput, Runtime};
 use crate::output;
+
+// =============================================================================
+// Async helper functions — defined as Python strings, initialized once.
+//
+// These must be Python `async def` functions to participate in asyncio's event
+// loop. They cannot be expressed as pure Rust because they use Python's async
+// iteration protocol and ContextVar.set() before awaiting a coroutine.
+// =============================================================================
+
+/// Collects an async generator into a list. Initialized once, reused per-call.
+static COLLECT_ASYNC_GEN: OnceLock<Py<PyAny>> = OnceLock::new();
+
+/// Sets a ContextVar then awaits a coroutine. Initialized once, reused per-call.
+static CTX_WRAPPER: OnceLock<Py<PyAny>> = OnceLock::new();
+
+/// Get or initialize the `_collect_async_gen` Python helper.
+fn get_collect_async_gen(py: Python<'_>) -> Result<Py<PyAny>, PredictionError> {
+    if let Some(f) = COLLECT_ASYNC_GEN.get() {
+        return Ok(f.clone_ref(py));
+    }
+
+    let code = c"\
+async def _collect_async_gen(agen):
+    results = []
+    async for item in agen:
+        results.append(item)
+    return results
+";
+    let globals = PyDict::new(py);
+    py.run(code, Some(&globals), None).map_err(|e| {
+        PredictionError::Failed(format!("Failed to define _collect_async_gen: {e}"))
+    })?;
+    let f = globals
+        .get_item("_collect_async_gen")
+        .map_err(|e| PredictionError::Failed(format!("Failed to get _collect_async_gen: {e}")))?
+        .ok_or_else(|| PredictionError::Failed("_collect_async_gen not found".to_string()))?
+        .unbind();
+    let _ = COLLECT_ASYNC_GEN.set(f.clone_ref(py));
+    Ok(f)
+}
+
+/// Get or initialize the `_ctx_wrapper` Python helper.
+fn get_ctx_wrapper(py: Python<'_>) -> Result<Py<PyAny>, PredictionError> {
+    if let Some(f) = CTX_WRAPPER.get() {
+        return Ok(f.clone_ref(py));
+    }
+
+    let code = c"\
+async def _ctx_wrapper(coro, prediction_id, contextvar):
+    contextvar.set(prediction_id)
+    return await coro
+";
+    let globals = PyDict::new(py);
+    py.run(code, Some(&globals), None)
+        .map_err(|e| PredictionError::Failed(format!("Failed to define _ctx_wrapper: {e}")))?;
+    let f = globals
+        .get_item("_ctx_wrapper")
+        .map_err(|e| PredictionError::Failed(format!("Failed to get _ctx_wrapper: {e}")))?
+        .ok_or_else(|| PredictionError::Failed("_ctx_wrapper not found".to_string()))?
+        .unbind();
+    let _ = CTX_WRAPPER.set(f.clone_ref(py));
+    Ok(f)
+}
 
 /// Check if a PyErr is a CancelationException or asyncio.CancelledError.
 fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
@@ -671,60 +736,19 @@ impl PythonPredictor {
                 } | PredictorKind::StandaloneFunction(PredictKind::AsyncGen)
             );
             let coro = if is_async_gen {
-                let collect_code = "
-async def _collect_async_gen(agen):
-    results = []
-    async for item in agen:
-        results.append(item)
-    return results
-";
-                let builtins = py.import("builtins").map_err(|e| {
-                    PredictionError::Failed(format!("Failed to import builtins: {}", e))
-                })?;
-                let exec_fn = builtins
-                    .getattr("exec")
-                    .map_err(|e| PredictionError::Failed(format!("Failed to get exec: {}", e)))?;
-                let globals = PyDict::new(py);
-                exec_fn.call1((collect_code, &globals)).map_err(|e| {
-                    PredictionError::Failed(format!("Failed to define collect helper: {}", e))
-                })?;
-                let collect_fn = globals
-                    .get_item("_collect_async_gen")
+                let collect_fn = get_collect_async_gen(py)?;
+                collect_fn
+                    .call1(py, (&coro,))
                     .map_err(|e| {
-                        PredictionError::Failed(format!("Failed to get collect helper: {}", e))
+                        PredictionError::Failed(format!("Failed to wrap async generator: {}", e))
                     })?
-                    .ok_or_else(|| {
-                        PredictionError::Failed("_collect_async_gen not found".to_string())
-                    })?;
-                collect_fn.call1((&coro,)).map_err(|e| {
-                    PredictionError::Failed(format!("Failed to wrap async generator: {}", e))
-                })?
+                    .into_bound(py)
             } else {
                 coro
             };
 
             // Wrap coroutine to set up log routing in the event loop thread
-            let wrap_code = r#"
-async def _ctx_wrapper(coro, prediction_id, contextvar):
-    contextvar.set(prediction_id)
-    return await coro
-"#;
-            let builtins = py.import("builtins").map_err(|e| {
-                PredictionError::Failed(format!("Failed to import builtins: {}", e))
-            })?;
-            let exec_fn = builtins
-                .getattr("exec")
-                .map_err(|e| PredictionError::Failed(format!("Failed to get exec: {}", e)))?;
-            let globals = PyDict::new(py);
-            exec_fn.call1((wrap_code, &globals)).map_err(|e| {
-                PredictionError::Failed(format!("Failed to define context wrapper: {}", e))
-            })?;
-            let ctx_wrapper = globals
-                .get_item("_ctx_wrapper")
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to get context wrapper: {}", e))
-                })?
-                .ok_or_else(|| PredictionError::Failed("_ctx_wrapper not found".to_string()))?;
+            let ctx_wrapper = get_ctx_wrapper(py)?;
 
             // Get the same ContextVar instance used by SlotLogWriter for log routing
             let contextvar = crate::log_writer::get_prediction_contextvar(py).map_err(|e| {
@@ -733,7 +757,7 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
 
             // Wrap the coroutine with context setup
             let wrapped_coro = ctx_wrapper
-                .call1((&coro, prediction_id, contextvar.bind(py)))
+                .call1(py, (&coro, prediction_id, contextvar.bind(py)))
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to wrap coroutine with context: {}", e))
                 })?;
@@ -742,7 +766,7 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
             let future = asyncio
                 .call_method1(
                     "run_coroutine_threadsafe",
-                    (&wrapped_coro, event_loop.bind(py)),
+                    (wrapped_coro.bind(py), event_loop.bind(py)),
                 )
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to submit coroutine: {}", e))
@@ -855,27 +879,7 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
             .map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
 
             // Wrap coroutine to set up log routing
-            let wrap_code = r#"
-async def _ctx_wrapper(coro, prediction_id, contextvar):
-    contextvar.set(prediction_id)
-    return await coro
-"#;
-            let builtins = py.import("builtins").map_err(|e| {
-                PredictionError::Failed(format!("Failed to import builtins: {}", e))
-            })?;
-            let exec_fn = builtins
-                .getattr("exec")
-                .map_err(|e| PredictionError::Failed(format!("Failed to get exec: {}", e)))?;
-            let globals = PyDict::new(py);
-            exec_fn.call1((wrap_code, &globals)).map_err(|e| {
-                PredictionError::Failed(format!("Failed to define context wrapper: {}", e))
-            })?;
-            let ctx_wrapper = globals
-                .get_item("_ctx_wrapper")
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to get context wrapper: {}", e))
-                })?
-                .ok_or_else(|| PredictionError::Failed("_ctx_wrapper not found".to_string()))?;
+            let ctx_wrapper = get_ctx_wrapper(py)?;
 
             // Get the same ContextVar instance used by SlotLogWriter
             let contextvar = crate::log_writer::get_prediction_contextvar(py).map_err(|e| {
@@ -884,7 +888,7 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
 
             // Wrap the coroutine with context setup
             let wrapped_coro = ctx_wrapper
-                .call1((&coro, prediction_id, contextvar.bind(py)))
+                .call1(py, (&coro, prediction_id, contextvar.bind(py)))
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to wrap coroutine with context: {}", e))
                 })?;
@@ -893,7 +897,7 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
             let future = asyncio
                 .call_method1(
                     "run_coroutine_threadsafe",
-                    (&wrapped_coro, event_loop.bind(py)),
+                    (wrapped_coro.bind(py), event_loop.bind(py)),
                 )
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to submit coroutine: {}", e))

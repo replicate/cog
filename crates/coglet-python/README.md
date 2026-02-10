@@ -62,7 +62,7 @@ coglet-python/
 ```python
 import coglet
 
-if coglet.active():
+if coglet.server.active:
     # Running inside worker subprocess
     # stdout/stderr are captured, print goes to slot routing
 else:
