@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "coglet"
-version = "0.17.0-alpha3"
+version = "0.17.0-alpha4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -206,7 +206,7 @@ dependencies = [
 
 [[package]]
 name = "coglet-python"
-version = "0.17.0-alpha3"
+version = "0.17.0-alpha4"
 dependencies = [
  "async-trait",
  "coglet",
