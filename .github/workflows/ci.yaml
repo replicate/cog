@@ -694,7 +694,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, cog-rust]
+        runtime: [cog-rust]
         shard: ${{ fromJSON(needs.integration-shards.outputs.shards) }}
     steps:
       - uses: actions/checkout@v6
@@ -867,5 +867,3 @@ jobs:
         with:
           version: '~> v2'
           args: check
-
-
