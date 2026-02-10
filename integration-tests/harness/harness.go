@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	mathrand "math/rand"
+	mathrand "math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -80,9 +80,7 @@ func New() (*Harness, error) {
 func ResolveCogBinary() (string, error) {
 	if cogBinary := os.Getenv("COG_BINARY"); cogBinary != "" {
 		if !filepath.IsAbs(cogBinary) {
-			// Resolve relative paths from repo root, not cwd.
-			// This handles the case where tests run from integration-tests/
-			// but COG_BINARY is set relative to repo root (e.g., "./cog").
+			// Resolve relative paths from repo root, not the test package directory.
 			repoRoot, err := findRepoRoot()
 			if err != nil {
 				return "", err
@@ -122,7 +120,7 @@ func buildCogBinary() (string, error) {
 
 	if len(cogWheelExists) == 0 || len(cogletWheelExists) == 0 {
 		fmt.Println("Building Python wheels...")
-		if err := runCommand(repoRoot, "make", "wheel"); err != nil {
+		if err := runCommand(repoRoot, "mise", "run", "build:wheels"); err != nil {
 			return "", fmt.Errorf("failed to build wheels: %w", err)
 		}
 
@@ -156,7 +154,7 @@ func findRepoRoot() (string, error) {
 	for {
 		goMod := filepath.Join(dir, "go.mod")
 		if _, err := os.Stat(goMod); err == nil {
-			// Verify it's the main cog repo (not a submodule like integration-tests)
+			// Verify it's the cog repo root (matches the expected module path)
 			content, err := os.ReadFile(goMod)
 			if err == nil && strings.Contains(string(content), "module github.com/replicate/cog\n") {
 				return dir, nil
@@ -214,17 +212,10 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 // It handles all cog subcommands, with special handling for certain commands.
 func (h *Harness) cmdCog(ts *testscript.TestScript, neg bool, args []string) {
 	// Check for subcommands that need special handling
-	if len(args) > 0 {
-		switch args[0] {
-		case "serve":
-			// Special handling for 'cog serve' - run in background
-			h.cmdCogServe(ts, neg, args[1:])
-			return
-			// Add more special subcommands here as needed:
-			// case "run":
-			//     h.cmdCogRun(ts, neg, args[1:])
-			//     return
-		}
+	if len(args) > 0 && args[0] == "serve" {
+		// Special handling for 'cog serve' - run in background
+		h.cmdCogServe(ts, neg, args[1:])
+		return
 	}
 
 	// Default: run cog command normally
@@ -314,12 +305,11 @@ func removeDockerImage(imageName string) {
 		return
 	}
 
-	images := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, img := range images {
+	for img := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
 		if img == "" {
 			continue
 		}
-		exec.Command("docker", "rmi", "-f", img).Run() //nolint:errcheck
+		exec.Command("docker", "rmi", "-f", img).Run() //nolint:errcheck,gosec
 	}
 }
 
@@ -390,7 +380,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 
 	if !waitForServer(serverURL, 60*time.Second) {
 		// Try to get server output for debugging
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		ts.Fatalf("server did not become healthy within timeout")
 	}
 }
@@ -457,7 +447,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 			ts.Fatalf("curl: failed to read response: %v", readErr)
 		}
 		respBody := string(respBodyBytes)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		lastStatus = resp.StatusCode
 		lastBody = respBody
@@ -474,7 +464,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 		} else {
 			if statusOK {
 				// Success - write body to stdout
-				ts.Stdout().Write([]byte(respBody))
+				_, _ = ts.Stdout().Write([]byte(respBody))
 				return
 			}
 		}
@@ -526,14 +516,14 @@ func (h *Harness) stopServerByWorkDir(workDir string) {
 	shutdownURL := serverURL + "/shutdown"
 	resp, err := http.Post(shutdownURL, "application/json", nil) //nolint:gosec,noctx
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	// Force kill the cog process if still running
 	if info.cmd.Process != nil {
-		info.cmd.Process.Kill()
+		_ = info.cmd.Process.Kill()
 	}
-	info.cmd.Wait()
+	_ = info.cmd.Wait()
 
 	// Also kill any Docker container that may still be running on this port
 	// Find container by port and kill it
@@ -541,7 +531,7 @@ func (h *Harness) stopServerByWorkDir(workDir string) {
 	if err == nil && len(output) > 0 {
 		containerID := strings.TrimSpace(string(output))
 		if containerID != "" {
-			exec.Command("docker", "kill", containerID).Run() //nolint:errcheck
+			exec.Command("docker", "kill", containerID).Run() //nolint:errcheck,gosec
 		}
 	}
 }
@@ -577,7 +567,7 @@ func waitForServer(serverURL string, timeout time.Duration) bool {
 
 		if resp.StatusCode == http.StatusOK {
 			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if err != nil {
 				time.Sleep(200 * time.Millisecond)
 				continue
@@ -602,7 +592,7 @@ func waitForServer(serverURL string, timeout time.Duration) bool {
 				return false
 			}
 		} else {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		time.Sleep(200 * time.Millisecond)
@@ -668,7 +658,7 @@ func (h *Harness) cmdWaitFor(ts *testscript.TestScript, neg bool, args []string)
 			resp, err := client.Get(target)
 			if err == nil {
 				conditionMet = resp.StatusCode == expectedStatus
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 
 		default:
@@ -839,8 +829,8 @@ func (h *Harness) cmdRegistryInspect(ts *testscript.TestScript, neg bool, args [
 		ts.Fatalf("registry-inspect: failed to marshal result: %v", err)
 	}
 
-	ts.Stdout().Write(output)
-	ts.Stdout().Write([]byte("\n"))
+	_, _ = ts.Stdout().Write(output)
+	_, _ = ts.Stdout().Write([]byte("\n"))
 }
 
 // cmdDockerPush tags and pushes a local image to the test registry.
@@ -974,14 +964,11 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 
 	var files []mockWeightFile
 
-	// Seed the RNG for varied sizes across test runs
-	rng := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
-
 	for i := 1; i <= count; i++ {
 		// Random size between min and max
 		size := minSize
 		if maxSize > minSize {
-			size = minSize + (rng.Int63() % (maxSize - minSize + 1))
+			size = minSize + mathrand.Int64N(maxSize-minSize+1) //nolint:gosec // test data, not security-sensitive
 		}
 
 		// Generate identifier (e.g., "weights-001")

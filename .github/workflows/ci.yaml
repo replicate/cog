@@ -476,7 +476,7 @@ jobs:
             kill -KILL -- -$$ 2>/dev/null || true
           }
           trap cleanup INT TERM
-          gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...) &
+          gotestsum -- -short -timeout 1200s -parallel 5 ./... &
           wait $!
 
   test-rust:
@@ -690,9 +690,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache-dependency-path: |
-            go.sum
-            integration-tests/go.sum
+          cache-dependency-path: go.sum
       # gotestsum via Go module proxy (not GitHub Releases) for reliability
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@v1.13.0
@@ -709,7 +707,6 @@ jobs:
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
-        working-directory: integration-tests
         shell: bash
         run: |
           set -euo pipefail
@@ -728,9 +725,11 @@ jobs:
           echo "Running tests matching: $RUN_PATTERN"
           
           gotestsum --format github-actions -- \
+            -tags integration \
             -parallel $TEST_PARALLEL \
             -timeout 30m \
-            -run "TestIntegration/($RUN_PATTERN)/" &
+            -run "TestIntegration/($RUN_PATTERN)/" \
+            ./integration-tests/... &
           wait $!
 
 # =============================================================================

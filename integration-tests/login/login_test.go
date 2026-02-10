@@ -1,3 +1,5 @@
+//go:build integration
+
 // Package login provides integration tests for the cog login command.
 //
 // These tests verify:
