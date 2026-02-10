@@ -241,9 +241,9 @@ func fetchLayers(ctx context.Context, reference, digest string, reg registry.Cli
 }
 
 type rawStep struct {
-	Step     string      `json:"step"`
-	Data     interface{} `json:"data,omitempty"`
-	Manifest interface{} `json:"manifest,omitempty"`
+	Step     string `json:"step"`
+	Data     any    `json:"data,omitempty"`
+	Manifest any    `json:"manifest,omitempty"`
 }
 
 func streamRaw(ctx context.Context, reference string, m *model.Model, reg registry.Client) error {
@@ -252,7 +252,7 @@ func streamRaw(ctx context.Context, reference string, m *model.Model, reg regist
 	// Step 1: resolve
 	_ = enc.Encode(rawStep{
 		Step: "resolve",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"reference":  reference,
 			"cogVersion": m.CogVersion,
 			"type": func() string {
@@ -268,7 +268,7 @@ func streamRaw(ctx context.Context, reference string, m *model.Model, reg regist
 		// Step 2: index
 		_ = enc.Encode(rawStep{
 			Step: "index",
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"digest":    m.Index.Digest,
 				"mediaType": m.Index.MediaType,
 				"count":     len(m.Index.Manifests),
@@ -286,7 +286,7 @@ func streamRaw(ctx context.Context, reference string, m *model.Model, reg regist
 				if err == nil {
 					rawManifest, err := img.RawManifest()
 					if err == nil {
-						var parsed interface{}
+						var parsed any
 						if jsonErr := json.Unmarshal(rawManifest, &parsed); jsonErr == nil {
 							_ = enc.Encode(rawStep{
 								Step:     "manifest",
@@ -310,7 +310,7 @@ func streamRaw(ctx context.Context, reference string, m *model.Model, reg regist
 	// Final step: model summary
 	_ = enc.Encode(rawStep{
 		Step: "model",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"reference":  reference,
 			"cogVersion": m.CogVersion,
 		},
