@@ -408,10 +408,16 @@ run = [
 [tasks."generate:stubs"]
 alias = "stub:generate"
 description = "Generate Python type stubs for coglet"
-sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml"]
-outputs = ["crates/coglet-python/coglet.pyi"]
+sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml", "crates/coglet-python/coglet/__init__.py"]
+outputs = ["crates/coglet-python/coglet/_sdk/__init__.pyi", "crates/coglet-python/coglet/__init__.pyi"]
 dir = "crates/coglet-python"
-run = "cargo run --bin stub_gen"
+run = '''
+# 1. pyo3-stub-gen: Rust types → _sdk/__init__.pyi (and initial __init__.pyi)
+cargo run --bin stub_gen
+
+# 2. mypy stubgen: Python __init__.py → __init__.pyi (overwrites pyo3 version)
+uvx --from mypy stubgen coglet/__init__.py -o . --quiet
+'''
 
 [tasks."generate:compat"]
 description = "Regenerate CUDA/PyTorch/TensorFlow compatibility matrices"
@@ -458,22 +464,28 @@ echo "Done."
 [tasks."stub:check"]
 description = "Check that coglet Python stubs are up to date"
 dir = "crates/coglet-python"
-run = """
+run = '''
 #!/usr/bin/env bash
 set -e
-# Generate to temp file and compare
+
+# Regenerate stubs in-place
 cargo run --bin stub_gen 2>/dev/null
-if ! git diff --quiet coglet.pyi; then
-  echo "ERROR: Stubs are out of date. Run 'mise run generate:stubs' to update."
-  git diff coglet.pyi
+uvx --from mypy stubgen coglet/__init__.py -o . --quiet
+
+# Check if any .pyi files changed
+if ! git diff --quiet -- '**/*.pyi'; then
+  echo "ERROR: Stubs are out of date:"
+  git diff -- '**/*.pyi'
+  echo ""
+  echo "Run 'mise run generate:stubs' to update."
   exit 1
 fi
 echo "Stubs are up to date."
-"""
+'''
 
 [tasks."stub:typecheck"]
 description = "Type-check coglet stubs with ty"
-run = "ty check crates/coglet-python/coglet.pyi"
+run = "ty check crates/coglet-python/coglet/__init__.pyi"
 
 # =============================================================================
 # Clean tasks
