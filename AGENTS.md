@@ -230,6 +230,30 @@ For comprehensive architecture documentation, see [`architecture/`](./architectu
 ### Updating the docs
 - Documentation is in the `docs/` directory, written in Markdown and generated into HTML using `mkdocs`.
 
+## CI Tool Dependencies
+
+Development tools are managed in **two places** that must be kept in sync:
+
+1. **`mise.toml`** — Tool versions for local development (uses aqua backend for prebuilt binaries)
+2. **`.github/workflows/ci.yaml`** — Tool installation for CI (uses dedicated GitHub Actions)
+
+CI deliberately avoids aqua downloads from GitHub Releases to prevent transient 502 failures. Instead, it uses:
+
+| Tool | CI installation method | Why |
+|------|----------------------|-----|
+| gotestsum | `go install` | Uses Go module proxy, not GitHub Releases |
+| cargo-deny | `taiki-e/install-action` | Prebuilt with checksum verification |
+| cargo-nextest | `taiki-e/install-action` | Prebuilt with checksum verification |
+| coglet wheel (maturin+zig) | `PyO3/maturin-action` | Bundles maturin and zig |
+| golangci-lint | `golangci/golangci-lint-action` | Built-in caching |
+| Rust toolchain | `dtolnay/rust-toolchain` | Guaranteed ordering |
+
+Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
+
+**When updating a tool version**, update both:
+- The version in `mise.toml` (for local dev)
+- The corresponding version pin in `.github/workflows/ci.yaml` (for CI)
+
 ## Important Files
 - `cog.yaml` - User-facing model configuration
 - `pkg/config/config.go` - Go code for parsing and validating `cog.yaml`
