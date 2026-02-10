@@ -490,26 +490,8 @@ func (g *StandardGenerator) installCog() (string, error) {
 		}
 	}
 
-	var installLines string
-
-	switch wheelConfig.Source {
-	case wheels.WheelSourcePyPI:
-		installLines, err = g.installCogFromPyPI(wheelConfig)
-	case wheels.WheelSourceURL:
-		console.Infof("Using cog wheel from URL: %s", wheelConfig.URL)
-		installLines, err = g.installWheelFromURL(wheelConfig.URL)
-	case wheels.WheelSourceFile:
-		console.Infof("Using local cog wheel: %s", wheelConfig.Path)
-		installLines, err = g.installWheelFromFile(wheelConfig.Path)
-	default:
-		return "", fmt.Errorf("unknown wheel source: %v", wheelConfig.Source)
-	}
-
-	if err != nil {
-		return "", err
-	}
-
-	// Install coglet wheel alongside cog
+	// Install coglet BEFORE cog — cog depends on coglet, so coglet must
+	// be present when pip resolves cog's dependencies.
 	var cogletConfig *wheels.WheelConfig
 	if g.cogletWheelConfig != nil {
 		cogletConfig = g.cogletWheelConfig
@@ -527,12 +509,37 @@ func (g *StandardGenerator) installCog() (string, error) {
 	case wheels.WheelSourceFile:
 		console.Infof("Using local coglet wheel: %s", cogletConfig.Path)
 	}
+	var installLines string
 	cogletInstall, err := g.installCogletWheel(cogletConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to install coglet wheel: %w", err)
 	}
 	if cogletInstall != "" {
-		installLines += "\n" + cogletInstall
+		installLines = cogletInstall
+	}
+
+	// Install cog SDK
+	var cogInstall string
+	switch wheelConfig.Source {
+	case wheels.WheelSourcePyPI:
+		cogInstall, err = g.installCogFromPyPI(wheelConfig)
+	case wheels.WheelSourceURL:
+		console.Infof("Using cog wheel from URL: %s", wheelConfig.URL)
+		cogInstall, err = g.installWheelFromURL(wheelConfig.URL)
+	case wheels.WheelSourceFile:
+		console.Infof("Using local cog wheel: %s", wheelConfig.Path)
+		cogInstall, err = g.installWheelFromFile(wheelConfig.Path)
+	default:
+		return "", fmt.Errorf("unknown wheel source: %v", wheelConfig.Source)
+	}
+	if err != nil {
+		return "", err
+	}
+	if cogInstall != "" {
+		if installLines != "" {
+			installLines += "\n"
+		}
+		installLines += cogInstall
 	}
 
 	return installLines, nil

@@ -34,11 +34,12 @@ func testInstallCog(stripped bool) string {
 	if stripped {
 		strippedCall += " && find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 	}
+	// coglet is installed before cog — cog depends on coglet
 	return fmt.Sprintf(`ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir cog%s
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir coglet%s
 ENV CFLAGS=
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir coglet%s
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir cog%s
 ENV CFLAGS=`, strippedCall, strippedCall)
 }
 
