@@ -78,7 +78,7 @@ func TestWeightConfig_JSONRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify JSON structure
-	var raw map[string]interface{}
+	var raw map[string]any
 	err = json.Unmarshal(data, &raw)
 	require.NoError(t, err)
 	require.Equal(t, "1.0", raw["schemaVersion"])

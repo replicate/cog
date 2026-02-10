@@ -178,23 +178,23 @@ func TestWeightPusher_Push_RawManifestContainsArtifactType(t *testing.T) {
 	rawManifest, err := pushedImg.RawManifest()
 	require.NoError(t, err)
 
-	var manifestJSON map[string]interface{}
+	var manifestJSON map[string]any
 	require.NoError(t, json.Unmarshal(rawManifest, &manifestJSON))
 
 	// artifactType must be present at the manifest level (OCI 1.1)
 	require.Equal(t, MediaTypeWeightArtifact, manifestJSON["artifactType"])
 
 	// config.mediaType must be the weight config type
-	configMap, ok := manifestJSON["config"].(map[string]interface{})
+	configMap, ok := manifestJSON["config"].(map[string]any)
 	require.True(t, ok, "config should be an object")
 	require.Equal(t, MediaTypeWeightConfig, configMap["mediaType"])
 
 	// layers should have exactly one entry with the weight layer media type
-	layers, ok := manifestJSON["layers"].([]interface{})
+	layers, ok := manifestJSON["layers"].([]any)
 	require.True(t, ok, "layers should be an array")
 	require.Len(t, layers, 1)
 
-	layerMap, ok := layers[0].(map[string]interface{})
+	layerMap, ok := layers[0].(map[string]any)
 	require.True(t, ok, "layer should be an object")
 	require.Equal(t, MediaTypeWeightLayer, layerMap["mediaType"])
 }
