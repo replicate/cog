@@ -26,8 +26,9 @@ bin/*
 # Compiled test tools
 /weights-gen
 
-# Test directory for weights testing
+# Test directories for weights testing
 /test-weights/
+/test-weights-example/
 weights.lock
 
 # Auto-:d version files from setuptools-scm
