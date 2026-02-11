@@ -66,16 +66,22 @@ func TestParseWheelValue(t *testing.T) {
 			expected: &WheelConfig{Source: WheelSourcePyPI, Version: "1.0.0"},
 		},
 
-		// dist keyword
+		// relative directory paths (e.g. "dist") are resolved to absolute
 		{
-			name:     "dist keyword",
-			input:    "dist",
-			expected: &WheelConfig{Source: WheelSourceFile, Path: "dist"},
+			name:  "dist as relative path",
+			input: "dist",
+			expected: &WheelConfig{
+				Source: WheelSourceFile,
+				// Path will be converted to absolute
+			},
 		},
 		{
-			name:     "dist uppercase",
-			input:    "DIST",
-			expected: &WheelConfig{Source: WheelSourceFile, Path: "dist"},
+			name:  "dist uppercase as relative path",
+			input: "DIST",
+			expected: &WheelConfig{
+				Source: WheelSourceFile,
+				// Path will be converted to absolute
+			},
 		},
 
 		// URLs
@@ -250,7 +256,7 @@ func TestGetCogWheelConfigErrors(t *testing.T) {
 		t.Setenv(CogWheelEnvVar, "/nonexistent/path/wheel.whl")
 		_, err := GetCogWheelConfig()
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "wheel file not found")
+		require.Contains(t, err.Error(), "path not found")
 	})
 }
 
