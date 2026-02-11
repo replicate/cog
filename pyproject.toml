@@ -21,19 +21,12 @@ requires-python = ">=3.10"
 dependencies = [
   "typing_extensions>=4.0",
   "pyyaml>=6.0",
-  # Server deps
-  "fastapi>=0.100.0",
-  "uvicorn>=0.20.0",
   "structlog>=21.0.0",
   "requests>=2.25.0",
+  "coglet>=0.1.0,<1.0",
 ]
 
 dynamic = ["version"]
-
-[project.optional-dependencies]
-# Rust-based prediction server (alpha)
-# Lower bound ensures SDK shim compatibility; upper bound allows breaking changes at major version
-coglet = ["coglet>=0.1.0,<1.0"]
 
 [dependency-groups]
 dev = [
@@ -43,18 +36,10 @@ dev = [
 ]
 
 test = [
-    "httpx",
-    "hypothesis",
-    "numpy",
-    "pillow",
     "pytest",
-    "pytest-asyncio",
-    "pytest-httpserver",
     "pytest-timeout",
     "pytest-xdist",
     "pytest-cov",
-    "responses",
-    "pexpect",
 ]
 
 [tool.setuptools_scm]

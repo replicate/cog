@@ -256,7 +256,7 @@ func (h *Harness) Setup(env *testscript.Env) error {
 		env.Setenv("COG_WHEEL", cogWheel)
 	}
 
-	// Propagate COGLET_WHEEL for Rust coglet server testing
+	// Propagate COGLET_WHEEL for coglet server
 	if cogletWheel := os.Getenv("COGLET_WHEEL"); cogletWheel != "" {
 		env.Setenv("COGLET_WHEEL", cogletWheel)
 	}

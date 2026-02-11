@@ -528,8 +528,11 @@ jobs:
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
-    needs: [changes, build-sdk]
-    if: needs.changes.outputs.python == 'true' && needs.build-sdk.result == 'success'
+    needs: [changes, build-sdk, build-rust]
+    if: |
+      needs.changes.outputs.python == 'true' &&
+      needs.build-sdk.result == 'success' &&
+      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     strategy:
@@ -537,11 +540,11 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - name: Download SDK
+      - name: Download artifacts
         uses: actions/download-artifact@v7
         with:
-          name: CogPackage
           path: dist
+          merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: astral-sh/setup-uv@v6
@@ -680,7 +683,7 @@ jobs:
           done
 
   test-integration:
-    name: "Test integration (${{ matrix.runtime }}, shard ${{ matrix.shard.index }})"
+    name: "Test integration (shard ${{ matrix.shard.index }})"
     needs: [changes, build-cog, build-sdk, build-rust, integration-shards]
     if: |
       !cancelled() &&
@@ -694,7 +697,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, cog-rust]
         shard: ${{ fromJSON(needs.integration-shards.outputs.shards) }}
     steps:
       - uses: actions/checkout@v6
@@ -723,11 +725,6 @@ jobs:
       # gotestsum via Go module proxy (not GitHub Releases) for reliability
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@v1.13.0
-      - name: Set runtime environment
-        run: |
-          if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
-            echo "COGLET_WHEEL=dist" >> $GITHUB_ENV
-          fi
       - name: Run integration tests (shard ${{ matrix.shard.index }}, ${{ matrix.shard.count }} tests)
         env:
           COG_BINARY: ./cog
@@ -867,5 +864,3 @@ jobs:
         with:
           version: '~> v2'
           args: check
-
-

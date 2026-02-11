@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/registry/registrytest"
+	"github.com/replicate/cog/pkg/wheels"
 )
 
 func testTini() string {
@@ -33,9 +34,20 @@ func testInstallCog(stripped bool) string {
 	if stripped {
 		strippedCall += " && find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 	}
+	// coglet is installed before cog — cog depends on coglet
 	return fmt.Sprintf(`ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir coglet%s
+ENV CFLAGS=
+ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir cog%s
-ENV CFLAGS=`, strippedCall)
+ENV CFLAGS=`, strippedCall, strippedCall)
+}
+
+// pypiWheels sets the generator to use unpinned PyPI for both cog and coglet,
+// giving deterministic Dockerfile output regardless of local dist/ contents.
+func pypiWheels(gen *StandardGenerator) {
+	gen.cogWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
+	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
 }
 
 func testInstallPython(version string) string {
@@ -86,6 +98,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -122,6 +135,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -167,6 +181,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -223,6 +238,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -275,6 +291,7 @@ build:
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -313,6 +330,7 @@ build:
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 	fmt.Println(actual)
@@ -376,6 +394,7 @@ predict: predict.py:Predictor
 		}
 		return nil
 	}
+	pypiWheels(gen)
 
 	modelDockerfile, runnerDockerfile, dockerignore, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
@@ -468,6 +487,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
 	actual, err := gen.GenerateDockerfileWithoutSeparateWeights(t.Context())
 	require.NoError(t, err)
 
@@ -503,6 +523,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -542,6 +563,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -594,6 +616,7 @@ predict: predict.py:Predictor
 		gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 		require.NoError(t, err)
 		gen.SetUseCogBaseImage(true)
+		pypiWheels(gen)
 		_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 		require.NoError(t, err)
 
@@ -655,6 +678,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -710,6 +734,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -764,6 +789,7 @@ predict: predict.py:Predictor
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -800,6 +826,7 @@ predict: predict.py:Predictor
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)
 	gen.SetPrecompile(true)
+	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
@@ -904,12 +931,14 @@ predict: predict.py:Predictor
 	client := registrytest.NewMockRegistryClient()
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
+	pypiWheels(gen)
 
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain pip install cog from PyPI
+	// Should contain pip install cog and coglet from PyPI
 	require.Contains(t, actual, "pip install --no-cache-dir cog")
+	require.Contains(t, actual, "pip install --no-cache-dir coglet")
 }
 
 func TestCOGWheelEnvPyPI(t *testing.T) {

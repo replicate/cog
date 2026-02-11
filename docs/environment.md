@@ -43,26 +43,21 @@ The `dist` option searches for wheels in:
 
 ### `COGLET_WHEEL`
 
-Controls which coglet wheel is installed in the Docker image. Coglet is the experimental Rust-based prediction server that provides faster, more stable request handling.
+Controls which coglet wheel is installed in the Docker image. Coglet is the Rust-based prediction server.
 
 **Supported values:** Same as `COG_WHEEL`
 
-**Default behavior:** Coglet is **not installed** unless explicitly enabled via this variable.
+**Default behavior:** For development builds, auto-detects a wheel in `dist/`. For release builds, installs the matching version from PyPI. Can be overridden with an explicit value.
 
 **Examples:**
 
 ```console
-# Use coglet from PyPI
-$ COGLET_WHEEL=pypi cog build
-
 # Use local development wheel
 $ COGLET_WHEEL=dist cog build
 
-# Use specific version
+# Use specific version from PyPI
 $ COGLET_WHEEL=pypi:0.1.0 cog build
 ```
-
-When coglet is installed, it is used automatically at runtime - no additional configuration is needed.
 
 ## Runtime variables
 

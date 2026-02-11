@@ -91,7 +91,7 @@ fn init_tracing(
         EnvFilter::new(filter_str)
     };
 
-    let use_json = std::env::var("LOG_FORMAT").as_deref() == Ok("json");
+    let use_json = std::env::var("LOG_FORMAT").as_deref() != Ok("console");
 
     if let Some(tx) = setup_log_tx {
         let accumulator = coglet_core::SetupLogAccumulator::new(tx);

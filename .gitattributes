@@ -1,2 +1,3 @@
 .git_archival.txt export-subst
 Makefile -linguist-detectable
+docs/llms.txt linguist-generated=true
