@@ -146,14 +146,14 @@ jobs:
             fi
 
             # Detect Python changes
-            if echo "$CHANGED" | grep -qE '^(python/|pyproject\.toml|noxfile\.py|\.ruff\.toml)'; then
+            if echo "$CHANGED" | grep -qE '^(python/|pyproject\.toml|uv\.lock|noxfile\.py|\.ruff\.toml)'; then
               echo "python=true" >> $GITHUB_OUTPUT
             else
               echo "python=false" >> $GITHUB_OUTPUT
             fi
 
             # Detect integration test changes (or if any code changed)
-            if echo "$CHANGED" | grep -qE '^(integration-tests/|cmd/|pkg/|python/|crates/)'; then
+            if echo "$CHANGED" | grep -qE '^(integration-tests/|cmd/|pkg/|python/|crates/|uv\.lock|pyproject\.toml)'; then
               echo "integration=true" >> $GITHUB_OUTPUT
             else
               echo "integration=false" >> $GITHUB_OUTPUT
