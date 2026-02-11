@@ -285,6 +285,13 @@ func TestGetCogWheelConfigAutoDetect(t *testing.T) {
 }
 
 func TestGetCogletWheelConfig(t *testing.T) {
+	// Change to temp dir to prevent auto-detection from repo dist/
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { require.NoError(t, os.Chdir(origDir)) }()
+
 	tests := []struct {
 		name           string
 		envValue       string
