@@ -109,23 +109,34 @@ func ParseWheelValue(value string) *WheelConfig {
 //
 // Returns an error if neither method succeeds.
 func getRepoRoot() (string, error) {
-	// Check REPO_ROOT env var first (set by mise)
-	if repoRoot := os.Getenv("REPO_ROOT"); repoRoot != "" {
-		return repoRoot, nil
+	var root string
+
+	// Check REPO_ROOT env var first (set by mise), then fall back to git
+	if r := os.Getenv("REPO_ROOT"); r != "" {
+		root = r
+	} else {
+		cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+		out, err := cmd.Output()
+		if err != nil {
+			if execErr, ok := err.(*exec.Error); ok && execErr.Err == exec.ErrNotFound {
+				return "", fmt.Errorf("cannot locate repository root: git is not installed and REPO_ROOT is not set\n\nSet REPO_ROOT environment variable or run from within a git repository")
+			}
+			return "", fmt.Errorf("cannot locate repository root: not inside a git repository and REPO_ROOT is not set\n\nSet REPO_ROOT environment variable or run from within a git repository")
+		}
+		root = strings.TrimSpace(string(out))
 	}
 
-	// Fall back to git
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
-	if err != nil {
-		// Check if git command exists
-		if execErr, ok := err.(*exec.Error); ok && execErr.Err == exec.ErrNotFound {
-			return "", fmt.Errorf("cannot locate repository root: git is not installed and REPO_ROOT is not set\n\nSet REPO_ROOT environment variable or run from within a git repository")
-		}
-		// git command exists but we're not in a repo
-		return "", fmt.Errorf("cannot locate repository root: not inside a git repository and REPO_ROOT is not set\n\nSet REPO_ROOT environment variable or run from within a git repository")
+	// Only return the root if cwd is inside the tree. Running from
+	// an unrelated directory (e.g. test tmpdir) should not resolve
+	// back to a repo's dist/ for auto-detection.
+	absRoot, _ := filepath.Abs(root)
+	absCwd, _ := filepath.Abs(".")
+	if absRoot != "" && absCwd != "" &&
+		absCwd != absRoot && !strings.HasPrefix(absCwd, absRoot+string(filepath.Separator)) {
+		return "", fmt.Errorf("working directory is outside repository root")
 	}
-	return strings.TrimSpace(string(out)), nil
+
+	return root, nil
 }
 
 // findWheelInDist looks for a wheel file matching the pattern in the dist/ directory.
