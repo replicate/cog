@@ -124,8 +124,8 @@ jobs:
           # Update pyproject.toml with lockstep version constraint
           sed -i "s/coglet>=0\.1\.0,<1\.0/coglet>=$VERSION,<1.0/" pyproject.toml
           
-          # Verify the change
-          grep -A1 'optional-dependencies' pyproject.toml
+          # Verify the change took effect
+          grep "coglet>=$VERSION" pyproject.toml
 
       - name: Build SDK wheel
         run: |
