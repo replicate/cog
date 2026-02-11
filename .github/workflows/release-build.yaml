@@ -122,7 +122,7 @@ jobs:
         run: uv build --out-dir dist .
 
       - name: Upload SDK artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sdk-dist
           path: dist/*
@@ -171,7 +171,7 @@ jobs:
           args: --release --out dist -m crates/coglet-python/Cargo.toml --zig
 
       - name: Upload coglet wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coglet-wheel-${{ matrix.artifact-suffix }}
           path: dist/*.whl
