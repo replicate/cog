@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockercontext"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/version"
@@ -104,7 +105,7 @@ func NewStandardGenerator(config *config.Config, dir string, configFilename stri
 		Dir:              dir,
 		ConfigFilename:   configFilename,
 		GOOS:             runtime.GOOS,
-		GOARCH:           runtime.GOOS,
+		GOARCH:           runtime.GOARCH,
 		tmpDir:           tmpDir,
 		relativeTmpDir:   relativeTmpDir,
 		fileWalker:       filepath.Walk,
@@ -491,7 +492,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 	if g.cogletWheelConfig != nil {
 		cogletConfig = g.cogletWheelConfig
 	} else {
-		cogletConfig, err = wheels.GetCogletWheelConfig()
+		cogletConfig, err = wheels.ResolveCogletWheel(os.Getenv(wheels.CogletWheelEnvVar), global.Version, g.GOARCH)
 		if err != nil {
 			return "", err
 		}
