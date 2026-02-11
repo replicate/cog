@@ -305,6 +305,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+      - name: Get version from Cargo.toml
+        id: version
+        run: echo "version=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')" >> "$GITHUB_OUTPUT"
       - name: Build cog binary
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -312,6 +315,8 @@ jobs:
           args: build --clean --snapshot --single-target --id cog --output cog
         env:
           GOFLAGS: -buildvcs=false
+          # Use Cargo.toml as version source so snapshot builds match the wheel version
+          COG_VERSION: ${{ steps.version.outputs.version }}
       - name: Upload cog binary
         uses: actions/upload-artifact@v6
         with:
