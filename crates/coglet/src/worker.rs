@@ -81,7 +81,7 @@ use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
     ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
-use crate::bridge::transport::{connect_transport, get_transport_info_from_env};
+use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
 use crate::worker_tracing_layer::WorkerTracingLayer;
 
@@ -285,6 +285,7 @@ impl SlotCompletion {
 pub async fn run_worker<H: PredictHandler>(
     handler: Arc<H>,
     config: WorkerConfig,
+    transport_info: ChildTransportInfo,
 ) -> io::Result<()> {
     let num_slots = config.num_slots;
 
@@ -297,10 +298,9 @@ pub async fn run_worker<H: PredictHandler>(
     let control_fds =
         crate::fd_redirect::redirect_fds_for_subprocess_isolation(setup_log_tx.clone())?;
 
-    // Connect to slot sockets (transport info from env, set by parent)
-    let child_info = get_transport_info_from_env()?;
-    tracing::trace!(?child_info, "Connecting to slot transport");
-    let mut transport = connect_transport(child_info).await?;
+    // Connect to slot sockets (transport info from Init message)
+    tracing::trace!(?transport_info, "Connecting to slot transport");
+    let mut transport = connect_transport(transport_info).await?;
     tracing::info!(num_slots, "Connected to slot transport");
 
     // Control channel via redirected fds (not stdin/stdout)

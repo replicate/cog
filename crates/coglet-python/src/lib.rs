@@ -420,17 +420,6 @@ async fn run_worker_with_init() -> Result<(), String> {
 
     info!(predictor_ref = %predictor_ref, num_slots, is_train, "Init received, connecting to transport");
 
-    // Set transport info for run_worker
-    let transport_json = serde_json::to_string(&transport_info)
-        .map_err(|e| format!("Failed to serialize transport info: {}", e))?;
-    // SAFETY: Single-threaded at this point, only read by our own code
-    unsafe {
-        std::env::set_var(
-            coglet_core::bridge::transport::TRANSPORT_INFO_ENV,
-            &transport_json,
-        );
-    }
-
     let handler = Arc::new(if is_train {
         worker_bridge::PythonPredictHandler::new_train(predictor_ref)
             .map_err(|e| format!("Failed to create handler: {}", e))?
@@ -453,7 +442,7 @@ async fn run_worker_with_init() -> Result<(), String> {
         setup_log_hook: Some(setup_log_hook),
     };
 
-    coglet_core::run_worker(handler, config)
+    coglet_core::run_worker(handler, config, transport_info)
         .await
         .map_err(|e| format!("Worker error: {}", e))
 }
