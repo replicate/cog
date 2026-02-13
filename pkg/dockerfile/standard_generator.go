@@ -6,7 +6,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 
@@ -100,11 +99,13 @@ func NewStandardGenerator(config *config.Config, dir string, configFilename stri
 	}
 
 	return &StandardGenerator{
-		Config:           config,
-		Dir:              dir,
-		ConfigFilename:   configFilename,
-		GOOS:             runtime.GOOS,
-		GOARCH:           runtime.GOOS,
+		Config:         config,
+		Dir:            dir,
+		ConfigFilename: configFilename,
+		// Docker build target is always linux/amd64 (see pkg/docker/buildkit.go).
+		// These must match the container platform, not the host.
+		GOOS:             "linux",
+		GOARCH:           "amd64",
 		tmpDir:           tmpDir,
 		relativeTmpDir:   relativeTmpDir,
 		fileWalker:       filepath.Walk,
@@ -496,7 +497,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 	if g.cogletWheelConfig != nil {
 		cogletConfig = g.cogletWheelConfig
 	} else {
-		cogletConfig, err = wheels.GetCogletWheelConfig()
+		cogletConfig, err = wheels.GetCogletWheelConfig(g.GOARCH)
 		if err != nil {
 			return "", err
 		}
