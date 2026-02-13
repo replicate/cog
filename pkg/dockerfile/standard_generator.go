@@ -12,6 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockercontext"
+	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/version"
@@ -52,9 +53,10 @@ type StandardGenerator struct {
 	Dir            string
 	ConfigFilename string // Base filename like "cog.yaml" or "my-config.yaml"
 
-	// these are here to make this type testable
-	GOOS   string
-	GOARCH string
+	// Target OS and architecture for the Docker build (e.g. "linux", "amd64").
+	// These must match the Docker build platform, not the host.
+	TargetOS   string
+	TargetArch string
 
 	useCudaBaseImage bool
 	useCogBaseImage  *bool
@@ -103,9 +105,8 @@ func NewStandardGenerator(config *config.Config, dir string, configFilename stri
 		Dir:            dir,
 		ConfigFilename: configFilename,
 		// Docker build target is always linux/amd64 (see pkg/docker/buildkit.go).
-		// These must match the container platform, not the host.
-		GOOS:             "linux",
-		GOARCH:           "amd64",
+		TargetOS:         "linux",
+		TargetArch:       "amd64",
 		tmpDir:           tmpDir,
 		relativeTmpDir:   relativeTmpDir,
 		fileWalker:       filepath.Walk,
@@ -469,11 +470,6 @@ RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /u
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
-	// Skip installing normal cog if coglet is already in requirements
-	if g.Config.ContainsCoglet() {
-		return "", nil
-	}
-
 	// Do not install Cog in base images
 	if !g.requiresCog {
 		return "", nil
@@ -497,7 +493,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 	if g.cogletWheelConfig != nil {
 		cogletConfig = g.cogletWheelConfig
 	} else {
-		cogletConfig, err = wheels.GetCogletWheelConfig(g.GOARCH)
+		cogletConfig, err = wheels.ResolveCogletWheel(os.Getenv(wheels.CogletWheelEnvVar), global.Version, g.TargetArch)
 		if err != nil {
 			return "", err
 		}
@@ -559,32 +555,12 @@ func (g *StandardGenerator) installCogFromPyPI(config *wheels.WheelConfig) (stri
 
 // installWheelFromURL installs a wheel from a URL (when COG_WHEEL=https://...)
 func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
-	// Set coglet env vars if this looks like a coglet wheel
-	var envLines []string
-	if strings.Contains(url, "coglet") {
-		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
-			return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
-		}
-		envLines = []string{
-			"ENV R8_COG_VERSION=coglet",
-			"ENV R8_PYTHON_VERSION=" + g.Config.Build.PythonVersion,
-		}
-	}
-
-	// For coglet URLs, uninstall cog first to avoid conflicts with coglet's cog shim package.
-	// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
-	// with coglet's cog compatibility shim that provides the same module paths.
-	var pipPrefix string
-	if strings.Contains(url, "coglet") {
-		pipPrefix = "pip uninstall -y cog 2>/dev/null || true && "
-	}
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + url
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + url
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
 
-	envLines = append(envLines, CFlags, pipInstallLine, "ENV CFLAGS=")
-	return strings.Join(envLines, "\n"), nil
+	return strings.Join([]string{CFlags, pipInstallLine, "ENV CFLAGS="}, "\n"), nil
 }
 
 // installWheelFromFile installs a wheel from a local file (when COG_WHEEL=/path/to/file.whl)
@@ -601,23 +577,7 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 		return "", err
 	}
 
-	// Set coglet env vars if this looks like a coglet wheel
-	var pipPrefix string
-	if strings.Contains(filename, "coglet") {
-		if !CheckMajorMinorOnly(g.Config.Build.PythonVersion) {
-			return "", fmt.Errorf("Python version must be <major>.<minor> for coglet")
-		}
-		lines = append(lines,
-			"ENV R8_COG_VERSION=coglet",
-			"ENV R8_PYTHON_VERSION="+g.Config.Build.PythonVersion,
-		)
-		// Uninstall cog first to avoid conflicts with coglet's cog shim package.
-		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
-		// with coglet's cog compatibility shim that provides the same module paths.
-		pipPrefix = "pip uninstall -y cog 2>/dev/null || true && "
-	}
-
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + containerPath
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -697,7 +657,7 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 	if tensorflowVersion, ok := g.Config.TensorFlowVersion(); ok {
 		includePackages = append(includePackages, "tensorflow=="+tensorflowVersion)
 	}
-	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.GOOS, g.GOARCH, includePackages)
+	g.pythonRequirementsContents, err = g.Config.PythonRequirementsForArch(g.TargetOS, g.TargetArch, includePackages)
 	if err != nil {
 		return "", err
 	}

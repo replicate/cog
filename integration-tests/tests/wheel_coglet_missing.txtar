@@ -3,10 +3,9 @@
 # This test verifies that when COGLET_WHEEL points to a non-existent file,
 # a clear error message is shown.
 
-env COG_WHEEL=dist
 env COGLET_WHEEL=/nonexistent/path/coglet.whl
 ! cog build -t $TEST_IMAGE
-stderr 'wheel file not found'
+stderr 'path not found'
 stderr '/nonexistent/path/coglet.whl'
 
 -- cog.yaml --

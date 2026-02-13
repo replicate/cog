@@ -205,16 +205,16 @@ Releases use a two-workflow system with manual approval via draft releases.
 │  │  (tag fmt)   │                                                           │
 │  └──────┬───────┘                                                           │
 │         │                                                                    │
-│         ├─────────────────┬─────────────────┬─────────────────┐             │
-│         ▼                 ▼                 ▼                 ▼             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │publish-pypi- │  │publish-pypi- │  │publish-crates│  │publish-github│    │
-│  │   coglet     │  │     sdk      │  │     -io      │  │   -release   │    │
-│  │   (PyPI)     │  │   (PyPI)     │  │  (crates.io) │  │  (goreleaser)│    │
-│  └──────┬───────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
-│         │                 ▲                                                  │
-│         └─────────────────┘                                                  │
-│         (SDK waits for coglet - cog[coglet] depends on coglet)              │
+│         ├─────────────────┬─────────────────┐                               │
+│         ▼                 ▼                 ▼                                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                      │
+│  │publish-pypi- │  │publish-crates│  │publish-pypi- │                      │
+│  │   coglet     │──│     -io      │  │     sdk      │                      │
+│  │   (PyPI)     │  │  (crates.io) │  │   (PyPI)     │                      │
+│  └──────┬───────┘  └──────────────┘  └──────────────┘                      │
+│         │                                    ▲                               │
+│         └────────────────────────────────────┘                               │
+│         (SDK waits for coglet via needs: dependency)                        │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -226,12 +226,12 @@ Triggered by version tags (`v*.*.*`). Builds artifacts and creates a draft relea
 
 | Job | Purpose |
 |-----|---------|
-| `verify-tag` | Ensures tag is on main branch |
-| `build-sdk` | Build cog SDK wheel and sdist |
+| `verify-tag` | Verify tag and version (branch rules + Cargo.toml match) |
+| `build-sdk` | Build cog SDK wheel |
 | `build-coglet-wheels` | Build coglet wheels (3 platforms via zig cross-compile) |
-| `create-draft-release` | Create draft GitHub release with all artifacts |
+| `create-draft-release` | Goreleaser builds CLI + creates draft, then appends wheels |
 
-**Security**: No secrets required - only builds artifacts.
+**Security**: Requires `contents: write` for release creation.
 
 #### `release-publish.yaml`
 
@@ -240,24 +240,34 @@ Triggered when a draft release is published. Publishes to PyPI and crates.io.
 | Job | Depends on | Purpose |
 |-----|------------|---------|
 | `verify-release` | - | Validate tag format |
-| `publish-pypi-coglet` | verify-release | Publish coglet to PyPI |
-| `publish-pypi-sdk` | publish-pypi-coglet | Publish SDK to PyPI (after coglet) |
-| `publish-crates-io` | verify-release | Publish coglet crate |
-| `publish-github-release` | verify-release | Build and attach CLI binaries |
+| `publish-pypi-coglet` | verify-release | Publish coglet to PyPI (trusted publishing) |
+| `publish-pypi-sdk` | publish-pypi-coglet | Publish SDK to PyPI (waits for coglet) |
+| `publish-crates-io` | verify-release | Publish coglet crate (OIDC via crates-io-auth-action) |
 
 **Security**: 
-- Secrets only available via GitHub environment protection rules
+- All publishing uses OIDC trusted publishing (no long-lived tokens)
 - Environments restricted to `v*` tags only
 - Only maintainers can publish draft releases
 
 ### Package Versioning
 
-All packages use the same version from the git tag:
-- **cog SDK**: `cog==1.0.0` (PyPI)
-- **coglet**: `coglet==1.0.0` (PyPI + crates.io)
-- **CLI**: `cog v1.0.0` (GitHub Release)
+All packages use **lockstep versioning** from a single source of truth: `crates/Cargo.toml`.
 
-The SDK's optional dependency `cog[coglet]` requires `coglet>=0.1.0,<1.0` to ensure compatibility.
+| Package | Registry | Version format | Example |
+|---------|----------|----------------|---------|
+| cog SDK | PyPI | PEP 440 | `cog==0.17.0`, `cog==0.17.0a3` |
+| coglet | PyPI | PEP 440 | `coglet==0.17.0`, `coglet==0.17.0a3` |
+| coglet | crates.io | semver | `coglet@0.17.0`, `coglet@0.17.0-alpha3` |
+| CLI | GitHub Release | semver | `cog v0.17.0`, `cog v0.17.0-alpha3` |
+
+**Version conversion** (semver → PEP 440):
+- `0.17.0-alpha3` → `0.17.0a3`
+- `0.17.0-beta1` → `0.17.0b1`
+- `0.17.0-rc1` → `0.17.0rc1`
+- `0.17.0-dev1` → `0.17.0.dev1`
+- `0.17.0` → `0.17.0`
+
+The SDK's optional dependency `cog[coglet]` requires `coglet>=<version>,<1.0` to ensure compatibility.
 
 ### SDK Wheel Sourcing
 
@@ -277,36 +287,78 @@ Same pattern for `COGLET_WHEEL` (but coglet is optional by default).
 ### GitHub Environment Setup
 
 1. Create environments in **Settings → Environments**:
-   - `pypi` - For PyPI publishing (uses OIDC, no secrets needed)
-   - `crates-io` - For crates.io publishing
+   - `pypi` - For PyPI publishing (trusted publishing, no secrets)
+   - `crates-io` - For crates.io publishing (trusted publishing, no secrets)
 
 2. Configure protection rules for each environment:
    - **Deployment branches**: "Selected branches and tags"
    - **Add pattern**: `v*` (restricts to version tags)
    - **Required reviewers**: Add maintainers
 
-3. Add secrets:
-   - `crates-io`: `CARGO_REGISTRY_TOKEN`
+3. Configure trusted publishers:
+   - **PyPI** (both `cog` and `coglet`): workflow `release-publish.yaml`, environment `pypi`
+   - **crates.io** (`coglet`): workflow `release-publish.yaml`, environment `crates-io`
 
-### Performing a Release
+### Stable Releases
+
+Stable releases (`v0.17.0`) are tagged from `main`.
 
 ```bash
-# 1. Ensure you're on main with latest changes
-git checkout main
-git pull
+# 1. Ensure Cargo.toml version matches the release
+grep '^version' crates/Cargo.toml  # should be "0.17.0"
 
-# 2. Create and push tag
-git tag v1.0.0
-git push origin v1.0.0
+# 2. Tag and push
+git tag v0.17.0
+git push origin v0.17.0
 
 # 3. Wait for release-build.yaml to complete
-#    This creates a draft release with all artifacts
+#    Goreleaser builds CLI and creates draft, wheels are appended
 
 # 4. Review the draft release in GitHub UI
-#    - Check artifacts are present
-#    - Review auto-generated release notes
 
-# 5. Publish the draft release
-#    - Click "Publish release" in GitHub UI
-#    - This triggers release-publish.yaml
+# 5. Click "Publish release" → triggers release-publish.yaml
+#    Publishes coglet to PyPI + crates.io, then SDK to PyPI
 ```
+
+### Pre-releases
+
+Pre-releases (`v0.17.0-alpha3`) are tagged from `prerelease/*` branches.
+
+```bash
+# 1. Create prerelease branch (if not exists)
+git checkout -b prerelease/0.17.0
+
+# 2. Set version in Cargo.toml
+#    This is the single source of truth for ALL package versions
+#    Edit crates/Cargo.toml: version = "0.17.0-alpha3"
+
+# 3. Commit and push
+git add crates/Cargo.toml
+git commit -m "chore: bump version to 0.17.0-alpha3"
+git push origin prerelease/0.17.0
+
+# 4. Tag and push
+git tag v0.17.0-alpha3
+git push origin v0.17.0-alpha3
+
+# 5. Same flow as stable: review draft → publish
+```
+
+#### Pre-release lifecycle
+
+```
+prerelease/0.17.0 branch:
+  v0.17.0-alpha1 → v0.17.0-alpha2 → ... → v0.17.0-alpha5
+
+When ready for stable:
+  1. Update Cargo.toml to "0.17.0" (remove pre-release suffix)
+  2. Merge prerelease/0.17.0 → main
+  3. Tag v0.17.0 on main
+```
+
+#### Branch rules
+
+- **Stable tags** (`v0.17.0`): must be on `main`
+- **Pre-release tags** (`v0.17.0-alpha3`): must be on `prerelease/*`
+- **Tags are immutable** (GitHub ruleset)
+- **Only maintainers** can create `prerelease/*` branches

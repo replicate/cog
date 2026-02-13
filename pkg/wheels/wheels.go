@@ -4,12 +4,14 @@ package wheels
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/replicate/cog/pkg/global"
 )
+
+var semverPreReleaseRe = regexp.MustCompile(`-alpha(\d+)|-beta(\d+)|-rc(\d+)|-dev(\d*)`)
 
 // WheelSource represents the source type for the wheel to install
 type WheelSource int
@@ -59,9 +61,11 @@ const CogletWheelEnvVar = "COGLET_WHEEL"
 // Supported values:
 //   - "pypi" - Install from PyPI (latest version)
 //   - "pypi:0.12.0" - Install specific version from PyPI
-//   - "dist" - Use local dist/ directory (error if not found)
 //   - "https://..." or "http://..." - Direct wheel URL
-//   - "/path/to/file.whl" or "./path/to/file.whl" - Local wheel file
+//   - "/path/to/file.whl" or "relative/path" - Local file or directory (resolved to abspath)
+//
+// Paths that point to directories are resolved later by the Resolve functions,
+// which glob for the appropriate wheel inside the directory.
 //
 // Returns nil if the value is empty (caller should use auto-detection).
 func ParseWheelValue(value string) *WheelConfig {
@@ -84,166 +88,17 @@ func ParseWheelValue(value string) *WheelConfig {
 		return &WheelConfig{Source: WheelSourceURL, URL: value}
 	}
 
-	// "dist" keyword means look in dist/ directory
-	if strings.EqualFold(value, "dist") {
-		// This signals to use dist/ - actual path resolution happens in GetCogWheelConfig
-		return &WheelConfig{Source: WheelSourceFile, Path: "dist"}
-	}
-
-	// Treat everything else as a file path - resolve to absolute path
+	// Treat everything else as a file/directory path - resolve to absolute
 	absPath, err := filepath.Abs(value)
 	if err != nil {
-		// If we can't resolve, use the original path
 		absPath = value
 	}
 	return &WheelConfig{Source: WheelSourceFile, Path: absPath}
 }
 
-// getRepoRoot returns the root of the repository.
-// It checks (in order):
-//  1. REPO_ROOT environment variable (set by mise)
-//  2. git rev-parse --show-toplevel
-//
-// Returns an error if neither method succeeds.
-func getRepoRoot() (string, error) {
-	// Check REPO_ROOT env var first (set by mise)
-	if repoRoot := os.Getenv("REPO_ROOT"); repoRoot != "" {
-		return repoRoot, nil
-	}
-
-	// Fall back to git
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
-	if err != nil {
-		// Check if git command exists
-		if execErr, ok := err.(*exec.Error); ok && execErr.Err == exec.ErrNotFound {
-			return "", fmt.Errorf("cannot locate repository root: git is not installed and REPO_ROOT is not set\n\nSet REPO_ROOT environment variable or run from within a git repository")
-		}
-		// git command exists but we're not in a repo
-		return "", fmt.Errorf("cannot locate repository root: not inside a git repository and REPO_ROOT is not set\n\nSet REPO_ROOT environment variable or run from within a git repository")
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-// findWheelInDist looks for a wheel file matching the pattern in the dist/ directory.
-// Returns the absolute path to the wheel if found.
-// Checks multiple locations: ./dist, <repo-root>/dist
-// If platformTag is non-empty, only wheels whose filename contains the tag are considered.
-func findWheelInDist(pattern string, envVar string, platformTag string) (string, error) {
-	// First try ./dist in current directory
-	matches, _ := filepath.Glob(filepath.Join("dist", pattern))
-	matches = filterWheelsByPlatform(matches, platformTag)
-	if len(matches) > 0 {
-		absPath, err := filepath.Abs(matches[0])
-		if err != nil {
-			return matches[0], nil
-		}
-		return absPath, nil
-	}
-
-	// Try repo root dist/
-	repoRoot, err := getRepoRoot()
-	if err != nil {
-		return "", err
-	}
-
-	distDir := filepath.Join(repoRoot, "dist")
-	matches, _ = filepath.Glob(filepath.Join(distDir, pattern))
-	matches = filterWheelsByPlatform(matches, platformTag)
-	if len(matches) > 0 {
-		return matches[0], nil
-	}
-
-	return "", fmt.Errorf("%s=dist: no wheel matching '%s' found in %s\n\nTo build the wheel, run: mise run build:sdk (for cog) or mise run build:coglet (for coglet)", envVar, pattern, distDir)
-}
-
-// findWheelInDistSilent is like findWheelInDist but returns empty string instead of error.
-// Used for auto-detection where missing wheel is not an error.
-// If platformTag is non-empty, only wheels whose filename contains the tag are considered.
-func findWheelInDistSilent(pattern string, platformTag string) string {
-	// First try ./dist in current directory
-	matches, _ := filepath.Glob(filepath.Join("dist", pattern))
-	matches = filterWheelsByPlatform(matches, platformTag)
-	if len(matches) > 0 {
-		absPath, _ := filepath.Abs(matches[0])
-		if absPath != "" {
-			return absPath
-		}
-		return matches[0]
-	}
-
-	// Try repo root dist/
-	repoRoot, err := getRepoRoot()
-	if err != nil {
-		return ""
-	}
-
-	matches, _ = filepath.Glob(filepath.Join(repoRoot, "dist", pattern))
-	matches = filterWheelsByPlatform(matches, platformTag)
-	if len(matches) > 0 {
-		return matches[0]
-	}
-	return ""
-}
-
-// isDevVersion returns true if the version is a development/snapshot build.
-// This includes "dev", versions containing "-dev", and versions with "+" (local versions).
-func isDevVersion() bool {
-	v := global.Version
-	return v == "dev" || strings.Contains(v, "-dev") || strings.Contains(v, "+")
-}
-
-// GetCogWheelConfig returns the WheelConfig for the cog SDK based on COG_WHEEL env var.
-//
-// Resolution order:
-//  1. COG_WHEEL env var (if set, explicit override)
-//  2. Auto-detect: check dist/cog-*.whl (for development)
-//  3. Default: PyPI
-//
-// For development builds (snapshot versions), auto-detection is enabled.
-// For release builds, auto-detection is skipped (always PyPI unless overridden).
-func GetCogWheelConfig() (*WheelConfig, error) {
-	// Check explicit env var first
-	if config := ParseWheelValue(os.Getenv(CogWheelEnvVar)); config != nil {
-		// Handle "dist" keyword - resolve to actual path
-		if config.Source == WheelSourceFile && config.Path == "dist" {
-			path, err := findWheelInDist("cog-*.whl", CogWheelEnvVar, "")
-			if err != nil {
-				return nil, err
-			}
-			config.Path = path
-		}
-		// Verify file path exists
-		if config.Source == WheelSourceFile && config.Path != "" {
-			if _, err := os.Stat(config.Path); os.IsNotExist(err) {
-				return nil, fmt.Errorf("%s: wheel file not found: %s", CogWheelEnvVar, config.Path)
-			}
-		}
-		return config, nil
-	}
-
-	// Auto-detect for dev builds: check dist/ directory
-	if isDevVersion() {
-		if path := findWheelInDistSilent("cog-*.whl", ""); path != "" {
-			return &WheelConfig{Source: WheelSourceFile, Path: path}, nil
-		}
-	}
-
-	// Default: PyPI
-	// For release builds, use the matching version
-	// For dev builds where no local wheel found, use latest
-	config := &WheelConfig{Source: WheelSourcePyPI}
-	if !isDevVersion() {
-		config.Version = global.Version
-	}
-	return config, nil
-}
-
-// wheelPlatformTag returns the wheel platform substring to match for a given
-// GOARCH when targeting Linux containers. For example, "amd64" → "x86_64",
-// "arm64" → "aarch64". Returns empty string if targetArch is empty (no filtering).
-func wheelPlatformTag(targetArch string) string {
-	switch targetArch {
+// goarchToWheelPlatform maps GOARCH values to wheel filename platform substrings.
+func goarchToWheelPlatform(goarch string) string {
+	switch goarch {
 	case "amd64":
 		return "x86_64"
 	case "arm64":
@@ -253,75 +108,184 @@ func wheelPlatformTag(targetArch string) string {
 	}
 }
 
-// filterWheelsByPlatform filters a list of wheel paths to only those matching
-// the target platform tag. If platformTag is empty, returns all matches unchanged.
-func filterWheelsByPlatform(matches []string, platformTag string) []string {
-	if platformTag == "" {
-		return matches
+// resolveWheelPath resolves a wheel path that may be a file or directory.
+// If path is a directory, globs for pattern inside it, filtering by platform if non-empty.
+// If path is a file, returns it directly.
+func resolveWheelPath(path string, pattern string, platform string, envVar string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("%s: path not found: %s", envVar, path)
 	}
-	var filtered []string
-	for _, m := range matches {
-		if strings.Contains(filepath.Base(m), platformTag) {
-			filtered = append(filtered, m)
+
+	if !info.IsDir() {
+		return path, nil
+	}
+
+	matches, _ := filepath.Glob(filepath.Join(path, pattern))
+	if len(matches) == 0 {
+		return "", fmt.Errorf("%s: no wheel matching '%s' found in %s\n\nTo build the wheel, run: mise run build:sdk (for cog) or mise run build:coglet (for coglet)", envVar, pattern, path)
+	}
+
+	// Filter by platform if specified
+	platStr := goarchToWheelPlatform(platform)
+	if platStr != "" {
+		var filtered []string
+		for _, m := range matches {
+			base := filepath.Base(m)
+			if strings.Contains(base, platStr) || strings.Contains(base, "-none-any") {
+				filtered = append(filtered, m)
+			}
 		}
+		if len(filtered) == 0 {
+			return "", fmt.Errorf("%s: no wheel for platform %s found in %s (found %d for other platforms)", envVar, platform, path, len(matches))
+		}
+		matches = filtered
 	}
-	return filtered
+
+	if len(matches) > 1 {
+		return "", fmt.Errorf("%s: multiple wheels matching '%s' in %s — specify the exact file path", envVar, pattern, path)
+	}
+
+	return matches[0], nil
 }
 
-// GetCogletWheelConfig returns the WheelConfig for coglet based on COGLET_WHEEL env var.
+// findWheelInCwdDist checks ./dist in the current working directory for a matching wheel.
+// Returns the absolute path if found, empty string otherwise.
+// Only checks cwd — does NOT chase REPO_ROOT. Used for auto-detection in dev builds
+// where a missing wheel just means "fall back to PyPI".
+func findWheelInCwdDist(pattern string) string {
+	matches, _ := filepath.Glob(filepath.Join("dist", pattern))
+	if len(matches) > 0 {
+		absPath, _ := filepath.Abs(matches[0])
+		if absPath != "" {
+			return absPath
+		}
+		return matches[0]
+	}
+	return ""
+}
+
+// ResolveCogWheel resolves the WheelConfig for the cog SDK.
 //
-// targetArch is the GOARCH of the Docker build target (e.g. "amd64", "arm64").
-// It is used to select the correct platform-specific wheel from dist/.
+// Parameters:
+//   - envValue: value of COG_WHEEL env var (empty string if not set)
+//   - version: the CLI version (e.g. "dev", "0.17.0", "0.17.0-alpha1")
 //
 // Resolution order:
-//  1. COGLET_WHEEL env var (if set, explicit override)
-//  2. Auto-detect: check dist/coglet-*.whl (for development)
-//  3. Default: PyPI
-//
-// Returns nil only on error. Coglet is always installed.
-func GetCogletWheelConfig(targetArch string) (*WheelConfig, error) {
-	platformTag := wheelPlatformTag(targetArch)
-
+//  1. envValue (if non-empty, explicit override)
+//  2. Auto-detect: check dist/cog-*.whl (for development builds only)
+//  3. Default: PyPI (with version pin for release builds)
+func ResolveCogWheel(envValue string, version string) (*WheelConfig, error) {
 	// Check explicit env var first
-	if config := ParseWheelValue(os.Getenv(CogletWheelEnvVar)); config != nil {
-		// Handle "dist" keyword - resolve to actual path
-		if config.Source == WheelSourceFile && config.Path == "dist" {
-			path, err := findWheelInDist("coglet-*.whl", CogletWheelEnvVar, platformTag)
+	if config := ParseWheelValue(envValue); config != nil {
+		if config.Source == WheelSourceFile {
+			// cog SDK is pure Python (py3-none-any), no platform filtering needed
+			resolved, err := resolveWheelPath(config.Path, "cog-*.whl", "", CogWheelEnvVar)
 			if err != nil {
 				return nil, err
 			}
-			config.Path = path
-		}
-		// Verify file path exists
-		if config.Source == WheelSourceFile && config.Path != "" {
-			if _, err := os.Stat(config.Path); os.IsNotExist(err) {
-				return nil, fmt.Errorf("%s: wheel file not found: %s", CogletWheelEnvVar, config.Path)
-			}
+			config.Path = resolved
 		}
 		return config, nil
 	}
 
-	// Auto-detect for dev builds: check dist/ directory
-	if isDevVersion() {
-		if path := findWheelInDistSilent("coglet-*.whl", platformTag); path != "" {
+	isDev := version == "dev" || strings.Contains(version, "-dev") || strings.Contains(version, "+")
+
+	// Auto-detect for dev builds: check ./dist in cwd
+	if isDev {
+		if path := findWheelInCwdDist("cog-*.whl"); path != "" {
 			return &WheelConfig{Source: WheelSourceFile, Path: path}, nil
 		}
 	}
 
 	// Default: PyPI
 	config := &WheelConfig{Source: WheelSourcePyPI}
-	if !isDevVersion() {
-		config.Version = global.Version
+	if !isDev {
+		config.Version = version
 	}
 	return config, nil
 }
 
+// GetCogWheelConfig is a convenience wrapper that reads COG_WHEEL from the environment
+// and version from global.Version.
+func GetCogWheelConfig() (*WheelConfig, error) {
+	return ResolveCogWheel(os.Getenv(CogWheelEnvVar), global.Version)
+}
+
+// ResolveCogletWheel resolves the WheelConfig for coglet.
+//
+// targetArch is the GOARCH of the Docker build target (e.g. "amd64", "arm64").
+// It is used to select the correct platform-specific wheel from dist/.
+//
+// Resolution order:
+//  1. envValue (COGLET_WHEEL) if non-empty — explicit override
+//  2. Auto-detect: check ./dist for coglet-*.whl (development builds only)
+//  3. Default: PyPI (with version pinned for release builds)
+//
+// Coglet is always required. Returns a valid config or an error.
+// The platform parameter is a GOARCH value (e.g. "amd64", "arm64") used to select
+// the correct platform-specific wheel from a directory. Pass "" to skip filtering.
+func ResolveCogletWheel(envValue string, version string, platform string) (*WheelConfig, error) {
+	// Check explicit env var first
+	if config := ParseWheelValue(envValue); config != nil {
+		if config.Source == WheelSourceFile {
+			resolved, err := resolveWheelPath(config.Path, "coglet-*.whl", platform, CogletWheelEnvVar)
+			if err != nil {
+				return nil, err
+			}
+			config.Path = resolved
+		}
+		return config, nil
+	}
+
+	isDev := version == "dev" || strings.Contains(version, "-dev") || strings.Contains(version, "+")
+
+	// Auto-detect for dev builds: check ./dist in cwd
+	if isDev {
+		if path := findWheelInCwdDist("coglet-*.whl"); path != "" {
+			return &WheelConfig{Source: WheelSourceFile, Path: path}, nil
+		}
+	}
+
+	// Default: PyPI
+	config := &WheelConfig{Source: WheelSourcePyPI}
+	if !isDev {
+		config.Version = version
+	}
+	return config, nil
+}
+
+// GetCogletWheelConfig is a convenience wrapper that reads COGLET_WHEEL from the environment
+// and version from global.Version. Does not filter by platform — use ResolveCogletWheel
+// directly when platform selection is needed (e.g. Dockerfile generation).
+func GetCogletWheelConfig() (*WheelConfig, error) {
+	return ResolveCogletWheel(os.Getenv(CogletWheelEnvVar), global.Version, "")
+}
+
+// SemverToPEP440 converts a semver pre-release version to PEP 440 format.
+// e.g. "0.17.0-alpha1" -> "0.17.0a1", "0.17.0-beta2" -> "0.17.0b2",
+// "0.17.0-rc1" -> "0.17.0rc1", "0.17.0-dev1" -> "0.17.0.dev1"
+// Stable versions pass through unchanged: "0.17.0" -> "0.17.0"
+func SemverToPEP440(version string) string {
+	return semverPreReleaseRe.ReplaceAllStringFunc(version, func(match string) string {
+		match = strings.TrimPrefix(match, "-")
+		match = strings.Replace(match, "alpha", "a", 1)
+		match = strings.Replace(match, "beta", "b", 1)
+		// rc stays as rc in PEP 440
+		// dev -> .dev (PEP 440 uses dot separator)
+		if strings.HasPrefix(match, "dev") {
+			return "." + match
+		}
+		return match
+	})
+}
+
 // PyPIPackageURL returns the pip install specifier for a PyPI package.
 // If version is empty, returns just the package name (latest).
-// Otherwise returns "package==version".
+// Otherwise returns "package==version" with the version converted to PEP 440.
 func (c *WheelConfig) PyPIPackageURL(packageName string) string {
 	if c.Version == "" {
 		return packageName
 	}
-	return packageName + "==" + c.Version
+	return packageName + "==" + SemverToPEP440(c.Version)
 }
