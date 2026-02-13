@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures::{SinkExt, StreamExt};
@@ -41,6 +42,54 @@ fn report_dropped_logs(tx: &mpsc::Sender<ControlResponse>, interval_millis: u64)
             interval_millis,
         });
     }
+}
+
+// ============================================================================
+// Fatal worker shutdown
+// ============================================================================
+
+struct FatalContext {
+    tx: mpsc::Sender<ControlResponse>,
+}
+
+static FATAL_CONTEXT: OnceLock<FatalContext> = OnceLock::new();
+
+fn init_fatal_context(tx: mpsc::Sender<ControlResponse>) {
+    let _ = FATAL_CONTEXT.set(FatalContext { tx });
+}
+
+/// Install a panic hook that sends a Fatal IPC message and aborts.
+///
+/// Any panic in the worker is an invariant violation. The hook sends a best-effort
+/// `ControlResponse::Fatal` so the parent can poison all slots, then aborts.
+/// This means `.expect()` / `panic!()` at any call site automatically gets
+/// the correct fatal behavior — no special helpers needed.
+fn install_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // Run the default hook first (prints to stderr).
+        prev(info);
+
+        let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "<unknown>".to_string()
+        };
+
+        let reason = match info.location() {
+            Some(loc) => format!("panic at {}:{}: {}", loc.file(), loc.line(), msg),
+            None => format!("panic: {}", msg),
+        };
+
+        if let Some(ctx) = FATAL_CONTEXT.get() {
+            let _ = ctx.tx.try_send(ControlResponse::Fatal { reason });
+        }
+
+        // If panic=abort is not set, abort explicitly.
+        std::process::abort();
+    }));
 }
 
 // ============================================================================
@@ -315,6 +364,9 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Generate unique SlotIds for each socket
     let slot_ids: Vec<SlotId> = (0..num_slots).map(|_| SlotId::new()).collect();
+
+    init_fatal_context(setup_log_tx.clone());
+    install_panic_hook();
 
     let setup_cleanup = config.setup_log_hook.map(|hook| hook(setup_log_tx.clone()));
 

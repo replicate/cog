@@ -419,6 +419,12 @@ pub async fn spawn_worker(
                         slot, error
                     )));
                 }
+                Some(Ok(ControlResponse::Fatal { reason })) => {
+                    return Err(OrchestratorError::Setup(format!(
+                        "worker fatal: {}",
+                        reason
+                    )));
+                }
                 Some(Ok(other)) => {
                     tracing::warn!(?other, "Unexpected message during setup");
                 }
@@ -569,6 +575,22 @@ async fn run_event_loop(
                                 p.set_failed(error);
                             }
                         }
+                    }
+                    Some(Ok(ControlResponse::Fatal { reason })) => {
+                        tracing::error!(%reason, "Worker fatal");
+                        for (slot, pred) in predictions.drain() {
+                            tracing::warn!(%slot, "Failing prediction due to worker fatal error");
+                            if let Some(mut p) = try_lock_prediction(&pred) {
+                                p.set_slot_poisoned();
+                                if !p.is_terminal() {
+                                    p.set_failed(reason.clone());
+                                }
+                            }
+                        }
+                        if let Some(tx) = pending_healthcheck.take() {
+                            let _ = tx.send(HealthcheckResult::unhealthy(reason));
+                        }
+                        break;
                     }
                     Some(Ok(ControlResponse::Ready { .. })) => {
                         tracing::warn!("Unexpected Ready in event loop");

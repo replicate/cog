@@ -95,16 +95,23 @@ impl ControlChannelLogSender {
     }
 }
 
-// NOTE: All mutex locks in this file use expect() with clear messages.
+// NOTE: All mutex locks in the worker use .expect().
+//
 // If a mutex is poisoned (another thread panicked while holding it), the worker
-// is in an unrecoverable state. We panic with a clear message.
+// is in an unrecoverable state. We cannot safely continue because:
+// - Log routing shares channels with prediction updates
+// - Prediction→slot mappings could be inconsistent
+// - Continuing risks cross-prediction data bleed
+//
+// The panic hook installed by coglet_core::worker sends a Fatal IPC message
+// to the parent (which poisons all slots) and aborts the process.
 
 /// Register the control channel log sender.
 /// Called by worker before setup().
 pub fn register_control_channel_sender(sender: Arc<ControlChannelLogSender>) {
     let mut slot = get_control_channel_sender_slot()
         .lock()
-        .expect("Worker internal error: control_channel_sender mutex poisoned");
+        .expect("control_channel_sender mutex poisoned");
     *slot = Some(sender);
 }
 
@@ -114,7 +121,7 @@ pub fn register_control_channel_sender(sender: Arc<ControlChannelLogSender>) {
 pub fn unregister_control_channel_sender() {
     let mut slot = get_control_channel_sender_slot()
         .lock()
-        .expect("Worker internal error: control_channel_sender mutex poisoned");
+        .expect("control_channel_sender mutex poisoned");
     *slot = None;
 }
 
@@ -122,7 +129,7 @@ pub fn unregister_control_channel_sender() {
 fn get_control_channel_sender() -> Option<Arc<ControlChannelLogSender>> {
     let slot = get_control_channel_sender_slot()
         .lock()
-        .expect("Worker internal error: control_channel_sender mutex poisoned");
+        .expect("control_channel_sender mutex poisoned");
     slot.clone()
 }
 
@@ -159,7 +166,7 @@ pub fn get_prediction_contextvar(py: Python<'_>) -> PyResult<&'static Py<PyAny>>
 pub fn register_prediction(prediction_id: String, sender: Arc<SlotSender>) {
     let mut registry = get_registry()
         .lock()
-        .expect("Worker internal error: prediction_registry mutex poisoned");
+        .expect("prediction_registry mutex poisoned");
     tracing::trace!(%prediction_id, "Registering prediction sender");
     registry.insert(prediction_id, sender);
 }
@@ -169,13 +176,13 @@ pub fn register_prediction(prediction_id: String, sender: Arc<SlotSender>) {
 pub fn unregister_prediction(prediction_id: &str) {
     let mut registry = get_registry()
         .lock()
-        .expect("Worker internal error: prediction_registry mutex poisoned");
+        .expect("prediction_registry mutex poisoned");
     registry.remove(prediction_id);
 
     // Clear sync prediction ID if it matches
     let mut slot = get_sync_prediction_id_slot()
         .lock()
-        .expect("Worker internal error: sync_prediction_id mutex poisoned");
+        .expect("sync_prediction_id mutex poisoned");
     if slot.as_deref() == Some(prediction_id) {
         *slot = None;
     }
@@ -185,7 +192,7 @@ pub fn unregister_prediction(prediction_id: &str) {
 fn get_prediction_sender(prediction_id: &str) -> Option<Arc<SlotSender>> {
     let registry = get_registry()
         .lock()
-        .expect("Worker internal error: prediction_registry mutex poisoned");
+        .expect("prediction_registry mutex poisoned");
     registry.get(prediction_id).cloned()
 }
 
@@ -203,7 +210,7 @@ pub fn set_current_prediction(py: Python<'_>, prediction_id: &str) -> PyResult<P
 pub fn set_sync_prediction_id(prediction_id: Option<&str>) {
     let mut slot = get_sync_prediction_id_slot()
         .lock()
-        .expect("Worker internal error: sync_prediction_id mutex poisoned");
+        .expect("sync_prediction_id mutex poisoned");
     *slot = prediction_id.map(|s| s.to_string());
 }
 
@@ -214,7 +221,7 @@ fn get_current_prediction_id(py: Python<'_>) -> PyResult<Option<String>> {
     {
         let slot = get_sync_prediction_id_slot()
             .lock()
-            .expect("Worker internal error: sync_prediction_id mutex poisoned");
+            .expect("sync_prediction_id mutex poisoned");
         if let Some(ref prediction_id) = *slot {
             tracing::trace!(%prediction_id, "Sync prediction ID found");
             return Ok(Some(prediction_id.clone()));
@@ -291,10 +298,7 @@ impl SlotLogWriter {
 
         // Append to line buffer and extract complete lines
         let complete = {
-            let mut buffer = self
-                .line_buffer
-                .lock()
-                .expect("Worker internal error: line_buffer mutex poisoned");
+            let mut buffer = self.line_buffer.lock().expect("line_buffer mutex poisoned");
             buffer.push_str(data);
 
             // Check if we have complete lines to emit
@@ -365,10 +369,7 @@ impl SlotLogWriter {
     fn flush(&self, py: Python<'_>) -> PyResult<()> {
         // Emit any buffered content
         let buffered = {
-            let mut buffer = self
-                .line_buffer
-                .lock()
-                .expect("Worker internal error: line_buffer mutex poisoned");
+            let mut buffer = self.line_buffer.lock().expect("line_buffer mutex poisoned");
             std::mem::take(&mut *buffer)
         };
         if !buffered.is_empty() {

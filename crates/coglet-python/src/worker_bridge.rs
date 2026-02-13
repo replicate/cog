@@ -170,18 +170,14 @@ impl PythonPredictHandler {
         })
     }
 
-    // NOTE: All mutex locks in this file use expect() with clear messages.
-    // If a mutex is poisoned (another thread panicked while holding it), the worker
-    // is in an unrecoverable state. We panic with a clear message - the orchestrator
-    // will see the worker exit and fail all in-flight predictions.
-    // Future: Could add a "last gasp" control message to signal why we're dying.
+    // NOTE: All mutex locks in this file use .expect().
+    // See log_writer.rs for the full rationale. Short version: poisoned mutex
+    // means slot isolation is compromised. The panic hook installed by
+    // coglet_core::worker sends a Fatal IPC message and aborts.
 
     /// Check and clear the cancelled flag for a slot.
     fn take_cancelled(&self, slot: SlotId) -> bool {
-        let mut slots = self
-            .slots
-            .lock()
-            .expect("Worker internal error: slots mutex poisoned");
+        let mut slots = self.slots.lock().expect("slots mutex poisoned");
         let state = slots.entry(slot).or_default();
         let was_cancelled = state.is_cancelled();
         // Reset to idle after checking cancellation
@@ -193,19 +189,13 @@ impl PythonPredictHandler {
 
     /// Mark a slot as having a sync prediction in progress.
     fn start_sync_prediction(&self, slot: SlotId) {
-        let mut slots = self
-            .slots
-            .lock()
-            .expect("Worker internal error: slots mutex poisoned");
+        let mut slots = self.slots.lock().expect("slots mutex poisoned");
         slots.insert(slot, SlotState::SyncPrediction { cancelled: false });
     }
 
     /// Mark a slot as having an async prediction in progress.
     fn start_async_prediction(&self, slot: SlotId, future: Py<PyAny>) {
-        let mut slots = self
-            .slots
-            .lock()
-            .expect("Worker internal error: slots mutex poisoned");
+        let mut slots = self.slots.lock().expect("slots mutex poisoned");
         slots.insert(
             slot,
             SlotState::AsyncPrediction {
@@ -217,10 +207,7 @@ impl PythonPredictHandler {
 
     /// Clear prediction state for a slot.
     fn finish_prediction(&self, slot: SlotId) {
-        let mut slots = self
-            .slots
-            .lock()
-            .expect("Worker internal error: slots mutex poisoned");
+        let mut slots = self.slots.lock().expect("slots mutex poisoned");
         slots.insert(slot, SlotState::Idle);
     }
 
@@ -229,10 +216,7 @@ impl PythonPredictHandler {
     fn cancel_async_future(&self, slot: SlotId) -> bool {
         Python::attach(|py| {
             let future = {
-                let slots = self
-                    .slots
-                    .lock()
-                    .expect("Worker internal error: slots mutex poisoned");
+                let slots = self.slots.lock().expect("slots mutex poisoned");
                 if let Some(SlotState::AsyncPrediction { future, .. }) = slots.get(&slot) {
                     Some(future.clone_ref(py))
                 } else {
@@ -263,7 +247,7 @@ impl PythonPredictHandler {
         Python::attach(|py| {
             self.async_loop
                 .lock()
-                .expect("Worker internal error: async_loop mutex poisoned")
+                .expect("async_loop mutex poisoned")
                 .as_ref()
                 .map(|l| l.clone_ref(py))
         })
@@ -290,10 +274,7 @@ impl PredictHandler for PythonPredictHandler {
             pred.setup(py)
                 .map_err(|e| SetupError::setup(e.to_string()))?;
 
-            let mut guard = self
-                .predictor
-                .lock()
-                .expect("Worker internal error: predictor mutex poisoned");
+            let mut guard = self.predictor.lock().expect("predictor mutex poisoned");
             *guard = Some(Arc::new(pred));
 
             tracing::info!("Setup complete");
@@ -312,10 +293,7 @@ impl PredictHandler for PythonPredictHandler {
 
         // Get predictor
         let pred = {
-            let guard = self
-                .predictor
-                .lock()
-                .expect("Worker internal error: predictor mutex poisoned");
+            let guard = self.predictor.lock().expect("predictor mutex poisoned");
             match guard.as_ref() {
                 Some(p) => Arc::clone(p),
                 None => {
@@ -522,10 +500,7 @@ impl PredictHandler for PythonPredictHandler {
 
     fn cancel(&self, slot: SlotId) {
         // Mark slot as cancelled and determine how to cancel based on state
-        let mut slots = self
-            .slots
-            .lock()
-            .expect("Worker internal error: slots mutex poisoned");
+        let mut slots = self.slots.lock().expect("slots mutex poisoned");
 
         if let Some(state) = slots.get_mut(&slot) {
             state.mark_cancelled();
@@ -556,20 +531,14 @@ impl PredictHandler for PythonPredictHandler {
     }
 
     fn schema(&self) -> Option<serde_json::Value> {
-        let guard = self
-            .predictor
-            .lock()
-            .expect("Worker internal error: predictor mutex poisoned");
+        let guard = self.predictor.lock().expect("predictor mutex poisoned");
         guard.as_ref().and_then(|pred| pred.schema(self.mode))
     }
 
     async fn healthcheck(&self) -> coglet_core::orchestrator::HealthcheckResult {
         // Get predictor
         let pred = {
-            let guard = self
-                .predictor
-                .lock()
-                .expect("Worker internal error: predictor mutex poisoned");
+            let guard = self.predictor.lock().expect("predictor mutex poisoned");
             match guard.as_ref() {
                 Some(p) => Arc::clone(p),
                 None => {
@@ -616,7 +585,7 @@ impl Drop for PythonPredictHandler {
         if let Some(loop_obj) = self
             .async_loop
             .lock()
-            .expect("Worker internal error: async_loop mutex poisoned during drop")
+            .expect("async_loop mutex poisoned")
             .take()
         {
             Python::attach(|py| {
@@ -641,7 +610,7 @@ impl Drop for PythonPredictHandler {
         if let Some(thread) = self
             .async_thread
             .lock()
-            .expect("Worker internal error: async_thread mutex poisoned during drop")
+            .expect("async_thread mutex poisoned")
             .take()
             && let Err(e) = thread.join()
         {
