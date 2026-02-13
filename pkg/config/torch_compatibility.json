@@ -1,5 +1,20 @@
 [
   {
+    "Torch": "2.10.0+cu128",
+    "Torchvision": "0.25.0",
+    "Torchaudio": "2.10.0",
+    "FindLinks": "",
+    "ExtraIndexURL": "https://download.pytorch.org/whl/cu128/",
+    "CUDA": "12.8",
+    "Pythons": [
+      "3.10",
+      "3.11",
+      "3.12",
+      "3.13",
+      "3.14"
+    ]
+  },
+  {
     "Torch": "2.8.0+cpu",
     "Torchvision": "0.23.0",
     "Torchaudio": "2.8.0",
