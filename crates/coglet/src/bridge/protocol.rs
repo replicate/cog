@@ -106,6 +106,14 @@ pub enum ControlResponse {
         error: String,
     },
 
+    /// Worker unrecoverable error - parent should poison all slots and fail all
+    /// in-flight predictions. The worker will abort immediately after sending this.
+    ///
+    /// Reason explains *why* (e.g. "slots mutex poisoned: cannot guarantee slot isolation").
+    Fatal {
+        reason: String,
+    },
+
     /// System diagnostic: logs dropped due to backpressure.
     DroppedLogs {
         count: usize,

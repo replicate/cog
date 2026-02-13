@@ -370,7 +370,7 @@ func TestGetCogletWheelConfig(t *testing.T) {
 				t.Setenv(CogletWheelEnvVar, tt.envValue)
 			}
 
-			result, err := GetCogletWheelConfig()
+			result, err := GetCogletWheelConfig("amd64")
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			require.Equal(t, tt.expectedSource, result.Source)

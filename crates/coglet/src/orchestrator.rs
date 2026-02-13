@@ -257,8 +257,6 @@ pub struct OrchestratorHandle {
         Arc<tokio::sync::Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>>,
     register_tx: mpsc::Sender<(SlotId, Arc<StdMutex<Prediction>>)>,
     healthcheck_tx: mpsc::Sender<tokio::sync::oneshot::Sender<HealthcheckResult>>,
-    /// Semaphore to limit concurrent healthchecks to 1
-    healthcheck_semaphore: Arc<tokio::sync::Semaphore>,
     slot_ids: Vec<SlotId>,
 }
 
@@ -269,25 +267,19 @@ impl Orchestrator for OrchestratorHandle {
     }
 
     async fn healthcheck(&self) -> Result<HealthcheckResult, OrchestratorError> {
-        // Only allow one healthcheck at a time - if already running, return healthy
-        // (don't pile up healthcheck requests)
-        let _permit = match self.healthcheck_semaphore.try_acquire() {
-            Ok(permit) => permit,
-            Err(_) => {
-                tracing::debug!("Healthcheck already in progress, returning cached healthy");
-                return Ok(HealthcheckResult::healthy());
-            }
-        };
-
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
-        // Send the response channel to the event loop
+        // Send our channel to the event loop. If a healthcheck is already
+        // in-flight, the event loop coalesces — we get the same result as
+        // all other waiters when it comes back.
         self.healthcheck_tx
             .send(response_tx)
             .await
             .map_err(|_| OrchestratorError::Protocol("healthcheck channel closed".to_string()))?;
 
-        // Wait for the response with a timeout (worker has 5s, we give 10s total)
+        // Wait for the response with a timeout (worker has 5s, we give 10s total).
+        // If we time out, the healthcheck keeps running — our sender just gets a
+        // silent failure when the event loop eventually broadcasts.
         match tokio::time::timeout(Duration::from_secs(10), response_rx).await {
             Ok(Ok(result)) => Ok(result),
             Ok(Err(_)) => Err(OrchestratorError::Protocol(
@@ -419,6 +411,12 @@ pub async fn spawn_worker(
                         slot, error
                     )));
                 }
+                Some(Ok(ControlResponse::Fatal { reason })) => {
+                    return Err(OrchestratorError::Setup(format!(
+                        "worker fatal: {}",
+                        reason
+                    )));
+                }
                 Some(Ok(other)) => {
                     tracing::warn!(?other, "Unexpected message during setup");
                 }
@@ -476,7 +474,6 @@ pub async fn spawn_worker(
         ctrl_writer: Arc::clone(&ctrl_writer),
         register_tx,
         healthcheck_tx,
-        healthcheck_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
         slot_ids: slot_ids.clone(),
     };
 
@@ -513,10 +510,10 @@ async fn run_event_loop(
     )>,
     mut register_rx: mpsc::Receiver<(SlotId, Arc<StdMutex<Prediction>>)>,
     mut healthcheck_rx: mpsc::Receiver<tokio::sync::oneshot::Sender<HealthcheckResult>>,
-    _pool: Arc<PermitPool>,
+    pool: Arc<PermitPool>,
 ) {
     let mut predictions: HashMap<SlotId, Arc<StdMutex<Prediction>>> = HashMap::new();
-    let mut pending_healthcheck: Option<tokio::sync::oneshot::Sender<HealthcheckResult>> = None;
+    let mut pending_healthchecks: Vec<tokio::sync::oneshot::Sender<HealthcheckResult>> = Vec::new();
     let mut healthcheck_counter: u64 = 0;
 
     let (slot_msg_tx, mut slot_msg_rx) =
@@ -561,14 +558,30 @@ async fn run_event_loop(
                     }
                     Some(Ok(ControlResponse::Failed { slot, error })) => {
                         tracing::warn!(%slot, %error, "Slot poisoned");
+                        pool.poison(slot);
                         if let Some(pred) = predictions.remove(&slot)
                             && let Some(mut p) = try_lock_prediction(&pred)
+                            && !p.is_terminal()
                         {
-                            p.set_slot_poisoned();
-                            if !p.is_terminal() {
-                                p.set_failed(error);
+                            p.set_failed(error);
+                        }
+                    }
+                    Some(Ok(ControlResponse::Fatal { reason })) => {
+                        tracing::error!(%reason, "Worker fatal");
+                        for (slot, pred) in predictions.drain() {
+                            tracing::warn!(%slot, "Failing prediction due to worker fatal error");
+                            pool.poison(slot);
+                            if let Some(mut p) = try_lock_prediction(&pred)
+                                && !p.is_terminal()
+                            {
+                                p.set_failed(reason.clone());
                             }
                         }
+                        let result = HealthcheckResult::unhealthy(&reason);
+                        for tx in pending_healthchecks.drain(..) {
+                            let _ = tx.send(result.clone());
+                        }
+                        break;
                     }
                     Some(Ok(ControlResponse::Ready { .. })) => {
                         tracing::warn!("Unexpected Ready in event loop");
@@ -590,16 +603,18 @@ async fn run_event_loop(
                         );
                     }
                     Some(Ok(ControlResponse::HealthcheckResult { id: _, status, error })) => {
-                        if let Some(tx) = pending_healthcheck.take() {
+                        if pending_healthchecks.is_empty() {
+                            tracing::warn!("Received healthcheck result but no pending requests");
+                        } else {
                             let result = match status {
                                 HealthcheckStatus::Healthy => HealthcheckResult::healthy(),
                                 HealthcheckStatus::Unhealthy => {
                                     HealthcheckResult::unhealthy(error.unwrap_or_else(|| "unhealthy".to_string()))
                                 }
                             };
-                            let _ = tx.send(result);
-                        } else {
-                            tracing::warn!("Received healthcheck result but no pending request");
+                            for tx in pending_healthchecks.drain(..) {
+                                let _ = tx.send(result.clone());
+                            }
                         }
                     }
                     Some(Ok(ControlResponse::ShuttingDown)) => {
@@ -618,8 +633,8 @@ async fn run_event_loop(
                                 p.set_failed("Worker crashed".to_string());
                             }
                         }
-                        // Fail any pending healthcheck
-                        if let Some(tx) = pending_healthcheck.take() {
+                        // Fail any pending healthchecks
+                        for tx in pending_healthchecks.drain(..) {
                             let _ = tx.send(HealthcheckResult::unhealthy("Worker crashed"));
                         }
                         break;
@@ -628,27 +643,24 @@ async fn run_event_loop(
             }
 
             Some(response_tx) = healthcheck_rx.recv() => {
-                // If there's already a pending healthcheck, respond immediately with healthy
-                // (shouldn't happen due to semaphore, but be defensive)
-                if pending_healthcheck.is_some() {
-                    let _ = response_tx.send(HealthcheckResult::healthy());
-                    continue;
+                let in_flight = !pending_healthchecks.is_empty();
+                pending_healthchecks.push(response_tx);
+
+                // Only send to worker if no healthcheck is already in-flight.
+                // Otherwise this caller just waits for the same result.
+                if !in_flight {
+                    healthcheck_counter += 1;
+                    let hc_id = format!("hc_{}", healthcheck_counter);
+
+                    let mut writer = ctrl_writer.lock().await;
+                    if let Err(e) = writer.send(ControlRequest::Healthcheck { id: hc_id }).await {
+                        tracing::error!(error = %e, "Failed to send healthcheck request");
+                        let result = HealthcheckResult::unhealthy(format!("Failed to send: {}", e));
+                        for tx in pending_healthchecks.drain(..) {
+                            let _ = tx.send(result.clone());
+                        }
+                    }
                 }
-
-                healthcheck_counter += 1;
-                let hc_id = format!("hc_{}", healthcheck_counter);
-
-                // Send healthcheck request to worker
-                let mut writer = ctrl_writer.lock().await;
-                if let Err(e) = writer.send(ControlRequest::Healthcheck { id: hc_id }).await {
-                    tracing::error!(error = %e, "Failed to send healthcheck request");
-                    let _ = response_tx.send(HealthcheckResult::unhealthy(format!("Failed to send: {}", e)));
-                    continue;
-                }
-                drop(writer);
-
-                // Store the response channel to use when we get HealthcheckResult
-                pending_healthcheck = Some(response_tx);
             }
 
             Some((slot_id, prediction)) = register_rx.recv() => {
