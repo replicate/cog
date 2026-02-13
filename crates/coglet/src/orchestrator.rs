@@ -519,7 +519,7 @@ async fn run_event_loop(
     )>,
     mut register_rx: mpsc::Receiver<(SlotId, Arc<StdMutex<Prediction>>)>,
     mut healthcheck_rx: mpsc::Receiver<tokio::sync::oneshot::Sender<HealthcheckResult>>,
-    _pool: Arc<PermitPool>,
+    pool: Arc<PermitPool>,
 ) {
     let mut predictions: HashMap<SlotId, Arc<StdMutex<Prediction>>> = HashMap::new();
     let mut pending_healthcheck: Option<tokio::sync::oneshot::Sender<HealthcheckResult>> = None;
@@ -567,24 +567,23 @@ async fn run_event_loop(
                     }
                     Some(Ok(ControlResponse::Failed { slot, error })) => {
                         tracing::warn!(%slot, %error, "Slot poisoned");
+                        pool.poison(slot);
                         if let Some(pred) = predictions.remove(&slot)
                             && let Some(mut p) = try_lock_prediction(&pred)
+                            && !p.is_terminal()
                         {
-                            p.set_slot_poisoned();
-                            if !p.is_terminal() {
-                                p.set_failed(error);
-                            }
+                            p.set_failed(error);
                         }
                     }
                     Some(Ok(ControlResponse::Fatal { reason })) => {
                         tracing::error!(%reason, "Worker fatal");
                         for (slot, pred) in predictions.drain() {
                             tracing::warn!(%slot, "Failing prediction due to worker fatal error");
-                            if let Some(mut p) = try_lock_prediction(&pred) {
-                                p.set_slot_poisoned();
-                                if !p.is_terminal() {
-                                    p.set_failed(reason.clone());
-                                }
+                            pool.poison(slot);
+                            if let Some(mut p) = try_lock_prediction(&pred)
+                                && !p.is_terminal()
+                            {
+                                p.set_failed(reason.clone());
                             }
                         }
                         if let Some(tx) = pending_healthcheck.take() {

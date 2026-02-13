@@ -2,6 +2,10 @@
 //!
 //! This separation allows the prediction to be behind Mutex for concurrent
 //! updates while the permit's idle_flag can be set without holding the lock.
+//!
+//! Slot poisoning is NOT managed here — it's a pool-level property.
+//! The slot always transitions to idle when done; `PermitIdle::drop` checks
+//! the pool-level poison flag to decide whether to return the permit.
 
 use std::sync::{Arc, Mutex};
 
@@ -11,7 +15,7 @@ use crate::prediction::Prediction;
 
 /// Holds a prediction and its permit side-by-side.
 ///
-/// On drop: Permit returns to pool (if idle) or is orphaned (if poisoned).
+/// On drop: Permit returns to pool (if idle and not poisoned at pool level).
 pub struct PredictionSlot {
     prediction: Arc<Mutex<Prediction>>,
     slot_id: SlotId,
@@ -43,9 +47,10 @@ impl PredictionSlot {
         self.slot_id
     }
 
-    /// Mark the slot as idle - permit will return to pool on drop.
+    /// Mark the slot as idle - permit will return to pool on drop
+    /// (unless the slot has been poisoned at the pool level).
     ///
-    /// Returns `None` if the slot is poisoned or permit was already consumed (bug).
+    /// Returns `None` if the permit was already consumed (bug).
     pub fn into_idle(&mut self) -> Option<IdleToken> {
         let permit = self.permit.take()?;
         match permit {
@@ -61,7 +66,7 @@ impl PredictionSlot {
                 Some(IdleToken { slot_id })
             }
             AnyPermit::Poisoned(p) => {
-                // Bug: caller tried to mark poisoned slot as idle
+                // Permit was explicitly poisoned (legacy path) — keep it.
                 debug_assert!(false, "Cannot mark poisoned slot as idle");
                 tracing::error!(slot = %p.slot_id(), "Bug: attempted to mark poisoned slot as idle");
                 self.permit = Some(AnyPermit::Poisoned(p));
@@ -70,63 +75,8 @@ impl PredictionSlot {
         }
     }
 
-    /// Mark the slot as poisoned - permit will NOT return to pool.
-    ///
-    /// Also fails the prediction if not already terminal.
-    ///
-    /// Returns `false` if the slot is idle (completed successfully) or permit was already consumed.
-    /// These are bugs in the caller that should be fixed.
-    pub fn into_poisoned(&mut self) -> bool {
-        if let Ok(mut prediction) = self.prediction.try_lock()
-            && !prediction.is_terminal()
-        {
-            tracing::warn!(
-                slot = %self.slot_id,
-                prediction_id = %prediction.id(),
-                "Slot poisoned - failing non-terminal prediction"
-            );
-            prediction.set_failed("Slot poisoned".to_string());
-        }
-
-        let Some(permit) = self.permit.take() else {
-            // Bug: permit already consumed
-            debug_assert!(false, "permit already consumed");
-            tracing::error!(slot = %self.slot_id, "Bug: into_poisoned called with consumed permit");
-            return false;
-        };
-
-        match permit {
-            AnyPermit::InUse(p) => {
-                self.permit = Some(AnyPermit::Poisoned(p.into_poisoned()));
-                true
-            }
-            AnyPermit::Idle(p) => {
-                // Bug: caller tried to poison an already-completed slot
-                debug_assert!(
-                    false,
-                    "Cannot poison idle slot - prediction already completed"
-                );
-                tracing::error!(
-                    slot = %p.slot_id(),
-                    "Bug: attempted to poison idle slot (prediction already completed)"
-                );
-                self.permit = Some(AnyPermit::Idle(p));
-                false
-            }
-            AnyPermit::Poisoned(p) => {
-                // Already poisoned, no-op
-                self.permit = Some(AnyPermit::Poisoned(p));
-                true
-            }
-        }
-    }
-
     pub fn is_idle(&self) -> bool {
         self.permit.as_ref().is_some_and(|p| p.is_idle())
-    }
-
-    pub fn is_poisoned(&self) -> bool {
-        self.permit.as_ref().is_some_and(|p| p.is_poisoned())
     }
 
     pub fn elapsed(&self) -> std::time::Duration {

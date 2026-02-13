@@ -1,6 +1,10 @@
 //! Permit pool implementation with typestate for compile-time state transition safety.
+//!
+//! Slot poisoning is a pool-level property: a poisoned slot is permanently removed
+//! from the pool regardless of whether a prediction was active on it.
 
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use futures::SinkExt;
@@ -15,6 +19,7 @@ pub(crate) struct PermitInner {
     pub slot_id: SlotId,
     pub writer: FramedWrite<OwnedWriteHalf, JsonCodec<SlotRequest>>,
     pub idle_flag: Arc<AtomicBool>,
+    pub poisoned: Arc<AtomicBool>,
 }
 
 struct PoolConnection {
@@ -36,6 +41,7 @@ pub struct PermitInUse {
     slot_id: SlotId,
     writer: Option<FramedWrite<OwnedWriteHalf, JsonCodec<SlotRequest>>>,
     idle_flag: Arc<AtomicBool>,
+    poisoned: Arc<AtomicBool>,
     pool: PoolConnection,
 }
 
@@ -51,6 +57,7 @@ impl PermitInUse {
             slot_id: inner.slot_id,
             writer: Some(inner.writer),
             idle_flag: inner.idle_flag,
+            poisoned: inner.poisoned,
             pool: PoolConnection {
                 pool_tx,
                 pool_available,
@@ -62,19 +69,24 @@ impl PermitInUse {
         self.slot_id
     }
 
-    /// Transition to idle state - permit will return to pool on drop.
+    /// Transition to idle state - permit will return to pool on drop
+    /// (unless the slot has been poisoned at the pool level).
     pub fn into_idle(mut self) -> PermitIdle {
         self.idle_flag.store(true, Ordering::Release);
         PermitIdle {
             slot_id: self.slot_id,
             writer: self.writer.take(),
             idle_flag: Arc::clone(&self.idle_flag),
+            poisoned: Arc::clone(&self.poisoned),
             pool: self.pool.clone(),
         }
     }
 
     /// Transition to poisoned state - permit will NOT return to pool.
+    ///
+    /// Also sets the pool-level poison flag so the slot is never reused.
     pub fn into_poisoned(mut self) -> PermitPoisoned {
+        self.poisoned.store(true, Ordering::Release);
         PermitPoisoned {
             slot_id: self.slot_id,
             _writer: self.writer.take(),
@@ -98,11 +110,13 @@ impl Drop for PermitInUse {
     }
 }
 
-/// A permit that completed successfully - returns to pool on drop.
+/// A permit that completed successfully - returns to pool on drop
+/// (unless the slot has been poisoned at the pool level).
 pub struct PermitIdle {
     slot_id: SlotId,
     writer: Option<FramedWrite<OwnedWriteHalf, JsonCodec<SlotRequest>>>,
     idle_flag: Arc<AtomicBool>,
+    poisoned: Arc<AtomicBool>,
     pool: PoolConnection,
 }
 
@@ -114,11 +128,18 @@ impl PermitIdle {
 
 impl Drop for PermitIdle {
     fn drop(&mut self) {
+        // If the slot was poisoned at the pool level, don't return it.
+        if self.poisoned.load(Ordering::Acquire) {
+            tracing::warn!(slot = %self.slot_id, "Slot poisoned - not returning to pool");
+            return;
+        }
+
         if let Some(writer) = self.writer.take() {
             let inner = PermitInner {
                 slot_id: self.slot_id,
                 writer,
                 idle_flag: Arc::clone(&self.idle_flag),
+                poisoned: Arc::clone(&self.poisoned),
             };
 
             if self.pool.pool_tx.try_send(inner).is_ok() {
@@ -196,11 +217,16 @@ pub enum PermitError {
 }
 
 /// Pool of prediction slot permits.
+///
+/// Slot poisoning is tracked here. A poisoned slot is permanently removed
+/// from the pool — its permit will not be returned or acquired again.
 pub struct PermitPool {
     available_rx: Mutex<mpsc::Receiver<PermitInner>>,
     available_tx: mpsc::Sender<PermitInner>,
     num_slots: usize,
     available_count: Arc<AtomicUsize>,
+    /// Per-slot poison flags, shared with permits for fast checking.
+    poison_flags: StdMutex<Vec<(SlotId, Arc<AtomicBool>)>>,
 }
 
 impl PermitPool {
@@ -212,6 +238,7 @@ impl PermitPool {
             available_tx: tx,
             num_slots,
             available_count: Arc::new(AtomicUsize::new(0)),
+            poison_flags: StdMutex::new(Vec::with_capacity(num_slots)),
         }
     }
 
@@ -220,10 +247,18 @@ impl PermitPool {
         slot_id: SlotId,
         writer: FramedWrite<OwnedWriteHalf, JsonCodec<SlotRequest>>,
     ) {
+        let poisoned = Arc::new(AtomicBool::new(false));
+
+        // Store the flag for external poisoning.
+        if let Ok(mut flags) = self.poison_flags.lock() {
+            flags.push((slot_id, Arc::clone(&poisoned)));
+        }
+
         let inner = PermitInner {
             slot_id,
             writer,
             idle_flag: Arc::new(AtomicBool::new(true)),
+            poisoned,
         };
 
         if let Err(e) = self.available_tx.try_send(inner) {
@@ -233,26 +268,75 @@ impl PermitPool {
         }
     }
 
+    /// Poison a slot. The permit will not be returned to the pool.
+    ///
+    /// This works whether the slot is idle (in the pool) or in use (held by a prediction).
+    /// - Idle: the permit will be discarded on next `acquire`/`try_acquire`.
+    /// - In use: `PermitIdle::drop` will see the flag and not return it.
+    pub fn poison(&self, slot_id: SlotId) {
+        if let Ok(flags) = self.poison_flags.lock() {
+            for (id, flag) in flags.iter() {
+                if *id == slot_id {
+                    if !flag.swap(true, Ordering::AcqRel) {
+                        tracing::warn!(slot = %slot_id, "Slot poisoned - capacity permanently reduced");
+                    }
+                    return;
+                }
+            }
+        }
+        tracing::warn!(slot = %slot_id, "Attempted to poison unknown slot");
+    }
+
+    /// Check if a slot is poisoned.
+    pub fn is_poisoned(&self, slot_id: SlotId) -> bool {
+        if let Ok(flags) = self.poison_flags.lock() {
+            for (id, flag) in flags.iter() {
+                if *id == slot_id {
+                    return flag.load(Ordering::Acquire);
+                }
+            }
+        }
+        false
+    }
+
     pub fn try_acquire(&self) -> Option<PermitInUse> {
         let mut rx = self.available_rx.try_lock().ok()?;
-        let inner = rx.try_recv().ok()?;
-        self.available_count.fetch_sub(1, Ordering::Release);
-        Some(PermitInUse::new(
-            inner,
-            self.available_tx.clone(),
-            Arc::clone(&self.available_count),
-        ))
+        loop {
+            let inner = rx.try_recv().ok()?;
+            self.available_count.fetch_sub(1, Ordering::Release);
+
+            // Skip poisoned permits — they're permanently dead.
+            if inner.poisoned.load(Ordering::Acquire) {
+                tracing::debug!(slot = %inner.slot_id, "Discarding poisoned permit from pool");
+                continue;
+            }
+
+            return Some(PermitInUse::new(
+                inner,
+                self.available_tx.clone(),
+                Arc::clone(&self.available_count),
+            ));
+        }
     }
 
     pub async fn acquire(&self) -> Option<PermitInUse> {
         let mut rx = self.available_rx.lock().await;
-        let inner = rx.recv().await?;
-        self.available_count.fetch_sub(1, Ordering::Release);
-        Some(PermitInUse::new(
-            inner,
-            self.available_tx.clone(),
-            Arc::clone(&self.available_count),
-        ))
+        loop {
+            let inner = rx.recv().await?;
+            self.available_count.fetch_sub(1, Ordering::Release);
+
+            // Skip poisoned permits — they're permanently dead.
+            if inner.poisoned.load(Ordering::Acquire) {
+                tracing::debug!(slot = %inner.slot_id, "Discarding poisoned permit from pool");
+                continue;
+            }
+
+            return Some(PermitInUse::new(
+                inner,
+                self.available_tx.clone(),
+                Arc::clone(&self.available_count),
+            ));
+        }
     }
 
     pub fn num_slots(&self) -> usize {
@@ -333,5 +417,68 @@ mod tests {
 
         let permit = pool.try_acquire();
         assert!(permit.is_none());
+    }
+
+    #[tokio::test]
+    async fn pool_poison_idle_slot() {
+        // Poison a slot while it's idle in the pool — acquire should skip it.
+        let pool = PermitPool::new(2);
+
+        let (write1, _read1) = make_socket_pair().await;
+        let (write2, _read2) = make_socket_pair().await;
+
+        let slot1 = SlotId::new();
+        let slot2 = SlotId::new();
+
+        pool.add_permit(slot1, FramedWrite::new(write1, JsonCodec::new()));
+        pool.add_permit(slot2, FramedWrite::new(write2, JsonCodec::new()));
+
+        assert!(!pool.is_poisoned(slot1));
+        pool.poison(slot1);
+        assert!(pool.is_poisoned(slot1));
+        assert!(!pool.is_poisoned(slot2));
+
+        // First acquire should skip poisoned slot1, return slot2.
+        let permit = pool.try_acquire().unwrap();
+        assert_eq!(permit.slot_id(), slot2);
+
+        // No more permits available.
+        assert!(pool.try_acquire().is_none());
+    }
+
+    #[tokio::test]
+    async fn pool_poison_in_use_slot_prevents_return() {
+        // Poison a slot while a prediction holds it — into_idle + drop should NOT return it.
+        let pool = PermitPool::new(1);
+
+        let (write, _read) = make_socket_pair().await;
+        let slot = SlotId::new();
+
+        pool.add_permit(slot, FramedWrite::new(write, JsonCodec::new()));
+
+        {
+            let permit = pool.try_acquire().unwrap();
+            // Poison while in use.
+            pool.poison(slot);
+            // Transition to idle — drop should see the poison flag.
+            let _idle = permit.into_idle();
+        }
+
+        // Permit should NOT have returned to the pool.
+        assert!(pool.try_acquire().is_none());
+    }
+
+    #[tokio::test]
+    async fn pool_poison_is_idempotent() {
+        let pool = PermitPool::new(1);
+
+        let (write, _read) = make_socket_pair().await;
+        let slot = SlotId::new();
+
+        pool.add_permit(slot, FramedWrite::new(write, JsonCodec::new()));
+
+        pool.poison(slot);
+        pool.poison(slot); // Should not panic or double-count.
+        assert!(pool.is_poisoned(slot));
     }
 }

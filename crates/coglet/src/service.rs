@@ -304,10 +304,12 @@ impl PredictionService {
 
         if let Err(e) = permit.send(request).await {
             tracing::error!(%slot_id, error = %e, "Failed to send prediction request");
+            // Broken socket means the slot is dead — poison it at the pool level.
+            state.pool.poison(slot_id);
             if let Some(mut pred) = try_lock_prediction(&prediction_arc) {
                 pred.set_failed(format!("Failed to send request: {}", e));
             }
-            // Slot is poisoned - don't mark idle
+            let _ = slot.into_idle();
             return Err(PredictionError::Failed(format!(
                 "Failed to send request: {}",
                 e
@@ -328,7 +330,7 @@ impl PredictionService {
             completion.notified().await;
         }
 
-        let (status, output, error, logs, predict_time, slot_poisoned) = {
+        let (status, output, error, logs, predict_time) = {
             let Some(pred) = try_lock_prediction(&prediction_arc) else {
                 return Err(PredictionError::Failed(
                     "Prediction mutex poisoned".to_string(),
@@ -340,15 +342,12 @@ impl PredictionService {
                 pred.error().map(|s| s.to_string()),
                 pred.logs().to_string(),
                 pred.elapsed(),
-                pred.is_slot_poisoned(),
             )
         };
 
-        if slot_poisoned {
-            let _ = slot.into_poisoned();
-        } else {
-            let _ = slot.into_idle();
-        }
+        // Always transition to idle. If the slot was poisoned at the pool level,
+        // PermitIdle::drop will see the flag and not return it.
+        let _ = slot.into_idle();
 
         match status {
             PredictionStatus::Succeeded => Ok(PredictionResult {

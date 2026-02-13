@@ -74,7 +74,6 @@ pub struct Prediction {
     error: Option<String>,
     webhook: Option<WebhookSender>,
     completion: Arc<Notify>,
-    slot_poisoned: bool,
 }
 
 impl Prediction {
@@ -90,7 +89,6 @@ impl Prediction {
             error: None,
             webhook,
             completion: Arc::new(Notify::new()),
-            slot_poisoned: false,
         }
     }
 
@@ -133,14 +131,6 @@ impl Prediction {
     pub fn set_canceled(&mut self) {
         self.status = PredictionStatus::Canceled;
         self.completion.notify_waiters();
-    }
-
-    pub fn set_slot_poisoned(&mut self) {
-        self.slot_poisoned = true;
-    }
-
-    pub fn is_slot_poisoned(&self) -> bool {
-        self.slot_poisoned
     }
 
     pub fn elapsed(&self) -> std::time::Duration {
