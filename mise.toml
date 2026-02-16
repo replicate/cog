@@ -91,15 +91,20 @@ run = [
 ]
 
 [tasks.install]
-description = "Build and install cog CLI to /usr/local/bin (or PREFIX)"
-depends = ["build:cog"]
+description = "Symlink cog CLI to /usr/local/bin (or PREFIX). Run build:cog first."
 run = """
 #!/usr/bin/env bash
 set -e
 PREFIX="${PREFIX:-/usr/local}"
-install -d "$PREFIX/bin"
-install -m 0755 cog "$PREFIX/bin/cog"
-echo "Installed cog to $PREFIX/bin/cog"
+BINARY=$(ls dist/go/*/cog 2>/dev/null | head -1)
+if [ -z "$BINARY" ]; then
+    echo "Error: no cog binary found in dist/go/. Run 'mise run build:cog' first." >&2
+    exit 1
+fi
+BINARY="$(cd "$(dirname "$BINARY")" && pwd)/$(basename "$BINARY")"
+mkdir -p "$PREFIX/bin"
+ln -sf "$BINARY" "$PREFIX/bin/cog"
+echo "Installed $PREFIX/bin/cog -> $BINARY"
 """
 
 [tasks."build:cog"]

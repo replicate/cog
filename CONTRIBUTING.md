@@ -112,15 +112,33 @@ uv venv
 uv sync --all-groups
 ```
 
+### Building
+
+Cog is composed of three components that are built separately:
+
+- **Python SDK** (`python/cog/`) — the Python library that model authors use. Built into a wheel that gets installed inside containers.
+- **Coglet** (`crates/`) — a Rust prediction server that runs inside containers. Cross-compiled into a Linux wheel.
+- **Cog CLI** (`cmd/cog/`, `pkg/`) — the Go command-line tool. Embeds the SDK wheel and picks up the coglet wheel from `dist/`.
+
+```sh
+# Build everything and install
+mise run build:sdk                        # build the Python SDK wheel
+mise run build:coglet:wheel:linux-x64     # cross-compile the coglet wheel for Linux containers
+mise run build:cog                        # build the Go CLI (embeds SDK, picks up coglet from dist/)
+sudo mise run install                     # symlink the binary to /usr/local/bin
+```
+
+After making changes, rebuild only the component you changed and then `build:cog`:
+
+```sh
+mise run build:sdk                        # after changing python/cog/
+mise run build:coglet:wheel:linux-x64     # after changing crates/
+mise run build:cog                        # after changing cmd/cog/ or pkg/, or to pick up new wheels
+```
+
 ### Common tasks
 
 ```sh
-# Build cog binary
-mise run build:cog
-
-# Install cog to $GOPATH/bin
-make install PREFIX=$(go env GOPATH)
-
 # Run all tests
 mise run test:go
 mise run test:python
