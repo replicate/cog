@@ -71,11 +71,11 @@ $ cog predict -i image=@input.jpg
 Or, build a Docker image for deployment:
 
 ```console
-$ cog build -t my-colorization-model
+$ cog build -t my-classification-model
 --> Building Docker image...
---> Built my-colorization-model:latest
+--> Built my-classification-model:latest
 
-$ docker run -d -p 5000:5000 --gpus all my-colorization-model
+$ docker run -d -p 5000:5000 --gpus all my-classification-model
 
 $ curl http://localhost:5000/predictions -X POST \
     -H 'Content-Type: application/json' \
