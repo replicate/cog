@@ -15,8 +15,8 @@ stdout '"status":"READY"'
 curl POST /predictions '{"input":{"text":"trigger_slow"}}'
 stdout '"status":"succeeded"'
 
-# Now healthcheck should timeout and return UNHEALTHY
-curl GET /health-check
+# Now healthcheck should timeout and return UNHEALTHY (503)
+! curl GET /health-check
 stdout '"status":"UNHEALTHY"'
 stdout 'user_healthcheck_error'
 stdout 'timed out after 5.0 seconds'

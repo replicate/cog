@@ -99,7 +99,9 @@ fn generate_prediction_id() -> String {
     format!("pred_{:x}", timestamp)
 }
 
-async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
+async fn health_check(
+    State(service): State<Arc<PredictionService>>,
+) -> (StatusCode, Json<HealthCheckResponse>) {
     let snapshot = service.health().await;
 
     // Run user healthcheck if ready and not busy
@@ -116,10 +118,13 @@ async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<Hea
         None
     };
 
-    Json(HealthCheckResponse::from_snapshot(
-        snapshot,
-        user_healthcheck_error,
-    ))
+    let response = HealthCheckResponse::from_snapshot(snapshot, user_healthcheck_error);
+    let status_code = match response.status {
+        HealthResponse::Ready => StatusCode::OK,
+        _ => StatusCode::SERVICE_UNAVAILABLE,
+    };
+
+    (status_code, Json(response))
 }
 
 /// Write /var/run/cog/ready for K8s readiness probe.
@@ -549,7 +554,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 
         let json = response_json(response).await;
         assert_eq!(json["status"], "STARTING");
@@ -566,6 +571,7 @@ mod tests {
             .await
             .unwrap();
 
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let json = response_json(response).await;
         assert_eq!(json["status"], "UNKNOWN");
     }
@@ -920,6 +926,7 @@ mod tests {
             .await
             .unwrap();
 
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let json = response_json(response).await;
         assert_eq!(json["status"], "BUSY");
     }

@@ -7,8 +7,8 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Test: Async healthcheck returning False gives UNHEALTHY
-curl GET /health-check
+# Test: Async healthcheck returning False gives UNHEALTHY (503)
+! curl GET /health-check
 stdout '"status":"UNHEALTHY"'
 stdout 'user_healthcheck_error'
 stdout 'returned False'

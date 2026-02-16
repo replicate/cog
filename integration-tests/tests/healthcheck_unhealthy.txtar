@@ -7,8 +7,8 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Unhealthy healthcheck should return UNHEALTHY status
-curl GET /health-check
+# Unhealthy healthcheck should return UNHEALTHY status (503)
+! curl GET /health-check
 stdout '"status":"UNHEALTHY"'
 stdout 'user_healthcheck_error'
 stdout 'user-defined healthcheck returned False'
