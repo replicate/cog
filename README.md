@@ -156,17 +156,11 @@ sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/la
 sudo chmod +x /usr/local/bin/cog
 ```
 
-Alternatively, you can build Cog from source and install it with these commands:
+Alternatively, you can build Cog from source by [installing mise](https://mise.jdx.dev/getting-started.html) and running:
 
 ```console
 make
 sudo make install
-```
-
-Or if you are on docker:
-
-```
-RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
 ```
 
 ## Upgrade
