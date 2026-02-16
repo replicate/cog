@@ -125,64 +125,103 @@ func getRepoRoot() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// distFromExecutable returns the dist/ directory relative to the running cog
+// binary, if it appears to be in a goreleaser output layout (dist/go/<platform>/cog).
+// Returns empty string if the path cannot be determined.
+func distFromExecutable() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	exePath, err = filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return ""
+	}
+	// Binary is at dist/go/<platform>/cog → go up 2 levels to dist/
+	distDir := filepath.Clean(filepath.Join(filepath.Dir(exePath), "..", ".."))
+	if info, err := os.Stat(distDir); err == nil && info.IsDir() {
+		return distDir
+	}
+	return ""
+}
+
 // findWheelInDist looks for a wheel file matching the pattern in the dist/ directory.
 // Returns the absolute path to the wheel if found.
-// Checks multiple locations: ./dist, <repo-root>/dist
+// Checks multiple locations: ./dist, <repo-root>/dist, <executable-relative>/dist
 // If platformTag is non-empty, only wheels whose filename contains the tag are considered.
+// When multiple wheels match, the last one in lexicographic order is used (highest version).
 func findWheelInDist(pattern string, envVar string, platformTag string) (string, error) {
 	// First try ./dist in current directory
 	matches, _ := filepath.Glob(filepath.Join("dist", pattern))
 	matches = filterWheelsByPlatform(matches, platformTag)
 	if len(matches) > 0 {
-		absPath, err := filepath.Abs(matches[0])
+		best := matches[len(matches)-1]
+		absPath, err := filepath.Abs(best)
 		if err != nil {
-			return matches[0], nil
+			return best, nil
 		}
 		return absPath, nil
 	}
 
 	// Try repo root dist/
 	repoRoot, err := getRepoRoot()
-	if err != nil {
-		return "", err
+	if err == nil {
+		distDir := filepath.Join(repoRoot, "dist")
+		matches, _ = filepath.Glob(filepath.Join(distDir, pattern))
+		matches = filterWheelsByPlatform(matches, platformTag)
+		if len(matches) > 0 {
+			return matches[len(matches)-1], nil
+		}
 	}
 
-	distDir := filepath.Join(repoRoot, "dist")
-	matches, _ = filepath.Glob(filepath.Join(distDir, pattern))
-	matches = filterWheelsByPlatform(matches, platformTag)
-	if len(matches) > 0 {
-		return matches[0], nil
+	// Try dist/ relative to the cog executable
+	if distDir := distFromExecutable(); distDir != "" {
+		matches, _ = filepath.Glob(filepath.Join(distDir, pattern))
+		matches = filterWheelsByPlatform(matches, platformTag)
+		if len(matches) > 0 {
+			return matches[len(matches)-1], nil
+		}
 	}
 
-	return "", fmt.Errorf("%s=dist: no wheel matching '%s' found in %s\n\nTo build the wheel, run: mise run build:sdk (for cog) or mise run build:coglet (for coglet)", envVar, pattern, distDir)
+	return "", fmt.Errorf("%s=dist: no wheel matching '%s' found\n\nTo build the wheel, run: mise run build:sdk (for cog) or mise run build:coglet (for coglet)", envVar, pattern)
 }
 
 // findWheelInDistSilent is like findWheelInDist but returns empty string instead of error.
 // Used for auto-detection where missing wheel is not an error.
 // If platformTag is non-empty, only wheels whose filename contains the tag are considered.
+// When multiple wheels match, the last one in lexicographic order is used (highest version).
 func findWheelInDistSilent(pattern string, platformTag string) string {
 	// First try ./dist in current directory
 	matches, _ := filepath.Glob(filepath.Join("dist", pattern))
 	matches = filterWheelsByPlatform(matches, platformTag)
 	if len(matches) > 0 {
-		absPath, _ := filepath.Abs(matches[0])
+		best := matches[len(matches)-1]
+		absPath, _ := filepath.Abs(best)
 		if absPath != "" {
 			return absPath
 		}
-		return matches[0]
+		return best
 	}
 
 	// Try repo root dist/
 	repoRoot, err := getRepoRoot()
-	if err != nil {
-		return ""
+	if err == nil {
+		matches, _ = filepath.Glob(filepath.Join(repoRoot, "dist", pattern))
+		matches = filterWheelsByPlatform(matches, platformTag)
+		if len(matches) > 0 {
+			return matches[len(matches)-1]
+		}
 	}
 
-	matches, _ = filepath.Glob(filepath.Join(repoRoot, "dist", pattern))
-	matches = filterWheelsByPlatform(matches, platformTag)
-	if len(matches) > 0 {
-		return matches[0]
+	// Try dist/ relative to the cog executable
+	if distDir := distFromExecutable(); distDir != "" {
+		matches, _ = filepath.Glob(filepath.Join(distDir, pattern))
+		matches = filterWheelsByPlatform(matches, platformTag)
+		if len(matches) > 0 {
+			return matches[len(matches)-1]
+		}
 	}
+
 	return ""
 }
 
