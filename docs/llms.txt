@@ -1409,8 +1409,8 @@ If the upload fails, the server responds with an error.
 ### `GET /health-check`
 
 Returns the current health status of the model container.
-This endpoint always responds with `200 OK` —
-check the `status` field in the response body to determine readiness.
+Responds with `200 OK` when the model is ready,
+or `503 Service Unavailable` otherwise.
 
 The response body is a JSON object with the following fields:
 

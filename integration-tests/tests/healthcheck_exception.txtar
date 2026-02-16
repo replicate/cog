@@ -7,8 +7,8 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Exception in healthcheck should return UNHEALTHY with error message
-curl GET /health-check
+# Exception in healthcheck should return UNHEALTHY with error message (503)
+! curl GET /health-check
 stdout '"status":"UNHEALTHY"'
 stdout 'user_healthcheck_error'
 stdout 'Critical system error'

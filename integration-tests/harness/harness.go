@@ -458,7 +458,8 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 
 		if neg {
 			if !statusOK {
-				// Expected to fail - success!
+				// Expected to fail - write body to stdout and return
+				_, _ = ts.Stdout().Write([]byte(respBody))
 				return
 			}
 		} else {
@@ -551,9 +552,9 @@ type healthCheckResponse struct {
 	Status string `json:"status"`
 }
 
-// waitForServer polls the server's health-check endpoint until it returns READY status.
-// The server may return HTTP 200 while still in STARTING state (during setup),
-// so we must check the actual status field in the response.
+// waitForServer polls the server's health-check endpoint until it returns a
+// post-setup status. It checks the status field in the JSON response body
+// regardless of HTTP status code.
 func waitForServer(serverURL string, timeout time.Duration) bool {
 	client := &http.Client{Timeout: 5 * time.Second}
 	deadline := time.Now().Add(timeout)
@@ -565,34 +566,30 @@ func waitForServer(serverURL string, timeout time.Duration) bool {
 			continue
 		}
 
-		if resp.StatusCode == http.StatusOK {
-			body, err := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			if err != nil {
-				time.Sleep(200 * time.Millisecond)
-				continue
-			}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
 
-			var health healthCheckResponse
-			if err := json.Unmarshal(body, &health); err != nil {
-				time.Sleep(200 * time.Millisecond)
-				continue
-			}
+		var health healthCheckResponse
+		if err := json.Unmarshal(body, &health); err != nil {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
 
-			// Return success when the server has completed setup
-			// READY = setup completed, healthcheck passed (or no healthcheck)
-			// UNHEALTHY = setup completed, but user healthcheck failed
-			// BUSY = setup completed, prediction in progress
-			if health.Status == "READY" || health.Status == "UNHEALTHY" || health.Status == "BUSY" {
-				return true
-			}
+		// Return success when the server has completed setup
+		// READY = setup completed, healthcheck passed (or no healthcheck)
+		// UNHEALTHY = setup completed, but user healthcheck failed
+		// BUSY = setup completed, prediction in progress
+		if health.Status == "READY" || health.Status == "UNHEALTHY" || health.Status == "BUSY" {
+			return true
+		}
 
-			// If setup failed, no point waiting
-			if health.Status == "SETUP_FAILED" || health.Status == "DEFUNCT" {
-				return false
-			}
-		} else {
-			_ = resp.Body.Close()
+		// If setup failed, no point waiting
+		if health.Status == "SETUP_FAILED" || health.Status == "DEFUNCT" {
+			return false
 		}
 
 		time.Sleep(200 * time.Millisecond)
