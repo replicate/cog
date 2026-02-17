@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import sys
 
@@ -6,11 +7,25 @@ import coglet
 import structlog
 
 from ..config import Config
+from ..logging import setup_logging
 from ..mode import Mode
 
 log = structlog.get_logger("cog.server.http")
 
+_COG_LOG_LEVELS = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "warn": logging.WARNING,
+    "error": logging.ERROR,
+}
+
 if __name__ == "__main__":
+    log_level = _COG_LOG_LEVELS.get(
+        os.environ.get("COG_LOG_LEVEL", "").lower(), logging.INFO
+    )
+    setup_logging(log_level=log_level)
+
     # Parse minimal args needed for Rust server
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
@@ -62,7 +77,7 @@ if __name__ == "__main__":
         )
         sys.exit(1)
 
-    log.info("Starting Rust coglet server")
+    log.debug("Starting Rust coglet server")
     coglet.server.serve(  # type: ignore[attr-defined]
         predictor_ref=predictor_ref,
         host=args.host,

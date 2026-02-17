@@ -67,7 +67,7 @@ fn set_active() {
     ACTIVE.store(true, Ordering::SeqCst);
 }
 
-/// Initialize tracing with COG_LOG and LOG_FORMAT support.
+/// Initialize tracing with COG_LOG_LEVEL and LOG_FORMAT support.
 /// Returns optional receiver for draining setup logs.
 fn init_tracing(
     _to_stderr: bool,
@@ -76,7 +76,7 @@ fn init_tracing(
     let filter = if std::env::var("RUST_LOG").is_ok() {
         EnvFilter::from_default_env()
     } else {
-        let base_level = match std::env::var("COG_LOG").as_deref() {
+        let base_level = match std::env::var("COG_LOG_LEVEL").as_deref() {
             Ok("debug") => "debug",
             Ok("warn") | Ok("warning") => "warn",
             Ok("error") => "error",
@@ -84,7 +84,7 @@ fn init_tracing(
         };
 
         let filter_str = format!(
-            "coglet={level},coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
+            "coglet={level},coglet::setup=info,coglet::user=info,coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
             level = base_level
         );
 
