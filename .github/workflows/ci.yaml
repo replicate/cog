@@ -153,7 +153,7 @@ jobs:
             fi
 
             # Detect integration test changes (or if any code changed)
-            if echo "$CHANGED" | grep -qE '^(integration-tests/|cmd/|pkg/|python/|crates/|uv\.lock|pyproject\.toml)'; then
+            if echo "$CHANGED" | grep -qE '^(integration-tests/|cmd/|pkg/|python/|crates/|go\.(mod|sum)|uv\.lock|pyproject\.toml)'; then
               echo "integration=true" >> $GITHUB_OUTPUT
             else
               echo "integration=false" >> $GITHUB_OUTPUT
@@ -407,6 +407,8 @@ jobs:
         with:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.8.0
 
   lint-rust:
     name: Lint Rust
