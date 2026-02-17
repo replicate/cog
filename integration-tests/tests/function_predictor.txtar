@@ -1,0 +1,22 @@
+# Test function-based predictor (no class, just a function)
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict using function-based predictor
+cog predict $TEST_IMAGE -i prompt=world
+stdout 'HELLO WORLD'
+
+-- cog.yaml --
+build:
+  python_version: "3.13"
+predict: "predict.py:run"
+
+-- predict.py --
+from cog import Input
+
+
+def run(
+    prompt: str = Input(),
+) -> str:
+    return f"HELLO {prompt.upper()}"

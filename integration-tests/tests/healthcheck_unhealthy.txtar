@@ -1,0 +1,36 @@
+# Test unhealthy healthcheck behavior
+# This tests when healthcheck returns False
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+cog serve
+
+# Unhealthy healthcheck should return UNHEALTHY status
+curl GET /health-check
+stdout '"status":"UNHEALTHY"'
+stdout 'user_healthcheck_error'
+stdout 'user-defined healthcheck returned False'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self) -> None:
+        self._healthcheck_calls = 0
+
+    def predict(self, text: str) -> str:
+        return f"hello {text}"
+    
+    def healthcheck(self) -> bool:
+        """Unhealthy healthcheck after startup."""
+        self._healthcheck_calls += 1
+        if self._healthcheck_calls == 1:
+            return True
+        return False

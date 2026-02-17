@@ -197,6 +197,47 @@
         "type": "object",
         "additionalItems": true
       }
+    },
+    "environment": {
+      "$id": "#/properties/properties/environment",
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "A list of environment variables to make available during builds and at runtime, in the format `NAME=value`",
+      "additionalItems": true,
+      "items": {
+        "$id": "#/properties/properties/environment/items",
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*=.*$"
+      }
+    },
+    "weights": {
+      "$id": "#/properties/weights",
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "A list of weight files or directories to include in the model.",
+      "items": {
+        "type": "object",
+        "required": ["source"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A unique identifier for this weight entry."
+          },
+          "source": {
+            "type": "string",
+            "description": "Path to a weight file or directory (relative to cog.yaml)."
+          },
+          "target": {
+            "type": "string",
+            "description": "Target path in the container (must be under /cache/). Defaults to /cache/<basename>."
+          }
+        }
+      }
     }
   },
   "additionalProperties": false

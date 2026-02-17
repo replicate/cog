@@ -1,0 +1,23 @@
+# Test Python 3.13 works with --use-cog-base-image
+# Source: test_build.py::test_python_313_base_images
+
+# Build using Python 3.13 with --use-cog-base-image
+cog build -t $TEST_IMAGE --use-cog-base-image
+
+# Verify build succeeded by running a prediction
+cog predict $TEST_IMAGE -i num=7
+stdout '14'
+
+-- cog.yaml --
+build:
+  gpu: false
+  python_version: "3.13"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, num: int) -> int:
+        return num * 2

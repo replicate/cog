@@ -1,0 +1,35 @@
+
+# Test from __future__ import annotations support
+# This tests that future annotations work correctly with Path types
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict - creates and returns an image
+cog predict $TEST_IMAGE
+
+# Verify output file was created
+exec test -f output.png
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_packages:
+    - pillow==10.0.0
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from __future__ import annotations
+
+from cog import BasePredictor, Input, Path
+from PIL import Image
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Path:
+        """Create and return a simple test image."""
+        # Create a simple red image
+        img = Image.new("RGB", (100, 100), color="red")
+        output_path = Path("/tmp/output.png")
+        img.save(output_path)
+        return output_path

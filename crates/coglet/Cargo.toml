@@ -1,0 +1,55 @@
+[package]
+name = "coglet"
+description = "High-performance prediction server for Cog ML models"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+# Async runtime
+tokio.workspace = true
+tokio-util = { workspace = true, features = ["codec"] }
+futures.workspace = true
+async-trait = "0.1"
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Identifiers
+uuid.workspace = true
+
+# HTTP server
+axum.workspace = true
+
+# HTTP client (webhooks)
+reqwest.workspace = true
+ureq = { version = "3", default-features = false, features = ["json", "rustls", "platform-verifier"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Concurrent collections
+dashmap = "6"
+
+# Observability
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", features = ["signal", "fs"] }
+
+[dev-dependencies]
+insta.workspace = true
+wiremock = "0.6"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

@@ -1,111 +1,149 @@
+# Makefile - Shim that delegates to mise tasks
+#
+# This Makefile provides backward compatibility for common targets.
+# All task definitions live in mise.toml. Run `mise tasks` to see available tasks.
+#
+# For new development, prefer using mise directly:
+#   mise run build:cog    instead of    make cog
+#   mise run test:go      instead of    make test-go
+#   mise run fmt:fix      instead of    make fmt
+
 SHELL := bash
 
-DESTDIR ?=
-PREFIX = /usr/local
-BINDIR = $(PREFIX)/bin
+# Show deprecation warning (set MAKE_NO_WARN=1 to suppress)
+ifndef MAKE_NO_WARN
+$(info )
+$(info ┌────────────────────────────────────────────────────────────────────┐)
+$(info │ NOTE: This Makefile is a compatibility shim. Prefer using mise:   │)
+$(info │                                                                    │)
+$(info │   mise run build:cog      mise run test:go      mise run fmt:fix  │)
+$(info │                                                                    │)
+$(info │ Run 'mise tasks' to see all available tasks.                      │)
+$(info │ Set MAKE_NO_WARN=1 to suppress this message.                      │)
+$(info └────────────────────────────────────────────────────────────────────┘)
+$(info )
+endif
 
-INSTALL := install -m 0755
+PREFIX ?= /usr/local
 
 GO ?= go
-GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@v2.3.2
-GOIMPORTS := $(GO) run golang.org/x/tools/cmd/goimports@latest
-GOLINT := $(GO) run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
-
-PYTHON ?= python
-TOX := $(PYTHON) -Im tox
-
-COG_GO_SOURCE := $(shell find cmd pkg -type f)
-COG_PYTHON_SOURCE := $(shell find python/cog -type f -name '*.py')
 
 COG_BINARIES := cog base-image
 
-default: all
+default: cog
 
-.PHONY: all
-all: cog
+# =============================================================================
+# Build targets
+# =============================================================================
+
+.PHONY: cog base-image
+$(COG_BINARIES):
+	mise run build:cog
 
 .PHONY: wheel
-wheel: pkg/dockerfile/embed/.wheel
-
-ifdef COG_WHEEL
-pkg/dockerfile/embed/.wheel: $(COG_WHEEL)
-	@mkdir -p pkg/dockerfile/embed
-	@rm -f pkg/dockerfile/embed/*.whl # there can only be one embedded wheel
-	@echo "Using prebuilt COG_WHEEL $<"
-	cp $< pkg/dockerfile/embed/
-	@touch $@
-else
-pkg/dockerfile/embed/.wheel: $(COG_PYTHON_SOURCE)
-	@mkdir -p pkg/dockerfile/embed
-	@rm -f pkg/dockerfile/embed/*.whl # there can only be one embedded wheel
-	$(PYTHON) -m pip wheel --no-deps --no-binary=:all: --wheel-dir=pkg/dockerfile/embed .
-	@touch $@
-
-define COG_WHEEL
-    $(shell find pkg/dockerfile/embed -type f -name '*.whl')
-endef
-
-endif
-
-$(COG_BINARIES): $(COG_GO_SOURCE) pkg/dockerfile/embed/.wheel
-	@echo Building $@
-	@if git name-rev --name-only --tags HEAD | grep -qFx undefined; then \
-		$(GORELEASER) build --clean --snapshot --single-target --id $@ --output $@; \
-	else \
-		$(GORELEASER) build --clean --auto-snapshot --single-target --id $@ --output $@; \
-	fi
+wheel:
+	mise run build:sdk
 
 .PHONY: install
-install: $(COG_BINARIES)
-	$(INSTALL) -d $(DESTDIR)$(BINDIR)
-	$(INSTALL) $< $(DESTDIR)$(BINDIR)/$<
+install: cog
+	PREFIX=$(PREFIX) mise run install
 
-.PHONY: clean
-clean:
-	rm -rf .tox build dist pkg/dockerfile/embed
-	rm -f $(COG_BINARIES)
-
-.PHONY: test-go
-test-go: pkg/dockerfile/embed/.wheel
-	$(GO) get gotest.tools/gotestsum
-	$(GO) run gotest.tools/gotestsum -- -timeout 1200s -parallel 5 ./... $(ARGS)
-
-.PHONY: test-integration
-test-integration: $(COG_BINARIES)
-	PATH="$(PWD):$(PATH)" $(TOX) -e integration
-
-.PHONY: test-python
-test-python: pkg/dockerfile/embed/.wheel
-	$(TOX) run --installpkg $(COG_WHEEL) -f tests
+# =============================================================================
+# Test targets
+# =============================================================================
 
 .PHONY: test
-test: test-go test-python test-integration
+test:
+	mise run test:go
+	mise run test:python
+
+.PHONY: test-go
+test-go:
+	mise run test:go
+
+.PHONY: test-python
+test-python:
+	mise run test:python
+
+.PHONY: test-integration
+test-integration:
+	mise run test:integration
+
+.PHONY: test-coglet
+test-coglet: test-coglet-rust
+
+.PHONY: test-coglet-rust
+test-coglet-rust:
+	mise run test:rust
+
+.PHONY: test-coglet-python
+test-coglet-python:
+	mise run test:coglet:python
+
+# =============================================================================
+# Format and lint targets
+# =============================================================================
 
 .PHONY: fmt
 fmt:
-	$(GO) run golang.org/x/tools/cmd/goimports@latest -w -d .
-
-.PHONY: generate
-generate:
-	$(GO) generate ./...
-
-.PHONY: vet
-vet: pkg/dockerfile/embed/.wheel
-	$(GO) vet ./...
+	mise run fmt:fix
 
 .PHONY: check-fmt
 check-fmt:
-	$(GOIMPORTS) -d .
-	@test -z $$($(GOIMPORTS) -l .)
+	mise run fmt
 
 .PHONY: lint
-lint: pkg/dockerfile/embed/.wheel check-fmt vet
-	$(GOLINT) run ./...
-	$(TOX) run --installpkg $(COG_WHEEL) -e lint,typecheck-pydantic2
+lint:
+	mise run lint
+
+.PHONY: vet
+vet:
+	$(GO) vet ./...
+
+# =============================================================================
+# Code generation
+# =============================================================================
+
+.PHONY: generate
+generate:
+	mise run generate
+
+.PHONY: gen-mocks
+gen-mocks:
+	mockery
+
+# =============================================================================
+# Coglet (Rust) targets
+# =============================================================================
+
+.PHONY: fmt-coglet
+fmt-coglet:
+	mise run fmt:rust:fix
+
+.PHONY: check-fmt-coglet
+check-fmt-coglet:
+	mise run fmt:rust
+
+.PHONY: lint-coglet
+lint-coglet:
+	mise run lint:rust
+
+# =============================================================================
+# Documentation
+# =============================================================================
 
 .PHONY: run-docs-server
 run-docs-server:
-	pip install mkdocs-material
-	sed 's/docs\///g' README.md > ./docs/README.md
-	cp CONTRIBUTING.md ./docs/
-	mkdocs serve
+	mise run docs:serve
+
+# =============================================================================
+# Clean
+# =============================================================================
+
+.PHONY: clean
+clean:
+	mise run clean
+
+.PHONY: clean-coglet
+clean-coglet:
+	mise run clean:rust

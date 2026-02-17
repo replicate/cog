@@ -1,0 +1,23 @@
+
+# Test input validation with ge/le constraints
+# Build should fail because default=1 violates ge=2 constraint
+
+# Build should fail at schema validation
+! cog build -t $TEST_IMAGE
+stderr 'invalid'
+stderr 'minimum'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input
+
+
+class Predictor(BasePredictor):
+    def predict(
+        self, num: int = Input(description="Number of things", default=1, ge=2, le=10)
+    ) -> int:
+        return num * 2

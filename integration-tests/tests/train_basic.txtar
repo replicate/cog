@@ -1,0 +1,43 @@
+
+# Test basic training functionality
+
+# Train with input (no pre-built image, runs from cog.yaml)
+cog train -i n=42
+
+# Verify weights file was created with correct size
+exec test -f weights.bin
+exec sh -c 'wc -c < weights.bin'
+stdout '42'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+train: "train.py:train"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
+
+-- train.py --
+from cog import BaseModel, Input, Path
+
+
+class TrainingOutput(BaseModel):
+    weights: Path
+
+
+def train(
+    n: int,
+) -> TrainingOutput:
+    with open("weights.bin", "w") as fh:
+        for _ in range(n):
+            fh.write("a")
+
+    return TrainingOutput(
+        weights=Path("weights.bin"),
+    )

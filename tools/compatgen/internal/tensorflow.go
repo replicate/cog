@@ -62,8 +62,8 @@ func FetchTensorFlowCompatibilityMatrix() ([]config.TFCompatibility, error) {
 
 func parsePythonVersionsCell(val string) ([]string, error) {
 	versions := []string{}
-	parts := strings.Split(val, ",")
-	for _, part := range parts {
+	parts := strings.SplitSeq(val, ",")
+	for part := range parts {
 		part = strings.TrimSpace(part)
 		if strings.Contains(part, "-") {
 			start, end := split2(part, "-")

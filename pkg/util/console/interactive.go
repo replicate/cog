@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
-
-	"github.com/replicate/cog/pkg/util/slices"
 )
 
 type Interactive struct {
@@ -18,7 +17,7 @@ type Interactive struct {
 }
 
 func (i Interactive) Read() (string, error) {
-	if i.Default != "" && i.Options != nil && !slices.ContainsString(i.Options, i.Default) {
+	if i.Default != "" && i.Options != nil && !slices.Contains(i.Options, i.Default) {
 		panic("Default is not an option")
 	}
 
@@ -64,7 +63,7 @@ func (i Interactive) Read() (string, error) {
 		}
 
 		if i.Options != nil {
-			if !slices.ContainsString(i.Options, text) {
+			if !slices.Contains(i.Options, text) {
 				Warnf("%s is not a valid option", text)
 				continue
 			}
@@ -91,7 +90,8 @@ func (i InteractiveBool) Read() (bool, error) {
 		reader := bufio.NewReader(os.Stdin)
 		text, err := reader.ReadString('\n')
 		if err != nil {
-			if err == io.EOF {
+			// Only translate error if a flag is set
+			if err == io.EOF && i.NonDefaultFlag != "" {
 				return false, fmt.Errorf("stdin is closed. If you're running in a script, you need to pass the '%s' option", i.NonDefaultFlag)
 			}
 			return false, err

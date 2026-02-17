@@ -51,7 +51,7 @@ func WaitForHTTPOK(url string, timeout time.Duration) error {
 func PortIsOpen(port int) bool {
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort("", strconv.Itoa(port)), 100*time.Millisecond)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	return err == nil
 }

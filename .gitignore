@@ -1,4 +1,3 @@
-/.direnv
 /cog
 .ipynb_checkpoints/
 Untitled*.ipynb
@@ -8,7 +7,7 @@ __pycache__
 build
 dist
 *.egg-info
-pkg/dockerfile/embed/*
+pkg/wheels/*.whl
 # Used by a vim plugin (projectionist)
 .projections.json
 .tox/
@@ -20,3 +19,44 @@ docs/CONTRIBUTING.md
 venv
 base-image
 flag_file
+
+bin/*
+.beads/
+
+# Compiled test tools
+/weights-gen
+
+# Test directory for weights testing
+/test-weights/
+weights.lock
+
+# Auto-:d version files from setuptools-scm
+python/cog/_version.py
+coglet/python/coglet/_version.py
+cog-dataclass/python/cog/_version.py
+
+# Built coglet-server binaries
+coglet/python/cog/bin/
+
+# Local planning files
+docs/plans/**
+
+# Local agent files
+AGENTS.local.md
+CLAUDE.local.md
+
+# Local mise files
+mise.local.toml
+mise.local.lock
+
+# Built extension modules
+*.so
+*.pyd
+
+# Ignore rust specific build artifacts
+target
+/.cargo-home
+/.cargo-home/**
+/.rustup
+/.rustup/**
+.coverage

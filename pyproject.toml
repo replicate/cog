@@ -11,44 +11,35 @@ license.file = "LICENSE"
 urls."Source" = "https://github.com/replicate/cog"
 
 classifiers = [
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 
 dependencies = [
-  # intentionally loose. perhaps these should be vendored to not collide with user code?
-  "attrs>=20.1,<24",
-  "fastapi>=0.100,<0.116.0",
-  "pydantic>=1.9,<3",
-  "PyYAML",
-  "requests>=2,<3",
-  "structlog>=20,<25",
-  "typing_extensions>=4.4.0",
-  "uvicorn[standard]>=0.12,<1",
+  "typing_extensions>=4.0",
+  "pyyaml>=6.0",
+  "structlog>=21.0.0",
+  "requests>=2.25.0",
+  "coglet>=0.1.0,<1.0",
 ]
 
 dynamic = ["version"]
 
-[project.optional-dependencies]
-dev = ["build", "setuptools_scm", "tox", "tox-uv"]
+[dependency-groups]
+dev = [
+    "build>=1.2.2.post1",
+    "ruff",
+    "setuptools-scm>=8.2.0",
+]
 
-tests = [
-  "httpx",
-  "hypothesis",
-  "numpy",
-  "pillow",
-  "pytest",
-  "pytest-asyncio",
-  "pytest-httpserver",
-  "pytest-timeout",
-  "pytest-xdist",
-  "pytest-cov",
-  "responses",
+test = [
+    "pytest",
+    "pytest-timeout",
+    "pytest-xdist",
+    "pytest-cov",
 ]
 
 [tool.setuptools_scm]
@@ -68,9 +59,6 @@ reportUnnecessaryComparison = "warning"
 reportUnneesssaryContains = "warning"
 reportMissingTypeArgument = "error"
 reportUnusedExpression = "warning"
-
-[tool.pyright.defineConstant]
-PYDANTIC_V2 = true
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
@@ -116,13 +104,12 @@ lint.ignore = [
   "ANN001", # Missing type annotation for function argument
   "ANN002", # Missing type annotation for `*args`
   "ANN003", # Missing type annotation for `**kwargs`
-  "ANN101", # Missing type annotation for self in method
-  "ANN102", # Missing type annotation for cls in classmethod
   "ANN401", # Dynamically typed expressions are disallowed
 ]
 extend-exclude = [
   "python/tests/server/fixtures/*",
-  "test-integration/test_integration/fixtures/*",
+  "crates/coglet-python/*.pyi",
+  "crates/coglet-python/scripts/*",
 ]
 src = ["python"]
 
@@ -133,13 +120,19 @@ src = ["python"]
 "python/tests/*" = [
   "S101", # Use of assert
   "S104", # Possible binding to all interfaces
+  "S105", # Possible hardcoded password
+  "S106", # Possible hardcoded password in argument
+  "S108", # Probable insecure usage of temp file
+  "S110", # try-except-pass
   "S301", # pickle can be unsafe when used to deserialize untrusted data
-  "ANN",
+  "ANN",  # Type annotations not required in tests
+  "B011", # Do not assert False
 ]
-"test-integration/*" = [
+"crates/coglet-python/tests/*" = [
   "S101", # Use of assert
-  "S311", # Standard pseudo-random generators are not suitable for cryptographic purposes
-  "S603", # subprocess call - check for execution of untrusted input
-  "S607", # Starting a process with a partial executable path"
-  "ANN",
+  "S104", # Possible binding to all interfaces
+  "S110", # try-except-pass
+  "S603", # subprocess call
+  "ANN",  # Type annotations not required in tests
+  "B904", # raise from
 ]

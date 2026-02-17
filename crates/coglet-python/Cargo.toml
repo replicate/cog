@@ -1,0 +1,30 @@
+[package]
+name = "coglet-python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false  # Published to PyPI as 'coglet' wheel, not crates.io
+build = "build.rs"
+
+[lib]
+name = "coglet"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+async-trait = "0.1.89"
+coglet_core = { path = "../coglet", package = "coglet" }
+futures.workspace = true
+pyo3.workspace = true
+pyo3-async-runtimes.workspace = true
+pyo3-stub-gen.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util = { workspace = true, features = ["codec"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[features]
+extension-module = ["pyo3/extension-module"]

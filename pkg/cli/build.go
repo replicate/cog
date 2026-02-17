@@ -9,7 +9,9 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/image"
+	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -24,7 +26,7 @@ var buildDockerfileFile string
 var buildUseCogBaseImage bool
 var buildStrip bool
 var buildPrecompile bool
-var buildFast bool
+var configFilename string
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
 
@@ -47,45 +49,52 @@ func newBuildCommand() *cobra.Command {
 	addBuildTimestampFlag(cmd)
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
-	addFastFlag(cmd)
+	addConfigFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
 
 func buildCommand(cmd *cobra.Command, args []string) error {
-	cfg, projectDir, err := config.GetConfig(projectDirFlag)
+	ctx := cmd.Context()
+
+	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	imageName := cfg.Image
+	src, err := model.NewSource(configFilename)
+	if err != nil {
+		return err
+	}
+
+	imageName := src.Config.Image
 	if buildTag != "" {
 		imageName = buildTag
 	}
 	if imageName == "" {
-		imageName = config.DockerImageName(projectDir)
+		imageName = config.DockerImageName(src.ProjectDir)
 	}
 
-	err = config.ValidateModelPythonVersion(cfg)
+	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, nil))
 	if err != nil {
 		return err
 	}
 
-	if err := image.Build(cfg, projectDir, imageName, buildSecrets, buildNoCache, buildSeparateWeights, buildUseCudaBaseImage, buildProgressOutput, buildSchemaFile, buildDockerfileFile, DetermineUseCogBaseImage(cmd), buildStrip, buildPrecompile, buildFast, nil); err != nil {
-		return err
-	}
-
-	console.Infof("\nImage built as %s", imageName)
+	console.Infof("\nImage built as %s", m.ImageRef())
 
 	return nil
 }
 
 func addBuildProgressOutputFlag(cmd *cobra.Command) {
-	defaultOutput := "auto"
-	if os.Getenv("TERM") == "dumb" {
-		defaultOutput = "plain"
+	defaultOutput := os.Getenv("BUILDKIT_PROGRESS")
+	if defaultOutput == "" {
+		defaultOutput = "auto"
+		if os.Getenv("TERM") == "dumb" {
+			defaultOutput = "plain"
+		}
 	}
-	cmd.Flags().StringVar(&buildProgressOutput, "progress", defaultOutput, "Set type of build progress output, 'auto' (default), 'tty' or 'plain'")
+	cmd.Flags().StringVar(&buildProgressOutput, "progress", defaultOutput, "Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet'")
 }
 
 func addSecretsFlag(cmd *cobra.Command) {
@@ -138,10 +147,8 @@ func addPrecompileFlag(cmd *cobra.Command) {
 	_ = cmd.Flags().MarkHidden(precompileFlag)
 }
 
-func addFastFlag(cmd *cobra.Command) {
-	const fastFlag = "x-fast"
-	cmd.Flags().BoolVar(&buildFast, fastFlag, false, "Whether to use the experimental fast features")
-	_ = cmd.Flags().MarkHidden(fastFlag)
+func addConfigFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVarP(&configFilename, "file", "f", "cog.yaml", "The name of the config file.")
 }
 
 func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {
@@ -165,4 +172,34 @@ func DetermineUseCogBaseImage(cmd *cobra.Command) *bool {
 	useCogBaseImage := new(bool)
 	*useCogBaseImage = buildUseCogBaseImage
 	return useCogBaseImage
+}
+
+// buildOptionsFromFlags creates BuildOptions from the current CLI flag values.
+// The imageName and annotations parameters vary by command and must be provided.
+func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map[string]string) model.BuildOptions {
+	return model.BuildOptions{
+		ImageName:        imageName,
+		Secrets:          buildSecrets,
+		NoCache:          buildNoCache,
+		SeparateWeights:  buildSeparateWeights,
+		UseCudaBaseImage: buildUseCudaBaseImage,
+		ProgressOutput:   buildProgressOutput,
+		SchemaFile:       buildSchemaFile,
+		DockerfileFile:   buildDockerfileFile,
+		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
+		Strip:            buildStrip,
+		Precompile:       buildPrecompile,
+		Annotations:      annotations,
+		OCIIndex:         model.OCIIndexEnabled(),
+	}
+}
+
+// buildBaseOptionsFromFlags creates BuildBaseOptions from the current CLI flag values.
+func buildBaseOptionsFromFlags(cmd *cobra.Command) model.BuildBaseOptions {
+	return model.BuildBaseOptions{
+		UseCudaBaseImage: buildUseCudaBaseImage,
+		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
+		ProgressOutput:   buildProgressOutput,
+		RequiresCog:      true,
+	}
 }

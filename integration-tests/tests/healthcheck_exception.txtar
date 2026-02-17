@@ -1,0 +1,36 @@
+# Test healthcheck that raises an exception
+# This tests error handling when healthcheck throws
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+cog serve
+
+# Exception in healthcheck should return UNHEALTHY with error message
+curl GET /health-check
+stdout '"status":"UNHEALTHY"'
+stdout 'user_healthcheck_error'
+stdout 'Critical system error'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self) -> None:
+        self._healthcheck_calls = 0
+
+    def predict(self, text: str) -> str:
+        return f"hello {text}"
+    
+    def healthcheck(self) -> bool:
+        """Healthcheck that raises an exception after startup."""
+        self._healthcheck_calls += 1
+        if self._healthcheck_calls == 1:
+            return True
+        raise RuntimeError("Critical system error")

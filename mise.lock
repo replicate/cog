@@ -1,0 +1,160 @@
+[[tools."aqua:EmbarkStudios/cargo-deny"]]
+version = "0.19.0"
+backend = "aqua:EmbarkStudios/cargo-deny"
+"platforms.linux-arm64" = { checksum = "sha256:2b3567a60b7491c159d1cef8b7d8479d1ad2a31e29ef49462634ad4552fcc77d", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-unknown-linux-musl.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:a22f2023c06f3eefd099a5d42dd828fd4fa74d1e1c167bd1dbc3cf59ad62ded0", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-aarch64-apple-darwin.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:c42163655413f7e872638cd8c4345a327b512ef0ab99109e9cced691b95af5fb", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:413f0e2ce780d0d14ba8e9339f9fb033419a8a971ec7714faec518e4a664bdb0", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-pc-windows-msvc.tar.gz"}
+
+[[tools."aqua:golangci/golangci-lint"]]
+version = "2.8.0"
+backend = "aqua:golangci/golangci-lint"
+"platforms.linux-arm64" = { checksum = "sha256:2a58388db8af5ab9330791cea0ebdd4100723cd05ad7185d92febaaee272ec9a", url = "https://github.com/golangci/golangci-lint/releases/download/v2.8.0/golangci-lint-2.8.0-linux-arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:7048bc6b25c9515ed092c83f9fa8709ca97937ead52d9ff317a143299ee97a50", url = "https://github.com/golangci/golangci-lint/releases/download/v2.8.0/golangci-lint-2.8.0-linux-amd64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:6f8979a83117e0607d4b85ff486382ef0404440bbf54f0e6f003ceab6ccf641e", url = "https://github.com/golangci/golangci-lint/releases/download/v2.8.0/golangci-lint-2.8.0-darwin-arm64.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:164c72806d0e31ab19da4f08fff748a3fdc57e241851279b666c945ed9b91830", url = "https://github.com/golangci/golangci-lint/releases/download/v2.8.0/golangci-lint-2.8.0-darwin-amd64.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:22428168a9406f79853bf9a198b66e88ded9faa57cf85e5d225361f457f33513", url = "https://github.com/golangci/golangci-lint/releases/download/v2.8.0/golangci-lint-2.8.0-windows-amd64.zip"}
+
+[[tools."aqua:gotestyourself/gotestsum"]]
+version = "1.13.0"
+backend = "aqua:gotestyourself/gotestsum"
+"platforms.linux-arm64" = { checksum = "sha256:7644a4c5cd1bb978d56245aeab25a586ac5ac62adebed20a399548867c13499d", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_linux_arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:11ccddeaf708ef228889f9fe2f68291a75b27013ddfc3b18156e094f5f40e8ee", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_linux_amd64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:509cb27aef747f48faf9bce424f59dcf79572c905204b990ee935bbfcc7fa0e9", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_darwin_arm64.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:99529350f4c7b780b1efc543ca0d9721b09f0a4228f0efa9281261f58fefa05a", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_darwin_amd64.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:fd5a6dc69e46a0970593e70d85a7e75f16714e9c61d6d72ccc324eb82df5bb8a", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_windows_amd64.tar.gz"}
+
+[[tools."aqua:mitsuhiko/insta"]]
+version = "1.46.0"
+backend = "aqua:mitsuhiko/insta"
+"platforms.linux-x64" = { checksum = "sha256:592f7f8ddd465f0b8f2e7121bbe6bace97b475330b7f3c0ac62e504c1de6b967", url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"}
+"platforms.macos-arm64" = { checksum = "sha256:c32a785806a7b329330fefced808c0ba7017416c8a7ea24c0a8363ad66d1aeed", url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-aarch64-apple-darwin.tar.xz"}
+"platforms.macos-x64" = { checksum = "sha256:4a2e8bc9b3e7591fd96580cbb4c79cae062060f9482719bb32bc3932eff08fba", url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-apple-darwin.tar.xz"}
+"platforms.windows-x64" = { checksum = "sha256:d13a207264e10644d6995bdb332d7cc7353ffc53a0199f4e20376923016247ab", url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-pc-windows-msvc.zip"}
+
+[[tools."aqua:rust-cross/cargo-zigbuild"]]
+version = "0.20.1"
+backend = "aqua:rust-cross/cargo-zigbuild"
+"platforms.linux-arm64" = { checksum = "sha256:e9631045cc5f33ef0d6d9186196192d70b8018bf7633626c3a7c1384e81b7f67", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:742ed281f15fef6eaf49535ac10ffe98fb57913d0c4c88d6888d794043c05618", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.x86_64-unknown-linux-musl.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:d5c7ac2e6f25fb76083dff84640cdf679c5da858b9c97631555c3185be2fbf35", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.apple-darwin.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:d5c7ac2e6f25fb76083dff84640cdf679c5da858b9c97631555c3185be2fbf35", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:b0bb728ba068ee61342f40a2124b3d8d234af8f716dd416b7c1f794dfeb4e478", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.windows-x64.zip"}
+
+[[tools."aqua:rust-lang/rustup"]]
+version = "1.28.2"
+backend = "aqua:rust-lang/rustup"
+"platforms.linux-arm64" = { checksum = "sha256:e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c", url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-unknown-linux-gnu/rustup-init"}
+"platforms.linux-x64" = { checksum = "sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c", url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"}
+"platforms.macos-arm64" = { checksum = "sha256:20ef5516c31b1ac2290084199ba77dbbcaa1406c45c1d978ca68558ef5964ef5", url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-apple-darwin/rustup-init"}
+"platforms.macos-x64" = { checksum = "sha256:9c331076f62b4d0edeae63d9d1c9442d5fe39b37b05025ec8d41c5ed35486496", url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-apple-darwin/rustup-init"}
+"platforms.windows-x64" = { checksum = "sha256:88d8258dcf6ae4f7a80c7d1088e1f36fa7025a1cfd1343731b4ee6f385121fc0", url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-pc-windows-msvc/rustup-init.exe"}
+
+[[tools."aqua:rust-lang/rustup/rustup-init"]]
+version = "1.28.2"
+backend = "aqua:rust-lang/rustup/rustup-init"
+"platforms.linux-arm64" = { checksum = "sha256:e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c", url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-unknown-linux-gnu/rustup-init"}
+"platforms.linux-x64" = { checksum = "sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c", url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"}
+"platforms.macos-arm64" = { checksum = "sha256:20ef5516c31b1ac2290084199ba77dbbcaa1406c45c1d978ca68558ef5964ef5", url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-apple-darwin/rustup-init"}
+"platforms.macos-x64" = { checksum = "sha256:9c331076f62b4d0edeae63d9d1c9442d5fe39b37b05025ec8d41c5ed35486496", url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-apple-darwin/rustup-init"}
+"platforms.windows-x64" = { checksum = "sha256:88d8258dcf6ae4f7a80c7d1088e1f36fa7025a1cfd1343731b4ee6f385121fc0", url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-pc-windows-msvc/rustup-init.exe"}
+
+[[tools."aqua:ziglang/zig"]]
+version = "0.15.2"
+backend = "aqua:ziglang/zig"
+"platforms.linux-arm64" = { url = "https://ziglang.org/download/0.15.2/zig-aarch64-linux-0.15.2.tar.xz"}
+"platforms.linux-x64" = { url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"}
+"platforms.macos-arm64" = { checksum = "blake3:c7d2fb746701fea2c070f66c29a0300ba42a0d5d2c09c493462b8c0f4f0bd604", url = "https://ziglang.org/download/0.15.2/zig-aarch64-macos-0.15.2.tar.xz"}
+"platforms.macos-x64" = { url = "https://ziglang.org/download/0.15.2/zig-x86_64-macos-0.15.2.tar.xz"}
+"platforms.windows-x64" = { url = "https://ziglang.org/download/0.15.2/zig-x86_64-windows-0.15.2.zip"}
+
+[[tools.cargo-binstall]]
+version = "1.16.6"
+backend = "aqua:cargo-bins/cargo-binstall"
+"platforms.linux-arm64" = { checksum = "sha256:b556421835ba67fa98ca1570c85b5511457956b7836ce938b47d3f73899517a3", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-aarch64-unknown-linux-musl.tgz"}
+"platforms.linux-x64" = { checksum = "sha256:3225eea8041c30d7462761a481883e3aa8fe31c58def4b6c8dd91b7c80973df0", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
+"platforms.macos-arm64" = { checksum = "sha256:30543b378b96fbddabee1edfaccde7914dd2f851f02c560de859f81a21ab665b", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-aarch64-apple-darwin.zip"}
+"platforms.macos-x64" = { checksum = "sha256:633dc2f381f7000d8ba3c02eb24b2f290bf0154372bafe8d8094d777f129f21d", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-apple-darwin.zip"}
+"platforms.windows-x64" = { checksum = "sha256:fca962c3d12ae6192280111074db073c15abad3ba162a1a5a2af0f6f01872114", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.6/cargo-binstall-x86_64-pc-windows-msvc.zip"}
+
+[[tools."cargo:cargo-deny"]]
+version = "0.19.0"
+backend = "cargo:cargo-deny"
+
+[[tools."cargo:cargo-insta"]]
+version = "1.46.0"
+backend = "cargo:cargo-insta"
+
+[[tools."cargo:cargo-nextest"]]
+version = "0.9.120"
+backend = "cargo:cargo-nextest"
+
+[[tools."cargo:cargo-zigbuild"]]
+version = "0.20.1"
+backend = "cargo:cargo-zigbuild"
+
+[[tools."cargo:maturin"]]
+version = "1.11.5"
+backend = "cargo:maturin"
+
+[[tools.go]]
+version = "1.25.6"
+backend = "core:go"
+"platforms.linux-arm64" = { checksum = "sha256:738ef87d79c34272424ccdf83302b7b0300b8b096ed443896089306117943dd5", url = "https://dl.google.com/go/go1.25.6.linux-arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a", url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:984521ae978a5377c7d782fd2dd953291840d7d3d0bd95781a1f32f16d94a006", url = "https://dl.google.com/go/go1.25.6.darwin-arm64.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:e2b5b237f5c262931b8e280ac4b8363f156e19bfad5270c099998932819670b7", url = "https://dl.google.com/go/go1.25.6.darwin-amd64.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:19b4733b727ba5c611b5656187f3ac367d278d64c3d4199a845e39c0fdac5335", url = "https://dl.google.com/go/go1.25.6.windows-amd64.zip"}
+
+[[tools."pipx:nox"]]
+version = "2025.11.12"
+backend = "pipx:nox"
+
+[tools."pipx:nox".options]
+uvx = "true"
+uvx_args = "--python-preference=managed -p 3.13"
+
+[[tools.python]]
+version = "3.12.12"
+backend = "core:python"
+
+[[tools.ruff]]
+version = "0.14.13"
+backend = "aqua:astral-sh/ruff"
+"platforms.linux-arm64" = { checksum = "sha256:25941b777ff712f4d9473d26c1b875034214a3d5de20ea99b2add939dcd0b367", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:2fe394f493318551f271277a2228e56b31ca69a4842483e5709af4548f342bc3", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-unknown-linux-musl.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:067d1a90da8add55614eff91990425883a092d8279d9e503258ff8be0f8e9c18", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-aarch64-apple-darwin.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:69e424a42ac3a7c6c7032ad96deb757c35c93c848b6ea329a3f4c605e6d89ef9", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:d2af4376053458f283d74980b49dc0d61d3ef9d9b8684c5b25bd64b73e11634a", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-pc-windows-msvc.zip"}
+
+[[tools.rust]]
+version = "1.93.0"
+backend = "core:rust"
+
+[[tools.ty]]
+version = "0.0.10"
+backend = "aqua:astral-sh/ty"
+"platforms.linux-arm64" = { checksum = "sha256:43b3ceb655a8f6362733c3e3097aadba21b0077cb8ccc4873b6e187c083bd605", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:870e0f634d740df2a543dc977d68cae9bb073f1e70da93278b78622962a51189", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-unknown-linux-musl.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:5c256844da0401534908535d3c744ffb28db823e2e21ebc2aa45fa4b0599f6f5", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-aarch64-apple-darwin.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:eb839e72d317e381ad7c5804d61a6098b041b0b7bd0a207f429b8bfe9f445be0", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:d7cd33adf0113decee579fbf31f58b55e44195571043b22ed0e653bf60062d4a", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-pc-windows-msvc.zip"}
+
+[[tools.uv]]
+version = "0.9.26"
+backend = "aqua:astral-sh/uv"
+"platforms.linux-arm64" = { checksum = "sha256:ba8698c36c00c22efed4bd3506339b03c95604d001f02eaf6fbc814c9224d801", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:708b752876aeeb753257e1d55470569789e465684c1d3bc1760db26360b6c28b", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-unknown-linux-musl.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:fcf0a9ea6599c6ae28a4c854ac6da76f2c889354d7c36ce136ef071f7ab9721f", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-aarch64-apple-darwin.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:171eb8c518313e157c5b4cec7b4f743bc6bab1bd23e09b646679a02d096a047f", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:eb02fd95d8e0eed462b4a67ecdd320d865b38c560bffcda9a0b87ec944bdf036", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-pc-windows-msvc.zip"}
+
+[[tools.zig]]
+version = "0.15.2"
+backend = "core:zig"
+"platforms.linux-arm64" = { checksum = "sha256:958ed7d1e00d0ea76590d27666efbf7a932281b3d7ba0c6b01b0ff26498f667f", url = "https://ziglang.org/download/0.15.2/zig-aarch64-linux-0.15.2.tar.xz"}
+"platforms.linux-x64" = { checksum = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239", url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"}
+"platforms.macos-arm64" = { checksum = "sha256:3cc2bab367e185cdfb27501c4b30b1b0653c28d9f73df8dc91488e66ece5fa6b", url = "https://ziglang.org/download/0.15.2/zig-aarch64-macos-0.15.2.tar.xz"}
+"platforms.macos-x64" = { checksum = "sha256:375b6909fc1495d16fc2c7db9538f707456bfc3373b14ee83fdd3e22b3d43f7f", url = "https://ziglang.org/download/0.15.2/zig-x86_64-macos-0.15.2.tar.xz"}
+"platforms.windows-x64" = { checksum = "sha256:3a0ed1e8799a2f8ce2a6e6290a9ff22e6906f8227865911fb7ddedc3cc14cb0c", url = "https://ziglang.org/download/0.15.2/zig-x86_64-windows-0.15.2.zip"}

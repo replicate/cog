@@ -4,19 +4,21 @@ import (
 	// blank import for embeds
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
 	"golang.org/x/exp/slices"
 
+	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util"
 	"github.com/replicate/cog/pkg/util/console"
 
 	"github.com/replicate/cog/pkg/util/version"
 )
 
-// TODO(andreas): check tf/py versions. tf 1.5.0 didn't install on py 3.8
+// TODO(andreas): check tf/py versions. tf 1.5.0 didn't install on py 3.10
 // TODO(andreas): support more tf versions. No matching tensorflow CPU package for version 1.15.4, etc.
 // TODO(andreas): allow user to install versions that aren't compatible
 // TODO(andreas): allow user to install tf cpu package on gpu
@@ -80,18 +82,15 @@ func (i *CUDABaseImage) ImageTag() string {
 	return "nvidia/cuda:" + i.Tag
 }
 
-//go:generate go run ../../tools/compatgen/main.go cuda -o cuda_base_images.json
-//go:embed cuda_base_images.json
+//go:embed cuda_compatibility.json
 var cudaBaseImagesData []byte
 var CUDABaseImages []CUDABaseImage
 
-//go:generate go run ../../tools/compatgen/main.go tensorflow -o tf_compatibility_matrix.json
-//go:embed tf_compatibility_matrix.json
+//go:embed tf_compatibility.json
 var tfCompatibilityMatrixData []byte
 var TFCompatibilityMatrix []TFCompatibility
 
-//go:generate go run ../../tools/compatgen/main.go torch -o torch_compatibility_matrix.json
-//go:embed torch_compatibility_matrix.json
+//go:embed torch_compatibility.json
 var torchCompatibilityMatrixData []byte
 var TorchCompatibilityMatrix []TorchCompatibility
 
@@ -153,6 +152,11 @@ func cudaVersionFromTorchPlusVersion(ver string) (string, string) {
 }
 
 func cudasFromTorch(ver string) ([]string, error) {
+	if ver == "" {
+		return nil, errors.New(
+			"torch version must be specified when using CUDA",
+		)
+	}
 	cudas := []string{}
 
 	// Check the version modifier on torch (such as +cu118)
@@ -252,7 +256,7 @@ func versionGreater(a string, b string) (bool, error) {
 	return aVer.Greater(bVer), nil
 }
 
-func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
+func cudaBaseImageFor(cuda string, cuDNN string) (string, error) {
 	var images []CUDABaseImage
 	for _, image := range CUDABaseImages {
 		if version.Matches(cuda, image.CUDA) && image.CuDNN == cuDNN {
@@ -260,7 +264,7 @@ func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 		}
 	}
 	if len(images) == 0 {
-		return "", fmt.Errorf("No matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
+		return "", fmt.Errorf("no matching base image for CUDA %s and CuDNN %s", cuda, cuDNN)
 	}
 
 	sort.Slice(images, func(i, j int) bool {
@@ -276,7 +280,7 @@ func CUDABaseImageFor(cuda string, cuDNN string) (string, error) {
 func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err error) {
 	for _, compat := range TFCompatibilityMatrix {
 		if compat.TF == ver && version.Equal(compat.CUDA, cuda) {
-			name, cpuVersion, _, _, err = SplitPinnedPythonRequirement(compat.TFGPUPackage)
+			name, cpuVersion, _, _, err = requirements.SplitPinnedPythonRequirement(compat.TFGPUPackage)
 			return name, cpuVersion, err
 		}
 	}

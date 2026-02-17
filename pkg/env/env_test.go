@@ -11,3 +11,9 @@ func TestSchemeFromEnvironment(t *testing.T) {
 	t.Setenv(SchemeEnvVarName, "myscheme")
 	require.Equal(t, SchemeFromEnvironment(), testScheme)
 }
+
+func TestWebHostFromEnvironment(t *testing.T) {
+	const testHost = "web"
+	t.Setenv(WebHostEnvVarName, testHost)
+	require.Equal(t, WebHostFromEnvironment(), testHost)
+}

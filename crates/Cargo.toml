@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = ["coglet", "coglet-python"]
+
+[workspace.package]
+version = "0.17.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/replicate/cog"
+homepage = "https://cog.run"
+documentation = "https://cog.run/docs"
+keywords = ["machine-learning", "inference", "containers", "prediction"]
+categories = ["development-tools", "web-programming"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+futures = "0.3"
+
+# HTTP server
+axum = "0.8"
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Identifiers
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Python bindings
+pyo3 = { version = "0.27", features = ["auto-initialize", "abi3-py310"] }
+pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
+pyo3-stub-gen = "0.18"
+
+# Testing
+insta = { version = "1", features = ["json"] }

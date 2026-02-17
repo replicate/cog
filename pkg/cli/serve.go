@@ -1,15 +1,15 @@
 package cli
 
 import (
-	"runtime"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/image"
-	"github.com/replicate/cog/pkg/util"
+	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -33,7 +33,7 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)
-	addFastFlag(cmd)
+	addConfigFlag(cmd)
 
 	cmd.Flags().IntVarP(&port, "port", "p", port, "Port on which to listen")
 
@@ -41,24 +41,28 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 }
 
 func cmdServe(cmd *cobra.Command, arg []string) error {
-	cfg, projectDir, err := config.GetConfig(projectDirFlag)
+	ctx := cmd.Context()
+
+	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	imageName, err := image.BuildBase(cfg, projectDir, buildUseCudaBaseImage, DetermineUseCogBaseImage(cmd), buildProgressOutput)
+	src, err := model.NewSource(configFilename)
 	if err != nil {
 		return err
 	}
 
-	if buildFast {
-		console.Info("Fast serve enabled.")
+	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+	m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
+	if err != nil {
+		return err
 	}
 
 	gpus := ""
 	if gpusFlag != "" {
 		gpus = gpusFlag
-	} else if cfg.Build.GPU {
+	} else if m.HasGPU() {
 		gpus = "all"
 	}
 
@@ -69,20 +73,22 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		"--await-explicit-shutdown", "true",
 	}
 
-	runOptions := docker.RunOptions{
+	// Automatically propagate RUST_LOG for Rust coglet debugging
+	env := envFlags
+	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
+		env = append(env, "RUST_LOG="+rustLog)
+	}
+
+	runOptions := command.RunOptions{
 		Args:    args,
-		Env:     envFlags,
+		Env:     env,
 		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: []docker.Volume{{Source: projectDir, Destination: "/src"}},
+		Image:   m.ImageRef(),
+		Volumes: []command.Volume{{Source: src.ProjectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
 
-	if util.IsAppleSiliconMac(runtime.GOOS, runtime.GOARCH) {
-		runOptions.Platform = "linux/amd64"
-	}
-
-	runOptions.Ports = append(runOptions.Ports, docker.Port{HostPort: port, ContainerPort: 5000})
+	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000})
 
 	console.Info("")
 	console.Infof("Running '%[1]s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
@@ -90,14 +96,14 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	console.Infof("Serving at http://127.0.0.1:%[1]v", port)
 	console.Info("")
 
-	err = docker.Run(runOptions)
+	err = docker.Run(ctx, dockerClient, runOptions)
 	// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
 	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 	if runOptions.GPUs == "all" && err == docker.ErrMissingDeviceDriver {
 		console.Info("Missing device driver, re-trying without GPU")
 
 		runOptions.GPUs = ""
-		err = docker.Run(runOptions)
+		err = docker.Run(ctx, dockerClient, runOptions)
 	}
 
 	return err

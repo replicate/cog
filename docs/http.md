@@ -213,6 +213,58 @@ If the upload fails, the server responds with an error.
 
 ## Endpoints
 
+### `GET /health-check`
+
+Returns the current health status of the model container.
+This endpoint always responds with `200 OK` —
+check the `status` field in the response body to determine readiness.
+
+The response body is a JSON object with the following fields:
+
+- `status`: One of the following values:
+  - `STARTING`: The model's `setup()` method is still running.
+  - `READY`: The model is ready to accept predictions.
+  - `BUSY`: The model is ready but all prediction slots are in use.
+  - `SETUP_FAILED`: The model's `setup()` method raised an exception.
+  - `DEFUNCT`: The model encountered an unrecoverable error.
+  - `UNHEALTHY`: The model is ready
+    but a user-defined `healthcheck()` method returned `False`.
+- `setup`: Setup phase details (included once setup has started):
+  - `started_at`: ISO 8601 timestamp of when setup began.
+  - `completed_at`: ISO 8601 timestamp of when setup finished (if complete).
+  - `status`: One of `starting`, `succeeded`, or `failed`.
+  - `logs`: Output captured during setup.
+- `version`: Runtime version information:
+  - `coglet`: Coglet version.
+  - `cog`: Cog Python SDK version (if available).
+  - `python`: Python version (if available).
+- `user_healthcheck_error`:
+  Error message from a user-defined `healthcheck()` method (if applicable).
+
+```http
+GET /health-check HTTP/1.1
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+    "status": "READY",
+    "setup": {
+        "started_at": "2025-01-01T00:00:00.000000+00:00",
+        "completed_at": "2025-01-01T00:00:05.000000+00:00",
+        "status": "succeeded",
+        "logs": ""
+    },
+    "version": {
+        "coglet": "0.17.0",
+        "cog": "0.14.0",
+        "python": "3.12.0"
+    }
+}
+```
+
 ### `GET /openapi.json`
 
 The [OpenAPI](https://swagger.io/specification/) specification of the API, 

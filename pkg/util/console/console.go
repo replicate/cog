@@ -49,27 +49,27 @@ func (c *Console) Fatal(msg string) {
 }
 
 // Debug level message
-func (c *Console) Debugf(msg string, v ...interface{}) {
+func (c *Console) Debugf(msg string, v ...any) {
 	c.log(DebugLevel, fmt.Sprintf(msg, v...))
 }
 
 // Info level message
-func (c *Console) Infof(msg string, v ...interface{}) {
+func (c *Console) Infof(msg string, v ...any) {
 	c.log(InfoLevel, fmt.Sprintf(msg, v...))
 }
 
 // Warn level message
-func (c *Console) Warnf(msg string, v ...interface{}) {
+func (c *Console) Warnf(msg string, v ...any) {
 	c.log(WarnLevel, fmt.Sprintf(msg, v...))
 }
 
 // Error level message
-func (c *Console) Errorf(msg string, v ...interface{}) {
+func (c *Console) Errorf(msg string, v ...any) {
 	c.log(ErrorLevel, fmt.Sprintf(msg, v...))
 }
 
 // Fatal level message, followed by exit
-func (c *Console) Fatalf(msg string, v ...interface{}) {
+func (c *Console) Fatalf(msg string, v ...any) {
 	c.log(FatalLevel, fmt.Sprintf(msg, v...))
 	os.Exit(1)
 }
@@ -79,7 +79,7 @@ func (c *Console) Fatalf(msg string, v ...interface{}) {
 func (c *Console) Output(s string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	fmt.Fprintln(os.Stdout, s)
+	_, _ = fmt.Fprintln(os.Stdout, s)
 }
 
 func (c *Console) log(level Level, msg string) {
@@ -102,7 +102,7 @@ func (c *Console) log(level Level, msg string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	for _, line := range strings.Split(formattedMsg, "\n") {
+	for line := range strings.SplitSeq(formattedMsg, "\n") {
 		if c.Color && level == DebugLevel {
 			line = aurora.Faint(line).String()
 		}

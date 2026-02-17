@@ -1,0 +1,63 @@
+# Test cog inspect on a pushed OCI bundle with declarative weights.
+# Verifies: push bundle -> cog inspect --remote --json shows correct structure.
+# The inspect output should show an OCI index with image + weight manifests.
+
+[short] skip 'requires local registry'
+
+# Start test registry
+registry-start
+
+# Create weight files (small, deterministic)
+mkdir weights
+exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "A" > weights/model-a.bin'
+exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "B" > weights/model-b.bin'
+
+# Build weights.lock
+cog weights build
+stderr 'Generated weights.lock'
+exists weights.lock
+
+# Build and push with OCI index mode
+env COG_OCI_INDEX=1
+cog push $TEST_REGISTRY/test/inspect-model:v1
+
+# Inspect the pushed bundle
+cog inspect --remote --json $TEST_REGISTRY/test/inspect-model:v1
+
+# Verify it's an OCI index
+stdout '"type": "index"'
+
+# Verify image manifest is present
+stdout '"type": "image"'
+
+# Verify weight manifests are present with correct names
+stdout '"type": "weights"'
+stdout '"name": "alpha"'
+stdout '"name": "beta"'
+
+# Verify weight targets
+stdout '"target": "/weights/model-a.bin"'
+stdout '"target": "/weights/model-b.bin"'
+
+# Verify layers are populated
+stdout '"layers"'
+stdout '"digest": "sha256:'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+weights:
+  - name: alpha
+    source: weights/model-a.bin
+    target: /weights/model-a.bin
+  - name: beta
+    source: weights/model-b.bin
+    target: /weights/model-b.bin
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return f"processed: {text}"

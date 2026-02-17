@@ -1,0 +1,34 @@
+
+# Test list[File] input type (multiple file inputs using File type)
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict with multiple file inputs
+cog predict $TEST_IMAGE -i files=@file1.txt -i files=@file2.txt
+stdout 'content one'
+stdout 'content two'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, File
+
+
+class Predictor(BasePredictor):
+    def predict(self, files: list[File]) -> str:
+        output_parts = []
+        for f in files:
+            content = f.read()
+            if isinstance(content, bytes):
+                content = content.decode('utf-8')
+            output_parts.append(content)
+        return "\n\n".join(output_parts)
+
+-- file1.txt --
+content one
+-- file2.txt --
+content two

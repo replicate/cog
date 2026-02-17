@@ -1,0 +1,24 @@
+
+# Test str return type that returns None
+# This tests the handling of None values for typed outputs
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict returns None despite str type annotation
+# When None is returned, cog shows "No output generated" on stderr
+cog predict $TEST_IMAGE
+stderr 'No output generated'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        return None

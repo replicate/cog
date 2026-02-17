@@ -1,0 +1,22 @@
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Integer input and output works
+cog predict $TEST_IMAGE -i num=5
+stdout '10'
+
+# Negative numbers work
+cog predict $TEST_IMAGE -i num=-3
+stdout '-6'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, num: int) -> int:
+        return num * 2

@@ -1,0 +1,20 @@
+
+# Build image
+cog build -t $TEST_IMAGE
+
+# Predict using class without BasePredictor
+cog predict $TEST_IMAGE -i text=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: predict.py:Predictor
+
+-- predict.py --
+from cog import Input
+
+
+class Predictor:
+    def predict(self, text: str = Input(default="world")) -> str:
+        return f"hello {text}"
