@@ -1,0 +1,26 @@
+# Test predict works with pre-built image from different directory
+# Source: test_predict.py::test_predict_runs_an_existing_image
+
+# Build the image first
+cog build -t $TEST_IMAGE
+
+# Create a different directory and run predict from there
+mkdir another_dir
+cd another_dir
+
+# Run predict on the pre-built image (no cog.yaml in current dir)
+cog predict $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

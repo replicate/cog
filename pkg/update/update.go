@@ -21,7 +21,7 @@ func isUpdateEnabled() bool {
 // DisplayAndCheckForRelease will display an update message if an update is available and will check for a new update in the background
 // The result of that check will then be displayed the next time the user runs Cog
 // Returns errors which the caller is assumed to ignore so as not to break the client
-func DisplayAndCheckForRelease() error {
+func DisplayAndCheckForRelease(ctx context.Context) error {
 	if !isUpdateEnabled() {
 		return fmt.Errorf("update check disabled")
 	}
@@ -37,7 +37,7 @@ func DisplayAndCheckForRelease() error {
 	}
 
 	if time.Since(s.LastChecked) > time.Hour {
-		startCheckingForRelease()
+		startCheckingForRelease(ctx)
 	}
 	if s.Message != "" {
 		console.Info(s.Message)
@@ -46,10 +46,10 @@ func DisplayAndCheckForRelease() error {
 	return nil
 }
 
-func startCheckingForRelease() {
+func startCheckingForRelease(ctx context.Context) {
 	go func() {
 		console.Debugf("Checking for updates...")
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		switch r, err := checkForRelease(ctx); {
 		case err == nil:

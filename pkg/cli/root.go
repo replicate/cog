@@ -10,8 +10,6 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-var projectDirFlag string
-
 func NewRootCommand() (*cobra.Command, error) {
 	rootCmd := cobra.Command{
 		Use:   "cog",
@@ -29,7 +27,7 @@ https://github.com/replicate/cog`,
 				console.SetLevel(console.DebugLevel)
 			}
 			cmd.SilenceUsage = true
-			if err := update.DisplayAndCheckForRelease(); err != nil {
+			if err := update.DisplayAndCheckForRelease(cmd.Context()); err != nil {
 				console.Debugf("%s", err)
 			}
 		},
@@ -41,12 +39,14 @@ https://github.com/replicate/cog`,
 		newBuildCommand(),
 		newDebugCommand(),
 		newInitCommand(),
+		newInspectCommand(),
 		newLoginCommand(),
 		newPredictCommand(),
 		newPushCommand(),
 		newRunCommand(),
 		newServeCommand(),
 		newTrainCommand(),
+		newWeightsCommand(),
 	)
 
 	return &rootCmd, nil
@@ -56,5 +56,7 @@ func setPersistentFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(&global.Debug, "debug", false, "Show debugging output")
 	cmd.PersistentFlags().BoolVar(&global.ProfilingEnabled, "profile", false, "Enable profiling")
 	cmd.PersistentFlags().Bool("version", false, "Show version of Cog")
+	cmd.PersistentFlags().StringVar(&global.ReplicateRegistryHost, "registry", global.ReplicateRegistryHost, "Registry host")
 	_ = cmd.PersistentFlags().MarkHidden("profile")
+	_ = cmd.PersistentFlags().MarkHidden("registry")
 }

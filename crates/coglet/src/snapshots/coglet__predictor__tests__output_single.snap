@@ -1,0 +1,5 @@
+---
+source: coglet/src/predictor.rs
+expression: single
+---
+"hello"

@@ -1,0 +1,53 @@
+# Test pushing an OCI bundle with declarative weights via cog push.
+# Verifies: cog.yaml weights -> cog weights build -> cog push (BundlePusher path)
+# The push should create an OCI index with image + weight manifests.
+
+[short] skip 'requires local registry'
+
+# Start test registry
+registry-start
+
+# Create weight files (small, deterministic)
+mkdir weights
+exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "A" > weights/model-a.bin'
+exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "B" > weights/model-b.bin'
+
+# Step 1: Build weights.lock
+cog weights build
+stderr 'Generated weights.lock'
+exists weights.lock
+
+# Step 2: Build and push with OCI index mode
+env COG_OCI_INDEX=1
+cog push $TEST_REGISTRY/test/bundle-model:v1
+
+# Verify push succeeded — should mention pushing
+stderr -count=1 'Pushing'
+
+# Step 3: Verify the pushed artifact is an OCI index with image + weight manifests
+registry-inspect $TEST_REGISTRY/test/bundle-model:v1
+# Verify it's an OCI index
+stdout 'application/vnd.oci.image.index.v1\+json'
+# Verify weight annotations are present
+stdout 'vnd.cog.reference.type.*weights'
+stdout 'vnd.cog.weight.name.*alpha'
+stdout 'vnd.cog.weight.name.*beta'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+weights:
+  - name: alpha
+    source: weights/model-a.bin
+    target: /weights/model-a.bin
+  - name: beta
+    source: weights/model-b.bin
+    target: /weights/model-b.bin
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return f"processed: {text}"

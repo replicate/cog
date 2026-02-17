@@ -37,6 +37,30 @@ $ cat weights
 hello train
 ```
 
+You can also use classes if you want to run many model trainings and save on setup time. This works the same way as the [Predictor](./python.md) class with the only difference being the `train` method.
+
+`cog.yaml`:
+
+```yaml
+build:
+  python_version: "3.10"
+train: "train.py:Trainer"
+```
+
+`train.py`:
+
+```python
+from cog import BasePredictor, File
+import io
+
+class Trainer:
+    def setup(self) -> None:
+        self.base_model = ... # Load a big base model
+
+    def train(param: str) -> File:
+        return self.base_model.train(param) # Train on top of a base model
+```
+
 ## `Input(**kwargs)`
 
 Use Cog's `Input()` function to define each of the parameters in your `train()` function:

@@ -112,7 +112,15 @@ func Greater(v1 string, v2 string) bool {
 }
 
 func GreaterOrEqual(v1 string, v2 string) bool {
-	return MustVersion(v1).GreaterOrEqual(MustVersion(v2))
+	leftVersion, err := NewVersion(v1)
+	if err != nil {
+		return v1 == v2
+	}
+	rightVersion, err := NewVersion(v2)
+	if err != nil {
+		return v1 == v2
+	}
+	return leftVersion.GreaterOrEqual(rightVersion)
 }
 
 func (v *Version) Matches(other *Version) bool {

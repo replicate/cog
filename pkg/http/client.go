@@ -1,16 +1,19 @@
 package http
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/env"
 	"github.com/replicate/cog/pkg/global"
 )
 
 const UserAgentHeader = "User-Agent"
+const BearerHeaderPrefix = "Bearer "
 
-func ProvideHTTPClient(dockerCommand command.Command) (*http.Client, error) {
-	userInfo, err := dockerCommand.LoadUserInformation(global.ReplicateRegistryHost)
+func ProvideHTTPClient(ctx context.Context, dockerCommand command.Command) (*http.Client, error) {
+	userInfo, err := dockerCommand.LoadUserInformation(ctx, global.ReplicateRegistryHost)
 	if err != nil {
 		return nil, err
 	}
@@ -19,8 +22,10 @@ func ProvideHTTPClient(dockerCommand command.Command) (*http.Client, error) {
 		Transport: &Transport{
 			headers: map[string]string{
 				UserAgentHeader: UserAgent(),
-				"Authorization": "Bearer " + userInfo.Token,
 				"Content-Type":  "application/json",
+			},
+			authentication: map[string]string{
+				env.WebHostFromEnvironment(): BearerHeaderPrefix + userInfo.Token,
 			},
 		},
 	}

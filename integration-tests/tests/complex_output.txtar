@@ -1,0 +1,30 @@
+# Test complex/structured output type using cog.BaseModel (dataclass)
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict returns structured output
+cog predict $TEST_IMAGE -i msg='test error'
+stdout '"success": false'
+stdout '"error": "test error"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import Optional
+
+from cog import BaseModel, BasePredictor, Path
+
+
+class ModelOutput(BaseModel):
+    success: bool
+    error: Optional[str]
+    segmented_image: Optional[Path]
+
+
+class Predictor(BasePredictor):
+    def predict(self, msg: str) -> ModelOutput:
+        return ModelOutput(success=False, error=msg, segmented_image=None)

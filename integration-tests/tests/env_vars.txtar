@@ -1,0 +1,25 @@
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Environment variables are set
+cog predict $TEST_IMAGE -i name=TEST_VAR
+stdout 'test_value'
+
+cog predict $TEST_IMAGE -i name=NAME
+stdout 'michael'
+
+-- cog.yaml --
+predict: "predict.py:Predictor"
+build:
+  python_version: "3.12"
+environment:
+  - NAME=michael
+  - TEST_VAR=test_value
+
+-- predict.py --
+from cog import BasePredictor
+import os
+
+class Predictor(BasePredictor):
+    def predict(self, name: str) -> str:
+        return f"ENV[{name}]={os.getenv(name)}"

@@ -79,3 +79,9 @@ func TestVersionMatchesModifier(t *testing.T) {
 	matchVersion := "2.3.2+cu118"
 	require.True(t, Matches(version, matchVersion))
 }
+
+func TestGreaterThanOrEqualToWithInvalidPatch(t *testing.T) {
+	leftVersion := "1.1.0b2"
+	rightVersion := "1.1.0b2"
+	require.True(t, GreaterOrEqual(leftVersion, rightVersion))
+}

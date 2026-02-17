@@ -1,0 +1,13 @@
+# Test that cog init creates a buildable project
+# Source: test_build.py::test_build_with_cog_init_templates
+
+# Initialize a new cog project
+cog init
+
+# Build the initialized project
+cog build -t $TEST_IMAGE
+stderr 'Image built as cog-'
+
+# Verify the expected files were created
+exists cog.yaml
+exists predict.py

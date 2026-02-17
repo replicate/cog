@@ -1,0 +1,46 @@
+# Test building an OCI bundle with declarative weights in cog.yaml.
+# Verifies: cog.yaml weights declaration -> cog weights build -> cog build (COG_OCI_INDEX=1)
+# The image should build successfully and predictions should work.
+
+# Create weight files (small, deterministic)
+mkdir weights
+exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "A" > weights/model-a.bin'
+exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "B" > weights/model-b.bin'
+
+# Step 1: Build weights.lock from cog.yaml declarations
+cog weights build
+stderr 'Generated weights.lock'
+stderr '2 file'
+exists weights.lock
+
+# Step 2: Build with OCI index mode enabled
+env COG_OCI_INDEX=1
+cog build -t $TEST_IMAGE
+stderr 'Image built as'
+
+# Verify image was built
+exec docker image inspect $TEST_IMAGE
+stdout 'run.cog.config'
+
+# Verify prediction works
+cog predict $TEST_IMAGE -i text=hello
+stdout 'processed: hello'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+weights:
+  - name: alpha
+    source: weights/model-a.bin
+    target: /weights/model-a.bin
+  - name: beta
+    source: weights/model-b.bin
+    target: /weights/model-b.bin
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return f"processed: {text}"

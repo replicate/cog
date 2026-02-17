@@ -106,6 +106,7 @@ func (s *s3Uploader) UploadObject(ctx context.Context, objectPath, bucket, key s
 			decor.Name(" ] "),
 			decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 30),
 		),
+		mpb.BarRemoveOnComplete(),
 	)
 	defer bar.Abort(false)
 
@@ -212,7 +213,7 @@ func (s *s3Uploader) uploadMultipartObjectToS3(ctx context.Context, fInfo upload
 				isExpectedUnexpectedEOF := errors.Is(err, io.ErrUnexpectedEOF) && partNumber == expectedParts
 				isEOF := errors.Is(err, io.EOF)
 
-				if !(isExpectedUnexpectedEOF || isEOF) {
+				if !isExpectedUnexpectedEOF && !isEOF {
 					console.Errorf("upload part failed: failed to read object content. part_number: %d, total_parts: %d, size: %d, error: %v", partNumber, expectedParts, n, err)
 					return fmt.Errorf("failed to read object content (%s/%s): %w", fInfo.bucket, fInfo.key, err)
 				}
@@ -231,7 +232,7 @@ func (s *s3Uploader) uploadMultipartObjectToS3(ctx context.Context, fInfo upload
 				return fmt.Errorf("failed to upload part (%s/%s): %w", fInfo.bucket, fInfo.key, err)
 			}
 
-			fInfo.bar.EwmaIncrBy(n, time.Now().Sub(startTime))
+			fInfo.bar.EwmaIncrBy(n, time.Since(startTime))
 
 			// PartNumber is 1 indexed in S3 but the slice is zero indexed
 			completedParts[partNumber-1] = types.CompletedPart{

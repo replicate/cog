@@ -1,0 +1,10 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "healthcheck_result",
+  "id": "hc_123",
+  "status": "unhealthy",
+  "error": "user healthcheck returned False"
+}

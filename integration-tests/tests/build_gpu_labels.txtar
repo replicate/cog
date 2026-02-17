@@ -1,0 +1,49 @@
+# Test GPU build labels
+# Source: test_build.py::test_build_gpu_model_on_cpu
+# Requires git init/tag for version labels
+
+[short] skip 'requires long GPU build time'
+
+# Setup git repo for version labels
+exec git init
+exec git config user.email noreply@replicate.com
+exec git config user.name 'Replicate Test Bot'
+exec git config commit.gpgsign false
+exec git commit --allow-empty -m initial
+exec git tag 0.0.1
+
+# Build the GPU image
+cog build -t $TEST_IMAGE
+
+# Check core labels exist
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.version"}}'
+stdout '.+'
+
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.config"}}'
+stdout '"gpu":true'
+stdout '"cuda":'
+stdout '"cudnn":'
+stdout '"python_version":"3.12"'
+
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout 'openapi'
+
+# Check OCI labels for version info
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "org.opencontainers.image.version"}}'
+stdout '.+'
+
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+stdout '.+'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  gpu: true
+predict: predict.py:Predictor
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text

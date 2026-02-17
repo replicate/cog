@@ -1,0 +1,44 @@
+# Test that cog weights build generates weights.lock
+
+# Build should fail without weights section
+! cog weights build
+stderr 'no weights defined'
+
+# Add weights section and create weight file
+cp cog-with-weights.yaml cog.yaml
+mkdir models
+exec sh -c 'echo "test model content" > models/model.bin'
+
+# Build weights.lock
+cog weights build
+stderr 'Generated weights.lock'
+stderr '1 file'
+
+# Verify weights.lock was created
+exists weights.lock
+
+# Verify weights.lock contains expected content
+exec grep -q '"name": "model"' weights.lock
+exec grep -q '"dest": "/cache/model.bin"' weights.lock
+exec grep -q '"digestOriginal": "sha256:' weights.lock
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- cog-with-weights.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+weights:
+  - name: model
+    source: models/model.bin
+    target: /cache/model.bin
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

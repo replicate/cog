@@ -1,0 +1,24 @@
+# Test integer input and output types work correctly
+cog build -t $TEST_IMAGE
+
+# Integer input and output works
+cog predict $TEST_IMAGE -i num=10
+stdout '20'
+
+# Negative numbers work
+cog predict $TEST_IMAGE -i num=-10
+stdout '-20'
+
+-- cog.yaml --
+build:
+  python_version: "3.11"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(
+        self, num: int = Input(description="Number of things")
+    ) -> int:
+        return num * 2

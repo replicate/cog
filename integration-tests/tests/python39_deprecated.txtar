@@ -1,0 +1,18 @@
+# Test that Python 3.9 is deprecated and build fails with appropriate error
+# Build should fail with deprecation error
+! cog build -t $TEST_IMAGE
+stderr 'invalid build.python_version "3.9": minimum supported Python version is 3.10'
+
+-- cog.yaml --
+build:
+  gpu: false
+  python_version: "3.9"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, num: int) -> int:
+        return num * 2

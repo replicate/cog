@@ -1,0 +1,151 @@
+---
+name: Version Bump
+
+# Manually triggered workflow to create a PR bumping coglet version.
+#
+# Usage:
+#   - Run with no input: auto-bumps minor version (0.16.x -> 0.17.0)
+#   - Run with version input: bumps to specified patch or minor version
+#
+# Restrictions:
+#   - Major version bumps are NOT allowed (require manual edit)
+#   - Version must not already exist as a tag
+#   - Version must not be a downgrade
+#
+# Pre-1.0: Minor version bumps are used for new releases.
+# Post-1.0: Will need to decide major vs minor vs patch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Target version (e.g., 0.17.0). Leave empty to auto-bump minor version.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version-bump:
+    name: Create version bump PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine target version
+        id: version
+        run: |
+          # Get current version from Cargo.toml
+          CURRENT=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "Current version: $CURRENT"
+          
+          # Parse current version
+          CURRENT_BASE="${CURRENT%%-*}"
+          IFS='.' read -r CUR_MAJOR CUR_MINOR CUR_PATCH <<< "$CURRENT_BASE"
+          
+          if [[ -n "${{ inputs.version }}" ]]; then
+            # Use provided version
+            TARGET="${{ inputs.version }}"
+            echo "Using provided version: $TARGET"
+            
+            # Validate version format
+            if [[ ! "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+              echo "::error::Invalid version format: $TARGET"
+              exit 1
+            fi
+            
+            # Parse target version
+            TARGET_BASE="${TARGET%%-*}"
+            IFS='.' read -r NEW_MAJOR NEW_MINOR NEW_PATCH <<< "$TARGET_BASE"
+            
+            # Disallow major version bumps
+            if [ "$NEW_MAJOR" != "$CUR_MAJOR" ]; then
+              echo "::error::Major version bumps not allowed via this workflow"
+              echo "::error::Current: $CUR_MAJOR.x.x, Requested: $NEW_MAJOR.x.x"
+              echo "::error::Major version changes require manual Cargo.toml edit"
+              exit 1
+            fi
+          else
+            # Auto-bump minor version (pre-1.0 convention)
+            NEW_MINOR=$((CUR_MINOR + 1))
+            TARGET="${CUR_MAJOR}.${NEW_MINOR}.0"
+            echo "Auto-bumped minor version: $CURRENT -> $TARGET"
+          fi
+          
+          # Check version doesn't already exist as a tag
+          if git tag -l "v$TARGET" | grep -q .; then
+            echo "::error::Tag v$TARGET already exists!"
+            exit 1
+          fi
+          
+          # Check it's not a downgrade (using sort -V for proper semver comparison)
+          SORTED_HIGHEST=$(printf '%s\n%s' "$CURRENT" "$TARGET" | sort -V | tail -1)
+          if [[ "$SORTED_HIGHEST" != "$TARGET" && "$CURRENT" != "$TARGET" ]]; then
+            echo "::error::Cannot downgrade from $CURRENT to $TARGET"
+            exit 1
+          fi
+          
+          # Check if already at target version
+          if [[ "$CURRENT" == "$TARGET" ]]; then
+            echo "::error::Already at version $TARGET"
+            exit 1
+          fi
+          
+          echo "version=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+
+      - name: Create version bump PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CURRENT: ${{ steps.version.outputs.current }}
+        run: |
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Create branch
+          BRANCH="chore/bump-coglet-$VERSION"
+          git checkout -b "$BRANCH"
+          
+          # Update version in Cargo.toml
+          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' crates/Cargo.toml
+          
+          # Verify the change
+          echo "Updated crates/Cargo.toml:"
+          grep '^version' crates/Cargo.toml
+          
+          # Commit and push
+          git add crates/Cargo.toml
+          git commit -m "chore: bump coglet version to $VERSION"
+          git push origin "$BRANCH"
+          
+          # Create PR
+          gh pr create \
+            --title "chore: bump coglet version to $VERSION" \
+            --body "$(cat <<EOF
+          ## Version Bump
+          
+          Bumps coglet version: \`$CURRENT\` → \`$VERSION\`
+          
+          ### Before merging
+          - [ ] Verify this is the intended next release version
+          - [ ] Ensure all features for this release are merged
+          
+          ### After merging
+          1. Create and push the release tag:
+             \`\`\`bash
+             git tag v$VERSION
+             git push origin v$VERSION
+             \`\`\`
+          2. The release workflow will build and create a draft release
+          3. Review and publish the draft release to trigger PyPI/crates.io publishing
+          EOF
+          )" \
+            --base main \
+            --head "$BRANCH"

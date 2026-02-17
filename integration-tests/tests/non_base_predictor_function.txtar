@@ -1,0 +1,19 @@
+
+# Build image
+cog build -t $TEST_IMAGE
+
+# Predict using standalone function
+cog predict $TEST_IMAGE -i text=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: predict.py:predict
+
+-- predict.py --
+from cog import Input
+
+
+def predict(text: str = Input(default="world")) -> str:
+    return f"hello {text}"

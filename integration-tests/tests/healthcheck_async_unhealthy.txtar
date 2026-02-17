@@ -1,0 +1,32 @@
+# Test async unhealthy healthcheck behavior
+# Tests that async def healthcheck() returning False works correctly
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+cog serve
+
+# Test: Async healthcheck returning False gives UNHEALTHY
+curl GET /health-check
+stdout '"status":"UNHEALTHY"'
+stdout 'user_healthcheck_error'
+stdout 'returned False'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+import asyncio
+
+class Predictor(BasePredictor):
+    async def predict(self, text: str) -> str:
+        return f"hello {text}"
+    
+    async def healthcheck(self) -> bool:
+        """Async healthcheck that returns unhealthy."""
+        await asyncio.sleep(0.01)
+        return False

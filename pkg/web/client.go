@@ -5,31 +5,38 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/docker/docker/api/types/image"
 	"github.com/replicate/go/types"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/env"
+	r8_errors "github.com/replicate/cog/pkg/errors"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 const (
-	pushStartURLPath = "/api/models/push-start"
+	pushStartURLPath      = "/api/models/push-start"
+	startChallengeURLPath = "/api/models/file-challenge"
 )
 
 var (
-	ErrorBadResponseNewVersionEndpoint = errors.New("Bad response from new version endpoint")
-	ErrorBadResponsePushStartEndpoint  = errors.New("Bad response from push start endpoint")
-	ErrorBadRegistryURL                = errors.New("The image URL must have 3 components in the format of " + global.ReplicateRegistryHost + "/your-username/your-model")
-	ErrorBadRegistryHost               = errors.New("The image name must have the " + global.ReplicateRegistryHost + " prefix when using --x-fast.")
+	ErrorBadResponseNewVersionEndpoint        = errors.New("Bad response from new version endpoint")
+	ErrorBadResponsePushStartEndpoint         = errors.New("Bad response from push start endpoint")
+	ErrorBadResponseInitiateChallengeEndpoint = errors.New("Bad response from start file challenge endpoint")
+	ErrorNoSuchDigest                         = errors.New("No digest submitted matches the digest requested")
 )
 
 type Client struct {
@@ -63,13 +70,62 @@ type RuntimeConfig struct {
 }
 
 type Version struct {
-	Annotations   map[string]string `json:"annotations"`
-	CogConfig     config.Config     `json:"cog_config"`
-	CogVersion    string            `json:"cog_version"`
-	OpenAPISchema map[string]any    `json:"openapi_schema"`
-	RuntimeConfig RuntimeConfig     `json:"runtime_config"`
-	Virtual       bool              `json:"virtual"`
-	PushID        string            `json:"push_id"`
+	Annotations   map[string]string     `json:"annotations"`
+	CogConfig     config.Config         `json:"cog_config"`
+	CogVersion    string                `json:"cog_version"`
+	OpenAPISchema map[string]any        `json:"openapi_schema"`
+	RuntimeConfig RuntimeConfig         `json:"runtime_config"`
+	Virtual       bool                  `json:"virtual"`
+	PushID        string                `json:"push_id"`
+	Challenges    []FileChallengeAnswer `json:"file_challenges"`
+}
+
+type FileChallengeRequest struct {
+	Digest   string `json:"digest"`
+	FileType string `json:"file_type"`
+}
+
+type FileChallenge struct {
+	Salt   string `json:"salt"`
+	Start  int    `json:"byte_start"`
+	End    int    `json:"byte_end"`
+	Digest string `json:"digest"`
+	ID     string `json:"challenge_id"`
+}
+
+type FileChallengeAnswer struct {
+	Digest      string `json:"digest"`
+	Hash        string `json:"hash"`
+	ChallengeID string `json:"challenge_id"`
+}
+
+type VersionError struct {
+	Detail  string `json:"detail"`
+	Pointer string `json:"pointer"`
+}
+
+type VersionErrors struct {
+	Detail string         `json:"detail"`
+	Errors []VersionError `json:"errors"`
+	Status int            `json:"status"`
+	Title  string         `json:"title"`
+}
+
+type VersionCreate struct {
+	Version string `json:"version"`
+}
+
+type CogKey struct {
+	Key       string `json:"key"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+type Keys struct {
+	Cog CogKey `json:"cog"`
+}
+
+type TokenData struct {
+	Keys Keys `json:"keys"`
 }
 
 func NewClient(dockerCommand command.Command, client *http.Client) *Client {
@@ -112,8 +168,8 @@ func (c *Client) PostPushStart(ctx context.Context, pushID string, buildTime tim
 	return nil
 }
 
-func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File) error {
-	version, err := c.versionFromManifest(image, weights, files)
+func (c *Client) PostNewVersion(ctx context.Context, image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) error {
+	version, err := c.versionFromManifest(ctx, image, weights, files, fileChallenges)
 	if err != nil {
 		return util.WrapError(err, "failed to build new version from manifest")
 	}
@@ -138,24 +194,65 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 		return err
 	}
 	defer resp.Body.Close()
+	decoder := json.NewDecoder(resp.Body)
 
 	if resp.StatusCode != http.StatusCreated {
+		if resp.StatusCode == http.StatusBadRequest {
+			var versionErrors VersionErrors
+			err = decoder.Decode(&versionErrors)
+			if err != nil {
+				return err
+			}
+			return errors.New(versionErrors.Detail)
+		}
 		return util.WrapError(ErrorBadResponseNewVersionEndpoint, strconv.Itoa(resp.StatusCode))
 	}
+
+	var versionCreate VersionCreate
+	err = decoder.Decode(&versionCreate)
+	if err != nil {
+		return err
+	}
+	console.Infof("New Version: %s", versionCreate.Version)
 
 	return nil
 }
 
-func (c *Client) versionFromManifest(image string, weights []File, files []File) (*Version, error) {
-	manifest, err := c.dockerCommand.Inspect(image)
+func (c *Client) FetchAPIToken(ctx context.Context, entity string) (string, error) {
+	tokenUrl := tokenURL(entity)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenUrl.String(), nil)
+	if err != nil {
+		return "", err
+	}
+
+	tokenResp, err := c.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer tokenResp.Body.Close()
+
+	if tokenResp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Bad response: %s attempting to exchange tokens", strconv.Itoa(tokenResp.StatusCode))
+	}
+
+	var tokenData TokenData
+	err = json.NewDecoder(tokenResp.Body).Decode(&tokenData)
+	if err != nil {
+		return "", err
+	}
+
+	return tokenData.Keys.Cog.Key, nil
+}
+
+func (c *Client) versionFromManifest(ctx context.Context, image string, weights []File, files []File, fileChallenges []FileChallengeAnswer) (*Version, error) {
+	manifest, err := c.dockerCommand.Inspect(ctx, image)
 	if err != nil {
 		return nil, util.WrapError(err, "failed to inspect docker image")
 	}
 
-	var cogConfig config.Config
-	err = json.Unmarshal([]byte(manifest.Config.Labels[command.CogConfigLabelKey]), &cogConfig)
+	cogConfig, err := readCogConfig(manifest)
 	if err != nil {
-		return nil, util.WrapError(err, "failed to get cog config from docker image")
+		return nil, err
 	}
 
 	var openAPISchema map[string]any
@@ -235,6 +332,16 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 		}
 	}
 
+	// Digests should match whatever digest we are sending in as the
+	// runtime config digests
+	for i, challenge := range fileChallenges {
+		fileChallenges[i] = FileChallengeAnswer{
+			Digest:      fmt.Sprintf("sha256:%s", challenge.Digest),
+			Hash:        challenge.Hash,
+			ChallengeID: challenge.ChallengeID,
+		}
+	}
+
 	runtimeConfig := RuntimeConfig{
 		Weights: prefixedWeights,
 		Files:   prefixedFiles,
@@ -243,11 +350,12 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 
 	version := Version{
 		Annotations:   manifest.Config.Labels,
-		CogConfig:     cogConfig,
+		CogConfig:     *cogConfig,
 		CogVersion:    manifest.Config.Labels[command.CogVersionLabelKey],
 		OpenAPISchema: openAPISchema,
 		RuntimeConfig: runtimeConfig,
 		Virtual:       true,
+		Challenges:    fileChallenges,
 	}
 
 	if pushID, ok := manifest.Config.Labels["run.cog.push_id"]; ok {
@@ -257,45 +365,151 @@ func (c *Client) versionFromManifest(image string, weights []File, files []File)
 	return &version, nil
 }
 
+func (c *Client) InitiateAndDoFileChallenge(ctx context.Context, weights []File, files []File) ([]FileChallengeAnswer, error) {
+	var challengeAnswers []FileChallengeAnswer
+	var mu sync.Mutex
+
+	var wg errgroup.Group
+	for _, item := range files {
+		wg.Go(func() error {
+			answer, err := c.doSingleFileChallenge(ctx, item, "files")
+			if err != nil {
+				return util.WrapError(err, fmt.Sprintf("do file challenge for digest %s", item.Digest))
+			}
+			mu.Lock()
+			challengeAnswers = append(challengeAnswers, answer)
+			mu.Unlock()
+			return nil
+		})
+	}
+	for _, item := range weights {
+		wg.Go(func() error {
+			answer, err := c.doSingleFileChallenge(ctx, item, "weights")
+			if err != nil {
+				return util.WrapError(err, fmt.Sprintf("do file challenge for digest %s", item.Digest))
+			}
+			mu.Lock()
+			challengeAnswers = append(challengeAnswers, answer)
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := wg.Wait(); err != nil {
+		return nil, util.WrapError(err, "do file challenges")
+	}
+
+	return challengeAnswers, nil
+}
+
+// doSingleFileChallenge does a single file challenge. This is expected to be called in a goroutine.
+func (c *Client) doSingleFileChallenge(ctx context.Context, file File, fileType string) (FileChallengeAnswer, error) {
+	initiateChallengePath := webBaseURL()
+	initiateChallengePath.Path = startChallengeURLPath
+
+	answer := FileChallengeAnswer{}
+
+	jsonData, err := json.Marshal(FileChallengeRequest{
+		Digest:   file.Digest,
+		FileType: fileType,
+	})
+
+	if err != nil {
+		return answer, util.WrapError(err, "encode request JSON")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, initiateChallengePath.String(), bytes.NewReader(jsonData))
+	if err != nil {
+		return answer, util.WrapError(err, "build HTTP request")
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return answer, util.WrapError(err, "do HTTP request")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return answer, util.WrapError(ErrorBadResponseInitiateChallengeEndpoint, strconv.Itoa(resp.StatusCode))
+	}
+
+	var challenge FileChallenge
+	err = json.NewDecoder(resp.Body).Decode(&challenge)
+	if err != nil {
+		return answer, util.WrapError(err, "decode response body")
+	}
+
+	ans, err := util.SHA256HashFileWithSaltAndRange(file.Path, challenge.Start, challenge.End, challenge.Salt)
+	if err != nil {
+		return answer, util.WrapError(err, "hash file")
+	}
+	return FileChallengeAnswer{
+		Digest:      file.Digest,
+		Hash:        ans,
+		ChallengeID: challenge.ID,
+	}, nil
+}
+
 func newVersionURL(image string) (url.URL, error) {
 	imageComponents := strings.Split(image, "/")
 	newVersionUrl := webBaseURL()
-	if len(imageComponents) != 3 {
-		return newVersionUrl, ErrorBadRegistryURL
-	}
-	if imageComponents[0] != global.ReplicateRegistryHost {
-		return newVersionUrl, ErrorBadRegistryHost
+	if len(imageComponents) != 3 || imageComponents[0] != global.ReplicateRegistryHost {
+		return newVersionUrl, r8_errors.ErrorBadRegistryURL
 	}
 	newVersionUrl.Path = strings.Join([]string{"", "api", "models", imageComponents[1], imageComponents[2], "versions"}, "/")
 	return newVersionUrl, nil
 }
 
+func tokenURL(entity string) url.URL {
+	newVersionUrl := webBaseURL()
+	newVersionUrl.Path = strings.Join([]string{"", "api", "token", entity}, "/")
+	return newVersionUrl
+}
+
 func webBaseURL() url.URL {
 	return url.URL{
 		Scheme: env.SchemeFromEnvironment(),
-		Host:   HostFromEnvironment(),
+		Host:   env.WebHostFromEnvironment(),
 	}
 }
 
-func stripCodeFromStub(cogConfig config.Config, isPredict bool) (string, error) {
+func codeFileName(cogConfig *config.Config, isPredict bool) (string, error) {
 	var stubComponents []string
 	if isPredict {
+		if cogConfig.Predict == "" {
+			return "", nil
+		}
 		stubComponents = strings.Split(cogConfig.Predict, ":")
 	} else {
+		if cogConfig.Train == "" {
+			return "", nil
+		}
 		stubComponents = strings.Split(cogConfig.Train, ":")
 	}
 
 	if len(stubComponents) < 2 {
-		return "", nil
+		return "", errors.New("Code stub components has less than 2 entries.")
 	}
 
-	codeFile := stubComponents[0]
+	return stubComponents[0], nil
+}
+
+func readCode(cogConfig *config.Config, isPredict bool) (string, string, error) {
+	codeFile, err := codeFileName(cogConfig, isPredict)
+	if err != nil {
+		return "", codeFile, err
+	}
+	if codeFile == "" {
+		return "", "", nil
+	}
 
 	b, err := os.ReadFile(codeFile)
 	if err != nil {
-		return "", err
+		return "", codeFile, err
 	}
 
+	return string(b), codeFile, nil
+}
+
+func stripCodeFromStub(cogConfig *config.Config, isPredict bool) (string, error) {
 	// TODO: We should attempt to strip the code here, in python this is done like so:
 	// from cog.code_xforms import strip_model_source_code
 	// code = strip_model_source_code(
@@ -309,5 +523,16 @@ func stripCodeFromStub(cogConfig config.Config, isPredict bool) (string, error) 
 	// It could be a good idea to do this in the layer functions where we do pip freeze
 	// et al.
 
-	return string(b), nil
+	code, _, err := readCode(cogConfig, isPredict)
+	return code, err
+}
+
+func readCogConfig(manifest *image.InspectResponse) (*config.Config, error) {
+	var cogConfig config.Config
+	err := json.Unmarshal([]byte(manifest.Config.Labels[command.CogConfigLabelKey]), &cogConfig)
+	if err != nil {
+		return nil, util.WrapError(err, "failed to get cog config from docker image")
+	}
+
+	return &cogConfig, nil
 }

@@ -1,0 +1,471 @@
+[
+  {
+    "Tag": "12.9.1-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.9.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.9.1-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.9.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.9.1-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.9.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.9.0-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.9.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.9.0-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.9.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.9.0-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.9.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.8.1-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.8.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.8.1-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.8.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.8.1-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.8.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.8.0-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.8.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.8.0-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.8.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.8.0-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.8.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.6.3-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.6.3",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.6.3-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.6.3",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.6.3-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.6.3",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.6.2-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.6.2",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.6.2-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.6.2",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.6.2-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.6.2",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.6.1-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.6.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.6.1-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.6.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.6.1-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.6.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.6.0-cudnn-devel-ubuntu24.04",
+    "CUDA": "12.6.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "24.04"
+  },
+  {
+    "Tag": "12.6.0-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.6.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.6.0-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.6.0",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.5.1-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.5.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.5.1-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.5.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.4.1-cudnn-devel-ubuntu22.04",
+    "CUDA": "12.4.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.4.1-cudnn-devel-ubuntu20.04",
+    "CUDA": "12.4.1",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.3.2-cudnn9-devel-ubuntu22.04",
+    "CUDA": "12.3.2",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.3.2-cudnn9-devel-ubuntu20.04",
+    "CUDA": "12.3.2",
+    "CuDNN": "9",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.2.2-cudnn8-devel-ubuntu22.04",
+    "CUDA": "12.2.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.2.2-cudnn8-devel-ubuntu20.04",
+    "CUDA": "12.2.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.1.1-cudnn8-devel-ubuntu22.04",
+    "CUDA": "12.1.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.1.1-cudnn8-devel-ubuntu20.04",
+    "CUDA": "12.1.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.1.0-cudnn8-devel-ubuntu22.04",
+    "CUDA": "12.1.0",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.1.0-cudnn8-devel-ubuntu20.04",
+    "CUDA": "12.1.0",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.0.1-cudnn8-devel-ubuntu22.04",
+    "CUDA": "12.0.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.0.1-cudnn8-devel-ubuntu20.04",
+    "CUDA": "12.0.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.0.1-cudnn8-devel-ubuntu18.04",
+    "CUDA": "12.0.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "12.0.0-cudnn8-devel-ubuntu22.04",
+    "CUDA": "12.0.0",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "12.0.0-cudnn8-devel-ubuntu20.04",
+    "CUDA": "12.0.0",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "12.0.0-cudnn8-devel-ubuntu18.04",
+    "CUDA": "12.0.0",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.8.0-cudnn8-devel-ubuntu22.04",
+    "CUDA": "11.8.0",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "11.8.0-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.8.0",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "11.8.0-cudnn8-devel-ubuntu18.04",
+    "CUDA": "11.8.0",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.7.1-cudnn8-devel-ubuntu22.04",
+    "CUDA": "11.7.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "22.04"
+  },
+  {
+    "Tag": "11.7.1-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.7.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "11.7.1-cudnn8-devel-ubuntu18.04",
+    "CUDA": "11.7.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.6.2-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.6.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "11.6.2-cudnn8-devel-ubuntu18.04",
+    "CUDA": "11.6.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.6.1-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.6.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "11.5.2-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.5.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "11.5.2-cudnn8-devel-ubuntu18.04",
+    "CUDA": "11.5.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.4.3-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.4.3",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "11.4.3-cudnn8-devel-ubuntu18.04",
+    "CUDA": "11.4.3",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.3.1-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.3.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "11.3.1-cudnn8-devel-ubuntu18.04",
+    "CUDA": "11.3.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.3.1-cudnn8-devel-ubuntu16.04",
+    "CUDA": "11.3.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "16.04"
+  },
+  {
+    "Tag": "11.2.2-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.2.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "11.2.2-cudnn8-devel-ubuntu18.04",
+    "CUDA": "11.2.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.2.2-cudnn8-devel-ubuntu16.04",
+    "CUDA": "11.2.2",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "16.04"
+  },
+  {
+    "Tag": "11.1.1-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.1.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "11.1.1-cudnn8-devel-ubuntu18.04",
+    "CUDA": "11.1.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.1.1-cudnn8-devel-ubuntu16.04",
+    "CUDA": "11.1.1",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "16.04"
+  },
+  {
+    "Tag": "11.0.3-cudnn8-devel-ubuntu20.04",
+    "CUDA": "11.0.3",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "20.04"
+  },
+  {
+    "Tag": "11.0.3-cudnn8-devel-ubuntu18.04",
+    "CUDA": "11.0.3",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "18.04"
+  },
+  {
+    "Tag": "11.0.3-cudnn8-devel-ubuntu16.04",
+    "CUDA": "11.0.3",
+    "CuDNN": "8",
+    "IsDevel": true,
+    "Ubuntu": "16.04"
+  }
+]

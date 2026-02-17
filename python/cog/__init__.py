@@ -1,39 +1,63 @@
-import mimetypes
+"""
+Cog SDK: Define machine learning models with standard Python.
 
-from pydantic import BaseModel
+This package provides the core types and classes for building Cog predictors.
 
-from .base_predictor import BasePredictor
-from .mimetypes_ext import install_mime_extensions
-from .server.scope import current_scope, emit_metric
+Example:
+    from cog import BasePredictor, Input, Path
+
+    class Predictor(BasePredictor):
+        def setup(self):
+            # Load model weights
+            self.model = load_model()
+
+        def predict(
+            self,
+            prompt: str = Input(description="Input prompt"),
+            image: Path = Input(description="Input image"),
+        ) -> str:
+            return self.model.generate(prompt, image)
+"""
+
+from ._version import __version__
+from .coder import Coder
+
+# Register built-in coders
+from .coders import DataclassCoder, JsonCoder, SetCoder
+from .input import FieldInfo, Input
+from .model import BaseModel
+from .predictor import BasePredictor
 from .types import (
     AsyncConcatenateIterator,
     ConcatenateIterator,
-    ExperimentalFeatureWarning,
     File,
-    Input,
     Path,
     Secret,
+    URLFile,
+    URLPath,
 )
 
-install_mime_extensions(mimetypes)
-
-try:
-    from ._version import __version__
-except ImportError:
-    __version__ = "0.0.0+unknown"
-
+Coder.register(DataclassCoder)
+Coder.register(JsonCoder)
+Coder.register(SetCoder)
 
 __all__ = [
+    # Version
     "__version__",
-    "current_scope",
-    "emit_metric",
-    "AsyncConcatenateIterator",
-    "BaseModel",
+    # Core classes
     "BasePredictor",
-    "ConcatenateIterator",
-    "ExperimentalFeatureWarning",
-    "File",
+    "BaseModel",
+    # Input
     "Input",
+    "FieldInfo",
+    # Types
     "Path",
     "Secret",
+    "File",
+    "URLFile",
+    "URLPath",
+    "ConcatenateIterator",
+    "AsyncConcatenateIterator",
+    # Extensibility
+    "Coder",
 ]

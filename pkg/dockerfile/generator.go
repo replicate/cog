@@ -1,20 +1,26 @@
 package dockerfile
 
-import "github.com/replicate/cog/pkg/weights"
+import (
+	"context"
+
+	"github.com/replicate/cog/pkg/weights"
+)
 
 type Generator interface {
-	GenerateInitialSteps() (string, error)
+	GenerateInitialSteps(ctx context.Context) (string, error)
 	SetUseCogBaseImage(bool)
 	SetUseCogBaseImagePtr(*bool)
-	GenerateModelBaseWithSeparateWeights(string) (string, string, string, error)
+	GenerateModelBaseWithSeparateWeights(ctx context.Context, imageName string) (string, string, string, error)
 	Cleanup() error
 	SetStrip(bool)
 	SetPrecompile(bool)
 	SetUseCudaBaseImage(string)
 	IsUsingCogBaseImage() bool
-	BaseImage() (string, error)
-	GenerateWeightsManifest() (*weights.Manifest, error)
-	GenerateDockerfileWithoutSeparateWeights() (string, error)
-	GenerateModelBase() (string, error)
+	BaseImage(ctx context.Context) (string, error)
+	GenerateWeightsManifest(ctx context.Context) (*weights.Manifest, error)
+	GenerateDockerfileWithoutSeparateWeights(ctx context.Context) (string, error)
+	GenerateModelBase(ctx context.Context) (string, error)
 	Name() string
+	BuildDir() (string, error)
+	BuildContexts() (map[string]string, error)
 }
