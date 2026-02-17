@@ -39,8 +39,8 @@ require (
 	golang.org/x/crypto v0.46.0
 	golang.org/x/exp v0.0.0-20250711185948-6ae5c78190dc
 	golang.org/x/sync v0.19.0
-	golang.org/x/sys v0.39.0
-	golang.org/x/term v0.38.0
+	golang.org/x/sys v0.41.0
+	golang.org/x/term v0.40.0
 	google.golang.org/grpc v1.79.0
 )
 
