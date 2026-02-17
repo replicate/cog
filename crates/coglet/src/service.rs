@@ -15,7 +15,7 @@ use tokio::sync::{RwLock, watch};
 use crate::bridge::protocol::SlotRequest;
 use crate::health::{Health, SetupResult};
 use crate::orchestrator::{HealthcheckResult, Orchestrator};
-use crate::permit::{PermitPool, PredictionSlot};
+use crate::permit::{PermitPool, PredictionSlot, UnregisteredPredictionSlot};
 use crate::prediction::{Prediction, PredictionStatus};
 use crate::predictor::{PredictionError, PredictionOutput, PredictionResult};
 use crate::supervisor::PredictionSupervisor;
@@ -240,7 +240,7 @@ impl PredictionService {
         &self,
         id: String,
         webhook: Option<WebhookSender>,
-    ) -> Result<PredictionSlot, CreatePredictionError> {
+    ) -> Result<UnregisteredPredictionSlot, CreatePredictionError> {
         let health = *self.health.read().await;
         if health != Health::Ready {
             return Err(CreatePredictionError::NotReady);
@@ -255,7 +255,11 @@ impl PredictionService {
             .ok_or(CreatePredictionError::AtCapacity)?;
 
         let prediction = Prediction::new(id, webhook);
-        Ok(PredictionSlot::new(prediction, permit))
+        let (idle_tx, idle_rx) = tokio::sync::oneshot::channel();
+        Ok(UnregisteredPredictionSlot::new(
+            PredictionSlot::new(prediction, permit, idle_rx),
+            idle_tx,
+        ))
     }
 
     pub fn prediction_exists(&self, id: &str) -> bool {
@@ -265,13 +269,14 @@ impl PredictionService {
     /// Run a prediction to completion via orchestrator.
     pub async fn predict(
         &self,
-        slot: &mut PredictionSlot,
+        unregistered_slot: UnregisteredPredictionSlot,
         input: serde_json::Value,
     ) -> Result<PredictionResult, PredictionError> {
         let state = self.orchestrator.read().await.clone();
         let state = state
             .ok_or_else(|| PredictionError::Failed("No orchestrator configured".to_string()))?;
 
+        let (idle_tx, mut slot) = unregistered_slot.into_parts();
         let prediction_id = slot.id();
         let slot_id = slot.slot_id();
 
@@ -289,7 +294,7 @@ impl PredictionService {
         let prediction_arc = slot.prediction();
         state
             .orchestrator
-            .register_prediction(slot_id, Arc::clone(&prediction_arc))
+            .register_prediction(slot_id, Arc::clone(&prediction_arc), idle_tx)
             .await;
 
         let request = SlotRequest::Predict {
@@ -309,7 +314,6 @@ impl PredictionService {
             if let Some(mut pred) = try_lock_prediction(&prediction_arc) {
                 pred.set_failed(format!("Failed to send request: {}", e));
             }
-            let _ = slot.into_idle();
             return Err(PredictionError::Failed(format!(
                 "Failed to send request: {}",
                 e
@@ -345,9 +349,15 @@ impl PredictionService {
             )
         };
 
-        // Always transition to idle. If the slot was poisoned at the pool level,
-        // PermitIdle::drop will see the flag and not return it.
-        let _ = slot.into_idle();
+        // If `into_idle()` fails, it does not necessarily mean the prediction failed,
+        // so we return the result if available, but log the error and poison the slot to prevent reuse.
+        // This is performed asynchronously to avoid blocking the prediction response to the caller.
+        tokio::spawn(async move {
+            if let Err(e) = slot.into_idle().await {
+                tracing::error!(%slot_id, error = %e, "Failed to transition slot to idle, poisoning slot");
+                state.pool.poison(slot_id);
+            }
+        });
 
         match status {
             PredictionStatus::Succeeded => Ok(PredictionResult {
@@ -389,12 +399,15 @@ impl PredictionService {
 mod tests {
     use super::*;
     use crate::bridge::protocol::SlotId;
+    use crate::permit::{InactiveSlotIdleToken, SlotIdleToken};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     /// Mock orchestrator that immediately completes predictions.
     struct MockOrchestrator {
         register_count: AtomicUsize,
         complete_immediately: bool,
+        send_idle_ack: bool,
     }
 
     impl MockOrchestrator {
@@ -402,11 +415,17 @@ mod tests {
             Self {
                 register_count: AtomicUsize::new(0),
                 complete_immediately: true,
+                send_idle_ack: false,
             }
         }
 
         fn register_count(&self) -> usize {
             self.register_count.load(Ordering::SeqCst)
+        }
+
+        fn with_idle_ack(mut self) -> Self {
+            self.send_idle_ack = true;
+            self
         }
     }
 
@@ -414,8 +433,9 @@ mod tests {
     impl Orchestrator for MockOrchestrator {
         async fn register_prediction(
             &self,
-            _slot_id: SlotId,
+            slot_id: SlotId,
             prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
+            idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
         ) {
             self.register_count.fetch_add(1, Ordering::SeqCst);
             if self.complete_immediately {
@@ -423,6 +443,9 @@ mod tests {
                 pred.set_succeeded(crate::PredictionOutput::Single(serde_json::json!(
                     "mock result"
                 )));
+            }
+            if self.send_idle_ack {
+                let _ = idle_sender.send(InactiveSlotIdleToken::new(slot_id).activate());
             }
         }
 
@@ -459,6 +482,48 @@ mod tests {
             pool.add_permit(SlotId::new(), writer);
         }
         pool
+    }
+
+    async fn create_test_pool_with_slots(num_slots: usize) -> (Arc<PermitPool>, Vec<SlotId>) {
+        use crate::bridge::codec::JsonCodec;
+        use crate::bridge::protocol::SlotRequest;
+        use futures::StreamExt;
+        use tokio::net::UnixStream;
+
+        let pool = Arc::new(PermitPool::new(num_slots));
+        let mut slot_ids = Vec::with_capacity(num_slots);
+        for _ in 0..num_slots {
+            let (a, b) = UnixStream::pair().unwrap();
+            let (_read_a, write_a) = a.into_split();
+            let (read_b, _write_b) = b.into_split();
+
+            let mut reader =
+                tokio_util::codec::FramedRead::new(read_b, JsonCodec::<SlotRequest>::new());
+            tokio::spawn(async move { while reader.next().await.is_some() {} });
+
+            let writer =
+                tokio_util::codec::FramedWrite::new(write_a, JsonCodec::<SlotRequest>::new());
+            let slot_id = SlotId::new();
+            pool.add_permit(slot_id, writer);
+            slot_ids.push(slot_id);
+        }
+        (pool, slot_ids)
+    }
+
+    async fn create_broken_test_pool() -> (Arc<PermitPool>, SlotId) {
+        use crate::bridge::codec::JsonCodec;
+        use crate::bridge::protocol::SlotRequest;
+        use tokio::net::UnixStream;
+
+        let pool = Arc::new(PermitPool::new(1));
+        let (a, b) = UnixStream::pair().unwrap();
+        let (_read_a, write_a) = a.into_split();
+        drop(b);
+
+        let writer = tokio_util::codec::FramedWrite::new(write_a, JsonCodec::<SlotRequest>::new());
+        let slot_id = SlotId::new();
+        pool.add_permit(slot_id, writer);
+        (pool, slot_id)
     }
 
     #[tokio::test]
@@ -540,10 +605,10 @@ mod tests {
         svc.set_orchestrator(pool, orchestrator).await;
         svc.set_health(Health::Ready).await;
 
-        let slot = svc.create_prediction("test-1".to_string(), None).await;
-        assert!(slot.is_ok());
+        let unregistered_slot = svc.create_prediction("test-1".to_string(), None).await;
+        assert!(unregistered_slot.is_ok());
+        let (_idle_rx, slot) = unregistered_slot.unwrap().into_parts();
 
-        let slot = slot.unwrap();
         assert_eq!(slot.id(), "test-1");
     }
 
@@ -577,13 +642,13 @@ mod tests {
         svc.set_orchestrator(pool, orchestrator).await;
         svc.set_health(Health::Ready).await;
 
-        let mut slot = svc
+        let unregistered_slot = svc
             .create_prediction("test-1".to_string(), None)
             .await
             .unwrap();
         let input = serde_json::json!({"prompt": "hello"});
 
-        let result = svc.predict(&mut slot, input).await;
+        let result = svc.predict(unregistered_slot, input).await;
 
         // MockOrchestrator completes immediately with success
         assert!(result.is_ok(), "predict failed: {:?}", result.err());
@@ -612,5 +677,87 @@ mod tests {
         let health = svc.health().await;
         assert!(health.is_busy());
         assert_eq!(health.available_slots, 0);
+    }
+
+    #[tokio::test]
+    async fn predict_idle_channel_closed_poison_slot_async() {
+        let svc = PredictionService::new_no_pool();
+        let (pool, slot_ids) = create_test_pool_with_slots(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+        let slot_id = slot_ids[0];
+
+        svc.set_orchestrator(Arc::clone(&pool), orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let unregistered_slot = svc
+            .create_prediction("test-1".to_string(), None)
+            .await
+            .unwrap();
+        let input = serde_json::json!({"prompt": "hello"});
+
+        let result = svc.predict(unregistered_slot, input).await;
+        assert!(result.is_ok(), "predict failed: {:?}", result.err());
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if pool.is_poisoned(slot_id) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("slot was not poisoned after idle token channel closed");
+    }
+
+    #[tokio::test]
+    async fn predict_idle_ack_returns_capacity_async() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new().with_idle_ack());
+
+        svc.set_orchestrator(Arc::clone(&pool), orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let unregistered_slot = svc
+            .create_prediction("test-1".to_string(), None)
+            .await
+            .unwrap();
+        let input = serde_json::json!({"prompt": "hello"});
+
+        let result = svc.predict(unregistered_slot, input).await;
+        assert!(result.is_ok(), "predict failed: {:?}", result.err());
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if pool.available() == 1 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("slot capacity was not returned after idle acknowledgement");
+    }
+
+    #[tokio::test]
+    async fn predict_send_failure_poison_slot() {
+        let svc = PredictionService::new_no_pool();
+        let (pool, slot_id) = create_broken_test_pool().await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(Arc::clone(&pool), orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let unregistered_slot = svc
+            .create_prediction("test-1".to_string(), None)
+            .await
+            .unwrap();
+        let input = serde_json::json!({"prompt": "hello"});
+
+        let result = svc.predict(unregistered_slot, input).await;
+        assert!(matches!(result, Err(PredictionError::Failed(_))));
+        assert!(pool.is_poisoned(slot_id));
+        assert!(pool.try_acquire().is_none());
     }
 }

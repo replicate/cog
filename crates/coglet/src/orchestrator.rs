@@ -25,7 +25,7 @@ use crate::bridge::protocol::{
     ControlRequest, ControlResponse, HealthcheckStatus, SlotId, SlotRequest, SlotResponse,
 };
 use crate::bridge::transport::create_transport;
-use crate::permit::PermitPool;
+use crate::permit::{InactiveSlotIdleToken, PermitPool, SlotIdleToken};
 use crate::prediction::Prediction;
 
 /// Try to lock a prediction mutex.
@@ -155,7 +155,12 @@ impl HealthcheckResult {
 #[async_trait]
 pub trait Orchestrator: Send + Sync {
     /// Register a prediction for response routing in the event loop.
-    async fn register_prediction(&self, slot_id: SlotId, prediction: Arc<StdMutex<Prediction>>);
+    async fn register_prediction(
+        &self,
+        slot_id: SlotId,
+        prediction: Arc<StdMutex<Prediction>>,
+        idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
+    );
 
     /// Run user-defined healthcheck if available.
     async fn healthcheck(&self) -> Result<HealthcheckResult, OrchestratorError>;
@@ -255,15 +260,27 @@ pub struct OrchestratorHandle {
     child: Child,
     ctrl_writer:
         Arc<tokio::sync::Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>>,
-    register_tx: mpsc::Sender<(SlotId, Arc<StdMutex<Prediction>>)>,
+    register_tx: mpsc::Sender<(
+        SlotId,
+        Arc<StdMutex<Prediction>>,
+        tokio::sync::oneshot::Sender<SlotIdleToken>,
+    )>,
     healthcheck_tx: mpsc::Sender<tokio::sync::oneshot::Sender<HealthcheckResult>>,
     slot_ids: Vec<SlotId>,
 }
 
 #[async_trait]
 impl Orchestrator for OrchestratorHandle {
-    async fn register_prediction(&self, slot_id: SlotId, prediction: Arc<StdMutex<Prediction>>) {
-        let _ = self.register_tx.send((slot_id, prediction)).await;
+    async fn register_prediction(
+        &self,
+        slot_id: SlotId,
+        prediction: Arc<StdMutex<Prediction>>,
+        idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
+    ) {
+        let _ = self
+            .register_tx
+            .send((slot_id, prediction, idle_sender))
+            .await;
     }
 
     async fn healthcheck(&self) -> Result<HealthcheckResult, OrchestratorError> {
@@ -508,11 +525,17 @@ async fn run_event_loop(
         SlotId,
         FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotResponse>>,
     )>,
-    mut register_rx: mpsc::Receiver<(SlotId, Arc<StdMutex<Prediction>>)>,
+    mut register_rx: mpsc::Receiver<(
+        SlotId,
+        Arc<StdMutex<Prediction>>,
+        tokio::sync::oneshot::Sender<SlotIdleToken>,
+    )>,
     mut healthcheck_rx: mpsc::Receiver<tokio::sync::oneshot::Sender<HealthcheckResult>>,
     pool: Arc<PermitPool>,
 ) {
     let mut predictions: HashMap<SlotId, Arc<StdMutex<Prediction>>> = HashMap::new();
+    let mut idle_senders: HashMap<SlotId, tokio::sync::oneshot::Sender<SlotIdleToken>> =
+        HashMap::new();
     let mut pending_healthchecks: Vec<tokio::sync::oneshot::Sender<HealthcheckResult>> = Vec::new();
     let mut healthcheck_counter: u64 = 0;
 
@@ -551,7 +574,19 @@ async fn run_event_loop(
             ctrl_msg = ctrl_reader.next() => {
                 match ctrl_msg {
                     Some(Ok(ControlResponse::Idle { slot })) => {
-                        tracing::debug!(%slot, "Slot idle");
+                        tracing::debug!(%slot, "Slot idle notification received (control channel)");
+                        match idle_senders.remove(&slot) {
+                            Some(sender) => {
+                                let token = InactiveSlotIdleToken::new(slot);
+                                if sender.send(token.activate()).is_err() {
+                                    tracing::warn!(%slot, "Idle token receiver dropped before idle confirmation");
+                                }
+                            }
+                            None => {
+                                tracing::warn!(%slot, "Received Idle for slot with no pending idle confirmation");
+                            }
+
+                        }
                     }
                     Some(Ok(ControlResponse::Cancelled { slot })) => {
                         tracing::debug!(%slot, "Slot cancelled (control channel)");
@@ -663,7 +698,7 @@ async fn run_event_loop(
                 }
             }
 
-            Some((slot_id, prediction)) = register_rx.recv() => {
+            Some((slot_id, prediction, idle_sender)) = register_rx.recv() => {
                 let prediction_id = match try_lock_prediction(&prediction) {
                     Some(p) => p.id().to_string(),
                     None => {
@@ -672,6 +707,11 @@ async fn run_event_loop(
                         continue;
                     }
                 };
+                // NOTE: we insert the idle sender, and idle senders are only removed on consumption of the
+                // `tokio::sync::oneshot::Sender`, this means the only time we'll leak memory here is if the
+                // slot is poisoned or otherwise in a bad state. It is intentional that we don't remove idle
+                // senders in any other case.
+                idle_senders.insert(slot_id, idle_sender);
                 tracing::info!(
                     target: "coglet::prediction",
                     %prediction_id,
