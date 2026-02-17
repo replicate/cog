@@ -4,12 +4,17 @@ Cog plays nicely with Jupyter notebooks.
 
 ## Install the jupyterlab Python package
 
-First, add `jupyterlab` to the `python_packages` array in your [`cog.yaml`](yaml.md) file:
+First, add `jupyterlab` to your `requirements.txt` file and reference it in [`cog.yaml`](yaml.md):
 
+`requirements.txt`:
+```
+jupyterlab==3.3.4
+```
+
+`cog.yaml`:
 ```yaml
 build:
-  python_packages:
-    - "jupyterlab==3.3.4"
+  python_requirements: requirements.txt
 ```
 
 

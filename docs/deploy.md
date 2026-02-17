@@ -73,7 +73,7 @@ For example:
 
     docker run -d -p 5000:5000 my-model python -m cog.server.http --threads=10
 
-## `--host`
+### `--host`
 
 By default, Cog serves to `0.0.0.0`.
 You can override this using the `--host` option.

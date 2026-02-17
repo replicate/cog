@@ -263,7 +263,7 @@ def _create_output_type(tpe: type) -> adt.OutputType:
     """Create an OutputType from a return type annotation."""
     if tpe is Any:
         print(
-            "Warning: use of Any as output type is error prone and highly-discouraged"
+            "Warning: use of Any as output type is error-prone and highly discouraged"
         )
         return adt.OutputType(kind=adt.OutputKind.SINGLE, type=_any_type)  # type: ignore[arg-type]
 
