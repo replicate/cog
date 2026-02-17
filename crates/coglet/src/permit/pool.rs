@@ -104,7 +104,7 @@ impl PermitInUse {
 
 impl Drop for PermitInUse {
     fn drop(&mut self) {
-        if self.writer.is_some() {
+        if self.writer.is_some() && !self.poisoned.load(Ordering::Acquire) {
             tracing::error!(slot = %self.slot_id, "PermitInUse dropped without state transition");
         }
     }
@@ -196,15 +196,63 @@ impl AnyPermit {
     }
 }
 
-/// Proof that a permit has been marked idle.
-#[must_use = "IdleToken proves permit will return to pool"]
-pub struct IdleToken {
-    pub(crate) slot_id: SlotId,
+#[must_use = "must be activated to enable slot idle transition"]
+#[derive(Debug)]
+pub struct InactiveSlotIdleToken {
+    slot_id: SlotId,
 }
 
-impl IdleToken {
+impl InactiveSlotIdleToken {
+    pub fn new(slot_id: SlotId) -> Self {
+        Self { slot_id }
+    }
+
     pub fn slot_id(&self) -> SlotId {
         self.slot_id
+    }
+
+    pub fn activate(self) -> SlotIdleToken {
+        SlotIdleToken {
+            slot_id: self.slot_id,
+            create_time: std::time::Instant::now(),
+            alarm_handle: tokio::spawn(async move {
+                // This task exists solely to alert if the token isn't consumed within a reasonable time.
+                // If we see this alert, it means the slot won't return to the pool until the process exits.
+                tokio::time::sleep(SlotIdleToken::ALERT_THRESHOLD).await;
+                tracing::error!(slot = %self.slot_id, "IdleToken not consumed after 5s - slot will not return to pool");
+            }),
+        }
+    }
+}
+
+/// Token confirming the worker has marked the slot as idle, allowing the permit to return to the pool on drop.
+#[must_use = "IdleToken confirms the worker has marked the slot as idle"]
+#[derive(Debug)]
+pub struct SlotIdleToken {
+    pub(crate) slot_id: SlotId,
+    pub(crate) create_time: std::time::Instant,
+    pub(crate) alarm_handle: tokio::task::JoinHandle<()>,
+}
+
+impl SlotIdleToken {
+    const ALERT_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(5);
+
+    pub fn slot_id(&self) -> SlotId {
+        self.slot_id
+    }
+
+    pub fn consume(self) {
+        let elapsed = self.create_time.elapsed();
+        if elapsed > Self::ALERT_THRESHOLD {
+            tracing::warn!(slot = %self.slot_id, latency = ?elapsed, "Delayed IdleToken Consumption");
+        }
+        tracing::debug!(slot = %self.slot_id, "IdleToken consumed");
+    }
+}
+
+impl Drop for SlotIdleToken {
+    fn drop(&mut self) {
+        self.alarm_handle.abort();
     }
 }
 

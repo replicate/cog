@@ -284,7 +284,7 @@ async fn create_prediction_with_id(
     let handle = supervisor.submit(prediction_id.clone(), input.clone(), webhook_sender);
 
     // Try to create prediction slot (acquires permit, checks health)
-    let mut slot = match service.create_prediction(prediction_id.clone(), None).await {
+    let unregistered_slot = match service.create_prediction(prediction_id.clone(), None).await {
         Ok(p) => p,
         Err(CreatePredictionError::NotReady) => {
             let msg = PredictionError::NotReady.to_string();
@@ -319,6 +319,7 @@ async fn create_prediction_with_id(
         }
     };
 
+    let prediction = unregistered_slot.prediction();
     supervisor.update_status(&prediction_id, PredictionStatus::Processing, None, None);
 
     // Async mode: spawn background task, return immediately
@@ -327,7 +328,7 @@ async fn create_prediction_with_id(
         let supervisor_clone = Arc::clone(supervisor);
         let id_for_cleanup = prediction_id.clone();
         tokio::spawn(async move {
-            let result = service_clone.predict(&mut slot, input).await;
+            let result = service_clone.predict(unregistered_slot, input).await;
 
             match result {
                 Ok(r) => {
@@ -371,8 +372,12 @@ async fn create_prediction_with_id(
     // Sync mode: use sync guard for connection-drop cancellation
     let mut sync_guard = handle.sync_guard();
 
-    let result = service.predict(&mut slot, input).await;
-    let predict_time = slot.elapsed().as_secs_f64();
+    let result = service.predict(unregistered_slot, input).await;
+    let predict_time = prediction
+        .try_lock()
+        .map(|p| p.elapsed())
+        .unwrap_or(std::time::Duration::ZERO)
+        .as_secs_f64();
 
     // Disarm guard - prediction completed normally
     sync_guard.disarm();
@@ -678,6 +683,7 @@ mod tests {
             &self,
             _slot_id: SlotId,
             prediction: Arc<StdMutex<crate::prediction::Prediction>>,
+            _idle_sender: tokio::sync::oneshot::Sender<crate::permit::SlotIdleToken>,
         ) {
             self.register_count.fetch_add(1, Ordering::SeqCst);
             if self.complete_immediately {
