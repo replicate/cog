@@ -131,7 +131,7 @@ func addUseCogBaseImageFlag(cmd *cobra.Command) {
 }
 
 func addBuildTimestampFlag(cmd *cobra.Command) {
-	cmd.Flags().Int64Var(&config.BuildSourceEpochTimestamp, "timestamp", -1, "Number of seconds sing Epoch to use for the build timestamp; this rewrites the timestamp of each layer. Useful for reproducibility. (`-1` to disable timestamp rewrites)")
+	cmd.Flags().Int64Var(&config.BuildSourceEpochTimestamp, "timestamp", -1, "Number of seconds since Epoch to use for the build timestamp; this rewrites the timestamp of each layer. Useful for reproducibility. (`-1` to disable timestamp rewrites)")
 	_ = cmd.Flags().MarkHidden("timestamp")
 }
 

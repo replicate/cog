@@ -61,7 +61,7 @@ Your Predictor class should define two methods: `setup()` and `predict()`.
 
 Prepare the model so multiple predictions run efficiently.
 
-Use this _optional_ method to include any expensive one-off operations in here like loading trained models, instantiate data transformations, etc.
+Use this _optional_ method to include expensive one-off operations like loading trained models, instantiating data transformations, etc.
 
 Many models use this method to download their weights (e.g. using [`pget`](https://github.com/replicate/pget)). This has some advantages:
 

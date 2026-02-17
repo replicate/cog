@@ -252,7 +252,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 	timeout := time.Duration(setupTimeout) * time.Second
 	if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
-		// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
+		// Only retry if we're using a GPU but the user didn't explicitly select a GPU with --gpus
 		// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 		if gpus == "all" && errors.Is(err, docker.ErrMissingDeviceDriver) {
 			console.Info("Missing device driver, re-trying without GPU")

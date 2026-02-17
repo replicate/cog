@@ -678,7 +678,7 @@ For example:
 
     docker run -d -p 5000:5000 my-model python -m cog.server.http --threads=10
 
-## `--host`
+### `--host`
 
 By default, Cog serves to `0.0.0.0`.
 You can override this using the `--host` option.
@@ -1194,7 +1194,7 @@ Those are the basics! Next, you might want to take a look at:
 
 > [!TIP]
 > For information about how to run the HTTP server, 
-> see [our documentation to deploying models](deploy.md).
+> see [our documentation on deploying models](deploy.md).
 
 When you run a Docker image built by Cog, 
 it serves an HTTP API for making predictions.
@@ -1307,7 +1307,7 @@ Prefer: respond-async
 Endpoints for creating and canceling a prediction idempotently
 accept a `prediction_id` parameter in their path.
 The server can run only one prediction at a time.
-The client must ensure that running prediction is complete
+The client must ensure that the running prediction is complete
 before creating a new one with a different ID.
 
 Clients are responsible for providing unique prediction IDs.
@@ -1634,12 +1634,17 @@ Cog plays nicely with Jupyter notebooks.
 
 ## Install the jupyterlab Python package
 
-First, add `jupyterlab` to the `python_packages` array in your [`cog.yaml`](yaml.md) file:
+First, add `jupyterlab` to your `requirements.txt` file and reference it in [`cog.yaml`](yaml.md):
 
+`requirements.txt`:
+```
+jupyterlab==3.3.4
+```
+
+`cog.yaml`:
 ```yaml
 build:
-  python_packages:
-    - "jupyterlab==3.3.4"
+  python_requirements: requirements.txt
 ```
 
 
@@ -1786,7 +1791,7 @@ Your Predictor class should define two methods: `setup()` and `predict()`.
 
 Prepare the model so multiple predictions run efficiently.
 
-Use this _optional_ method to include any expensive one-off operations in here like loading trained models, instantiate data transformations, etc.
+Use this _optional_ method to include expensive one-off operations like loading trained models, instantiating data transformations, etc.
 
 Many models use this method to download their weights (e.g. using [`pget`](https://github.com/replicate/pget)). This has some advantages:
 
@@ -2235,7 +2240,7 @@ class Trainer:
     def setup(self) -> None:
         self.base_model = ... # Load a big base model
 
-    def train(param: str) -> File:
+    def train(self, param: str) -> File:
         return self.base_model.train(param) # Train on top of a base model
 ```
 
@@ -2339,7 +2344,7 @@ Before beginning installation, make sure you have:
 
 ## 1. Install the GPU driver
 
-Per NVIDIA, the first order of business is to install the latest Game Ready drivers for you NVIDIA GPU.
+Per NVIDIA, the first order of business is to install the latest Game Ready drivers for your NVIDIA GPU.
 
 <https://www.nvidia.com/download/index.aspx>
 

@@ -57,7 +57,7 @@ class Trainer:
     def setup(self) -> None:
         self.base_model = ... # Load a big base model
 
-    def train(param: str) -> File:
+    def train(self, param: str) -> File:
         return self.base_model.train(param) # Train on top of a base model
 ```
 
