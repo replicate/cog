@@ -102,7 +102,7 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
     let filter = if std::env::var("RUST_LOG").is_ok() {
         EnvFilter::from_default_env()
     } else {
-        let base_level = match std::env::var("COG_LOG").as_deref() {
+        let base_level = match std::env::var("COG_LOG_LEVEL").as_deref() {
             Ok("debug") => "debug",
             Ok("warn") | Ok("warning") => "warn",
             Ok("error") => "error",
@@ -110,7 +110,7 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
         };
 
         let filter_str = format!(
-            "coglet={level},coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
+            "coglet={level},coglet::setup=info,coglet::user=info,coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
             level = base_level
         );
 

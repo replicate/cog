@@ -71,11 +71,11 @@ $ cog predict -i image=@input.jpg
 Or, build a Docker image for deployment:
 
 ```console
-$ cog build -t my-colorization-model
+$ cog build -t my-classification-model
 --> Building Docker image...
---> Built my-colorization-model:latest
+--> Built my-classification-model:latest
 
-$ docker run -d -p 5000:5000 --gpus all my-colorization-model
+$ docker run -d -p 5000:5000 --gpus all my-classification-model
 
 $ curl http://localhost:5000/predictions -X POST \
     -H 'Content-Type: application/json' \
@@ -156,13 +156,6 @@ sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/la
 sudo chmod +x /usr/local/bin/cog
 ```
 
-Alternatively, you can build Cog from source and install it with these commands:
-
-```console
-make
-sudo make install
-```
-
 Or if you are on docker:
 
 ```
@@ -178,6 +171,10 @@ brew upgrade cog
 ```
 
 Otherwise, you can upgrade to the latest version by running the same commands you used to install it.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environment and build from source.
 
 ## Next steps
 
@@ -1405,6 +1402,58 @@ If the upload fails, the server responds with an error.
 <a id="api"></a>
 
 ## Endpoints
+
+### `GET /health-check`
+
+Returns the current health status of the model container.
+This endpoint always responds with `200 OK` —
+check the `status` field in the response body to determine readiness.
+
+The response body is a JSON object with the following fields:
+
+- `status`: One of the following values:
+  - `STARTING`: The model's `setup()` method is still running.
+  - `READY`: The model is ready to accept predictions.
+  - `BUSY`: The model is ready but all prediction slots are in use.
+  - `SETUP_FAILED`: The model's `setup()` method raised an exception.
+  - `DEFUNCT`: The model encountered an unrecoverable error.
+  - `UNHEALTHY`: The model is ready
+    but a user-defined `healthcheck()` method returned `False`.
+- `setup`: Setup phase details (included once setup has started):
+  - `started_at`: ISO 8601 timestamp of when setup began.
+  - `completed_at`: ISO 8601 timestamp of when setup finished (if complete).
+  - `status`: One of `starting`, `succeeded`, or `failed`.
+  - `logs`: Output captured during setup.
+- `version`: Runtime version information:
+  - `coglet`: Coglet version.
+  - `cog`: Cog Python SDK version (if available).
+  - `python`: Python version (if available).
+- `user_healthcheck_error`:
+  Error message from a user-defined `healthcheck()` method (if applicable).
+
+```http
+GET /health-check HTTP/1.1
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+    "status": "READY",
+    "setup": {
+        "started_at": "2025-01-01T00:00:00.000000+00:00",
+        "completed_at": "2025-01-01T00:00:05.000000+00:00",
+        "status": "succeeded",
+        "logs": ""
+    },
+    "version": {
+        "coglet": "0.17.0",
+        "cog": "0.14.0",
+        "python": "3.12.0"
+    }
+}
+```
 
 ### `GET /openapi.json`
 

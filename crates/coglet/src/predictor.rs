@@ -66,7 +66,9 @@ pub enum PredictionError {
     #[error("Input validation error: {0}")]
     InvalidInput(String),
 
-    #[error("Predictor not ready")]
+    #[error(
+        "Setup has not finished yet. Wait until it has finished, or GET /health-check for status."
+    )]
     NotReady,
 
     #[error("Prediction was cancelled")]
@@ -120,6 +122,9 @@ mod tests {
         assert_eq!(format!("{}", err), "Input validation error: bad json");
 
         let err = PredictionError::NotReady;
-        assert_eq!(format!("{}", err), "Predictor not ready");
+        assert_eq!(
+            format!("{}", err),
+            "Setup has not finished yet. Wait until it has finished, or GET /health-check for status."
+        );
     }
 }

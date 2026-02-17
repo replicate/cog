@@ -71,11 +71,11 @@ $ cog predict -i image=@input.jpg
 Or, build a Docker image for deployment:
 
 ```console
-$ cog build -t my-colorization-model
+$ cog build -t my-classification-model
 --> Building Docker image...
---> Built my-colorization-model:latest
+--> Built my-classification-model:latest
 
-$ docker run -d -p 5000:5000 --gpus all my-colorization-model
+$ docker run -d -p 5000:5000 --gpus all my-classification-model
 
 $ curl http://localhost:5000/predictions -X POST \
     -H 'Content-Type: application/json' \
@@ -156,13 +156,6 @@ sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/la
 sudo chmod +x /usr/local/bin/cog
 ```
 
-Alternatively, you can build Cog from source and install it with these commands:
-
-```console
-make
-sudo make install
-```
-
 Or if you are on docker:
 
 ```
@@ -178,6 +171,10 @@ brew upgrade cog
 ```
 
 Otherwise, you can upgrade to the latest version by running the same commands you used to install it.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environment and build from source.
 
 ## Next steps
 

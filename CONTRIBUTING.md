@@ -1,96 +1,5 @@
 # Contributing guide
 
-## Making a contribution
-
-### Signing your work
-
-Each commit you contribute to Cog must be signed off (not to be confused with **[signing](https://git-scm.com/book/en/v2/Git-Tools-Signing-Your-Work)**). It certifies that you wrote the patch, or have the right to contribute it. It is called the [Developer Certificate of Origin](https://developercertificate.org/) and was originally developed for the Linux kernel.
-
-If you can certify the following:
-
-```
-By making a contribution to this project, I certify that:
-
-(a) The contribution was created in whole or in part by me and I
-    have the right to submit it under the open source license
-    indicated in the file; or
-
-(b) The contribution is based upon previous work that, to the best
-    of my knowledge, is covered under an appropriate open source
-    license and I have the right under that license to submit that
-    work with modifications, whether created in whole or in part
-    by me, under the same open source license (unless I am
-    permitted to submit under a different license), as indicated
-    in the file; or
-
-(c) The contribution was provided directly to me by some other
-    person who certified (a), (b) or (c) and I have not modified
-    it.
-
-(d) I understand and agree that this project and the contribution
-    are public and that a record of the contribution (including all
-    personal information I submit with it, including my sign-off) is
-    maintained indefinitely and may be redistributed consistent with
-    this project or the open source license(s) involved.
-```
-
-Then add this line to each of your Git commit messages, with your name and email:
-
-```
-Signed-off-by: Sam Smith <sam.smith@example.com>
-```
-
-### How to sign off your commits
-
-If you're using the `git` CLI, you can sign a commit by passing the `-s` option: `git commit -s -m "Reticulate splines"`
-
-You can also create a git hook which will sign off all your commits automatically. Using hooks also allows you to sign off commits when using non-command-line tools like GitHub Desktop or VS Code.
-
-First, create the hook file and make it executable:
-
-```sh
-cd your/checkout/of/cog
-touch .git/hooks/prepare-commit-msg
-chmod +x .git/hooks/prepare-commit-msg
-```
-
-Then paste the following into the file:
-
-```
-#!/bin/sh
-
-NAME=$(git config user.name)
-EMAIL=$(git config user.email)
-
-if [ -z "$NAME" ]; then
-    echo "empty git config user.name"
-    exit 1
-fi
-
-if [ -z "$EMAIL" ]; then
-    echo "empty git config user.email"
-    exit 1
-fi
-
-git interpret-trailers --if-exists doNothing --trailer \
-    "Signed-off-by: $NAME <$EMAIL>" \
-    --in-place "$1"
-```
-
-### Acknowledging contributions
-
-We welcome contributions from everyone, and consider all forms of contribution equally valuable. This includes code, bug reports, feature requests, and documentation. We use [All Contributors](https://allcontributors.org/) to maintain a list of all the people who have contributed to Cog.
-
-To acknowledge a contribution, add a comment to an issue or pull request in the following format:
-
-```
-@allcontributors please add @username for doc,code,ideas
-```
-
-A bot will automatically open a pull request to add the contributor to the project README.
-
-Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the full list at [allcontributors.org/docs/en/emoji-key](https://allcontributors.org/docs/en/emoji-key)
-
 ## Development environment
 
 Development tasks are managed with [mise](https://mise.jdx.dev/). Run `mise tasks` to see all available tasks.
@@ -112,15 +21,33 @@ uv venv
 uv sync --all-groups
 ```
 
+### Building
+
+Cog is composed of three components that are built separately:
+
+- **Python SDK** (`python/cog/`) — the Python library that model authors use. Built into a wheel that gets installed inside containers.
+- **Coglet** (`crates/`) — a Rust prediction server that runs inside containers. Cross-compiled into a Linux wheel.
+- **Cog CLI** (`cmd/cog/`, `pkg/`) — the Go command-line tool. Embeds the SDK wheel and picks up the coglet wheel from `dist/`.
+
+```sh
+# Build everything and install
+mise run build:sdk                        # build the Python SDK wheel
+mise run build:coglet:wheel:linux-x64     # cross-compile the coglet wheel for Linux containers
+mise run build:cog                        # build the Go CLI (embeds SDK, picks up coglet from dist/)
+sudo mise run install                     # symlink the binary to /usr/local/bin
+```
+
+After making changes, rebuild only the component you changed and then `build:cog`:
+
+```sh
+mise run build:sdk                        # after changing python/cog/
+mise run build:coglet:wheel:linux-x64     # after changing crates/
+mise run build:cog                        # after changing cmd/cog/ or pkg/, or to pick up new wheels
+```
+
 ### Common tasks
 
 ```sh
-# Build cog binary
-mise run build:cog
-
-# Install cog to $GOPATH/bin
-make install PREFIX=$(go env GOPATH)
-
 # Run all tests
 mise run test:go
 mise run test:python

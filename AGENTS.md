@@ -32,6 +32,7 @@ Development tasks are managed with [mise](https://mise.jdx.dev/). Run `mise task
 | `mise run build:cog` | Build cog CLI binary |
 | `mise run build:coglet` | Build coglet wheel (dev) |
 | `mise run build:sdk` | Build SDK wheel |
+| `mise run install` | Build and symlink cog to /usr/local/bin |
 
 ### Task Naming Convention
 
@@ -69,6 +70,10 @@ Tasks follow a consistent naming pattern:
 - `mise run build:coglet:wheel:linux-x64` - Build for Linux x86_64
 - `mise run build:coglet:wheel:linux-arm64` - Build for Linux ARM64
 - `mise run build:sdk` - Build SDK wheel
+
+**Install:**
+- `mise run install` - Symlink cog CLI to `/usr/local/bin` (requires `build:cog` first)
+- `PREFIX=/custom/path mise run install` - Symlink to custom location
 
 **Other:**
 - `mise run typecheck` - Type check all languages
@@ -123,7 +128,7 @@ The CLI code is in the `cmd/cog/` and `pkg/` directories. Support tooling is in 
 The main commands for working on the CLI are:
 - `go run ./cmd/cog` - Runs the Cog CLI directly from source (requires wheel to be built first)
 - `mise run build:cog` - Builds the Cog CLI binary, embedding the Python wheel
-- `make install` - Builds and installs the Cog CLI binary to `/usr/local/bin`, or to a custom path with `make install PREFIX=/custom/path`
+- `mise run install` - Symlinks the built binary to `/usr/local/bin` (run `build:cog` first), or to a custom path with `PREFIX=/custom/path mise run install`
 - `mise run test:go` - Runs all Go unit tests
 - `go test ./pkg/...` - Runs tests directly with `go test`
 
@@ -144,7 +149,8 @@ The code is in the `crates/` directory:
 For detailed architecture documentation, see `crates/README.md` and `crates/coglet/README.md`.
 
 The main commands for working on Coglet are:
-- `mise run build:coglet` - Build and install coglet wheel for development
+- `mise run build:coglet` - Build and install coglet wheel for development (macOS, for local Rust/Python tests)
+- `mise run build:coglet:wheel:linux-x64` - Build Linux x86_64 wheel (required to test Rust changes in Docker containers via `cog predict`/`cog train`)
 - `mise run test:rust` - Run Rust unit tests
 - `mise run lint:rust` - Run clippy linter
 - `mise run fmt:rust:fix` - Format code
@@ -164,16 +170,19 @@ The integration test suite in `integration-tests/` tests the end-to-end function
 
 The integration tests require a built Cog binary, which defaults to the first `cog` in `PATH`. Run tests against a specific binary with the `COG_BINARY` environment variable:
 ```bash
-make install PREFIX=./cog
-COG_BINARY=./cog/cog mise run test:integration
+mise run build:cog
+COG_BINARY=dist/go/*/cog mise run test:integration
 ```
 
 ### Development Workflow
 1. Run `mise install` to set up the development environment
 2. Run `mise run build:sdk` after making changes to the `./python` directory
-3. Run `mise run fmt:fix` to format code
-4. Run `mise run lint` to check code quality
-5. Read the `./docs` directory and make sure the documentation is up to date
+3. Run `mise run build:coglet:wheel:linux-x64` after making changes to the `./crates` directory (needed for Docker testing)
+4. Run `mise run build:cog` to build the CLI (embeds the SDK wheel; picks up coglet wheel from `dist/`)
+5. Run `mise run fmt:fix` to format code
+6. Run `mise run lint` to check code quality
+7. Run `mise run docs:llm` to regenerate `docs/llms.txt` after changing `README.md` or any `docs/*.md` file
+8. Read the `./docs` directory and make sure the documentation is up to date
 
 ## Architecture
 
