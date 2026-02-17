@@ -156,13 +156,6 @@ sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/la
 sudo chmod +x /usr/local/bin/cog
 ```
 
-Alternatively, you can build Cog from source and install it with these commands:
-
-```console
-make
-sudo make install
-```
-
 Or if you are on docker:
 
 ```
@@ -178,6 +171,10 @@ brew upgrade cog
 ```
 
 Otherwise, you can upgrade to the latest version by running the same commands you used to install it.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environment and build from source.
 
 ## Next steps
 
