@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/replicate/cog/pkg/global"
@@ -96,6 +97,9 @@ func ParseWheelValue(value string) *WheelConfig {
 	return &WheelConfig{Source: WheelSourceFile, Path: absPath}
 }
 
+var executablePath = os.Executable
+var evalSymlinks = filepath.EvalSymlinks
+
 // goarchToWheelPlatform maps GOARCH values to wheel filename platform substrings.
 func goarchToWheelPlatform(goarch string) string {
 	switch goarch {
@@ -106,6 +110,72 @@ func goarchToWheelPlatform(goarch string) string {
 	default:
 		return ""
 	}
+}
+
+func bestWheelMatch(matches []string, platform string) string {
+	if len(matches) == 0 {
+		return ""
+	}
+	if platform != "" {
+		platStr := goarchToWheelPlatform(platform)
+		if platStr != "" {
+			var filtered []string
+			for _, match := range matches {
+				base := filepath.Base(match)
+				if strings.Contains(base, platStr) || strings.Contains(base, "-none-any") {
+					filtered = append(filtered, match)
+				}
+			}
+			matches = filtered
+		}
+	}
+	if len(matches) == 0 {
+		return ""
+	}
+	sort.Strings(matches)
+	return matches[len(matches)-1]
+}
+
+// distFromExecutable returns the dist/ directory relative to the running cog
+// binary, if it appears to be in a goreleaser output layout (dist/go/<platform>/cog).
+// Returns empty string if the path cannot be determined.
+func distFromExecutable() string {
+	exePath, err := executablePath()
+	if err != nil {
+		return ""
+	}
+	exePath, err = evalSymlinks(exePath)
+	if err != nil {
+		return ""
+	}
+
+	distDir := filepath.Clean(filepath.Join(filepath.Dir(exePath), "..", ".."))
+	if info, err := os.Stat(distDir); err == nil && info.IsDir() {
+		return distDir
+	}
+	return ""
+}
+
+// findWheelInAutoDetectDist checks ./dist and dist relative to the cog executable.
+// Returns the absolute path if found, empty string otherwise.
+func findWheelInAutoDetectDist(pattern string, platform string) string {
+	matches, _ := filepath.Glob(filepath.Join("dist", pattern))
+	if best := bestWheelMatch(matches, platform); best != "" {
+		absPath, _ := filepath.Abs(best)
+		if absPath != "" {
+			return absPath
+		}
+		return best
+	}
+
+	if distDir := distFromExecutable(); distDir != "" {
+		matches, _ = filepath.Glob(filepath.Join(distDir, pattern))
+		if best := bestWheelMatch(matches, platform); best != "" {
+			return best
+		}
+	}
+
+	return ""
 }
 
 // resolveWheelPath resolves a wheel path that may be a file or directory.
@@ -149,22 +219,6 @@ func resolveWheelPath(path string, pattern string, platform string, envVar strin
 	return matches[0], nil
 }
 
-// findWheelInCwdDist checks ./dist in the current working directory for a matching wheel.
-// Returns the absolute path if found, empty string otherwise.
-// Only checks cwd — does NOT chase REPO_ROOT. Used for auto-detection in dev builds
-// where a missing wheel just means "fall back to PyPI".
-func findWheelInCwdDist(pattern string) string {
-	matches, _ := filepath.Glob(filepath.Join("dist", pattern))
-	if len(matches) > 0 {
-		absPath, _ := filepath.Abs(matches[0])
-		if absPath != "" {
-			return absPath
-		}
-		return matches[0]
-	}
-	return ""
-}
-
 // ResolveCogWheel resolves the WheelConfig for the cog SDK.
 //
 // Parameters:
@@ -191,9 +245,9 @@ func ResolveCogWheel(envValue string, version string) (*WheelConfig, error) {
 
 	isDev := version == "dev" || strings.Contains(version, "-dev") || strings.Contains(version, "+")
 
-	// Auto-detect for dev builds: check ./dist in cwd
+	// Auto-detect for dev builds: check ./dist or executable-relative dist
 	if isDev {
-		if path := findWheelInCwdDist("cog-*.whl"); path != "" {
+		if path := findWheelInAutoDetectDist("cog-*.whl", ""); path != "" {
 			return &WheelConfig{Source: WheelSourceFile, Path: path}, nil
 		}
 	}
@@ -240,9 +294,9 @@ func ResolveCogletWheel(envValue string, version string, platform string) (*Whee
 
 	isDev := version == "dev" || strings.Contains(version, "-dev") || strings.Contains(version, "+")
 
-	// Auto-detect for dev builds: check ./dist in cwd
+	// Auto-detect for dev builds: check ./dist or executable-relative dist
 	if isDev {
-		if path := findWheelInCwdDist("coglet-*.whl"); path != "" {
+		if path := findWheelInAutoDetectDist("coglet-*.whl", platform); path != "" {
 			return &WheelConfig{Source: WheelSourceFile, Path: path}, nil
 		}
 	}

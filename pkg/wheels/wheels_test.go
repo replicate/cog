@@ -290,6 +290,45 @@ func TestGetCogWheelConfigAutoDetect(t *testing.T) {
 	require.Equal(t, "0.12.0", result.Version)
 }
 
+func TestResolveCogWheelUsesExecutableDist(t *testing.T) {
+	rootDir := t.TempDir()
+	distDir := filepath.Join(rootDir, "dist")
+	require.NoError(t, os.MkdirAll(distDir, 0o750))
+
+	wheelPath := filepath.Join(distDir, "cog-0.1.0-py3-none-any.whl")
+	require.NoError(t, os.WriteFile(wheelPath, []byte("fake wheel content"), 0o600))
+
+	fakeExe := filepath.Join(distDir, "go", "linux_amd64", "cog")
+	require.NoError(t, os.MkdirAll(filepath.Dir(fakeExe), 0o750))
+	require.NoError(t, os.WriteFile(fakeExe, []byte("binary"), 0o600))
+
+	origExecutablePath := executablePath
+	origEvalSymlinks := evalSymlinks
+	defer func() {
+		executablePath = origExecutablePath
+		evalSymlinks = origEvalSymlinks
+	}()
+
+	executablePath = func() (string, error) {
+		return fakeExe, nil
+	}
+	evalSymlinks = func(path string) (string, error) {
+		return path, nil
+	}
+
+	cwd := t.TempDir()
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(cwd))
+	defer func() { require.NoError(t, os.Chdir(origDir)) }()
+
+	result, err := ResolveCogWheel("", "dev")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, WheelSourceFile, result.Source)
+	require.Contains(t, result.Path, "cog-0.1.0-py3-none-any.whl")
+}
+
 func TestGetCogletWheelConfig(t *testing.T) {
 	// Change to temp dir to prevent auto-detection from repo dist/
 	tmpDir := t.TempDir()
