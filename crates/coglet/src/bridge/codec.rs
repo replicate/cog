@@ -63,7 +63,7 @@ impl<T: Serialize> Encoder<T> for JsonCodec<T> {
         // a WorkerLog message from triggering another log that creates another WorkerLog, etc.
         tracing::trace!(json_size_bytes = json_len, "Encoding frame");
         if json_len > 100_000 {
-            tracing::warn!(
+            tracing::info!(
                 json_size_bytes = json_len,
                 json_size_kb = json_len / 1024,
                 "Large frame being encoded"

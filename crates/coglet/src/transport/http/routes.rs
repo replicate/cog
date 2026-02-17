@@ -287,16 +287,17 @@ async fn create_prediction_with_id(
     let unregistered_slot = match service.create_prediction(prediction_id.clone(), None).await {
         Ok(p) => p,
         Err(CreatePredictionError::NotReady) => {
+            let msg = PredictionError::NotReady.to_string();
             supervisor.update_status(
                 &prediction_id,
                 PredictionStatus::Failed,
                 None,
-                Some("Predictor not ready".to_string()),
+                Some(msg.clone()),
             );
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
-                    "error": "Predictor not ready",
+                    "error": msg,
                     "status": "failed"
                 })),
             );
@@ -426,15 +427,18 @@ async fn create_prediction_with_id(
                 "metrics": { "predict_time": predict_time }
             })),
         ),
-        Err(PredictionError::NotReady) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "id": prediction_id,
-                "error": "Predictor not ready",
-                "logs": "",
-                "status": "failed"
-            })),
-        ),
+        Err(PredictionError::NotReady) => {
+            let msg = PredictionError::NotReady.to_string();
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "id": prediction_id,
+                    "error": msg,
+                    "logs": "",
+                    "status": "failed"
+                })),
+            )
+        }
         Err(PredictionError::Failed(msg)) => (
             // 200 for parity with Python - prediction failure is data, not HTTP error
             StatusCode::OK,
@@ -594,7 +598,12 @@ mod tests {
 
         let json = response_json(response).await;
         assert_eq!(json["status"], "failed");
-        assert!(json["error"].as_str().unwrap().contains("not ready"));
+        assert!(
+            json["error"]
+                .as_str()
+                .unwrap()
+                .contains("Setup has not finished yet")
+        );
     }
 
     #[tokio::test]

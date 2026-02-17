@@ -247,7 +247,7 @@ worker_bridge.setup()
 
 **Worker Startup:**
 1. `set_active()` - Mark as worker subprocess
-2. `init_tracing()` - Configure logging (stderr, COG_LOG env)
+2. `init_tracing()` - Configure logging (stderr, COG_LOG_LEVEL env)
 3. `install_slot_log_writers()` - Replace sys.stdout/stderr
 4. `install_audit_hook()` - Protect streams
 5. `install_signal_handler()` - SIGUSR1 for cancellation
