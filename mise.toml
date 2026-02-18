@@ -55,9 +55,9 @@ ty = "0.0.10"
 [env]
 _.path = "./bin"
 _.file = [".env"]
-_.python.venv = ".venv"
 # Set REPO_ROOT only if not already set (e.g., by CI)
 REPO_ROOT = "{{env.REPO_ROOT | default(value=config_root)}}"
+_.python.venv = "{{env.REPO_ROOT}}/.venv"
 
 [settings]
 lockfile = true
@@ -72,6 +72,12 @@ hide = true
 quiet = true
 description = "Create dist directory"
 run = "mkdir -p dist"
+
+[tasks._setup_venv]
+hide = true
+quiet = true
+description = "Ensure root .venv exists with Python"
+run = "test -d .venv || uv venv --quiet"
 
 [tasks._clean_dist]
 hide = true
@@ -125,14 +131,17 @@ run = "cargo build --manifest-path crates/Cargo.toml --workspace --release"
 
 [tasks."build:coglet"]
 description = "Build coglet Python wheel (development, local install)"
-run = "cd crates/coglet-python && uv run maturin develop"
+run = [
+  { task = "_setup_venv" },
+  "maturin develop --manifest-path crates/coglet-python/Cargo.toml",
+]
 
 [tasks."build:coglet:wheel"]
 description = "Build coglet Python wheel (native platform)"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
 outputs = ["dist/coglet-*.whl"]
 run = [
-  { task = "_setup_dist" },
+  { tasks = ["_setup_dist", "_setup_venv"] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml",
 ]
 
@@ -141,7 +150,7 @@ description = "Build coglet Python wheel for Linux x86_64"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
 outputs = ["dist/coglet-*-linux_x86_64.whl"]
 run = [
-  { task = "_setup_dist" },
+  { tasks = ["_setup_dist", "_setup_venv"] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig",
 ]
 
@@ -150,7 +159,7 @@ description = "Build coglet Python wheel for Linux ARM64"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
 outputs = ["dist/coglet-*-linux_aarch64.whl"]
 run = [
-  { task = "_setup_dist" },
+  { tasks = ["_setup_dist", "_setup_venv"] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-unknown-linux-gnu --zig",
 ]
 
@@ -159,7 +168,7 @@ description = "Build coglet Python wheel for macOS ARM64"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
 outputs = ["dist/coglet-*-macosx_*_arm64.whl"]
 run = [
-  { task = "_setup_dist" },
+  { tasks = ["_setup_dist", "_setup_venv"] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-apple-darwin",
 ]
 
@@ -168,7 +177,7 @@ description = "Build coglet Python wheel for macOS x86_64"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
 outputs = ["dist/coglet-*-macosx_*_x86_64.whl"]
 run = [
-  { task = "_setup_dist" },
+  { tasks = ["_setup_dist", "_setup_venv"] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-apple-darwin",
 ]
 
@@ -185,7 +194,7 @@ description = "Build cog SDK wheel"
 sources = ["python/**/*.py", "pyproject.toml"]
 outputs = ["dist/cog-*.whl"]
 run = [
-  { task = "_setup_dist" },
+  { tasks = ["_setup_dist", "_setup_venv"] },
   "uv build --wheel --out-dir=dist .",
 ]
 
@@ -405,15 +414,18 @@ run = [
 alias = "stub:generate"
 description = "Generate Python type stubs for coglet"
 sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml", "crates/coglet-python/coglet/__init__.py"]
-outputs = ["crates/coglet-python/coglet/_sdk/__init__.pyi", "crates/coglet-python/coglet/__init__.pyi"]
+outputs = ["coglet/_sdk/__init__.pyi", "coglet/__init__.pyi", "coglet/_impl.pyi"]
 dir = "crates/coglet-python"
-run = '''
-# 1. pyo3-stub-gen: Rust types → _sdk/__init__.pyi (and initial __init__.pyi)
-cargo run --bin stub_gen
+run = [
+  { task = "_setup_venv" },
+  '''
+# 1. pyo3-stub-gen: Rust types → _impl.pyi and _sdk/__init__.pyi
+uv run --active cargo run --bin stub_gen
 
-# 2. mypy stubgen: Python __init__.py → __init__.pyi (overwrites pyo3 version)
+# 2. mypy stubgen: Python __init__.py → __init__.pyi (re-export stubs)
 uvx --from mypy stubgen coglet/__init__.py -o . --quiet
-'''
+''',
+]
 
 [tasks."generate:compat"]
 description = "Regenerate CUDA/PyTorch/TensorFlow compatibility matrices"
@@ -460,15 +472,11 @@ echo "Done."
 [tasks."stub:check"]
 description = "Check that coglet Python stubs are up to date"
 dir = "crates/coglet-python"
-run = '''
+run = [
+  { task = "generate:stubs" },
+  '''
 #!/usr/bin/env bash
 set -e
-
-# Regenerate stubs in-place
-cargo run --bin stub_gen 2>/dev/null
-uvx --from mypy stubgen coglet/__init__.py -o . --quiet
-
-# Check if any .pyi files changed
 if ! git diff --quiet -- '**/*.pyi'; then
   echo "ERROR: Stubs are out of date:"
   git diff -- '**/*.pyi'
@@ -477,7 +485,8 @@ if ! git diff --quiet -- '**/*.pyi'; then
   exit 1
 fi
 echo "Stubs are up to date."
-'''
+''',
+]
 
 [tasks."stub:typecheck"]
 description = "Type-check coglet stubs with ty"
@@ -504,7 +513,7 @@ run = "cd crates && cargo clean"
 
 [tasks."clean:python"]
 description = "Clean Python build artifacts"
-run = "rm -rf .tox build python/cog.egg-info"
+run = "rm -rf .tox build python/cog.egg-info .venv crates/coglet-python/.venv crates/coglet-python/coglet/*.so"
 
 # =============================================================================
 # Docs tasks

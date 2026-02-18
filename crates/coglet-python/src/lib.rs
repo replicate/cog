@@ -19,6 +19,12 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 // Define stub info gatherer for generating .pyi files
 pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
 
+// Module-level attributes (pyo3-stub-gen can't see m.add() calls).
+// Uses "coglet" because that's the module key in StubInfo for the native module.
+pyo3_stub_gen::module_variable!("coglet", "__version__", &str);
+pyo3_stub_gen::module_variable!("coglet", "__build__", BuildInfo);
+pyo3_stub_gen::module_variable!("coglet", "server", CogletServer);
+
 use coglet_core::{
     Health, PredictionService, SetupResult, VersionInfo,
     transport::{ServerConfig, serve as http_serve},
@@ -259,6 +265,7 @@ impl CogletServer {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn serve_impl(
     py: Python<'_>,
     predictor_ref: Option<String>,
