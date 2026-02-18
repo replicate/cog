@@ -64,6 +64,10 @@ impl<T: Serialize> Encoder<T> for JsonCodec<T> {
         tracing::trace!(json_size_bytes = json_len, "Encoding frame");
         if json_len > 100_000 {
             tracing::info!(
+                // This log line should be shipped across the IPC to be emitted, unlike the
+                // above trace line. This is a real indicator that we've encoded a large
+                // frame and is generally useful.
+                target: "coglet::bridge::codec::large_frame",
                 json_size_bytes = json_len,
                 json_size_kb = json_len / 1024,
                 "Large frame being encoded"

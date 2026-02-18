@@ -19,6 +19,8 @@ use futures::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
+use crate::bridge::protocol::truncate_worker_log;
+
 // ============================================================================
 // Dropped log tracking
 // ============================================================================
@@ -158,7 +160,7 @@ impl SlotSender {
 
         let msg = SlotResponse::Log {
             source,
-            data: data.to_string(),
+            data: truncate_worker_log(data.to_string()),
         };
 
         self.tx

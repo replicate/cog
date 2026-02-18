@@ -42,6 +42,21 @@ impl std::fmt::Display for SlotId {
     }
 }
 
+const MAX_WORKER_LOG_SIZE: usize = 1024 * 1024 * 4; // 4MIB
+const WORKER_LOG_TRUNCATE_NOTICE: &str = "[**** LOG LINE TRUNCATED AT 4 MiB ****]";
+
+/// To ensure no panics happen due to oversized log lines, we truncate at 4 MiB. 1 MiB
+/// let alone 4 MiB log line boarder/exceed usefulness from a readability standpoint.
+pub fn truncate_worker_log(mut log_message: String) -> String {
+    if log_message.len() > MAX_WORKER_LOG_SIZE {
+        let boundary =
+            log_message.floor_char_boundary(MAX_WORKER_LOG_SIZE - WORKER_LOG_TRUNCATE_NOTICE.len());
+        log_message.truncate(boundary);
+        log_message.push_str(WORKER_LOG_TRUNCATE_NOTICE);
+    }
+    log_message
+}
+
 /// Control messages from parent to worker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -391,5 +406,30 @@ mod tests {
             id: "pred_123".to_string(),
         };
         insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn truncate_worker_log_truncates_long_messages() {
+        let emoji = "🦀"; // 4-byte UTF-8 character
+        // known size of truncate target, add one more character
+        let count = 1024 * 1024 * 1024 * 4 / emoji.len() + 1;
+        let message: String = truncate_worker_log(emoji.repeat(count));
+        assert!(
+            message.ends_with(WORKER_LOG_TRUNCATE_NOTICE),
+            "log message didn't end with {}",
+            WORKER_LOG_TRUNCATE_NOTICE
+        );
+    }
+
+    #[test]
+    fn truncate_worker_log_does_not_truncate_short_messages() {
+        let emoji = "🦀"; // 4-byte UTF-8 character
+        // known size of truncate target, add one more character
+        let count = 10;
+        let message: String = truncate_worker_log(std::iter::repeat(emoji).take(count).collect());
+        assert!(
+            !message.ends_with(WORKER_LOG_TRUNCATE_NOTICE),
+            "short log message was truncated"
+        );
     }
 }
