@@ -777,7 +777,7 @@ async fn run_event_loop(
                             predictions.remove(&slot_id);
                         }
                     }
-                    Ok(SlotResponse::FileOutput { filename, kind }) => {
+                    Ok(SlotResponse::FileOutput { filename, kind, mime_type }) => {
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
                         let output = match std::fs::read(&filename) {
                             Ok(bytes) => match kind {
@@ -793,9 +793,11 @@ async fn run_event_loop(
                                 FileOutputKind::FileType => {
                                     // Binary file — base64-encode as data URI
                                     // TODO: upload to signed endpoint when upload_url is set
-                                    let mime = mime_guess::from_path(&filename)
-                                        .first_or_octet_stream()
-                                        .to_string();
+                                    let mime = mime_type.unwrap_or_else(|| {
+                                        mime_guess::from_path(&filename)
+                                            .first_or_octet_stream()
+                                            .to_string()
+                                    });
                                     use base64::Engine;
                                     let encoded =
                                         base64::engine::general_purpose::STANDARD.encode(&bytes);

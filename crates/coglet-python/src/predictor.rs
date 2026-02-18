@@ -134,7 +134,7 @@ fn send_output_item(
             .and_then(|p| p.extract())
             .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
         slot_sender
-            .send_file_output(std::path::PathBuf::from(path_str))
+            .send_file_output(std::path::PathBuf::from(path_str), None)
             .map_err(|e| PredictionError::Failed(format!("Failed to send file output: {}", e)))?;
         return Ok(());
     }
@@ -168,7 +168,7 @@ fn send_output_item(
             .unwrap_or_else(|| "bin".to_string());
 
         slot_sender
-            .write_file_output(&data, &ext)
+            .write_file_output(&data, &ext, None)
             .map_err(|e| PredictionError::Failed(format!("Failed to write file output: {}", e)))?;
         return Ok(());
     }
@@ -766,7 +766,7 @@ impl PythonPredictor {
                 .and_then(|p| p.extract())
                 .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
             slot_sender
-                .send_file_output(std::path::PathBuf::from(path_str))
+                .send_file_output(std::path::PathBuf::from(path_str), None)
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to send file output: {}", e))
                 })?;
@@ -796,9 +796,11 @@ impl PythonPredictor {
                         .map(|s| s.to_string())
                 })
                 .unwrap_or_else(|| "bin".to_string());
-            slot_sender.write_file_output(&data, &ext).map_err(|e| {
-                PredictionError::Failed(format!("Failed to write file output: {}", e))
-            })?;
+            slot_sender
+                .write_file_output(&data, &ext, None)
+                .map_err(|e| {
+                    PredictionError::Failed(format!("Failed to write file output: {}", e))
+                })?;
             return Ok(PredictionOutput::Single(serde_json::Value::Null));
         }
 

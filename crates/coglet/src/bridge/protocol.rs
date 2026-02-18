@@ -230,6 +230,9 @@ pub enum SlotResponse {
     FileOutput {
         filename: String,
         kind: FileOutputKind,
+        /// Explicit MIME type from the predictor. Falls back to mime_guess when None.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mime_type: Option<String>,
     },
 
     /// Streaming output chunk (for generators).

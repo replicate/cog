@@ -186,16 +186,22 @@ impl SlotSender {
     ///
     /// Used by FFI workers (Python, Node, etc.) to hand off file data without
     /// needing language-specific file I/O — SlotSender owns the write.
-    pub fn write_file_output(&self, data: &[u8], extension: &str) -> io::Result<()> {
+    pub fn write_file_output(
+        &self,
+        data: &[u8],
+        extension: &str,
+        mime_type: Option<String>,
+    ) -> io::Result<()> {
         let path = self.next_output_path(extension);
         std::fs::write(&path, data)?;
-        self.send_file_output(path)
+        self.send_file_output(path, mime_type)
     }
 
     /// Send a file-typed output (e.g. Path, File return types).
     ///
     /// The file is already on disk at `path` — we just send the path reference.
-    pub fn send_file_output(&self, path: PathBuf) -> io::Result<()> {
+    /// `mime_type` is an explicit MIME type; when None the parent guesses from extension.
+    pub fn send_file_output(&self, path: PathBuf, mime_type: Option<String>) -> io::Result<()> {
         let filename = path
             .to_str()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
@@ -203,6 +209,7 @@ impl SlotSender {
         let msg = SlotResponse::FileOutput {
             filename,
             kind: FileOutputKind::FileType,
+            mime_type,
         };
         self.tx
             .send(msg)
@@ -226,6 +233,7 @@ impl SlotSender {
             SlotResponse::FileOutput {
                 filename,
                 kind: FileOutputKind::Oversized,
+                mime_type: None,
             }
         } else {
             SlotResponse::Output { output }
