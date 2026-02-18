@@ -182,6 +182,16 @@ impl SlotSender {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
 
+    /// Write raw bytes to a file in the output dir and send as FileOutput.
+    ///
+    /// Used by FFI workers (Python, Node, etc.) to hand off file data without
+    /// needing language-specific file I/O — SlotSender owns the write.
+    pub fn write_file_output(&self, data: &[u8], extension: &str) -> io::Result<()> {
+        let path = self.next_output_path(extension);
+        std::fs::write(&path, data)?;
+        self.send_file_output(path)
+    }
+
     /// Send a file-typed output (e.g. Path, File return types).
     ///
     /// The file is already on disk at `path` — we just send the path reference.
