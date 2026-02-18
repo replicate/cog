@@ -536,6 +536,7 @@ mkdocs serve
 
 [tasks."docs:llm"]
 description = "Update LLM documentation (llms.txt)"
+depends = ["docs:cli"]
 sources = ["README.md", "docs/*.md"]
 outputs = ["docs/llms.txt"]
 run = """
