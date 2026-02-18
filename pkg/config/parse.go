@@ -107,8 +107,6 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 		}
 		if cfg.Build.PythonVersion != nil {
 			config.Build.PythonVersion = *cfg.Build.PythonVersion
-		} else {
-			config.Build.PythonVersion = DefaultPythonVersion
 		}
 		if cfg.Build.PythonRequirements != nil {
 			config.Build.PythonRequirements = *cfg.Build.PythonRequirements

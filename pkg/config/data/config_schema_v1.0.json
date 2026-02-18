@@ -147,6 +147,7 @@
           }
         }
       },
+      "required": ["python_version"],
       "additionalProperties": false
     },
     "image": {

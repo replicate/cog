@@ -146,6 +146,36 @@ func TestValidateConfigFileDeprecatedPreInstall(t *testing.T) {
 	require.Contains(t, result.Warnings[0].Message, "build.run")
 }
 
+func TestValidateConfigFileMissingPythonVersion(t *testing.T) {
+	cfg := &configFile{
+		Build: &buildFile{
+			GPU: boolPtr(true),
+		},
+	}
+
+	result := ValidateConfigFile(cfg)
+	require.True(t, result.HasErrors())
+	require.Contains(t, result.Err().Error(), "python_version is required")
+}
+
+func TestValidateConfigFileMissingPythonVersionEmptyBuild(t *testing.T) {
+	cfg := &configFile{
+		Build: &buildFile{},
+	}
+
+	result := ValidateConfigFile(cfg)
+	require.True(t, result.HasErrors())
+	require.Contains(t, result.Err().Error(), "python_version is required")
+}
+
+func TestValidateConfigFileNilBuildSkipsPythonVersionCheck(t *testing.T) {
+	cfg := &configFile{}
+
+	result := ValidateConfigFile(cfg)
+	// No build section at all should not error about python_version
+	require.False(t, result.HasErrors(), "expected no errors for nil build, got: %v", result.Errors)
+}
+
 // Helper functions
 func boolPtr(b bool) *bool {
 	return &b

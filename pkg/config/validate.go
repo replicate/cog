@@ -145,8 +145,13 @@ func validateBuild(cfg *configFile, opts *validateOptions, result *ValidationRes
 
 	build := cfg.Build
 
-	// Validate Python version
-	if build.PythonVersion != nil && *build.PythonVersion != "" {
+	// Validate Python version is set and valid
+	if build.PythonVersion == nil || *build.PythonVersion == "" {
+		result.AddError(&ValidationError{
+			Field:   "build.python_version",
+			Message: "python_version is required. Add it to the build section of your cog.yaml, e.g. `python_version: \"3.13\"`",
+		})
+	} else {
 		if err := validatePythonVersion(*build.PythonVersion); err != nil {
 			result.AddError(err)
 		}
