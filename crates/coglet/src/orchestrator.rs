@@ -22,7 +22,8 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use crate::PredictionOutput;
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
-    ControlRequest, ControlResponse, HealthcheckStatus, SlotId, SlotRequest, SlotResponse,
+    ControlRequest, ControlResponse, FileOutputKind, HealthcheckStatus, SlotId, SlotRequest,
+    SlotResponse,
 };
 use crate::bridge::transport::create_transport;
 use crate::permit::{InactiveSlotIdleToken, PermitPool, SlotIdleToken};
@@ -779,11 +780,28 @@ async fn run_event_loop(
                     Ok(SlotResponse::FileOutput { filename, kind }) => {
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
                         let output = match std::fs::read(&filename) {
-                            Ok(bytes) => match serde_json::from_slice(&bytes) {
-                                Ok(val) => val,
-                                Err(e) => {
-                                    tracing::error!(%slot_id, %filename, error = %e, "Failed to parse FileOutput JSON");
-                                    continue;
+                            Ok(bytes) => match kind {
+                                FileOutputKind::Oversized => {
+                                    match serde_json::from_slice(&bytes) {
+                                        Ok(val) => val,
+                                        Err(e) => {
+                                            tracing::error!(%slot_id, %filename, error = %e, "Failed to parse oversized JSON");
+                                            continue;
+                                        }
+                                    }
+                                }
+                                FileOutputKind::FileType => {
+                                    // Binary file — base64-encode as data URI
+                                    // TODO: upload to signed endpoint when upload_url is set
+                                    let mime = mime_guess::from_path(&filename)
+                                        .first_or_octet_stream()
+                                        .to_string();
+                                    use base64::Engine;
+                                    let encoded =
+                                        base64::engine::general_purpose::STANDARD.encode(&bytes);
+                                    serde_json::Value::String(format!(
+                                        "data:{mime};base64,{encoded}"
+                                    ))
                                 }
                             },
                             Err(e) => {
