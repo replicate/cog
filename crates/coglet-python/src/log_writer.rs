@@ -595,7 +595,7 @@ mod tests {
     fn registry_operations() {
         let prediction_id = "pred_123".to_string();
         let (tx, _rx) = mpsc::unbounded_channel();
-        let sender = Arc::new(SlotSender::new(tx));
+        let sender = Arc::new(SlotSender::new(tx, std::env::temp_dir()));
 
         // Register
         register_prediction(prediction_id.clone(), sender.clone());
@@ -609,7 +609,7 @@ mod tests {
     #[test]
     fn slot_sender_sends_log() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let sender = SlotSender::new(tx);
+        let sender = SlotSender::new(tx, std::env::temp_dir());
 
         sender.send_log(LogSource::Stdout, "hello").unwrap();
 
@@ -626,7 +626,7 @@ mod tests {
     #[test]
     fn slot_sender_ignores_empty() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let sender = SlotSender::new(tx);
+        let sender = SlotSender::new(tx, std::env::temp_dir());
 
         sender.send_log(LogSource::Stderr, "").unwrap();
 
@@ -639,7 +639,7 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel::<SlotResponse>();
         drop(rx); // Close receiver
 
-        let sender = SlotSender::new(tx);
+        let sender = SlotSender::new(tx, std::env::temp_dir());
         let result = sender.send_log(LogSource::Stdout, "hello");
 
         assert!(result.is_err());

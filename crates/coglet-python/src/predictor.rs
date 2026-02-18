@@ -1,10 +1,11 @@
 //! Python predictor loading and invocation.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+use coglet_core::worker::SlotSender;
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 
 use crate::cancel;
@@ -480,6 +481,7 @@ impl PythonPredictor {
     pub fn predict_worker(
         &self,
         input: serde_json::Value,
+        slot_sender: Arc<SlotSender>,
     ) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
@@ -530,7 +532,7 @@ impl PythonPredictor {
             let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
 
             let output = if is_generator {
-                self.process_generator_output(py, result_bound, &json_module)?
+                self.process_generator_output(py, result_bound, &json_module, &slot_sender)?
             } else {
                 self.process_single_output(py, result_bound, &json_module)?
             };
@@ -550,6 +552,7 @@ impl PythonPredictor {
     pub fn train_worker(
         &self,
         input: serde_json::Value,
+        slot_sender: Arc<SlotSender>,
     ) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
@@ -600,7 +603,7 @@ impl PythonPredictor {
             let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
 
             let output = if is_generator {
-                self.process_generator_output(py, result_bound, &json_module)?
+                self.process_generator_output(py, result_bound, &json_module, &slot_sender)?
             } else {
                 self.process_single_output(py, result_bound, &json_module)?
             };
@@ -615,14 +618,14 @@ impl PythonPredictor {
         })
     }
 
-    /// Process generator output into PredictionOutput::Stream.
+    /// Process generator output by streaming each yield over IPC.
     fn process_generator_output(
         &self,
         py: Python<'_>,
         result: &Bound<'_, PyAny>,
         json_module: &Bound<'_, PyAny>,
+        slot_sender: &SlotSender,
     ) -> Result<PredictionOutput, PredictionError> {
-        let mut outputs = Vec::new();
         let iter = result
             .try_iter()
             .map_err(|e| PredictionError::Failed(format!("Failed to iterate generator: {}", e)))?;
@@ -653,10 +656,13 @@ impl PythonPredictor {
                 PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
             })?;
 
-            outputs.push(item_json);
+            slot_sender
+                .send_output(item_json)
+                .map_err(|e| PredictionError::Failed(format!("Failed to send output: {}", e)))?;
         }
 
-        Ok(PredictionOutput::Stream(outputs))
+        // Outputs already streamed over IPC — return empty stream
+        Ok(PredictionOutput::Stream(vec![]))
     }
 
     /// Process single output into PredictionOutput::Single.
@@ -785,6 +791,7 @@ impl PythonPredictor {
         py: Python<'_>,
         result: &Bound<'_, PyAny>,
         is_async_gen: bool,
+        slot_sender: &SlotSender,
     ) -> Result<PredictionResult, PredictionError> {
         let json_module = py
             .import("json")
@@ -795,8 +802,7 @@ impl PythonPredictor {
 
         // Process output
         let output = if is_async_gen {
-            // Result is a list
-            let mut outputs = Vec::new();
+            // Result is a pre-collected list — stream each item over IPC
             if let Ok(list) = result.extract::<Vec<Bound<'_, PyAny>>>() {
                 for item in list {
                     let processed = output::process_output_item(py, &item).map_err(|e| {
@@ -813,10 +819,12 @@ impl PythonPredictor {
                         })?;
                     let item_json: serde_json::Value = serde_json::from_str(&item_str)
                         .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
-                    outputs.push(item_json);
+                    slot_sender.send_output(item_json).map_err(|e| {
+                        PredictionError::Failed(format!("Failed to send output: {}", e))
+                    })?;
                 }
             }
-            PredictionOutput::Stream(outputs)
+            PredictionOutput::Stream(vec![])
         } else {
             // Check if result is a generator (sync generator from async predict)
             let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
@@ -825,7 +833,7 @@ impl PythonPredictor {
             let is_generator: bool = result.is_instance(&generator_type).unwrap_or(false);
 
             if is_generator {
-                self.process_generator_output(py, result, &json_module)?
+                self.process_generator_output(py, result, &json_module, slot_sender)?
             } else {
                 self.process_single_output(py, result, &json_module)?
             }
