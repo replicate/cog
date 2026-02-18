@@ -777,8 +777,33 @@ async fn run_event_loop(
                         }
                     }
                     Ok(SlotResponse::FileOutput { filename, kind }) => {
-                        // TODO: read file from disk, integrate into prediction output
-                        tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received (not yet wired)");
+                        tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
+                        let output = match std::fs::read(&filename) {
+                            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                                Ok(val) => val,
+                                Err(e) => {
+                                    tracing::error!(%slot_id, %filename, error = %e, "Failed to parse FileOutput JSON");
+                                    continue;
+                                }
+                            },
+                            Err(e) => {
+                                tracing::error!(%slot_id, %filename, error = %e, "Failed to read FileOutput");
+                                continue;
+                            }
+                        };
+                        let poisoned = if let Some(pred) = predictions.get(&slot_id) {
+                            if let Some(mut p) = try_lock_prediction(pred) {
+                                p.append_output(output);
+                                false
+                            } else {
+                                true
+                            }
+                        } else {
+                            false
+                        };
+                        if poisoned {
+                            predictions.remove(&slot_id);
+                        }
                     }
                     Ok(SlotResponse::Done { id, output, predict_time }) => {
                         tracing::info!(
