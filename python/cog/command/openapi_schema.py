@@ -116,6 +116,6 @@ if __name__ == "__main__":
         remove_title_next_to_ref(schema)
         fix_nullable_anyof(schema)
     except FileNotFoundError:
-        raise ConfigDoesNotExist("no cog.yaml found or present") from None
+        raise ConfigDoesNotExist("cog.yaml not found") from None
 
     print(json.dumps(schema, indent=2))

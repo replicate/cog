@@ -63,7 +63,7 @@ class PredictionRequest:
             self.webhook_events_filter = WebhookEvent.default_events()
 
     def dict(self, exclude_unset: bool = False) -> Dict[str, Any]:
-        """Convert to dictionary ."""
+        """Convert to dictionary."""
         result = {
             "input": self.input,
             "id": self.id,
@@ -102,7 +102,7 @@ class PredictionResponse:
     _fatal_exception: Optional[BaseException] = field(default=None, repr=False)
 
     def dict(self, exclude_unset: bool = False) -> Dict[str, Any]:
-        """Convert to dictionary ."""
+        """Convert to dictionary."""
         result = {
             "input": self.input,
             "output": self.output,

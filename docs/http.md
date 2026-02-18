@@ -2,7 +2,7 @@
 
 > [!TIP]
 > For information about how to run the HTTP server, 
-> see [our documentation to deploying models](deploy.md).
+> see [our documentation on deploying models](deploy.md).
 
 When you run a Docker image built by Cog, 
 it serves an HTTP API for making predictions.
@@ -115,7 +115,7 @@ Prefer: respond-async
 Endpoints for creating and canceling a prediction idempotently
 accept a `prediction_id` parameter in their path.
 The server can run only one prediction at a time.
-The client must ensure that running prediction is complete
+The client must ensure that the running prediction is complete
 before creating a new one with a different ID.
 
 Clients are responsible for providing unique prediction IDs.

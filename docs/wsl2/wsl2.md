@@ -30,7 +30,7 @@ Before beginning installation, make sure you have:
 
 ## 1. Install the GPU driver
 
-Per NVIDIA, the first order of business is to install the latest Game Ready drivers for you NVIDIA GPU.
+Per NVIDIA, the first order of business is to install the latest Game Ready drivers for your NVIDIA GPU.
 
 <https://www.nvidia.com/download/index.aspx>
 
