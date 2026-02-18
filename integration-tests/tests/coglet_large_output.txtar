@@ -1,0 +1,23 @@
+# Test that outputs larger than the 8MiB IPC frame limit spill to disk
+# and are reconstructed correctly by the orchestrator.
+# Without spilling this would panic the bridge and poison the slot.
+
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE
+
+# Output should be a 9MiB string of 'x' characters — not an error
+stdout 'xxx'
+! stdout 'failed'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        # 9MiB string — exceeds the 8MiB IPC frame limit
+        return "x" * (9 * 1024 * 1024)

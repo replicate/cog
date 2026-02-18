@@ -40,6 +40,22 @@ type registryInfo struct {
 	host      string // e.g., "localhost:5432"
 }
 
+// mockUploadRecord records a single upload received by the mock upload server.
+type mockUploadRecord struct {
+	Path        string
+	ContentType string
+	Size        int
+}
+
+// mockUploadServer is a lightweight HTTP server that accepts PUT requests
+// and records what was uploaded.
+type mockUploadServer struct {
+	server  *http.Server
+	port    int
+	mu      sync.Mutex
+	uploads []mockUploadRecord
+}
+
 type Harness struct {
 	CogBinary string
 	// realHome is captured at creation time before testscript overrides HOME
@@ -52,6 +68,9 @@ type Harness struct {
 	// registries tracks test registry containers for cleanup, keyed by work directory
 	registries   map[string]*registryInfo
 	registriesMu sync.Mutex
+	// uploadServers tracks mock upload servers for cleanup, keyed by work directory
+	uploadServers   map[string]*mockUploadServer
+	uploadServersMu sync.Mutex
 }
 
 // New creates a new Harness, resolving the cog binary location.
@@ -68,8 +87,9 @@ func New() (*Harness, error) {
 		CogBinary:   cogBinary,
 		realHome:    os.Getenv("HOME"),
 		repoRoot:    repoRoot,
-		serverProcs: make(map[string]*serverInfo),
-		registries:  make(map[string]*registryInfo),
+		serverProcs:   make(map[string]*serverInfo),
+		registries:    make(map[string]*registryInfo),
+		uploadServers: make(map[string]*mockUploadServer),
 	}, nil
 }
 
@@ -196,6 +216,10 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 		NewCommand("docker-push", h.cmdDockerPush),
 		NewCommand("mock-weights", h.cmdMockWeights),
 
+		// Mock upload server commands
+		NewCommand("upload-server-start", h.cmdUploadServerStart),
+		NewCommand("upload-server-count", h.cmdUploadServerCount),
+
 		// PTY command (defined in cmd_pty.go)
 		&PtyRunCommand{harness: h},
 	}
@@ -279,6 +303,8 @@ func (h *Harness) Setup(env *testscript.Env) error {
 		h.stopServerByWorkDir(workDir)
 		// Stop the registry for this specific test (if any)
 		h.stopRegistryByWorkDir(workDir)
+		// Stop the upload server for this specific test (if any)
+		h.stopUploadServerByWorkDir(workDir)
 		removeDockerImage(imageName)
 	})
 
@@ -1058,4 +1084,126 @@ func parseSize(s string) (int64, error) {
 	}
 
 	return int64(num * float64(multiplier)), nil
+}
+
+// =============================================================================
+// Mock upload server commands
+// =============================================================================
+
+// cmdUploadServerStart starts a mock HTTP upload server on the host.
+// It accepts PUT requests, records them, and responds with a Location header.
+// Usage: upload-server-start
+// Exports $UPLOAD_SERVER_URL with the server's base URL.
+func (h *Harness) cmdUploadServerStart(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("upload-server-start: does not support negation")
+	}
+
+	workDir := ts.Getenv("WORK")
+
+	h.uploadServersMu.Lock()
+	if _, exists := h.uploadServers[workDir]; exists {
+		h.uploadServersMu.Unlock()
+		ts.Fatalf("upload-server-start: server already running for this test")
+	}
+	h.uploadServersMu.Unlock()
+
+	mus := &mockUploadServer{}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		record := mockUploadRecord{
+			Path:        r.URL.Path,
+			ContentType: r.Header.Get("Content-Type"),
+			Size:        len(body),
+		}
+		mus.mu.Lock()
+		mus.uploads = append(mus.uploads, record)
+		mus.mu.Unlock()
+
+		// Return a clean URL without query params (simulates a signed URL redirect)
+		location := fmt.Sprintf("http://host.docker.internal:%d%s", mus.port, r.URL.Path)
+		w.Header().Set("Location", location)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mus.server = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second} //nolint:gosec // test harness, not production
+
+	// Bind to all interfaces so the container can reach us via host.docker.internal
+	ln, err := net.Listen("tcp", "0.0.0.0:0") //nolint:gosec // must be reachable from Docker container
+	if err != nil {
+		ts.Fatalf("upload-server-start: failed to listen: %v", err)
+	}
+	mus.port = ln.Addr().(*net.TCPAddr).Port
+
+	go func() { _ = mus.server.Serve(ln) }()
+
+	h.uploadServersMu.Lock()
+	h.uploadServers[workDir] = mus
+	h.uploadServersMu.Unlock()
+
+	// Advertise host.docker.internal so the container can reach the host server.
+	// On Linux, cog serve adds --add-host=host.docker.internal:host-gateway.
+	// On Mac, Docker Desktop resolves host.docker.internal automatically.
+	url := fmt.Sprintf("http://host.docker.internal:%d/", mus.port)
+	ts.Setenv("UPLOAD_SERVER_URL", url)
+	ts.Logf("upload-server-start: listening on 0.0.0.0:%d, container URL: %s", mus.port, url)
+}
+
+// cmdUploadServerCount verifies exactly N uploads were received.
+// Usage: upload-server-count N
+func (h *Harness) cmdUploadServerCount(ts *testscript.TestScript, neg bool, args []string) {
+	if len(args) != 1 {
+		ts.Fatalf("upload-server-count: usage: upload-server-count N")
+	}
+
+	expected, err := strconv.Atoi(args[0])
+	if err != nil {
+		ts.Fatalf("upload-server-count: invalid count %q: %v", args[0], err)
+	}
+
+	workDir := ts.Getenv("WORK")
+	h.uploadServersMu.Lock()
+	mus, exists := h.uploadServers[workDir]
+	h.uploadServersMu.Unlock()
+
+	if !exists {
+		ts.Fatalf("upload-server-count: no upload server running (call upload-server-start first)")
+	}
+
+	mus.mu.Lock()
+	got := len(mus.uploads)
+	mus.mu.Unlock()
+
+	if neg {
+		if got == expected {
+			ts.Fatalf("upload-server-count: expected NOT %d uploads but got %d", expected, got)
+		}
+		return
+	}
+
+	if got != expected {
+		ts.Fatalf("upload-server-count: expected %d uploads but got %d", expected, got)
+	}
+}
+
+// stopUploadServerByWorkDir shuts down the upload server for a work directory.
+func (h *Harness) stopUploadServerByWorkDir(workDir string) {
+	h.uploadServersMu.Lock()
+	mus, exists := h.uploadServers[workDir]
+	if !exists {
+		h.uploadServersMu.Unlock()
+		return
+	}
+	delete(h.uploadServers, workDir)
+	h.uploadServersMu.Unlock()
+
+	if mus.server != nil {
+		_ = mus.server.Close()
+	}
 }

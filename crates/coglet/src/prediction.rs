@@ -153,6 +153,10 @@ impl Prediction {
         &self.outputs
     }
 
+    pub fn take_outputs(&mut self) -> Vec<serde_json::Value> {
+        std::mem::take(&mut self.outputs)
+    }
+
     pub fn output(&self) -> Option<&PredictionOutput> {
         self.output.as_ref()
     }

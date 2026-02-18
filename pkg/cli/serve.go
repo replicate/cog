@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	port = 8393
+	port      = 8393
+	uploadURL = ""
 )
 
 func newServeCommand() *cobra.Command {
@@ -36,6 +37,7 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 	addConfigFlag(cmd)
 
 	cmd.Flags().IntVarP(&port, "port", "p", port, "Port on which to listen")
+	cmd.Flags().StringVar(&uploadURL, "upload-url", "", "Upload URL for file outputs (e.g. https://example.com/upload/)")
 
 	return cmd
 }
@@ -73,6 +75,10 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		"--await-explicit-shutdown", "true",
 	}
 
+	if uploadURL != "" {
+		args = append(args, "--upload-url", uploadURL)
+	}
+
 	// Automatically propagate RUST_LOG for Rust coglet debugging
 	env := envFlags
 	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
@@ -86,6 +92,13 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		Image:   m.ImageRef(),
 		Volumes: []command.Volume{{Source: src.ProjectDir, Destination: "/src"}},
 		Workdir: "/src",
+	}
+
+	// On Linux, host.docker.internal is not available by default — add it.
+	// This allows the container to reach services running on the host,
+	// e.g. when --upload-url points to a local upload server.
+	if uploadURL != "" {
+		runOptions.ExtraHosts = []string{"host.docker.internal:host-gateway"}
 	}
 
 	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000})

@@ -929,7 +929,7 @@ async fn run_event_loop(
                             }
                         }
                     }
-                    Ok(SlotResponse::Done { id, output, predict_time }) => {
+                    Ok(SlotResponse::Done { id, output: _, predict_time }) => {
                         tracing::info!(
                             target: "coglet::prediction",
                             prediction_id = %id,
@@ -943,9 +943,14 @@ async fn run_event_loop(
                                     let _ = h.await;
                                 }
                                 if let Some(mut p) = try_lock_prediction(&pred) {
-                                    let pred_output = output
-                                        .map(PredictionOutput::Single)
-                                        .unwrap_or(PredictionOutput::Single(serde_json::Value::Null));
+                                    // Outputs are accumulated via append_output (from Output
+                                    // and FileOutput messages). Done always arrives with
+                                    // output: None — the actual values are in outputs().
+                                    let pred_output = match p.take_outputs().as_slice() {
+                                        [] => PredictionOutput::Single(serde_json::Value::Null),
+                                        [single] => PredictionOutput::Single(single.clone()),
+                                        many => PredictionOutput::Stream(many.to_vec()),
+                                    };
                                     p.set_succeeded(pred_output);
                                 }
                             });
