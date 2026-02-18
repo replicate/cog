@@ -84,5 +84,6 @@ if __name__ == "__main__":
         port=port,
         await_explicit_shutdown=args.await_explicit_shutdown,
         is_train=is_train,
+        upload_url=args.upload_url,
     )
     sys.exit(0)

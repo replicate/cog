@@ -29,6 +29,59 @@ use crate::bridge::transport::create_transport;
 use crate::permit::{InactiveSlotIdleToken, PermitPool, SlotIdleToken};
 use crate::prediction::Prediction;
 
+/// Upload a file to a signed endpoint, returning the final URL.
+///
+/// Matches the behavior of Python cog's `put_file_to_signed_endpoint`:
+/// PUT to `{endpoint}{filename}` with Content-Type header, then extract
+/// the final URL from the Location header (falling back to response URL),
+/// stripping query parameters. Follows redirects automatically.
+async fn upload_file(
+    endpoint: &str,
+    filename: &str,
+    data: &[u8],
+    content_type: &str,
+) -> Result<String, String> {
+    let url = format!("{endpoint}{filename}");
+    let client = reqwest::Client::new();
+    let resp = client
+        .put(&url)
+        .header("Content-Type", content_type)
+        .body(data.to_vec())
+        .timeout(std::time::Duration::from_secs(25))
+        .send()
+        .await
+        .map_err(|e| format!("upload request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("upload returned status {}", resp.status()));
+    }
+
+    // Prefer Location header, fall back to final request URL (after redirects)
+    let final_url = resp
+        .headers()
+        .get("location")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| resp.url().to_string());
+
+    // Strip query parameters (signing gubbins)
+    match reqwest::Url::parse(&final_url) {
+        Ok(mut parsed) => {
+            parsed.set_query(None);
+            Ok(parsed.to_string())
+        }
+        Err(_) => Ok(final_url),
+    }
+}
+
+fn ensure_trailing_slash(s: &str) -> String {
+    if s.ends_with('/') {
+        s.to_string()
+    } else {
+        format!("{s}/")
+    }
+}
+
 /// Try to lock a prediction mutex.
 /// On poison: logs error, recovers to fail the prediction, returns None.
 /// Caller should remove the prediction from tracking if None is returned.
@@ -210,6 +263,8 @@ pub struct OrchestratorConfig {
     pub is_async: bool,
     pub setup_timeout: Duration,
     pub spawner: Arc<dyn WorkerSpawner>,
+    /// Upload URL prefix for file outputs (from --upload-url CLI arg).
+    pub upload_url: Option<String>,
 }
 
 impl OrchestratorConfig {
@@ -221,7 +276,13 @@ impl OrchestratorConfig {
             is_async: false,
             setup_timeout: Duration::from_secs(300),
             spawner: Arc::new(SimpleSpawner),
+            upload_url: None,
         }
+    }
+
+    pub fn with_upload_url(mut self, upload_url: Option<String>) -> Self {
+        self.upload_url = upload_url;
+        self
     }
 
     pub fn with_num_slots(mut self, n: usize) -> Self {
@@ -497,6 +558,7 @@ pub async fn spawn_worker(
 
     let pool_for_loop = Arc::clone(&pool);
     let ctrl_writer_for_loop = Arc::clone(&ctrl_writer);
+    let upload_url = config.upload_url.clone();
     tokio::spawn(async move {
         run_event_loop(
             ctrl_reader,
@@ -505,6 +567,7 @@ pub async fn spawn_worker(
             register_rx,
             healthcheck_rx,
             pool_for_loop,
+            upload_url,
         )
         .await;
     });
@@ -533,12 +596,14 @@ async fn run_event_loop(
     )>,
     mut healthcheck_rx: mpsc::Receiver<tokio::sync::oneshot::Sender<HealthcheckResult>>,
     pool: Arc<PermitPool>,
+    upload_url: Option<String>,
 ) {
     let mut predictions: HashMap<SlotId, Arc<StdMutex<Prediction>>> = HashMap::new();
     let mut idle_senders: HashMap<SlotId, tokio::sync::oneshot::Sender<SlotIdleToken>> =
         HashMap::new();
     let mut pending_healthchecks: Vec<tokio::sync::oneshot::Sender<HealthcheckResult>> = Vec::new();
     let mut healthcheck_counter: u64 = 0;
+    let mut pending_uploads: HashMap<SlotId, Vec<tokio::task::JoinHandle<()>>> = HashMap::new();
 
     let (slot_msg_tx, mut slot_msg_rx) =
         mpsc::channel::<(SlotId, Result<SlotResponse, std::io::Error>)>(100);
@@ -779,50 +844,89 @@ async fn run_event_loop(
                     }
                     Ok(SlotResponse::FileOutput { filename, kind, mime_type }) => {
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
-                        let output = match std::fs::read(&filename) {
-                            Ok(bytes) => match kind {
-                                FileOutputKind::Oversized => {
-                                    match serde_json::from_slice(&bytes) {
-                                        Ok(val) => val,
-                                        Err(e) => {
-                                            tracing::error!(%slot_id, %filename, error = %e, "Failed to parse oversized JSON");
-                                            continue;
-                                        }
-                                    }
-                                }
-                                FileOutputKind::FileType => {
-                                    // Binary file — base64-encode as data URI
-                                    // TODO: upload to signed endpoint when upload_url is set
-                                    let mime = mime_type.unwrap_or_else(|| {
-                                        mime_guess::from_path(&filename)
-                                            .first_or_octet_stream()
-                                            .to_string()
-                                    });
-                                    use base64::Engine;
-                                    let encoded =
-                                        base64::engine::general_purpose::STANDARD.encode(&bytes);
-                                    serde_json::Value::String(format!(
-                                        "data:{mime};base64,{encoded}"
-                                    ))
-                                }
-                            },
+                        let bytes = match std::fs::read(&filename) {
+                            Ok(b) => b,
                             Err(e) => {
                                 tracing::error!(%slot_id, %filename, error = %e, "Failed to read FileOutput");
                                 continue;
                             }
                         };
-                        let poisoned = if let Some(pred) = predictions.get(&slot_id) {
-                            if let Some(mut p) = try_lock_prediction(pred) {
-                                p.append_output(output);
-                                false
-                            } else {
-                                true
+                        match kind {
+                            FileOutputKind::Oversized => {
+                                let output: serde_json::Value = match serde_json::from_slice(&bytes) {
+                                    Ok(val) => val,
+                                    Err(e) => {
+                                        tracing::error!(%slot_id, %filename, error = %e, "Failed to parse oversized JSON");
+                                        continue;
+                                    }
+                                };
+                                let poisoned = if let Some(pred) = predictions.get(&slot_id) {
+                                    if let Some(mut p) = try_lock_prediction(pred) {
+                                        p.append_output(output);
+                                        false
+                                    } else {
+                                        true
+                                    }
+                                } else {
+                                    false
+                                };
+                                if poisoned {
+                                    predictions.remove(&slot_id);
+                                }
                             }
-                        } else {
-                            false
-                        };
-                        if poisoned {
-                            predictions.remove(&slot_id);
+                            FileOutputKind::FileType => {
+                                let mime = mime_type.unwrap_or_else(|| {
+                                    mime_guess::from_path(&filename)
+                                        .first_or_octet_stream()
+                                        .to_string()
+                                });
+                                if let Some(ref url) = upload_url {
+                                    // Spawn upload task so we don't block the event loop
+                                    let pred = predictions.get(&slot_id).cloned();
+                                    let endpoint = ensure_trailing_slash(url);
+                                    let basename = std::path::Path::new(&filename)
+                                        .file_name()
+                                        .and_then(|n| n.to_str())
+                                        .unwrap_or("output")
+                                        .to_string();
+                                    let handle = tokio::spawn(async move {
+                                        match upload_file(&endpoint, &basename, &bytes, &mime).await {
+                                            Ok(url) => {
+                                                if let Some(pred) = pred
+                                                    && let Some(mut p) = try_lock_prediction(&pred)
+                                                {
+                                                    p.append_output(serde_json::Value::String(url));
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(error = %e, "Failed to upload file output");
+                                            }
+                                        }
+                                    });
+                                    pending_uploads.entry(slot_id).or_default().push(handle);
+                                } else {
+                                    // No upload URL — base64-encode as data URI
+                                    use base64::Engine;
+                                    let encoded = base64::engine::general_purpose::STANDARD
+                                        .encode(&bytes);
+                                    let output = serde_json::Value::String(format!(
+                                        "data:{mime};base64,{encoded}"
+                                    ));
+                                    let poisoned = if let Some(pred) = predictions.get(&slot_id) {
+                                        if let Some(mut p) = try_lock_prediction(pred) {
+                                            p.append_output(output);
+                                            false
+                                        } else {
+                                            true
+                                        }
+                                    } else {
+                                        false
+                                    };
+                                    if poisoned {
+                                        predictions.remove(&slot_id);
+                                    }
+                                }
+                            }
                         }
                     }
                     Ok(SlotResponse::Done { id, output, predict_time }) => {
@@ -832,14 +936,19 @@ async fn run_event_loop(
                             predict_time,
                             "Prediction succeeded"
                         );
+                        let uploads = pending_uploads.remove(&slot_id).unwrap_or_default();
                         if let Some(pred) = predictions.remove(&slot_id) {
-                            if let Some(mut p) = try_lock_prediction(&pred) {
-                                let pred_output = output
-                                    .map(PredictionOutput::Single)
-                                    .unwrap_or(PredictionOutput::Single(serde_json::Value::Null));
-                                p.set_succeeded(pred_output);
-                            }
-                            // On mutex poison, prediction already failed - nothing more to do
+                            tokio::spawn(async move {
+                                for h in uploads {
+                                    let _ = h.await;
+                                }
+                                if let Some(mut p) = try_lock_prediction(&pred) {
+                                    let pred_output = output
+                                        .map(PredictionOutput::Single)
+                                        .unwrap_or(PredictionOutput::Single(serde_json::Value::Null));
+                                    p.set_succeeded(pred_output);
+                                }
+                            });
                         } else {
                             tracing::warn!(%slot_id, %id, "Prediction not found for Done message");
                         }
@@ -851,6 +960,10 @@ async fn run_event_loop(
                             %error,
                             "Prediction failed"
                         );
+                        // Abort any pending uploads — prediction is terminal
+                        if let Some(handles) = pending_uploads.remove(&slot_id) {
+                            for h in handles { h.abort(); }
+                        }
                         if let Some(pred) = predictions.remove(&slot_id)
                             && let Some(mut p) = try_lock_prediction(&pred)
                         {
@@ -863,6 +976,10 @@ async fn run_event_loop(
                             prediction_id = %id,
                             "Prediction cancelled"
                         );
+                        // Abort any pending uploads — prediction is terminal
+                        if let Some(handles) = pending_uploads.remove(&slot_id) {
+                            for h in handles { h.abort(); }
+                        }
                         if let Some(pred) = predictions.remove(&slot_id)
                             && let Some(mut p) = try_lock_prediction(&pred)
                         {
@@ -871,6 +988,9 @@ async fn run_event_loop(
                     }
                     Err(e) => {
                         tracing::error!(%slot_id, error = %e, "Slot socket error");
+                        if let Some(handles) = pending_uploads.remove(&slot_id) {
+                            for h in handles { h.abort(); }
+                        }
                         if let Some(pred) = predictions.remove(&slot_id)
                             && let Some(mut p) = try_lock_prediction(&pred)
                         {
