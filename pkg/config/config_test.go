@@ -97,9 +97,9 @@ func TestPythonPackagesAndRequirementsCantBeUsedTogether(t *testing.T) {
 
 func TestPythonRequirementsResolvesPythonPackagesAndCudaVersions(t *testing.T) {
 	tmpDir := t.TempDir()
-	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch==1.7.1
-torchvision==0.8.2
-torchaudio==0.7.2
+	err := os.WriteFile(path.Join(tmpDir, "requirements.txt"), []byte(`torch==1.13.1
+torchvision==0.14.1
+torchaudio==0.13.1
 foo==1.0.0`), 0o644)
 	require.NoError(t, err)
 
@@ -112,15 +112,15 @@ foo==1.0.0`), 0o644)
 	}
 	err = config.Complete(tmpDir)
 	require.NoError(t, err)
-	require.Equal(t, "11.0", config.Build.CUDA)
+	require.Equal(t, "11.7", config.Build.CUDA)
 	require.Equal(t, "8", config.Build.CuDNN)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.7.1
-torchvision==0.8.2
-torchaudio==0.7.2
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu117
+torch==1.13.1
+torchvision==0.14.1
+torchaudio==0.13.1
 foo==1.0.0`
 	require.Equal(t, expected, requirements)
 }
@@ -238,8 +238,8 @@ func TestValidateAndCompleteCUDAForSelectedTorch(t *testing.T) {
 		cuDNN string
 	}{
 		{"2.0.1", "11.8", "8"},
-		{"1.8.0", "11.1", "8"},
-		{"1.7.0", "11.0", "8"},
+		{"1.13.1", "11.7", "8"},
+		{"1.11.0", "11.3", "8"},
 	} {
 		config := &Config{
 			Build: &Build{
@@ -336,9 +336,9 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 			GPU:           true,
 			PythonVersion: "3.10",
 			PythonPackages: []string{
-				"torch==1.7.1",
-				"torchvision==0.8.2",
-				"torchaudio==0.7.2",
+				"torch==2.0.1",
+				"torchvision==0.15.2",
+				"torchaudio==2.0.2",
 				"foo==1.0.0",
 			},
 			CUDA: "11.8",
@@ -351,10 +351,10 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.7.1
-torchvision==0.8.2
-torchaudio==0.7.2
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.0.1
+torchvision==0.15.2
+torchaudio==2.0.2
 foo==1.0.0`
 	require.Equal(t, expected, requirements)
 }
@@ -365,9 +365,9 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 			GPU:           false,
 			PythonVersion: "3.10",
 			PythonPackages: []string{
-				"torch==1.7.1",
-				"torchvision==0.8.2",
-				"torchaudio==0.7.2",
+				"torch==2.0.1",
+				"torchvision==0.15.2",
+				"torchaudio==2.0.2",
 				"foo==1.0.0",
 			},
 			CUDA: "11.8",
@@ -378,10 +378,10 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.7.1+cpu
-torchvision==0.8.2+cpu
-torchaudio==0.7.2
+	expected := `--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.0.1
+torchvision==0.15.2
+torchaudio==2.0.2
 foo==1.0.0`
 	require.Equal(t, expected, requirements)
 }

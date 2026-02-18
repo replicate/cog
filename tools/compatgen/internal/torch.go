@@ -33,6 +33,17 @@ func FetchTorchCompatibilityMatrix() ([]config.TorchCompatibility, error) {
 		return nil, err
 	}
 
+	// Remove entries with no supported Python versions
+	filtered := make([]config.TorchCompatibility, 0, len(compats))
+	for _, c := range compats {
+		if len(c.Pythons) > 0 {
+			filtered = append(filtered, c)
+		} else {
+			console.Warnf("Dropping %s: no supported Python versions", c.Torch)
+		}
+	}
+	compats = filtered
+
 	// sanity check
 	if len(compats) < 21 {
 		return nil, fmt.Errorf("PyTorch compatibility matrix only had %d rows, has the html changed?", len(compats))
