@@ -297,9 +297,18 @@ impl PredictionService {
             .register_prediction(slot_id, Arc::clone(&prediction_arc), idle_tx)
             .await;
 
+        // Create per-prediction output dir for file-based outputs
+        let output_dir = std::path::PathBuf::from("/tmp/coglet/outputs").join(&prediction_id);
+        std::fs::create_dir_all(&output_dir)
+            .map_err(|e| PredictionError::Failed(format!("Failed to create output dir: {}", e)))?;
+
         let request = SlotRequest::Predict {
             id: prediction_id.clone(),
             input,
+            output_dir: output_dir
+                .to_str()
+                .expect("output dir path is valid UTF-8")
+                .to_string(),
         };
 
         // permit_mut returns None if permit isn't InUse (shouldn't happen here)

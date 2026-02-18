@@ -201,7 +201,19 @@ pub enum SlotRequest {
     Predict {
         id: String,
         input: serde_json::Value,
+        /// Directory for writing file outputs (created by coglet before dispatch).
+        /// Not included in API responses — internal transport detail.
+        output_dir: String,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FileOutputKind {
+    /// Output is a file-like return type (e.g. File, Path)
+    FileType,
+    /// Output exceeds size threshold for bridge codec serialization but is not a file-like return type
+    Oversized,
 }
 
 /// Messages from worker to parent on slot socket.
@@ -211,6 +223,13 @@ pub enum SlotResponse {
     Log {
         source: LogSource,
         data: String,
+    },
+
+    /// Output for a file/path-like output return type or an output that exceeds the size threshold
+    /// for bridge codec serialization.
+    FileOutput {
+        filename: String,
+        kind: FileOutputKind,
     },
 
     /// Streaming output chunk (for generators).
@@ -360,6 +379,7 @@ mod tests {
         let req = SlotRequest::Predict {
             id: "pred_123".to_string(),
             input: json!({"text": "hello"}),
+            output_dir: "/tmp/coglet/outputs/pred_123".to_string(),
         };
         insta::assert_json_snapshot!(req);
     }

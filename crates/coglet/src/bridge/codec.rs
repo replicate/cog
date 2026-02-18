@@ -121,6 +121,7 @@ mod tests {
         let req = SlotRequest::Predict {
             id: "test".to_string(),
             input: serde_json::json!({"x": 1}),
+            output_dir: "/tmp/coglet/outputs/test".to_string(),
         };
 
         codec.encode(req.clone(), &mut buf).unwrap();
@@ -131,14 +132,17 @@ mod tests {
                 SlotRequest::Predict {
                     id: id1,
                     input: input1,
+                    output_dir: dir1,
                 },
                 SlotRequest::Predict {
                     id: id2,
                     input: input2,
+                    output_dir: dir2,
                 },
             ) => {
                 assert_eq!(id1, id2);
                 assert_eq!(input1, input2);
+                assert_eq!(dir1, dir2);
             }
         }
     }

@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -130,7 +131,8 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
 
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
-    ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
+    ControlRequest, ControlResponse, FileOutputKind, LogSource, SlotId, SlotOutcome, SlotRequest,
+    SlotResponse,
 };
 use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
@@ -146,11 +148,23 @@ type SlotWriter =
 #[derive(Clone)]
 pub struct SlotSender {
     tx: mpsc::UnboundedSender<SlotResponse>,
+    output_dir: PathBuf,
+    file_counter: Arc<AtomicUsize>,
 }
 
 impl SlotSender {
-    pub fn new(tx: mpsc::UnboundedSender<SlotResponse>) -> Self {
-        Self { tx }
+    pub fn new(tx: mpsc::UnboundedSender<SlotResponse>, output_dir: PathBuf) -> Self {
+        Self {
+            tx,
+            output_dir,
+            file_counter: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// Generate a unique filename in the output dir.
+    fn next_output_path(&self, extension: &str) -> PathBuf {
+        let n = self.file_counter.fetch_add(1, Ordering::Relaxed);
+        self.output_dir.join(format!("{n}.{extension}"))
     }
 
     pub fn send_log(&self, source: LogSource, data: &str) -> io::Result<()> {
@@ -168,8 +182,44 @@ impl SlotSender {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
 
+    /// Send a file-typed output (e.g. Path, File return types).
+    ///
+    /// The file is already on disk at `path` — we just send the path reference.
+    pub fn send_file_output(&self, path: PathBuf) -> io::Result<()> {
+        let filename = path
+            .to_str()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
+            .to_string();
+        let msg = SlotResponse::FileOutput {
+            filename,
+            kind: FileOutputKind::FileType,
+        };
+        self.tx
+            .send(msg)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+    }
+
+    const MAX_INLINE_OUTPUT_SIZE: usize = 1024 * 1024 * 6; // 6MiB
+
+    /// Send prediction output, either inline or spilled to disk if too large.
     pub fn send_output(&self, output: serde_json::Value) -> io::Result<()> {
-        let msg = SlotResponse::Output { output };
+        let serialized = serde_json::to_vec(&output)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        let msg = if serialized.len() > Self::MAX_INLINE_OUTPUT_SIZE {
+            let path = self.next_output_path("json");
+            std::fs::write(&path, &serialized)?;
+            let filename = path
+                .to_str()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
+                .to_string();
+            SlotResponse::FileOutput {
+                filename,
+                kind: FileOutputKind::Oversized,
+            }
+        } else {
+            SlotResponse::Output { output }
+        };
         self.tx
             .send(msg)
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
@@ -587,7 +637,7 @@ pub async fn run_worker<H: PredictHandler>(
                 }
 
                 match request {
-                    SlotRequest::Predict { id, input } => {
+                    SlotRequest::Predict { id, input, output_dir } => {
                         tracing::trace!(%slot_id, %id, "Prediction request received");
                         slot_busy.insert(slot_id, true);
 
@@ -606,6 +656,7 @@ pub async fn run_worker<H: PredictHandler>(
                                 slot_id,
                                 id,
                                 input,
+                                PathBuf::from(output_dir),
                                 handler,
                                 writer,
                             ).await;
@@ -649,6 +700,7 @@ async fn run_prediction<H: PredictHandler>(
     slot_id: SlotId,
     prediction_id: String,
     input: serde_json::Value,
+    output_dir: PathBuf,
     handler: Arc<H>,
     writer: SlotWriter,
 ) -> SlotCompletion {
@@ -656,7 +708,7 @@ async fn run_prediction<H: PredictHandler>(
 
     // Create channel for log streaming
     let (log_tx, mut log_rx) = mpsc::unbounded_channel::<SlotResponse>();
-    let slot_sender = Arc::new(SlotSender::new(log_tx));
+    let slot_sender = Arc::new(SlotSender::new(log_tx, output_dir));
 
     // Forward logs to slot socket
     let writer_for_logs = Arc::clone(&writer);

@@ -776,6 +776,10 @@ async fn run_event_loop(
                             predictions.remove(&slot_id);
                         }
                     }
+                    Ok(SlotResponse::FileOutput { filename, kind }) => {
+                        // TODO: read file from disk, integrate into prediction output
+                        tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received (not yet wired)");
+                    }
                     Ok(SlotResponse::Done { id, output, predict_time }) => {
                         tracing::info!(
                             target: "coglet::prediction",

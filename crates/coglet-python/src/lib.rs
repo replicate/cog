@@ -188,7 +188,8 @@ impl CogletServer {
     }
 
     /// Start the HTTP prediction server. Blocks until shutdown.
-    #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false, output_temp_dir_base="/tmp/coglet/output".to_string()))]
     fn serve(
         &self,
         py: Python<'_>,
@@ -197,6 +198,7 @@ impl CogletServer {
         port: u16,
         await_explicit_shutdown: bool,
         is_train: bool,
+        output_temp_dir_base: String,
     ) -> PyResult<()> {
         serve_impl(
             py,
@@ -205,6 +207,7 @@ impl CogletServer {
             port,
             await_explicit_shutdown,
             is_train,
+            output_temp_dir_base,
         )
     }
 
@@ -261,6 +264,7 @@ fn serve_impl(
     port: u16,
     await_explicit_shutdown: bool,
     is_train: bool,
+    _output_temp_dir_base: String,
 ) -> PyResult<()> {
     let (setup_log_tx, setup_log_rx) = tokio::sync::mpsc::unbounded_channel();
     init_tracing(false, Some(setup_log_tx));
