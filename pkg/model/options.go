@@ -56,6 +56,11 @@ type BuildOptions struct {
 	// All other layers (wheel installs, apt, etc.) are shared with `cog build`
 	// via Docker layer caching.
 	ExcludeSource bool
+
+	// SkipSchemaValidation skips OpenAPI schema generation and validation.
+	// Used by `cog run` which executes arbitrary commands and may not have
+	// a predictor or trainer defined in cog.yaml.
+	SkipSchemaValidation bool
 }
 
 // WithDefaults returns a copy of BuildOptions with defaults applied from Source.

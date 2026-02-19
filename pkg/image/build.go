@@ -55,6 +55,7 @@ func Build(
 	strip bool,
 	precompile bool,
 	excludeSource bool,
+	skipSchemaValidation bool,
 	annotations map[string]string,
 	dockerCommand command.Command,
 	client registry.Client) (string, error) {
@@ -195,7 +196,10 @@ func Build(
 	}
 
 	var schemaJSON []byte
-	if schemaFile != "" {
+	switch {
+	case skipSchemaValidation:
+		console.Debug("Skipping model schema validation")
+	case schemaFile != "":
 		console.Infof("Validating model schema from %s...", schemaFile)
 		data, err := os.ReadFile(schemaFile)
 		if err != nil {
@@ -203,7 +207,7 @@ func Build(
 		}
 
 		schemaJSON = data
-	} else {
+	default:
 		console.Info("Validating model schema...")
 		// When excludeSource is true (cog serve), /src was not COPYed into the
 		// image, so we need to volume-mount the project directory for schema generation.
@@ -224,20 +228,22 @@ func Build(
 		schemaJSON = data
 	}
 
-	// save open_api schema file
-	if err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644); err != nil {
-		return "", fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
-	}
+	if !skipSchemaValidation {
+		// save open_api schema file
+		if err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644); err != nil {
+			return "", fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
+		}
 
-	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
-	doc, err := loader.LoadFromData(schemaJSON)
-	if err != nil {
-		return "", fmt.Errorf("Failed to load model schema JSON: %w", err)
-	}
-	err = doc.Validate(loader.Context)
-	if err != nil {
-		return "", fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
+		loader := openapi3.NewLoader()
+		loader.IsExternalRefsAllowed = true
+		doc, err := loader.LoadFromData(schemaJSON)
+		if err != nil {
+			return "", fmt.Errorf("Failed to load model schema JSON: %w", err)
+		}
+		err = doc.Validate(loader.Context)
+		if err != nil {
+			return "", fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
+		}
 	}
 
 	console.Info("Adding labels to image...")
@@ -314,8 +320,13 @@ func Build(
 
 	maps.Copy(labels, annotations)
 
-	// The final image ID comes from the label-adding step
-	imageID, err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, bundledSchemaFile, progressOutput)
+	// The final image ID comes from the label-adding step.
+	// When schema validation is skipped (cog run), there is no schema file to bundle.
+	schemaFileToBundle := bundledSchemaFile
+	if skipSchemaValidation {
+		schemaFileToBundle = ""
+	}
+	imageID, err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, schemaFileToBundle, progressOutput)
 	if err != nil {
 		return "", fmt.Errorf("Failed to add labels to image: %w", err)
 	}
@@ -336,7 +347,12 @@ func Build(
 // The new image is based on the provided image with the labels and schema file appended to it.
 // tmpName is the source image to build from, image is the final image name/tag.
 func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, tmpName, image string, labels map[string]string, bundledSchemaFile string, progressOutput string) (string, error) {
-	dockerfile := fmt.Sprintf("FROM %s\nCOPY %s .cog\n", tmpName, bundledSchemaFile)
+	var dockerfile string
+	if bundledSchemaFile != "" {
+		dockerfile = fmt.Sprintf("FROM %s\nCOPY %s .cog\n", tmpName, bundledSchemaFile)
+	} else {
+		dockerfile = fmt.Sprintf("FROM %s\n", tmpName)
+	}
 
 	buildOpts := command.ImageBuildOptions{
 		DockerfileContents: dockerfile,
