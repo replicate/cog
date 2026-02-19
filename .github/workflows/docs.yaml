@@ -10,9 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
+
+      - name: Generate CLI docs
+        run: go run ./tools/gendocs/main.go -o docs/cli.md
 
       - name: Copy top-level docs like README and CONTRIBUTING
         run: |

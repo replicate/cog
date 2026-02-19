@@ -159,8 +159,8 @@ jobs:
               echo "integration=false" >> $GITHUB_OUTPUT
             fi
 
-            # Detect docs changes
-            if echo "$CHANGED" | grep -qE '^(docs/|README\.md)'; then
+            # Detect docs changes (includes CLI source which generates docs/cli.md)
+            if echo "$CHANGED" | grep -qE '^(docs/|README\.md|cmd/|pkg/cli/)'; then
               echo "docs=true" >> $GITHUB_OUTPUT
             else
               echo "docs=false" >> $GITHUB_OUTPUT
@@ -390,6 +390,8 @@ jobs:
           cache: false
       - name: Check llms.txt is up to date
         run: mise run docs:llm:check
+      - name: Check CLI docs are up to date
+        run: mise run docs:cli:check
 
 # =============================================================================
 # Lint Checks - Parallel

@@ -34,6 +34,7 @@ Development tasks are managed with [mise](https://mise.jdx.dev/). Run `mise task
 | `mise run build:sdk` | Build SDK wheel |
 | `mise run install` | Build and symlink cog to /usr/local/bin |
 | `mise run docs:llm` | **IMPORTANT:** Regenerate `docs/llms.txt` after editing docs |
+| `mise run docs:cli` | Generate CLI reference docs from Go source code |
 
 ### Task Naming Convention
 
@@ -240,6 +241,7 @@ For comprehensive architecture documentation, see [`architecture/`](./architectu
 ### Updating the docs
 - Documentation is in the `docs/` directory, written in Markdown and generated into HTML using `mkdocs`.
 - **IMPORTANT:** After editing any file in `docs/` or `README.md`, you MUST run `mise run docs:llm` to regenerate `docs/llms.txt`. This file is used by coding agents and should be kept in sync with the documentation.
+- **IMPORTANT:** CLI reference docs (`docs/cli.md`) are auto-generated from Go source code. After modifying CLI commands in `cmd/` or `pkg/cli/`, run `mise run docs:cli` to regenerate, and ensure `mise run docs:cli:check` passes before committing.
 
 ## CI Tool Dependencies
 

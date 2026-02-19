@@ -60,3 +60,6 @@ target
 /.rustup
 /.rustup/**
 .coverage
+
+# Generated docs
+/site

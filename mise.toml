@@ -536,6 +536,7 @@ mkdocs serve
 
 [tasks."docs:llm"]
 description = "Update LLM documentation (llms.txt)"
+depends = ["docs:cli"]
 sources = ["README.md", "docs/*.md"]
 outputs = ["docs/llms.txt"]
 run = """
@@ -563,6 +564,28 @@ if ! diff -q "$tmpfile" docs/llms.txt > /dev/null 2>&1; then
   exit 1
 fi
 echo "docs/llms.txt is up to date"
+"""
+
+[tasks."docs:cli"]
+description = "Generate CLI reference documentation"
+sources = ["pkg/cli/*.go", "cmd/cog/*.go"]
+outputs = ["docs/cli.md"]
+run = "go run ./tools/gendocs/main.go -o docs/cli.md"
+
+[tasks."docs:cli:check"]
+description = "Check that CLI docs are up to date"
+run = """
+#!/usr/bin/env bash
+set -e
+tmpfile=$(mktemp)
+trap 'rm -f "$tmpfile"' EXIT
+# Generate to temp file and compare
+go run ./tools/gendocs/main.go -o "$tmpfile"
+if ! diff -q "$tmpfile" docs/cli.md > /dev/null 2>&1; then
+  echo "ERROR: docs/cli.md is out of date. Run 'mise run docs:cli' to update."
+  exit 1
+fi
+echo "docs/cli.md is up to date"
 """
 
 # =============================================================================
