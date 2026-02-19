@@ -352,56 +352,6 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 	return imageID, nil
 }
 
-func BuildBase(ctx context.Context, dockerClient command.Command, cfg *config.Config, dir string, configFilename string, useCudaBaseImage string, useCogBaseImage *bool, progressOutput string, client registry.Client, requiresCog bool) (string, error) {
-	// TODO: better image management so we don't eat up disk space
-	// https://github.com/replicate/cog/issues/80
-	imageName := config.BaseDockerImageName(dir)
-
-	console.Info("Building Docker image from environment in cog.yaml...")
-	generator, err := dockerfile.NewGenerator(cfg, dir, configFilename, dockerClient, client, requiresCog)
-	if err != nil {
-		return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
-	}
-	contextDir, err := generator.BuildDir()
-	if err != nil {
-		return "", err
-	}
-	buildContexts, err := generator.BuildContexts()
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if err := generator.Cleanup(); err != nil {
-			console.Warnf("Error cleaning up Dockerfile generator: %s", err)
-		}
-	}()
-
-	generator.SetUseCudaBaseImage(useCudaBaseImage)
-	if useCogBaseImage != nil {
-		generator.SetUseCogBaseImage(*useCogBaseImage)
-	}
-
-	dockerfileContents, err := generator.GenerateModelBase(ctx)
-	if err != nil {
-		return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)
-	}
-
-	buildOpts := command.ImageBuildOptions{
-		WorkingDir:         dir,
-		DockerfileContents: dockerfileContents,
-		ImageName:          imageName,
-		NoCache:            false,
-		ProgressOutput:     progressOutput,
-		Epoch:              &config.BuildSourceEpochTimestamp,
-		ContextDir:         contextDir,
-		BuildContexts:      buildContexts,
-	}
-	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
-		return "", fmt.Errorf("Failed to build Docker image: %w", err)
-	}
-	return imageName, nil
-}
-
 func isGitWorkTree(ctx context.Context, dir string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
