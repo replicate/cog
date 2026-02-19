@@ -1,5 +1,6 @@
 //! Predictor traits and prediction lifecycle types.
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 pub use crate::prediction::{CancellationToken, PredictionOutput};
@@ -10,6 +11,8 @@ pub struct PredictionResult {
     pub output: PredictionOutput,
     pub predict_time: Option<Duration>,
     pub logs: String,
+    /// User-emitted metrics from the prediction.
+    pub metrics: HashMap<String, serde_json::Value>,
 }
 
 /// Metrics collected during prediction.

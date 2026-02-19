@@ -5,6 +5,7 @@
 //! - Webhook sends outside Drop (no blocking in destructor)
 //! - Lock-free concurrent access via DashMap
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -25,6 +26,8 @@ pub struct PredictionState {
     pub error: Option<String>,
     pub started_at: Instant,
     pub completed_at: Option<Instant>,
+    /// User-emitted metrics. Accumulated during prediction, included in all webhook payloads.
+    pub metrics: HashMap<String, serde_json::Value>,
 }
 
 impl PredictionState {
@@ -44,9 +47,26 @@ impl PredictionState {
             response["error"] = serde_json::Value::String(error.clone());
         }
 
-        if let Some(completed_at) = self.completed_at {
-            let predict_time = completed_at.duration_since(self.started_at).as_secs_f64();
-            response["metrics"] = serde_json::json!({ "predict_time": predict_time });
+        // Build metrics: user metrics + predict_time (predict_time only on completion).
+        // Intermediate webhooks include whatever user metrics have accumulated so far.
+        if !self.metrics.is_empty() || self.completed_at.is_some() {
+            let mut metrics_obj = serde_json::Map::new();
+
+            // User metrics first
+            for (k, v) in &self.metrics {
+                metrics_obj.insert(k.clone(), v.clone());
+            }
+
+            // predict_time only on terminal (0.16.11: only added in succeeded())
+            if let Some(completed_at) = self.completed_at {
+                let predict_time = completed_at.duration_since(self.started_at).as_secs_f64();
+                metrics_obj.insert(
+                    "predict_time".to_string(),
+                    serde_json::json!(predict_time),
+                );
+            }
+
+            response["metrics"] = serde_json::Value::Object(metrics_obj);
         }
 
         response
@@ -158,6 +178,7 @@ impl PredictionSupervisor {
                 error: None,
                 started_at: Instant::now(),
                 completed_at: None,
+                metrics: HashMap::new(),
             },
             cancel_token: cancel_token.clone(),
             completion: Arc::clone(&completion),
@@ -180,6 +201,7 @@ impl PredictionSupervisor {
         status: PredictionStatus,
         output: Option<serde_json::Value>,
         error: Option<String>,
+        metrics: Option<HashMap<String, serde_json::Value>>,
     ) {
         if let Some(mut entry) = self.predictions.get_mut(id) {
             entry.state.status = status;
@@ -188,6 +210,9 @@ impl PredictionSupervisor {
             }
             if let Some(e) = error {
                 entry.state.error = Some(e);
+            }
+            if let Some(m) = metrics {
+                entry.state.metrics = m;
             }
 
             if status.is_terminal() {
@@ -212,6 +237,13 @@ impl PredictionSupervisor {
     pub fn append_logs(&self, id: &str, logs: &str) {
         if let Some(mut entry) = self.predictions.get_mut(id) {
             entry.state.logs.push_str(logs);
+        }
+    }
+
+    /// Update user metrics on a prediction. Called as metrics arrive during prediction.
+    pub fn update_metrics(&self, id: &str, metrics: HashMap<String, serde_json::Value>) {
+        if let Some(mut entry) = self.predictions.get_mut(id) {
+            entry.state.metrics = metrics;
         }
     }
 
@@ -261,7 +293,7 @@ mod tests {
         assert_eq!(state.status, PredictionStatus::Starting);
         assert_eq!(state.input, serde_json::json!({"x": 1}));
 
-        supervisor.update_status("test-1", PredictionStatus::Processing, None, None);
+        supervisor.update_status("test-1", PredictionStatus::Processing, None, None, None);
 
         let state = handle.state().unwrap();
         assert_eq!(state.status, PredictionStatus::Processing);
@@ -270,6 +302,7 @@ mod tests {
             "test-1",
             PredictionStatus::Succeeded,
             Some(serde_json::json!("result")),
+            None,
             None,
         );
 
