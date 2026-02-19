@@ -290,6 +290,11 @@ func (h *Harness) Setup(env *testscript.Env) error {
 		env.Setenv("RUST_LOG", rustLog)
 	}
 
+	// Propagate COG_CA_CERT for custom CA certificates (e.g. Cloudflare WARP)
+	if caCert := os.Getenv("COG_CA_CERT"); caCert != "" {
+		env.Setenv("COG_CA_CERT", caCert)
+	}
+
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)

@@ -69,19 +69,19 @@ experimental = true
 
 [tasks._setup_dist]
 hide = true
-quiet = true
+silent = true
 description = "Create dist directory"
 run = "mkdir -p dist"
 
 [tasks._setup_venv]
 hide = true
-quiet = true
+silent = true
 description = "Ensure root .venv exists with Python"
 run = "test -d .venv || uv venv --quiet"
 
 [tasks._clean_dist]
 hide = true
-quiet = true
+silent = true
 description = "Clean dist directory"
 run = "rm -f dist/cog-*.whl dist/cog-*.tar.gz dist/coglet-*.whl"
 
@@ -115,6 +115,8 @@ echo "Installed $PREFIX/bin/cog -> $BINARY"
 
 [tasks."build:cog"]
 description = "Build cog CLI (development)"
+sources = ["cmd/**/*.go", "pkg/**/*.go", "go.mod", "go.sum"]
+outputs = ["dist/go/*/cog"]
 run = "GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --snapshot --single-target --id cog --output cog"
 
 [tasks."build:cog:release"]
@@ -148,7 +150,7 @@ run = [
 [tasks."build:coglet:wheel:linux-x64"]
 description = "Build coglet Python wheel for Linux x86_64"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
-outputs = ["dist/coglet-*-linux_x86_64.whl"]
+outputs = ["dist/coglet-*manylinux*x86_64*.whl"]
 run = [
   { tasks = ["_setup_dist", "_setup_venv"] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig",
@@ -157,7 +159,7 @@ run = [
 [tasks."build:coglet:wheel:linux-arm64"]
 description = "Build coglet Python wheel for Linux ARM64"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
-outputs = ["dist/coglet-*-linux_aarch64.whl"]
+outputs = ["dist/coglet-*manylinux*aarch64*.whl"]
 run = [
   { tasks = ["_setup_dist", "_setup_venv"] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-unknown-linux-gnu --zig",
@@ -258,7 +260,7 @@ run = "nox -s coglet"
 
 [tasks."test:integration"]
 description = "Run integration tests (skips slow tests by default, set SHORT=0 for full suite)"
-depends = ["build:cog", "build:sdk", "build:coglet:wheel"]
+depends = ["build:cog", "build:sdk", "build:coglet:wheel:linux-x64"]
 run = """
 #!/usr/bin/env bash
 set -e
@@ -266,10 +268,13 @@ SHORT_FLAG="-short"
 if [ "${SHORT:-1}" = "0" ]; then
   SHORT_FLAG=""
 fi
-if [ -n "$1" ]; then
-  gotestsum -- -tags integration -v $SHORT_FLAG -run "TestIntegration/$1" -timeout 30m ./integration-tests/...
+# If first arg is a bare name (no dash), treat as test name filter;
+# remaining args are passed through to go test.
+# e.g. mise run test:integration coglet_large_output -count=4
+if [ $# -gt 0 ] && [[ "$1" != -* ]]; then
+  gotestsum -- -tags integration -v $SHORT_FLAG -run "TestIntegration/$1" "${@:2}" -timeout 30m ./integration-tests/...
 else
-  gotestsum -- -tags integration -v $SHORT_FLAG -parallel ${TEST_PARALLEL:-4} -timeout 30m ./integration-tests/...
+  gotestsum -- -tags integration -v $SHORT_FLAG -parallel ${TEST_PARALLEL:-4} "$@" -timeout 30m ./integration-tests/...
 fi
 """
 

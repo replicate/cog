@@ -129,7 +129,7 @@ The CLI code is in the `cmd/cog/` and `pkg/` directories. Support tooling is in 
 
 The main commands for working on the CLI are:
 - `go run ./cmd/cog` - Runs the Cog CLI directly from source (requires wheel to be built first)
-- `mise run build:cog` - Builds the Cog CLI binary, embedding the Python wheel
+- `mise run build:cog` - Builds the Cog CLI binary
 - `mise run install` - Symlinks the built binary to `/usr/local/bin` (run `build:cog` first), or to a custom path with `PREFIX=/custom/path mise run install`
 - `mise run test:go` - Runs all Go unit tests
 - `go test ./pkg/...` - Runs tests directly with `go test`
@@ -180,7 +180,7 @@ COG_BINARY=dist/go/*/cog mise run test:integration
 1. Run `mise install` to set up the development environment
 2. Run `mise run build:sdk` after making changes to the `./python` directory
 3. Run `mise run build:coglet:wheel:linux-x64` after making changes to the `./crates` directory (needed for Docker testing)
-4. Run `mise run build:cog` to build the CLI (embeds the SDK wheel; picks up coglet wheel from `dist/`)
+4. Run `mise run build:cog` to build the CLI (wheels are picked up from `dist/` at Docker build time, not embedded in the binary)
 5. Run `mise run fmt:fix` to format code
 6. Run `mise run lint` to check code quality
 7. Run `mise run docs:llm` to regenerate `docs/llms.txt` after changing `README.md` or any `docs/*.md` file
@@ -212,7 +212,7 @@ See `crates/README.md` for detailed architecture documentation.
 - `crates/coglet-python/` - PyO3 bindings for Python predictor integration
 
 ### Key Design Patterns
-1. **Embedded Python Wheel**: The Go binary embeds the Python wheel at build time (`pkg/dockerfile/embed/`)
+1. **Local Wheel Resolution**: The CLI discovers SDK and coglet wheels from `dist/` at Docker build time (not embedded in the binary)
 2. **Docker SDK Integration**: Uses Docker Go SDK for container operations
 3. **Type Safety**: Dataclasses for Python type validation, strongly typed Go interfaces
 4. **Compatibility Matrix**: Automated CUDA/PyTorch/TensorFlow compatibility management
