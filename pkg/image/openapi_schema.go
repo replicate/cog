@@ -12,7 +12,8 @@ import (
 
 // GenerateOpenAPISchema by running the image and executing Cog
 // This will be run as part of the build process then added as a label to the image. It can be retrieved more efficiently with the label by using GetOpenAPISchema
-func GenerateOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string, enableGPU bool) (map[string]any, error) {
+// sourceDir, when non-empty, is volume-mounted as /src (needed for ExcludeSource builds where COPY . /src was skipped).
+func GenerateOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string, enableGPU bool, sourceDir string) (map[string]any, error) {
 	console.Debugf("=== image.GenerateOpenAPISchema %s", imageName)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -23,19 +24,24 @@ func GenerateOpenAPISchema(ctx context.Context, dockerClient command.Command, im
 		gpus = "all"
 	}
 
-	err := docker.RunWithIO(ctx, dockerClient, command.RunOptions{
+	runOpts := command.RunOptions{
 		Image: imageName,
 		Args: []string{
 			"python", "-m", "cog.command.openapi_schema",
 		},
 		GPUs: gpus,
-	}, nil, &stdout, &stderr)
+	}
+	if sourceDir != "" {
+		runOpts.Volumes = []command.Volume{{Source: sourceDir, Destination: "/src"}}
+	}
+
+	err := docker.RunWithIO(ctx, dockerClient, runOpts, nil, &stdout, &stderr)
 
 	if enableGPU && err == docker.ErrMissingDeviceDriver {
 		console.Debug(stdout.String())
 		console.Debug(stderr.String())
 		console.Debug("Missing device driver, re-trying without GPU")
-		return GenerateOpenAPISchema(ctx, dockerClient, imageName, false)
+		return GenerateOpenAPISchema(ctx, dockerClient, imageName, false, sourceDir)
 	}
 
 	if err != nil {

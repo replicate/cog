@@ -54,6 +54,7 @@ func Build(
 	useCogBaseImage *bool,
 	strip bool,
 	precompile bool,
+	excludeSource bool,
 	annotations map[string]string,
 	dockerCommand command.Command,
 	client registry.Client) (string, error) {
@@ -162,7 +163,15 @@ func Build(
 				return "", fmt.Errorf("Failed to build runner Docker image: %w", err)
 			}
 		} else {
-			dockerfileContents, err := generator.GenerateDockerfileWithoutSeparateWeights(ctx)
+			var dockerfileContents string
+			if excludeSource {
+				// Dev mode (cog serve): same layers as cog build but without
+				// COPY . /src — source is volume-mounted at runtime instead.
+				// This shares Docker layer cache with full builds.
+				dockerfileContents, err = generator.GenerateModelBase(ctx)
+			} else {
+				dockerfileContents, err = generator.GenerateDockerfileWithoutSeparateWeights(ctx)
+			}
 			if err != nil {
 				return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)
 			}
@@ -196,7 +205,13 @@ func Build(
 		schemaJSON = data
 	} else {
 		console.Info("Validating model schema...")
-		schema, err := GenerateOpenAPISchema(ctx, dockerCommand, tmpImageId, cfg.Build.GPU)
+		// When excludeSource is true (cog serve), /src was not COPYed into the
+		// image, so we need to volume-mount the project directory for schema generation.
+		schemaSourceDir := ""
+		if excludeSource {
+			schemaSourceDir = dir
+		}
+		schema, err := GenerateOpenAPISchema(ctx, dockerCommand, tmpImageId, cfg.Build.GPU, schemaSourceDir)
 		if err != nil {
 			return "", fmt.Errorf("Failed to get type signature: %w", err)
 		}

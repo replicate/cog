@@ -26,11 +26,28 @@ import (
 	"github.com/replicate/cog/pkg/registry_testhelpers"
 )
 
+// propagatedEnvVars lists host environment variables that should be propagated
+// into testscript environments (Setup) and background processes (cmdCogServe).
+// Keep this list in sync: if you add a new env var to propagate, add it here.
+var propagatedEnvVars = []string{
+	"COG_WHEEL",         // SDK wheel override
+	"COGLET_WHEEL",      // coglet wheel override
+	"RUST_LOG",          // Rust logging control
+	"COG_CA_CERT",       // custom CA certificates (e.g. Cloudflare WARP)
+	"BUILDKIT_PROGRESS", // Docker build output format
+}
+
 // Harness provides utilities for running cog integration tests.
 // serverInfo tracks a running cog serve process and its port
 type serverInfo struct {
 	cmd  *exec.Cmd
 	port int
+}
+
+// containerInfo tracks a running Docker container started by container-start.
+type containerInfo struct {
+	containerID string
+	port        int
 }
 
 // registryInfo tracks a running test registry container
@@ -56,6 +73,24 @@ type mockUploadServer struct {
 	uploads []mockUploadRecord
 }
 
+// webhookResult is the summary written to stdout by webhook-server-wait.
+type webhookResult struct {
+	Status     string `json:"status"`
+	OutputSize int    `json:"output_size"`
+	HasError   bool   `json:"has_error"`
+}
+
+// webhookServer accepts prediction webhook callbacks from coglet.
+// It parses the JSON payload to extract status and output size, without
+// ever exposing the (potentially huge) output to testscript's log buffer.
+type webhookServer struct {
+	server *http.Server
+	port   int
+	mu     sync.Mutex
+	result *webhookResult
+	done   chan struct{} // closed on first terminal webhook
+}
+
 type Harness struct {
 	CogBinary string
 	// realHome is captured at creation time before testscript overrides HOME
@@ -71,6 +106,9 @@ type Harness struct {
 	// uploadServers tracks mock upload servers for cleanup, keyed by work directory
 	uploadServers   map[string]*mockUploadServer
 	uploadServersMu sync.Mutex
+	// webhookServers tracks webhook receiver servers for cleanup, keyed by work directory
+	webhookServers   map[string]*webhookServer
+	webhookServersMu sync.Mutex
 }
 
 // New creates a new Harness, resolving the cog binary location.
@@ -84,12 +122,13 @@ func New() (*Harness, error) {
 		return nil, err
 	}
 	return &Harness{
-		CogBinary:     cogBinary,
-		realHome:      os.Getenv("HOME"),
-		repoRoot:      repoRoot,
-		serverProcs:   make(map[string]*serverInfo),
-		registries:    make(map[string]*registryInfo),
-		uploadServers: make(map[string]*mockUploadServer),
+		CogBinary:      cogBinary,
+		realHome:       os.Getenv("HOME"),
+		repoRoot:       repoRoot,
+		serverProcs:    make(map[string]*serverInfo),
+		registries:     make(map[string]*registryInfo),
+		uploadServers:  make(map[string]*mockUploadServer),
+		webhookServers: make(map[string]*webhookServer),
 	}, nil
 }
 
@@ -220,6 +259,10 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 		NewCommand("upload-server-start", h.cmdUploadServerStart),
 		NewCommand("upload-server-count", h.cmdUploadServerCount),
 
+		// Webhook receiver commands
+		NewCommand("webhook-server-start", h.cmdWebhookServerStart),
+		NewCommand("webhook-server-wait", h.cmdWebhookServerWait),
+
 		// PTY command (defined in cmd_pty.go)
 		&PtyRunCommand{harness: h},
 	}
@@ -275,24 +318,11 @@ func (h *Harness) Setup(env *testscript.Env) error {
 	// Disable update checks during tests
 	env.Setenv("COG_NO_UPDATE_CHECK", "1")
 
-	// Propagate COG_WHEEL environment variable for runtime selection
-	if cogWheel := os.Getenv("COG_WHEEL"); cogWheel != "" {
-		env.Setenv("COG_WHEEL", cogWheel)
-	}
-
-	// Propagate COGLET_WHEEL for coglet server
-	if cogletWheel := os.Getenv("COGLET_WHEEL"); cogletWheel != "" {
-		env.Setenv("COGLET_WHEEL", cogletWheel)
-	}
-
-	// Propagate RUST_LOG for Rust logging control
-	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
-		env.Setenv("RUST_LOG", rustLog)
-	}
-
-	// Propagate COG_CA_CERT for custom CA certificates (e.g. Cloudflare WARP)
-	if caCert := os.Getenv("COG_CA_CERT"); caCert != "" {
-		env.Setenv("COG_CA_CERT", caCert)
+	// Propagate host env vars listed in propagatedEnvVars
+	for _, key := range propagatedEnvVars {
+		if val := os.Getenv(key); val != "" {
+			env.Setenv(key, val)
+		}
 	}
 
 	// Generate unique image name for this test run
@@ -310,6 +340,8 @@ func (h *Harness) Setup(env *testscript.Env) error {
 		h.stopRegistryByWorkDir(workDir)
 		// Stop the upload server for this specific test (if any)
 		h.stopUploadServerByWorkDir(workDir)
+		// Stop the webhook server for this specific test (if any)
+		h.stopWebhookServerByWorkDir(workDir)
 		removeDockerImage(imageName)
 	})
 
@@ -383,11 +415,17 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	cmd := exec.Command(h.CogBinary, expandedArgs...)
 	cmd.Dir = workDir
 
-	// Build environment from testscript
+	// Build environment from testscript.
+	// Always include core vars, plus everything from propagatedEnvVars.
 	var env []string
-	for _, key := range []string{"HOME", "PATH", "REPO_ROOT", "COG_NO_UPDATE_CHECK", "COG_WHEEL", "COGLET_WHEEL", "RUST_LOG", "BUILDKIT_PROGRESS", "TEST_IMAGE"} {
+	for _, key := range []string{"HOME", "PATH", "REPO_ROOT", "COG_NO_UPDATE_CHECK", "TEST_IMAGE"} {
 		if val := ts.Getenv(key); val != "" {
-			env = append(env, fmt.Sprintf("%s=%s", key, val))
+			env = append(env, key+"="+val)
+		}
+	}
+	for _, key := range propagatedEnvVars {
+		if val := ts.Getenv(key); val != "" {
+			env = append(env, key+"="+val)
 		}
 	}
 	cmd.Env = env
@@ -419,14 +457,34 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 // cmdCurl implements the 'curl' command for testscript.
 // It makes HTTP requests to the server started with 'serve'.
 // Includes built-in retry logic (10 attempts, 500ms delay) for resilience.
-// Usage: curl [method] [path] [body]
+// Usage: curl [-H key:value]... [method] [path] [body]
 // Examples:
 //
 //	curl GET /health-check
 //	curl POST /predictions '{"input":{"s":"hello"}}'
+//	curl -H Prefer:respond-async POST /predictions '{"input":{}}'
 func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) < 2 {
-		ts.Fatalf("curl: usage: curl [method] [path] [body]")
+		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body]")
+	}
+
+	// Parse -H flags for extra headers
+	var extraHeaders [][2]string
+	for len(args) >= 2 && args[0] == "-H" {
+		kv := args[1]
+		parts := strings.SplitN(kv, ":", 2)
+		if len(parts) != 2 {
+			ts.Fatalf("curl: invalid header %q (expected key:value)", kv)
+		}
+		extraHeaders = append(extraHeaders, [2]string{
+			strings.TrimSpace(parts[0]),
+			strings.TrimSpace(parts[1]),
+		})
+		args = args[2:]
+	}
+
+	if len(args) < 2 {
+		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body]")
 	}
 
 	serverURL := ts.Getenv("SERVER_URL")
@@ -438,7 +496,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	path := args[1]
 	var body string
 	if len(args) > 2 {
-		body = args[2]
+		body = os.Expand(args[2], ts.Getenv)
 	}
 
 	// Retry settings
@@ -463,6 +521,9 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 
 		if body != "" {
 			req.Header.Set("Content-Type", "application/json")
+		}
+		for _, h := range extraHeaders {
+			req.Header.Set(h[0], h[1])
 		}
 
 		resp, err := client.Do(req)
@@ -1210,5 +1271,151 @@ func (h *Harness) stopUploadServerByWorkDir(workDir string) {
 
 	if mus.server != nil {
 		_ = mus.server.Close()
+	}
+}
+
+// =============================================================================
+// Webhook receiver commands
+// =============================================================================
+
+// cmdWebhookServerStart starts a webhook receiver that accepts prediction callbacks.
+// It parses the JSON payload to extract status and measure the output size, without
+// ever exposing the (potentially huge) output to testscript's log buffer.
+// Usage: webhook-server-start
+// Exports $WEBHOOK_URL with the server's callback URL.
+func (h *Harness) cmdWebhookServerStart(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("webhook-server-start: does not support negation")
+	}
+
+	workDir := ts.Getenv("WORK")
+
+	h.webhookServersMu.Lock()
+	if _, exists := h.webhookServers[workDir]; exists {
+		h.webhookServersMu.Unlock()
+		ts.Fatalf("webhook-server-start: server already running for this test")
+	}
+	h.webhookServersMu.Unlock()
+
+	ws := &webhookServer{
+		done: make(chan struct{}),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Stream-parse the JSON to extract status and measure output size
+		// without holding the entire output string in testscript memory.
+		var payload struct {
+			Status string `json:"status"`
+			Output string `json:"output"`
+			Error  string `json:"error"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+
+		// Only record terminal statuses
+		switch payload.Status {
+		case "succeeded", "failed", "canceled":
+		default:
+			return
+		}
+
+		ws.mu.Lock()
+		defer ws.mu.Unlock()
+
+		// Only record the first terminal callback
+		if ws.result != nil {
+			return
+		}
+		ws.result = &webhookResult{
+			Status:     payload.Status,
+			OutputSize: len(payload.Output),
+			HasError:   payload.Error != "",
+		}
+		close(ws.done)
+	})
+
+	ws.server = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second} //nolint:gosec
+
+	// Bind to all interfaces so the container can reach us via host.docker.internal
+	ln, err := net.Listen("tcp", "0.0.0.0:0") //nolint:gosec
+	if err != nil {
+		ts.Fatalf("webhook-server-start: failed to listen: %v", err)
+	}
+	ws.port = ln.Addr().(*net.TCPAddr).Port
+
+	go func() { _ = ws.server.Serve(ln) }()
+
+	h.webhookServersMu.Lock()
+	h.webhookServers[workDir] = ws
+	h.webhookServersMu.Unlock()
+
+	url := fmt.Sprintf("http://host.docker.internal:%d/webhook", ws.port)
+	ts.Setenv("WEBHOOK_URL", url)
+	ts.Logf("webhook-server-start: listening on 0.0.0.0:%d, container URL: %s", ws.port, url)
+}
+
+// cmdWebhookServerWait blocks until the webhook server receives a terminal prediction callback,
+// then writes a compact JSON summary to stdout for assertion with stdout/stderr matchers.
+// Usage: webhook-server-wait [timeout]
+// Default timeout: 120s
+func (h *Harness) cmdWebhookServerWait(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("webhook-server-wait: does not support negation")
+	}
+
+	timeout := 120 * time.Second
+	if len(args) > 0 {
+		if d, err := time.ParseDuration(args[0]); err == nil {
+			timeout = d
+		}
+	}
+
+	workDir := ts.Getenv("WORK")
+	h.webhookServersMu.Lock()
+	ws, exists := h.webhookServers[workDir]
+	h.webhookServersMu.Unlock()
+
+	if !exists {
+		ts.Fatalf("webhook-server-wait: no webhook server running (call webhook-server-start first)")
+	}
+
+	select {
+	case <-ws.done:
+	case <-time.After(timeout):
+		ts.Fatalf("webhook-server-wait: timed out after %s waiting for terminal webhook", timeout)
+	}
+
+	ws.mu.Lock()
+	result := ws.result
+	ws.mu.Unlock()
+
+	out, _ := json.Marshal(result)
+	_, _ = ts.Stdout().Write(out)
+	_, _ = ts.Stdout().Write([]byte("\n"))
+}
+
+// stopWebhookServerByWorkDir shuts down the webhook server for a work directory.
+func (h *Harness) stopWebhookServerByWorkDir(workDir string) {
+	h.webhookServersMu.Lock()
+	ws, exists := h.webhookServers[workDir]
+	if !exists {
+		h.webhookServersMu.Unlock()
+		return
+	}
+	delete(h.webhookServers, workDir)
+	h.webhookServersMu.Unlock()
+
+	if ws.server != nil {
+		_ = ws.server.Close()
 	}
 }

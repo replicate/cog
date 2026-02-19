@@ -42,6 +42,19 @@ Generate and run an HTTP server based on the declared model inputs and outputs.`
 	return cmd
 }
 
+// serveBuildOptions creates BuildOptions for cog serve.
+// Same build path as cog build, but with ExcludeSource so COPY . /src is
+// skipped — source is volume-mounted at runtime instead. All other layers
+// (wheels, apt, etc.) share Docker layer cache with cog build.
+func serveBuildOptions(cmd *cobra.Command) model.BuildOptions {
+	return model.BuildOptions{
+		UseCudaBaseImage: buildUseCudaBaseImage,
+		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
+		ProgressOutput:   buildProgressOutput,
+		ExcludeSource:    true,
+	}
+}
+
 func cmdServe(cmd *cobra.Command, arg []string) error {
 	ctx := cmd.Context()
 
@@ -56,7 +69,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	}
 
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
-	m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
+	m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
 	if err != nil {
 		return err
 	}

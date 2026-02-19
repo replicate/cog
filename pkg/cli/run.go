@@ -65,7 +65,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
-	m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
+	m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
 	if err != nil {
 		return err
 	}

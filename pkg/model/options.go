@@ -49,6 +49,13 @@ type BuildOptions struct {
 	// artifacts and pushes create an OCI Image Index. Set via COG_OCI_INDEX=1.
 	// Remove this field once index pushes are validated with all registries.
 	OCIIndex bool
+
+	// ExcludeSource skips the COPY . /src step in the generated Dockerfile.
+	// Used by `cog serve` to produce an image identical to `cog build` minus
+	// the source copy — the source directory is volume-mounted at runtime.
+	// All other layers (wheel installs, apt, etc.) are shared with `cog build`
+	// via Docker layer caching.
+	ExcludeSource bool
 }
 
 // WithDefaults returns a copy of BuildOptions with defaults applied from Source.
