@@ -938,14 +938,13 @@ async fn run_event_loop(
                         );
                         let uploads = pending_uploads.remove(&slot_id).unwrap_or_default();
                         if let Some(pred) = predictions.remove(&slot_id) {
-                            tokio::spawn(async move {
-                                for h in uploads {
-                                    let _ = h.await;
-                                }
+                            if uploads.is_empty() {
+                                // No pending uploads — complete synchronously to avoid
+                                // a race between tokio::spawn and Notify::notified() in
+                                // service.rs.  notify_waiters() only wakes already-
+                                // registered waiters; spawning a task can fire the
+                                // notification before the service registers its waiter.
                                 if let Some(mut p) = try_lock_prediction(&pred) {
-                                    // Outputs are accumulated via append_output (from Output
-                                    // and FileOutput messages). Done always arrives with
-                                    // output: None — the actual values are in outputs().
                                     let pred_output = match p.take_outputs().as_slice() {
                                         [] => PredictionOutput::Single(serde_json::Value::Null),
                                         [single] => PredictionOutput::Single(single.clone()),
@@ -953,7 +952,25 @@ async fn run_event_loop(
                                     };
                                     p.set_succeeded(pred_output);
                                 }
-                            });
+                            } else {
+                                // Has pending uploads — must spawn to await them.
+                                // TODO(#2748): when cancellation is wired end-to-end,
+                                // this spawn should also observe the cancel token and
+                                // abort in-flight uploads on cancellation.
+                                tokio::spawn(async move {
+                                    for h in uploads {
+                                        let _ = h.await;
+                                    }
+                                    if let Some(mut p) = try_lock_prediction(&pred) {
+                                        let pred_output = match p.take_outputs().as_slice() {
+                                            [] => PredictionOutput::Single(serde_json::Value::Null),
+                                            [single] => PredictionOutput::Single(single.clone()),
+                                            many => PredictionOutput::Stream(many.to_vec()),
+                                        };
+                                        p.set_succeeded(pred_output);
+                                    }
+                                });
+                            }
                         } else {
                             tracing::warn!(%slot_id, %id, "Prediction not found for Done message");
                         }
