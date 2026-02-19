@@ -216,6 +216,18 @@ pub enum FileOutputKind {
     Oversized,
 }
 
+/// Accumulation mode for user metrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetricMode {
+    /// Replace existing value (default).
+    Replace,
+    /// Add to existing numeric value.
+    Increment,
+    /// Append to existing array.
+    Append,
+}
+
 /// Messages from worker to parent on slot socket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -238,6 +250,20 @@ pub enum SlotResponse {
     /// Streaming output chunk (for generators).
     Output {
         output: serde_json::Value,
+    },
+
+    /// User-emitted metric from the prediction.
+    ///
+    /// Metrics are key-value pairs attached to the prediction response.
+    /// Supports dot-path keys (e.g., "timing.preprocess") that the server
+    /// resolves into nested objects. The mode controls how values are merged:
+    /// - Replace: overwrite existing value
+    /// - Increment: add to existing numeric value
+    /// - Append: push onto existing array
+    Metric {
+        name: String,
+        value: serde_json::Value,
+        mode: MetricMode,
     },
 
     Done {
@@ -427,6 +453,56 @@ mod tests {
     fn slot_cancelled_serializes() {
         let resp = SlotResponse::Cancelled {
             id: "pred_123".to_string(),
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_metric_replace_serializes() {
+        let resp = SlotResponse::Metric {
+            name: "temperature".to_string(),
+            value: json!(0.7),
+            mode: MetricMode::Replace,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_metric_increment_serializes() {
+        let resp = SlotResponse::Metric {
+            name: "token_count".to_string(),
+            value: json!(1),
+            mode: MetricMode::Increment,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_metric_append_serializes() {
+        let resp = SlotResponse::Metric {
+            name: "logprobs".to_string(),
+            value: json!(-1.2),
+            mode: MetricMode::Append,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_metric_delete_serializes() {
+        let resp = SlotResponse::Metric {
+            name: "unwanted".to_string(),
+            value: json!(null),
+            mode: MetricMode::Replace,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_metric_complex_value_serializes() {
+        let resp = SlotResponse::Metric {
+            name: "timing".to_string(),
+            value: json!({"preprocess": 0.1, "inference": 0.8}),
+            mode: MetricMode::Replace,
         };
         insta::assert_json_snapshot!(resp);
     }

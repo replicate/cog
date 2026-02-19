@@ -1,11 +1,13 @@
 //! Prediction state tracking.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::sync::Notify;
 pub use tokio_util::sync::CancellationToken;
 
+use crate::bridge::protocol::MetricMode;
 use crate::webhook::WebhookSender;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +76,8 @@ pub struct Prediction {
     error: Option<String>,
     webhook: Option<WebhookSender>,
     completion: Arc<Notify>,
+    /// User-emitted metrics. Merged with system metrics (predict_time) in terminal response.
+    metrics: HashMap<String, serde_json::Value>,
 }
 
 impl Prediction {
@@ -89,6 +93,7 @@ impl Prediction {
             error: None,
             webhook,
             completion: Arc::new(Notify::new()),
+            metrics: HashMap::new(),
         }
     }
 
@@ -151,6 +156,132 @@ impl Prediction {
         &self.logs
     }
 
+    /// Set a user metric with the given accumulation mode.
+    ///
+    /// - `Replace`: overwrites the value (or deletes if null).
+    /// - `Increment`: adds to an existing numeric value. Errors silently if types mismatch.
+    /// - `Append`: pushes onto an existing array, creating one if needed.
+    ///
+    /// Dot-path keys (e.g., "timing.preprocess") are resolved into nested objects.
+    pub fn set_metric(&mut self, name: String, value: serde_json::Value, mode: MetricMode) {
+        // Dot-path resolution: "a.b.c" → nested objects
+        let parts: Vec<&str> = name.split('.').collect();
+        if parts.len() > 1 {
+            self.set_metric_dotpath(&parts, value, mode);
+            return;
+        }
+
+        match mode {
+            MetricMode::Replace => {
+                if value.is_null() {
+                    self.metrics.remove(&name);
+                } else {
+                    self.metrics.insert(name, value);
+                }
+            }
+            MetricMode::Increment => {
+                let entry = self.metrics.entry(name).or_insert(serde_json::json!(0));
+                if let (Some(existing), Some(delta)) = (entry.as_f64(), value.as_f64()) {
+                    // Preserve integer type if both are integers
+                    if entry.is_i64() && value.is_i64() {
+                        *entry = serde_json::json!(existing as i64 + delta as i64);
+                    } else if entry.is_u64() && value.is_u64() {
+                        *entry = serde_json::json!(existing as u64 + delta as u64);
+                    } else {
+                        *entry = serde_json::json!(existing + delta);
+                    }
+                }
+                // Non-numeric increment is silently ignored
+            }
+            MetricMode::Append => {
+                let entry = self
+                    .metrics
+                    .entry(name)
+                    .or_insert(serde_json::Value::Array(vec![]));
+                if let Some(arr) = entry.as_array_mut() {
+                    arr.push(value);
+                } else {
+                    // Existing value is not an array — wrap it and append
+                    let existing = entry.take();
+                    *entry = serde_json::json!([existing, value]);
+                }
+            }
+        }
+    }
+
+    /// Resolve a dot-path key into nested objects and apply the metric.
+    fn set_metric_dotpath(&mut self, parts: &[&str], value: serde_json::Value, mode: MetricMode) {
+        debug_assert!(parts.len() > 1);
+
+        let root_key = parts[0].to_string();
+
+        // Navigate/create nested structure
+        let entry = self
+            .metrics
+            .entry(root_key)
+            .or_insert_with(|| serde_json::json!({}));
+
+        let mut current = entry;
+        for &part in &parts[1..parts.len() - 1] {
+            // Ensure intermediate nodes are objects
+            if !current.is_object() {
+                *current = serde_json::json!({});
+            }
+            current = current
+                .as_object_mut()
+                .unwrap()
+                .entry(part)
+                .or_insert_with(|| serde_json::json!({}));
+        }
+
+        let leaf_key = parts[parts.len() - 1];
+
+        // Ensure the parent is an object
+        if !current.is_object() {
+            *current = serde_json::json!({});
+        }
+        let obj = current.as_object_mut().unwrap();
+
+        match mode {
+            MetricMode::Replace => {
+                if value.is_null() {
+                    obj.remove(leaf_key);
+                } else {
+                    obj.insert(leaf_key.to_string(), value);
+                }
+            }
+            MetricMode::Increment => {
+                let entry = obj
+                    .entry(leaf_key)
+                    .or_insert(serde_json::json!(0));
+                if let (Some(existing), Some(delta)) = (entry.as_f64(), value.as_f64()) {
+                    if entry.is_i64() && value.is_i64() {
+                        *entry = serde_json::json!(existing as i64 + delta as i64);
+                    } else if entry.is_u64() && value.is_u64() {
+                        *entry = serde_json::json!(existing as u64 + delta as u64);
+                    } else {
+                        *entry = serde_json::json!(existing + delta);
+                    }
+                }
+            }
+            MetricMode::Append => {
+                let entry = obj
+                    .entry(leaf_key)
+                    .or_insert(serde_json::Value::Array(vec![]));
+                if let Some(arr) = entry.as_array_mut() {
+                    arr.push(value);
+                } else {
+                    let existing = entry.take();
+                    *entry = serde_json::json!([existing, value]);
+                }
+            }
+        }
+    }
+
+    pub fn metrics(&self) -> &HashMap<String, serde_json::Value> {
+        &self.metrics
+    }
+
     pub fn append_output(&mut self, output: serde_json::Value) {
         self.outputs.push(output);
     }
@@ -187,8 +318,25 @@ impl Prediction {
         self.webhook.take()
     }
 
-    pub fn build_terminal_response(&self) -> serde_json::Value {
+    /// Build merged metrics object: user metrics + system metrics (predict_time).
+    /// System metrics (predict_time) always win on conflict.
+    fn build_metrics(&self) -> serde_json::Value {
         let predict_time = self.elapsed().as_secs_f64();
+        let mut merged = serde_json::Map::new();
+
+        // User metrics first
+        for (k, v) in &self.metrics {
+            merged.insert(k.clone(), v.clone());
+        }
+
+        // System metrics override — predict_time is always authoritative
+        merged.insert("predict_time".to_string(), serde_json::json!(predict_time));
+
+        serde_json::Value::Object(merged)
+    }
+
+    pub fn build_terminal_response(&self) -> serde_json::Value {
+        let metrics = self.build_metrics();
 
         match self.status {
             PredictionStatus::Succeeded => {
@@ -196,7 +344,7 @@ impl Prediction {
                     "id": self.id,
                     "status": "succeeded",
                     "output": self.output,
-                    "metrics": { "predict_time": predict_time }
+                    "metrics": metrics
                 })
             }
             PredictionStatus::Failed => {
@@ -204,14 +352,14 @@ impl Prediction {
                     "id": self.id,
                     "status": "failed",
                     "error": self.error,
-                    "metrics": { "predict_time": predict_time }
+                    "metrics": metrics
                 })
             }
             PredictionStatus::Canceled => {
                 serde_json::json!({
                     "id": self.id,
                     "status": "canceled",
-                    "metrics": { "predict_time": predict_time }
+                    "metrics": metrics
                 })
             }
             _ => {
@@ -219,7 +367,7 @@ impl Prediction {
                     "id": self.id,
                     "status": "failed",
                     "error": "Prediction in non-terminal state",
-                    "metrics": { "predict_time": predict_time }
+                    "metrics": metrics
                 })
             }
         }
