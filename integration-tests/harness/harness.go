@@ -84,9 +84,9 @@ func New() (*Harness, error) {
 		return nil, err
 	}
 	return &Harness{
-		CogBinary:   cogBinary,
-		realHome:    os.Getenv("HOME"),
-		repoRoot:    repoRoot,
+		CogBinary:     cogBinary,
+		realHome:      os.Getenv("HOME"),
+		repoRoot:      repoRoot,
 		serverProcs:   make(map[string]*serverInfo),
 		registries:    make(map[string]*registryInfo),
 		uploadServers: make(map[string]*mockUploadServer),
