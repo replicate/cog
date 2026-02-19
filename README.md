@@ -29,8 +29,7 @@ build:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
   python_version: "3.12"
-  python_packages:
-    - "torch==2.3"
+  python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
 
