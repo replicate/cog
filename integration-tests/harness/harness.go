@@ -44,12 +44,6 @@ type serverInfo struct {
 	port int
 }
 
-// containerInfo tracks a running Docker container started by container-start.
-type containerInfo struct {
-	containerID string
-	port        int
-}
-
 // registryInfo tracks a running test registry container
 type registryInfo struct {
 	container *registry_testhelpers.RegistryContainer
