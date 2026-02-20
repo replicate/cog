@@ -7,5 +7,6 @@ expression: req
   "id": "pred_123",
   "input": {
     "text": "hello"
-  }
+  },
+  "output_dir": "/tmp/coglet/outputs/pred_123"
 }

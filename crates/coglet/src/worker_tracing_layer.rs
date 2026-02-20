@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use tracing::{Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
-use crate::bridge::protocol::ControlResponse;
+use crate::bridge::protocol::{ControlResponse, truncate_worker_log};
 
 pub struct WorkerTracingLayer {
     tx: mpsc::Sender<ControlResponse>,
@@ -52,7 +52,7 @@ where
 
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
-        let message = visitor.message;
+        let message = truncate_worker_log(visitor.message);
 
         // Targets excluded from IPC:
         // - coglet::bridge::codec: feedback loop when encoding WorkerLog messages

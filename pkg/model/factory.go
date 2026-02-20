@@ -12,11 +12,9 @@ import (
 // Different implementations handle different build strategies.
 type Factory interface {
 	// Build creates a Docker image from source and returns ImageArtifact metadata.
+	// For dev mode (cog serve), set ExcludeSource=true in BuildOptions to skip
+	// COPY . /src — the source directory is volume-mounted at runtime instead.
 	Build(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error)
-
-	// BuildBase creates a base image for dev mode (without /src copied).
-	// The source directory is expected to be mounted as a volume at runtime.
-	BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*ImageArtifact, error)
 
 	// Name returns the factory name for logging/debugging.
 	Name() string
@@ -56,6 +54,8 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 		opts.UseCogBaseImage,
 		opts.Strip,
 		opts.Precompile,
+		opts.ExcludeSource,
+		opts.SkipSchemaValidation,
 		opts.Annotations,
 		f.docker,
 		f.registry,
@@ -67,30 +67,6 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 	return &ImageArtifact{
 		Reference: opts.ImageName,
 		Digest:    imageID,
-		Source:    ImageSourceBuild,
-	}, nil
-}
-
-// BuildBase delegates to the existing image.BuildBase() function.
-func (f *DockerfileFactory) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*ImageArtifact, error) {
-	imageName, err := image.BuildBase(
-		ctx,
-		f.docker,
-		src.Config,
-		src.ProjectDir,
-		src.ConfigFilename,
-		opts.UseCudaBaseImage,
-		opts.UseCogBaseImage,
-		opts.ProgressOutput,
-		f.registry,
-		opts.RequiresCog,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ImageArtifact{
-		Reference: imageName,
 		Source:    ImageSourceBuild,
 	}, nil
 }

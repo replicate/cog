@@ -73,13 +73,13 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
+		m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
 		if err != nil {
 			return err
 		}
 		imageName = m.ImageRef()
 
-		// Base image doesn't have /src in it, so mount as volume
+		// ExcludeSource build doesn't have /src in it, so mount as volume
 		volumes = append(volumes, command.Volume{
 			Source:      src.ProjectDir,
 			Destination: "/src",

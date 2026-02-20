@@ -275,38 +275,6 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 	return pusher.Push(ctx, m, opts)
 }
 
-// BuildBase creates a base image for dev mode (without /src copied).
-// The source directory is expected to be mounted as a volume at runtime.
-// Returns a Model with the built image info and the source config.
-//
-// NOTE: Unlike Build(), this does not use ImageBuilder because base images
-// don't have labels yet (they're added during full builds). The returned
-// ImageArtifact has no labels, no descriptor, and no inspect results.
-func (r *Resolver) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Model, error) {
-	if src == nil {
-		return nil, fmt.Errorf("source is required for BuildBase")
-	}
-	if src.Config == nil {
-		return nil, fmt.Errorf("source.Config is required for BuildBase")
-	}
-	if src.ProjectDir == "" {
-		return nil, fmt.Errorf("source.ProjectDir is required for BuildBase")
-	}
-	opts = opts.WithDefaults()
-
-	img, err := r.factory.BuildBase(ctx, src, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// For base builds, we don't have labels yet (they're added in full builds).
-	// Return the model with the source config and the built image.
-	return &Model{
-		Image:  img,
-		Config: src.Config,
-	}, nil
-}
-
 // loadLocal loads a Model from the local docker daemon.
 func (r *Resolver) loadLocal(ctx context.Context, ref *ParsedRef) (*Model, error) {
 	resp, err := r.docker.Inspect(ctx, ref.String())

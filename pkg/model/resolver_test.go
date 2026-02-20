@@ -143,9 +143,8 @@ func (m *mockRegistry) WriteLayer(ctx context.Context, opts registry.WriteLayerO
 
 // mockFactory implements Factory for testing.
 type mockFactory struct {
-	name          string
-	buildFunc     func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error)
-	buildBaseFunc func(ctx context.Context, src *Source, opts BuildBaseOptions) (*ImageArtifact, error)
+	name      string
+	buildFunc func(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error)
 }
 
 func (f *mockFactory) Build(ctx context.Context, src *Source, opts BuildOptions) (*ImageArtifact, error) {
@@ -153,13 +152,6 @@ func (f *mockFactory) Build(ctx context.Context, src *Source, opts BuildOptions)
 		return f.buildFunc(ctx, src, opts)
 	}
 	return &ImageArtifact{Reference: opts.ImageName, Source: ImageSourceBuild}, nil
-}
-
-func (f *mockFactory) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*ImageArtifact, error) {
-	if f.buildBaseFunc != nil {
-		return f.buildBaseFunc(ctx, src, opts)
-	}
-	return &ImageArtifact{Reference: "cog-base", Source: ImageSourceBuild}, nil
 }
 
 func (f *mockFactory) Name() string {

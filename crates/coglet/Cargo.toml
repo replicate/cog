@@ -21,6 +21,10 @@ async-trait = "0.1"
 serde.workspace = true
 serde_json.workspace = true
 
+# Encoding
+base64 = "0.22.1"
+mime_guess = "2.0.5"
+
 # Identifiers
 uuid.workspace = true
 

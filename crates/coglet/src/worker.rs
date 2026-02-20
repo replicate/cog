@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -18,6 +19,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use futures::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
+
+use crate::bridge::protocol::truncate_worker_log;
 
 // ============================================================================
 // Dropped log tracking
@@ -128,7 +131,8 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
 
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
-    ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
+    ControlRequest, ControlResponse, FileOutputKind, LogSource, SlotId, SlotOutcome, SlotRequest,
+    SlotResponse,
 };
 use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
@@ -144,11 +148,23 @@ type SlotWriter =
 #[derive(Clone)]
 pub struct SlotSender {
     tx: mpsc::UnboundedSender<SlotResponse>,
+    output_dir: PathBuf,
+    file_counter: Arc<AtomicUsize>,
 }
 
 impl SlotSender {
-    pub fn new(tx: mpsc::UnboundedSender<SlotResponse>) -> Self {
-        Self { tx }
+    pub fn new(tx: mpsc::UnboundedSender<SlotResponse>, output_dir: PathBuf) -> Self {
+        Self {
+            tx,
+            output_dir,
+            file_counter: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// Generate a unique filename in the output dir.
+    fn next_output_path(&self, extension: &str) -> PathBuf {
+        let n = self.file_counter.fetch_add(1, Ordering::Relaxed);
+        self.output_dir.join(format!("{n}.{extension}"))
     }
 
     pub fn send_log(&self, source: LogSource, data: &str) -> io::Result<()> {
@@ -158,7 +174,7 @@ impl SlotSender {
 
         let msg = SlotResponse::Log {
             source,
-            data: data.to_string(),
+            data: truncate_worker_log(data.to_string()),
         };
 
         self.tx
@@ -166,11 +182,73 @@ impl SlotSender {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
 
-    pub fn send_output(&self, output: serde_json::Value) -> io::Result<()> {
-        let msg = SlotResponse::Output { output };
+    /// Write raw bytes to a file in the output dir and send as FileOutput.
+    ///
+    /// Used by FFI workers (Python, Node, etc.) to hand off file data without
+    /// needing language-specific file I/O — SlotSender owns the write.
+    pub fn write_file_output(
+        &self,
+        data: &[u8],
+        extension: &str,
+        mime_type: Option<String>,
+    ) -> io::Result<()> {
+        let path = self.next_output_path(extension);
+        std::fs::write(&path, data)?;
+        self.send_file_output(path, mime_type)
+    }
+
+    /// Send a file-typed output (e.g. Path, File return types).
+    ///
+    /// The file is already on disk at `path` — we just send the path reference.
+    /// `mime_type` is an explicit MIME type; when None the parent guesses from extension.
+    pub fn send_file_output(&self, path: PathBuf, mime_type: Option<String>) -> io::Result<()> {
+        let filename = path
+            .to_str()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
+            .to_string();
+        let msg = SlotResponse::FileOutput {
+            filename,
+            kind: FileOutputKind::FileType,
+            mime_type,
+        };
         self.tx
             .send(msg)
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+    }
+
+    /// Send prediction output, either inline or spilled to disk if too large.
+    pub fn send_output(&self, output: serde_json::Value) -> io::Result<()> {
+        let msg = build_output_message(&self.output_dir, output)?;
+        self.tx
+            .send(msg)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+    }
+}
+
+const MAX_INLINE_OUTPUT_SIZE: usize = 1024 * 1024 * 6; // 6MiB
+
+/// Build an output message, spilling to disk if larger than the IPC frame limit.
+fn build_output_message(
+    output_dir: &std::path::Path,
+    output: serde_json::Value,
+) -> io::Result<SlotResponse> {
+    let serialized =
+        serde_json::to_vec(&output).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    if serialized.len() > MAX_INLINE_OUTPUT_SIZE {
+        let path = output_dir.join(format!("spill_{}.json", uuid::Uuid::new_v4()));
+        std::fs::write(&path, &serialized)?;
+        let filename = path
+            .to_str()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
+            .to_string();
+        Ok(SlotResponse::FileOutput {
+            filename,
+            kind: FileOutputKind::Oversized,
+            mime_type: None,
+        })
+    } else {
+        Ok(SlotResponse::Output { output })
     }
 }
 
@@ -585,7 +663,7 @@ pub async fn run_worker<H: PredictHandler>(
                 }
 
                 match request {
-                    SlotRequest::Predict { id, input } => {
+                    SlotRequest::Predict { id, input, output_dir } => {
                         tracing::trace!(%slot_id, %id, "Prediction request received");
                         slot_busy.insert(slot_id, true);
 
@@ -604,6 +682,7 @@ pub async fn run_worker<H: PredictHandler>(
                                 slot_id,
                                 id,
                                 input,
+                                PathBuf::from(output_dir),
                                 handler,
                                 writer,
                             ).await;
@@ -647,6 +726,7 @@ async fn run_prediction<H: PredictHandler>(
     slot_id: SlotId,
     prediction_id: String,
     input: serde_json::Value,
+    output_dir: PathBuf,
     handler: Arc<H>,
     writer: SlotWriter,
 ) -> SlotCompletion {
@@ -654,7 +734,7 @@ async fn run_prediction<H: PredictHandler>(
 
     // Create channel for log streaming
     let (log_tx, mut log_rx) = mpsc::unbounded_channel::<SlotResponse>();
-    let slot_sender = Arc::new(SlotSender::new(log_tx));
+    let slot_sender = Arc::new(SlotSender::new(log_tx, output_dir.clone()));
 
     // Forward logs to slot socket
     let writer_for_logs = Arc::clone(&writer);
@@ -669,7 +749,8 @@ async fn run_prediction<H: PredictHandler>(
         tracing::trace!("Prediction log forwarder exiting");
     });
 
-    // Run prediction
+    // Run prediction — slot_sender is moved in, dropped when predict returns,
+    // which closes the log channel and lets the log forwarder exit.
     let result = handler
         .predict(slot_id, prediction_id.clone(), input, slot_sender)
         .await;
@@ -680,16 +761,39 @@ async fn run_prediction<H: PredictHandler>(
     let _ = log_forwarder.await;
     tracing::trace!(%slot_id, %prediction_id, "Log forwarder done");
 
-    // Send result on slot socket
+    // Send result on slot socket.
+    // Output is always sent separately from Done so that large values get
+    // spilled to disk and never exceed the IPC frame limit.
+    let mut w = writer.lock().await;
     let response = match result.outcome {
         PredictionOutcome::Success {
             output,
             predict_time,
-        } => SlotResponse::Done {
-            id: prediction_id.clone(),
-            output: Some(output),
-            predict_time,
-        },
+        } => {
+            // Send output as a separate message (handles spilling for large values).
+            // Skip if null or empty array — those mean "already streamed" (generators).
+            if !output.is_null() && output != serde_json::Value::Array(vec![]) {
+                let output_msg = match build_output_message(&output_dir, output) {
+                    Ok(msg) => msg,
+                    Err(e) => {
+                        tracing::error!(error = %e, "Failed to build output message");
+                        return SlotCompletion::poisoned(
+                            slot_id,
+                            format!("Output spill error: {}", e),
+                        );
+                    }
+                };
+                if let Err(e) = w.send(output_msg).await {
+                    tracing::error!(error = %e, "Failed to send prediction output");
+                    return SlotCompletion::poisoned(slot_id, format!("Socket write error: {}", e));
+                }
+            }
+            SlotResponse::Done {
+                id: prediction_id.clone(),
+                output: None,
+                predict_time,
+            }
+        }
         PredictionOutcome::Cancelled { .. } => SlotResponse::Cancelled {
             id: prediction_id.clone(),
         },
@@ -699,7 +803,6 @@ async fn run_prediction<H: PredictHandler>(
         },
     };
 
-    let mut w = writer.lock().await;
     if let Err(e) = w.send(response).await {
         tracing::error!(error = %e, "Failed to send prediction response");
         return SlotCompletion::poisoned(slot_id, format!("Socket write error: {}", e));

@@ -44,6 +44,8 @@ coverage.xml
 const LDConfigCacheBuildCommand = "RUN find / -type f -name \"*python*.so\" -printf \"%h\\n\" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig"
 const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
+const uvCacheMount = "--mount=type=cache,target=/root/.cache/uv"
+const uvPip = "uv pip"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
 
@@ -190,6 +192,7 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 			installCACert, // First! Before any network requests (apt, pip, etc.)
 			envs,
 			aptInstalls,
+			g.installUV(),
 		}
 		if installCog != "" {
 			steps = append(steps, installCog)
@@ -203,6 +206,12 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 		return joinStringsWithoutLineSpace(steps), nil
 	}
 
+	// For the CUDA path, uv is installed inside installPython (after the apt step).
+	// For all other paths (python:X-slim), install uv after apt.
+	uvInstall := ""
+	if installPython == "" {
+		uvInstall = g.installUV()
+	}
 	steps := []string{
 		"#syntax=docker/dockerfile:1.4",
 		"FROM " + baseImage,
@@ -211,6 +220,7 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 		g.installTini(),
 		envs,
 		aptInstalls,
+		uvInstall,
 		installPython,
 		pipInstalls,
 		installCog,
@@ -425,47 +435,26 @@ func (g *StandardGenerator) installPython() (string, error) {
 	return "", nil
 }
 
+func (g *StandardGenerator) installUV() string {
+	return `RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 UV_VERSION=0.9.26 sh
+ENV UV_SYSTEM_PYTHON=true`
+}
+
 func (g *StandardGenerator) installPythonCUDA() (string, error) {
 	// TODO: check that python version is valid
 
 	py := g.Config.Build.PythonVersion
-	// Make sure we install 3.13.0 instead of a later version due to the GIL lock not working on packages with certain versions of Cython
-	if py == "3.13" {
-		py = "3.13.0"
-	}
-	return `ENV PATH="/root/.pyenv/shims:/root/.pyenv/bin:$PATH"
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy --no-install-recommends \
-	make \
-	build-essential \
-	libssl-dev \
-	zlib1g-dev \
-	libbz2-dev \
-	libreadline-dev \
-	libsqlite3-dev \
+	return `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy --no-install-recommends \
 	wget \
 	curl \
-	llvm \
-	libncurses5-dev \
-	libncursesw5-dev \
 	xz-utils \
-	tk-dev \
-	libffi-dev \
-	liblzma-dev \
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
-` + fmt.Sprintf(`
-RUN --mount=type=cache,target=/root/.cache/pip curl -s -S -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash && \
-	git clone https://github.com/momo-lab/pyenv-install-latest.git "$(pyenv root)"/plugins/pyenv-install-latest && \
-	export PYTHON_CONFIGURE_OPTS='--enable-optimizations --with-lto' && \
-	export PYTHON_CFLAGS='-O3' && \
-	pyenv install-latest "%s" && \
-	pyenv global $(pyenv install-latest --print "%s") && \
-	pip install "wheel<1"`, py, py) + `
-RUN rm -rf /usr/bin/python3 && ln -s ` + "`realpath \\`pyenv which python\\`` /usr/bin/python3 && chmod +x /usr/bin/python3", nil
-	// for sitePackagesLocation, kind of need to determine which specific version latest is (3.10 -> 3.10.14, etc.)
-	// install-latest essentially does pyenv install --list | grep $py | tail -1
-	// there are many bad options, but a symlink to $(pyenv prefix) is the least bad one
+` + g.installUV() + "\n" + fmt.Sprintf(`RUN uv python install %s && \
+	ln -sf $(uv python find %s) /usr/bin/python3
+ENV UV_PYTHON=%s
+ENV PATH="/usr/local/bin:$PATH"`, py, py, py), nil
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
@@ -478,7 +467,6 @@ func (g *StandardGenerator) installCog() (string, error) {
 	if !g.requiresCog {
 		return "", nil
 	}
-
 	// Use override if set, otherwise auto-detect via env var / dist / PyPI
 	var wheelConfig *wheels.WheelConfig
 	var err error
@@ -549,7 +537,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 // installCogFromPyPI installs the cog SDK from PyPI
 func (g *StandardGenerator) installCogFromPyPI(config *wheels.WheelConfig) (string, error) {
 	packageSpec := config.PyPIPackageURL("cog")
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + packageSpec
+	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install --no-cache " + packageSpec
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -576,9 +564,9 @@ func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
 	// with coglet's cog compatibility shim that provides the same module paths.
 	var pipPrefix string
 	if strings.Contains(url, "coglet") {
-		pipPrefix = "pip uninstall -y cog 2>/dev/null || true && "
+		pipPrefix = uvPip + " uninstall cog 2>/dev/null || true && "
 	}
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + url
+	pipInstallLine := "RUN " + uvCacheMount + " " + pipPrefix + uvPip + " install --no-cache " + url
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -614,10 +602,10 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 		// Uninstall cog first to avoid conflicts with coglet's cog shim package.
 		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
 		// with coglet's cog compatibility shim that provides the same module paths.
-		pipPrefix = "pip uninstall -y cog 2>/dev/null || true && "
+		pipPrefix = uvPip + " uninstall cog 2>/dev/null || true && "
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip " + pipPrefix + "pip install --no-cache-dir " + containerPath
+	pipInstallLine := "RUN " + uvCacheMount + " " + pipPrefix + uvPip + " install --no-cache " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -642,7 +630,7 @@ func (g *StandardGenerator) installCogletWheel(config *wheels.WheelConfig) (stri
 // installCogletFromPyPI installs coglet from PyPI
 func (g *StandardGenerator) installCogletFromPyPI(config *wheels.WheelConfig) (string, error) {
 	packageSpec := config.PyPIPackageURL("coglet")
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + packageSpec
+	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install --no-cache " + packageSpec
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -652,7 +640,7 @@ func (g *StandardGenerator) installCogletFromPyPI(config *wheels.WheelConfig) (s
 
 // installCogletFromURL installs coglet from a URL
 func (g *StandardGenerator) installCogletFromURL(url string) (string, error) {
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + url
+	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install --no-cache " + url
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -673,7 +661,7 @@ func (g *StandardGenerator) installCogletFromFile(path string) (string, error) {
 		return "", err
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir " + containerPath
+	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install --no-cache " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -712,7 +700,7 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 		return "", err
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip pip install -r " + containerPath
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}

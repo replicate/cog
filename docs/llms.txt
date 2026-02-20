@@ -369,6 +369,7 @@ cog serve [flags]
   -h, --help                         help for serve
   -p, --port int                     Port on which to listen (default 8393)
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
+      --upload-url string            Upload URL for file outputs (e.g. https://example.com/upload/)
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```

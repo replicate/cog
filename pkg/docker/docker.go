@@ -447,6 +447,11 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 		}
 	}
 
+	// Configure extra hosts (e.g. host.docker.internal on Linux)
+	if len(options.ExtraHosts) > 0 {
+		hostCfg.ExtraHosts = options.ExtraHosts
+	}
+
 	networkingCfg := &network.NetworkingConfig{
 		EndpointsConfig: map[string]*network.EndpointSettings{},
 	}

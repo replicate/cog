@@ -1,0 +1,40 @@
+# Test that outputs larger than the 8MiB IPC frame limit spill to disk
+# and are reconstructed correctly by the orchestrator.
+# Without spilling this would panic the bridge and poison the slot.
+#
+# Uses async prediction + webhook so the 9MiB output goes directly to our
+# Go webhook receiver — never through testscript's log buffer.
+#
+# --upload-url is set to a dummy value so cog serve adds
+# --add-host=host.docker.internal:host-gateway (needed on Linux for the
+# webhook callback to reach the host). Nothing is actually uploaded because
+# the output is a plain string, not a Path.
+
+webhook-server-start
+cog serve --upload-url http://unused/
+
+# Async prediction — server returns 202 immediately, delivers result to webhook
+curl -H Prefer:respond-async POST /predictions '{"id":"large-output-test","webhook":"$WEBHOOK_URL","webhook_events_filter":["completed"]}'
+
+# Wait for the webhook callback (up to 120s)
+webhook-server-wait
+
+# 1. Prediction succeeded
+stdout '"status":"succeeded"'
+
+# 2. Output is correct — 9 * 1024 * 1024 = 9437184 bytes
+stdout '"output_size":9437184'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        # 9MiB string — exceeds the 8MiB IPC frame limit
+        return "x" * (9 * 1024 * 1024)

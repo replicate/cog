@@ -157,9 +157,11 @@ func GenerateCACertInstall(certData []byte, writeTemp func(filename string, cont
 	lines := []string{}
 	lines = append(lines, copyLines...)
 
-	// Copy to system CA directory, update the certificate store, and set env vars
+	// Copy to system CA directory, update the certificate store, and set env vars.
+	// Also append the cert directly to the bundle file as a fallback for images
+	// where update-ca-certificates may not work as expected.
 	lines = append(lines,
-		fmt.Sprintf("RUN cp /tmp/%s %s && update-ca-certificates", CACertFilename, CACertContainerPath),
+		fmt.Sprintf("RUN cp /tmp/%s %s && update-ca-certificates && cat /tmp/%s >> %s", CACertFilename, CACertContainerPath, CACertFilename, SystemCertBundle),
 		fmt.Sprintf("ENV SSL_CERT_FILE=%s", SystemCertBundle),
 		fmt.Sprintf("ENV REQUESTS_CA_BUNDLE=%s", SystemCertBundle),
 	)
