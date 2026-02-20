@@ -493,11 +493,7 @@ mod tests {
     fn metric_replace_null_deletes() {
         let mut pred = Prediction::new("test".to_string(), None);
         pred.set_metric("temp".into(), serde_json::json!(0.7), MetricMode::Replace);
-        pred.set_metric(
-            "temp".into(),
-            serde_json::Value::Null,
-            MetricMode::Replace,
-        );
+        pred.set_metric("temp".into(), serde_json::Value::Null, MetricMode::Replace);
         assert!(!pred.metrics().contains_key("temp"));
     }
 
@@ -545,10 +541,7 @@ mod tests {
             serde_json::json!(-0.3),
             MetricMode::Append,
         );
-        assert_eq!(
-            pred.metrics()["logprobs"],
-            serde_json::json!([-1.2, -0.3])
-        );
+        assert_eq!(pred.metrics()["logprobs"], serde_json::json!([-1.2, -0.3]));
     }
 
     #[test]
@@ -576,15 +569,8 @@ mod tests {
     #[test]
     fn metric_dotpath_deep() {
         let mut pred = Prediction::new("test".to_string(), None);
-        pred.set_metric(
-            "a.b.c".into(),
-            serde_json::json!(42),
-            MetricMode::Replace,
-        );
-        assert_eq!(
-            pred.metrics()["a"],
-            serde_json::json!({"b": {"c": 42}})
-        );
+        pred.set_metric("a.b.c".into(), serde_json::json!(42), MetricMode::Replace);
+        assert_eq!(pred.metrics()["a"], serde_json::json!({"b": {"c": 42}}));
     }
 
     #[test]
@@ -636,10 +622,7 @@ mod tests {
             serde_json::json!(5),
             MetricMode::Increment,
         );
-        assert_eq!(
-            pred.metrics()["stats"],
-            serde_json::json!({"tokens": 15})
-        );
+        assert_eq!(pred.metrics()["stats"], serde_json::json!({"tokens": 15}));
     }
 
     #[test]
@@ -659,10 +642,7 @@ mod tests {
             pred.metrics()["config"],
             serde_json::json!({"layers": 12, "heads": 8})
         );
-        assert_eq!(
-            pred.metrics()["scores"],
-            serde_json::json!([0.9, 0.8, 0.7])
-        );
+        assert_eq!(pred.metrics()["scores"], serde_json::json!([0.9, 0.8, 0.7]));
     }
 
     #[test]

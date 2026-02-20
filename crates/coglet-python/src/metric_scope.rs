@@ -409,9 +409,9 @@ pub fn py_current_scope(py: Python<'_>) -> PyResult<Py<Scope>> {
 /// RAII guard that manages the Scope for a prediction.
 ///
 /// On creation, creates a Scope with a MetricRecorder and sets it in
-/// ContextVar + sync scope. On drop, clears the scope.
+/// ContextVar + sync scope. On drop, clears the scope and releases the
+/// Arc<SlotSender> so the log-forwarder channel can close.
 pub struct ScopeGuard {
-    #[allow(dead_code)]
     scope: Py<Scope>,
     #[allow(dead_code)]
     token: Py<PyAny>,
@@ -432,6 +432,21 @@ impl ScopeGuard {
 impl Drop for ScopeGuard {
     fn drop(&mut self) {
         clear_sync_scope();
+
+        // Acquire the GIL to release the Arc<SlotSender> held by the MetricRecorder.
+        // Without this, the Py<Scope> destructor may not run immediately (PyO3
+        // defers ref-count decrements when the GIL is not held), keeping the
+        // SlotSender channel alive and blocking the log-forwarder shutdown.
+        Python::attach(|py| {
+            let scope = self.scope.borrow(py);
+            let recorder = scope.metrics_recorder.borrow(py);
+            let mut guard = recorder
+                .inner
+                .lock()
+                .expect("metric_recorder mutex poisoned");
+            // Drop the RecorderInner (and its Arc<SlotSender>)
+            *guard = None;
+        });
     }
 }
 
