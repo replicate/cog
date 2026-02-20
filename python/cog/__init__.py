@@ -37,6 +37,31 @@ from .types import (
     URLPath,
 )
 
+
+def current_scope():  # type: ignore[no-untyped-def]
+    """Get the current prediction scope for recording metrics.
+
+    Returns a Scope object with a ``metrics`` attribute for recording
+    prediction metrics. Outside a prediction context, returns a no-op scope.
+
+    Example::
+
+        from cog import current_scope
+
+        scope = current_scope()
+        scope.record_metric("temperature", 0.7)
+        scope.metrics["token_count"] = 42
+        scope.metrics.record("logprobs", -1.2, mode="append")
+    """
+    try:
+        from coglet._sdk import current_scope as _current_scope
+
+        return _current_scope()
+    except ImportError:
+        # coglet not installed (e.g. running outside container) — return None
+        return None
+
+
 Coder.register(DataclassCoder)
 Coder.register(JsonCoder)
 Coder.register(SetCoder)
@@ -60,4 +85,6 @@ __all__ = [
     "AsyncConcatenateIterator",
     # Extensibility
     "Coder",
+    # Metrics
+    "current_scope",
 ]
