@@ -729,8 +729,20 @@ First, install Cog:
 ```bash
 sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
 sudo chmod +x /usr/local/bin/cog
+sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
 
 ```
+
+> [!NOTE]
+> **macOS: "cannot be opened because the developer cannot be verified"**
+>
+> If you see this Gatekeeper warning, it's because the binary isn't signed yet. The `xattr` command above clears the quarantine flag automatically. If you downloaded the binary via a browser instead, run this manually:
+>
+> ```bash
+> sudo xattr -d com.apple.quarantine /usr/local/bin/cog
+> ```
+>
+> Alternatively, you can install Cog via Homebrew (`brew install cog`) which builds from source and isn't affected.
 
 ## Create a project
 
