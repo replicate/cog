@@ -230,7 +230,9 @@ impl Scope {
         value: &Bound<'_, PyAny>,
         mode: Option<&str>,
     ) -> PyResult<()> {
-        self.metrics_recorder.borrow(py).record(py, key, value, mode)
+        self.metrics_recorder
+            .borrow(py)
+            .record(py, key, value, mode)
     }
 
     fn __repr__(&self, py: Python<'_>) -> String {
@@ -256,7 +258,7 @@ fn parse_mode(mode: Option<&str>) -> PyResult<MetricMode> {
 }
 
 fn record_impl(
-    py: Python<'_>,
+    _py: Python<'_>,
     inner: &mut RecorderInner,
     key: &str,
     value: &Bound<'_, PyAny>,
@@ -265,15 +267,15 @@ fn record_impl(
     let value_type = MetricValueType::from_py(value)?;
 
     // Type invariant check
-    if let Some(existing_type) = inner.types.get(key) {
-        if *existing_type != value_type {
-            return Err(PyTypeError::new_err(format!(
-                "Metric '{}' has type {}, cannot set to {} without deleting first",
-                key,
-                existing_type.as_str(),
-                value_type.as_str(),
-            )));
-        }
+    if let Some(existing_type) = inner.types.get(key)
+        && *existing_type != value_type
+    {
+        return Err(PyTypeError::new_err(format!(
+            "Metric '{}' has type {}, cannot set to {} without deleting first",
+            key,
+            existing_type.as_str(),
+            value_type.as_str(),
+        )));
     }
 
     // Mode-specific validation
@@ -286,16 +288,14 @@ fn record_impl(
         )));
     }
 
-    let json_value = py_to_json(py, value)?;
+    let json_value = py_to_json(value)?;
 
     inner.types.insert(key.to_string(), value_type);
 
     inner
         .sender
         .send_metric(key.to_string(), json_value, mode)
-        .map_err(|e| {
-            pyo3::exceptions::PyIOError::new_err(format!("Failed to send metric: {}", e))
-        })
+        .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("Failed to send metric: {}", e)))
 }
 
 fn delete_impl(inner: &mut RecorderInner, key: &str) -> PyResult<()> {
@@ -308,10 +308,7 @@ fn delete_impl(inner: &mut RecorderInner, key: &str) -> PyResult<()> {
             MetricMode::Replace,
         )
         .map_err(|e| {
-            pyo3::exceptions::PyIOError::new_err(format!(
-                "Failed to send metric delete: {}",
-                e
-            ))
+            pyo3::exceptions::PyIOError::new_err(format!("Failed to send metric delete: {}", e))
         })
 }
 
@@ -441,7 +438,7 @@ impl Drop for ScopeGuard {
 // Python → JSON conversion
 // ============================================================================
 
-fn py_to_json(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
+fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
     if obj.is_none() {
         Ok(serde_json::Value::Null)
     } else if obj.is_instance_of::<pyo3::types::PyBool>() {
@@ -460,7 +457,7 @@ fn py_to_json(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Va
         let list = obj.cast::<pyo3::types::PyList>()?;
         let items: Vec<serde_json::Value> = list
             .iter()
-            .map(|item| py_to_json(py, &item))
+            .map(|item| py_to_json(&item))
             .collect::<PyResult<_>>()?;
         Ok(serde_json::Value::Array(items))
     } else if obj.is_instance_of::<pyo3::types::PyDict>() {
@@ -468,7 +465,7 @@ fn py_to_json(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Va
         let mut map = serde_json::Map::new();
         for (k, v) in dict.iter() {
             let key: String = k.extract()?;
-            map.insert(key, py_to_json(py, &v)?);
+            map.insert(key, py_to_json(&v)?);
         }
         Ok(serde_json::Value::Object(map))
     } else {

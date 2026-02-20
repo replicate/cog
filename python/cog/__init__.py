@@ -38,7 +38,7 @@ from .types import (
 )
 
 
-def current_scope():  # type: ignore[no-untyped-def]
+def current_scope() -> object:
     """Get the current prediction scope for recording metrics.
 
     Returns a Scope object with a ``metrics`` attribute for recording

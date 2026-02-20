@@ -251,9 +251,7 @@ impl Prediction {
                 }
             }
             MetricMode::Increment => {
-                let entry = obj
-                    .entry(leaf_key)
-                    .or_insert(serde_json::json!(0));
+                let entry = obj.entry(leaf_key).or_insert(serde_json::json!(0));
                 if let (Some(existing), Some(delta)) = (entry.as_f64(), value.as_f64()) {
                     if entry.is_i64() && value.is_i64() {
                         *entry = serde_json::json!(existing as i64 + delta as i64);

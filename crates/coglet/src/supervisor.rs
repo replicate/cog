@@ -60,10 +60,7 @@ impl PredictionState {
             // predict_time only on terminal (0.16.11: only added in succeeded())
             if let Some(completed_at) = self.completed_at {
                 let predict_time = completed_at.duration_since(self.started_at).as_secs_f64();
-                metrics_obj.insert(
-                    "predict_time".to_string(),
-                    serde_json::json!(predict_time),
-                );
+                metrics_obj.insert("predict_time".to_string(), serde_json::json!(predict_time));
             }
 
             response["metrics"] = serde_json::Value::Object(metrics_obj);

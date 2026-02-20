@@ -322,7 +322,13 @@ async fn create_prediction_with_id(
     };
 
     let prediction = unregistered_slot.prediction();
-    supervisor.update_status(&prediction_id, PredictionStatus::Processing, None, None, None);
+    supervisor.update_status(
+        &prediction_id,
+        PredictionStatus::Processing,
+        None,
+        None,
+        None,
+    );
 
     // Async mode: spawn background task, return immediately
     if respond_async {
