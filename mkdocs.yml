@@ -24,7 +24,7 @@ theme:
   font:
     text: "Roboto"
     code: "Roboto Mono"
-  favicon: cog.png
+  favicon: favicon.svg
 
   # Display a link to edit pages right on GitHub
   features:
