@@ -24,6 +24,11 @@ This document defines the API of the `cog` Python module, which is used to defin
   - [Returning a list](#returning-a-list)
   - [Optional properties](#optional-properties)
   - [Streaming output](#streaming-output)
+- [Metrics](#metrics)
+  - [Recording metrics](#recording-metrics)
+  - [Accumulation modes](#accumulation-modes)
+  - [Dot-path keys](#dot-path-keys)
+  - [Type safety](#type-safety)
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
@@ -292,6 +297,122 @@ class Predictor(BasePredictor):
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:
             yield token + " "
+```
+
+## Metrics
+
+You can record custom metrics from your `predict()` function to track model-specific data like token counts, timing breakdowns, or confidence scores. Metrics are included in the prediction response alongside the output.
+
+### Recording metrics
+
+Use `current_scope()` to get the current prediction scope, then record metrics on it:
+
+```python
+from cog import BasePredictor, current_scope
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> str:
+        scope = current_scope()
+
+        # Record a metric
+        scope.record_metric("temperature", 0.7)
+
+        # Dict-style access
+        scope.metrics["token_count"] = 42
+
+        result = self.model.generate(prompt)
+        return result
+```
+
+Metrics appear in the prediction response `metrics` field:
+
+```json
+{
+    "status": "succeeded",
+    "output": "...",
+    "metrics": {
+        "temperature": 0.7,
+        "token_count": 42,
+        "predict_time": 1.23
+    }
+}
+```
+
+The `predict_time` metric is always added automatically by the runtime. If you set `predict_time` yourself, the runtime value takes precedence.
+
+Supported value types are `bool`, `int`, `float`, `str`, `list`, and `dict`. Setting a metric to `None` deletes it.
+
+### Accumulation modes
+
+By default, recording a metric replaces any previous value for that key. You can use accumulation modes to build up values across multiple calls:
+
+```python
+scope = current_scope()
+
+# Increment a counter (adds to the existing numeric value)
+scope.record_metric("token_count", 1, mode="incr")
+scope.record_metric("token_count", 1, mode="incr")
+# Result: {"token_count": 2}
+
+# Append to an array
+scope.record_metric("steps", "preprocessing", mode="append")
+scope.record_metric("steps", "inference", mode="append")
+# Result: {"steps": ["preprocessing", "inference"]}
+
+# Replace (default behavior)
+scope.record_metric("status", "running", mode="replace")
+scope.record_metric("status", "done", mode="replace")
+# Result: {"status": "done"}
+```
+
+The `mode` parameter accepts `"replace"` (default), `"incr"`, or `"append"`.
+
+### Dot-path keys
+
+Use dot-separated keys to create nested objects in the metrics output:
+
+```python
+scope = current_scope()
+scope.record_metric("timing.preprocess", 0.12)
+scope.record_metric("timing.inference", 0.85)
+```
+
+This produces nested JSON:
+
+```json
+{
+    "metrics": {
+        "timing": {
+            "preprocess": 0.12,
+            "inference": 0.85
+        },
+        "predict_time": 1.23
+    }
+}
+```
+
+### Type safety
+
+Once a metric key has been assigned a value of a certain type, it cannot be changed to a different type without deleting it first. This prevents accidental type mismatches when using accumulation modes:
+
+```python
+scope = current_scope()
+scope.record_metric("count", 1)
+
+# This would raise an error — "count" is an int, not a string:
+# scope.record_metric("count", "oops")
+
+# Delete first, then set with new type:
+del scope.metrics["count"]
+scope.record_metric("count", "now a string")
+```
+
+`current_scope()` returns `None` when called outside of a Cog container (for example, during local development without coglet). Check for this if your code needs to run in both environments:
+
+```python
+scope = current_scope()
+if scope is not None:
+    scope.record_metric("key", value)
 ```
 
 ## Input and output types

@@ -285,6 +285,10 @@ The response body is a JSON object with the following fields:
 - `status`: Either `succeeded` or `failed`.
 - `output`: The return value of the `predict()` function.
 - `error`: If `status` is `failed`, the error message.
+- `metrics`: An object containing prediction metrics.
+  Always includes `predict_time` (elapsed seconds).
+  May also include custom metrics recorded by the model
+  using [`current_scope()`](python.md#metrics).
 
 ```http
 POST /predictions HTTP/1.1
@@ -304,7 +308,10 @@ Content-Type: application/json
 
 {
     "status": "succeeded",
-    "output": "data:image/png;base64,..."
+    "output": "data:image/png;base64,...",
+    "metrics": {
+        "predict_time": 4.52
+    }
 }
 ```
 
