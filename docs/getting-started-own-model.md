@@ -36,12 +36,17 @@ For example:
 
 ```yaml
 build:
-  python_version: "3.11"
-  python_packages:
-    - "torch==2.0.1"
+  python_version: "3.12"
+  python_requirements: requirements.txt
 ```
 
-This will generate a Docker image with Python 3.11 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
+With a `requirements.txt` containing your dependencies:
+
+```
+torch==2.6.0
+```
+
+This will generate a Docker image with Python 3.12 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
 
 To run a command inside this environment, prefix it with `cog run`:
 
@@ -51,8 +56,8 @@ $ cog run python
 Running 'python' in Docker with the current directory mounted as a volume...
 ────────────────────────────────────────────────────────────────────────────────────────
 
-Python 3.11.1 (main, Jan 27 2023, 10:52:46)
-[GCC 9.3.0] on linux
+Python 3.12.0 (main, Oct  2 2023, 15:45:55)
+[GCC 12.2.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
 ```
@@ -110,9 +115,8 @@ Next, add the line `predict: "predict.py:Predictor"` to your `cog.yaml`, so it l
 
 ```yaml
 build:
-  python_version: "3.11"
-  python_packages:
-    - "torch==2.0.1"
+  python_version: "3.12"
+  python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
 

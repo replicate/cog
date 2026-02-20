@@ -29,8 +29,7 @@ build:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
   python_version: "3.12"
-  python_packages:
-    - "torch==2.3"
+  python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
 
@@ -582,12 +581,17 @@ For example:
 
 ```yaml
 build:
-  python_version: "3.11"
-  python_packages:
-    - "torch==2.0.1"
+  python_version: "3.12"
+  python_requirements: requirements.txt
 ```
 
-This will generate a Docker image with Python 3.11 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
+With a `requirements.txt` containing your dependencies:
+
+```
+torch==2.6.0
+```
+
+This will generate a Docker image with Python 3.12 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
 
 To run a command inside this environment, prefix it with `cog run`:
 
@@ -597,8 +601,8 @@ $ cog run python
 Running 'python' in Docker with the current directory mounted as a volume...
 ────────────────────────────────────────────────────────────────────────────────────────
 
-Python 3.11.1 (main, Jan 27 2023, 10:52:46)
-[GCC 9.3.0] on linux
+Python 3.12.0 (main, Oct  2 2023, 15:45:55)
+[GCC 12.2.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
 ```
@@ -656,9 +660,8 @@ Next, add the line `predict: "predict.py:Predictor"` to your `cog.yaml`, so it l
 
 ```yaml
 build:
-  python_version: "3.11"
-  python_packages:
-    - "torch==2.0.1"
+  python_version: "3.12"
+  python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
 
@@ -747,7 +750,7 @@ The first thing you need to do is create a file called `cog.yaml`:
 
 ```yaml
 build:
-  python_version: "3.11"
+  python_version: "3.12"
 ```
 
 Then, you can run any command inside this environment. For example, enter
@@ -764,8 +767,8 @@ and you'll get an interactive Python shell:
 Running 'python' in Docker with the current directory mounted as a volume...
 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-Python 3.11.1 (main, Jan 27 2023, 10:52:46)
-[GCC 9.3.0] on linux
+Python 3.12.0 (main, Oct  2 2023, 15:45:55)
+[GCC 12.2.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
 ```
@@ -778,56 +781,59 @@ Inside this Docker environment you can do anything – run a Jupyter notebook, 
 
 Let's pretend we've trained a model. With Cog, we can define how to run predictions on it in a standard way, so other people can easily run predictions on it without having to hunt around for a prediction script.
 
-First, run this to get some pre-trained model weights:
-
-```bash
-WEIGHTS_URL=https://storage.googleapis.com/tensorflow/keras-applications/resnet/resnet50_weights_tf_dim_ordering_tf_kernels.h5
-curl -O $WEIGHTS_URL
-
-```
-
-Then, we need to write some code to describe how predictions are run on the model.
+We need to write some code to describe how predictions are run on the model.
 
 Save this to `predict.py`:
 
 ```python
-from typing import Any
+import os
+os.environ["TORCH_HOME"] = "."
+
+import torch
 from cog import BasePredictor, Input, Path
-from tensorflow.keras.applications.resnet50 import ResNet50
-from tensorflow.keras.preprocessing import image as keras_image
-from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
-import numpy as np
+from PIL import Image
+from torchvision import models
+
+WEIGHTS = models.ResNet50_Weights.IMAGENET1K_V1
 
 
 class Predictor(BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
-        self.model = ResNet50(weights='resnet50_weights_tf_dim_ordering_tf_kernels.h5')
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = models.resnet50(weights=WEIGHTS).to(self.device)
+        self.model.eval()
 
-    # Define the arguments and types the model takes as input
-    def predict(self, image: Path = Input(description="Image to classify")) -> Any:
+    def predict(self, image: Path = Input(description="Image to classify")) -> dict:
         """Run a single prediction on the model"""
-        # Preprocess the image
-        img = keras_image.load_img(image, target_size=(224, 224))
-        x = keras_image.img_to_array(img)
-        x = np.expand_dims(x, axis=0)
-        x = preprocess_input(x)
-        # Run the prediction
-        preds = self.model.predict(x)
-        # Return the top 3 predictions
-        return decode_predictions(preds, top=3)[0]
+        img = Image.open(image).convert("RGB")
+        preds = self.model(WEIGHTS.transforms()(img).unsqueeze(0).to(self.device))
+        top3 = preds[0].softmax(0).topk(3)
+        categories = WEIGHTS.meta["categories"]
+        return {categories[i]: p.detach().item() for p, i in zip(*top3)}
 ```
 
-We also need to point Cog at this, and tell it what Python dependencies to install. Update `cog.yaml` to look like this:
+We also need to point Cog at this, and tell it what Python dependencies to install.
+
+Save this to `requirements.txt`:
+
+```
+pillow==11.1.0
+torch==2.6.0
+torchvision==0.21.0
+```
+
+Then update `cog.yaml` to look like this:
 
 ```yaml
 build:
-  python_version: "3.11"
-  python_packages:
-    - pillow==9.5.0
-    - tensorflow==2.12.0
+  python_version: "3.12"
+  python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
+
+> [!TIP]
+> If you have a machine with an NVIDIA GPU attached, add `gpu: true` to the `build` section of your `cog.yaml` to enable GPU acceleration.
 
 Let's grab an image to test the model with:
 
@@ -846,24 +852,12 @@ cog predict -i image=@input.jpg
 
 If you see the following output
 
-```
-[
-  [
-    "n02123159",
-    "tiger_cat",
-    0.4874822497367859
-  ],
-  [
-    "n02123045",
-    "tabby",
-    0.23169134557247162
-  ],
-  [
-    "n02124075",
-    "Egyptian_cat",
-    0.09728282690048218
-  ]
-]
+```json
+{
+  "tiger_cat": 0.4874822497367859,
+  "tabby": 0.23169134557247162,
+  "Egyptian_cat": 0.09728282690048218
+}
 ```
 
 then it worked!
@@ -879,12 +873,6 @@ cog build -t resnet
 # Building Docker image...
 # Built resnet:latest
 
-```
-
-Once you've built the image, you can optionally view the generated dockerfile to get a sense of what Cog is doing under the hood:
-
-```bash
-cog debug
 ```
 
 You can run this image with `cog predict` by passing the filename as an argument:
@@ -926,32 +914,6 @@ cog push
 ```
 
 The Docker image is now accessible to anyone or any system that has access to this Docker registry.
-
-> **Note**
-> Model repos often contain large data files, like weights and checkpoints. If you put these files in their own subdirectory and run `cog build` with the `--separate-weights` flag, Cog will copy these files into a separate Docker layer, which reduces the time needed to rebuild after making changes to code.
->
-> ```shell
-> # ✅ Yes
-> .
-> ├── checkpoints/
-> │   └── weights.ckpt
-> ├── predict.py
-> └── cog.yaml
->
-> # ❌ No
-> .
-> ├── weights.ckpt # <- Don't put weights in root directory
-> ├── predict.py
-> └── cog.yaml
->
-> # ❌ No
-> .
-> ├── checkpoints/
-> │   ├── weights.ckpt
-> │   └── load_weights.py # <- Don't put code in weights directory
-> ├── predict.py
-> └── cog.yaml
-> ```
 
 ## Next steps
 
