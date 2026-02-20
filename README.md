@@ -127,7 +127,7 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 If you're using macOS, you can install Cog using Homebrew:
 
 ```console
-brew install cog
+brew install replicate/tap/cog
 ```
 
 You can also download and install the latest release using our 
@@ -164,7 +164,7 @@ RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run
 If you're using macOS and you previously installed Cog with Homebrew, run the following:
 
 ```console
-brew upgrade cog
+brew upgrade replicate/tap/cog
 ```
 
 Otherwise, you can upgrade to the latest version by running the same commands you used to install it.

@@ -54,3 +54,22 @@ release:
   # If set to true, will mark the release as not ready for production.
   # Default is false.
   prerelease: auto
+homebrew_casks:
+  - name: cog
+    ids:
+      - cog
+    description: "Containers for machine learning"
+    homepage: "https://cog.run"
+    # On pre-releases, don't push to the tap
+    skip_upload: auto
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/cog"]
+          end
+    repository:
+      owner: replicate
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
