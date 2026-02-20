@@ -469,4 +469,228 @@ mod tests {
         let output = PredictionOutput::Stream(vec![serde_json::json!("a"), serde_json::json!("b")]);
         assert!(output.is_stream());
     }
+
+    // ====================================================================
+    // Metric tests
+    // ====================================================================
+
+    #[test]
+    fn metric_replace_sets_value() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("temp".into(), serde_json::json!(0.7), MetricMode::Replace);
+        assert_eq!(pred.metrics()["temp"], serde_json::json!(0.7));
+    }
+
+    #[test]
+    fn metric_replace_overwrites() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("temp".into(), serde_json::json!(0.7), MetricMode::Replace);
+        pred.set_metric("temp".into(), serde_json::json!(0.9), MetricMode::Replace);
+        assert_eq!(pred.metrics()["temp"], serde_json::json!(0.9));
+    }
+
+    #[test]
+    fn metric_replace_null_deletes() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("temp".into(), serde_json::json!(0.7), MetricMode::Replace);
+        pred.set_metric(
+            "temp".into(),
+            serde_json::Value::Null,
+            MetricMode::Replace,
+        );
+        assert!(!pred.metrics().contains_key("temp"));
+    }
+
+    #[test]
+    fn metric_increment_integers() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("count".into(), serde_json::json!(1), MetricMode::Increment);
+        pred.set_metric("count".into(), serde_json::json!(3), MetricMode::Increment);
+        assert_eq!(pred.metrics()["count"], serde_json::json!(4));
+    }
+
+    #[test]
+    fn metric_increment_floats() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric(
+            "score".into(),
+            serde_json::json!(1.5),
+            MetricMode::Increment,
+        );
+        pred.set_metric(
+            "score".into(),
+            serde_json::json!(2.5),
+            MetricMode::Increment,
+        );
+        assert_eq!(pred.metrics()["score"], serde_json::json!(4.0));
+    }
+
+    #[test]
+    fn metric_increment_creates_from_zero() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("count".into(), serde_json::json!(5), MetricMode::Increment);
+        assert_eq!(pred.metrics()["count"], serde_json::json!(5));
+    }
+
+    #[test]
+    fn metric_append_creates_array() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric(
+            "logprobs".into(),
+            serde_json::json!(-1.2),
+            MetricMode::Append,
+        );
+        pred.set_metric(
+            "logprobs".into(),
+            serde_json::json!(-0.3),
+            MetricMode::Append,
+        );
+        assert_eq!(
+            pred.metrics()["logprobs"],
+            serde_json::json!([-1.2, -0.3])
+        );
+    }
+
+    #[test]
+    fn metric_append_to_non_array_wraps() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("val".into(), serde_json::json!(1), MetricMode::Replace);
+        pred.set_metric("val".into(), serde_json::json!(2), MetricMode::Append);
+        assert_eq!(pred.metrics()["val"], serde_json::json!([1, 2]));
+    }
+
+    #[test]
+    fn metric_dotpath_creates_nested() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric(
+            "timing.preprocess".into(),
+            serde_json::json!(0.1),
+            MetricMode::Replace,
+        );
+        assert_eq!(
+            pred.metrics()["timing"],
+            serde_json::json!({"preprocess": 0.1})
+        );
+    }
+
+    #[test]
+    fn metric_dotpath_deep() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric(
+            "a.b.c".into(),
+            serde_json::json!(42),
+            MetricMode::Replace,
+        );
+        assert_eq!(
+            pred.metrics()["a"],
+            serde_json::json!({"b": {"c": 42}})
+        );
+    }
+
+    #[test]
+    fn metric_dotpath_multiple_leaves() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric(
+            "timing.preprocess".into(),
+            serde_json::json!(0.1),
+            MetricMode::Replace,
+        );
+        pred.set_metric(
+            "timing.inference".into(),
+            serde_json::json!(0.8),
+            MetricMode::Replace,
+        );
+        assert_eq!(
+            pred.metrics()["timing"],
+            serde_json::json!({"preprocess": 0.1, "inference": 0.8})
+        );
+    }
+
+    #[test]
+    fn metric_dotpath_delete_leaf() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric(
+            "timing.preprocess".into(),
+            serde_json::json!(0.1),
+            MetricMode::Replace,
+        );
+        pred.set_metric(
+            "timing.preprocess".into(),
+            serde_json::Value::Null,
+            MetricMode::Replace,
+        );
+        // Parent object should still exist but be empty
+        assert_eq!(pred.metrics()["timing"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn metric_dotpath_increment() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric(
+            "stats.tokens".into(),
+            serde_json::json!(10),
+            MetricMode::Increment,
+        );
+        pred.set_metric(
+            "stats.tokens".into(),
+            serde_json::json!(5),
+            MetricMode::Increment,
+        );
+        assert_eq!(
+            pred.metrics()["stats"],
+            serde_json::json!({"tokens": 15})
+        );
+    }
+
+    #[test]
+    fn metric_complex_values() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric(
+            "config".into(),
+            serde_json::json!({"layers": 12, "heads": 8}),
+            MetricMode::Replace,
+        );
+        pred.set_metric(
+            "scores".into(),
+            serde_json::json!([0.9, 0.8, 0.7]),
+            MetricMode::Replace,
+        );
+        assert_eq!(
+            pred.metrics()["config"],
+            serde_json::json!({"layers": 12, "heads": 8})
+        );
+        assert_eq!(
+            pred.metrics()["scores"],
+            serde_json::json!([0.9, 0.8, 0.7])
+        );
+    }
+
+    #[test]
+    fn build_metrics_merges_with_predict_time() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("temp".into(), serde_json::json!(0.7), MetricMode::Replace);
+        pred.set_metric("count".into(), serde_json::json!(42), MetricMode::Replace);
+
+        let metrics = pred.build_metrics();
+        let obj = metrics.as_object().unwrap();
+        assert_eq!(obj["temp"], serde_json::json!(0.7));
+        assert_eq!(obj["count"], serde_json::json!(42));
+        assert!(obj.contains_key("predict_time"));
+    }
+
+    #[test]
+    fn build_metrics_predict_time_overrides_user() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        // User tries to set predict_time — system should override
+        pred.set_metric(
+            "predict_time".into(),
+            serde_json::json!(999.0),
+            MetricMode::Replace,
+        );
+
+        let metrics = pred.build_metrics();
+        let obj = metrics.as_object().unwrap();
+        // predict_time should be the actual elapsed, not 999.0
+        assert_ne!(obj["predict_time"], serde_json::json!(999.0));
+    }
 }
