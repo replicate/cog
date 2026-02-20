@@ -59,7 +59,6 @@ def tests(session: nox.Session) -> None:
     )
 
 
-
 @nox.session(python=PYTHON_DEFAULT)
 def typecheck(session: nox.Session) -> None:
     """Run type checking with pyright."""
