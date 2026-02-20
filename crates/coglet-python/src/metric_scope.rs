@@ -370,6 +370,7 @@ pub fn clear_sync_scope() {
 /// Python-callable: get the current Scope.
 ///
 /// Returns the active scope if inside a prediction, or a no-op scope otherwise.
+#[gen_stub_pyfunction(module = "coglet._sdk")]
 #[pyfunction]
 #[pyo3(name = "current_scope")]
 pub fn py_current_scope(py: Python<'_>) -> PyResult<Py<Scope>> {
