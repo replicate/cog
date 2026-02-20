@@ -54,9 +54,9 @@ def current_scope() -> object:
         scope.metrics.record("logprobs", -1.2, mode="append")
     """
     try:
-        import coglet
+        from coglet._sdk import current_scope as _current_scope
 
-        return coglet._sdk.current_scope()
+        return _current_scope()
     except (ImportError, AttributeError):
         # coglet not installed (e.g. running outside container) — return None
         return None

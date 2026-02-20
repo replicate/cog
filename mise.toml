@@ -418,17 +418,14 @@ run = [
 [tasks."generate:stubs"]
 alias = "stub:generate"
 description = "Generate Python type stubs for coglet"
-sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml", "crates/coglet-python/coglet/__init__.py"]
+sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml"]
 outputs = ["coglet/_sdk/__init__.pyi", "coglet/__init__.pyi", "coglet/_impl.pyi"]
 dir = "crates/coglet-python"
 run = [
   { task = "_setup_venv" },
   '''
-# 1. pyo3-stub-gen: Rust types → _impl.pyi and _sdk/__init__.pyi
+# pyo3-stub-gen: Rust types → _impl.pyi, _sdk/__init__.pyi, __init__.pyi
 uv run --active cargo run --bin stub_gen
-
-# 2. mypy stubgen: Python __init__.py → __init__.pyi (re-export stubs)
-uvx --from mypy stubgen coglet/__init__.py -o . --quiet
 ''',
 ]
 
