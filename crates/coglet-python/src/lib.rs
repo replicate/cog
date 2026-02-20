@@ -19,6 +19,12 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 // Define stub info gatherer for generating .pyi files
 pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
 
+// Module-level attributes (pyo3-stub-gen can't see m.add() calls).
+// Uses "coglet" because that's the module key in StubInfo for the native module.
+pyo3_stub_gen::module_variable!("coglet", "__version__", &str);
+pyo3_stub_gen::module_variable!("coglet", "__build__", BuildInfo);
+pyo3_stub_gen::module_variable!("coglet", "server", CogletServer);
+
 use coglet_core::{
     Health, PredictionService, SetupResult, VersionInfo,
     transport::{ServerConfig, serve as http_serve},
@@ -188,7 +194,8 @@ impl CogletServer {
     }
 
     /// Start the HTTP prediction server. Blocks until shutdown.
-    #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false, output_temp_dir_base="/tmp/coglet/output".to_string(), upload_url=None))]
     fn serve(
         &self,
         py: Python<'_>,
@@ -197,6 +204,8 @@ impl CogletServer {
         port: u16,
         await_explicit_shutdown: bool,
         is_train: bool,
+        output_temp_dir_base: String,
+        upload_url: Option<String>,
     ) -> PyResult<()> {
         serve_impl(
             py,
@@ -205,6 +214,8 @@ impl CogletServer {
             port,
             await_explicit_shutdown,
             is_train,
+            output_temp_dir_base,
+            upload_url,
         )
     }
 
@@ -254,6 +265,7 @@ impl CogletServer {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn serve_impl(
     py: Python<'_>,
     predictor_ref: Option<String>,
@@ -261,6 +273,8 @@ fn serve_impl(
     port: u16,
     await_explicit_shutdown: bool,
     is_train: bool,
+    _output_temp_dir_base: String,
+    upload_url: Option<String>,
 ) -> PyResult<()> {
     let (setup_log_tx, setup_log_rx) = tokio::sync::mpsc::unbounded_channel();
     init_tracing(false, Some(setup_log_tx));
@@ -303,7 +317,15 @@ fn serve_impl(
     };
 
     info!(predictor_ref = %pred_ref, is_train, "Using subprocess isolation");
-    serve_subprocess(py, pred_ref, config, version, is_train, setup_log_rx)
+    serve_subprocess(
+        py,
+        pred_ref,
+        config,
+        version,
+        is_train,
+        setup_log_rx,
+        upload_url,
+    )
 }
 
 fn serve_subprocess(
@@ -313,6 +335,7 @@ fn serve_subprocess(
     version: VersionInfo,
     is_train: bool,
     mut setup_log_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
+    upload_url: Option<String>,
 ) -> PyResult<()> {
     let max_concurrency = read_max_concurrency(py);
     info!(
@@ -322,7 +345,8 @@ fn serve_subprocess(
 
     let orch_config = coglet_core::orchestrator::OrchestratorConfig::new(pred_ref)
         .with_num_slots(max_concurrency)
-        .with_train(is_train);
+        .with_train(is_train)
+        .with_upload_url(upload_url);
 
     let service = Arc::new(
         PredictionService::new_no_pool()

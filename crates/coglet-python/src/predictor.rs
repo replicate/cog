@@ -1,10 +1,11 @@
 //! Python predictor loading and invocation.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+use coglet_core::worker::SlotSender;
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 
 use crate::cancel;
@@ -100,6 +101,96 @@ fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
 /// Cog validation errors are already formatted as "field: message".
 fn format_validation_error(py: Python<'_>, err: &PyErr) -> String {
     err.value(py).to_string()
+}
+
+/// Send a single output item over IPC, routing file outputs to disk.
+///
+/// For Path outputs (os.PathLike): sends the existing file path via send_file_output.
+/// For IOBase outputs: reads bytes, writes to output_dir via write_file_output.
+/// For everything else: processes through make_encodeable + upload_files, then send_output.
+fn send_output_item(
+    py: Python<'_>,
+    item: &Bound<'_, PyAny>,
+    json_module: &Bound<'_, PyAny>,
+    slot_sender: &SlotSender,
+) -> Result<(), PredictionError> {
+    let os = py
+        .import("os")
+        .map_err(|e| PredictionError::Failed(format!("Failed to import os: {}", e)))?;
+    let io_mod = py
+        .import("io")
+        .map_err(|e| PredictionError::Failed(format!("Failed to import io: {}", e)))?;
+    let pathlike = os
+        .getattr("PathLike")
+        .map_err(|e| PredictionError::Failed(format!("Failed to get os.PathLike: {}", e)))?;
+    let iobase = io_mod
+        .getattr("IOBase")
+        .map_err(|e| PredictionError::Failed(format!("Failed to get io.IOBase: {}", e)))?;
+
+    if item.is_instance(&pathlike).unwrap_or(false) {
+        // Path output — file already on disk, send path reference
+        let path_str: String = item
+            .call_method0("__fspath__")
+            .and_then(|p| p.extract())
+            .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
+        slot_sender
+            .send_file_output(std::path::PathBuf::from(path_str), None)
+            .map_err(|e| PredictionError::Failed(format!("Failed to send file output: {}", e)))?;
+        return Ok(());
+    }
+
+    if item.is_instance(&iobase).unwrap_or(false) {
+        // IOBase output — read bytes, write to disk via SlotSender
+        // Seek to start if seekable
+        if item
+            .call_method0("seekable")
+            .and_then(|r| r.extract::<bool>())
+            .unwrap_or(false)
+        {
+            let _ = item.call_method1("seek", (0,));
+        }
+        let data: Vec<u8> = item
+            .call_method0("read")
+            .and_then(|d| d.extract())
+            .map_err(|e| PredictionError::Failed(format!("Failed to read IOBase: {}", e)))?;
+
+        // Try to guess extension from filename
+        let ext = item
+            .getattr("name")
+            .and_then(|n| n.extract::<String>())
+            .ok()
+            .and_then(|name| {
+                std::path::Path::new(&name)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "bin".to_string());
+
+        slot_sender
+            .write_file_output(&data, &ext, None)
+            .map_err(|e| PredictionError::Failed(format!("Failed to write file output: {}", e)))?;
+        return Ok(());
+    }
+
+    // Non-file output — process normally
+    let processed = output::process_output_item(py, item)
+        .map_err(|e| PredictionError::Failed(format!("Failed to process output item: {}", e)))?;
+
+    let item_str: String = json_module
+        .call_method1("dumps", (&processed,))
+        .map_err(|e| PredictionError::Failed(format!("Failed to serialize output item: {}", e)))?
+        .extract()
+        .map_err(|e| PredictionError::Failed(format!("Failed to extract output string: {}", e)))?;
+
+    let item_json: serde_json::Value = serde_json::from_str(&item_str)
+        .map_err(|e| PredictionError::Failed(format!("Failed to parse output JSON: {}", e)))?;
+
+    slot_sender
+        .send_output(item_json)
+        .map_err(|e| PredictionError::Failed(format!("Failed to send output: {}", e)))?;
+
+    Ok(())
 }
 
 /// Type alias for Python object (Py<PyAny>).
@@ -480,6 +571,7 @@ impl PythonPredictor {
     pub fn predict_worker(
         &self,
         input: serde_json::Value,
+        slot_sender: Arc<SlotSender>,
     ) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
@@ -530,9 +622,9 @@ impl PythonPredictor {
             let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
 
             let output = if is_generator {
-                self.process_generator_output(py, result_bound, &json_module)?
+                self.process_generator_output(py, result_bound, &json_module, &slot_sender)?
             } else {
-                self.process_single_output(py, result_bound, &json_module)?
+                self.process_single_output(py, result_bound, &json_module, &slot_sender)?
             };
 
             // prepared drops here, cleaning up temp files via RAII
@@ -550,6 +642,7 @@ impl PythonPredictor {
     pub fn train_worker(
         &self,
         input: serde_json::Value,
+        slot_sender: Arc<SlotSender>,
     ) -> Result<PredictionResult, PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
@@ -600,9 +693,9 @@ impl PythonPredictor {
             let is_generator: bool = result_bound.is_instance(&generator_type).unwrap_or(false);
 
             let output = if is_generator {
-                self.process_generator_output(py, result_bound, &json_module)?
+                self.process_generator_output(py, result_bound, &json_module, &slot_sender)?
             } else {
-                self.process_single_output(py, result_bound, &json_module)?
+                self.process_single_output(py, result_bound, &json_module, &slot_sender)?
             };
 
             drop(prepared);
@@ -615,14 +708,14 @@ impl PythonPredictor {
         })
     }
 
-    /// Process generator output into PredictionOutput::Stream.
+    /// Process generator output by streaming each yield over IPC.
     fn process_generator_output(
         &self,
         py: Python<'_>,
         result: &Bound<'_, PyAny>,
         json_module: &Bound<'_, PyAny>,
+        slot_sender: &SlotSender,
     ) -> Result<PredictionOutput, PredictionError> {
-        let mut outputs = Vec::new();
         let iter = result
             .try_iter()
             .map_err(|e| PredictionError::Failed(format!("Failed to iterate generator: {}", e)))?;
@@ -635,37 +728,83 @@ impl PythonPredictor {
                 PredictionError::Failed(format!("Generator iteration error: {}", e))
             })?;
 
-            let processed = output::process_output_item(py, &item).map_err(|e| {
-                PredictionError::Failed(format!("Failed to process output item: {}", e))
-            })?;
-
-            let item_str: String = json_module
-                .call_method1("dumps", (&processed,))
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to serialize output item: {}", e))
-                })?
-                .extract()
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to extract output string: {}", e))
-                })?;
-
-            let item_json: serde_json::Value = serde_json::from_str(&item_str).map_err(|e| {
-                PredictionError::Failed(format!("Failed to parse output JSON: {}", e))
-            })?;
-
-            outputs.push(item_json);
+            send_output_item(py, &item, json_module, slot_sender)?;
         }
 
-        Ok(PredictionOutput::Stream(outputs))
+        // Outputs already streamed over IPC — return empty stream
+        Ok(PredictionOutput::Stream(vec![]))
     }
 
     /// Process single output into PredictionOutput::Single.
+    ///
+    /// For file outputs (Path/IOBase), the file is sent via slot_sender and
+    /// an empty Single(Null) is returned since the output was already streamed.
     fn process_single_output(
         &self,
         py: Python<'_>,
         result: &Bound<'_, PyAny>,
         json_module: &Bound<'_, PyAny>,
+        slot_sender: &SlotSender,
     ) -> Result<PredictionOutput, PredictionError> {
+        // Check for file-type outputs first
+        let os = py
+            .import("os")
+            .map_err(|e| PredictionError::Failed(format!("Failed to import os: {}", e)))?;
+        let io_mod = py
+            .import("io")
+            .map_err(|e| PredictionError::Failed(format!("Failed to import io: {}", e)))?;
+        let pathlike = os
+            .getattr("PathLike")
+            .map_err(|e| PredictionError::Failed(format!("Failed to get os.PathLike: {}", e)))?;
+        let iobase = io_mod
+            .getattr("IOBase")
+            .map_err(|e| PredictionError::Failed(format!("Failed to get io.IOBase: {}", e)))?;
+
+        if result.is_instance(&pathlike).unwrap_or(false) {
+            let path_str: String = result
+                .call_method0("__fspath__")
+                .and_then(|p| p.extract())
+                .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
+            slot_sender
+                .send_file_output(std::path::PathBuf::from(path_str), None)
+                .map_err(|e| {
+                    PredictionError::Failed(format!("Failed to send file output: {}", e))
+                })?;
+            return Ok(PredictionOutput::Single(serde_json::Value::Null));
+        }
+
+        if result.is_instance(&iobase).unwrap_or(false) {
+            if result
+                .call_method0("seekable")
+                .and_then(|r| r.extract::<bool>())
+                .unwrap_or(false)
+            {
+                let _ = result.call_method1("seek", (0,));
+            }
+            let data: Vec<u8> = result
+                .call_method0("read")
+                .and_then(|d| d.extract())
+                .map_err(|e| PredictionError::Failed(format!("Failed to read IOBase: {}", e)))?;
+            let ext = result
+                .getattr("name")
+                .and_then(|n| n.extract::<String>())
+                .ok()
+                .and_then(|name| {
+                    std::path::Path::new(&name)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(|s| s.to_string())
+                })
+                .unwrap_or_else(|| "bin".to_string());
+            slot_sender
+                .write_file_output(&data, &ext, None)
+                .map_err(|e| {
+                    PredictionError::Failed(format!("Failed to write file output: {}", e))
+                })?;
+            return Ok(PredictionOutput::Single(serde_json::Value::Null));
+        }
+
+        // Non-file output — process normally
         let processed = output::process_output(py, result, None)
             .map_err(|e| PredictionError::Failed(format!("Failed to process output: {}", e)))?;
 
@@ -785,6 +924,7 @@ impl PythonPredictor {
         py: Python<'_>,
         result: &Bound<'_, PyAny>,
         is_async_gen: bool,
+        slot_sender: &SlotSender,
     ) -> Result<PredictionResult, PredictionError> {
         let json_module = py
             .import("json")
@@ -795,28 +935,13 @@ impl PythonPredictor {
 
         // Process output
         let output = if is_async_gen {
-            // Result is a list
-            let mut outputs = Vec::new();
+            // Result is a pre-collected list — stream each item over IPC
             if let Ok(list) = result.extract::<Vec<Bound<'_, PyAny>>>() {
                 for item in list {
-                    let processed = output::process_output_item(py, &item).map_err(|e| {
-                        PredictionError::Failed(format!("Failed to process output item: {}", e))
-                    })?;
-                    let item_str: String = json_module
-                        .call_method1("dumps", (&processed,))
-                        .map_err(|e| {
-                            PredictionError::Failed(format!("Failed to serialize: {}", e))
-                        })?
-                        .extract()
-                        .map_err(|e| {
-                            PredictionError::Failed(format!("Failed to extract: {}", e))
-                        })?;
-                    let item_json: serde_json::Value = serde_json::from_str(&item_str)
-                        .map_err(|e| PredictionError::Failed(format!("Failed to parse: {}", e)))?;
-                    outputs.push(item_json);
+                    send_output_item(py, &item, &json_module, slot_sender)?;
                 }
             }
-            PredictionOutput::Stream(outputs)
+            PredictionOutput::Stream(vec![])
         } else {
             // Check if result is a generator (sync generator from async predict)
             let generator_type = types_module.getattr("GeneratorType").map_err(|e| {
@@ -825,9 +950,9 @@ impl PythonPredictor {
             let is_generator: bool = result.is_instance(&generator_type).unwrap_or(false);
 
             if is_generator {
-                self.process_generator_output(py, result, &json_module)?
+                self.process_generator_output(py, result, &json_module, slot_sender)?
             } else {
-                self.process_single_output(py, result, &json_module)?
+                self.process_single_output(py, result, &json_module, slot_sender)?
             }
         };
 

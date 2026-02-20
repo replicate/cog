@@ -1,0 +1,34 @@
+# Test iterator prediction with Path outputs (no upload URL — files written to disk)
+
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE
+
+# cog predict writes file outputs to disk, not as base64 to stdout
+stderr 'Written output to: output.0.png'
+stderr 'Written output to: output.1.png'
+stderr 'Written output to: output.2.png'
+! stderr 'failed'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_packages:
+    - "pillow==10.4.0"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import os
+import tempfile
+from typing import Iterator
+
+from cog import BasePredictor, Path
+from PIL import Image
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Iterator[Path]:
+        for color in ["red", "blue", "green"]:
+            d = tempfile.mkdtemp()
+            p = os.path.join(d, f"{color}.png")
+            Image.new("RGB", (10, 10), color).save(p)
+            yield Path(p)

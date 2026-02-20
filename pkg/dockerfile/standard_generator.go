@@ -467,7 +467,6 @@ func (g *StandardGenerator) installCog() (string, error) {
 	if !g.requiresCog {
 		return "", nil
 	}
-
 	// Use override if set, otherwise auto-detect via env var / dist / PyPI
 	var wheelConfig *wheels.WheelConfig
 	var err error

@@ -48,17 +48,18 @@ type ImageBuildOptions struct {
 }
 
 type RunOptions struct {
-	Detach  bool
-	Args    []string
-	Env     []string
-	GPUs    string
-	Image   string
-	Ports   []Port
-	Volumes []Volume
-	Workdir string
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
+	Detach     bool
+	Args       []string
+	Env        []string
+	GPUs       string
+	Image      string
+	Ports      []Port
+	Volumes    []Volume
+	Workdir    string
+	ExtraHosts []string
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
 }
 
 type Port struct {

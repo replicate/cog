@@ -119,18 +119,24 @@ impl Prediction {
     pub fn set_succeeded(&mut self, output: PredictionOutput) {
         self.status = PredictionStatus::Succeeded;
         self.output = Some(output);
-        self.completion.notify_waiters();
+        // notify_one stores a permit so a future .notified().await will
+        // consume it immediately.  notify_waiters only wakes currently-
+        // registered waiters and would race with the service task that
+        // checks is_terminal() then awaits — the notification can fire
+        // in between.  There is exactly one waiter per prediction
+        // (service.rs predict()), so notify_one is semantically correct.
+        self.completion.notify_one();
     }
 
     pub fn set_failed(&mut self, error: String) {
         self.status = PredictionStatus::Failed;
         self.error = Some(error);
-        self.completion.notify_waiters();
+        self.completion.notify_one();
     }
 
     pub fn set_canceled(&mut self) {
         self.status = PredictionStatus::Canceled;
-        self.completion.notify_waiters();
+        self.completion.notify_one();
     }
 
     pub fn elapsed(&self) -> std::time::Duration {
@@ -151,6 +157,10 @@ impl Prediction {
 
     pub fn outputs(&self) -> &[serde_json::Value] {
         &self.outputs
+    }
+
+    pub fn take_outputs(&mut self) -> Vec<serde_json::Value> {
+        std::mem::take(&mut self.outputs)
     }
 
     pub fn output(&self) -> Option<&PredictionOutput> {

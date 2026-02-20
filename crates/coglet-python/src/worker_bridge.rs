@@ -381,8 +381,14 @@ impl PredictHandler for PythonPredictHandler {
                     });
 
                     // Block on future.result()
+                    let sender_for_async = slot_sender.clone();
                     let result = Python::attach(|py| match future.call_method0(py, "result") {
-                        Ok(result) => pred.process_async_result(py, result.bind(py), is_async_gen),
+                        Ok(result) => pred.process_async_result(
+                            py,
+                            result.bind(py),
+                            is_async_gen,
+                            &sender_for_async,
+                        ),
                         Err(e) => {
                             let err_str = e.to_string();
                             if err_str.contains("CancelledError") || err_str.contains("cancelled") {
@@ -404,7 +410,7 @@ impl PredictHandler for PythonPredictHandler {
                     // Sync train - set sync prediction ID for log routing
                     crate::log_writer::set_sync_prediction_id(Some(&id));
                     let _cancelable = crate::cancel::enter_cancelable();
-                    let r = pred.train_worker(input);
+                    let r = pred.train_worker(input, slot_sender.clone());
                     crate::log_writer::set_sync_prediction_id(None);
                     r
                 }
@@ -446,8 +452,14 @@ impl PredictHandler for PythonPredictHandler {
                     });
 
                     // Block on future.result()
+                    let sender_for_async = slot_sender.clone();
                     let result = Python::attach(|py| match future.call_method0(py, "result") {
-                        Ok(result) => pred.process_async_result(py, result.bind(py), is_async_gen),
+                        Ok(result) => pred.process_async_result(
+                            py,
+                            result.bind(py),
+                            is_async_gen,
+                            &sender_for_async,
+                        ),
                         Err(e) => {
                             let err_str = e.to_string();
                             if err_str.contains("CancelledError") || err_str.contains("cancelled") {
@@ -470,7 +482,7 @@ impl PredictHandler for PythonPredictHandler {
                     crate::log_writer::set_sync_prediction_id(Some(&id));
                     let _cancelable = crate::cancel::enter_cancelable();
                     tracing::trace!(%slot, %id, "Calling predict_worker");
-                    let r = pred.predict_worker(input);
+                    let r = pred.predict_worker(input, slot_sender.clone());
                     tracing::trace!(%slot, %id, "predict_worker returned");
                     crate::log_writer::set_sync_prediction_id(None);
                     r

@@ -193,13 +193,3 @@ func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map
 		OCIIndex:         model.OCIIndexEnabled(),
 	}
 }
-
-// buildBaseOptionsFromFlags creates BuildBaseOptions from the current CLI flag values.
-func buildBaseOptionsFromFlags(cmd *cobra.Command) model.BuildBaseOptions {
-	return model.BuildBaseOptions{
-		UseCudaBaseImage: buildUseCudaBaseImage,
-		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
-		ProgressOutput:   buildProgressOutput,
-		RequiresCog:      true,
-	}
-}
