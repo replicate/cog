@@ -190,6 +190,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 
 [Join us in #cog on Discord.](https://discord.gg/replicate)
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/replicate/cog)
+
 ## Contributors ✨
 
 Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
