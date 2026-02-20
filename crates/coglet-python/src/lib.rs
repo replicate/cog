@@ -4,6 +4,7 @@ mod audit;
 mod cancel;
 mod input;
 mod log_writer;
+mod metric_scope;
 mod output;
 mod predictor;
 mod worker_bridge;
@@ -503,6 +504,9 @@ fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     sdk.add_class::<log_writer::SlotLogWriter>()?;
     sdk.add_class::<audit::_TeeWriter>()?;
+    sdk.add_class::<metric_scope::Scope>()?;
+    sdk.add_class::<metric_scope::MetricRecorder>()?;
+    sdk.add_function(wrap_pyfunction!(metric_scope::py_current_scope, &sdk)?)?;
     m.add_submodule(&sdk)?;
 
     Ok(())
