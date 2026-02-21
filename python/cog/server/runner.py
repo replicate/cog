@@ -158,7 +158,7 @@ class PredictionRunner:
         """Run the user's healthcheck method."""
         # Don't run healthcheck if the setup task is not completed
         if self._setup_task is None or not self._setup_task.done():
-            return Done(event_type="healthcheck")
+            return Done()
 
         result = await asyncio.wrap_future(self._worker.healthcheck())
         return result

@@ -3,9 +3,11 @@ import contextlib
 import inspect
 import multiprocessing
 import os
+import queue
 import signal
 import sys
 import threading
+import time
 import traceback
 import types
 import uuid
@@ -101,16 +103,85 @@ class PredictionState:
     cancel_sent: bool = False
 
 
+class _Healthchecker:
+    def __init__(self, events: Connection) -> None:
+        self._events = events
+        self._queue: "queue.SimpleQueue[Tuple[str, Future[Done]]]" = queue.SimpleQueue()
+        self._thread: Optional[threading.Thread] = None
+
+    def check(self) -> "Future[Done]":
+        if self._thread is None:
+            self._thread = threading.Thread(
+                target=self._run,
+                daemon=True,
+            )
+            self._thread.start()
+
+        result: "Future[Done]" = Future()
+        tag = uuid.uuid4().hex
+        self._queue.put((tag, result))
+        return result
+
+    def _run(self) -> None:
+        while True:
+            try:
+                tag, result = self._queue.get()
+            except Exception:
+                break
+
+            try:
+                self._events.send(Envelope(event=Healthcheck(), tag=tag))
+                deadline = time.monotonic() + HEALTHCHECK_TIMEOUT
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not self._events.poll(remaining):
+                        result.set_result(
+                            Done(
+                                error=True,
+                                error_detail=f"Healthcheck failed: user-defined healthcheck timed out after {HEALTHCHECK_TIMEOUT} seconds",
+                            )
+                        )
+                        break
+                    resp = cast(Envelope, self._events.recv())
+                    if resp.tag == tag:
+                        if isinstance(resp.event, Done):
+                            result.set_result(resp.event)
+                        else:
+                            result.set_result(
+                                Done(
+                                    error=True,
+                                    error_detail="Unexpected response from healthcheck pipe",
+                                )
+                            )
+                        break
+            except Exception as exc:
+                result.set_result(
+                    Done(
+                        error=True,
+                        error_detail=f"Healthcheck IPC error: {exc}",
+                    )
+                )
+
+
 class Worker:
     @property
     def uses_concurrency(self) -> bool:
         return self._max_concurrency > 1
 
     def __init__(
-        self, child: "_ChildWorker", events: Connection, max_concurrency: int = 1
+        self,
+        child: "_ChildWorker",
+        events: Connection,
+        max_concurrency: int = 1,
+        healthcheck_events: Optional[Connection] = None,
     ) -> None:
         self._child = child
         self._events = events
+        self._healthchecker: Optional[_Healthchecker] = (
+            _Healthchecker(healthcheck_events)
+            if healthcheck_events is not None
+            else None
+        )
 
         self._sent_shutdown_event = False
         self._state = WorkerState.NEW
@@ -256,30 +327,13 @@ class Worker:
     def healthcheck(self) -> "Future[Done]":
         """Execute the healthcheck method if defined."""
         self._assert_state(WorkerState.READY)
-        result: "Future[Done]" = Future()
 
-        # Create a unique tag for this healthcheck
-        tag = f"healthcheck-{uuid.uuid4().hex}"
+        if self._healthchecker is None:
+            result: "Future[Done]" = Future()
+            result.set_result(Done())
+            return result
 
-        # Subscribe to the healthcheck response
-        def handle_response(event: _PublicEventType) -> None:
-            if isinstance(event, Done):
-                result.set_result(event)
-
-        sid = self.subscribe(handle_response, tag=tag)
-
-        # Send healthcheck request to child worker
-        self._events.send(
-            Envelope(
-                event=Healthcheck(),
-                tag=tag,
-            )
-        )
-
-        # Unsubscribe after done
-        result.add_done_callback(lambda _: self.unsubscribe(sid))
-
-        return result
+        return self._healthchecker.check()
 
     def shutdown(self, timeout: Optional[float] = None) -> None:
         """
@@ -380,7 +434,7 @@ class Worker:
 
             ev = self._events.recv()
             self._publish(ev)
-            if isinstance(ev.event, Done) and ev.event.event_type != "healthcheck":
+            if isinstance(ev.event, Done):
                 self._complete_prediction(ev.event, ev.tag)
 
         # If we dropped off the end off the end of the loop, it's because the
@@ -388,7 +442,7 @@ class Worker:
         while self._events.poll():
             ev = self._events.recv()
             self._publish(ev)
-            if isinstance(ev.event, Done) and ev.event.event_type != "healthcheck":
+            if isinstance(ev.event, Done):
                 self._complete_prediction(ev.event, ev.tag)
 
         if not self._terminating:
@@ -435,6 +489,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         is_async: bool,
         is_train: bool,
         events: Connection,
+        healthcheck_events: Optional[Connection] = None,
         max_concurrency: int = 1,
         tee_output: bool = True,
     ) -> None:
@@ -443,6 +498,7 @@ class _ChildWorker(_spawn.Process):  # type: ignore
         self._events: Union[AsyncConnection, LockedConnection] = LockedConnection(
             events
         )
+        self._healthcheck_events = healthcheck_events
         self._tee_output = tee_output
         self._cancelable = False
         self._max_concurrency = max_concurrency
@@ -492,6 +548,14 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 if not self._is_train
                 else get_train(self._predictor)
             )
+
+            if self._healthcheck_events is not None:
+                hc_thread = threading.Thread(
+                    target=_run_healthcheck_loop,
+                    args=(self._healthcheck_events, self._predictor),
+                    daemon=True,
+                )
+                hc_thread.start()
 
             if self._has_async_predictor:
                 assert isinstance(redirector, SimpleStreamRedirector)
@@ -612,8 +676,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                 continue
             elif isinstance(e.event, Shutdown):
                 break
-            elif isinstance(e.event, Healthcheck):
-                self._healthcheck(e.tag, redirector)
             elif isinstance(e.event, PredictionInput):
                 self._predict(
                     e.tag,
@@ -653,8 +715,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                     task.cancel()
                 elif isinstance(e.event, Shutdown):
                     break
-                elif isinstance(e.event, Healthcheck):
-                    tasks[e.tag] = tg.create_task(self._ahealthcheck(e.tag, redirector))
                 elif isinstance(e.event, PredictionInput):
                     tasks[e.tag] = tg.create_task(
                         self._apredict(
@@ -779,78 +839,6 @@ class _ChildWorker(_spawn.Process):  # type: ignore
                         )
                     )
 
-    def _healthcheck(
-        self,
-        tag: Optional[str],
-        redirector: StreamRedirector,
-    ) -> None:
-        """Execute the healthcheck method."""
-        done = Done(event_type="healthcheck")
-        asyncio.run(self._healthcheck_internal(done))
-        # This code, while the exact same as in ahealthcheck, cannot
-        # be factored out because StreamRedirector and
-        # SimpleStreamRedirector are not the same class/base class
-        try:
-            redirector.drain(timeout=10)
-        except TimeoutError:
-            pass
-        self._events.send(Envelope(event=done, tag=tag))
-
-    async def _ahealthcheck(
-        self,
-        tag: Optional[str],
-        redirector: SimpleStreamRedirector,
-    ) -> None:
-        """Execute the healthcheck method asynchronously."""
-        done = Done(event_type="healthcheck")
-        await self._healthcheck_internal(done)
-
-        try:
-            redirector.drain(timeout=10)
-        except TimeoutError:
-            pass
-        self._events.send(Envelope(event=done, tag=tag))
-
-    async def _healthcheck_internal(
-        self,
-        done: Done,
-    ) -> None:
-        try:
-            assert self._predictor
-            healthcheck_fn = get_healthcheck(self._predictor)
-
-            if healthcheck_fn is not None:
-                # Check if it's async
-                if inspect.iscoroutinefunction(healthcheck_fn):
-                    result = await asyncio.wait_for(
-                        healthcheck_fn(),
-                        timeout=HEALTHCHECK_TIMEOUT,
-                    )
-                else:
-                    # If sync, run in executor with timeout
-                    loop = asyncio.get_event_loop()
-                    result = await asyncio.wait_for(
-                        loop.run_in_executor(None, healthcheck_fn),
-                        timeout=HEALTHCHECK_TIMEOUT,
-                    )
-
-                if not bool(result):
-                    done.error = True
-                    done.error_detail = (
-                        "Healthcheck failed: user-defined healthcheck returned False"
-                    )
-        except asyncio.TimeoutError:
-            done.error = True
-            done.error_detail = f"Healthcheck failed: user-defined healthcheck timed out after {HEALTHCHECK_TIMEOUT} seconds"
-            log.warn(
-                "User-defined healthcheck timed out",
-                timeout_secs=HEALTHCHECK_TIMEOUT,
-            )
-        except Exception as e:
-            done.error = True
-            done.error_detail = f"Healthcheck failed: {str(e)}"
-            traceback.print_exc()
-
     @contextlib.contextmanager
     def _handle_setup_error(
         self,
@@ -965,6 +953,43 @@ class _ChildWorker(_spawn.Process):  # type: ignore
             )
 
 
+def _run_healthcheck_loop(
+    events: Connection,
+    predictor: BasePredictor,
+) -> None:
+    while True:
+        try:
+            if not events.poll(1.0):
+                continue
+            envelope = cast(Envelope, events.recv())
+        except (EOFError, OSError):
+            break
+
+        if not isinstance(envelope.event, Healthcheck):
+            continue
+
+        done = Done()
+        try:
+            healthcheck_fn = get_healthcheck(predictor)
+            if healthcheck_fn is not None:
+                result = healthcheck_fn()
+                if inspect.iscoroutine(result):
+                    result = asyncio.run(result)
+                if not bool(result):
+                    done.error = True
+                    done.error_detail = (
+                        "Healthcheck failed: user-defined healthcheck returned False"
+                    )
+        except Exception as exc:
+            done.error = True
+            done.error_detail = f"Healthcheck failed: {str(exc)}"
+
+        try:
+            events.send(Envelope(event=done, tag=envelope.tag))
+        except (EOFError, OSError):
+            break
+
+
 def make_worker(
     predictor_ref: str,
     *,
@@ -972,15 +997,28 @@ def make_worker(
     is_train: bool,
     tee_output: bool = True,
     max_concurrency: int = 1,
+    has_user_healthcheck: bool = False,
 ) -> Worker:
     parent_conn, child_conn = _spawn.Pipe()
+
+    hc_parent: Optional[Connection] = None
+    hc_child: Optional[Connection] = None
+    if has_user_healthcheck:
+        hc_parent, hc_child = _spawn.Pipe()
+
     child = _ChildWorker(
         predictor_ref,
         is_async=is_async,
         is_train=is_train,
         events=child_conn,
+        healthcheck_events=hc_child,
         tee_output=tee_output,
         max_concurrency=max_concurrency,
     )
-    parent = Worker(child=child, events=parent_conn, max_concurrency=max_concurrency)
+    parent = Worker(
+        child=child,
+        events=parent_conn,
+        max_concurrency=max_concurrency,
+        healthcheck_events=hc_parent,
+    )
     return parent
