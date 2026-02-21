@@ -3,7 +3,7 @@ name: CI
 on:
   merge_group:
   push:
-    branches: [main]
+    branches: [main, v0.16-maint]
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
   pull_request:
   workflow_dispatch:

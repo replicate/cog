@@ -3,7 +3,7 @@ name: PyPI package
 
 on:
   push:
-    branches: [main]
+    branches: [main, v0.16-maint]
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
   workflow_dispatch:
 
@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0 # needed for setuptools_scm version determination
       # HACK: for now, disable local versions so we can push to Test PyPI on main
       - name: Disable local version
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v0.16-maint')
         run: |
           sed -i '/\[tool\.setuptools_scm\]/a local_scheme = "no-local-version"' pyproject.toml
           git update-index --assume-unchanged pyproject.toml
@@ -32,7 +32,7 @@ jobs:
 
   release-test-pypi:
     name: Publish dev package to test.pypi.org
-    if: github.repository_owner == 'replicate' && github.ref == 'refs/heads/main'
+    if: github.repository_owner == 'replicate' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v0.16-maint')
     runs-on: ubuntu-latest
     needs: build-package
     environment: test-pypi
