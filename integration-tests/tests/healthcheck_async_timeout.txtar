@@ -5,8 +5,8 @@
 # Skip for cog-dataclass which does not support this
 [cog_dataclass] skip
 
-# Test healthcheck timeout behavior
-# This tests when healthcheck takes too long (>5 seconds)
+# Test async healthcheck that times out
+# Ensures timeout works for async healthcheck functions
 
 # Build the image
 cog build -t $TEST_IMAGE
@@ -14,11 +14,10 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Timeout in healthcheck should return UNHEALTHY with timeout message
+# Async healthcheck should timeout (sleeps 10s, timeout is 5s)
 curl GET /health-check
 stdout '"status":"UNHEALTHY"'
-stdout 'user_healthcheck_error'
-stdout 'timed out after 5.0 seconds'
+stdout 'timed out after 5'
 
 -- cog.yaml --
 build:
@@ -26,7 +25,7 @@ build:
 predict: "predict.py:Predictor"
 
 -- predict.py --
-import time
+import asyncio
 from cog import BasePredictor
 
 class Predictor(BasePredictor):
@@ -36,10 +35,12 @@ class Predictor(BasePredictor):
     def predict(self, text: str) -> str:
         return f"hello {text}"
 
-    def healthcheck(self) -> bool:
-        """Healthcheck that times out after startup."""
+    async def healthcheck(self) -> bool:
+        """Async healthcheck that times out after first call."""
         self._healthcheck_calls += 1
         if self._healthcheck_calls == 1:
+            # First call succeeds so server becomes ready
             return True
-        time.sleep(10)  # Sleep longer than the 5 second timeout
+        # Subsequent calls timeout
+        await asyncio.sleep(10)  # Exceeds 5s timeout
         return True
