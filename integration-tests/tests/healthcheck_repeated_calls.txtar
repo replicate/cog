@@ -1,10 +1,3 @@
-# Skip for coglet_alpha which does not support this
-[coglet_alpha] skip
-# Skip for coglet_rust which does not support this
-[coglet_rust] skip
-# Skip for cog-dataclass which does not support this
-[cog_dataclass] skip
-
 # Test repeated healthcheck calls (simulates supervisor container polling pattern)
 # This ensures no resource leaks over many healthcheck calls
 
