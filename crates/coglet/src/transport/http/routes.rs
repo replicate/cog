@@ -294,6 +294,7 @@ async fn create_prediction_with_id(
                 PredictionStatus::Failed,
                 None,
                 Some(msg.clone()),
+                None,
             );
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -309,6 +310,7 @@ async fn create_prediction_with_id(
                 PredictionStatus::Failed,
                 None,
                 Some("At capacity".to_string()),
+                None,
             );
             return (
                 StatusCode::CONFLICT,
@@ -321,7 +323,13 @@ async fn create_prediction_with_id(
     };
 
     let prediction = unregistered_slot.prediction();
-    supervisor.update_status(&prediction_id, PredictionStatus::Processing, None, None);
+    supervisor.update_status(
+        &prediction_id,
+        PredictionStatus::Processing,
+        None,
+        None,
+        None,
+    );
 
     // Async mode: spawn background task, return immediately
     if respond_async {
@@ -338,12 +346,14 @@ async fn create_prediction_with_id(
                         PredictionStatus::Succeeded,
                         Some(serde_json::json!(r.output)),
                         None,
+                        Some(r.metrics),
                     );
                 }
                 Err(PredictionError::Cancelled) => {
                     supervisor_clone.update_status(
                         &id_for_cleanup,
                         PredictionStatus::Canceled,
+                        None,
                         None,
                         None,
                     );
@@ -354,6 +364,7 @@ async fn create_prediction_with_id(
                         PredictionStatus::Failed,
                         None,
                         Some(e.to_string()),
+                        None,
                     );
                 }
             }
@@ -390,10 +401,11 @@ async fn create_prediction_with_id(
                 PredictionStatus::Succeeded,
                 Some(serde_json::json!(r.output)),
                 None,
+                Some(r.metrics.clone()),
             );
         }
         Err(PredictionError::Cancelled) => {
-            supervisor.update_status(&prediction_id, PredictionStatus::Canceled, None, None);
+            supervisor.update_status(&prediction_id, PredictionStatus::Canceled, None, None, None);
         }
         Err(e) => {
             supervisor.update_status(
@@ -401,23 +413,37 @@ async fn create_prediction_with_id(
                 PredictionStatus::Failed,
                 None,
                 Some(e.to_string()),
+                None,
             );
         }
     }
 
     service.unregister_prediction(&prediction_id);
 
+    // Build metrics object: user metrics + predict_time
+    let build_metrics = |user_metrics: &std::collections::HashMap<String, serde_json::Value>| {
+        let mut m = serde_json::Map::new();
+        for (k, v) in user_metrics {
+            m.insert(k.clone(), v.clone());
+        }
+        m.insert("predict_time".to_string(), serde_json::json!(predict_time));
+        serde_json::Value::Object(m)
+    };
+
     match result {
-        Ok(r) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": prediction_id,
-                "output": r.output,
-                "logs": r.logs,
-                "status": "succeeded",
-                "metrics": { "predict_time": predict_time }
-            })),
-        ),
+        Ok(r) => {
+            let metrics = build_metrics(&r.metrics);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "id": prediction_id,
+                    "output": r.output,
+                    "logs": r.logs,
+                    "status": "succeeded",
+                    "metrics": metrics
+                })),
+            )
+        }
         Err(PredictionError::InvalidInput(msg)) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(serde_json::json!({

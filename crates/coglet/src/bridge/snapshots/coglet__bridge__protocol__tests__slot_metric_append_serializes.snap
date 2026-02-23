@@ -1,0 +1,10 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "metric",
+  "name": "logprobs",
+  "value": -1.2,
+  "mode": "append"
+}

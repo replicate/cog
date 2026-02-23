@@ -1,0 +1,13 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "metric",
+  "name": "timing",
+  "value": {
+    "inference": 0.8,
+    "preprocess": 0.1
+  },
+  "mode": "replace"
+}

@@ -56,7 +56,7 @@ reportMissingParameterType = "error"
 reportUnknownLambdaType = "error"
 reportUnnecessaryIsInstance = "warning"
 reportUnnecessaryComparison = "warning"
-reportUnneesssaryContains = "warning"
+reportUnnecessaryContains = "warning"
 reportMissingTypeArgument = "error"
 reportUnusedExpression = "warning"
 
@@ -108,7 +108,7 @@ lint.ignore = [
 ]
 extend-exclude = [
   "python/tests/server/fixtures/*",
-  "crates/coglet-python/*.pyi",
+  "crates/coglet-python/**/*.pyi",
   "crates/coglet-python/scripts/*",
 ]
 src = ["python"]
