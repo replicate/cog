@@ -29,7 +29,7 @@ ENTRYPOINT ["/sbin/tini", "--"]
 `
 }
 
-const testInstallUVLine = "RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 UV_VERSION=0.9.26 sh\nENV UV_SYSTEM_PYTHON=true"
+var testInstallUVLine = "COPY --from=ghcr.io/astral-sh/uv:" + UVVersion + " /uv /uvx /usr/local/bin/\nENV UV_SYSTEM_PYTHON=true"
 
 func testInstallCog(stripped bool) string {
 	strippedCall := ""
@@ -60,7 +60,7 @@ func testInstallPython(version string) string {
 	git \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
-RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 UV_VERSION=0.9.26 sh
+COPY --from=ghcr.io/astral-sh/uv:`+UVVersion+` /uv /uvx /usr/local/bin/
 ENV UV_SYSTEM_PYTHON=true
 RUN uv python install %s && \
 	ln -sf $(uv python find %s) /usr/bin/python3
