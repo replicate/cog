@@ -84,6 +84,10 @@ func (m *mockDocker) ContainerStart(ctx context.Context, options command.RunOpti
 	return "", errors.New("mockDocker.ContainerStart not implemented")
 }
 
+func (m *mockDocker) ImageSave(ctx context.Context, imageRef string) (io.ReadCloser, error) {
+	return nil, errors.New("mockDocker.ImageSave not implemented")
+}
+
 // mockRegistry implements registry.Client for testing.
 type mockRegistry struct {
 	inspectFunc       func(ctx context.Context, ref string, platform *registry.Platform) (*registry.ManifestResult, error)

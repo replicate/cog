@@ -12,6 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 // Option configures how Resolver methods behave.
@@ -263,16 +264,29 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 }
 
 // Push pushes a Model to a container registry.
-// TODO(md): The OCIIndex gate is temporary. When true, pushes an OCI Image Index
-// with weight artifacts. When false, does a plain docker push. Remove the gate
-// once index pushes are validated with all registries.
+//
+// Uses the OCI chunked push path (via OCIImagePusher) which bypasses Docker's
+// monolithic push and supports layers of any size through chunked uploads.
+// Falls back to legacy Docker push if OCI push is not available.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
+	ociPusher := registry.NewOCIImagePusher(r.registry, r.docker.ImageSave)
+
 	if m.OCIIndex {
-		pusher := NewBundlePusher(r.docker, r.registry)
+		pusher := NewBundlePusher(r.docker, r.registry, ociPusher)
 		return pusher.Push(ctx, m, opts)
 	}
-	pusher := NewImagePusher(r.docker)
-	return pusher.Push(ctx, m, opts)
+
+	// Use OCI chunked push for standalone images, fallback to Docker push
+	imgArtifact := m.GetImageArtifact()
+	if imgArtifact == nil {
+		return fmt.Errorf("no image artifact in model")
+	}
+
+	if err := ociPusher.Push(ctx, imgArtifact.Reference); err != nil {
+		console.Warnf("OCI chunked push failed, falling back to Docker push: %v", err)
+		return NewImagePusher(r.docker).PushArtifact(ctx, imgArtifact)
+	}
+	return nil
 }
 
 // loadLocal loads a Model from the local docker daemon.

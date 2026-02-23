@@ -255,6 +255,11 @@ func (c *apiClient) Push(ctx context.Context, imageRef string) error {
 	return nil
 }
 
+func (c *apiClient) ImageSave(ctx context.Context, imageRef string) (io.ReadCloser, error) {
+	console.Debugf("=== APIClient.ImageSave %s", imageRef)
+	return c.client.ImageSave(ctx, []string{imageRef})
+}
+
 // TODO[md]: this doesn't need to be on the interface, move to auth handler
 func (c *apiClient) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	console.Debugf("=== APIClient.LoadUserInformation %s", registryHost)
