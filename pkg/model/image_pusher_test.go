@@ -97,6 +97,8 @@ func fakeImageSaveFunc(img v1.Image, tagStr string) func(context.Context, string
 // =============================================================================
 
 func TestImagePusher_Push(t *testing.T) {
+	t.Setenv("COG_PUSH_OCI", "1")
+
 	t.Run("pushes layers config and manifest via OCI path", func(t *testing.T) {
 		img, err := random.Image(1024, 2) // 2 layers of 1KB
 		require.NoError(t, err)
@@ -294,6 +296,8 @@ func TestImagePusher_PushArtifact(t *testing.T) {
 // =============================================================================
 
 func TestImagePusher_Fallback(t *testing.T) {
+	t.Setenv("COG_PUSH_OCI", "1")
+
 	t.Run("uses OCI push when it succeeds", func(t *testing.T) {
 		img, err := random.Image(512, 1)
 		require.NoError(t, err)

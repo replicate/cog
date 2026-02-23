@@ -66,7 +66,7 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	repo := repoFromReference(imgArtifact.Reference)
 
 	// 1. Push image via OCI chunked push (falls back to Docker push on error)
-	if err := p.pushContainerImage(ctx, imgArtifact); err != nil {
+	if err := p.imagePusher.PushArtifact(ctx, imgArtifact); err != nil {
 		return fmt.Errorf("push image %q: %w", imgArtifact.Reference, err)
 	}
 
@@ -113,12 +113,6 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	}
 
 	return nil
-}
-
-// pushContainerImage pushes the container image via ImagePusher (OCI chunked
-// push with Docker fallback).
-func (p *BundlePusher) pushContainerImage(ctx context.Context, imgArtifact *ImageArtifact) error {
-	return p.imagePusher.PushArtifact(ctx, imgArtifact)
 }
 
 // pushWeights pushes all weight artifacts concurrently (bounded by GetPushConcurrency)

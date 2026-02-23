@@ -84,9 +84,10 @@ func (p *ImagePusher) PushArtifact(ctx context.Context, artifact *ImageArtifact)
 	return p.Push(ctx, artifact.Reference)
 }
 
-// canOCIPush returns true if OCI chunked push is available.
+// canOCIPush returns true if OCI chunked push is enabled.
+// Requires COG_PUSH_OCI=1 and a registry client.
 func (p *ImagePusher) canOCIPush() bool {
-	return p.registry != nil
+	return os.Getenv("COG_PUSH_OCI") == "1" && p.registry != nil
 }
 
 // ociPush exports the image from Docker daemon to OCI layout, then pushes all layers,
