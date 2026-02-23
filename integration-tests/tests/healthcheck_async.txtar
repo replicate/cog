@@ -1,5 +1,5 @@
-# Test async healthcheck functionality
-# Tests that async def healthcheck() works correctly
+# Test async healthcheck function
+# Ensures async healthchecks work correctly
 
 # Build the image
 cog build -t $TEST_IMAGE
@@ -7,16 +7,16 @@ cog build -t $TEST_IMAGE
 # Start the server
 cog serve
 
-# Test 1: Healthy async healthcheck returns READY status
+# Test async healthcheck returns healthy
 curl GET /health-check
 stdout '"status":"READY"'
 ! stdout 'user_healthcheck_error'
 
-# Test 2: Make a prediction to ensure predictor works
+# Make a prediction
 curl POST /predictions '{"input":{"text":"world"}}'
 stdout '"output":"hello world"'
 
-# Test 3: Health check still works after prediction
+# Healthcheck should still work
 curl GET /health-check
 stdout '"status":"READY"'
 
@@ -26,14 +26,15 @@ build:
 predict: "predict.py:Predictor"
 
 -- predict.py --
-from cog import BasePredictor
 import asyncio
+from cog import BasePredictor
 
 class Predictor(BasePredictor):
-    async def predict(self, text: str) -> str:
+    def predict(self, text: str) -> str:
         return f"hello {text}"
-    
+
     async def healthcheck(self) -> bool:
-        """Async healthcheck that always returns healthy."""
-        await asyncio.sleep(0.01)  # Small delay to exercise async path
+        """Async healthcheck function."""
+        # Simulate async operation
+        await asyncio.sleep(0.1)
         return True

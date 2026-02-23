@@ -1,0 +1,46 @@
+# Test healthcheck immediately after prediction completes
+# Ensures healthcheck works correctly in quick succession with predictions
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+cog serve
+
+# Make a quick prediction
+curl POST /predictions '{"input":{"text":"world"}}'
+stdout '"output":"hello world"'
+
+# Immediately call healthcheck after prediction (no delay)
+curl GET /health-check
+stdout '"status":"READY"'
+
+# Do it again - rapid fire prediction + healthcheck
+curl POST /predictions '{"input":{"text":"again"}}'
+stdout '"output":"hello again"'
+
+curl GET /health-check
+stdout '"status":"READY"'
+
+# One more time to ensure pattern holds
+curl POST /predictions '{"input":{"text":"final"}}'
+stdout '"output":"hello final"'
+
+curl GET /health-check
+stdout '"status":"READY"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return f"hello {text}"
+
+    def healthcheck(self) -> bool:
+        """Healthcheck should work immediately after predictions."""
+        return True

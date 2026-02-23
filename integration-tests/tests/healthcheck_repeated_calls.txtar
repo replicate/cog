@@ -1,0 +1,41 @@
+# Test repeated healthcheck calls (simulates supervisor container polling pattern)
+# This ensures no resource leaks over many healthcheck calls
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server
+cog serve
+
+# Call healthcheck 50 times sequentially (simulates supervisor polling)
+# Each call should succeed and return READY status
+exec bash -c 'for i in {1..50}; do curl -s $SERVER_URL/health-check | grep -q "\"status\":\"READY\"" || exit 1; done'
+
+# Make a prediction to ensure system still works after many healthchecks
+curl POST /predictions '{"input":{"text":"world"}}'
+stdout '"output":"hello world"'
+
+# Healthcheck should still work after prediction
+curl GET /health-check
+stdout '"status":"READY"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def __init__(self):
+        self.call_count = 0
+
+    def predict(self, text: str) -> str:
+        return f"hello {text}"
+
+    def healthcheck(self) -> bool:
+        """Custom healthcheck that tracks call count."""
+        self.call_count += 1
+        # Always return healthy
+        return True
