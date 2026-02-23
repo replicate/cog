@@ -632,11 +632,11 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 // The repo parameter is needed to restart the upload session if multipart fails.
 // Returns the final upload location URL which must be used for committing the upload.
 func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, location string, totalSize int64, progressCh chan<- v1.Update) (string, error) {
-	// Multipart upload settings:
-	// - Threshold: Use multipart only for blobs larger than 50MB (avoids MPU overhead for smaller files)
-	// - Chunk size: 256MB per chunk (large chunks reduce HTTP round-trips for multi-GB weight files)
-	const multipartThreshold = 50 * 1024 * 1024
-	const chunkSize = 256 * 1024 * 1024
+	// Multipart upload settings are configurable via environment variables:
+	// - COG_PUSH_MULTIPART_THRESHOLD: Minimum blob size for multipart upload (default: 50MB)
+	// - COG_PUSH_CHUNK_SIZE: Size of each chunk in multipart upload (default: 256MB)
+	multipartThreshold := getMultipartThreshold()
+	chunkSize := getChunkSize()
 
 	if totalSize > multipartThreshold {
 		finalLocation, newLocation, fallback, err := c.tryMultipartWithFallback(ctx, client, repo, layer, location, totalSize, chunkSize, progressCh)

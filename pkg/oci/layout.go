@@ -1,4 +1,6 @@
-package registry
+// Package oci provides utilities for working with OCI image layouts on disk.
+// It handles conversion between Docker image tarballs and OCI layout directories.
+package oci
 
 import (
 	"context"
@@ -15,12 +17,16 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
+// ImageSaveFunc exports a Docker image as a tar stream.
+// This matches the signature of Docker SDK's client.ImageSave (simplified).
+type ImageSaveFunc func(ctx context.Context, imageRef string) (io.ReadCloser, error)
+
 // ExportOCILayout exports an image from the Docker daemon to an OCI layout directory.
 // It uses Docker's ImageSave API to get a Docker tar stream, converts it to a v1.Image
 // using go-containerregistry, then writes it as an OCI layout.
 //
 // The caller is responsible for cleaning up the returned directory when done.
-func ExportOCILayout(ctx context.Context, imageRef string, imageSave func(ctx context.Context, imageRef string) (io.ReadCloser, error)) (string, v1.Image, error) {
+func ExportOCILayout(ctx context.Context, imageRef string, imageSave ImageSaveFunc) (string, v1.Image, error) {
 	console.Debugf("Exporting image %s from Docker daemon...", imageRef)
 
 	ref, err := name.ParseReference(imageRef, name.Insecure)

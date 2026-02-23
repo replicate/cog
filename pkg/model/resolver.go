@@ -12,7 +12,6 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
-	"github.com/replicate/cog/pkg/util/console"
 )
 
 // Option configures how Resolver methods behave.
@@ -77,17 +76,19 @@ func WithPlatform(p *registry.Platform) Option {
 
 // Resolver orchestrates building and loading Models.
 type Resolver struct {
-	docker   command.Command
-	registry registry.Client
-	factory  Factory
+	docker    command.Command
+	registry  registry.Client
+	factory   Factory
+	ociPusher *OCIImagePusher
 }
 
 // NewResolver creates a Resolver with the default factory.
 func NewResolver(docker command.Command, reg registry.Client) *Resolver {
 	return &Resolver{
-		docker:   docker,
-		registry: reg,
-		factory:  DefaultFactory(docker, reg),
+		docker:    docker,
+		registry:  reg,
+		factory:   DefaultFactory(docker, reg),
+		ociPusher: NewOCIImagePusher(reg, docker.ImageSave),
 	}
 }
 
@@ -269,24 +270,17 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 // monolithic push and supports layers of any size through chunked uploads.
 // Falls back to legacy Docker push if OCI push is not available.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	ociPusher := registry.NewOCIImagePusher(r.registry, r.docker.ImageSave)
-
 	if m.OCIIndex {
-		pusher := NewBundlePusher(r.docker, r.registry, ociPusher)
+		pusher := NewBundlePusher(r.docker, r.registry, r.ociPusher)
 		return pusher.Push(ctx, m, opts)
 	}
 
-	// Use OCI chunked push for standalone images, fallback to Docker push
 	imgArtifact := m.GetImageArtifact()
 	if imgArtifact == nil {
 		return fmt.Errorf("no image artifact in model")
 	}
 
-	if err := ociPusher.Push(ctx, imgArtifact.Reference); err != nil {
-		console.Warnf("OCI chunked push failed, falling back to Docker push: %v", err)
-		return NewImagePusher(r.docker).PushArtifact(ctx, imgArtifact)
-	}
-	return nil
+	return pushImageWithFallback(ctx, r.ociPusher, NewImagePusher(r.docker), imgArtifact)
 }
 
 // loadLocal loads a Model from the local docker daemon.

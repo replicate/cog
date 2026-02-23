@@ -11,7 +11,6 @@ import (
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
-	"github.com/replicate/cog/pkg/util/console"
 )
 
 // Pusher handles pushing a model to a registry.
@@ -44,14 +43,14 @@ type PushOptions struct {
 // It orchestrates OCIImagePusher and WeightPusher, then assembles the OCI index
 // from the pushed manifest descriptors.
 type BundlePusher struct {
-	ociPusher    *registry.OCIImagePusher
+	ociPusher    *OCIImagePusher
 	imagePusher  *ImagePusher
 	weightPusher *WeightPusher
 	registry     registry.Client
 }
 
 // NewBundlePusher creates a new BundlePusher.
-func NewBundlePusher(docker command.Command, reg registry.Client, ociPusher *registry.OCIImagePusher) *BundlePusher {
+func NewBundlePusher(docker command.Command, reg registry.Client, ociPusher *OCIImagePusher) *BundlePusher {
 	return &BundlePusher{
 		ociPusher:    ociPusher,
 		imagePusher:  NewImagePusher(docker),
@@ -125,16 +124,9 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 }
 
 // pushContainerImage pushes the container image using the OCI chunked push path.
-// Falls back to legacy Docker push if OCI push fails.
+// Falls back to legacy Docker push if OCI push fails (except on auth/context errors).
 func (p *BundlePusher) pushContainerImage(ctx context.Context, imgArtifact *ImageArtifact) error {
-	if p.ociPusher != nil {
-		err := p.ociPusher.Push(ctx, imgArtifact.Reference)
-		if err == nil {
-			return nil
-		}
-		console.Warnf("OCI chunked push failed, falling back to Docker push: %v", err)
-	}
-	return p.imagePusher.PushArtifact(ctx, imgArtifact)
+	return pushImageWithFallback(ctx, p.ociPusher, p.imagePusher, imgArtifact)
 }
 
 // pushWeightsConcurrently pushes all weight artifacts and returns their results.

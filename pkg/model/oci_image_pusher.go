@@ -1,18 +1,21 @@
-package registry
+package model
 
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
+	"strings"
 
-	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/replicate/cog/pkg/oci"
+	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -24,23 +27,19 @@ const (
 	envPushConcurrency = "COG_PUSH_CONCURRENCY"
 )
 
-// ImageSaveFunc is a function that exports a Docker image as a tar stream.
-// This matches the Docker SDK's ImageSave API signature (simplified).
-type ImageSaveFunc func(ctx context.Context, imageRef string) (io.ReadCloser, error)
-
 // OCIImagePusher pushes container images to a registry using the OCI Distribution API
 // with chunked uploads. It exports images from the Docker daemon to OCI layout,
 // then pushes layers concurrently using the registry client's WriteLayer method.
 type OCIImagePusher struct {
-	registry  Client
-	imageSave ImageSaveFunc
+	registry  registry.Client
+	imageSave oci.ImageSaveFunc
 }
 
 // NewOCIImagePusher creates a new OCIImagePusher.
 //
 // imageSave should export a Docker image as a tar stream. Typically this wraps
 // the Docker SDK's client.ImageSave method.
-func NewOCIImagePusher(reg Client, imageSave ImageSaveFunc) *OCIImagePusher {
+func NewOCIImagePusher(reg registry.Client, imageSave oci.ImageSaveFunc) *OCIImagePusher {
 	return &OCIImagePusher{
 		registry:  reg,
 		imageSave: imageSave,
@@ -75,7 +74,7 @@ func (p *OCIImagePusher) Push(ctx context.Context, imageRef string, opts ...Imag
 	}
 
 	// Export from Docker daemon to OCI layout
-	layoutDir, img, err := ExportOCILayout(ctx, imageRef, p.imageSave)
+	layoutDir, img, err := oci.ExportOCILayout(ctx, imageRef, p.imageSave)
 	if err != nil {
 		return fmt.Errorf("export OCI layout: %w", err)
 	}
@@ -95,7 +94,7 @@ func (p *OCIImagePusher) PushFromLayout(ctx context.Context, imageRef string, la
 		opt = opts[0]
 	}
 
-	img, err := LoadOCILayoutImage(layoutPath)
+	img, err := oci.LoadOCILayoutImage(layoutPath)
 	if err != nil {
 		return fmt.Errorf("load OCI layout: %w", err)
 	}
@@ -106,7 +105,7 @@ func (p *OCIImagePusher) PushFromLayout(ctx context.Context, imageRef string, la
 // pushImage pushes a v1.Image (layers, config, manifest) to the registry.
 func (p *OCIImagePusher) pushImage(ctx context.Context, imageRef string, img v1.Image, opt ImagePushOptions) error {
 	// Extract repo from reference for WriteLayer calls
-	repo := ociRepoFromReference(imageRef)
+	repo := repoFromReference(imageRef)
 
 	// Push layers concurrently
 	if err := p.pushLayers(ctx, repo, img, opt); err != nil {
@@ -187,7 +186,7 @@ func (p *OCIImagePusher) pushLayer(ctx context.Context, repo string, layer v1.La
 		}()
 	}
 
-	writeErr := p.registry.WriteLayer(ctx, WriteLayerOptions{
+	writeErr := p.registry.WriteLayer(ctx, registry.WriteLayerOptions{
 		Repo:       repo,
 		Layer:      layer,
 		ProgressCh: progressCh,
@@ -229,10 +228,49 @@ func (p *OCIImagePusher) pushConfig(ctx context.Context, repo string, img v1.Ima
 		digest: cfgName,
 	}
 
-	return p.registry.WriteLayer(ctx, WriteLayerOptions{
+	return p.registry.WriteLayer(ctx, registry.WriteLayerOptions{
 		Repo:  repo,
 		Layer: configLayer,
 	})
+}
+
+// pushImageWithFallback pushes an image using the OCI chunked push path.
+// Falls back to legacy Docker push if OCI push fails with a retryable/unknown error.
+// Does NOT fall back on context cancellation or authentication errors.
+func pushImageWithFallback(ctx context.Context, ociPusher *OCIImagePusher, dockerPusher *ImagePusher, artifact *ImageArtifact) error {
+	if ociPusher != nil {
+		err := ociPusher.Push(ctx, artifact.Reference)
+		if err == nil {
+			return nil
+		}
+		if !shouldFallbackToDocker(err) {
+			return fmt.Errorf("OCI chunked push: %w", err)
+		}
+		console.Warnf("OCI chunked push failed, falling back to Docker push: %v", err)
+	}
+	return dockerPusher.PushArtifact(ctx, artifact)
+}
+
+// shouldFallbackToDocker returns true if the error is safe to fall back from.
+// We do NOT fall back on context errors (cancellation/timeout) or auth failures.
+func shouldFallbackToDocker(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Never fall back on context cancellation or deadline
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	// Never fall back on authentication/authorization errors
+	errStr := err.Error()
+	if strings.Contains(errStr, "UNAUTHORIZED") ||
+		strings.Contains(errStr, "unauthorized") ||
+		strings.Contains(errStr, "authentication required") ||
+		strings.Contains(errStr, "DENIED") ||
+		strings.Contains(errStr, "denied") {
+		return false
+	}
+	return true
 }
 
 // getPushConcurrency returns the configured concurrency, checking env var override.
@@ -243,15 +281,6 @@ func getPushConcurrency() int {
 		}
 	}
 	return DefaultPushConcurrency
-}
-
-// ociRepoFromReference extracts the repository (without tag or digest) from an image reference.
-func ociRepoFromReference(ref string) string {
-	parsed, err := name.ParseReference(ref, name.Insecure)
-	if err != nil {
-		return ref // fallback: return as-is if unparseable
-	}
-	return parsed.Context().String()
 }
 
 // configBlobLayer wraps a config blob to satisfy the v1.Layer interface
@@ -265,6 +294,9 @@ func (c *configBlobLayer) Digest() (v1.Hash, error) {
 	return c.digest, nil
 }
 
+// DiffID returns the same hash as Digest. For uncompressed config blobs,
+// the compressed and uncompressed representations are identical, so DiffID
+// (hash of uncompressed content) equals Digest (hash of compressed content).
 func (c *configBlobLayer) DiffID() (v1.Hash, error) {
 	return c.digest, nil
 }
