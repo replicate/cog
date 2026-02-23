@@ -1,18 +1,24 @@
 ---
 name: Release Build
 
-# Triggered on version tags to build release artifacts and create draft release.
-# A separate person must then publish the draft release to trigger release-publish.yaml.
+# Triggered on version tags to build release artifacts and create a GitHub release.
 #
-# FLOW:
-# 1. Developer pushes tag (e.g., v1.0.0)
-# 2. This workflow builds all artifacts and creates a draft GitHub release
-# 3. Different team member reviews and publishes the draft release
-# 4. release-publish.yaml triggers and publishes to PyPI/crates.io
+# THREE RELEASE TYPES:
+#
+# 1. Stable (v0.17.0) - must be on main
+#    - Creates DRAFT release → maintainer publishes → release-publish.yaml → PyPI/crates.io
+#
+# 2. Pre-release (v0.17.0-alpha3, v0.17.0-rc1) - must be on main
+#    - Same flow as stable, but marked as pre-release
+#
+# 3. Dev (v0.17.0-dev1) - can be tagged from ANY branch
+#    - Creates a published pre-release immediately (no draft, no human approval)
+#    - Does NOT publish to PyPI or crates.io
+#    - Artifacts (CLI binaries, wheels) attached to the GH release
 #
 # SECURITY:
-# - Tag must be on main branch (verified in verify-tag job)
-# - No secrets needed - only builds artifacts and creates draft
+# - Stable/pre-release tags verified on main branch
+# - Dev releases have no branch restriction but no registry publishing
 
 on:
   push:
@@ -26,70 +32,72 @@ env:
 
 jobs:
   verify-tag:
-    name: Verify tag is on main
+    name: Verify tag and version
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      is_dev: ${{ steps.check.outputs.is_dev }}
+      version: ${{ steps.check.outputs.version }}
+      pep440: ${{ steps.check.outputs.pep440 }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Verify tag and version
+        id: check
         run: |
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
           TAG_COMMIT="${{ github.sha }}"
-          
+
           # Get version from Cargo.toml
           CARGO_VERSION=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          
+
           echo "Tag: $TAG"
           echo "Tag version: $VERSION"
           echo "Cargo.toml version: $CARGO_VERSION"
           echo "Commit: $TAG_COMMIT"
           echo ""
-          
+
           # Check Cargo.toml matches tag
           if [[ "$CARGO_VERSION" != "$VERSION" ]]; then
             echo "::error::Version mismatch! crates/Cargo.toml has version $CARGO_VERSION but tag is $TAG"
             echo "::error::"
-            echo "::error::To fix: Run the 'Version Bump' workflow to create a PR, or manually update crates/Cargo.toml"
-            echo "::error::Then delete this tag, merge the version bump, and re-tag."
+            echo "::error::To fix: Update crates/Cargo.toml to match, merge to main, then delete this tag and re-tag."
             exit 1
           fi
           echo "✓ Cargo.toml version matches tag"
-          
-          # Check branch rules based on release type
-          if [[ "$VERSION" == *-* ]]; then
-            # Pre-release: must be on prerelease/* branch
-            echo "Pre-release detected, verifying prerelease/* branch..."
-            
-            git fetch origin 'refs/heads/prerelease/*:refs/remotes/origin/prerelease/*' 2>/dev/null || true
-            PRERELEASE_BRANCH=$(git branch -r --contains "$TAG_COMMIT" 2>/dev/null | grep 'origin/prerelease/' | head -1 | xargs || echo "")
-            
-            if [ -z "$PRERELEASE_BRANCH" ]; then
-              echo "::error::Pre-release tags must be on a prerelease/* branch"
-              echo "::error::Tag $TAG is not reachable from any prerelease/* branch"
-              echo "::error::"
-              echo "::error::To fix: Create a branch like 'prerelease/0.17' and tag from there"
-              exit 1
-            fi
-            
-            echo "✓ Pre-release tag is on branch: $PRERELEASE_BRANCH"
+
+          # Determine release type
+          IS_DEV="false"
+          if [[ "$VERSION" == *-dev* ]]; then
+            IS_DEV="true"
+          fi
+          echo "is_dev=$IS_DEV" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          # Compute PEP 440 version: v0.17.0-alpha1 -> 0.17.0a1, v0.17.0-dev1 -> 0.17.0.dev1
+          PEP440=$(echo "$VERSION" | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/')
+          echo "pep440=$PEP440" >> "$GITHUB_OUTPUT"
+          echo "PEP 440 version: $PEP440"
+
+          # Branch rules
+          if [[ "$IS_DEV" == "true" ]]; then
+            echo "Dev release - no branch restriction"
+            echo "✓ Dev release, skipping branch check"
           else
-            # Stable release: must be on main
-            echo "Stable release detected, verifying main branch..."
-            
+            # Stable and pre-release tags must be on main
+            echo "Stable/pre-release detected, verifying main branch..."
             git fetch origin main
             if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
-              echo "::error::Stable release tags must be on the main branch"
+              echo "::error::Release tags must be on the main branch"
               echo "::error::Tag commit $TAG_COMMIT is not reachable from origin/main"
               echo "::error::"
               echo "::error::To fix: Merge to main first, then tag"
               exit 1
             fi
-            
-            echo "✓ Stable release tag is on main branch"
+            echo "✓ Tag is on main branch"
           fi
 
   build-sdk:
@@ -108,18 +116,21 @@ jobs:
 
       - name: Update coglet version constraint
         run: |
-          # Extract version from tag (v0.17.0 -> 0.17.0)
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.verify-tag.outputs.pep440 }}"
           echo "Setting coglet constraint to >=$VERSION,<1.0"
-          
+
           # Update pyproject.toml with lockstep version constraint
           sed -i "s/coglet>=0\.1\.0,<1\.0/coglet>=$VERSION,<1.0/" pyproject.toml
-          
-          # Verify the change
-          grep -A1 'optional-dependencies' pyproject.toml
+
+          # Verify the change took effect
+          grep "coglet>=$VERSION" pyproject.toml
 
       - name: Build SDK wheel
-        run: uv build --out-dir dist .
+        run: |
+          echo "Building SDK with version: $SETUPTOOLS_SCM_PRETEND_VERSION"
+          uv build --out-dir dist .
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ needs.verify-tag.outputs.pep440 }}
 
       - name: Upload SDK artifacts
         uses: actions/upload-artifact@v6
@@ -130,21 +141,27 @@ jobs:
   build-coglet-wheels:
     name: Build coglet wheel (${{ matrix.target }})
     needs: verify-tag
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
             artifact-suffix: linux-x64
             manylinux: auto
-          - target: aarch64-unknown-linux-gnu
+            zig: true
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
             artifact-suffix: linux-arm64
             manylinux: auto
-          - target: aarch64-apple-darwin
+            zig: true
+          - os: macos-14
+            target: aarch64-apple-darwin
             artifact-suffix: macos-arm64
             manylinux: "off"
+            zig: false
     steps:
       - uses: actions/checkout@v6
         with:
@@ -162,13 +179,14 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
+          enable-cache: false
 
       - name: Build coglet wheel
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          args: --release --out dist -m crates/coglet-python/Cargo.toml --zig
+          args: --release --out dist -m crates/coglet-python/Cargo.toml ${{ matrix.zig && '--zig' || '' }}
 
       - name: Upload coglet wheel
         uses: actions/upload-artifact@v6
@@ -176,35 +194,80 @@ jobs:
           name: coglet-wheel-${{ matrix.artifact-suffix }}
           path: dist/*.whl
 
-  create-draft-release:
-    name: Create draft release
-    needs: [build-sdk, build-coglet-wheels]
+  create-release:
+    name: Create release
+    needs: [verify-tag, build-sdk, build-coglet-wheels]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Download all artifacts
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check for existing release
+        run: |
+          TAG="${{ github.ref_name }}"
+          EXISTING=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '.' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "::error::Release for $TAG already exists. Delete it before re-running."
+            echo "::error::Run: gh release delete $TAG --yes"
+            exit 1
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Goreleaser builds CLI binaries and creates draft release
+      - name: Build CLI and create draft release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Append Python wheels to the release
+      - name: Download all wheel artifacts
         uses: actions/download-artifact@v7
         with:
           path: artifacts
 
-      - name: Organize artifacts
+      - name: Upload wheels to release
         run: |
-          mkdir -p release-assets
-          # SDK
-          cp artifacts/sdk-dist/* release-assets/
-          # Coglet wheels
-          cp artifacts/coglet-wheel-*/*.whl release-assets/
-          
-          echo "Release assets:"
-          ls -la release-assets/
+          TAG="${{ github.ref_name }}"
 
-      - name: Create draft release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          generate_release_notes: true
-          files: release-assets/*
+          # Collect all wheels
+          mkdir -p release-wheels
+          cp artifacts/sdk-dist/* release-wheels/
+          cp artifacts/coglet-wheel-*/*.whl release-wheels/
+
+          # Download goreleaser's checksums.txt and append wheel checksums
+          gh release download "$TAG" -p checksums.txt -D release-wheels
+          cd release-wheels
+          sha256sum *.whl *.tar.gz >> checksums.txt
+          echo "Checksums:"
+          cat checksums.txt
+          cd ..
+
+          echo "Uploading wheels and updated checksums..."
+          gh release upload "$TAG" release-wheels/* --clobber
+
+          echo "Release assets:"
+          gh release view "$TAG" --json assets --jq '.assets[].name'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # For dev releases: immediately publish as pre-release (no draft review)
+      # For stable/pre-release: leave as draft for maintainer review
+      - name: Publish dev release
+        if: needs.verify-tag.outputs.is_dev == 'true'
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "Publishing dev release $TAG as pre-release (no draft phase)..."
+          gh release edit "$TAG" --draft=false --prerelease
+          echo "✓ Dev release $TAG published as pre-release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
