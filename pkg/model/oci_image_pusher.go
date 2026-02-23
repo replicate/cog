@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -261,15 +260,7 @@ func shouldFallbackToDocker(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	// Never fall back on authentication/authorization errors
-	errStr := err.Error()
-	if strings.Contains(errStr, "UNAUTHORIZED") ||
-		strings.Contains(errStr, "unauthorized") ||
-		strings.Contains(errStr, "authentication required") ||
-		strings.Contains(errStr, "DENIED") ||
-		strings.Contains(errStr, "denied") {
-		return false
-	}
+
 	return true
 }
 

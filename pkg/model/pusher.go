@@ -87,7 +87,7 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	// 3. Push weight artifacts concurrently (if any)
 	var weightResults []*WeightPushResult
 	if len(weightArtifacts) > 0 {
-		weightResults, err = p.pushWeightsConcurrently(ctx, repo, weightArtifacts)
+		weightResults, err = p.pushWeights(ctx, repo, weightArtifacts)
 		if err != nil {
 			return err
 		}
@@ -129,9 +129,9 @@ func (p *BundlePusher) pushContainerImage(ctx context.Context, imgArtifact *Imag
 	return pushImageWithFallback(ctx, p.ociPusher, p.imagePusher, imgArtifact)
 }
 
-// pushWeightsConcurrently pushes all weight artifacts and returns their results.
+// pushWeights pushes all weight artifacts and returns their results.
 // If any weight push fails, remaining pushes are canceled and the first error is returned.
-func (p *BundlePusher) pushWeightsConcurrently(ctx context.Context, repo string, weights []*WeightArtifact) ([]*WeightPushResult, error) {
+func (p *BundlePusher) pushWeights(ctx context.Context, repo string, weights []*WeightArtifact) ([]*WeightPushResult, error) {
 	// Create cancellable context so we can stop remaining pushes on first error
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
