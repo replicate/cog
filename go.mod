@@ -13,7 +13,7 @@ require (
 	github.com/docker/go-connections v0.6.0
 	github.com/getkin/kin-openapi v0.133.0
 	github.com/google/go-containerregistry v0.20.5
-	github.com/hashicorp/go-version v1.7.0
+	github.com/hashicorp/go-version v1.8.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-homedir v1.1.0
