@@ -1,0 +1,56 @@
+# Test healthcheck called during active prediction
+# Ensures healthcheck pipe doesn't interfere with prediction pipe
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server with concurrency enabled
+cog serve
+
+# Start a long-running prediction in background (5 seconds)
+exec bash -c 'curl -s -X POST $SERVER_URL/predictions -H "Content-Type: application/json" -d "{\"input\":{\"sleep_time\":5}}" > /tmp/prediction.json &'
+
+# Wait for prediction to start (500ms)
+exec sleep 0.5
+
+# Call healthcheck while prediction is running
+curl GET /health-check
+stdout '"status":"READY"'
+
+# Call healthcheck again (multiple times during prediction)
+exec sleep 1
+curl GET /health-check
+stdout '"status":"READY"'
+
+exec sleep 1
+curl GET /health-check
+stdout '"status":"READY"'
+
+# Wait for prediction to complete
+exec sleep 3
+
+# Verify prediction succeeded
+exec bash -c 'cat /tmp/prediction.json | grep -q "\"output\":\"slept for 5 seconds\""'
+
+# Healthcheck should still work after prediction completes
+curl GET /health-check
+stdout '"status":"READY"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import time
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, sleep_time: int) -> str:
+        """Sleep for specified seconds."""
+        time.sleep(sleep_time)
+        return f"slept for {sleep_time} seconds"
+
+    def healthcheck(self) -> bool:
+        """Healthcheck should work during predictions."""
+        return True
