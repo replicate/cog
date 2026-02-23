@@ -310,87 +310,41 @@ mise run docs:serve
 
 ## Publishing a release
 
-This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new annotated git tag.
+Releases are managed by GitHub Actions workflows. See [`.github/workflows/README.md`](.github/workflows/README.md) for full details.
 
-### Choose a version number
+All packages use **lockstep versioning** from `crates/Cargo.toml`. There are three release types:
 
-> Deciding what the annotated git tag should be requires some interpretation. Cog generally follows [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html), and since the major version
-> is `0`, the rules get [a bit more loose](https://semver.org/spec/v2.0.0.html#spec-item-4). Broadly speaking, the rules for when to increment the patch version still hold, but
-> backward-incompatible changes **will not** require incrementing the major version. In this way, the minor version may be incremented whether the changes are additive or
-> subtractive. This all changes once the major version is incremented to `1`.
+| Type | Example tag | Branch rule | PyPI/crates.io? |
+|------|-------------|-------------|-----------------|
+| **Stable** | `v0.17.0` | Must be on main | Yes |
+| **Pre-release** | `v0.17.0-alpha3` | Must be on main | Yes |
+| **Dev** | `v0.17.0-dev1` | Any branch | No |
 
-### Set up GPG signing (macOS)
-
-Before creating a signed tag, you'll need to set up GPG signing. On macOS, install GPG using Homebrew:
-
-```bash
-brew install gnupg
-```
-
-Generate a GPG key for signing:
+### Stable / Pre-release
 
 ```bash
-gpg --quick-generate-key "Your Name <your.email@example.com>" ed25519 default 0
+# 1. Update crates/Cargo.toml version (e.g. "0.17.0" or "0.17.0-alpha3")
+# 2. Merge to main
+# 3. Tag and push
+git tag v0.17.0
+git push origin v0.17.0
+# 4. Wait for release-build.yaml to create a draft release
+# 5. Review the draft in GitHub UI, then click "Publish release"
+#    This triggers release-publish.yaml -> PyPI + crates.io
 ```
 
-Configure Git to use your GPG key:
+### Dev release
 
 ```bash
-# Get your key ID
-gpg --list-secret-keys --keyid-format=long
+# From any branch:
+# 1. Update crates/Cargo.toml version (e.g. "0.17.0-dev1")
+# 2. Commit and push
+# 3. Tag and push
+git tag v0.17.0-dev1
+git push origin v0.17.0-dev1
+# 4. Done. Artifacts are built and published as a GH pre-release.
+#    No PyPI/crates.io. No manual approval.
 ```
-
-This will show output like:
-```
-sec   ed25519/ABC123DEF456 2024-01-15 [SC]
-      ABC123DEF4567890ABCDEF1234567890ABCDEF12
-uid                 [ultimate] Your Name <your.email@example.com>
-```
-
-The key ID is the part after `ed25519/` (in this example, `ABC123DEF456`).
-
-```bash
-# Configure Git (replace YOUR_KEY_ID with your actual key ID)
-git config --global user.signingkey YOUR_KEY_ID
-git config --global commit.gpgsign true
-```
-### Create a prerelease (optional)
-
-Prereleases are a useful way to give testers a way to try out new versions of Cog without affecting the documented `latest` download URL which people normally use to install Cog.
-
-To publish a prerelease version, append a [SemVer prerelease identifier](https://semver.org/#spec-item-9) like `-alpha` or `-beta` to the git tag name. Goreleaser will detect this and mark it as a prerelease in GitHub Releases.
-
-    git checkout some-prerelease-branch
-    git fetch --all --tags
-    git tag -a v0.1.0-alpha -m "Prerelease v0.1.0"
-    git push --tags
-
-### Create a release
-
-Run these commands to publish a new release `v0.13.12` referencing commit `fabdadbead`:
-
-    git checkout main
-    git fetch --all --tags
-    git tag --sign --annotate --message 'Release v0.13.12' v0.13.12 fabdadbead
-    git push origin v0.13.12
-
-Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/actions) to monitor the release process.
-
-
-### Get team approval for the PyPI package
-
-The release workflow will halt until another member of the team approves the release.
-
-Ping someone on the team to review and approve the release.
-
-### Convert your git tag to a GitHub release
-
-Once the release is published, convert your git tag to a proper GitHub release:
-
-1. Visit [github.com/replicate/cog/tags](https://github.com/replicate/cog/tags)
-2. Click on your tag
-3. Click "Create release from tag"
-4. Add release notes and publish the release
 
 
 ## Troubleshooting
