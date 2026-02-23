@@ -235,10 +235,11 @@ Triggered when a release is published. Publishes to PyPI and crates.io.
 
 | Job | Depends on | Purpose |
 |-----|------------|---------|
-| `verify-release` | - | Validate tag format, detect dev releases |
+| `verify-release` | - | Validate tag format, classify release type |
 | `publish-pypi-coglet` | verify-release | Publish coglet to PyPI (trusted publishing) |
 | `publish-pypi-sdk` | publish-pypi-coglet | Publish SDK to PyPI (waits for coglet) |
 | `publish-crates-io` | verify-release | Publish coglet crate (OIDC) |
+| `update-homebrew-tap` | publish-pypi-sdk, publish-crates-io | Update `replicate/homebrew-tap` cask (stable only, macOS, via GH App) |
 
 ### Package Versioning
 
@@ -287,6 +288,11 @@ Same pattern for `COGLET_WHEEL` (but coglet is optional by default).
 3. Configure trusted publishers:
    - **PyPI** (both `cog` and `coglet`): workflow `release-publish.yaml`, environment `pypi`
    - **crates.io** (`coglet`): workflow `release-publish.yaml`, environment `crates-io`
+
+4. Configure the Homebrew tap GitHub App:
+   - App: `cog-homebrew-tapbot` (ID: 1232932405)
+   - Create environment `homebrew` with secret `COG_HOMEBREW_TAP_PRIVATE_KEY` (app private key)
+   - App must have write access to `replicate/homebrew-tap`
 
 ### Performing a Stable / Pre-release
 

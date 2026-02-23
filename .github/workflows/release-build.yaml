@@ -78,7 +78,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
           # Compute PEP 440 version: v0.17.0-alpha1 -> 0.17.0a1, v0.17.0-dev1 -> 0.17.0.dev1
-          PEP440=$(echo "$VERSION" | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/')
+          PEP440=$(echo "$VERSION" | sed -E 's/-alpha\.?/a/; s/-beta\.?/b/; s/-rc\.?/rc/; s/-dev\.?/.dev/')
           echo "pep440=$PEP440" >> "$GITHUB_OUTPUT"
           echo "PEP 440 version: $PEP440"
 

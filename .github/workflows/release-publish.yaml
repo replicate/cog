@@ -3,25 +3,31 @@ name: Release Publish
 
 # Publishes packages to PyPI and crates.io when a release is published.
 #
-# For stable/pre-release: triggered when a maintainer publishes the draft release.
-# For dev releases: this workflow runs but ALL jobs are skipped (dev releases
-# do not publish to PyPI or crates.io).
+# For stable releases: publishes to PyPI, crates.io, and updates Homebrew tap.
+# For pre-releases: publishes to PyPI and crates.io only (no Homebrew tap).
+# For dev releases: ALL jobs are skipped. (Dev releases do trigger this workflow
+#   when release-build.yaml publishes them, but every job gates on is_dev.)
 #
 # PUBLISH ORDER:
 # 1. coglet -> PyPI (must be first, SDK depends on it)
 # 2. coglet -> crates.io (parallel with coglet PyPI)
 # 3. SDK -> PyPI (after coglet is on PyPI)
+# 4. Homebrew cask (stable only, after all publishing completes)
 #
 # REQUIRED GITHUB CONFIGURATION:
 # 1. Create environments in Settings -> Environments:
 #    - "pypi": For PyPI publishing (Trusted Publisher)
 #    - "crates-io": For crates.io publishing
+#    - "homebrew": For Homebrew tap updates
 #
 # 2. Configure environment protection rules:
 #    - Deployment branches: "Selected branches and tags"
 #    - Add pattern: v* (to restrict to version tags only)
 #
 # 3. crates-io uses Trusted Publishing (OIDC via rust-lang/crates-io-auth-action)
+#
+# 4. Homebrew tap uses the cog-homebrew-tapbot GitHub App (ID: 1232932405)
+#    - Secret: COG_HOMEBREW_TAP_PRIVATE_KEY (app's private key)
 
 on:
   release:
@@ -30,7 +36,6 @@ on:
 permissions:
   contents: read
   id-token: write
-  attestations: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -42,6 +47,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       is_dev: ${{ steps.check.outputs.is_dev }}
+      is_prerelease: ${{ steps.check.outputs.is_prerelease }}
+      version: ${{ steps.check.outputs.version }}
     steps:
       - name: Verify valid release tag
         id: check
@@ -56,14 +63,23 @@ jobs:
           fi
           echo "✓ Valid release tag: $TAG"
 
-          # Check if this is a dev release
           VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          # Classify release type
           IS_DEV="false"
+          IS_PRERELEASE="false"
           if [[ "$VERSION" == *-dev* ]]; then
             IS_DEV="true"
-            echo "Dev release detected - skipping PyPI/crates.io publishing"
+            echo "Dev release detected - skipping all publishing"
+          elif [[ "$VERSION" == *-* ]]; then
+            IS_PRERELEASE="true"
+            echo "Pre-release detected - publishing to PyPI/crates.io (no Homebrew tap)"
+          else
+            echo "Stable release detected - full publishing including Homebrew tap"
           fi
           echo "is_dev=$IS_DEV" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
 
   publish-pypi-coglet:
     name: Publish coglet to PyPI
@@ -74,11 +90,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Download coglet wheels from release
-        uses: robinraju/release-downloader@v1
-        with:
-          tag: ${{ github.event.release.tag_name }}
-          fileName: "coglet-*.whl"
-          out-file-path: dist
+        run: |
+          mkdir -p dist
+          gh release download "$TAG" -p "coglet-*.whl" -D dist
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -110,24 +127,118 @@ jobs:
 
   publish-pypi-sdk:
     name: Publish SDK to PyPI
-    needs: publish-pypi-coglet
+    needs: [verify-release, publish-pypi-coglet]
+    if: needs.verify-release.outputs.is_dev != 'true'
     runs-on: ubuntu-latest
     environment: pypi
     timeout-minutes: 10
     steps:
-      - name: Download SDK wheel from release
-        uses: robinraju/release-downloader@v1
-        with:
-          tag: ${{ github.event.release.tag_name }}
-          fileName: "cog-*.whl"
-          out-file-path: dist
-
-      - name: Download SDK sdist from release
-        uses: robinraju/release-downloader@v1
-        with:
-          tag: ${{ github.event.release.tag_name }}
-          fileName: "cog-*.tar.gz"
-          out-file-path: dist
+      - name: Download SDK artifacts from release
+        run: |
+          mkdir -p dist
+          gh release download "$TAG" -p "cog-*.whl" -D dist
+          gh release download "$TAG" -p "cog-*.tar.gz" -D dist
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  update-homebrew-tap:
+    name: Update Homebrew cask
+    needs: [verify-release, publish-pypi-sdk, publish-crates-io]
+    # Stable releases only — no dev, no pre-release
+    if: >-
+      needs.verify-release.outputs.is_dev != 'true' &&
+      needs.verify-release.outputs.is_prerelease != 'true'
+    runs-on: ubuntu-latest
+    environment: homebrew
+    timeout-minutes: 10
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: 1232932405
+          private-key: ${{ secrets.COG_HOMEBREW_TAP_PRIVATE_KEY }}
+          owner: replicate
+          repositories: homebrew-tap
+
+      - name: Download checksums from release
+        run: gh release download "$TAG" -p checksums.txt
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Generate and push cask
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          VERSION: ${{ needs.verify-release.outputs.version }}
+        run: |
+          # Extract SHA256s for Darwin binaries from checksums.txt
+          SHA_X86=$(grep 'cog_Darwin_x86_64' checksums.txt | awk '{print $1}')
+          SHA_ARM=$(grep 'cog_Darwin_arm64' checksums.txt | awk '{print $1}')
+
+          if [ -z "$SHA_X86" ] || [ -z "$SHA_ARM" ]; then
+            echo "::error::Missing Darwin binary checksums in checksums.txt"
+            echo "Darwin x86_64: ${SHA_X86:-MISSING}"
+            echo "Darwin arm64:  ${SHA_ARM:-MISSING}"
+            cat checksums.txt
+            exit 1
+          fi
+
+          echo "Checksums:"
+          echo "  Darwin x86_64: $SHA_X86"
+          echo "  Darwin arm64:  $SHA_ARM"
+
+          BASE_URL="https://github.com/replicate/cog/releases/download/${TAG}"
+
+          # Generate cask file (no indentation to avoid stripping issues)
+          cat > cog.rb <<CASK
+          cask "cog" do
+            version "${VERSION}"
+
+            on_intel do
+              url "${BASE_URL}/cog_Darwin_x86_64"
+              sha256 "${SHA_X86}"
+            end
+
+            on_arm do
+              url "${BASE_URL}/cog_Darwin_arm64"
+              sha256 "${SHA_ARM}"
+            end
+
+            name "Cog"
+            desc "Containers for machine learning"
+            homepage "https://cog.run"
+
+            binary "cog_Darwin_#{Hardware::CPU.intel? ? "x86_64" : "arm64"}", target: "cog"
+
+            postflight do
+              system_command "/usr/bin/xattr",
+                             args: ["-dr", "com.apple.quarantine", "#{staged_path}/cog"]
+            end
+          end
+          CASK
+
+          # Strip heredoc indentation
+          sed -i 's/^          //' cog.rb
+
+          echo "Generated cask:"
+          cat cog.rb
+
+          # Clone tap repo and push update
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/replicate/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          cp cog.rb tap/Casks/cog.rb
+
+          cd tap
+          git config user.name "cog-homebrew-tapbot[bot]"
+          git config user.email "1232932405+cog-homebrew-tapbot[bot]@users.noreply.github.com"
+          git add Casks/cog.rb
+          git diff --cached --quiet && echo "No changes to cask" && exit 0
+          git commit -m "Update cog to ${VERSION}"
+          git push origin main
+          echo "✓ Homebrew cask updated to ${VERSION}"
