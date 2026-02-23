@@ -44,6 +44,7 @@ coverage.xml
 const LDConfigCacheBuildCommand = "RUN find / -type f -name \"*python*.so\" -printf \"%h\\n\" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig"
 const StripDebugSymbolsCommand = "find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
+const UVVersion = "0.9.26"
 const uvCacheMount = "--mount=type=cache,target=/root/.cache/uv"
 const uvPip = "uv pip"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
@@ -436,7 +437,7 @@ func (g *StandardGenerator) installPython() (string, error) {
 }
 
 func (g *StandardGenerator) installUV() string {
-	return `RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 UV_VERSION=0.9.26 sh
+	return `COPY --from=ghcr.io/astral-sh/uv:` + UVVersion + ` /uv /uvx /usr/local/bin/
 ENV UV_SYSTEM_PYTHON=true`
 }
 
