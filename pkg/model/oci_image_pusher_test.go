@@ -315,11 +315,6 @@ func TestShouldFallbackToDocker(t *testing.T) {
 		{"nil error", nil, false},
 		{"context canceled", context.Canceled, false},
 		{"context deadline", context.DeadlineExceeded, false},
-		{"unauthorized", errors.New("UNAUTHORIZED: authentication required"), false},
-		{"unauthorized lowercase", errors.New("unauthorized: access denied"), false},
-		{"auth required", errors.New("authentication required"), false},
-		{"denied", errors.New("DENIED: requested access to the resource is denied"), false},
-		{"denied lowercase", errors.New("denied: access forbidden"), false},
 		{"network error", errors.New("connection refused"), true},
 		{"unknown error", errors.New("something unexpected"), true},
 		{"export error", errors.New("export OCI layout: daemon error"), true},
@@ -352,7 +347,7 @@ func TestPushImageWithFallback(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("falls back to docker on non-auth error", func(t *testing.T) {
+	t.Run("falls back to docker", func(t *testing.T) {
 		var dockerPushed bool
 		mock := &ociMockClient{writeLayerErr: errors.New("connection reset")}
 		tag := "example.com/test/repo:v1"
@@ -372,27 +367,6 @@ func TestPushImageWithFallback(t *testing.T) {
 		err = pushImageWithFallback(context.Background(), ociPusher, dockerPusher, artifact)
 		require.NoError(t, err)
 		assert.True(t, dockerPushed)
-	})
-
-	t.Run("does not fall back on auth error", func(t *testing.T) {
-		mock := &ociMockClient{pushImageErr: errors.New("UNAUTHORIZED: authentication required")}
-		tag := "example.com/test/repo:v1"
-
-		img, err := random.Image(512, 1)
-		require.NoError(t, err)
-
-		ociPusher := NewOCIImagePusher(mock, createFakeImageSave(img, tag))
-		dockerPusher := NewImagePusher(&mockDocker{
-			pushFunc: func(_ context.Context, _ string) error {
-				t.Fatal("docker push should not be called on auth errors")
-				return nil
-			},
-		})
-
-		artifact := &ImageArtifact{Reference: tag}
-		err = pushImageWithFallback(context.Background(), ociPusher, dockerPusher, artifact)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "UNAUTHORIZED")
 	})
 
 	t.Run("does not fall back on context cancellation", func(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -217,7 +216,7 @@ func pushImageWithFallback(ctx context.Context, ociPusher *OCIImagePusher, docke
 }
 
 // shouldFallbackToDocker returns true if the error is safe to fall back from.
-// We do NOT fall back on context errors (cancellation/timeout) or auth failures.
+// We do NOT fall back on context errors (cancellation/timeout).
 func shouldFallbackToDocker(err error) bool {
 	if err == nil {
 		return false
@@ -226,21 +225,8 @@ func shouldFallbackToDocker(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	// Never fall back on authentication/authorization errors
-	if isAuthError(err) {
-		return false
-	}
 
 	return true
-}
-
-// isAuthError returns true if the error message indicates an authentication
-// or authorization failure from the registry.
-func isAuthError(err error) bool {
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unauthorized") ||
-		strings.Contains(msg, "authentication required") ||
-		strings.Contains(msg, "denied")
 }
 
 // configBlobLayer wraps a config blob to satisfy the v1.Layer interface
