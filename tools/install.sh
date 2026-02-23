@@ -162,7 +162,7 @@ main() {
   # Check if macOS
   if [ "$(uname -s)" = "Darwin" ]; then
     echo "On macOS, it is recommended to install cog using Homebrew instead:"
-    echo \`brew install cog\`
+    echo \`brew install replicate/tap/cog\`
     echo "Do you want to continue with this installation anyway?"
     
     read -p "Continue? (y/N): " choice
