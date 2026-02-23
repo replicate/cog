@@ -102,8 +102,9 @@ fn generate_prediction_id() -> String {
 async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
     let snapshot = service.health().await;
 
-    // Run user healthcheck if ready and not busy
-    let user_healthcheck_error = if snapshot.is_ready() && !snapshot.is_busy() {
+    // Run user healthcheck if ready (even when busy — healthcheck health
+    // and slot availability are orthogonal concerns).
+    let user_healthcheck_error = if snapshot.is_ready() {
         write_readiness_file();
 
         // Run user-defined healthcheck
