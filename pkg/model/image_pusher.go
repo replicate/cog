@@ -8,12 +8,15 @@ import (
 	"io"
 	"os"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/oci"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -25,21 +28,17 @@ import (
 // on any non-fatal error. This bypasses size limits on Docker's monolithic
 // push path while maintaining backwards compatibility.
 type ImagePusher struct {
-	docker    command.Command
-	registry  registry.Client
-	imageSave oci.ImageSaveFunc
+	docker   command.Command
+	registry registry.Client
 }
 
-// NewImagePusher creates a new ImagePusher.
+// newImagePusher creates a new ImagePusher.
 //
-// imageSave should export a Docker image as a tar stream — typically
-// docker.ImageSave. If nil, OCI chunked push is skipped and Docker
-// push is used directly.
-func NewImagePusher(docker command.Command, reg registry.Client, imageSave oci.ImageSaveFunc) *ImagePusher {
+// If reg is nil, OCI chunked push is skipped and Docker push is used directly.
+func newImagePusher(docker command.Command, reg registry.Client) *ImagePusher {
 	return &ImagePusher{
-		docker:    docker,
-		registry:  reg,
-		imageSave: imageSave,
+		docker:   docker,
+		registry: reg,
 	}
 }
 
@@ -51,8 +50,8 @@ type ImagePushOptions struct {
 
 // Push pushes a container image to the registry by reference.
 //
-// Tries the OCI chunked push path first (if registry client and imageSave are
-// available), then falls back to Docker push on any non-fatal error.
+// Tries the OCI chunked push path first (if registry client is available),
+// then falls back to Docker push on any non-fatal error.
 func (p *ImagePusher) Push(ctx context.Context, imageRef string, opts ...ImagePushOptions) error {
 	var opt ImagePushOptions
 	if len(opts) > 0 {
@@ -87,20 +86,70 @@ func (p *ImagePusher) PushArtifact(ctx context.Context, artifact *ImageArtifact)
 
 // canOCIPush returns true if OCI chunked push is available.
 func (p *ImagePusher) canOCIPush() bool {
-	return p.registry != nil && p.imageSave != nil
+	return p.registry != nil
 }
 
 // ociPush exports the image from Docker daemon to OCI layout, then pushes all layers,
 // config, and manifest to the registry using chunked uploads.
 func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt ImagePushOptions) error {
-	layoutDir, img, err := oci.ExportOCILayout(ctx, imageRef, p.imageSave)
+	console.Debugf("Exporting image %s from Docker daemon...", imageRef)
+
+	ref, err := name.ParseReference(imageRef, name.Insecure)
 	if err != nil {
-		return fmt.Errorf("export OCI layout: %w", err)
+		return fmt.Errorf("parse image reference %q: %w", imageRef, err)
+	}
+
+	// Get the Docker tar stream directly from the docker command
+	rc, err := p.docker.ImageSave(ctx, imageRef)
+	if err != nil {
+		return fmt.Errorf("export image from daemon: %w", err)
+	}
+	defer rc.Close() //nolint:errcheck
+
+	// Write the tar to a temp file so we can seek on it
+	tmpTar, err := os.CreateTemp("", "cog-image-*.tar")
+	if err != nil {
+		return fmt.Errorf("create temp tar file: %w", err)
+	}
+	defer func() { _ = os.Remove(tmpTar.Name()) }()
+	defer tmpTar.Close() //nolint:errcheck
+
+	if _, err := io.Copy(tmpTar, rc); err != nil {
+		return fmt.Errorf("write image tar: %w", err)
+	}
+	_ = rc.Close()
+
+	// Load image from Docker tar using go-containerregistry
+	tag, ok := ref.(name.Tag)
+	if !ok {
+		// If reference is a digest, use tag "latest" as a fallback
+		tag = ref.Context().Tag("latest")
+	}
+
+	img, err := tarball.ImageFromPath(tmpTar.Name(), &tag)
+	if err != nil {
+		return fmt.Errorf("load image from tar: %w", err)
+	}
+
+	// Create a temp directory for the OCI layout
+	dir, err := os.MkdirTemp("", "cog-oci-layout-*")
+	if err != nil {
+		return fmt.Errorf("create OCI layout directory: %w", err)
 	}
 	defer func() {
-		console.Debugf("Cleaning up OCI layout directory: %s", layoutDir)
-		_ = os.RemoveAll(layoutDir)
+		console.Debugf("Cleaning up OCI layout directory: %s", dir)
+		_ = os.RemoveAll(dir)
 	}()
+
+	console.Debugf("Writing OCI layout to %s", dir)
+	lp, err := layout.Write(dir, empty.Index)
+	if err != nil {
+		return fmt.Errorf("initialize OCI layout: %w", err)
+	}
+
+	if err := lp.AppendImage(img); err != nil {
+		return fmt.Errorf("write image to OCI layout: %w", err)
+	}
 
 	return p.pushImage(ctx, imageRef, img, opt)
 }

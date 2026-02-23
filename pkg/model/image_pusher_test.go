@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/replicate/cog/pkg/oci"
 	"github.com/replicate/cog/pkg/registry"
 )
 
@@ -76,9 +75,9 @@ func (m *ociMockClient) GetDescriptor(context.Context, string) (v1.Descriptor, e
 }
 func (m *ociMockClient) PushIndex(context.Context, string, v1.ImageIndex) error { return nil }
 
-// createFakeImageSave creates a fake ImageSaveFunc that produces a Docker-format tar
+// fakeImageSaveFunc creates a fake ImageSave function that produces a Docker-format tar
 // from the given v1.Image. This simulates Docker's ImageSave API.
-func createFakeImageSave(img v1.Image, tagStr string) oci.ImageSaveFunc {
+func fakeImageSaveFunc(img v1.Image, tagStr string) func(context.Context, string) (io.ReadCloser, error) {
 	return func(_ context.Context, _ string) (io.ReadCloser, error) {
 		tag, err := name.NewTag(tagStr, name.Insecure)
 		if err != nil {
@@ -104,7 +103,8 @@ func TestImagePusher_Push(t *testing.T) {
 
 		mock := &ociMockClient{}
 		tag := "example.com/test/repo:v1"
-		pusher := NewImagePusher(&mockDocker{}, mock, createFakeImageSave(img, tag))
+		docker := &mockDocker{imageSaveFunc: fakeImageSaveFunc(img, tag)}
+		pusher := newImagePusher(docker, mock)
 
 		err = pusher.Push(context.Background(), tag)
 		require.NoError(t, err)
@@ -123,7 +123,8 @@ func TestImagePusher_Push(t *testing.T) {
 
 		mock := &ociMockClient{}
 		tag := "example.com/test/repo:v1"
-		pusher := NewImagePusher(&mockDocker{}, mock, createFakeImageSave(img, tag))
+		docker := &mockDocker{imageSaveFunc: fakeImageSaveFunc(img, tag)}
+		pusher := newImagePusher(docker, mock)
 
 		var mu sync.Mutex
 		var progressUpdates []PushProgress
@@ -156,12 +157,13 @@ func TestImagePusher_Push(t *testing.T) {
 		mock := &ociMockClient{writeLayerErr: errors.New("upload failed")}
 		tag := "example.com/test/repo:v1"
 		docker := &mockDocker{
+			imageSaveFunc: fakeImageSaveFunc(img, tag),
 			pushFunc: func(_ context.Context, _ string) error {
 				dockerPushed = true
 				return nil
 			},
 		}
-		pusher := NewImagePusher(docker, mock, createFakeImageSave(img, tag))
+		pusher := newImagePusher(docker, mock)
 
 		err = pusher.Push(context.Background(), tag)
 		require.NoError(t, err)
@@ -176,12 +178,13 @@ func TestImagePusher_Push(t *testing.T) {
 		mock := &ociMockClient{pushImageErr: errors.New("manifest push failed")}
 		tag := "example.com/test/repo:v1"
 		docker := &mockDocker{
+			imageSaveFunc: fakeImageSaveFunc(img, tag),
 			pushFunc: func(_ context.Context, _ string) error {
 				dockerPushed = true
 				return nil
 			},
 		}
-		pusher := NewImagePusher(docker, mock, createFakeImageSave(img, tag))
+		pusher := newImagePusher(docker, mock)
 
 		err = pusher.Push(context.Background(), tag)
 		require.NoError(t, err)
@@ -190,18 +193,18 @@ func TestImagePusher_Push(t *testing.T) {
 
 	t.Run("falls back to docker when ImageSave fails", func(t *testing.T) {
 		mock := &ociMockClient{}
-		failingSave := func(_ context.Context, _ string) (io.ReadCloser, error) {
-			return nil, errors.New("docker daemon unavailable")
-		}
 
 		var dockerPushed bool
 		docker := &mockDocker{
+			imageSaveFunc: func(_ context.Context, _ string) (io.ReadCloser, error) {
+				return nil, errors.New("docker daemon unavailable")
+			},
 			pushFunc: func(_ context.Context, _ string) error {
 				dockerPushed = true
 				return nil
 			},
 		}
-		pusher := NewImagePusher(docker, mock, failingSave)
+		pusher := newImagePusher(docker, mock)
 
 		err := pusher.Push(context.Background(), "example.com/test/repo:v1")
 		require.NoError(t, err)
@@ -215,7 +218,8 @@ func TestImagePusher_Push(t *testing.T) {
 
 		mock := &ociMockClient{}
 		tag := "example.com/test/repo:empty"
-		pusher := NewImagePusher(&mockDocker{}, mock, createFakeImageSave(img, tag))
+		docker := &mockDocker{imageSaveFunc: fakeImageSaveFunc(img, tag)}
+		pusher := newImagePusher(docker, mock)
 
 		err = pusher.Push(context.Background(), tag)
 		require.NoError(t, err)
@@ -234,14 +238,14 @@ func TestImagePusher_PushArtifact(t *testing.T) {
 	t.Run("pushes artifact by reference", func(t *testing.T) {
 		var dockerPushed string
 		docker := &mockDocker{
-			pushFunc: func(ctx context.Context, ref string) error {
+			pushFunc: func(_ context.Context, ref string) error {
 				dockerPushed = ref
 				return nil
 			},
 		}
 
-		// No registry/imageSave — will use Docker push directly
-		pusher := NewImagePusher(docker, nil, nil)
+		// No registry — will use Docker push directly
+		pusher := newImagePusher(docker, nil)
 		artifact := &ImageArtifact{Reference: "r8.im/user/model:latest"}
 
 		err := pusher.PushArtifact(context.Background(), artifact)
@@ -251,7 +255,7 @@ func TestImagePusher_PushArtifact(t *testing.T) {
 	})
 
 	t.Run("returns error for nil artifact", func(t *testing.T) {
-		pusher := NewImagePusher(&mockDocker{}, nil, nil)
+		pusher := newImagePusher(&mockDocker{}, nil)
 
 		err := pusher.PushArtifact(context.Background(), nil)
 
@@ -260,7 +264,7 @@ func TestImagePusher_PushArtifact(t *testing.T) {
 	})
 
 	t.Run("returns error for empty reference", func(t *testing.T) {
-		pusher := NewImagePusher(&mockDocker{}, nil, nil)
+		pusher := newImagePusher(&mockDocker{}, nil)
 
 		err := pusher.PushArtifact(context.Background(), &ImageArtifact{Reference: ""})
 
@@ -270,12 +274,12 @@ func TestImagePusher_PushArtifact(t *testing.T) {
 
 	t.Run("propagates docker push error", func(t *testing.T) {
 		docker := &mockDocker{
-			pushFunc: func(ctx context.Context, ref string) error {
+			pushFunc: func(_ context.Context, _ string) error {
 				return errors.New("unauthorized: authentication required")
 			},
 		}
 
-		pusher := NewImagePusher(docker, nil, nil)
+		pusher := newImagePusher(docker, nil)
 		artifact := &ImageArtifact{Reference: "r8.im/user/model:latest"}
 
 		err := pusher.PushArtifact(context.Background(), artifact)
@@ -297,13 +301,14 @@ func TestImagePusher_Fallback(t *testing.T) {
 		mock := &ociMockClient{}
 		tag := "example.com/test/repo:v1"
 		docker := &mockDocker{
+			imageSaveFunc: fakeImageSaveFunc(img, tag),
 			pushFunc: func(_ context.Context, _ string) error {
 				t.Fatal("docker push should not be called when OCI succeeds")
 				return nil
 			},
 		}
 
-		pusher := NewImagePusher(docker, mock, createFakeImageSave(img, tag))
+		pusher := newImagePusher(docker, mock)
 
 		err = pusher.Push(context.Background(), tag)
 		require.NoError(t, err)
@@ -318,13 +323,14 @@ func TestImagePusher_Fallback(t *testing.T) {
 		require.NoError(t, err)
 
 		docker := &mockDocker{
+			imageSaveFunc: fakeImageSaveFunc(img, tag),
 			pushFunc: func(_ context.Context, _ string) error {
 				dockerPushed = true
 				return nil
 			},
 		}
 
-		pusher := NewImagePusher(docker, mock, createFakeImageSave(img, tag))
+		pusher := newImagePusher(docker, mock)
 
 		err = pusher.Push(context.Background(), tag)
 		require.NoError(t, err)
@@ -338,16 +344,16 @@ func TestImagePusher_Fallback(t *testing.T) {
 		mock := &ociMockClient{}
 		tag := "example.com/test/repo:v1"
 		docker := &mockDocker{
+			imageSaveFunc: func(ctx context.Context, _ string) (io.ReadCloser, error) {
+				return nil, ctx.Err()
+			},
 			pushFunc: func(_ context.Context, _ string) error {
 				t.Fatal("docker push should not be called on context cancellation")
 				return nil
 			},
 		}
 
-		// ImageSave will fail because context is canceled
-		pusher := NewImagePusher(docker, mock, func(ctx context.Context, _ string) (io.ReadCloser, error) {
-			return nil, ctx.Err()
-		})
+		pusher := newImagePusher(docker, mock)
 
 		err := pusher.Push(ctx, tag)
 		require.Error(t, err)
@@ -362,7 +368,7 @@ func TestImagePusher_Fallback(t *testing.T) {
 			},
 		}
 
-		pusher := NewImagePusher(docker, nil, nil)
+		pusher := newImagePusher(docker, nil)
 
 		err := pusher.Push(context.Background(), "example.com/test/repo:v1")
 		require.NoError(t, err)

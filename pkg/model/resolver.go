@@ -87,8 +87,8 @@ func NewResolver(docker command.Command, reg registry.Client) *Resolver {
 	return &Resolver{
 		docker:      docker,
 		registry:    reg,
-		factory:     DefaultFactory(docker, reg),
-		imagePusher: NewImagePusher(docker, reg, docker.ImageSave),
+		factory:     defaultFactory(docker, reg),
+		imagePusher: newImagePusher(docker, reg),
 	}
 }
 

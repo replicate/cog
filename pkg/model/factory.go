@@ -71,11 +71,11 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 	}, nil
 }
 
-// DefaultFactory returns a Factory based on environment variables.
+// defaultFactory returns a Factory based on environment variables.
 // It checks COG_BUILDER and COGPACK to select the appropriate backend.
 //
 // TODO: When FrontendFactory is implemented, check COG_BUILDER env var.
 // TODO: When CogpacksFactory is implemented, check COGPACK env var.
-func DefaultFactory(docker command.Command, registry registry.Client) Factory {
+func defaultFactory(docker command.Command, registry registry.Client) Factory {
 	return NewDockerfileFactory(docker, registry)
 }

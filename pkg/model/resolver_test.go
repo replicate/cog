@@ -22,9 +22,10 @@ import (
 
 // mockDocker implements command.Command for testing.
 type mockDocker struct {
-	inspectFunc func(ctx context.Context, ref string) (*image.InspectResponse, error)
-	pullFunc    func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
-	pushFunc    func(ctx context.Context, ref string) error
+	inspectFunc   func(ctx context.Context, ref string) (*image.InspectResponse, error)
+	pullFunc      func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
+	pushFunc      func(ctx context.Context, ref string) error
+	imageSaveFunc func(ctx context.Context, imageRef string) (io.ReadCloser, error)
 }
 
 func (m *mockDocker) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {
@@ -85,6 +86,9 @@ func (m *mockDocker) ContainerStart(ctx context.Context, options command.RunOpti
 }
 
 func (m *mockDocker) ImageSave(ctx context.Context, imageRef string) (io.ReadCloser, error) {
+	if m.imageSaveFunc != nil {
+		return m.imageSaveFunc(ctx, imageRef)
+	}
 	return nil, errors.New("mockDocker.ImageSave not implemented")
 }
 
