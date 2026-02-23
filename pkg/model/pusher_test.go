@@ -23,7 +23,7 @@ func TestBundlePusher_Push(t *testing.T) {
 	t.Run("returns error when no image artifact in model", func(t *testing.T) {
 		docker := &mockDocker{}
 		reg := &mockRegistry{}
-		pusher := NewBundlePusher(docker, reg, nil)
+		pusher := NewBundlePusher(NewImagePusher(docker, nil, nil), reg)
 		m := &Model{
 			Image:     nil,
 			Artifacts: []Artifact{}, // no image artifact
@@ -61,7 +61,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			},
 		}
 
-		pusher := NewBundlePusher(docker, reg, nil)
+		pusher := NewBundlePusher(NewImagePusher(docker, nil, nil), reg)
 		m := &Model{
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
@@ -133,7 +133,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			},
 		}
 
-		pusher := NewBundlePusher(docker, reg, nil)
+		pusher := NewBundlePusher(NewImagePusher(docker, nil, nil), reg)
 		m := &Model{
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
@@ -195,7 +195,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			},
 		}
 
-		pusher := NewBundlePusher(docker, reg, nil)
+		pusher := NewBundlePusher(NewImagePusher(docker, nil, nil), reg)
 		m := &Model{
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
@@ -223,7 +223,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		}
 		reg := &mockRegistry{}
 
-		pusher := NewBundlePusher(docker, reg, nil)
+		pusher := NewBundlePusher(NewImagePusher(docker, nil, nil), reg)
 		m := &Model{
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
@@ -256,7 +256,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			},
 		}
 
-		pusher := NewBundlePusher(docker, reg, nil)
+		pusher := NewBundlePusher(NewImagePusher(docker, nil, nil), reg)
 		m := &Model{
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
@@ -295,7 +295,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			},
 		}
 
-		pusher := NewBundlePusher(docker, reg, nil)
+		pusher := NewBundlePusher(NewImagePusher(docker, nil, nil), reg)
 		m := &Model{
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
@@ -336,7 +336,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			},
 		}
 
-		pusher := NewBundlePusher(docker, reg, nil)
+		pusher := NewBundlePusher(NewImagePusher(docker, nil, nil), reg)
 		m := &Model{
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
@@ -386,7 +386,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			},
 		}
 
-		pusher := NewBundlePusher(docker, reg, nil)
+		pusher := NewBundlePusher(NewImagePusher(docker, nil, nil), reg)
 		m := &Model{
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{

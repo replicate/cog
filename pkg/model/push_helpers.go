@@ -31,7 +31,7 @@ func GetPushConcurrency() int {
 }
 
 // PushProgress reports progress for a layer or blob upload.
-// Used by both OCIImagePusher (container image layers) and WeightPusher (weight blobs).
+// Used by both ImagePusher (container image layers) and WeightPusher (weight blobs).
 type PushProgress struct {
 	// LayerDigest identifies which layer this progress is for.
 	// Empty for single-layer pushes (e.g., weight uploads).

@@ -76,19 +76,19 @@ func WithPlatform(p *registry.Platform) Option {
 
 // Resolver orchestrates building and loading Models.
 type Resolver struct {
-	docker    command.Command
-	registry  registry.Client
-	factory   Factory
-	ociPusher *OCIImagePusher
+	docker      command.Command
+	registry    registry.Client
+	factory     Factory
+	imagePusher *ImagePusher
 }
 
 // NewResolver creates a Resolver with the default factory.
 func NewResolver(docker command.Command, reg registry.Client) *Resolver {
 	return &Resolver{
-		docker:    docker,
-		registry:  reg,
-		factory:   DefaultFactory(docker, reg),
-		ociPusher: NewOCIImagePusher(reg, docker.ImageSave),
+		docker:      docker,
+		registry:    reg,
+		factory:     DefaultFactory(docker, reg),
+		imagePusher: NewImagePusher(docker, reg, docker.ImageSave),
 	}
 }
 
@@ -266,12 +266,12 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 
 // Push pushes a Model to a container registry.
 //
-// Uses the OCI chunked push path (via OCIImagePusher) which bypasses Docker's
+// Uses the OCI chunked push path (via ImagePusher) which bypasses Docker's
 // monolithic push and supports layers of any size through chunked uploads.
 // Falls back to legacy Docker push if OCI push is not available.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 	if m.OCIIndex {
-		pusher := NewBundlePusher(r.docker, r.registry, r.ociPusher)
+		pusher := NewBundlePusher(r.imagePusher, r.registry)
 		return pusher.Push(ctx, m, opts)
 	}
 
@@ -280,7 +280,7 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 		return fmt.Errorf("no image artifact in model")
 	}
 
-	return pushImageWithFallback(ctx, r.ociPusher, NewImagePusher(r.docker), imgArtifact)
+	return r.imagePusher.PushArtifact(ctx, imgArtifact)
 }
 
 // loadLocal loads a Model from the local docker daemon.

@@ -11,9 +11,6 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/empty"
-	"github.com/google/go-containerregistry/pkg/v1/layout"
-	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/stretchr/testify/assert"
@@ -41,10 +38,10 @@ func TestExportOCILayout(t *testing.T) {
 		_, err = os.Stat(dir + "/index.json")
 		require.NoError(t, err, "index.json should exist")
 
-		// Verify the exported image can be re-loaded
-		loaded, err := LoadOCILayoutImage(dir)
+		// Verify the exported image has layers
+		layers, err := exportedImg.Layers()
 		require.NoError(t, err)
-		require.NotNil(t, loaded)
+		assert.NotEmpty(t, layers)
 	})
 
 	t.Run("returns error for invalid image reference", func(t *testing.T) {
@@ -75,42 +72,6 @@ func TestExportOCILayout(t *testing.T) {
 	})
 }
 
-func TestLoadOCILayoutImage(t *testing.T) {
-	t.Run("loads image from valid layout", func(t *testing.T) {
-		img, err := random.Image(512, 2)
-		require.NoError(t, err)
-
-		dir := writeTestOCILayout(t, img)
-
-		loaded, err := LoadOCILayoutImage(dir)
-		require.NoError(t, err)
-		require.NotNil(t, loaded)
-
-		// Verify the loaded image has the same digest
-		origDigest, err := img.Digest()
-		require.NoError(t, err)
-		loadedDigest, err := loaded.Digest()
-		require.NoError(t, err)
-		assert.Equal(t, origDigest, loadedDigest)
-	})
-
-	t.Run("returns error for nonexistent path", func(t *testing.T) {
-		_, err := LoadOCILayoutImage("/nonexistent/path")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "open OCI layout")
-	})
-
-	t.Run("returns error for empty layout", func(t *testing.T) {
-		dir := t.TempDir()
-		_, err := layout.Write(dir, empty.Index)
-		require.NoError(t, err)
-
-		_, err = LoadOCILayoutImage(dir)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "OCI layout contains no images")
-	})
-}
-
 // fakeImageSave creates a fake ImageSaveFunc that produces a Docker-format tar.
 func fakeImageSave(img v1.Image, tagStr string) ImageSaveFunc {
 	return func(_ context.Context, _ string) (io.ReadCloser, error) {
@@ -125,14 +86,4 @@ func fakeImageSave(img v1.Image, tagStr string) ImageSaveFunc {
 		}
 		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
 	}
-}
-
-// writeTestOCILayout creates a temporary OCI layout directory with the given image.
-func writeTestOCILayout(t *testing.T, img v1.Image) string {
-	t.Helper()
-	dir := t.TempDir()
-	idx := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{Add: img})
-	_, err := layout.Write(dir, idx)
-	require.NoError(t, err)
-	return dir
 }

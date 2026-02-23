@@ -9,14 +9,8 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
 )
-
-// Pusher handles pushing a model to a registry.
-type Pusher interface {
-	Push(ctx context.Context, m *Model, opts PushOptions) error
-}
 
 // PushOptions configures push behavior.
 type PushOptions struct {
@@ -40,20 +34,18 @@ type PushOptions struct {
 // =============================================================================
 
 // BundlePusher pushes bundles (OCI Index with image + weight artifacts).
-// It orchestrates OCIImagePusher and WeightPusher, then assembles the OCI index
+// It orchestrates ImagePusher and WeightPusher, then assembles the OCI index
 // from the pushed manifest descriptors.
 type BundlePusher struct {
-	ociPusher    *OCIImagePusher
 	imagePusher  *ImagePusher
 	weightPusher *WeightPusher
 	registry     registry.Client
 }
 
 // NewBundlePusher creates a new BundlePusher.
-func NewBundlePusher(docker command.Command, reg registry.Client, ociPusher *OCIImagePusher) *BundlePusher {
+func NewBundlePusher(imagePusher *ImagePusher, reg registry.Client) *BundlePusher {
 	return &BundlePusher{
-		ociPusher:    ociPusher,
-		imagePusher:  NewImagePusher(docker),
+		imagePusher:  imagePusher,
 		weightPusher: NewWeightPusher(reg),
 		registry:     reg,
 	}
@@ -123,10 +115,10 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	return nil
 }
 
-// pushContainerImage pushes the container image using the OCI chunked push path.
-// Falls back to legacy Docker push if OCI push fails (except on auth/context errors).
+// pushContainerImage pushes the container image via ImagePusher (OCI chunked
+// push with Docker fallback).
 func (p *BundlePusher) pushContainerImage(ctx context.Context, imgArtifact *ImageArtifact) error {
-	return pushImageWithFallback(ctx, p.ociPusher, p.imagePusher, imgArtifact)
+	return p.imagePusher.PushArtifact(ctx, imgArtifact)
 }
 
 // pushWeights pushes all weight artifacts concurrently (bounded by GetPushConcurrency)

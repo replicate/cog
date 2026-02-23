@@ -86,34 +86,3 @@ func ExportOCILayout(ctx context.Context, imageRef string, imageSave ImageSaveFu
 
 	return dir, img, nil
 }
-
-// LoadOCILayoutImage loads the first image from an OCI layout directory.
-func LoadOCILayoutImage(layoutPath string) (v1.Image, error) {
-	lp, err := layout.FromPath(layoutPath)
-	if err != nil {
-		return nil, fmt.Errorf("open OCI layout at %s: %w", layoutPath, err)
-	}
-
-	idx, err := lp.ImageIndex()
-	if err != nil {
-		return nil, fmt.Errorf("read OCI layout index: %w", err)
-	}
-
-	idxManifest, err := idx.IndexManifest()
-	if err != nil {
-		return nil, fmt.Errorf("read index manifest: %w", err)
-	}
-
-	if len(idxManifest.Manifests) == 0 {
-		return nil, fmt.Errorf("OCI layout contains no images")
-	}
-
-	// Use the first manifest (we only export one image)
-	desc := idxManifest.Manifests[0]
-	img, err := idx.Image(desc.Digest)
-	if err != nil {
-		return nil, fmt.Errorf("load image from layout: %w", err)
-	}
-
-	return img, nil
-}
