@@ -213,10 +213,6 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		if len(displayName) > 30 {
 			displayName = "..." + displayName[len(displayName)-27:]
 		}
-		total := wa.Descriptor().Size
-		if total <= 0 {
-			total = 1 // avoid zero-total bars; will be updated by SetTotal
-		}
 
 		// Capture artName for the closure
 		retryStatus.Store(artName, "")
@@ -229,7 +225,10 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 			return ""
 		}
 
-		bar := p.AddBar(total,
+		// Start with total=0 so mpb doesn't set triggerComplete=true.
+		// This lets us call SetTotal(n, true) to explicitly complete the bar.
+		// The real total is set via ProgressFn → SetTotal(prog.Total, false).
+		bar := p.AddBar(0,
 			mpb.PrependDecorators(
 				decor.Name(fmt.Sprintf("  %-30s", displayName), decor.WC{C: decor.DindentRight}),
 			),
