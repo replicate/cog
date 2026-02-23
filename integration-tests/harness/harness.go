@@ -69,9 +69,10 @@ type mockUploadServer struct {
 
 // webhookResult is the summary written to stdout by webhook-server-wait.
 type webhookResult struct {
-	Status     string `json:"status"`
-	OutputSize int    `json:"output_size"`
-	HasError   bool   `json:"has_error"`
+	Status     string          `json:"status"`
+	OutputSize int             `json:"output_size"`
+	HasError   bool            `json:"has_error"`
+	Metrics    json.RawMessage `json:"metrics,omitempty"`
 }
 
 // webhookServer accepts prediction webhook callbacks from coglet.
@@ -1302,12 +1303,13 @@ func (h *Harness) cmdWebhookServerStart(ts *testscript.TestScript, neg bool, arg
 			return
 		}
 
-		// Stream-parse the JSON to extract status and measure output size
-		// without holding the entire output string in testscript memory.
+		// Stream-parse the JSON to extract status, measure output size, and
+		// capture metrics without holding the entire output string in memory.
 		var payload struct {
-			Status string `json:"status"`
-			Output string `json:"output"`
-			Error  string `json:"error"`
+			Status  string          `json:"status"`
+			Output  string          `json:"output"`
+			Error   string          `json:"error"`
+			Metrics json.RawMessage `json:"metrics"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "bad json", http.StatusBadRequest)
@@ -1334,6 +1336,7 @@ func (h *Harness) cmdWebhookServerStart(ts *testscript.TestScript, neg bool, arg
 			Status:     payload.Status,
 			OutputSize: len(payload.Output),
 			HasError:   payload.Error != "",
+			Metrics:    payload.Metrics,
 		}
 		close(ws.done)
 	})

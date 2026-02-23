@@ -1,0 +1,44 @@
+# Test that user-emitted metrics appear in webhook payloads.
+#
+# Uses async prediction with webhook to verify metrics flow through
+# the supervisor and webhook sender. The webhook server captures the
+# terminal payload including metrics for assertion.
+#
+# --upload-url is set to a dummy value so cog serve adds
+# --add-host=host.docker.internal:host-gateway (needed on Linux for the
+# webhook callback to reach the host).
+
+webhook-server-start
+cog serve --upload-url http://unused/
+
+# Async prediction — server returns 202, delivers result to webhook
+curl -H Prefer:respond-async POST /predictions '{"id":"metrics-webhook-test","webhook":"$WEBHOOK_URL","webhook_events_filter":["completed"]}'
+
+# Wait for the webhook callback
+webhook-server-wait
+
+# Prediction succeeded
+stdout '"status":"succeeded"'
+
+# User metrics present in webhook payload
+stdout '"model_version":"v2.1"'
+stdout '"confidence":0.95'
+
+# System predict_time always present
+stdout '"predict_time":'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, current_scope
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        scope = current_scope()
+        scope.record_metric("model_version", "v2.1")
+        scope.record_metric("confidence", 0.95)
+        return "ok"

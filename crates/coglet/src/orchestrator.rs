@@ -826,6 +826,21 @@ async fn run_event_loop(
                             }
                         }
                     }
+                    Ok(SlotResponse::Metric { name, value, mode }) => {
+                        let poisoned = if let Some(pred) = predictions.get(&slot_id) {
+                            if let Some(mut p) = try_lock_prediction(pred) {
+                                p.set_metric(name, value, mode);
+                                false
+                            } else {
+                                true
+                            }
+                        } else {
+                            false
+                        };
+                        if poisoned {
+                            predictions.remove(&slot_id);
+                        }
+                    }
                     Ok(SlotResponse::Output { output }) => {
                         let poisoned = if let Some(pred) = predictions.get(&slot_id) {
                             if let Some(mut p) = try_lock_prediction(pred) {

@@ -1,0 +1,61 @@
+# Test that user-emitted metrics appear in sync prediction responses.
+#
+# Verifies:
+# 1. record_metric() with default mode (replace) appears in response
+# 2. Increment and append accumulation modes work
+# 3. predict_time is always present (system metric)
+# 4. predict_time overrides any user-set predict_time
+# 5. Dict-style metrics access (scope.metrics["key"] = value)
+# 6. Dot-path keys create nested objects
+
+cog serve
+
+# Prediction that records metrics via current_scope()
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+
+# User metrics present
+stdout '"temperature":0.7'
+stdout '"token_count":3'
+stdout '"tags":\["fast","cached"\]'
+stdout '"timing":\{.*"preprocess":0.1'
+stdout '"dict_metric":"hello"'
+
+# System predict_time overrides user value — should be a float, not 999
+stdout '"predict_time":'
+! stdout '"predict_time":999'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, current_scope
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        scope = current_scope()
+
+        # Replace mode (default)
+        scope.record_metric("temperature", 0.7)
+
+        # Increment mode: 1 + 2 = 3
+        scope.record_metric("token_count", 1, mode="incr")
+        scope.record_metric("token_count", 2, mode="incr")
+
+        # Append mode: builds array
+        scope.record_metric("tags", "fast", mode="append")
+        scope.record_metric("tags", "cached", mode="append")
+
+        # Dot-path key creates nested object
+        scope.record_metric("timing.preprocess", 0.1)
+
+        # Dict-style access
+        scope.metrics["dict_metric"] = "hello"
+
+        # User-set predict_time should be overridden by system
+        scope.record_metric("predict_time", 999)
+
+        return "ok"

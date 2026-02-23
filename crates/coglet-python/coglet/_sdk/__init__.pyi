@@ -3,7 +3,69 @@
 
 import builtins
 import typing
-__all__ = []
+__all__ = [
+    "MetricRecorder",
+    "Scope",
+    "current_scope",
+]
+
+@typing.final
+class MetricRecorder:
+    r"""
+    Metric recorder with type invariant enforcement.
+    
+    Accessed via `scope.metrics`. Supports:
+    - `scope.metrics.record(key, value, mode="replace")` — full API
+    - `scope.metrics.delete(key)` — delete (required before type change)
+    - `scope.metrics[key] = value` — dict-style set (replace mode)
+    - `del scope.metrics[key]` — dict-style delete
+    """
+    def record(self, key: builtins.str, value: typing.Any, mode: typing.Optional[builtins.str] = None) -> None:
+        r"""
+        Record a metric value.
+        
+        Args:
+            key: Metric name. Dot-separated keys (e.g. "timing.preprocess") create
+                nested objects in the response.
+            value: Must be bool, int, float, str, list, or dict. Once a key is set
+                with a type, it cannot be changed without calling delete() first.
+            mode: Accumulation mode — "replace" (default), "incr" (increment numeric),
+                or "append" (push to array).
+        """
+    def delete(self, key: builtins.str) -> None:
+        r"""
+        Delete a metric key. Required before changing a metric's type.
+        """
+    def __setitem__(self, key: builtins.str, value: typing.Any) -> None:
+        r"""
+        Dict-style set: `scope.metrics["key"] = value`
+        """
+    def __delitem__(self, key: builtins.str) -> None:
+        r"""
+        Dict-style delete: `del scope.metrics["key"]`
+        """
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class Scope:
+    r"""
+    Prediction scope, obtained via `current_scope()`.
+    
+    Provides access to `scope.metrics` for recording metrics, and
+    `scope.record_metric()` as a convenience shorthand.
+    """
+    @property
+    def metrics(self) -> MetricRecorder:
+        r"""
+        The metric recorder for this prediction.
+        """
+    def record_metric(self, key: builtins.str, value: typing.Any, mode: typing.Optional[builtins.str] = None) -> None:
+        r"""
+        Convenience: record a metric value.
+        
+        Equivalent to `scope.metrics.record(key, value, mode)`.
+        """
+    def __repr__(self) -> builtins.str: ...
 
 @typing.final
 class _SlotLogWriter:
@@ -146,4 +208,11 @@ class _TeeWriter:
     def close(self) -> None: ...
     def __enter__(self) -> _TeeWriter: ...
     def __exit__(self, _exc_type: typing.Optional[typing.Any], _exc_val: typing.Optional[typing.Any], _exc_tb: typing.Optional[typing.Any]) -> builtins.bool: ...
+
+def current_scope() -> Scope:
+    r"""
+    Python-callable: get the current Scope.
+    
+    Returns the active scope if inside a prediction, or a no-op scope otherwise.
+    """
 
