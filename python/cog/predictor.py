@@ -452,9 +452,13 @@ def get_train(predictor: Any) -> Callable[..., Any]:
 
 def get_healthcheck(predictor: Any) -> Optional[Callable[..., Any]]:
     """Get the healthcheck method if it exists."""
-    if hasattr(predictor, "healthcheck"):
-        return predictor.healthcheck
-    return None
+    fn = getattr(predictor, "healthcheck", None)
+    return fn if callable(fn) else None
+
+
+def has_user_healthcheck(predictor: Any) -> bool:
+    """Return True if the predictor defines a healthcheck method."""
+    return callable(getattr(predictor, "healthcheck", None))
 
 
 def get_training_input_type(predictor: BasePredictor) -> Type[BaseInput]:

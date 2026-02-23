@@ -24,10 +24,3 @@ class BasePredictor:
         Run a single train on the model
         """
         raise NotImplementedError("train has not been implemented by parent class.")
-
-    def healthcheck(self) -> Any:
-        """
-        An optional method to perform custom health checks on the model.
-        Return True if healthy, False or raise an exception if unhealthy.
-        """
-        return True  # If unimplemented don't kill the container

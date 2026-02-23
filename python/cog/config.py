@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional, Tuple, Type
 
 import structlog
 import yaml
+from attrs import define
 from pydantic import BaseModel
 
 from .base_input import BaseInput
@@ -22,10 +23,20 @@ from .predictor import (
     get_train,
     get_training_input_type,
     get_training_output_type,
+    has_user_healthcheck,
     load_full_predictor_from_file,
 )
 from .types import CogConfig
 from .wait import wait_for_env
+
+
+@define
+class _PredictorInfo:
+    input_type: Type[BaseInput]
+    output_type: Type[BaseModel]
+    is_async: bool
+    has_healthcheck: bool
+
 
 COG_YAML_FILE = "cog.yaml"
 COG_PREDICT_TYPE_STUB_ENV_VAR = "COG_PREDICT_TYPE_STUB"
@@ -167,6 +178,11 @@ class Config:
         Find the input & output types of a predictor/train function as well
         as determining if the function is an async function.
         """
+        info = self.get_predictor_info(mode=mode)
+        return (info.input_type, info.output_type, info.is_async)
+
+    def get_predictor_info(self, mode: Mode) -> _PredictorInfo:
+        """Return input/output types, async flag, and healthcheck flag for a predictor."""
         predictor_ref = self.get_predictor_ref(mode=mode)
         predictor = self._load_predictor_for_types(
             predictor_ref, _method_name_from_mode(mode=mode), mode
@@ -176,15 +192,17 @@ class Config:
             return inspect.iscoroutinefunction(fn) or inspect.isasyncgenfunction(fn)
 
         if mode == Mode.PREDICT:
-            return (
-                get_input_type(predictor),
-                get_output_type(predictor),
-                is_async(get_predict(predictor)),
+            return _PredictorInfo(
+                input_type=get_input_type(predictor),
+                output_type=get_output_type(predictor),
+                is_async=is_async(get_predict(predictor)),
+                has_healthcheck=has_user_healthcheck(predictor),
             )
         elif mode == Mode.TRAIN:
-            return (
-                get_training_input_type(predictor),
-                get_training_output_type(predictor),
-                is_async(get_train(predictor)),
+            return _PredictorInfo(
+                input_type=get_training_input_type(predictor),
+                output_type=get_training_output_type(predictor),
+                is_async=is_async(get_train(predictor)),
+                has_healthcheck=False,
             )
         raise ValueError(f"Mode {mode} not found for generating input/output types.")

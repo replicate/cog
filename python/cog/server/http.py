@@ -193,19 +193,22 @@ def create_app(  # pylint: disable=too-many-arguments,too-many-locals,too-many-s
         return JSONResponse({}, status_code=200)
 
     try:
-        InputType, OutputType, is_async = cog_config.get_predictor_types(
-            mode=Mode.PREDICT
-        )
+        predictor_info = cog_config.get_predictor_info(mode=Mode.PREDICT)
     except Exception:  # pylint: disable=broad-exception-caught
         msg = "Error while loading predictor:\n\n" + traceback.format_exc()
         add_setup_failed_routes(app, started_at, msg)
         return app
+
+    InputType = predictor_info.input_type
+    OutputType = predictor_info.output_type
+    is_async = predictor_info.is_async
 
     worker = make_worker(
         predictor_ref=cog_config.get_predictor_ref(mode=mode),
         is_async=is_async,
         is_train=False if mode == Mode.PREDICT else True,
         max_concurrency=cog_config.max_concurrency,
+        has_user_healthcheck=predictor_info.has_healthcheck,
     )
     runner = PredictionRunner(worker=worker, max_concurrency=cog_config.max_concurrency)
 
