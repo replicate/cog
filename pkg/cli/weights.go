@@ -1,18 +1,16 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/moby/term"
 	"github.com/spf13/cobra"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
@@ -193,18 +191,70 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 
 	console.Infof("Pushing %d weight file(s) to %s...", len(artifacts), repo)
 
-	var (
-		regClient                 = registry.NewRegistryClient()
-		pusher                    = model.NewWeightPusher(regClient)
-		tracker                   = newProgressTracker(artifacts)
-		displayCtx, cancelDisplay = context.WithCancel(ctx)
-		displayDone               = make(chan struct{})
-	)
+	regClient := registry.NewRegistryClient()
+	pusher := model.NewWeightPusher(regClient)
 
-	go func() {
-		defer close(displayDone)
-		tracker.displayLoop(displayCtx)
-	}()
+	// Set up mpb progress container (writes to stderr, auto-detects TTY)
+	p := mpb.New(mpb.WithOutput(os.Stderr), mpb.WithWidth(80))
+
+	// Track per-artifact retry status for dynamic decorator display
+	var retryStatus sync.Map // name -> string
+
+	// Create a bar for each artifact
+	type barEntry struct {
+		bar  *mpb.Bar
+		name string
+		size int64
+	}
+	bars := make([]barEntry, len(artifacts))
+	for i, wa := range artifacts {
+		artName := wa.Name()
+		displayName := artName
+		if len(displayName) > 30 {
+			displayName = "..." + displayName[len(displayName)-27:]
+		}
+		total := wa.Descriptor().Size
+		if total <= 0 {
+			total = 1 // avoid zero-total bars; will be updated by SetTotal
+		}
+
+		// Capture artName for the closure
+		retryStatus.Store(artName, "")
+		statusFn := func(s decor.Statistics) string {
+			if v, ok := retryStatus.Load(artName); ok {
+				if msg, _ := v.(string); msg != "" {
+					return msg
+				}
+			}
+			return ""
+		}
+
+		bar := p.AddBar(total,
+			mpb.PrependDecorators(
+				decor.Name(fmt.Sprintf("  %-30s", displayName), decor.WC{C: decor.DindentRight}),
+			),
+			mpb.AppendDecorators(
+				decor.OnAbort(
+					decor.OnComplete(
+						decor.CountersKibiByte("% .1f / % .1f", decor.WCSyncWidth),
+						"done",
+					),
+					"FAILED",
+				),
+				decor.OnAbort(
+					decor.OnComplete(
+						decor.Percentage(decor.WC{W: 6}),
+						"",
+					),
+					"",
+				),
+				// Dynamic retry status decorator
+				decor.Any(statusFn, decor.WC{W: 1}),
+			),
+			mpb.BarFillerOnComplete(""),
+		)
+		bars[i] = barEntry{bar: bar, name: artName, size: wa.Descriptor().Size}
+	}
 
 	// Push each weight artifact concurrently
 	type pushResult struct {
@@ -218,42 +268,42 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 	results := make(chan pushResult, len(artifacts))
 	var wg sync.WaitGroup
 
-	for _, wa := range artifacts {
+	for i, wa := range artifacts {
 		wg.Add(1)
-		go func(wa *model.WeightArtifact) {
+		go func(wa *model.WeightArtifact, entry barEntry) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			artName := wa.Name()
-
 			result, pushErr := pusher.Push(ctx, repo, wa, model.WeightPushOptions{
-				ProgressFn: func(p model.PushProgress) {
-					tracker.clearRetrying(artName)
-					if p.Total > 0 {
-						tracker.setTotal(artName, p.Total)
+				ProgressFn: func(prog model.PushProgress) {
+					retryStatus.Store(entry.name, "")
+					if prog.Total > 0 {
+						entry.bar.SetTotal(prog.Total, false)
 					}
-					tracker.update(artName, p.Complete, p.Total)
+					entry.bar.SetCurrent(prog.Complete)
 				},
 				RetryFn: func(event model.WeightRetryEvent) bool {
-					tracker.setRetrying(event.Name, event.Attempt, event.MaxAttempts, event.NextRetryIn, event.Err)
-					if !tracker.isTTY {
-						console.Warnf("  %s: retrying (%d/%d) in %s: %v",
-							event.Name, event.Attempt, event.MaxAttempts,
-							event.NextRetryIn.Round(time.Second), event.Err)
-					}
+					msg := fmt.Sprintf("  retry %d/%d in %s",
+						event.Attempt, event.MaxAttempts,
+						event.NextRetryIn.Round(time.Second))
+					retryStatus.Store(event.Name, msg)
+					entry.bar.SetCurrent(0)
+					console.Warnf("  %s: retrying (%d/%d) in %s: %v",
+						event.Name, event.Attempt, event.MaxAttempts,
+						event.NextRetryIn.Round(time.Second), event.Err)
 					return true
 				},
 			})
 
 			if pushErr != nil {
-				tracker.setError(artName, pushErr)
-				results <- pushResult{name: artName, err: pushErr}
+				entry.bar.Abort(false) // keep the bar visible, show FAILED
+				results <- pushResult{name: entry.name, err: pushErr}
 			} else {
-				tracker.setComplete(artName)
-				results <- pushResult{name: artName, ref: result.Ref, size: wa.Descriptor().Size}
+				entry.bar.SetTotal(entry.bar.Current(), true) // mark complete
+				results <- pushResult{name: entry.name, ref: result.Ref, size: entry.size}
 			}
-		}(wa)
+		}(wa, bars[i])
 	}
 
 	go func() {
@@ -274,11 +324,15 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Stop progress display
-	cancelDisplay()
-	<-displayDone
+	// Wait for mpb to finish rendering
+	p.Wait()
 
-	tracker.printFinalStatus(refs)
+	// Print final summary
+	for _, entry := range bars {
+		if ref, ok := refs[entry.name]; ok {
+			console.Infof("  %s: %s", entry.name, ref)
+		}
+	}
 
 	if errorCount > 0 {
 		return fmt.Errorf("failed to push %d/%d weight files", errorCount, len(artifacts))
@@ -288,205 +342,4 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 	console.Infof("Total: %s", formatSize(totalSize))
 
 	return nil
-}
-
-// progressTracker tracks upload progress for multiple concurrent files
-type progressTracker struct {
-	mu       sync.Mutex
-	files    []fileProgress
-	fileMap  map[string]int // name -> index in files slice
-	isTTY    bool
-	lastDraw time.Time
-}
-
-type fileProgress struct {
-	name      string
-	complete  int64
-	total     int64
-	done      bool
-	err       error
-	retrying  bool
-	retryInfo string // Human-readable retry status
-}
-
-func newProgressTracker(artifacts []*model.WeightArtifact) *progressTracker {
-	pt := &progressTracker{
-		files:   make([]fileProgress, len(artifacts)),
-		fileMap: make(map[string]int, len(artifacts)),
-		isTTY:   term.IsTerminal(os.Stderr.Fd()),
-	}
-	for i, a := range artifacts {
-		pt.files[i] = fileProgress{
-			name:  a.Name(),
-			total: a.Descriptor().Size, // Initial estimate from build
-		}
-		pt.fileMap[a.Name()] = i
-	}
-	return pt
-}
-
-func (pt *progressTracker) setTotal(name string, total int64) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	if idx, ok := pt.fileMap[name]; ok {
-		pt.files[idx].total = total
-	}
-}
-
-func (pt *progressTracker) update(name string, complete, total int64) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	if idx, ok := pt.fileMap[name]; ok {
-		pt.files[idx].complete = complete
-		if total > 0 {
-			pt.files[idx].total = total
-		}
-	}
-}
-
-func (pt *progressTracker) setComplete(name string) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	if idx, ok := pt.fileMap[name]; ok {
-		pt.files[idx].done = true
-		pt.files[idx].complete = pt.files[idx].total
-	}
-}
-
-func (pt *progressTracker) setError(name string, err error) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	if idx, ok := pt.fileMap[name]; ok {
-		pt.files[idx].done = true
-		pt.files[idx].err = err
-		pt.files[idx].retrying = false
-		pt.files[idx].retryInfo = ""
-	}
-}
-
-func (pt *progressTracker) setRetrying(name string, attempt, maxAttempts int, nextRetryIn time.Duration, err error) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	if idx, ok := pt.fileMap[name]; ok {
-		pt.files[idx].retrying = true
-		pt.files[idx].retryInfo = fmt.Sprintf("retry %d/%d in %s", attempt, maxAttempts, nextRetryIn.Round(time.Second))
-		// Reset progress for retry attempt
-		pt.files[idx].complete = 0
-	}
-}
-
-func (pt *progressTracker) clearRetrying(name string) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	if idx, ok := pt.fileMap[name]; ok {
-		pt.files[idx].retrying = false
-		pt.files[idx].retryInfo = ""
-	}
-}
-
-func (pt *progressTracker) displayLoop(ctx context.Context) {
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			pt.draw()
-		}
-	}
-}
-
-func (pt *progressTracker) draw() {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-
-	if !pt.isTTY {
-		// In non-TTY mode, don't redraw - we'll print final status only
-		return
-	}
-
-	// Move cursor up to overwrite previous output
-	if !pt.lastDraw.IsZero() {
-		// Move cursor up by the number of files
-		fmt.Fprintf(os.Stderr, "\033[%dA", len(pt.files))
-	}
-
-	for _, f := range pt.files {
-		line := pt.formatProgressLine(f)
-		// Clear line and print
-		fmt.Fprintf(os.Stderr, "\033[2K%s\n", line)
-	}
-
-	pt.lastDraw = time.Now()
-}
-
-func (pt *progressTracker) formatProgressLine(f fileProgress) string {
-	// Truncate name if too long
-	name := f.name
-	if len(name) > 30 {
-		name = "..." + name[len(name)-27:]
-	}
-
-	if f.err != nil {
-		return fmt.Sprintf("  %-30s  FAILED", name)
-	}
-
-	if f.done {
-		return fmt.Sprintf("  %-30s  %s  done", name, formatSize(f.total))
-	}
-
-	// Show retry status if retrying
-	if f.retrying && f.retryInfo != "" {
-		return fmt.Sprintf("  %-30s  %s", name, f.retryInfo)
-	}
-
-	if f.total == 0 {
-		return fmt.Sprintf("  %-30s  waiting...", name)
-	}
-
-	percent := float64(f.complete) / float64(f.total) * 100
-	if percent > 100 {
-		percent = 100
-	}
-
-	// Create a simple progress bar
-	barWidth := 20
-	filled := min(int(percent/100*float64(barWidth)), barWidth)
-	bar := strings.Repeat("=", filled) + strings.Repeat("-", barWidth-filled)
-
-	return fmt.Sprintf("  %-30s  [%s] %5.1f%%  %s / %s",
-		name, bar, percent, formatSize(f.complete), formatSize(f.total))
-}
-
-func (pt *progressTracker) printFinalStatus(refs map[string]string) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-
-	if pt.isTTY && !pt.lastDraw.IsZero() {
-		// Clear the progress lines we drew
-		fmt.Fprintf(os.Stderr, "\033[%dA", len(pt.files))
-		for range pt.files {
-			fmt.Fprintf(os.Stderr, "\033[2K\n")
-		}
-		fmt.Fprintf(os.Stderr, "\033[%dA", len(pt.files))
-	}
-
-	// Sort files by name for consistent output
-	sortedFiles := make([]fileProgress, len(pt.files))
-	copy(sortedFiles, pt.files)
-	sort.Slice(sortedFiles, func(i, j int) bool {
-		return sortedFiles[i].name < sortedFiles[j].name
-	})
-
-	for _, f := range sortedFiles {
-		if f.err != nil {
-			console.Warnf("  %s: FAILED - %v", f.name, f.err)
-		} else if ref, ok := refs[f.name]; ok {
-			console.Infof("  %s: %s", f.name, ref)
-		} else {
-			console.Infof("  %s: %s", f.name, formatSize(f.total))
-		}
-	}
 }
