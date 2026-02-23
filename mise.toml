@@ -55,9 +55,9 @@ ty = "0.0.10"
 [env]
 _.path = "./bin"
 _.file = [".env"]
+_.python.venv = ".venv"
 # Set REPO_ROOT only if not already set (e.g., by CI)
 REPO_ROOT = "{{env.REPO_ROOT | default(value=config_root)}}"
-_.python.venv = "{{env.REPO_ROOT}}/.venv"
 
 [settings]
 lockfile = true
