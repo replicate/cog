@@ -1229,7 +1229,7 @@ The response body is a JSON object with the following fields:
 - `metrics`: An object containing prediction metrics.
   Always includes `predict_time` (elapsed seconds).
   May also include custom metrics recorded by the model
-  using [`current_scope()`](python.md#metrics).
+  using [`self.record_metric()`](python.md#metrics).
 
 ```http
 POST /predictions HTTP/1.1
@@ -1791,23 +1791,25 @@ You can record custom metrics from your `predict()` function to track model-spec
 
 ### Recording metrics
 
-Use `current_scope()` to get the current prediction scope, then record metrics on it:
+Use `self.record_metric()` inside your `predict()` method:
 
 ```python
-from cog import BasePredictor, current_scope
+from cog import BasePredictor
 
 class Predictor(BasePredictor):
     def predict(self, prompt: str) -> str:
-        scope = current_scope()
-
-        # Record a metric
-        scope.record_metric("temperature", 0.7)
-
-        # Dict-style access
-        scope.metrics["token_count"] = 42
+        self.record_metric("temperature", 0.7)
+        self.record_metric("token_count", 42)
 
         result = self.model.generate(prompt)
         return result
+```
+
+For advanced use (dict-style access, deleting metrics), use `self.scope`:
+
+```python
+self.scope.metrics["token_count"] = 42
+del self.scope.metrics["token_count"]
 ```
 
 Metrics appear in the prediction response `metrics` field:
@@ -1833,21 +1835,19 @@ Supported value types are `bool`, `int`, `float`, `str`, `list`, and `dict`. Set
 By default, recording a metric replaces any previous value for that key. You can use accumulation modes to build up values across multiple calls:
 
 ```python
-scope = current_scope()
-
 # Increment a counter (adds to the existing numeric value)
-scope.record_metric("token_count", 1, mode="incr")
-scope.record_metric("token_count", 1, mode="incr")
+self.record_metric("token_count", 1, mode="incr")
+self.record_metric("token_count", 1, mode="incr")
 # Result: {"token_count": 2}
 
 # Append to an array
-scope.record_metric("steps", "preprocessing", mode="append")
-scope.record_metric("steps", "inference", mode="append")
+self.record_metric("steps", "preprocessing", mode="append")
+self.record_metric("steps", "inference", mode="append")
 # Result: {"steps": ["preprocessing", "inference"]}
 
 # Replace (default behavior)
-scope.record_metric("status", "running", mode="replace")
-scope.record_metric("status", "done", mode="replace")
+self.record_metric("status", "running", mode="replace")
+self.record_metric("status", "done", mode="replace")
 # Result: {"status": "done"}
 ```
 
@@ -1858,9 +1858,8 @@ The `mode` parameter accepts `"replace"` (default), `"incr"`, or `"append"`.
 Use dot-separated keys to create nested objects in the metrics output:
 
 ```python
-scope = current_scope()
-scope.record_metric("timing.preprocess", 0.12)
-scope.record_metric("timing.inference", 0.85)
+self.record_metric("timing.preprocess", 0.12)
+self.record_metric("timing.inference", 0.85)
 ```
 
 This produces nested JSON:
@@ -1882,24 +1881,17 @@ This produces nested JSON:
 Once a metric key has been assigned a value of a certain type, it cannot be changed to a different type without deleting it first. This prevents accidental type mismatches when using accumulation modes:
 
 ```python
-scope = current_scope()
-scope.record_metric("count", 1)
+self.record_metric("count", 1)
 
 # This would raise an error — "count" is an int, not a string:
-# scope.record_metric("count", "oops")
+# self.record_metric("count", "oops")
 
 # Delete first, then set with new type:
-del scope.metrics["count"]
-scope.record_metric("count", "now a string")
+del self.scope.metrics["count"]
+self.record_metric("count", "now a string")
 ```
 
-`current_scope()` returns `None` when called outside of a Cog container (for example, during local development without coglet). Check for this if your code needs to run in both environments:
-
-```python
-scope = current_scope()
-if scope is not None:
-    scope.record_metric("key", value)
-```
+Outside an active prediction, `self.record_metric()` and `self.scope` are silent no-ops — no need for `None` checks.
 
 ## Input and output types
 

@@ -31,6 +31,7 @@ class BasePredictor:
                 self.model = load_model()
 
             def predict(self, prompt: str = Input(description="Input text")) -> str:
+                self.record_metric("temperature", 0.7)
                 return self.model.generate(prompt)
     """
 
@@ -67,6 +68,48 @@ class BasePredictor:
             NotImplementedError: If predict is not implemented.
         """
         raise NotImplementedError("predict has not been implemented by parent class.")
+
+    @property
+    def scope(self) -> Any:
+        """The current prediction scope.
+
+        Provides access to the full scope API for advanced metric operations
+        like dict-style access and deletion::
+
+            self.scope.metrics["token_count"] = 42
+            del self.scope.metrics["token_count"]
+
+        Outside an active prediction this returns a no-op scope.
+        """
+        import coglet
+
+        return coglet._sdk.current_scope()  # type: ignore[attr-defined]
+
+    def record_metric(self, key: str, value: Any, mode: str = "replace") -> None:
+        """Record a prediction metric.
+
+        Convenience method for recording metrics on the current prediction
+        scope. Outside an active prediction this is a silent no-op.
+
+        Args:
+            key: Metric name. Use dot-separated keys (e.g. ``"timing.inference"``)
+                to create nested objects in the metrics output.
+            value: Metric value. Supported types: bool, int, float, str, list, dict.
+                Setting a value to ``None`` deletes the metric.
+            mode: Accumulation mode. One of:
+                - ``"replace"`` (default): overwrite any previous value.
+                - ``"incr"``: add to the existing numeric value.
+                - ``"append"``: append to an array.
+
+        Example::
+
+            class Predictor(BasePredictor):
+                def predict(self, prompt: str) -> str:
+                    self.record_metric("temperature", 0.7)
+                    self.record_metric("token_count", 1, mode="incr")
+                    return self.model.generate(prompt)
+        """
+        self.scope.record_metric(key, value, mode=mode)
 
 
 def load_predictor_from_ref(ref: str) -> BasePredictor:

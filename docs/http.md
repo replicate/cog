@@ -288,7 +288,7 @@ The response body is a JSON object with the following fields:
 - `metrics`: An object containing prediction metrics.
   Always includes `predict_time` (elapsed seconds).
   May also include custom metrics recorded by the model
-  using [`current_scope()`](python.md#metrics).
+  using [`self.record_metric()`](python.md#metrics).
 
 ```http
 POST /predictions HTTP/1.1

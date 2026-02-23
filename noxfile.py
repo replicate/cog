@@ -1,6 +1,7 @@
 """Nox sessions for cog Python SDK testing."""
 
 import glob
+import platform
 
 import nox
 
@@ -19,15 +20,46 @@ TEST_DEPS = [
 ]
 
 
+def _find_compatible_wheel(pattern: str) -> str | None:
+    """Find a wheel matching the current platform from dist/.
+
+    When multiple wheels exist (e.g. macOS + Linux), pick the one
+    compatible with the running platform instead of relying on
+    filesystem ordering.
+    """
+    wheels = glob.glob(pattern)
+    if not wheels:
+        return None
+    if len(wheels) == 1:
+        return wheels[0]
+
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    platform_tags = {
+        ("darwin", "arm64"): "macosx",
+        ("darwin", "x86_64"): "macosx",
+        ("linux", "x86_64"): "manylinux",
+        ("linux", "aarch64"): "manylinux",
+    }
+    tag = platform_tags.get((system, machine))
+    if tag:
+        for whl in wheels:
+            if tag in whl:
+                return whl
+
+    # Fallback: let pip figure it out
+    return wheels[0]
+
+
 def _install_coglet(session: nox.Session) -> None:
     """Install coglet wheel (required dependency).
 
     Falls back to PyPI with --prerelease=allow since coglet
     may only have pre-release versions available.
     """
-    coglet_wheels = glob.glob("dist/coglet-*.whl")
-    if coglet_wheels:
-        session.install(coglet_wheels[0])
+    whl = _find_compatible_wheel("dist/coglet-*.whl")
+    if whl:
+        session.install(whl)
     else:
         session.install("--prerelease=allow", "coglet")
 
@@ -35,10 +67,9 @@ def _install_coglet(session: nox.Session) -> None:
 def _install_package(session: nox.Session) -> None:
     """Install the package, using pre-built wheel if available."""
     _install_coglet(session)
-    wheels = glob.glob("dist/cog-*.whl")
-    if wheels:
-        # Use pre-built wheel if available
-        session.install(wheels[0])
+    whl = _find_compatible_wheel("dist/cog-*.whl")
+    if whl:
+        session.install(whl)
     else:
         # Editable install
         session.install("-e", ".")
