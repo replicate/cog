@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
+	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -16,14 +16,6 @@ import (
 	"github.com/replicate/cog/pkg/oci"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
-)
-
-const (
-	// DefaultPushConcurrency is the default number of concurrent layer uploads.
-	DefaultPushConcurrency = 4
-
-	// envPushConcurrency overrides the default concurrency.
-	envPushConcurrency = "COG_PUSH_CONCURRENCY"
 )
 
 // OCIImagePusher pushes container images to a registry using the OCI Distribution API
@@ -45,20 +37,10 @@ func NewOCIImagePusher(reg registry.Client, imageSave oci.ImageSaveFunc) *OCIIma
 	}
 }
 
-// ImagePushProgress reports progress for a layer upload.
-type ImagePushProgress struct {
-	// LayerDigest identifies which layer this progress is for.
-	LayerDigest string
-	// Complete is the number of bytes uploaded so far.
-	Complete int64
-	// Total is the total number of bytes to upload.
-	Total int64
-}
-
 // ImagePushOptions configures push behavior for OCIImagePusher.
 type ImagePushOptions struct {
 	// ProgressFn is an optional callback for reporting per-layer upload progress.
-	ProgressFn func(ImagePushProgress)
+	ProgressFn func(PushProgress)
 }
 
 // Push exports the image from Docker daemon to OCI layout, then pushes all layers,
@@ -137,7 +119,7 @@ func (p *OCIImagePusher) pushLayers(ctx context.Context, repo string, img v1.Ima
 		return nil
 	}
 
-	concurrency := getPushConcurrency()
+	concurrency := GetPushConcurrency()
 	console.Debugf("Pushing %d layers with concurrency %d", len(layers), concurrency)
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -166,38 +148,22 @@ func (p *OCIImagePusher) pushLayer(ctx context.Context, repo string, layer v1.La
 
 	console.Debugf("Pushing layer %s (%d bytes)", digest, size)
 
-	// Set up progress channel if callback is provided
-	var progressCh chan v1.Update
-	var progressDone chan struct{}
+	var onProgress func(v1.Update)
 	if opt.ProgressFn != nil {
-		progressCh = make(chan v1.Update, 100)
-		progressDone = make(chan struct{})
 		digestStr := digest.String()
-		go func() {
-			defer close(progressDone)
-			for update := range progressCh {
-				opt.ProgressFn(ImagePushProgress{
-					LayerDigest: digestStr,
-					Complete:    update.Complete,
-					Total:       update.Total,
-				})
-			}
-		}()
+		onProgress = func(update v1.Update) {
+			opt.ProgressFn(PushProgress{
+				LayerDigest: digestStr,
+				Complete:    update.Complete,
+				Total:       update.Total,
+			})
+		}
 	}
 
-	writeErr := p.registry.WriteLayer(ctx, registry.WriteLayerOptions{
-		Repo:       repo,
-		Layer:      layer,
-		ProgressCh: progressCh,
-	})
-
-	// Close the progress channel ourselves — WriteLayer sends to it but does not close it.
-	if progressCh != nil {
-		close(progressCh)
-	}
-	if progressDone != nil {
-		<-progressDone
-	}
+	writeErr := writeLayerWithProgress(ctx, p.registry, registry.WriteLayerOptions{
+		Repo:  repo,
+		Layer: layer,
+	}, onProgress)
 
 	if writeErr != nil {
 		return fmt.Errorf("push layer %s: %w", digest, writeErr)
@@ -260,18 +226,21 @@ func shouldFallbackToDocker(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
+	// Never fall back on authentication/authorization errors
+	if isAuthError(err) {
+		return false
+	}
 
 	return true
 }
 
-// getPushConcurrency returns the configured concurrency, checking env var override.
-func getPushConcurrency() int {
-	if v := os.Getenv(envPushConcurrency); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
-	return DefaultPushConcurrency
+// isAuthError returns true if the error message indicates an authentication
+// or authorization failure from the registry.
+func isAuthError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unauthorized") ||
+		strings.Contains(msg, "authentication required") ||
+		strings.Contains(msg, "denied")
 }
 
 // configBlobLayer wraps a config blob to satisfy the v1.Layer interface

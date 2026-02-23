@@ -214,8 +214,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		err  error
 	}
 
-	const maxConcurrency = 4
-	sem := make(chan struct{}, maxConcurrency)
+	sem := make(chan struct{}, model.GetPushConcurrency())
 	results := make(chan pushResult, len(artifacts))
 	var wg sync.WaitGroup
 
@@ -229,7 +228,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 			artName := wa.Name()
 
 			result, pushErr := pusher.Push(ctx, repo, wa, model.WeightPushOptions{
-				ProgressFn: func(p model.WeightPushProgress) {
+				ProgressFn: func(p model.PushProgress) {
 					tracker.clearRetrying(artName)
 					if p.Total > 0 {
 						tracker.setTotal(artName, p.Total)

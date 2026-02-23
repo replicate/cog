@@ -4,10 +4,10 @@ package model
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
@@ -129,50 +129,28 @@ func (p *BundlePusher) pushContainerImage(ctx context.Context, imgArtifact *Imag
 	return pushImageWithFallback(ctx, p.ociPusher, p.imagePusher, imgArtifact)
 }
 
-// pushWeights pushes all weight artifacts and returns their results.
+// pushWeights pushes all weight artifacts concurrently (bounded by GetPushConcurrency)
+// and returns their results in the same order as the input slice.
 // If any weight push fails, remaining pushes are canceled and the first error is returned.
 func (p *BundlePusher) pushWeights(ctx context.Context, repo string, weights []*WeightArtifact) ([]*WeightPushResult, error) {
-	// Create cancellable context so we can stop remaining pushes on first error
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ordered := make([]*WeightPushResult, len(weights))
 
-	type indexedResult struct {
-		index  int
-		result *WeightPushResult
-		err    error
-	}
-
-	results := make(chan indexedResult, len(weights))
-	var wg sync.WaitGroup
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(GetPushConcurrency())
 
 	for i, wa := range weights {
-		wg.Add(1)
-		go func(idx int, artifact *WeightArtifact) {
-			defer wg.Done()
-			result, err := p.weightPusher.Push(ctx, repo, artifact)
-			results <- indexedResult{index: idx, result: result, err: err}
-		}(i, wa)
+		g.Go(func() error {
+			result, err := p.weightPusher.Push(ctx, repo, wa)
+			if err != nil {
+				return fmt.Errorf("push weight %q: %w", wa.Name(), err)
+			}
+			ordered[i] = result
+			return nil
+		})
 	}
 
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Drain all results, canceling on first error
-	ordered := make([]*WeightPushResult, len(weights))
-	var firstErr error
-	for r := range results {
-		if r.err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("push weight %q: %w", weights[r.index].Name(), r.err)
-			cancel() // Signal remaining goroutines to stop
-		}
-		if r.err == nil {
-			ordered[r.index] = r.result
-		}
-	}
-	if firstErr != nil {
-		return nil, firstErr
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	return ordered, nil

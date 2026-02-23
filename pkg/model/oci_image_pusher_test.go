@@ -123,9 +123,9 @@ func TestOCIImagePusher_Push(t *testing.T) {
 		pusher := NewOCIImagePusher(mock, createFakeImageSave(img, tag))
 
 		var mu sync.Mutex
-		var progressUpdates []ImagePushProgress
+		var progressUpdates []PushProgress
 		opts := ImagePushOptions{
-			ProgressFn: func(p ImagePushProgress) {
+			ProgressFn: func(p PushProgress) {
 				mu.Lock()
 				defer mu.Unlock()
 				progressUpdates = append(progressUpdates, p)
@@ -281,28 +281,28 @@ func TestConfigBlobLayer(t *testing.T) {
 
 func TestGetPushConcurrency(t *testing.T) {
 	t.Run("returns default when env not set", func(t *testing.T) {
-		t.Setenv(envPushConcurrency, "")
-		assert.Equal(t, DefaultPushConcurrency, getPushConcurrency())
+		t.Setenv("COG_PUSH_CONCURRENCY", "")
+		assert.Equal(t, DefaultPushConcurrency, GetPushConcurrency())
 	})
 
 	t.Run("returns env var value", func(t *testing.T) {
-		t.Setenv(envPushConcurrency, "8")
-		assert.Equal(t, 8, getPushConcurrency())
+		t.Setenv("COG_PUSH_CONCURRENCY", "8")
+		assert.Equal(t, 8, GetPushConcurrency())
 	})
 
 	t.Run("returns default for invalid value", func(t *testing.T) {
-		t.Setenv(envPushConcurrency, "not-a-number")
-		assert.Equal(t, DefaultPushConcurrency, getPushConcurrency())
+		t.Setenv("COG_PUSH_CONCURRENCY", "not-a-number")
+		assert.Equal(t, DefaultPushConcurrency, GetPushConcurrency())
 	})
 
 	t.Run("returns default for zero", func(t *testing.T) {
-		t.Setenv(envPushConcurrency, "0")
-		assert.Equal(t, DefaultPushConcurrency, getPushConcurrency())
+		t.Setenv("COG_PUSH_CONCURRENCY", "0")
+		assert.Equal(t, DefaultPushConcurrency, GetPushConcurrency())
 	})
 
 	t.Run("returns default for negative", func(t *testing.T) {
-		t.Setenv(envPushConcurrency, "-1")
-		assert.Equal(t, DefaultPushConcurrency, getPushConcurrency())
+		t.Setenv("COG_PUSH_CONCURRENCY", "-1")
+		assert.Equal(t, DefaultPushConcurrency, GetPushConcurrency())
 	})
 }
 
