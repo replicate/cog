@@ -195,7 +195,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 	pusher := model.NewWeightPusher(regClient)
 
 	// Set up mpb progress container (writes to stderr, auto-detects TTY)
-	p := mpb.New(mpb.WithOutput(os.Stderr), mpb.WithWidth(80))
+	p := mpb.New(mpb.WithOutput(os.Stderr), mpb.WithWidth(80), mpb.WithAutoRefresh())
 
 	// Track per-artifact retry status for dynamic decorator display
 	var retryStatus sync.Map // name -> string
