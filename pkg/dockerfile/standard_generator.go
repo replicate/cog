@@ -84,6 +84,11 @@ type StandardGenerator struct {
 	// When nil, auto-detection is used (env var → dist/ → PyPI).
 	cogWheelConfig    *wheels.WheelConfig
 	cogletWheelConfig *wheels.WheelConfig
+
+	// Resolved wheel configs — set once by resolveCogWheelConfigs() and shared
+	// between filterManagedPackages() (for warnings) and installCog() (for install).
+	resolvedCogConfig    *wheels.WheelConfig
+	resolvedCogletConfig *wheels.WheelConfig
 }
 
 func NewStandardGenerator(config *config.Config, dir string, configFilename string, command command.Command, client registry.Client, requiresCog bool) (*StandardGenerator, error) {
@@ -459,55 +464,78 @@ ENV UV_PYTHON=%s
 ENV PATH="/usr/local/bin:$PATH"`, py, py, py), nil
 }
 
+// resolveCogWheelConfigs resolves and caches the cog and coglet wheel configs.
+// It is idempotent — subsequent calls are no-ops. Must be called before
+// filterManagedPackages() and installCog().
+//
+// Precedence for cog SDK:
+//  1. Test override (cogWheelConfig field)
+//  2. COG_SDK_WHEEL env var
+//  3. build.sdk_version in cog.yaml
+//  4. Auto-detect dist/ (dev builds only)
+//  5. Latest PyPI
+//
+// Precedence for coglet:
+//  1. Test override (cogletWheelConfig field)
+//  2. COGLET_WHEEL env var
+//  3. Auto-detect dist/ (dev builds only)
+//  4. Latest PyPI
+func (g *StandardGenerator) resolveCogWheelConfigs() error {
+	if g.resolvedCogConfig != nil {
+		return nil // already resolved
+	}
+
+	var err error
+
+	// Resolve cog SDK
+	if g.cogWheelConfig != nil {
+		g.resolvedCogConfig = g.cogWheelConfig
+	} else if envVal := os.Getenv(wheels.CogSDKWheelEnvVar); envVal != "" {
+		g.resolvedCogConfig, err = wheels.GetCogWheelConfig()
+		if err != nil {
+			return err
+		}
+	} else if g.Config.Build != nil && g.Config.Build.SDKVersion != "" {
+		g.resolvedCogConfig = &wheels.WheelConfig{
+			Source:  wheels.WheelSourcePyPI,
+			Version: g.Config.Build.SDKVersion,
+		}
+	} else {
+		g.resolvedCogConfig, err = wheels.GetCogWheelConfig()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Validate: refuse versions older than the minimum supported SDK
+	if err := wheels.ValidateSDKVersion(g.resolvedCogConfig, "cog"); err != nil {
+		return err
+	}
+
+	// Resolve coglet
+	if g.cogletWheelConfig != nil {
+		g.resolvedCogletConfig = g.cogletWheelConfig
+	} else {
+		g.resolvedCogletConfig, err = wheels.GetCogletWheelConfig(g.GOARCH)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (g *StandardGenerator) installCog() (string, error) {
 	// Do not install Cog in base images
 	if !g.requiresCog {
 		return "", nil
 	}
 
-	// Resolve cog SDK wheel config.
-	// Precedence: test override → COG_SDK_WHEEL env var → build.sdk_version → auto-detect/PyPI
-	var wheelConfig *wheels.WheelConfig
-	var err error
-	if g.cogWheelConfig != nil {
-		// Test override: use as-is
-		wheelConfig = g.cogWheelConfig
-	} else if envVal := os.Getenv(wheels.CogSDKWheelEnvVar); envVal != "" {
-		// Explicit env var override: parse it directly
-		wheelConfig, err = wheels.GetCogWheelConfig()
-		if err != nil {
-			return "", err
-		}
-	} else if g.Config.Build != nil && g.Config.Build.SDKVersion != "" {
-		// build.sdk_version from cog.yaml: install that exact version from PyPI
-		wheelConfig = &wheels.WheelConfig{
-			Source:  wheels.WheelSourcePyPI,
-			Version: g.Config.Build.SDKVersion,
-		}
-	} else {
-		// Default: auto-detect (dev builds check dist/) or latest PyPI
-		wheelConfig, err = wheels.GetCogWheelConfig()
-		if err != nil {
-			return "", err
-		}
-	}
-
-	// Validate: refuse versions older than the minimum supported SDK
-	if err := wheels.ValidateSDKVersion(wheelConfig, "cog"); err != nil {
+	if err := g.resolveCogWheelConfigs(); err != nil {
 		return "", err
 	}
-
-	// Install coglet BEFORE cog — cog depends on coglet, so coglet must
-	// be present when pip resolves cog's dependencies.
-	var cogletConfig *wheels.WheelConfig
-	if g.cogletWheelConfig != nil {
-		cogletConfig = g.cogletWheelConfig
-	} else {
-		cogletConfig, err = wheels.GetCogletWheelConfig(g.GOARCH)
-		if err != nil {
-			return "", err
-		}
-	}
+	wheelConfig := g.resolvedCogConfig
+	cogletConfig := g.resolvedCogletConfig
 	switch cogletConfig.Source {
 	case wheels.WheelSourcePyPI:
 		console.Infof("Using coglet from PyPI: %s", cogletConfig.PyPIPackageURL("coglet"))
@@ -705,11 +733,38 @@ func (g *StandardGenerator) installCogletFromFile(path string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// filterManagedPackages strips cog and coglet from user requirements content.
-// These packages are always installed by installCog() — if they appear in the
-// user's python_packages or requirements.txt, we strip them to prevent pip from
-// overwriting the version we installed.
+// filterManagedPackages strips cog and coglet from user requirements content,
+// warning loudly for each occurrence. requirements.txt is not the intended
+// mechanism for controlling cog/coglet versions — use build.sdk_version in
+// cog.yaml or the COG_SDK_WHEEL / COGLET_WHEEL environment variables instead.
 func (g *StandardGenerator) filterManagedPackages(reqContents string) string {
+	// Build a human-readable description of what the build system will install
+	// for each managed package, so the warning is actionable.
+	override := func(pkg string) string {
+		var cfg *wheels.WheelConfig
+		if pkg == "cog" {
+			cfg = g.resolvedCogConfig
+		} else {
+			cfg = g.resolvedCogletConfig
+		}
+		if cfg == nil {
+			return "latest from PyPI"
+		}
+		switch cfg.Source {
+		case wheels.WheelSourcePyPI:
+			if cfg.Version != "" {
+				return fmt.Sprintf("%s==%s from PyPI", pkg, cfg.Version)
+			}
+			return "latest " + pkg + " from PyPI"
+		case wheels.WheelSourceURL:
+			return cfg.URL
+		case wheels.WheelSourceFile:
+			return cfg.Path
+		default:
+			return "unknown source"
+		}
+	}
+
 	managed := map[string]bool{"cog": true, "coglet": true}
 	var filtered []string
 	for line := range strings.SplitSeq(reqContents, "\n") {
@@ -719,9 +774,15 @@ func (g *StandardGenerator) filterManagedPackages(reqContents string) string {
 			continue
 		}
 		pkgName := requirements.PackageName(trimmed)
-		baseName := strings.Split(pkgName, "[")[0]
-		if managed[strings.ToLower(baseName)] {
-			console.Warnf("Stripping '%s' from requirements: cog and coglet are managed by the build system. Use build.sdk_version in cog.yaml or COG_SDK_WHEEL / COGLET_WHEEL env vars to override.", trimmed)
+		baseName := strings.ToLower(strings.Split(pkgName, "[")[0])
+		if managed[baseName] {
+			console.Warnf(
+				"'%s' found in requirements — overriding with %s. "+
+					"Remove it from requirements and use build.sdk_version in cog.yaml or %s to control the version.",
+				trimmed,
+				override(baseName),
+				map[string]string{"cog": "COG_SDK_WHEEL", "coglet": "COGLET_WHEEL"}[baseName],
+			)
 			continue
 		}
 		filtered = append(filtered, line)
@@ -730,6 +791,13 @@ func (g *StandardGenerator) filterManagedPackages(reqContents string) string {
 }
 
 func (g *StandardGenerator) pipInstalls() (string, error) {
+	// Resolve wheel configs early so filterManagedPackages can emit precise warnings.
+	if g.requiresCog {
+		if err := g.resolveCogWheelConfigs(); err != nil {
+			return "", err
+		}
+	}
+
 	var err error
 	includePackages := []string{}
 	if torchVersion, ok := g.Config.TorchVersion(); ok {
