@@ -179,6 +179,12 @@ impl PythonPredictHandler {
     // means slot isolation is compromised. The panic hook installed by
     // coglet_core::worker sends a Fatal IPC message and aborts.
 
+    /// Check the cancelled flag for a slot without clearing it.
+    fn is_cancelled(&self, slot: SlotId) -> bool {
+        let slots = self.slots.lock().expect("slots mutex poisoned");
+        slots.get(&slot).is_some_and(|s| s.is_cancelled())
+    }
+
     /// Check and clear the cancelled flag for a slot.
     fn take_cancelled(&self, slot: SlotId) -> bool {
         let mut slots = self.slots.lock().expect("slots mutex poisoned");
@@ -442,7 +448,15 @@ impl PredictHandler for PythonPredictHandler {
                     let _cancelable = crate::cancel::enter_cancelable();
                     let r = pred.train_worker(input, slot_sender.clone());
                     crate::log_writer::set_sync_prediction_id(None);
-                    r
+
+                    // Upgrade to Cancelled if the slot was marked cancelled
+                    // (same logic as sync predict above)
+                    match r {
+                        Err(_) if self.is_cancelled(slot) => {
+                            Err(coglet_core::PredictionError::Cancelled)
+                        }
+                        other => other,
+                    }
                 }
             }
             HandlerMode::Predict => {
@@ -515,7 +529,17 @@ impl PredictHandler for PythonPredictHandler {
                     let r = pred.predict_worker(input, slot_sender.clone());
                     tracing::trace!(%slot, %id, "predict_worker returned");
                     crate::log_writer::set_sync_prediction_id(None);
-                    r
+
+                    // If the prediction failed AND the slot was marked cancelled,
+                    // treat it as a cancellation. PyThreadState_SetAsyncExc injects
+                    // CancelationException which predict_worker sees as a generic
+                    // PyErr — we upgrade it to Cancelled here.
+                    match r {
+                        Err(_) if self.is_cancelled(slot) => {
+                            Err(coglet_core::PredictionError::Cancelled)
+                        }
+                        other => other,
+                    }
                 }
             }
         };
