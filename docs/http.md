@@ -422,7 +422,7 @@ Otherwise, the server responds with status `404 Not Found`.
 
 When a prediction is canceled,
 Cog raises [`CancelationException`](python.md#cancelationexception)
-in the model's `predict` function.
+in sync predictors (or `asyncio.CancelledError` in async predictors).
 This exception may be caught by the model to perform necessary cleanup.
 The cleanup should be brief, ideally completing within a few seconds.
 After cleanup, the exception must be re-raised using a bare `raise` statement.
