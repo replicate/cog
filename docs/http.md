@@ -421,21 +421,20 @@ the server responds with status `200 OK`.
 Otherwise, the server responds with status `404 Not Found`.
 
 When a prediction is canceled,
-Cog raises `cog.server.exceptions.CancelationException`
+Cog raises [`CancelationException`](python.md#cancelationexception)
 in the model's `predict` function.
 This exception may be caught by the model to perform necessary cleanup.
 The cleanup should be brief, ideally completing within a few seconds.
-After cleanup, the exception must be re-raised using a bare raise statement.
+After cleanup, the exception must be re-raised using a bare `raise` statement.
 Failure to re-raise the exception may result in the termination of the container.
 
 ```python
-from cog import Path
-from cog.server.exceptions import CancelationException
+from cog import CancelationException, Path
 
 def predict(image: Path) -> Path:
     try:
         return process(image)
-    except CancelationException as e:
-        cleanup() 
-        raise e
+    except CancelationException:
+        cleanup()
+        raise  # always re-raise
 ```
