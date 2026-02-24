@@ -48,7 +48,11 @@ pub enum SlotState {
     #[default]
     Idle,
     /// Sync prediction in progress
-    SyncPrediction { cancelled: bool },
+    SyncPrediction {
+        cancelled: bool,
+        /// Python thread identifier (for `PyThreadState_SetAsyncExc`)
+        py_thread_id: std::ffi::c_long,
+    },
     /// Async prediction in progress
     AsyncPrediction {
         /// Future for cancellation
@@ -60,7 +64,7 @@ pub enum SlotState {
 impl SlotState {
     pub fn is_cancelled(&self) -> bool {
         match self {
-            SlotState::SyncPrediction { cancelled } => *cancelled,
+            SlotState::SyncPrediction { cancelled, .. } => *cancelled,
             SlotState::AsyncPrediction { cancelled, .. } => *cancelled,
             SlotState::Idle => false,
         }
@@ -68,7 +72,7 @@ impl SlotState {
 
     pub fn mark_cancelled(&mut self) {
         match self {
-            SlotState::SyncPrediction { cancelled } => *cancelled = true,
+            SlotState::SyncPrediction { cancelled, .. } => *cancelled = true,
             SlotState::AsyncPrediction { cancelled, .. } => *cancelled = true,
             SlotState::Idle => { /* no-op */ }
         }
@@ -188,9 +192,18 @@ impl PythonPredictHandler {
     }
 
     /// Mark a slot as having a sync prediction in progress.
-    fn start_sync_prediction(&self, slot: SlotId) {
+    ///
+    /// `py_thread_id` is the Python thread identifier of the thread that will
+    /// run the prediction, for use with `PyThreadState_SetAsyncExc` on cancel.
+    fn start_sync_prediction(&self, slot: SlotId, py_thread_id: std::ffi::c_long) {
         let mut slots = self.slots.lock().expect("slots mutex poisoned");
-        slots.insert(slot, SlotState::SyncPrediction { cancelled: false });
+        slots.insert(
+            slot,
+            SlotState::SyncPrediction {
+                cancelled: false,
+                py_thread_id,
+            },
+        );
     }
 
     /// Mark a slot as having an async prediction in progress.
@@ -304,9 +317,12 @@ impl PredictHandler for PythonPredictHandler {
         let is_async = pred.is_async();
         tracing::trace!(%slot, %id, is_async, "Got predictor");
 
-        // Track that we're starting a prediction on this slot
-        // Note: we'll update with the actual future later if async
-        self.start_sync_prediction(slot);
+        // Track that we're starting a prediction on this slot.
+        // Capture the Python thread ID for this thread (used by
+        // PyThreadState_SetAsyncExc to inject CancelationException on cancel).
+        // For async predictions, the slot state is updated later with the future.
+        let py_thread_id = crate::cancel::current_py_thread_id();
+        self.start_sync_prediction(slot, py_thread_id);
 
         // Check cancellation first (in case cancel was called before we started)
         if self.take_cancelled(slot) {
@@ -525,12 +541,12 @@ impl PredictHandler for PythonPredictHandler {
                         tracing::trace!(%slot, "No async future to cancel (prediction may have completed)");
                     }
                 }
-                SlotState::SyncPrediction { .. } => {
+                SlotState::SyncPrediction { py_thread_id, .. } => {
+                    let py_thread_id = *py_thread_id;
                     drop(slots); // Release lock
-                    // Sync: send SIGUSR1 to interrupt Python code
-                    if let Err(e) = crate::cancel::send_cancel_signal() {
-                        tracing::warn!(%slot, error = %e, "Failed to send cancel signal");
-                    }
+                    // Sync: inject CancelationException into the Python thread
+                    // via PyThreadState_SetAsyncExc (fires at next bytecode boundary)
+                    crate::cancel::cancel_sync_thread(py_thread_id);
                 }
                 SlotState::Idle => {
                     // Already idle, nothing to cancel

@@ -369,42 +369,66 @@ async fn create_prediction_with_id(
         );
     }
 
-    // Sync mode: use sync guard for connection-drop cancellation
+    // Sync mode: spawn prediction into a background task so the slot lifetime
+    // is NOT tied to the HTTP connection. If the client disconnects, the
+    // SyncPredictionGuard fires cancel, but the slot/permit stays alive in the
+    // spawned task until the worker acknowledges the cancel.
     let mut sync_guard = handle.sync_guard();
 
-    let result = service.predict(unregistered_slot, input).await;
+    let service_bg = Arc::clone(&service);
+    let supervisor_bg = Arc::clone(supervisor);
+    let id_bg = prediction_id.clone();
+    let result_rx = {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let result = service_bg.predict(unregistered_slot, input).await;
+
+            match &result {
+                Ok(r) => {
+                    supervisor_bg.update_status(
+                        &id_bg,
+                        PredictionStatus::Succeeded,
+                        Some(serde_json::json!(r.output)),
+                        None,
+                    );
+                }
+                Err(PredictionError::Cancelled) => {
+                    supervisor_bg.update_status(&id_bg, PredictionStatus::Canceled, None, None);
+                }
+                Err(e) => {
+                    supervisor_bg.update_status(
+                        &id_bg,
+                        PredictionStatus::Failed,
+                        None,
+                        Some(e.to_string()),
+                    );
+                }
+            }
+
+            service_bg.unregister_prediction(&id_bg);
+            let _ = tx.send(result);
+        });
+        rx
+    };
+
+    // Wait for the prediction to complete. If the connection drops, axum
+    // cancels this future, dropping sync_guard which fires cancel.
+    let result = match result_rx.await {
+        Ok(r) => r,
+        Err(_) => {
+            // Background task panicked or was cancelled
+            Err(PredictionError::Failed("prediction task lost".to_string()))
+        }
+    };
+
     let predict_time = prediction
         .try_lock()
         .map(|p| p.elapsed())
         .unwrap_or(std::time::Duration::ZERO)
         .as_secs_f64();
 
-    // Disarm guard - prediction completed normally
+    // Disarm guard - prediction completed normally (connection still alive)
     sync_guard.disarm();
-
-    match &result {
-        Ok(r) => {
-            supervisor.update_status(
-                &prediction_id,
-                PredictionStatus::Succeeded,
-                Some(serde_json::json!(r.output)),
-                None,
-            );
-        }
-        Err(PredictionError::Cancelled) => {
-            supervisor.update_status(&prediction_id, PredictionStatus::Canceled, None, None);
-        }
-        Err(e) => {
-            supervisor.update_status(
-                &prediction_id,
-                PredictionStatus::Failed,
-                None,
-                Some(e.to_string()),
-            );
-        }
-    }
-
-    service.unregister_prediction(&prediction_id);
 
     match result {
         Ok(r) => (
@@ -690,6 +714,13 @@ mod tests {
                 let mut pred = prediction.lock().unwrap();
                 pred.set_succeeded(PredictionOutput::Single(serde_json::json!("mock output")));
             }
+        }
+
+        async fn cancel_by_prediction_id(
+            &self,
+            _prediction_id: &str,
+        ) -> Result<(), crate::orchestrator::OrchestratorError> {
+            Ok(())
         }
 
         async fn healthcheck(

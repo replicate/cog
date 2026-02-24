@@ -2,6 +2,7 @@
 
 import queue
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -412,6 +413,79 @@ class TestAsyncGeneratorPredictor:
             ]
 
 
+@pytest.fixture
+def slow_sync_predictor(tmp_path: Path) -> Path:
+    """Create a sync predictor that busy-loops (cancellable at bytecode boundaries)."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import time
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+
+    def predict(self, duration: float = 60.0) -> str:
+        # Busy-loop in Python (hits bytecode boundaries, so PyThreadState_SetAsyncExc works)
+        deadline = time.monotonic() + duration
+        while time.monotonic() < deadline:
+            pass
+        return "completed"
+""")
+
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
+def slow_async_predictor(tmp_path: Path) -> Path:
+    """Create an async predictor that sleeps for a long time (cancellable)."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+
+    async def predict(self, sleep_time: float = 60.0) -> str:
+        await asyncio.sleep(sleep_time)
+        return "completed"
+""")
+
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+def _wait_for_health_status(
+    server: "CogletServer", status: str, timeout: float = 5.0
+) -> None:
+    """Poll health check until the expected status is reached, or fail."""
+    deadline = time.time() + timeout
+    last_status = "<unknown>"
+    while time.time() < deadline:
+        health = server.health_check()
+        last_status = health["status"]
+        if last_status == status:
+            return
+        time.sleep(0.1)
+    stderr = "".join(server.stderr_lines)
+    pytest.fail(
+        f"Server did not reach status {status!r} within {timeout}s\n"
+        f"Last status: {last_status!r}\n"
+        f"STDERR:\n{stderr}"
+    )
+
+
 class TestCancellation:
     """Tests for prediction cancellation."""
 
@@ -429,3 +503,79 @@ class TestCancellation:
             result = server.predict({"name": "test"})
             assert "id" in result
             assert result["id"].startswith("pred_")
+
+    def test_cancel_running_sync_prediction(self, slow_sync_predictor: Path):
+        """Test that cancelling a running sync prediction actually terminates it."""
+        with CogletServer(slow_sync_predictor) as server:
+            # Start a long-running prediction asynchronously
+            prediction_id = "cancel-sync-test"
+            resp = requests.put(
+                f"{server.base_url}/predictions/{prediction_id}",
+                json={"input": {"duration": 60.0}},
+                headers={"Prefer": "respond-async"},
+            )
+            assert resp.status_code == 202
+
+            # Wait for the prediction to actually be processing (slot occupied)
+            _wait_for_health_status(server, "BUSY", timeout=5.0)
+
+            # Cancel the prediction
+            cancel_resp = requests.post(
+                f"{server.base_url}/predictions/{prediction_id}/cancel"
+            )
+            assert cancel_resp.status_code == 200
+
+            # Wait for the server to return to READY (slot freed after cancel)
+            _wait_for_health_status(server, "READY", timeout=10.0)
+
+    def test_cancel_running_async_prediction(self, slow_async_predictor: Path):
+        """Test that cancelling a running async prediction actually terminates it."""
+        with CogletServer(slow_async_predictor) as server:
+            # Start a long-running async prediction
+            prediction_id = "cancel-async-test"
+            resp = requests.put(
+                f"{server.base_url}/predictions/{prediction_id}",
+                json={"input": {"sleep_time": 60.0}},
+                headers={"Prefer": "respond-async"},
+            )
+            assert resp.status_code == 202
+
+            # Wait for the prediction to actually be processing (slot occupied)
+            _wait_for_health_status(server, "BUSY", timeout=5.0)
+
+            # Cancel the prediction
+            cancel_resp = requests.post(
+                f"{server.base_url}/predictions/{prediction_id}/cancel"
+            )
+            assert cancel_resp.status_code == 200
+
+            # Wait for the server to return to READY (slot freed after cancel)
+            _wait_for_health_status(server, "READY", timeout=10.0)
+
+    def test_cancel_sync_prediction_connection_drop(self, slow_sync_predictor: Path):
+        """Test that dropping a sync connection cancels the prediction."""
+        with CogletServer(slow_sync_predictor) as server:
+            # Start a sync (non-async) prediction with a short timeout
+            # The connection drop should trigger cancellation via SyncPredictionGuard
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect(("localhost", server.port))
+
+            request_body = '{"input": {"duration": 60.0}}'
+            http_request = (
+                f"POST /predictions HTTP/1.1\r\n"
+                f"Host: localhost:{server.port}\r\n"
+                f"Content-Type: application/json\r\n"
+                f"Content-Length: {len(request_body)}\r\n"
+                f"\r\n"
+                f"{request_body}"
+            )
+            sock.sendall(http_request.encode())
+
+            # Wait for the prediction to be processing (slot occupied)
+            _wait_for_health_status(server, "BUSY", timeout=5.0)
+
+            # Drop the connection abruptly
+            sock.close()
+
+            # Wait for the server to return to READY (slot freed after cancel)
+            _wait_for_health_status(server, "READY", timeout=10.0)
