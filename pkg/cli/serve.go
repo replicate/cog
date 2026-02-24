@@ -24,7 +24,19 @@ func newServeCommand() *cobra.Command {
 		Short: "Run a prediction HTTP server",
 		Long: `Run a prediction HTTP server.
 
-Generate and run an HTTP server based on the declared model inputs and outputs.`,
+Builds the model and starts an HTTP server that exposes the model's inputs
+and outputs as a REST API. Compatible with the Cog HTTP protocol.`,
+		Example: `  # Start the server on the default port (8393)
+  cog serve
+
+  # Start on a custom port
+  cog serve -p 5000
+
+  # Test the server
+  curl http://localhost:8393/predictions \
+    -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"prompt": "a cat"}}'`,
 		RunE:       cmdServe,
 		Args:       cobra.MaximumNArgs(0),
 		SuggestFor: []string{"http"},

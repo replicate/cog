@@ -32,8 +32,24 @@ const useCogBaseImageFlagKey = "use-cog-base-image"
 
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "build",
-		Short:   "Build an image from cog.yaml",
+		Use:   "build",
+		Short: "Build an image from cog.yaml",
+		Long: `Build a Docker image from the cog.yaml in the current directory.
+
+The generated image contains your model code, dependencies, and the Cog
+runtime. It can be run locally with 'cog predict' or pushed to a registry
+with 'cog push'.`,
+		Example: `  # Build with default settings
+  cog build
+
+  # Build and tag the image
+  cog build -t my-model:latest
+
+  # Build without using the cache
+  cog build --no-cache
+
+  # Build with model weights in a separate layer
+  cog build --separate-weights -t my-model:v1`,
 		Args:    cobra.NoArgs,
 		RunE:    buildCommand,
 		PreRunE: checkMutuallyExclusiveFlags,
