@@ -134,6 +134,15 @@ The main commands for working on the CLI are:
 - `mise run test:go` - Runs all Go unit tests
 - `go test ./pkg/...` - Runs tests directly with `go test`
 
+### Building and running Go binaries
+
+**Never run `go build` and leave a binary in the repo.** Stray binaries bloat the repo and get accidentally committed. Follow these rules:
+
+- **To test execution**, use `go run ./cmd/<name>` — no binary is produced.
+- **To verify compilation**, use `go build ./cmd/<name>` (without `-o`) — this still writes a binary to the working directory, so prefer `go vet ./cmd/<name>` for a compile check that produces no artifact.
+- **If you must produce a binary** (e.g. for integration tests), write it to a temp directory and clean up: `go build -o "$(mktemp -d)/binary" ./cmd/<name>`.
+- **For installable builds**, use `mise run build:cog` or `make install` — these have proper output paths.
+
 ## Working on the Python SDK
 The Python SDK is developed in the `python/cog/` directory. It uses `uv` for virtual environments and `tox` for testing across multiple Python versions.
 
