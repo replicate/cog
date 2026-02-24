@@ -69,6 +69,69 @@ func Build(
 		return "", err
 	}
 
+	// --- Schema generation (before Docker build) ---
+	// Generate schema from local source files using cog-schema-gen.
+	// This happens before the Docker build so we fail fast on schema errors
+	// and so the schema file is available in the build context.
+	var schemaJSON []byte
+	switch {
+	case skipSchemaValidation:
+		console.Debug("Skipping model schema validation")
+	case schemaFile != "":
+		console.Infof("Validating model schema from %s...", schemaFile)
+		data, err := os.ReadFile(schemaFile)
+		if err != nil {
+			return "", fmt.Errorf("Failed to read schema file: %w", err)
+		}
+
+		schemaJSON = data
+	default:
+		console.Info("Generating model schema...")
+
+		// Determine predictor ref and mode from config.
+		// Prefer predict, fall back to train (mirrors Python openapi_schema.py).
+		predictRef := cfg.Predict
+		mode := "predict"
+		if predictRef == "" {
+			predictRef = cfg.Train
+			mode = "train"
+		}
+		if predictRef == "" {
+			return "", fmt.Errorf("No predict or train reference found in cog.yaml")
+		}
+
+		schema, err := schemagen.Generate(ctx, dir, predictRef, mode)
+		if err != nil {
+			return "", fmt.Errorf("Failed to generate schema: %w", err)
+		}
+
+		data, err := json.Marshal(schema)
+		if err != nil {
+			return "", fmt.Errorf("Failed to convert schema to JSON: %w", err)
+		}
+
+		schemaJSON = data
+	}
+
+	if !skipSchemaValidation {
+		// Write schema file and validate OpenAPI spec
+		if err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644); err != nil {
+			return "", fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
+		}
+
+		loader := openapi3.NewLoader()
+		loader.IsExternalRefsAllowed = true
+		doc, err := loader.LoadFromData(schemaJSON)
+		if err != nil {
+			return "", fmt.Errorf("Failed to load model schema JSON: %w", err)
+		}
+		err = doc.Validate(loader.Context)
+		if err != nil {
+			return "", fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
+		}
+	}
+
+	// --- Docker build ---
 	var cogBaseImageName string
 
 	tmpImageId := imageName
@@ -193,64 +256,6 @@ func Build(
 			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 				return "", fmt.Errorf("Failed to build Docker image: %w", err)
 			}
-		}
-	}
-
-	var schemaJSON []byte
-	switch {
-	case skipSchemaValidation:
-		console.Debug("Skipping model schema validation")
-	case schemaFile != "":
-		console.Infof("Validating model schema from %s...", schemaFile)
-		data, err := os.ReadFile(schemaFile)
-		if err != nil {
-			return "", fmt.Errorf("Failed to read schema file: %w", err)
-		}
-
-		schemaJSON = data
-	default:
-		console.Info("Validating model schema...")
-
-		// Determine predictor ref and mode from config.
-		// Prefer predict, fall back to train (mirrors Python openapi_schema.py).
-		predictRef := cfg.Predict
-		mode := "predict"
-		if predictRef == "" {
-			predictRef = cfg.Train
-			mode = "train"
-		}
-		if predictRef == "" {
-			return "", fmt.Errorf("No predict or train reference found in cog.yaml")
-		}
-
-		schema, err := schemagen.Generate(ctx, dir, predictRef, mode)
-		if err != nil {
-			return "", fmt.Errorf("Failed to generate schema: %w", err)
-		}
-
-		data, err := json.Marshal(schema)
-		if err != nil {
-			return "", fmt.Errorf("Failed to convert schema to JSON: %w", err)
-		}
-
-		schemaJSON = data
-	}
-
-	if !skipSchemaValidation {
-		// save open_api schema file
-		if err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644); err != nil {
-			return "", fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
-		}
-
-		loader := openapi3.NewLoader()
-		loader.IsExternalRefsAllowed = true
-		doc, err := loader.LoadFromData(schemaJSON)
-		if err != nil {
-			return "", fmt.Errorf("Failed to load model schema JSON: %w", err)
-		}
-		err = doc.Validate(loader.Context)
-		if err != nil {
-			return "", fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
 		}
 	}
 

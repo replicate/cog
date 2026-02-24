@@ -333,6 +333,42 @@ pub trait PredictHandler: Send + Sync + 'static {
     }
 }
 
+/// Path to the pre-built OpenAPI schema file inside the container.
+/// Written by `cog-schema-gen` during `cog build` and COPYed into the image.
+const BUNDLED_SCHEMA_PATH: &str = ".cog/openapi_schema.json";
+
+/// Load the bundled OpenAPI schema from disk.
+///
+/// Returns `Some(schema)` if the file exists and parses correctly.
+/// Returns `None` if missing or unparseable — the predictor will accept
+/// any input without schema validation.
+fn load_bundled_schema() -> Option<serde_json::Value> {
+    let path = std::path::Path::new(BUNDLED_SCHEMA_PATH);
+    match std::fs::read_to_string(path) {
+        Ok(contents) => match serde_json::from_str(&contents) {
+            Ok(schema) => {
+                tracing::info!("Loaded OpenAPI schema from {}", BUNDLED_SCHEMA_PATH);
+                Some(schema)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse {}: {}. Running without schema — all input types accepted.",
+                    BUNDLED_SCHEMA_PATH, e,
+                );
+                None
+            }
+        },
+        Err(_) => {
+            tracing::warn!(
+                "No schema file at {}. Running without schema — all input types accepted. \
+                 Rebuild with a recent version of cog to generate the schema.",
+                BUNDLED_SCHEMA_PATH,
+            );
+            None
+        }
+    }
+}
+
 /// The outcome of a prediction
 #[derive(Debug, Clone, PartialEq)]
 pub enum PredictionOutcome {
@@ -536,15 +572,16 @@ pub async fn run_worker<H: PredictHandler>(
         return Ok(());
     }
 
-    // Send Ready with slot IDs and schema
-    let schema = handler.schema();
+    // Load the pre-built schema from .cog/openapi_schema.json (written by cog-schema-gen
+    // during `cog build`). No runtime generation — if the file doesn't exist, no schema.
+    let schema = load_bundled_schema();
     if let Some(ref s) = schema {
         let schema_json = serde_json::to_string(s).unwrap_or_else(|_| "{}".to_string());
         let schema_size = schema_json.len();
         tracing::info!(
             schema_size_bytes = schema_size,
             schema_size_kb = schema_size / 1024,
-            "Schema generated"
+            "Schema loaded"
         );
         if schema_size > 1024 * 1024 {
             // Log first 500 chars if schema is >1MB
