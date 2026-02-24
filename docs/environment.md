@@ -4,9 +4,9 @@ This guide lists the environment variables that change how Cog functions.
 
 ## Build-time variables
 
-### `COG_WHEEL`
+### `COG_SDK_WHEEL`
 
-Controls which cog Python SDK wheel is installed in the Docker image during `cog build`.
+Controls which cog Python SDK wheel is installed in the Docker image during `cog build`. Takes precedence over `build.sdk_version` in `cog.yaml`.
 
 **Supported values:**
 
@@ -20,20 +20,20 @@ Controls which cog Python SDK wheel is installed in the Docker image during `cog
 
 **Default behavior:**
 
-- **Release builds**: Installs matching version from PyPI (e.g., cog CLI v0.12.0 installs cog==0.12.0)
+- **Release builds**: Installs latest cog from PyPI
 - **Development builds**: Auto-detects wheel in `dist/` directory, falls back to latest PyPI
 
 **Examples:**
 
 ```console
 # Use specific PyPI version
-$ COG_WHEEL=pypi:0.11.0 cog build
+$ COG_SDK_WHEEL=pypi:0.11.0 cog build
 
 # Use local development wheel
-$ COG_WHEEL=dist cog build
+$ COG_SDK_WHEEL=dist cog build
 
 # Use wheel from URL
-$ COG_WHEEL=https://example.com/cog-0.12.0-py3-none-any.whl cog build
+$ COG_SDK_WHEEL=https://example.com/cog-0.12.0-py3-none-any.whl cog build
 ```
 
 The `dist` option searches for wheels in:
@@ -45,9 +45,9 @@ The `dist` option searches for wheels in:
 
 Controls which coglet wheel is installed in the Docker image. Coglet is the Rust-based prediction server.
 
-**Supported values:** Same as `COG_WHEEL`
+**Supported values:** Same as `COG_SDK_WHEEL`
 
-**Default behavior:** For development builds, auto-detects a wheel in `dist/`. For release builds, installs the matching version from PyPI. Can be overridden with an explicit value.
+**Default behavior:** For development builds, auto-detects a wheel in `dist/`. For release builds, installs the latest version from PyPI. Can be overridden with an explicit value.
 
 **Examples:**
 

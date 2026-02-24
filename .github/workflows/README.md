@@ -263,9 +263,9 @@ All packages use **lockstep versioning** from `crates/Cargo.toml`.
 
 The CLI installs the cog SDK from PyPI at container build time:
 
-| Scenario | COG_WHEEL env var | Behavior |
-|----------|-------------------|----------|
-| Released CLI | (unset) | Install `cog==<version>` from PyPI |
+| Scenario | COG_SDK_WHEEL env var | Behavior |
+|----------|-----------------------|----------|
+| Released CLI | (unset) | Install latest `cog` from PyPI |
 | Dev CLI (in repo) | (unset) | Auto-detect `dist/cog-*.whl` if present, else PyPI |
 | Force PyPI | `pypi` | Install latest from PyPI |
 | Specific version | `pypi:0.12.0` | Install `cog==0.12.0` from PyPI |

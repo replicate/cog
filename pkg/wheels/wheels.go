@@ -10,9 +10,48 @@ import (
 	"strings"
 
 	"github.com/replicate/cog/pkg/global"
+	cogversion "github.com/replicate/cog/pkg/util/version"
 )
 
 var semverPreReleaseRe = regexp.MustCompile(`-alpha(\d+)|-beta(\d+)|-rc(\d+)|-dev(\d*)`)
+
+// pep440PreReleaseRe matches PEP 440 pre-release identifiers (a1, b2, rc1, .dev1)
+var pep440PreReleaseRe = regexp.MustCompile(`\d(a|b|rc|\.dev)\d`)
+
+// IsPreRelease returns true if the version string contains a pre-release identifier
+// in either semver (-alpha1, -beta2, -rc1, -dev1) or PEP 440 (a1, b2, rc1, .dev1) format.
+func IsPreRelease(version string) bool {
+	return semverPreReleaseRe.MatchString(version) || pep440PreReleaseRe.MatchString(version)
+}
+
+// MinimumSDKVersion is the minimum cog SDK version that can be explicitly requested.
+// Versions older than this lack features required by the current CLI.
+const MinimumSDKVersion = "0.16.0"
+
+// baseVersionRe extracts the MAJOR.MINOR.PATCH prefix, ignoring pre-release suffixes.
+var baseVersionRe = regexp.MustCompile(`^(\d+\.\d+\.\d+)`)
+
+// ValidateSDKVersion checks that a PyPI WheelConfig does not request a version
+// older than MinimumSDKVersion. Non-PyPI sources, unpinned versions, and nil
+// configs are always valid.
+func ValidateSDKVersion(config *WheelConfig, label string) error {
+	if config == nil || config.Source != WheelSourcePyPI || config.Version == "" {
+		return nil
+	}
+	base := config.Version
+	if m := baseVersionRe.FindString(base); m != "" {
+		base = m
+	}
+	reqVer, err := cogversion.NewVersion(base)
+	if err != nil {
+		return nil // unparseable — let pip catch real problems
+	}
+	minVer := cogversion.MustVersion(MinimumSDKVersion)
+	if reqVer.GreaterOrEqual(minVer) {
+		return nil
+	}
+	return fmt.Errorf("%s version %s is below the minimum required version %s", label, config.Version, MinimumSDKVersion)
+}
 
 // WheelSource represents the source type for the wheel to install
 type WheelSource int
@@ -52,8 +91,8 @@ type WheelConfig struct {
 	Version string
 }
 
-// CogWheelEnvVar is the environment variable name for cog SDK wheel selection
-const CogWheelEnvVar = "COG_WHEEL"
+// CogSDKWheelEnvVar is the environment variable name for cog SDK wheel selection
+const CogSDKWheelEnvVar = "COG_SDK_WHEEL"
 
 // CogletWheelEnvVar is the environment variable name for coglet wheel selection
 const CogletWheelEnvVar = "COGLET_WHEEL"
@@ -222,19 +261,19 @@ func resolveWheelPath(path string, pattern string, platform string, envVar strin
 // ResolveCogWheel resolves the WheelConfig for the cog SDK.
 //
 // Parameters:
-//   - envValue: value of COG_WHEEL env var (empty string if not set)
+//   - envValue: value of COG_SDK_WHEEL env var (empty string if not set)
 //   - version: the CLI version (e.g. "dev", "0.17.0", "0.17.0-alpha1")
 //
 // Resolution order:
 //  1. envValue (if non-empty, explicit override)
 //  2. Auto-detect: check dist/cog-*.whl (for development builds only)
-//  3. Default: PyPI (with version pin for release builds)
+//  3. Default: PyPI latest (use build.sdk_version in cog.yaml to pin)
 func ResolveCogWheel(envValue string, version string) (*WheelConfig, error) {
 	// Check explicit env var first
 	if config := ParseWheelValue(envValue); config != nil {
 		if config.Source == WheelSourceFile {
 			// cog SDK is pure Python (py3-none-any), no platform filtering needed
-			resolved, err := resolveWheelPath(config.Path, "cog-*.whl", "", CogWheelEnvVar)
+			resolved, err := resolveWheelPath(config.Path, "cog-*.whl", "", CogSDKWheelEnvVar)
 			if err != nil {
 				return nil, err
 			}
@@ -252,18 +291,14 @@ func ResolveCogWheel(envValue string, version string) (*WheelConfig, error) {
 		}
 	}
 
-	// Default: PyPI
-	config := &WheelConfig{Source: WheelSourcePyPI}
-	if !isDev {
-		config.Version = version
-	}
-	return config, nil
+	// Default: PyPI (always latest; use sdk_version in cog.yaml to pin)
+	return &WheelConfig{Source: WheelSourcePyPI}, nil
 }
 
-// GetCogWheelConfig is a convenience wrapper that reads COG_WHEEL from the environment
+// GetCogWheelConfig is a convenience wrapper that reads COG_SDK_WHEEL from the environment
 // and version from global.Version.
 func GetCogWheelConfig() (*WheelConfig, error) {
-	return ResolveCogWheel(os.Getenv(CogWheelEnvVar), global.Version)
+	return ResolveCogWheel(os.Getenv(CogSDKWheelEnvVar), global.Version)
 }
 
 // ResolveCogletWheel resolves the WheelConfig for coglet.
@@ -274,7 +309,7 @@ func GetCogWheelConfig() (*WheelConfig, error) {
 // Resolution order:
 //  1. envValue (COGLET_WHEEL) if non-empty — explicit override
 //  2. Auto-detect: check ./dist for coglet-*.whl (development builds only)
-//  3. Default: PyPI (with version pinned for release builds)
+//  3. Default: PyPI latest (use COGLET_WHEEL=pypi:x.y.z to pin)
 //
 // Coglet is always required. Returns a valid config or an error.
 // The platform parameter is a GOARCH value (e.g. "amd64", "arm64") used to select
@@ -301,12 +336,8 @@ func ResolveCogletWheel(envValue string, version string, platform string) (*Whee
 		}
 	}
 
-	// Default: PyPI
-	config := &WheelConfig{Source: WheelSourcePyPI}
-	if !isDev {
-		config.Version = version
-	}
-	return config, nil
+	// Default: PyPI (always latest; use COGLET_WHEEL=pypi:x.y.z to pin)
+	return &WheelConfig{Source: WheelSourcePyPI}, nil
 }
 
 // GetCogletWheelConfig is a convenience wrapper that reads COGLET_WHEEL from the environment

@@ -25,8 +25,24 @@ func addGpusFlag(cmd *cobra.Command) {
 
 func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "run <command> [arg...]",
-		Short:   "Run a command inside a Docker environment",
+		Use:   "run <command> [arg...]",
+		Short: "Run a command inside a Docker environment",
+		Long: `Run a command inside a Docker environment defined by cog.yaml.
+
+Cog builds a temporary image from your cog.yaml configuration and runs the
+given command inside it. This is useful for debugging, running scripts, or
+exploring the environment your model will run in.`,
+		Example: `  # Open a Python interpreter inside the model environment
+  cog run python
+
+  # Run a script
+  cog run python train.py
+
+  # Run with environment variables
+  cog run -e HUGGING_FACE_HUB_TOKEN=abc123 python download.py
+
+  # Expose a port (e.g. for Jupyter)
+  cog run -p 8888 jupyter notebook`,
 		RunE:    run,
 		PreRunE: checkMutuallyExclusiveFlags,
 		Args:    cobra.MinimumNArgs(1),

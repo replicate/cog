@@ -880,11 +880,14 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
+	// coglet in python_packages is stripped — the build system always installs coglet
+	// via installCog(), which runs before pip requirements.
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
+` + testInstallCog(true) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
@@ -898,12 +901,12 @@ COPY . /src`
 
 	require.Equal(t, expected, actual)
 
+	// coglet URL is stripped from requirements — build system installs coglet itself
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
 torch==2.3.1
-pandas==2.0.3
-coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha31/coglet-0.1.0a31-py3-none-any.whl`, string(requirements))
+pandas==2.0.3`, string(requirements))
 }
 
 func TestCOGWheelDefault(t *testing.T) {
@@ -935,8 +938,8 @@ predict: predict.py:Predictor
 }
 
 func TestCOGWheelEnvPyPI(t *testing.T) {
-	// COG_WHEEL=pypi should install from PyPI
-	t.Setenv("COG_WHEEL", "pypi")
+	// COG_SDK_WHEEL=pypi should install from PyPI
+	t.Setenv("COG_SDK_WHEEL", "pypi")
 
 	tmpDir := t.TempDir()
 
@@ -963,8 +966,8 @@ predict: predict.py:Predictor
 }
 
 func TestCOGWheelEnvPyPIWithVersion(t *testing.T) {
-	// COG_WHEEL=pypi:0.12.0 should install specific version from PyPI
-	t.Setenv("COG_WHEEL", "pypi:0.12.0")
+	// COG_SDK_WHEEL=pypi:0.17.0 should install specific version from PyPI
+	t.Setenv("COG_SDK_WHEEL", "pypi:0.17.0")
 
 	tmpDir := t.TempDir()
 
@@ -986,14 +989,14 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain uv pip install cog==0.12.0 from PyPI
-	require.Contains(t, actual, "uv pip install --no-cache cog==0.12.0")
+	// Should contain uv pip install cog==0.17.0 from PyPI
+	require.Contains(t, actual, "uv pip install --no-cache cog==0.17.0")
 }
 
 func TestCOGWheelEnvURL(t *testing.T) {
-	// COG_WHEEL=https://... should install from URL
+	// COG_SDK_WHEEL=https://... should install from URL
 	customURL := "https://example.com/custom-wheel-0.1.0.whl"
-	t.Setenv("COG_WHEEL", customURL)
+	t.Setenv("COG_SDK_WHEEL", customURL)
 
 	tmpDir := t.TempDir()
 
@@ -1020,7 +1023,7 @@ predict: predict.py:Predictor
 }
 
 func TestCOGWheelEnvFile(t *testing.T) {
-	// COG_WHEEL=/path/to/file.whl should install from local file
+	// COG_SDK_WHEEL=/path/to/file.whl should install from local file
 	tmpDir := t.TempDir()
 
 	// Create a mock wheel file
@@ -1028,7 +1031,7 @@ func TestCOGWheelEnvFile(t *testing.T) {
 	err := os.WriteFile(wheelPath, []byte("mock wheel content"), 0o644)
 	require.NoError(t, err)
 
-	t.Setenv("COG_WHEEL", wheelPath)
+	t.Setenv("COG_SDK_WHEEL", wheelPath)
 
 	yaml := `
 build:
@@ -1050,4 +1053,132 @@ predict: predict.py:Predictor
 
 	// Should contain uv pip install from temp path (copied into container)
 	require.Contains(t, actual, "uv pip install --no-cache /tmp/test-cog-0.1.0-py3-none-any.whl")
+}
+
+func TestCogletAlwaysInstalledWhenInRequirements(t *testing.T) {
+	tmpDir := t.TempDir()
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  python_packages:
+    - "coglet==0.1.0"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+	dockerfile, err := gen.GenerateInitialSteps(t.Context())
+	require.NoError(t, err)
+	// coglet must be installed by the build system (not skipped)
+	require.Contains(t, dockerfile, "uv pip install")
+	require.Contains(t, dockerfile, "coglet")
+	// the user-supplied coglet==0.1.0 must be stripped from requirements
+	require.NotContains(t, dockerfile, "coglet==0.1.0")
+}
+
+func TestInstallCogWithSDKVersion(t *testing.T) {
+	// build.sdk_version pins the cog SDK version installed from PyPI
+	tmpDir := t.TempDir()
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  sdk_version: "0.18.0"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	require.NoError(t, err)
+	// Only pin coglet to PyPI; leave cog to come from config sdk_version
+	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
+	gen.SetUseCogBaseImage(false)
+
+	dockerfile, err := gen.GenerateInitialSteps(t.Context())
+	require.NoError(t, err)
+	require.Contains(t, dockerfile, "uv pip install --no-cache cog==0.18.0")
+	// No --pre flag for stable release
+	require.NotContains(t, dockerfile, "--pre")
+}
+
+func TestInstallCogWithPreReleaseSDKVersion(t *testing.T) {
+	// build.sdk_version with a pre-release version adds --pre to both cog and coglet installs
+	tmpDir := t.TempDir()
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  sdk_version: "0.18.0a1"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	require.NoError(t, err)
+	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
+	gen.SetUseCogBaseImage(false)
+
+	dockerfile, err := gen.GenerateInitialSteps(t.Context())
+	require.NoError(t, err)
+	// cog install should have --pre and pinned version
+	require.Contains(t, dockerfile, "uv pip install --pre --no-cache cog==0.18.0a1")
+	// coglet install should also have --pre (sdk pre-release implies coglet pre-release)
+	require.Contains(t, dockerfile, "uv pip install --pre --no-cache coglet")
+}
+
+func TestInstallCogSDKVersionBelowMinimum(t *testing.T) {
+	// build.sdk_version below MinimumSDKVersion should return an error
+	tmpDir := t.TempDir()
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  sdk_version: "0.15.0"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	require.NoError(t, err)
+	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
+	gen.SetUseCogBaseImage(false)
+
+	_, err = gen.GenerateInitialSteps(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "0.15.0")
+	require.Contains(t, err.Error(), "minimum required version")
+}
+
+func TestCOGSDKWheelEnvVarOverridesSDKVersion(t *testing.T) {
+	// COG_SDK_WHEEL env var overrides build.sdk_version
+	t.Setenv("COG_SDK_WHEEL", "pypi:0.17.0")
+	tmpDir := t.TempDir()
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  sdk_version: "0.18.0"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	require.NoError(t, err)
+	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
+	gen.SetUseCogBaseImage(false)
+
+	dockerfile, err := gen.GenerateInitialSteps(t.Context())
+	require.NoError(t, err)
+	// env var wins: should install 0.17.0, not 0.18.0
+	require.Contains(t, dockerfile, "uv pip install --no-cache cog==0.17.0")
+	require.NotContains(t, dockerfile, "cog==0.18.0")
 }

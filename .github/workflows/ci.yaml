@@ -746,7 +746,7 @@ jobs:
         run: |
           # Use locally-built wheels, not PyPI (version may not be published yet)
           # Must use absolute paths — cog subprocess runs from txtar workdir, not checkout root
-          echo "COG_WHEEL=${{ github.workspace }}/dist" >> $GITHUB_ENV
+          echo "COG_SDK_WHEEL=${{ github.workspace }}/dist" >> $GITHUB_ENV
           echo "COGLET_WHEEL=${{ github.workspace }}/dist" >> $GITHUB_ENV
       - name: Run integration tests (shard ${{ matrix.shard.index }}, ${{ matrix.shard.count }} tests)
         env:
