@@ -1,20 +1,20 @@
 # Test wheel resolution from environment variables
 #
-# This test verifies that COG_WHEEL and COGLET_WHEEL environment variables
+# This test verifies that COG_SDK_WHEEL and COGLET_WHEEL environment variables
 # correctly resolve wheel paths, including:
-# - COG_WHEEL pointing to a directory resolves wheels inside it
+# - COG_SDK_WHEEL pointing to a directory resolves wheels inside it
 # - Clear errors when wheel not found
 #
 # Note: Tests run from a temp directory, so we use $REPO_ROOT/dist
 # (an absolute path exported by the test harness) to find wheels.
 
-# Test 1: COG_WHEEL pointing to repo dist/ directory finds wheel
-env COG_WHEEL=$REPO_ROOT/dist
+# Test 1: COG_SDK_WHEEL pointing to repo dist/ directory finds wheel
+env COG_SDK_WHEEL=$REPO_ROOT/dist
 cog build -t $TEST_IMAGE
 stderr 'Using local cog wheel:'
 
 # Test 2: Relative path that doesn't exist gives clear error  
-env COG_WHEEL=./nonexistent/wheel.whl
+env COG_SDK_WHEEL=./nonexistent/wheel.whl
 ! cog build -t $TEST_IMAGE
 stderr 'path not found'
 

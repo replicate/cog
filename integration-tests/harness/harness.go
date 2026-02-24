@@ -30,7 +30,7 @@ import (
 // into testscript environments (Setup) and background processes (cmdCogServe).
 // Keep this list in sync: if you add a new env var to propagate, add it here.
 var propagatedEnvVars = []string{
-	"COG_WHEEL",         // SDK wheel override
+	"COG_SDK_WHEEL",     // SDK wheel override
 	"COGLET_WHEEL",      // coglet wheel override
 	"RUST_LOG",          // Rust logging control
 	"COG_CA_CERT",       // custom CA certificates (e.g. Cloudflare WARP)

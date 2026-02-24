@@ -546,7 +546,7 @@ func (g *StandardGenerator) installCogFromPyPI(config *wheels.WheelConfig) (stri
 	return strings.Join(lines, "\n"), nil
 }
 
-// installWheelFromURL installs a wheel from a URL (when COG_WHEEL=https://...)
+// installWheelFromURL installs a wheel from a URL (when COG_SDK_WHEEL=https://...)
 func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
 	// Set coglet env vars if this looks like a coglet wheel
 	var envLines []string
@@ -576,7 +576,7 @@ func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
 	return strings.Join(envLines, "\n"), nil
 }
 
-// installWheelFromFile installs a wheel from a local file (when COG_WHEEL=/path/to/file.whl)
+// installWheelFromFile installs a wheel from a local file (when COG_SDK_WHEEL=/path/to/file.whl)
 func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 	// Read the local wheel file
 	data, err := os.ReadFile(path)

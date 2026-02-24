@@ -935,8 +935,8 @@ predict: predict.py:Predictor
 }
 
 func TestCOGWheelEnvPyPI(t *testing.T) {
-	// COG_WHEEL=pypi should install from PyPI
-	t.Setenv("COG_WHEEL", "pypi")
+	// COG_SDK_WHEEL=pypi should install from PyPI
+	t.Setenv("COG_SDK_WHEEL", "pypi")
 
 	tmpDir := t.TempDir()
 
@@ -963,8 +963,8 @@ predict: predict.py:Predictor
 }
 
 func TestCOGWheelEnvPyPIWithVersion(t *testing.T) {
-	// COG_WHEEL=pypi:0.12.0 should install specific version from PyPI
-	t.Setenv("COG_WHEEL", "pypi:0.12.0")
+	// COG_SDK_WHEEL=pypi:0.12.0 should install specific version from PyPI
+	t.Setenv("COG_SDK_WHEEL", "pypi:0.12.0")
 
 	tmpDir := t.TempDir()
 
@@ -991,9 +991,9 @@ predict: predict.py:Predictor
 }
 
 func TestCOGWheelEnvURL(t *testing.T) {
-	// COG_WHEEL=https://... should install from URL
+	// COG_SDK_WHEEL=https://... should install from URL
 	customURL := "https://example.com/custom-wheel-0.1.0.whl"
-	t.Setenv("COG_WHEEL", customURL)
+	t.Setenv("COG_SDK_WHEEL", customURL)
 
 	tmpDir := t.TempDir()
 
@@ -1020,7 +1020,7 @@ predict: predict.py:Predictor
 }
 
 func TestCOGWheelEnvFile(t *testing.T) {
-	// COG_WHEEL=/path/to/file.whl should install from local file
+	// COG_SDK_WHEEL=/path/to/file.whl should install from local file
 	tmpDir := t.TempDir()
 
 	// Create a mock wheel file
@@ -1028,7 +1028,7 @@ func TestCOGWheelEnvFile(t *testing.T) {
 	err := os.WriteFile(wheelPath, []byte("mock wheel content"), 0o644)
 	require.NoError(t, err)
 
-	t.Setenv("COG_WHEEL", wheelPath)
+	t.Setenv("COG_SDK_WHEEL", wheelPath)
 
 	yaml := `
 build:

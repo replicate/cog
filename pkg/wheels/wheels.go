@@ -52,8 +52,8 @@ type WheelConfig struct {
 	Version string
 }
 
-// CogWheelEnvVar is the environment variable name for cog SDK wheel selection
-const CogWheelEnvVar = "COG_WHEEL"
+// CogSDKWheelEnvVar is the environment variable name for cog SDK wheel selection
+const CogSDKWheelEnvVar = "COG_SDK_WHEEL"
 
 // CogletWheelEnvVar is the environment variable name for coglet wheel selection
 const CogletWheelEnvVar = "COGLET_WHEEL"
@@ -222,7 +222,7 @@ func resolveWheelPath(path string, pattern string, platform string, envVar strin
 // ResolveCogWheel resolves the WheelConfig for the cog SDK.
 //
 // Parameters:
-//   - envValue: value of COG_WHEEL env var (empty string if not set)
+//   - envValue: value of COG_SDK_WHEEL env var (empty string if not set)
 //   - version: the CLI version (e.g. "dev", "0.17.0", "0.17.0-alpha1")
 //
 // Resolution order:
@@ -234,7 +234,7 @@ func ResolveCogWheel(envValue string, version string) (*WheelConfig, error) {
 	if config := ParseWheelValue(envValue); config != nil {
 		if config.Source == WheelSourceFile {
 			// cog SDK is pure Python (py3-none-any), no platform filtering needed
-			resolved, err := resolveWheelPath(config.Path, "cog-*.whl", "", CogWheelEnvVar)
+			resolved, err := resolveWheelPath(config.Path, "cog-*.whl", "", CogSDKWheelEnvVar)
 			if err != nil {
 				return nil, err
 			}
@@ -260,10 +260,10 @@ func ResolveCogWheel(envValue string, version string) (*WheelConfig, error) {
 	return config, nil
 }
 
-// GetCogWheelConfig is a convenience wrapper that reads COG_WHEEL from the environment
+// GetCogWheelConfig is a convenience wrapper that reads COG_SDK_WHEEL from the environment
 // and version from global.Version.
 func GetCogWheelConfig() (*WheelConfig, error) {
-	return ResolveCogWheel(os.Getenv(CogWheelEnvVar), global.Version)
+	return ResolveCogWheel(os.Getenv(CogSDKWheelEnvVar), global.Version)
 }
 
 // ResolveCogletWheel resolves the WheelConfig for coglet.

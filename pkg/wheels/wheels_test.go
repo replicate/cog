@@ -8,6 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCogSDKWheelEnvVarName(t *testing.T) {
+	require.Equal(t, "COG_SDK_WHEEL", CogSDKWheelEnvVar)
+}
+
 func TestWheelSourceString(t *testing.T) {
 	tests := []struct {
 		source   WheelSource
@@ -253,7 +257,7 @@ func TestGetCogWheelConfig(t *testing.T) {
 func TestGetCogWheelConfigErrors(t *testing.T) {
 	// Test error cases for wheel config
 	t.Run("file not found", func(t *testing.T) {
-		t.Setenv(CogWheelEnvVar, "/nonexistent/path/wheel.whl")
+		t.Setenv(CogSDKWheelEnvVar, "/nonexistent/path/wheel.whl")
 		_, err := GetCogWheelConfig()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "path not found")
