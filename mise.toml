@@ -55,9 +55,9 @@ ty = "0.0.10"
 [env]
 _.path = "./bin"
 _.file = [".env"]
+_.python.venv = ".venv"
 # Set REPO_ROOT only if not already set (e.g., by CI)
 REPO_ROOT = "{{env.REPO_ROOT | default(value=config_root)}}"
-_.python.venv = "{{env.REPO_ROOT}}/.venv"
 
 [settings]
 lockfile = true
@@ -115,9 +115,15 @@ echo "Installed $PREFIX/bin/cog -> $BINARY"
 
 [tasks."build:cog"]
 description = "Build cog CLI (development)"
-sources = ["cmd/**/*.go", "pkg/**/*.go", "go.mod", "go.sum"]
+sources = ["cmd/**/*.go", "pkg/**/*.go", "go.mod", "go.sum", "crates/Cargo.toml"]
 outputs = ["dist/go/*/cog"]
-run = "GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --snapshot --single-target --id cog --output cog"
+run = """
+#!/usr/bin/env bash
+set -e
+# Export version from Cargo.toml so goreleaser snapshot uses it
+export COG_VERSION=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\\(.*\\)"/\\1/')
+GOFLAGS=-buildvcs=false go run github.com/goreleaser/goreleaser/v2@latest build --clean --snapshot --single-target --id cog --output cog
+"""
 
 [tasks."build:cog:release"]
 description = "Build cog CLI (release)"
@@ -193,18 +199,19 @@ run = [
 
 [tasks."build:sdk"]
 description = "Build cog SDK wheel"
-sources = ["python/**/*.py", "pyproject.toml"]
-outputs = ["dist/cog-*.whl"]
+sources = ["python/**/*.py", "pyproject.toml", "crates/Cargo.toml"]
+outputs = ["dist/cog-*.whl", "dist/cog-*.tar.gz"]
 run = [
   { tasks = ["_setup_dist", "_setup_venv"] },
-  "uv build --wheel --out-dir=dist .",
-]
-
-[tasks."build:sdk:sdist"]
-description = "Build cog SDK source distribution"
-run = [
-  { task = "_setup_dist" },
-  "uv build --sdist --out-dir=dist .",
+  """
+#!/usr/bin/env bash
+set -euo pipefail
+# Version from Cargo.toml, converted to PEP 440
+RAW=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\\(.*\\)"/\\1/')
+export SETUPTOOLS_SCM_PRETEND_VERSION=$(echo "$RAW" | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/')
+echo "Building SDK wheel: $SETUPTOOLS_SCM_PRETEND_VERSION"
+uv build --out-dir=dist .
+""",
 ]
 
 [tasks."build:wheels"]
@@ -419,15 +426,15 @@ run = [
 alias = "stub:generate"
 description = "Generate Python type stubs for coglet"
 sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml", "crates/coglet-python/coglet/__init__.py"]
-outputs = ["coglet/_sdk/__init__.pyi", "coglet/__init__.pyi", "coglet/_impl.pyi"]
+outputs = ["crates/coglet-python/coglet/_sdk/__init__.pyi", "crates/coglet-python/coglet/__init__.pyi"]
 dir = "crates/coglet-python"
 run = [
   { task = "_setup_venv" },
   '''
-# 1. pyo3-stub-gen: Rust types → _impl.pyi and _sdk/__init__.pyi
+# 1. pyo3-stub-gen: Rust types → _sdk/__init__.pyi (and initial __init__.pyi)
 uv run --active cargo run --bin stub_gen
 
-# 2. mypy stubgen: Python __init__.py → __init__.pyi (re-export stubs)
+# 2. mypy stubgen: Python __init__.py → __init__.pyi (overwrites pyo3 version)
 uvx --from mypy stubgen coglet/__init__.py -o . --quiet
 ''',
 ]
@@ -617,7 +624,15 @@ run = [
 description = "CI: Build SDK wheel and sdist"
 run = [
   { task = "_setup_dist" },
-  "uv build --out-dir=dist .",
+  """
+#!/usr/bin/env bash
+set -euo pipefail
+# Version from Cargo.toml, converted to PEP 440
+RAW=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\\(.*\\)"/\\1/')
+export SETUPTOOLS_SCM_PRETEND_VERSION=$(echo "$RAW" | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/')
+echo "Building SDK wheel: $SETUPTOOLS_SCM_PRETEND_VERSION"
+uv build --out-dir=dist .
+""",
 ]
 
 [tasks."ci:build:coglet"]

@@ -102,8 +102,9 @@ fn generate_prediction_id() -> String {
 async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
     let snapshot = service.health().await;
 
-    // Run user healthcheck if ready and not busy
-    let user_healthcheck_error = if snapshot.is_ready() && !snapshot.is_busy() {
+    // Run user healthcheck if ready (even when busy — healthcheck health
+    // and slot availability are orthogonal concerns).
+    let user_healthcheck_error = if snapshot.is_ready() {
         write_readiness_file();
 
         // Run user-defined healthcheck
@@ -293,6 +294,7 @@ async fn create_prediction_with_id(
                 PredictionStatus::Failed,
                 None,
                 Some(msg.clone()),
+                None,
             );
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -308,6 +310,7 @@ async fn create_prediction_with_id(
                 PredictionStatus::Failed,
                 None,
                 Some("At capacity".to_string()),
+                None,
             );
             return (
                 StatusCode::CONFLICT,
@@ -320,7 +323,13 @@ async fn create_prediction_with_id(
     };
 
     let prediction = unregistered_slot.prediction();
-    supervisor.update_status(&prediction_id, PredictionStatus::Processing, None, None);
+    supervisor.update_status(
+        &prediction_id,
+        PredictionStatus::Processing,
+        None,
+        None,
+        None,
+    );
 
     // Async mode: spawn background task, return immediately
     if respond_async {
@@ -337,12 +346,14 @@ async fn create_prediction_with_id(
                         PredictionStatus::Succeeded,
                         Some(serde_json::json!(r.output)),
                         None,
+                        Some(r.metrics),
                     );
                 }
                 Err(PredictionError::Cancelled) => {
                     supervisor_clone.update_status(
                         &id_for_cleanup,
                         PredictionStatus::Canceled,
+                        None,
                         None,
                         None,
                     );
@@ -353,6 +364,7 @@ async fn create_prediction_with_id(
                         PredictionStatus::Failed,
                         None,
                         Some(e.to_string()),
+                        None,
                     );
                 }
             }
@@ -390,10 +402,17 @@ async fn create_prediction_with_id(
                         PredictionStatus::Succeeded,
                         Some(serde_json::json!(r.output)),
                         None,
+                        Some(r.metrics.clone()),
                     );
                 }
                 Err(PredictionError::Cancelled) => {
-                    supervisor_bg.update_status(&id_bg, PredictionStatus::Canceled, None, None);
+                    supervisor_bg.update_status(
+                        &id_bg,
+                        PredictionStatus::Canceled,
+                        None,
+                        None,
+                        None,
+                    );
                 }
                 Err(e) => {
                     supervisor_bg.update_status(
@@ -401,6 +420,7 @@ async fn create_prediction_with_id(
                         PredictionStatus::Failed,
                         None,
                         Some(e.to_string()),
+                        None,
                     );
                 }
             }
@@ -430,17 +450,30 @@ async fn create_prediction_with_id(
     // Disarm guard - prediction completed normally (connection still alive)
     sync_guard.disarm();
 
+    // Build metrics object: user metrics + predict_time
+    let build_metrics = |user_metrics: &std::collections::HashMap<String, serde_json::Value>| {
+        let mut m = serde_json::Map::new();
+        for (k, v) in user_metrics {
+            m.insert(k.clone(), v.clone());
+        }
+        m.insert("predict_time".to_string(), serde_json::json!(predict_time));
+        serde_json::Value::Object(m)
+    };
+
     match result {
-        Ok(r) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": prediction_id,
-                "output": r.output,
-                "logs": r.logs,
-                "status": "succeeded",
-                "metrics": { "predict_time": predict_time }
-            })),
-        ),
+        Ok(r) => {
+            let metrics = build_metrics(&r.metrics);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "id": prediction_id,
+                    "output": r.output,
+                    "logs": r.logs,
+                    "status": "succeeded",
+                    "metrics": metrics
+                })),
+            )
+        }
         Err(PredictionError::InvalidInput(msg)) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(serde_json::json!({

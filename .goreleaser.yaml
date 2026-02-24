@@ -16,7 +16,9 @@ builds:
       - arm64
     main: ./cmd/cog
     ldflags:
-      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+      # COG_VERSION (from Cargo.toml via mise build:cog) overrides git-derived version for snapshots.
+      # For tagged releases, COG_VERSION is unset and envOrDefault falls back to .Version (from tag).
+      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{ envOrDefault \"COG_VERSION\" .Version }} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
   - binary: base-image
     id: base-image
     goos:
@@ -27,7 +29,7 @@ builds:
       - arm64
     main: ./cmd/base-image
     ldflags:
-      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{ envOrDefault \"COG_VERSION\" .Version }} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
 archives:
   - formats: [binary]
     ids:
@@ -41,7 +43,7 @@ archives:
 checksum:
   name_template: "checksums.txt"
 snapshot:
-  version_template: "{{ incpatch .Version }}-dev+g{{ .ShortCommit }}{{ if .IsGitDirty }}.d{{ .Now.Format \"20060102\" }}{{ end }}"
+  version_template: '{{ envOrDefault "COG_VERSION" (printf "%s-dev+g%s" (incpatch .Version) .ShortCommit) }}'
 changelog:
   sort: asc
   filters:

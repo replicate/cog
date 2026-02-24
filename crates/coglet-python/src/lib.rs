@@ -4,6 +4,7 @@ mod audit;
 mod cancel;
 mod input;
 mod log_writer;
+mod metric_scope;
 mod output;
 mod predictor;
 mod worker_bridge;
@@ -479,10 +480,7 @@ async fn run_worker_with_init() -> Result<(), String> {
 #[pyo3(name = "_impl")]
 fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Control what `from ._impl import *` exports into coglet/__init__.py
-    m.add(
-        "__all__",
-        vec!["__version__", "__build__", "server", "_sdk"],
-    )?;
+    m.add("__all__", vec!["__version__", "__build__", "server"])?;
 
     // Static metadata
     m.add("__version__", env!("COGLET_PEP440_VERSION"))?;
@@ -503,6 +501,9 @@ fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     sdk.add_class::<log_writer::SlotLogWriter>()?;
     sdk.add_class::<audit::_TeeWriter>()?;
+    sdk.add_class::<metric_scope::Scope>()?;
+    sdk.add_class::<metric_scope::MetricRecorder>()?;
+    sdk.add_function(wrap_pyfunction!(metric_scope::py_current_scope, &sdk)?)?;
     m.add_submodule(&sdk)?;
 
     Ok(())

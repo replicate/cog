@@ -349,7 +349,7 @@ impl PredictionService {
             completion.notified().await;
         }
 
-        let (status, output, error, logs, predict_time) = {
+        let (status, output, error, logs, predict_time, metrics) = {
             let Some(pred) = try_lock_prediction(&prediction_arc) else {
                 return Err(PredictionError::Failed(
                     "Prediction mutex poisoned".to_string(),
@@ -361,6 +361,7 @@ impl PredictionService {
                 pred.error().map(|s| s.to_string()),
                 pred.logs().to_string(),
                 pred.elapsed(),
+                pred.metrics().clone(),
             )
         };
 
@@ -379,6 +380,7 @@ impl PredictionService {
                 output: output.unwrap_or(PredictionOutput::Single(serde_json::Value::Null)),
                 predict_time: Some(predict_time),
                 logs,
+                metrics,
             }),
             PredictionStatus::Failed => Err(PredictionError::Failed(
                 error.unwrap_or_else(|| "Unknown error".to_string()),

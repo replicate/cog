@@ -131,8 +131,8 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
 
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
-    ControlRequest, ControlResponse, FileOutputKind, LogSource, SlotId, SlotOutcome, SlotRequest,
-    SlotResponse,
+    ControlRequest, ControlResponse, FileOutputKind, LogSource, MetricMode, SlotId, SlotOutcome,
+    SlotRequest, SlotResponse,
 };
 use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
@@ -211,6 +211,19 @@ impl SlotSender {
             kind: FileOutputKind::FileType,
             mime_type,
         };
+        self.tx
+            .send(msg)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+    }
+
+    /// Send a user metric to the parent process.
+    pub fn send_metric(
+        &self,
+        name: String,
+        value: serde_json::Value,
+        mode: MetricMode,
+    ) -> io::Result<()> {
+        let msg = SlotResponse::Metric { name, value, mode };
         self.tx
             .send(msg)
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))

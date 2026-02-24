@@ -634,6 +634,7 @@ impl PythonPredictor {
                 output,
                 predict_time: None,
                 logs: String::new(),
+                metrics: Default::default(),
             })
         })
     }
@@ -704,6 +705,7 @@ impl PythonPredictor {
                 output,
                 predict_time: None,
                 logs: String::new(),
+                metrics: Default::default(),
             })
         })
     }
@@ -960,6 +962,7 @@ impl PythonPredictor {
             output,
             predict_time: None,
             logs: String::new(),
+            metrics: Default::default(),
         })
     }
 

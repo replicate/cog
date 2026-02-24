@@ -347,6 +347,20 @@ impl PredictHandler for PythonPredictHandler {
                 None
             }
         };
+
+        // Enter metric scope - sets Scope ContextVar for metric recording
+        let slot_sender_for_metrics = slot_sender.clone();
+        let scope_guard = Python::attach(|py| {
+            crate::metric_scope::ScopeGuard::enter(py, slot_sender_for_metrics)
+        });
+        let scope_guard = match scope_guard {
+            Ok(g) => Some(g),
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to enter metric scope");
+                None
+            }
+        };
+
         tracing::trace!(%slot, %id, "Prediction context entered");
 
         // Run prediction or training based on mode.
@@ -510,6 +524,7 @@ impl PredictHandler for PythonPredictHandler {
         self.finish_prediction(slot);
 
         // Exit prediction context
+        drop(scope_guard);
         drop(log_guard);
 
         match result {

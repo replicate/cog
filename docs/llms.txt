@@ -1234,6 +1234,10 @@ The response body is a JSON object with the following fields:
 - `status`: Either `succeeded` or `failed`.
 - `output`: The return value of the `predict()` function.
 - `error`: If `status` is `failed`, the error message.
+- `metrics`: An object containing prediction metrics.
+  Always includes `predict_time` (elapsed seconds).
+  May also include custom metrics recorded by the model
+  using [`self.record_metric()`](python.md#metrics).
 
 ```http
 POST /predictions HTTP/1.1
@@ -1253,7 +1257,10 @@ Content-Type: application/json
 
 {
     "status": "succeeded",
-    "output": "data:image/png;base64,..."
+    "output": "data:image/png;base64,...",
+    "metrics": {
+        "predict_time": 4.52
+    }
 }
 ```
 
@@ -1511,6 +1518,11 @@ This document defines the API of the `cog` Python module, which is used to defin
   - [Returning a list](#returning-a-list)
   - [Optional properties](#optional-properties)
   - [Streaming output](#streaming-output)
+- [Metrics](#metrics)
+  - [Recording metrics](#recording-metrics)
+  - [Accumulation modes](#accumulation-modes)
+  - [Dot-path keys](#dot-path-keys)
+  - [Type safety](#type-safety)
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
@@ -1780,6 +1792,114 @@ class Predictor(BasePredictor):
         for token in tokens:
             yield token + " "
 ```
+
+## Metrics
+
+You can record custom metrics from your `predict()` function to track model-specific data like token counts, timing breakdowns, or confidence scores. Metrics are included in the prediction response alongside the output.
+
+### Recording metrics
+
+Use `self.record_metric()` inside your `predict()` method:
+
+```python
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> str:
+        self.record_metric("temperature", 0.7)
+        self.record_metric("token_count", 42)
+
+        result = self.model.generate(prompt)
+        return result
+```
+
+For advanced use (dict-style access, deleting metrics), use `self.scope`:
+
+```python
+self.scope.metrics["token_count"] = 42
+del self.scope.metrics["token_count"]
+```
+
+Metrics appear in the prediction response `metrics` field:
+
+```json
+{
+    "status": "succeeded",
+    "output": "...",
+    "metrics": {
+        "temperature": 0.7,
+        "token_count": 42,
+        "predict_time": 1.23
+    }
+}
+```
+
+The `predict_time` metric is always added automatically by the runtime. If you set `predict_time` yourself, the runtime value takes precedence.
+
+Supported value types are `bool`, `int`, `float`, `str`, `list`, and `dict`. Setting a metric to `None` deletes it.
+
+### Accumulation modes
+
+By default, recording a metric replaces any previous value for that key. You can use accumulation modes to build up values across multiple calls:
+
+```python
+# Increment a counter (adds to the existing numeric value)
+self.record_metric("token_count", 1, mode="incr")
+self.record_metric("token_count", 1, mode="incr")
+# Result: {"token_count": 2}
+
+# Append to an array
+self.record_metric("steps", "preprocessing", mode="append")
+self.record_metric("steps", "inference", mode="append")
+# Result: {"steps": ["preprocessing", "inference"]}
+
+# Replace (default behavior)
+self.record_metric("status", "running", mode="replace")
+self.record_metric("status", "done", mode="replace")
+# Result: {"status": "done"}
+```
+
+The `mode` parameter accepts `"replace"` (default), `"incr"`, or `"append"`.
+
+### Dot-path keys
+
+Use dot-separated keys to create nested objects in the metrics output:
+
+```python
+self.record_metric("timing.preprocess", 0.12)
+self.record_metric("timing.inference", 0.85)
+```
+
+This produces nested JSON:
+
+```json
+{
+    "metrics": {
+        "timing": {
+            "preprocess": 0.12,
+            "inference": 0.85
+        },
+        "predict_time": 1.23
+    }
+}
+```
+
+### Type safety
+
+Once a metric key has been assigned a value of a certain type, it cannot be changed to a different type without deleting it first. This prevents accidental type mismatches when using accumulation modes:
+
+```python
+self.record_metric("count", 1)
+
+# This would raise an error — "count" is an int, not a string:
+# self.record_metric("count", "oops")
+
+# Delete first, then set with new type:
+del self.scope.metrics["count"]
+self.record_metric("count", "now a string")
+```
+
+Outside an active prediction, `self.record_metric()` and `self.scope` are silent no-ops — no need for `None` checks.
 
 ## Input and output types
 
