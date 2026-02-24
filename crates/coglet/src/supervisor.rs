@@ -410,8 +410,11 @@ mod tests {
     async fn repeated_cancel_is_idempotent() {
         let supervisor = PredictionSupervisor::new();
 
-        let handle =
-            supervisor.submit("test-repeat-cancel".to_string(), serde_json::json!({}), None);
+        let handle = supervisor.submit(
+            "test-repeat-cancel".to_string(),
+            serde_json::json!({}),
+            None,
+        );
         let cancel_token = handle.cancel_token();
 
         // First cancel should succeed
