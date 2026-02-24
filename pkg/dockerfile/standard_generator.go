@@ -464,16 +464,37 @@ func (g *StandardGenerator) installCog() (string, error) {
 	if !g.requiresCog {
 		return "", nil
 	}
-	// Use override if set, otherwise auto-detect via env var / dist / PyPI
+
+	// Resolve cog SDK wheel config.
+	// Precedence: test override → COG_SDK_WHEEL env var → build.sdk_version → auto-detect/PyPI
 	var wheelConfig *wheels.WheelConfig
 	var err error
 	if g.cogWheelConfig != nil {
+		// Test override: use as-is
 		wheelConfig = g.cogWheelConfig
-	} else {
+	} else if envVal := os.Getenv(wheels.CogSDKWheelEnvVar); envVal != "" {
+		// Explicit env var override: parse it directly
 		wheelConfig, err = wheels.GetCogWheelConfig()
 		if err != nil {
 			return "", err
 		}
+	} else if g.Config.Build != nil && g.Config.Build.SDKVersion != "" {
+		// build.sdk_version from cog.yaml: install that exact version from PyPI
+		wheelConfig = &wheels.WheelConfig{
+			Source:  wheels.WheelSourcePyPI,
+			Version: g.Config.Build.SDKVersion,
+		}
+	} else {
+		// Default: auto-detect (dev builds check dist/) or latest PyPI
+		wheelConfig, err = wheels.GetCogWheelConfig()
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// Validate: refuse versions older than the minimum supported SDK
+	if err := wheels.ValidateSDKVersion(wheelConfig, "cog"); err != nil {
+		return "", err
 	}
 
 	// Install coglet BEFORE cog — cog depends on coglet, so coglet must
@@ -495,8 +516,14 @@ func (g *StandardGenerator) installCog() (string, error) {
 	case wheels.WheelSourceFile:
 		console.Infof("Using local coglet wheel: %s", cogletConfig.Path)
 	}
+
+	// Determine if we need --pre flag (pre-release SDK implies pre-release coglet too)
+	sdkIsPreRelease := wheelConfig.Source == wheels.WheelSourcePyPI && wheels.IsPreRelease(wheelConfig.Version)
+	cogletIsPreRelease := sdkIsPreRelease ||
+		(cogletConfig.Source == wheels.WheelSourcePyPI && wheels.IsPreRelease(cogletConfig.Version))
+
 	var installLines string
-	cogletInstall, err := g.installCogletWheel(cogletConfig)
+	cogletInstall, err := g.installCogletWheel(cogletConfig, cogletIsPreRelease)
 	if err != nil {
 		return "", fmt.Errorf("failed to install coglet wheel: %w", err)
 	}
@@ -508,7 +535,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 	var cogInstall string
 	switch wheelConfig.Source {
 	case wheels.WheelSourcePyPI:
-		cogInstall, err = g.installCogFromPyPI(wheelConfig)
+		cogInstall, err = g.installCogFromPyPI(wheelConfig, sdkIsPreRelease)
 	case wheels.WheelSourceURL:
 		console.Infof("Using cog wheel from URL: %s", wheelConfig.URL)
 		cogInstall, err = g.installWheelFromURL(wheelConfig.URL)
@@ -531,10 +558,15 @@ func (g *StandardGenerator) installCog() (string, error) {
 	return installLines, nil
 }
 
-// installCogFromPyPI installs the cog SDK from PyPI
-func (g *StandardGenerator) installCogFromPyPI(config *wheels.WheelConfig) (string, error) {
+// installCogFromPyPI installs the cog SDK from PyPI.
+// preRelease adds --pre to allow pip to resolve pre-release packages.
+func (g *StandardGenerator) installCogFromPyPI(config *wheels.WheelConfig, preRelease bool) (string, error) {
 	packageSpec := config.PyPIPackageURL("cog")
-	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install --no-cache " + packageSpec
+	flags := "--no-cache"
+	if preRelease {
+		flags = "--pre " + flags
+	}
+	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install " + flags + " " + packageSpec
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -610,11 +642,12 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// installCogletWheel installs the coglet wheel based on the provided config
-func (g *StandardGenerator) installCogletWheel(config *wheels.WheelConfig) (string, error) {
+// installCogletWheel installs the coglet wheel based on the provided config.
+// preRelease adds --pre to allow pip to resolve pre-release packages.
+func (g *StandardGenerator) installCogletWheel(config *wheels.WheelConfig, preRelease bool) (string, error) {
 	switch config.Source {
 	case wheels.WheelSourcePyPI:
-		return g.installCogletFromPyPI(config)
+		return g.installCogletFromPyPI(config, preRelease)
 	case wheels.WheelSourceURL:
 		return g.installCogletFromURL(config.URL)
 	case wheels.WheelSourceFile:
@@ -624,10 +657,15 @@ func (g *StandardGenerator) installCogletWheel(config *wheels.WheelConfig) (stri
 	}
 }
 
-// installCogletFromPyPI installs coglet from PyPI
-func (g *StandardGenerator) installCogletFromPyPI(config *wheels.WheelConfig) (string, error) {
+// installCogletFromPyPI installs coglet from PyPI.
+// preRelease adds --pre to allow pip to resolve pre-release packages.
+func (g *StandardGenerator) installCogletFromPyPI(config *wheels.WheelConfig, preRelease bool) (string, error) {
 	packageSpec := config.PyPIPackageURL("coglet")
-	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install --no-cache " + packageSpec
+	flags := "--no-cache"
+	if preRelease {
+		flags = "--pre " + flags
+	}
+	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install " + flags + " " + packageSpec
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}

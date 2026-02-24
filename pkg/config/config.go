@@ -54,6 +54,10 @@ type Build struct {
 	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install,omitempty"` // Deprecated, but included for backwards compatibility
 	CUDA               string    `json:"cuda,omitempty" yaml:"cuda,omitempty"`
 	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
+	// SDKVersion pins the cog Python SDK version installed in the container.
+	// Accepts a PEP 440 version string (e.g. "0.18.0" or "0.18.0a1").
+	// When empty the latest release is installed. Overridden by COG_SDK_WHEEL env var.
+	SDKVersion string `json:"sdk_version,omitempty" yaml:"sdk_version,omitempty"`
 
 	pythonRequirementsContent []string
 }

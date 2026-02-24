@@ -30,6 +30,7 @@ type buildFile struct {
 	SystemPackages     []string      `json:"system_packages,omitempty" yaml:"system_packages,omitempty"`
 	CUDA               *string       `json:"cuda,omitempty" yaml:"cuda,omitempty"`
 	CuDNN              *string       `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
+	SDKVersion         *string       `json:"sdk_version,omitempty" yaml:"sdk_version,omitempty"`
 
 	// Deprecated fields - parsed with warnings
 	PythonPackages []string `json:"python_packages,omitempty" yaml:"python_packages,omitempty"`

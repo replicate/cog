@@ -148,6 +148,29 @@ build:
 
 You can use secret mounts to securely pass credentials to setup commands, without baking them into the image. For more information, see [Dockerfile reference](https://docs.docker.com/engine/reference/builder/#run---mounttypesecret).
 
+### `sdk_version`
+
+Pin the version of the cog Python SDK installed in the container. Accepts a [PEP 440](https://peps.python.org/pep-0440/) version string. When omitted, the latest release is installed.
+
+```yaml
+build:
+  python_version: "3.12"
+  sdk_version: "0.18.0"
+```
+
+Pre-release versions are also supported:
+
+```yaml
+build:
+  sdk_version: "0.18.0a1"
+```
+
+When a pre-release `sdk_version` is set, `--pre` is automatically passed to the pip install commands for both `cog` and `coglet`, so pip will resolve matching pre-release packages.
+
+The minimum supported version is `0.16.0`. Specifying an older version will cause `cog build` to fail with an error.
+
+The `COG_SDK_WHEEL` environment variable takes precedence over `sdk_version`. See [Environment variables](./environment.md) for details.
+
 ### `system_packages`
 
 A list of Ubuntu APT packages to install. For example:
