@@ -15,7 +15,9 @@ fn main() {
             eprintln!("Usage: cog-schema-gen <predict_ref> [--mode predict|train] [--src <dir>]");
             eprintln!();
             eprintln!("Arguments:");
-            eprintln!("  <predict_ref>    Predictor reference: file.py:ClassName or file.py:function_name");
+            eprintln!(
+                "  <predict_ref>    Predictor reference: file.py:ClassName or file.py:function_name"
+            );
             eprintln!();
             eprintln!("Options:");
             eprintln!("  --mode <mode>    Mode: predict or train [default: predict]");
@@ -62,7 +64,7 @@ fn parse_args(args: &[String]) -> Result<(String, String, PathBuf), String> {
     Ok((predict_ref, mode, src))
 }
 
-fn run(predict_ref: &str, mode_str: &str, src: &PathBuf) -> Result<(), SchemaError> {
+fn run(predict_ref: &str, mode_str: &str, src: &std::path::Path) -> Result<(), SchemaError> {
     let mode = match mode_str {
         "predict" => Mode::Predict,
         "train" => Mode::Train,

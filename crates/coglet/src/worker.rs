@@ -348,7 +348,8 @@ fn load_bundled_schema() -> Option<serde_json::Value> {
             Err(e) => {
                 tracing::warn!(
                     "Failed to parse {}: {}. Running without schema — all input types accepted.",
-                    BUNDLED_SCHEMA_PATH, e,
+                    BUNDLED_SCHEMA_PATH,
+                    e,
                 );
                 None
             }

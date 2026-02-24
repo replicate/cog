@@ -168,7 +168,7 @@ func extractEmbedded() (string, error) {
 		return "", fmt.Errorf("failed to write %s: %w", tmpPath, err)
 	}
 	if err := os.Rename(tmpPath, cachedPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return "", fmt.Errorf("failed to rename %s to %s: %w", tmpPath, cachedPath, err)
 	}
 

@@ -13,7 +13,16 @@ pub fn generate_openapi_schema(info: &PredictorInfo) -> Value {
     let output_schema = info.output.json_type();
 
     let is_train = info.mode == Mode::Train;
-    let (endpoint, request_name, response_name, cancel_endpoint, summary, description, op_id, cancel_op_id) = if is_train {
+    let (
+        endpoint,
+        request_name,
+        response_name,
+        cancel_endpoint,
+        summary,
+        description,
+        op_id,
+        cancel_op_id,
+    ) = if is_train {
         (
             "/trainings",
             "TrainingRequest",
@@ -313,10 +322,10 @@ fn build_input_schema(info: &PredictorInfo) -> (Value, Vec<(String, Value)>) {
         }
 
         // Deprecated
-        if let Some(deprecated) = field.deprecated {
-            if deprecated {
-                prop.insert("deprecated".into(), json!(true));
-            }
+        if let Some(deprecated) = field.deprecated
+            && deprecated
+        {
+            prop.insert("deprecated".into(), json!(true));
         }
 
         properties.insert(name.clone(), Value::Object(prop));
@@ -328,10 +337,10 @@ fn build_input_schema(info: &PredictorInfo) -> (Value, Vec<(String, Value)>) {
         "properties": properties,
     });
 
-    if !required.is_empty() {
-        if let Some(obj) = input_schema.as_object_mut() {
-            obj.insert("required".into(), Value::Array(required));
-        }
+    if !required.is_empty()
+        && let Some(obj) = input_schema.as_object_mut()
+    {
+        obj.insert("required".into(), Value::Array(required));
     }
 
     (input_schema, enum_schemas)
@@ -373,24 +382,23 @@ pub fn fix_nullable_anyof(schema: &mut Value) {
             }
 
             // Then check for anyOf with null pattern
-            if let Some(any_of) = map.get("anyOf") {
-                if let Value::Array(variants) = any_of {
-                    if variants.len() == 2 {
-                        let has_null = variants.iter().any(|v| {
-                            v.get("type").and_then(|t| t.as_str()) == Some("null")
-                        });
-                        if has_null {
-                            if let Some(non_null) = variants.iter().find(|v| {
-                                v.get("type").and_then(|t| t.as_str()) != Some("null")
-                            }) {
-                                let mut merged = non_null.clone();
-                                if let Value::Object(ref mut m) = merged {
-                                    m.insert("nullable".into(), json!(true));
-                                }
-                                *schema = merged;
-                            }
-                        }
+            if let Some(any_of) = map.get("anyOf")
+                && let Value::Array(variants) = any_of
+                && variants.len() == 2
+            {
+                let has_null = variants
+                    .iter()
+                    .any(|v| v.get("type").and_then(|t| t.as_str()) == Some("null"));
+                if has_null
+                    && let Some(non_null) = variants
+                        .iter()
+                        .find(|v| v.get("type").and_then(|t| t.as_str()) != Some("null"))
+                {
+                    let mut merged = non_null.clone();
+                    if let Value::Object(ref mut m) = merged {
+                        m.insert("nullable".into(), json!(true));
                     }
+                    *schema = merged;
                 }
             }
         }
@@ -419,7 +427,7 @@ fn title_case_single(s: &str) -> String {
 /// Title case with underscore splitting: `segmented_image` → `Segmented Image`
 fn title_case_words(s: &str) -> String {
     s.split('_')
-        .map(|word| title_case_single(word))
+        .map(title_case_single)
         .collect::<Vec<_>>()
         .join(" ")
 }

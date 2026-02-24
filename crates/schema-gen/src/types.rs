@@ -8,6 +8,9 @@ use serde_json::{Map, Value, json};
 
 use crate::error::{Result, SchemaError};
 
+/// Map of BaseModel class names to their fields: (field_name, type_annotation, default_value).
+pub type ModelClassMap = IndexMap<String, Vec<(String, TypeAnnotation, Option<DefaultValue>)>>;
+
 // ---------------------------------------------------------------------------
 // Primitive types
 // ---------------------------------------------------------------------------
@@ -271,10 +274,10 @@ impl OutputType {
                     "type": "object",
                     "properties": properties,
                 });
-                if !required.is_empty() {
-                    if let Some(obj) = schema.as_object_mut() {
-                        obj.insert("required".into(), Value::Array(required));
-                    }
+                if !required.is_empty()
+                    && let Some(obj) = schema.as_object_mut()
+                {
+                    obj.insert("required".into(), Value::Array(required));
                 }
                 schema
             }
@@ -368,9 +371,7 @@ pub fn resolve_field_type(ann: &TypeAnnotation, ctx: &ImportContext) -> Result<F
             let outer_name = outer.as_str();
 
             // Optional[X] → X with Optional repetition
-            if outer_name == "Optional"
-                || (ctx.is_typing_type(outer_name) && outer_name == "Optional")
-            {
+            if outer_name == "Optional" {
                 if args.len() != 1 {
                     return Err(SchemaError::UnsupportedType(format!(
                         "Optional expects exactly 1 type argument, got {}",
@@ -412,7 +413,9 @@ pub fn resolve_field_type(ann: &TypeAnnotation, ctx: &ImportContext) -> Result<F
         TypeAnnotation::Union(members) => {
             // Only support X | None (equivalent to Optional[X])
             if members.len() == 2 {
-                let has_none = members.iter().any(|m| matches!(m, TypeAnnotation::Simple(n) if n == "None"));
+                let has_none = members
+                    .iter()
+                    .any(|m| matches!(m, TypeAnnotation::Simple(n) if n == "None"));
                 if has_none {
                     // We confirmed has_none is true and len is 2, so the other member exists.
                     let non_none = match members
@@ -423,7 +426,7 @@ pub fn resolve_field_type(ann: &TypeAnnotation, ctx: &ImportContext) -> Result<F
                         None => {
                             return Err(SchemaError::UnsupportedType(
                                 "union with only None types".into(),
-                            ))
+                            ));
                         }
                     };
                     let inner = resolve_field_type(non_none, ctx)?;
@@ -433,9 +436,9 @@ pub fn resolve_field_type(ann: &TypeAnnotation, ctx: &ImportContext) -> Result<F
                     });
                 }
             }
-            Err(SchemaError::UnsupportedType(format!(
-                "union types other than X | None are not supported"
-            )))
+            Err(SchemaError::UnsupportedType(
+                "union types other than X | None are not supported".to_string(),
+            ))
         }
     }
 }
@@ -444,7 +447,7 @@ pub fn resolve_field_type(ann: &TypeAnnotation, ctx: &ImportContext) -> Result<F
 pub fn resolve_output_type(
     ann: &TypeAnnotation,
     ctx: &ImportContext,
-    model_classes: &IndexMap<String, Vec<(String, TypeAnnotation, Option<DefaultValue>)>>,
+    model_classes: &ModelClassMap,
 ) -> Result<OutputType> {
     match ann {
         TypeAnnotation::Simple(name) => {
@@ -494,7 +497,7 @@ pub fn resolve_output_type(
                 _ => {
                     return Err(SchemaError::UnsupportedType(
                         "nested generics in output type are not supported".into(),
-                    ))
+                    ));
                 }
             };
 
@@ -527,7 +530,9 @@ pub fn resolve_output_type(
         }
         TypeAnnotation::Union(members) => {
             // Check for Optional pattern — not allowed as output
-            let has_none = members.iter().any(|m| matches!(m, TypeAnnotation::Simple(n) if n == "None"));
+            let has_none = members
+                .iter()
+                .any(|m| matches!(m, TypeAnnotation::Simple(n) if n == "None"));
             if has_none {
                 return Err(SchemaError::OptionalOutput);
             }

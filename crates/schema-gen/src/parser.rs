@@ -111,9 +111,9 @@ fn collect_imports(root: Node, src: &[u8]) -> ImportContext {
 
     // Always include Python builtins that don't need importing
     for builtin in &["str", "int", "float", "bool", "list", "dict", "set"] {
-        ctx.names.entry((*builtin).to_string()).or_insert_with(|| {
-            ("builtins".to_string(), (*builtin).to_string())
-        });
+        ctx.names
+            .entry((*builtin).to_string())
+            .or_insert_with(|| ("builtins".to_string(), (*builtin).to_string()));
     }
     ctx.names
         .entry("None".to_string())
@@ -135,7 +135,11 @@ fn parse_import_from(node: &Node, src: &[u8], ctx: &mut ImportContext) {
             "dotted_name" => {
                 // `from X import name` (single import without parens)
                 // Only process if this isn't the module_name itself
-                if child.start_byte() != node.child_by_field_name("module_name").map_or(0, |n| n.start_byte()) {
+                if child.start_byte()
+                    != node
+                        .child_by_field_name("module_name")
+                        .map_or(0, |n| n.start_byte())
+                {
                     let name = node_text(&child, src).to_string();
                     ctx.names.insert(name.clone(), (module.clone(), name));
                 }
@@ -174,11 +178,7 @@ fn parse_import_from(node: &Node, src: &[u8], ctx: &mut ImportContext) {
 
 /// Collect all BaseModel subclasses defined in the file.
 /// Returns a map from class name → list of (field_name, type_annotation, default).
-fn collect_model_classes(
-    root: Node,
-    src: &[u8],
-    imports: &ImportContext,
-) -> IndexMap<String, Vec<(String, TypeAnnotation, Option<DefaultValue>)>> {
+fn collect_model_classes(root: Node, src: &[u8], imports: &ImportContext) -> ModelClassMap {
     let mut models = IndexMap::new();
     let mut cursor = root.walk();
 
@@ -448,15 +448,19 @@ fn collect_input_method(
 }
 
 /// Find a `return Input(...)` statement in a function body.
-fn find_return_input_call<'a>(body: &Node<'a>, src: &[u8], imports: &ImportContext) -> Option<Node<'a>> {
+fn find_return_input_call<'a>(
+    body: &Node<'a>,
+    src: &[u8],
+    imports: &ImportContext,
+) -> Option<Node<'a>> {
     let mut cursor = body.walk();
     for child in body.children(&mut cursor) {
         if child.kind() == "return_statement" {
             // The return value is the first named child
-            if let Some(expr) = child.named_child(0) {
-                if is_input_call(&expr, src, imports) {
-                    return Some(expr);
-                }
+            if let Some(expr) = child.named_child(0)
+                && is_input_call(&expr, src, imports)
+            {
+                return Some(expr);
             }
         }
     }
@@ -548,25 +552,25 @@ fn resolve_input_reference(
             // (because `default=default` evaluates the identifier `default` which isn't a literal),
             // but the call-site has a value for the `default` parameter, use that.
             for (param_name, call_site_node) in &arg_values {
-                if param_name == "default" {
-                    if let Some(val) = parse_default_value(call_site_node, src) {
-                        resolved.default = Some(val);
-                    }
+                if param_name == "default"
+                    && let Some(val) = parse_default_value(call_site_node, src)
+                {
+                    resolved.default = Some(val);
                 }
-                if param_name == "description" {
-                    if let Some(val) = parse_string_literal(call_site_node, src) {
-                        resolved.description = Some(val);
-                    }
+                if param_name == "description"
+                    && let Some(val) = parse_string_literal(call_site_node, src)
+                {
+                    resolved.description = Some(val);
                 }
-                if param_name == "ge" {
-                    if let Some(val) = parse_number_literal(call_site_node, src) {
-                        resolved.ge = Some(val);
-                    }
+                if param_name == "ge"
+                    && let Some(val) = parse_number_literal(call_site_node, src)
+                {
+                    resolved.ge = Some(val);
                 }
-                if param_name == "le" {
-                    if let Some(val) = parse_number_literal(call_site_node, src) {
-                        resolved.le = Some(val);
-                    }
+                if param_name == "le"
+                    && let Some(val) = parse_number_literal(call_site_node, src)
+                {
+                    resolved.le = Some(val);
                 }
             }
 
@@ -640,7 +644,10 @@ fn extract_annotations_simple(
     for child in body.children(&mut cursor) {
         let node = if child.kind() == "expression_statement" {
             // Unwrap expression_statement to get the inner node
-            if let Some(inner) = child.named_child(0).filter(|_| child.named_child_count() == 1) {
+            if let Some(inner) = child
+                .named_child(0)
+                .filter(|_| child.named_child_count() == 1)
+            {
                 inner
             } else {
                 continue;
@@ -755,13 +762,13 @@ fn parse_type_from_string(s: &str) -> Option<TypeAnnotation> {
     }
 
     // Check for generic syntax: `X[Y]`
-    if let Some(bracket_pos) = s.find('[') {
-        if s.ends_with(']') {
-            let outer = s[..bracket_pos].trim().to_string();
-            let inner_str = &s[bracket_pos + 1..s.len() - 1];
-            let inner = parse_type_from_string(inner_str)?;
-            return Some(TypeAnnotation::Generic(outer, vec![inner]));
-        }
+    if let Some(bracket_pos) = s.find('[')
+        && s.ends_with(']')
+    {
+        let outer = s[..bracket_pos].trim().to_string();
+        let inner_str = &s[bracket_pos + 1..s.len() - 1];
+        let inner = parse_type_from_string(inner_str)?;
+        return Some(TypeAnnotation::Generic(outer, vec![inner]));
     }
 
     // Simple identifier
@@ -790,13 +797,12 @@ fn find_target_function<'a>(
 
     // First: look for a class with this name
     for child in root.children(&mut cursor) {
-        if child.kind() == "class_definition" {
-            if let Some(name_node) = child.child_by_field_name("name") {
-                if node_text(&name_node, src) == predict_ref {
-                    // Found the class — now find the method
-                    return find_method_in_class(child, src, method_name);
-                }
-            }
+        if child.kind() == "class_definition"
+            && let Some(name_node) = child.child_by_field_name("name")
+            && node_text(&name_node, src) == predict_ref
+        {
+            // Found the class — now find the method
+            return find_method_in_class(child, src, method_name);
         }
     }
 
@@ -813,12 +819,12 @@ fn find_target_function<'a>(
                 Some(child)
             };
 
-            if let Some(func) = func {
-                if let Some(name_node) = func.child_by_field_name("name") {
-                    let name = node_text(&name_node, src);
-                    if name == predict_ref || name == method_name {
-                        return Ok(func);
-                    }
+            if let Some(func) = func
+                && let Some(name_node) = func.child_by_field_name("name")
+            {
+                let name = node_text(&name_node, src);
+                if name == predict_ref || name == method_name {
+                    return Ok(func);
                 }
             }
         }
@@ -846,12 +852,11 @@ fn find_method_in_class<'a>(
             _ => None,
         };
 
-        if let Some(func) = func {
-            if let Some(name_node) = func.child_by_field_name("name") {
-                if node_text(&name_node, src) == method_name {
-                    return Ok(func);
-                }
-            }
+        if let Some(func) = func
+            && let Some(name_node) = func.child_by_field_name("name")
+            && node_text(&name_node, src) == method_name
+        {
+            return Ok(func);
         }
     }
 
@@ -900,8 +905,7 @@ fn extract_inputs(
 
             // `name: type` — typed parameter with no default
             "typed_parameter" => {
-                let input =
-                    parse_typed_parameter(&child, src, order, method_name, imports)?;
+                let input = parse_typed_parameter(&child, src, order, method_name, imports)?;
                 inputs.insert(input.name.clone(), input);
                 order += 1;
             }
@@ -923,9 +927,7 @@ fn extract_inputs(
             // `name = default` — untyped parameter with default (error)
             "default_parameter" => {
                 let name_node = child.child_by_field_name("name");
-                let param_name = name_node
-                    .map(|n| node_text(&n, src))
-                    .unwrap_or("<unknown>");
+                let param_name = name_node.map(|n| node_text(&n, src)).unwrap_or("<unknown>");
                 return Err(SchemaError::MissingTypeAnnotation {
                     method: method_name.into(),
                     param: param_name.into(),
@@ -955,12 +957,12 @@ fn parse_typed_parameter(
             .ok_or_else(|| SchemaError::ParseError("typed_parameter has no identifier".into()))?
     };
 
-    let type_node = node
-        .child_by_field_name("type")
-        .ok_or_else(|| SchemaError::MissingTypeAnnotation {
-            method: method_name.into(),
-            param: name.clone(),
-        })?;
+    let type_node =
+        node.child_by_field_name("type")
+            .ok_or_else(|| SchemaError::MissingTypeAnnotation {
+                method: method_name.into(),
+                param: name.clone(),
+            })?;
 
     let type_ann = parse_type_annotation(&type_node, src)?;
     let field_type = resolve_field_type(&type_ann, imports)?;
@@ -992,16 +994,14 @@ fn parse_typed_default_parameter(
     let name = node
         .child_by_field_name("name")
         .map(|n| node_text(&n, src).to_string())
-        .ok_or_else(|| {
-            SchemaError::ParseError("typed_default_parameter has no name".into())
-        })?;
+        .ok_or_else(|| SchemaError::ParseError("typed_default_parameter has no name".into()))?;
 
-    let type_node = node
-        .child_by_field_name("type")
-        .ok_or_else(|| SchemaError::MissingTypeAnnotation {
-            method: method_name.into(),
-            param: name.clone(),
-        })?;
+    let type_node =
+        node.child_by_field_name("type")
+            .ok_or_else(|| SchemaError::MissingTypeAnnotation {
+                method: method_name.into(),
+                param: name.clone(),
+            })?;
 
     let type_ann = parse_type_annotation(&type_node, src)?;
     let field_type = resolve_field_type(&type_ann, imports)?;
@@ -1190,8 +1190,8 @@ pub fn parse_type_annotation(node: &Node, src: &[u8]) -> Result<TypeAnnotation> 
             let text = node_text(&node, src);
             // Strip quotes
             let inner = text
-                .trim_start_matches(|c: char| c == '"' || c == '\'')
-                .trim_end_matches(|c: char| c == '"' || c == '\'');
+                .trim_start_matches(['"', '\''])
+                .trim_end_matches(['"', '\'']);
             parse_type_from_string(inner)
                 .ok_or_else(|| SchemaError::UnsupportedType(format!("string annotation: {text}")))
         }
@@ -1265,10 +1265,8 @@ fn parse_input_call(node: &Node, src: &[u8], param_name: &str) -> Result<InputCa
         let key = node_text(&key_node, src);
         match key {
             "default" => {
-                info.default = Some(
-                    parse_default_value(&val_node, src)
-                        .unwrap_or(DefaultValue::None),
-                );
+                info.default =
+                    Some(parse_default_value(&val_node, src).unwrap_or(DefaultValue::None));
             }
             "default_factory" => {
                 return Err(SchemaError::DefaultFactoryNotSupported {
@@ -1357,10 +1355,10 @@ fn parse_default_value(node: &Node, src: &[u8]) -> Option<DefaultValue> {
             let mut items = Vec::new();
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                if child.is_named() {
-                    if let Some(val) = parse_default_value(&child, src) {
-                        items.push(val);
-                    }
+                if child.is_named()
+                    && let Some(val) = parse_default_value(&child, src)
+                {
+                    items.push(val);
                 }
             }
             Some(DefaultValue::List(items))
@@ -1411,10 +1409,10 @@ fn parse_list_literal(node: &Node, src: &[u8]) -> Option<Vec<DefaultValue>> {
     let mut items = Vec::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.is_named() {
-            if let Some(val) = parse_default_value(&child, src) {
-                items.push(val);
-            }
+        if child.is_named()
+            && let Some(val) = parse_default_value(&child, src)
+        {
+            items.push(val);
         }
     }
     Some(items)
@@ -1428,8 +1426,12 @@ fn parse_dict_literal(node: &Node, src: &[u8]) -> Option<Vec<(DefaultValue, Defa
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "pair" {
-            let key = child.child_by_field_name("key").and_then(|k| parse_default_value(&k, src));
-            let value = child.child_by_field_name("value").and_then(|v| parse_default_value(&v, src));
+            let key = child
+                .child_by_field_name("key")
+                .and_then(|k| parse_default_value(&k, src));
+            let value = child
+                .child_by_field_name("value")
+                .and_then(|v| parse_default_value(&v, src));
             if let (Some(k), Some(v)) = (key, value) {
                 pairs.push((k, v));
             }
@@ -1445,10 +1447,10 @@ fn parse_set_literal(node: &Node, src: &[u8]) -> Option<Vec<DefaultValue>> {
     let mut items = Vec::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.is_named() {
-            if let Some(val) = parse_default_value(&child, src) {
-                items.push(val);
-            }
+        if child.is_named()
+            && let Some(val) = parse_default_value(&child, src)
+        {
+            items.push(val);
         }
     }
     Some(items)
@@ -1605,7 +1607,10 @@ class Predictor(BasePredictor):
         pass
 "#;
         let err = parse_predictor(source, "Predictor", Mode::Predict).unwrap_err();
-        assert!(matches!(err, SchemaError::DefaultFactoryNotSupported { .. }));
+        assert!(matches!(
+            err,
+            SchemaError::DefaultFactoryNotSupported { .. }
+        ));
     }
 
     #[test]

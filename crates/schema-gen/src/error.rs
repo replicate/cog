@@ -20,13 +20,17 @@ pub enum SchemaError {
     #[error("unsupported type: {0}")]
     UnsupportedType(String),
 
-    #[error("default_factory is not supported in Input() — use a literal default value instead (parameter '{param}')")]
+    #[error(
+        "default_factory is not supported in Input() — use a literal default value instead (parameter '{param}')"
+    )]
     DefaultFactoryNotSupported { param: String },
 
     #[error("invalid constraint on parameter '{param}': {reason}")]
     InvalidConstraint { param: String, reason: String },
 
-    #[error("invalid predict reference '{0}' — expected format: file.py:ClassName or file.py:function_name")]
+    #[error(
+        "invalid predict reference '{0}' — expected format: file.py:ClassName or file.py:function_name"
+    )]
     InvalidPredictRef(String),
 
     #[error("file not found: {0}")]
