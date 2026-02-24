@@ -280,7 +280,11 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 		return fmt.Errorf("no image artifact in model")
 	}
 
-	return r.imagePusher.PushArtifact(ctx, imgArtifact)
+	var imagePushOpts []ImagePushOptions
+	if opts.ImageProgressFn != nil {
+		imagePushOpts = append(imagePushOpts, ImagePushOptions{ProgressFn: opts.ImageProgressFn})
+	}
+	return r.imagePusher.Push(ctx, imgArtifact.Reference, imagePushOpts...)
 }
 
 // loadLocal loads a Model from the local docker daemon.

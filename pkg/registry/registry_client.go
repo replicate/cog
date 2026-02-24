@@ -3,6 +3,7 @@ package registry
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -348,6 +350,40 @@ func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.Image
 	return nil
 }
 
+// http1OnlyTransport returns an http.Transport that only speaks HTTP/1.1.
+// This avoids HTTP/2 stream errors (RST_STREAM INTERNAL_ERROR) that occur when
+// uploading large blobs through certain CDN/proxy edges.
+func http1OnlyTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.TLSClientConfig = tlsConfigHTTP1Only(t.TLSClientConfig)
+	// ForceAttemptHTTP2 is true by default on cloned transports; disable it.
+	t.ForceAttemptHTTP2 = false
+	return t
+}
+
+// tlsConfigHTTP1Only returns a TLS config that only advertises HTTP/1.1 via ALPN.
+func tlsConfigHTTP1Only(base *tls.Config) *tls.Config {
+	if base == nil {
+		base = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	cfg := base.Clone()
+	cfg.NextProtos = []string{"http/1.1"}
+	return cfg
+}
+
+// isHTTP2StreamError checks if the error is an HTTP/2 stream error.
+// These appear as "stream error: stream ID N; ERROR_CODE" from net/http2.
+func isHTTP2StreamError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// net/http2.StreamError is not exported in a stable way, so we match on
+	// the error string. The format is:
+	//   "stream error: stream ID <N>; <CODE>"
+	msg := err.Error()
+	return strings.Contains(msg, "stream error: stream ID")
+}
+
 // DefaultRetryBackoff returns the default retry backoff configuration for weight pushes.
 // It retries 5 times with exponential backoff starting at 2 seconds.
 func DefaultRetryBackoff() remote.Backoff {
@@ -411,6 +447,11 @@ func isRetryableError(err error) bool {
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
 		return dnsErr.Temporary()
+	}
+
+	// Check for HTTP/2 stream errors (RST_STREAM), which are transient.
+	if isHTTP2StreamError(err) {
+		return true
 	}
 
 	return false
@@ -519,7 +560,10 @@ func (c *RegistryClient) writeLayerMultipart(ctx context.Context, repo name.Repo
 	}
 
 	scopes := []string{repo.Scope(transport.PushScope)}
-	tr, err := transport.NewWithContext(ctx, repo.Registry, auth, http.DefaultTransport, scopes)
+	// Use HTTP/1.1-only transport to avoid HTTP/2 stream errors during chunked uploads.
+	// Some CDN/proxy edges can send RST_STREAM INTERNAL_ERROR on large HTTP/2
+	// PATCH requests, killing uploads before they reach the origin.
+	tr, err := transport.NewWithContext(ctx, repo.Registry, auth, http1OnlyTransport(), scopes)
 	if err != nil {
 		return fmt.Errorf("creating transport: %w", err)
 	}

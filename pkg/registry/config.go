@@ -11,8 +11,9 @@ const (
 	DefaultMultipartThreshold = 50 * 1024 * 1024 // 50 MB
 
 	// DefaultChunkSize is the size (in bytes) of each chunk in a multipart upload.
-	// Large chunks reduce HTTP round-trips for multi-GB weight files.
-	DefaultChunkSize = 256 * 1024 * 1024 // 256 MB
+	// 95 MB stays under common CDN/proxy request body limits while still being
+	// large enough to reduce HTTP round-trips for multi-GB files.
+	DefaultChunkSize = 95 * 1024 * 1024 // 95 MB
 
 	// envPushChunkSize overrides the default chunk size for multipart uploads.
 	envPushChunkSize = "COG_PUSH_CHUNK_SIZE"

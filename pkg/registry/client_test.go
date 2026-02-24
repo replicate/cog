@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -126,6 +127,16 @@ func TestIsRetryableError(t *testing.T) {
 			name:     "context.DeadlineExceeded",
 			err:      context.DeadlineExceeded,
 			expected: false,
+		},
+		{
+			name:     "HTTP/2 stream error (INTERNAL_ERROR)",
+			err:      fmt.Errorf("Patch \"https://example.com/v2/repo/blobs/uploads/abc\": stream error: stream ID 71; INTERNAL_ERROR; received from peer"),
+			expected: true,
+		},
+		{
+			name:     "wrapped HTTP/2 stream error",
+			err:      fmt.Errorf("uploading blob chunks: %w", fmt.Errorf("stream error: stream ID 3; PROTOCOL_ERROR")),
+			expected: true,
 		},
 		{
 			name:     "generic error (not retryable)",

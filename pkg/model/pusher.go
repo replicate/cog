@@ -27,6 +27,11 @@ type PushOptions struct {
 	// Platform specifies the target platform for bundle indexes.
 	// Default: linux/amd64
 	Platform *Platform
+
+	// ImageProgressFn is an optional callback for reporting per-layer upload progress
+	// during OCI chunked image push. Each call includes the layer digest, bytes
+	// completed, and total bytes.
+	ImageProgressFn func(PushProgress)
 }
 
 // =============================================================================
@@ -66,7 +71,11 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	repo := repoFromReference(imgArtifact.Reference)
 
 	// 1. Push image via OCI chunked push (falls back to Docker push on error)
-	if err := p.imagePusher.PushArtifact(ctx, imgArtifact); err != nil {
+	var imagePushOpts []ImagePushOptions
+	if opts.ImageProgressFn != nil {
+		imagePushOpts = append(imagePushOpts, ImagePushOptions{ProgressFn: opts.ImageProgressFn})
+	}
+	if err := p.imagePusher.Push(ctx, imgArtifact.Reference, imagePushOpts...); err != nil {
 		return fmt.Errorf("push image %q: %w", imgArtifact.Reference, err)
 	}
 
