@@ -3,23 +3,24 @@
 //! Run with: cargo run --bin stub_gen
 //!
 //! Custom generate logic: pyo3-stub-gen places classes from the native
-//! `coglet._impl` module into the `coglet` parent package, but mypy stubgen
-//! overwrites `coglet/__init__.pyi` from the hand-maintained `__init__.py`.
-//! We redirect the `coglet` module output to `coglet/_impl.pyi` so the
-//! native module types are preserved, and also generate `coglet/__init__.pyi`
-//! to re-export the public API.
+//! `coglet._impl` module into the `coglet` parent package stub.  We redirect
+//! that output to `coglet/_impl.pyi` so native module types are preserved in
+//! the right place, then generate `coglet/__init__.pyi` ourselves to
+//! re-export the public API — matching the hand-maintained `__init__.py`.
 
 use pyo3_stub_gen::Result;
 use std::fs;
 use std::io::Write;
 
-/// Items re-exported from `coglet._impl` in `coglet/__init__.py`.
-///
-/// Public items use the `as X` pattern to mark them as explicit re-exports
-/// for type checkers (PEP 484). `_sdk` is re-exported with `as _sdk` so
-/// the cog SDK can import it, but it is NOT included in `__all__` because
-/// it is an internal/private submodule.
+/// Public items re-exported from `coglet._impl` in `coglet/__init__.pyi`.
+/// Uses the `X as X` pattern to mark explicit re-exports (PEP 484).
 const PUBLIC_REEXPORTS: &[&str] = &["__build__", "__version__", "server", "CancelationException"];
+
+/// Private submodules re-exported with `from . import X as X`.
+///
+/// These use a relative import (not `from coglet._impl`) because `_sdk` is a
+/// subpackage that type checkers resolve via the filesystem, not an attribute
+/// of the native extension module.  Not included in `__all__`.
 const PRIVATE_REEXPORTS: &[&str] = &["_sdk"];
 
 fn main() -> Result<()> {
@@ -55,13 +56,20 @@ fn main() -> Result<()> {
     writeln!(f, "# ruff: noqa: E501, F401")?;
     writeln!(f)?;
 
-    // Build the import line: `from coglet._impl import X as X, Y as Y, ...`
-    let all_reexports: Vec<String> = PUBLIC_REEXPORTS
+    // `from coglet._impl import X as X, Y as Y, ...`
+    let reexports: Vec<String> = PUBLIC_REEXPORTS
         .iter()
-        .chain(PRIVATE_REEXPORTS.iter())
         .map(|name| format!("{name} as {name}"))
         .collect();
-    writeln!(f, "from coglet._impl import {}", all_reexports.join(", "))?;
+    writeln!(f, "from coglet._impl import {}", reexports.join(", "))?;
+
+    // `from . import _sdk as _sdk` — relative import so ty resolves the
+    // subpackage via coglet/_sdk/__init__.pyi, not through _impl.
+    let private: Vec<String> = PRIVATE_REEXPORTS
+        .iter()
+        .map(|name| format!("{name} as {name}"))
+        .collect();
+    writeln!(f, "from . import {}", private.join(", "))?;
     writeln!(f)?;
 
     // __all__ only includes public items (no underscore-prefixed names)

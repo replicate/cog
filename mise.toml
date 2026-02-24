@@ -430,13 +430,7 @@ outputs = ["crates/coglet-python/coglet/_sdk/__init__.pyi", "crates/coglet-pytho
 dir = "crates/coglet-python"
 run = [
   { task = "_setup_venv" },
-  '''
-# 1. pyo3-stub-gen: Rust types → _sdk/__init__.pyi (and initial __init__.pyi)
-uv run --active cargo run --bin stub_gen
-
-# 2. mypy stubgen: Python __init__.py → __init__.pyi (overwrites pyo3 version)
-uvx --from mypy stubgen coglet/__init__.py -o . --quiet
-''',
+  "uv run --active cargo run --bin stub_gen",
 ]
 
 [tasks."generate:compat"]
