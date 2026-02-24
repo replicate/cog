@@ -454,8 +454,10 @@ jobs:
 
   lint-python:
     name: Lint Python
-    needs: [changes, build-sdk]
-    if: needs.changes.outputs.python == 'true'
+    needs: [changes, build-sdk, build-rust]
+    if: |
+      needs.changes.outputs.python == 'true' &&
+      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 15
     steps:
@@ -464,6 +466,12 @@ jobs:
         with:
           name: CogPackage
           path: dist
+      - name: Download coglet wheel
+        uses: actions/download-artifact@v7
+        with:
+          name: CogletRustWheel
+          path: dist
+        if: needs.build-rust.result == 'success'
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: astral-sh/setup-uv@v6
