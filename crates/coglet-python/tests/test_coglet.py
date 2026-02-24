@@ -442,6 +442,32 @@ predict: "predict.py:Predictor"
 
 
 @pytest.fixture
+def blocking_sleep_predictor(tmp_path: Path) -> Path:
+    """Create a sync predictor that blocks in time.sleep() (C-level nanosleep)."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import time
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+
+    def predict(self, duration: float = 60.0) -> str:
+        # C-level blocking sleep — PyThreadState_SetAsyncExc fires after sleep returns
+        time.sleep(duration)
+        return "completed"
+""")
+
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
 def slow_async_predictor(tmp_path: Path) -> Path:
     """Create an async predictor that sleeps for a long time (cancellable)."""
     predictor = tmp_path / "predict.py"
@@ -551,6 +577,56 @@ class TestCancellation:
 
             # Wait for the server to return to READY (slot freed after cancel)
             _wait_for_health_status(server, "READY", timeout=10.0)
+
+    @pytest.mark.parametrize(
+        ("predictor_fixture", "duration", "ready_timeout"),
+        [
+            # Busy-loop: cancels immediately at the next bytecode boundary
+            ("slow_sync_predictor", 60.0, 10.0),
+            # time.sleep (nanosleep): blocks in C; cancel fires once sleep returns
+            ("blocking_sleep_predictor", 5.0, 15.0),
+        ],
+        ids=["busy_loop", "nanosleep"],
+    )
+    def test_repeated_cancel_is_idempotent(
+        self,
+        predictor_fixture: str,
+        duration: float,
+        ready_timeout: float,
+        request: pytest.FixtureRequest,
+    ):
+        """Test that cancelling the same prediction multiple times doesn't panic or break.
+
+        Covers both busy-loop (bytecode boundaries) and time.sleep (C-level nanosleep).
+        For nanosleep the cancel is deferred until the sleep returns, so we use a short
+        duration and a longer timeout for the server to recover.
+        """
+        predictor_path: Path = request.getfixturevalue(predictor_fixture)
+        with CogletServer(predictor_path) as server:
+            prediction_id = "cancel-repeat-test"
+            resp = requests.put(
+                f"{server.base_url}/predictions/{prediction_id}",
+                json={"input": {"duration": duration}},
+                headers={"Prefer": "respond-async"},
+            )
+            assert resp.status_code == 202
+
+            # Wait for the prediction to actually be processing
+            _wait_for_health_status(server, "BUSY", timeout=5.0)
+
+            # Cancel the same prediction multiple times in rapid succession
+            for i in range(5):
+                cancel_resp = requests.post(
+                    f"{server.base_url}/predictions/{prediction_id}/cancel"
+                )
+                # First cancel returns 200 (found), subsequent may return 200 or
+                # 404 depending on timing — but must never panic or 500.
+                assert cancel_resp.status_code in (200, 404), (
+                    f"Cancel attempt {i + 1} returned unexpected {cancel_resp.status_code}"
+                )
+
+            # Server should recover to READY
+            _wait_for_health_status(server, "READY", timeout=ready_timeout)
 
     def test_cancel_sync_prediction_connection_drop(self, slow_sync_predictor: Path):
         """Test that dropping a sync connection cancels the prediction."""

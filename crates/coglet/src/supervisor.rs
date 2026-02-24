@@ -405,4 +405,25 @@ mod tests {
 
         assert!(!cancel_token.is_cancelled());
     }
+
+    #[tokio::test]
+    async fn repeated_cancel_is_idempotent() {
+        let supervisor = PredictionSupervisor::new();
+
+        let handle =
+            supervisor.submit("test-repeat-cancel".to_string(), serde_json::json!({}), None);
+        let cancel_token = handle.cancel_token();
+
+        // First cancel should succeed
+        assert!(supervisor.cancel("test-repeat-cancel"));
+        assert!(cancel_token.is_cancelled());
+
+        // Subsequent cancels on the same prediction should still return true
+        // (prediction entry still exists) and must not panic.
+        assert!(supervisor.cancel("test-repeat-cancel"));
+        assert!(supervisor.cancel("test-repeat-cancel"));
+
+        // Cancelling a nonexistent prediction returns false
+        assert!(!supervisor.cancel("nonexistent"));
+    }
 }

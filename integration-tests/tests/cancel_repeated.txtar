@@ -1,0 +1,49 @@
+# Test that cancelling the same prediction multiple times doesn't panic or break.
+#
+# Uses time.sleep() (C-level nanosleep) — the harder cancellation case since
+# the thread is blocked in native code.  Fires 3 cancel requests in quick
+# succession and verifies the webhook still receives "canceled" status.
+
+[short] skip 'requires Docker build'
+
+cog build -t $TEST_IMAGE
+
+webhook-server-start
+cog serve --upload-url http://unused/
+
+# Submit async prediction that sleeps for 5s (nanosleep blocks in C;
+# cancel fires once sleep returns, so keep it short for CI)
+curl -H Prefer:respond-async PUT /predictions/cancel-repeat-test '{"id":"cancel-repeat-test","input":{"duration":5},"webhook":"$WEBHOOK_URL","webhook_events_filter":["completed"]}'
+
+# Give the prediction time to start processing
+exec sleep 2
+
+# Cancel it 3 times in rapid succession — none should 500 or panic
+curl POST /predictions/cancel-repeat-test/cancel '{}'
+curl POST /predictions/cancel-repeat-test/cancel '{}'
+curl POST /predictions/cancel-repeat-test/cancel '{}'
+
+# Wait for webhook callback
+webhook-server-wait 30s
+
+# Prediction should be canceled
+stdout '"status":"canceled"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import time
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+
+    def predict(self, duration: float = 60.0) -> str:
+        # C-level blocking sleep (nanosleep) — harder to cancel than a busy-loop
+        time.sleep(duration)
+        return "completed"
