@@ -445,7 +445,6 @@ impl PredictHandler for PythonPredictHandler {
                 } else {
                     // Sync train - set sync prediction ID for log routing
                     crate::log_writer::set_sync_prediction_id(Some(&id));
-                    let _cancelable = crate::cancel::enter_cancelable();
                     let r = pred.train_worker(input, slot_sender.clone());
                     crate::log_writer::set_sync_prediction_id(None);
 
@@ -524,7 +523,6 @@ impl PredictHandler for PythonPredictHandler {
                 } else {
                     // Sync predict - set sync prediction ID for log routing
                     crate::log_writer::set_sync_prediction_id(Some(&id));
-                    let _cancelable = crate::cancel::enter_cancelable();
                     tracing::trace!(%slot, %id, "Calling predict_worker");
                     let r = pred.predict_worker(input, slot_sender.clone());
                     tracing::trace!(%slot, %id, "predict_worker returned");

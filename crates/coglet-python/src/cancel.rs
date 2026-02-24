@@ -2,8 +2,7 @@
 //!
 //! Sync predictors use `PyThreadState_SetAsyncExc` to inject a
 //! `CancelationException` (a `BaseException` subclass) into the Python
-//! thread running `predict()`.  A SIGUSR1 signal handler is also installed
-//! as a secondary mechanism.
+//! thread running `predict()`.
 //!
 //! Async predictors use asyncio task cancellation:
 //! - Store task reference when prediction starts
@@ -14,8 +13,6 @@
 //! `Exception`) so that bare `except Exception` blocks in user code cannot
 //! swallow it — matching the semantics of `KeyboardInterrupt` and
 //! `asyncio.CancelledError`.
-
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::prelude::*;
 
@@ -32,64 +29,6 @@ pyo3_stub_gen::create_exception!(
      This matches the semantics of ``KeyboardInterrupt`` and\n\
      ``asyncio.CancelledError``."
 );
-
-/// Global flag indicating if a sync prediction is currently cancelable.
-/// Only set to true while inside predict() for sync predictors.
-static CANCELABLE: AtomicBool = AtomicBool::new(false);
-
-/// SIGUSR1 signal handler implemented in Rust.
-///
-/// Raises CancelationException if we're currently inside a cancelable predict().
-#[pyfunction]
-fn _sigusr1_handler(_signum: i32, _frame: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
-    if is_cancelable() {
-        Err(PyErr::new::<CancelationException, _>(
-            "prediction was cancelled",
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-/// Install the SIGUSR1 signal handler for sync predictor cancellation.
-///
-/// This should be called once at startup. The handler will raise
-/// CancelationException when SIGUSR1 is received and CANCELABLE is true.
-pub fn install_signal_handler(py: Python<'_>) -> PyResult<()> {
-    let signal = py.import("signal")?;
-
-    // Install the Rust handler for SIGUSR1
-    let sigusr1 = signal.getattr("SIGUSR1")?;
-    let handler = wrap_pyfunction!(_sigusr1_handler, py)?;
-    signal.call_method1("signal", (sigusr1, handler))?;
-
-    tracing::debug!("Installed SIGUSR1 signal handler for sync cancellation");
-    Ok(())
-}
-
-/// Mark the current context as cancelable (for sync predictors).
-/// Returns a guard that clears the flag on drop.
-pub fn enter_cancelable() -> CancelableGuard {
-    CANCELABLE.store(true, Ordering::SeqCst);
-    CancelableGuard { _private: () }
-}
-
-/// Check if we're currently in a cancelable section.
-/// Called from Python signal handler.
-pub fn is_cancelable() -> bool {
-    CANCELABLE.load(Ordering::SeqCst)
-}
-
-/// RAII guard that clears cancelable flag on drop.
-pub struct CancelableGuard {
-    _private: (),
-}
-
-impl Drop for CancelableGuard {
-    fn drop(&mut self) {
-        CANCELABLE.store(false, Ordering::SeqCst);
-    }
-}
 
 /// Inject CancelationException into a specific Python thread.
 ///

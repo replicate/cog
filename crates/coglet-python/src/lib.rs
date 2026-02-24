@@ -236,11 +236,6 @@ impl CogletServer {
             warn!(error = %e, "Failed to install audit hook, stdout/stderr protection disabled");
         }
 
-        // Install signal handler for cancellation
-        if let Err(e) = cancel::install_signal_handler(py) {
-            warn!(error = %e, "Failed to install signal handler, cancellation may not work");
-        }
-
         info!(target: "coglet::worker", "Worker subprocess starting, waiting for Init message");
 
         py.detach(|| {
@@ -253,12 +248,6 @@ impl CogletServer {
                     .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
             })
         })
-    }
-
-    /// Returns `True` if the current thread is in a cancelable predict call.
-    #[pyo3(name = "_is_cancelable")]
-    fn is_cancelable(&self) -> bool {
-        cancel::is_cancelable()
     }
 
     fn __repr__(&self) -> &'static str {

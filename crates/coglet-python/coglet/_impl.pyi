@@ -66,9 +66,5 @@ class Server:
         Sets the active flag, installs log writers and audit hooks,
         then enters the worker event loop.
         """
-    def _is_cancelable(self) -> builtins.bool:
-        r"""
-        Returns `True` if the current thread is in a cancelable predict call.
-        """
     def __repr__(self) -> builtins.str: ...
 
