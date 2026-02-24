@@ -120,6 +120,9 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 		if cfg.Build.CuDNN != nil {
 			config.Build.CuDNN = *cfg.Build.CuDNN
 		}
+		if cfg.Build.SDKVersion != nil {
+			config.Build.SDKVersion = *cfg.Build.SDKVersion
+		}
 
 		// Convert Run items
 		config.Build.Run = make([]RunItem, len(cfg.Build.Run))

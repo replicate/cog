@@ -189,17 +189,17 @@ During build, the wheel is:
 
 #### Wheel Selection
 
-The `COG_WHEEL` environment variable controls which wheel is installed:
+The `COG_SDK_WHEEL` environment variable controls which cog SDK wheel is installed:
 
 | Value | Source |
 |-------|--------|
-| (unset) | Embedded `cog` wheel (default) |
-| `cog` | Embedded `cog` wheel |
-| `coglet` | Experimental runtime (temporary compatibility) |
+| (unset) | Latest `cog` from PyPI (auto-detects local wheel in dev builds) |
+| `pypi` | Latest `cog` from PyPI |
+| `pypi:0.18.0` | Specific version from PyPI |
 | `https://...` | Download wheel from URL |
 | `/path/to/file.whl` | Use local wheel file |
 
-This allows testing development versions of the SDK or pinning to specific releases. The upcoming unified runtime will also use this mechanism for selection.
+This allows testing development versions of the SDK or pinning to specific releases. The `build.sdk_version` field in `cog.yaml` provides the same version-pinning capability without requiring environment variables.
 
 ---
 
