@@ -184,11 +184,6 @@ func (c *Config) TensorFlowVersion() (string, bool) {
 	return c.pythonPackageVersion("tensorflow")
 }
 
-func (c *Config) ContainsCoglet() bool {
-	_, ok := c.pythonPackageVersion("coglet")
-	return ok
-}
-
 func (c *Config) cudasFromTorch() (torchVersion string, torchCUDAs []string, err error) {
 	if version, ok := c.TorchVersion(); ok {
 		cudas, err := cudasFromTorch(version)

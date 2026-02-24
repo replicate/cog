@@ -880,11 +880,14 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
+	// coglet in python_packages is stripped — the build system always installs coglet
+	// via installCog(), which runs before pip requirements.
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
+` + testInstallCog(true) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
@@ -898,12 +901,12 @@ COPY . /src`
 
 	require.Equal(t, expected, actual)
 
+	// coglet URL is stripped from requirements — build system installs coglet itself
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
 torch==2.3.1
-pandas==2.0.3
-coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha31/coglet-0.1.0a31-py3-none-any.whl`, string(requirements))
+pandas==2.0.3`, string(requirements))
 }
 
 func TestCOGWheelDefault(t *testing.T) {
@@ -1050,4 +1053,30 @@ predict: predict.py:Predictor
 
 	// Should contain uv pip install from temp path (copied into container)
 	require.Contains(t, actual, "uv pip install --no-cache /tmp/test-cog-0.1.0-py3-none-any.whl")
+}
+
+func TestCogletAlwaysInstalledWhenInRequirements(t *testing.T) {
+	tmpDir := t.TempDir()
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  python_packages:
+    - "coglet==0.1.0"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+	dockerfile, err := gen.GenerateInitialSteps(t.Context())
+	require.NoError(t, err)
+	// coglet must be installed by the build system (not skipped)
+	require.Contains(t, dockerfile, "uv pip install")
+	require.Contains(t, dockerfile, "coglet")
+	// the user-supplied coglet==0.1.0 must be stripped from requirements
+	require.NotContains(t, dockerfile, "coglet==0.1.0")
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/version"
 	"github.com/replicate/cog/pkg/weights"
@@ -459,11 +460,6 @@ ENV PATH="/usr/local/bin:$PATH"`, py, py, py), nil
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
-	// Skip installing normal cog if coglet is already in requirements
-	if g.Config.ContainsCoglet() {
-		return "", nil
-	}
-
 	// Do not install Cog in base images
 	if !g.requiresCog {
 		return "", nil
@@ -671,6 +667,30 @@ func (g *StandardGenerator) installCogletFromFile(path string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
+// filterManagedPackages strips cog and coglet from user requirements content.
+// These packages are always installed by installCog() — if they appear in the
+// user's python_packages or requirements.txt, we strip them to prevent pip from
+// overwriting the version we installed.
+func (g *StandardGenerator) filterManagedPackages(reqContents string) string {
+	managed := map[string]bool{"cog": true, "coglet": true}
+	var filtered []string
+	for line := range strings.SplitSeq(reqContents, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "-") {
+			filtered = append(filtered, line)
+			continue
+		}
+		pkgName := requirements.PackageName(trimmed)
+		baseName := strings.Split(pkgName, "[")[0]
+		if managed[strings.ToLower(baseName)] {
+			console.Warnf("Stripping '%s' from requirements: cog and coglet are managed by the build system. Use build.sdk_version in cog.yaml or COG_SDK_WHEEL / COGLET_WHEEL env vars to override.", trimmed)
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.Join(filtered, "\n")
+}
+
 func (g *StandardGenerator) pipInstalls() (string, error) {
 	var err error
 	includePackages := []string{}
@@ -690,6 +710,10 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	// Strip cog/coglet from user requirements — we always install them ourselves
+	// via installCog(). Leaving them in would cause pip to overwrite our version.
+	g.pythonRequirementsContents = g.filterManagedPackages(g.pythonRequirementsContents)
 
 	if strings.Trim(g.pythonRequirementsContents, "") == "" {
 		return "", nil
