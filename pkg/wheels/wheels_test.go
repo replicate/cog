@@ -184,13 +184,13 @@ func TestGetCogWheelConfig(t *testing.T) {
 		expectedURL    string
 		expectedVer    string
 	}{
-		// Release build defaults to PyPI with version
+		// Release build defaults to PyPI latest (no version pin)
 		{
-			name:           "release build defaults to PyPI with version",
+			name:           "release build defaults to PyPI latest",
 			envValue:       "",
 			globalVersion:  "0.12.0",
 			expectedSource: WheelSourcePyPI,
-			expectedVer:    "0.12.0",
+			expectedVer:    "",
 		},
 		// Dev build with explicit pypi (auto-detection tested separately in TestGetCogWheelConfigAutoDetect)
 		{
@@ -286,12 +286,12 @@ func TestGetCogWheelConfigAutoDetect(t *testing.T) {
 	require.Equal(t, WheelSourceFile, result.Source)
 	require.Contains(t, result.Path, "cog-0.1.0-py3-none-any.whl")
 
-	// Test that release mode does NOT auto-detect
+	// Test that release mode does NOT auto-detect (and has no version pin)
 	result, err = ResolveCogWheel("", "0.12.0")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, WheelSourcePyPI, result.Source)
-	require.Equal(t, "0.12.0", result.Version)
+	require.Equal(t, "", result.Version)
 }
 
 func TestResolveCogWheelUsesExecutableDist(t *testing.T) {
@@ -350,13 +350,13 @@ func TestGetCogletWheelConfig(t *testing.T) {
 		expectedURL    string
 		expectedVer    string
 	}{
-		// Default: coglet from PyPI (release build)
+		// Default: coglet from PyPI latest (release build, no version pin)
 		{
-			name:           "release default uses PyPI with version",
+			name:           "release default uses PyPI latest",
 			envValue:       "",
 			globalVersion:  "0.12.0",
 			expectedSource: WheelSourcePyPI,
-			expectedVer:    "0.12.0",
+			expectedVer:    "",
 		},
 		{
 			name:           "dev default falls back to PyPI without version",
@@ -460,4 +460,73 @@ func TestPyPIPackageURL(t *testing.T) {
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestIsPreRelease(t *testing.T) {
+	tests := []struct {
+		version  string
+		expected bool
+	}{
+		// semver format
+		{"0.17.0-alpha1", true},
+		{"0.17.0-beta2", true},
+		{"0.17.0-rc1", true},
+		{"0.17.0-dev1", true},
+		// PEP 440 format
+		{"0.17.0a1", true},
+		{"0.17.0b2", true},
+		{"0.17.0rc1", true},
+		{"0.17.0.dev1", true},
+		// stable
+		{"0.17.0", false},
+		{"1.0.0", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			require.Equal(t, tt.expected, IsPreRelease(tt.version))
+		})
+	}
+}
+
+func TestValidateSDKVersion(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    *WheelConfig
+		label     string
+		expectErr bool
+		errMsg    string
+	}{
+		{name: "exact minimum valid", config: &WheelConfig{Source: WheelSourcePyPI, Version: "0.16.0"}, label: "cog"},
+		{name: "above minimum valid", config: &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0"}, label: "cog"},
+		{name: "nil config valid", config: nil, label: "cog"},
+		{name: "no version pin valid", config: &WheelConfig{Source: WheelSourcePyPI, Version: ""}, label: "cog"},
+		{name: "URL source not checked", config: &WheelConfig{Source: WheelSourceURL, URL: "https://example.com/old.whl"}, label: "cog"},
+		{name: "file source not checked", config: &WheelConfig{Source: WheelSourceFile, Path: "/tmp/old.whl"}, label: "cog"},
+		{
+			name: "below minimum errors", config: &WheelConfig{Source: WheelSourcePyPI, Version: "0.15.0"},
+			label: "cog", expectErr: true,
+			errMsg: "cog version 0.15.0 is below the minimum required version 0.16.0",
+		},
+		{
+			name: "pre-release of old version errors", config: &WheelConfig{Source: WheelSourcePyPI, Version: "0.15.0-rc1"},
+			label: "cog", expectErr: true,
+			errMsg: "cog version 0.15.0-rc1 is below the minimum required version 0.16.0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateSDKVersion(tt.config, tt.label)
+			if tt.expectErr {
+				require.Error(t, err)
+				require.Equal(t, tt.errMsg, err.Error())
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestPyPIPackageURLPreRelease(t *testing.T) {
+	cfg := &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0-alpha1"}
+	require.Equal(t, "cog==0.17.0a1", cfg.PyPIPackageURL("cog"))
 }
