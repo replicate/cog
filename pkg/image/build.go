@@ -25,6 +25,7 @@ import (
 	"github.com/replicate/cog/pkg/dockerignore"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/schemagen"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/weights"
 )
@@ -209,20 +210,27 @@ func Build(
 		schemaJSON = data
 	default:
 		console.Info("Validating model schema...")
-		// When excludeSource is true (cog serve), /src was not COPYed into the
-		// image, so we need to volume-mount the project directory for schema generation.
-		schemaSourceDir := ""
-		if excludeSource {
-			schemaSourceDir = dir
+
+		// Determine predictor ref and mode from config.
+		// Prefer predict, fall back to train (mirrors Python openapi_schema.py).
+		predictRef := cfg.Predict
+		mode := "predict"
+		if predictRef == "" {
+			predictRef = cfg.Train
+			mode = "train"
 		}
-		schema, err := GenerateOpenAPISchema(ctx, dockerCommand, tmpImageId, cfg.Build.GPU, schemaSourceDir)
+		if predictRef == "" {
+			return "", fmt.Errorf("No predict or train reference found in cog.yaml")
+		}
+
+		schema, err := schemagen.Generate(ctx, dir, predictRef, mode)
 		if err != nil {
-			return "", fmt.Errorf("Failed to get type signature: %w", err)
+			return "", fmt.Errorf("Failed to generate schema: %w", err)
 		}
 
 		data, err := json.Marshal(schema)
 		if err != nil {
-			return "", fmt.Errorf("Failed to convert type signature to JSON: %w", err)
+			return "", fmt.Errorf("Failed to convert schema to JSON: %w", err)
 		}
 
 		schemaJSON = data

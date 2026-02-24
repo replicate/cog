@@ -291,10 +291,42 @@ jobs:
           name: CogletRustWheel
           path: dist/coglet-*-cp310-abi3-*.whl
 
+  build-schema-gen:
+    name: Build cog-schema-gen
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build cog-schema-gen (size-optimized)
+        run: |
+          cargo build --manifest-path crates/Cargo.toml -p schema-gen --profile release-small
+          mkdir -p dist
+          cp crates/target/release-small/cog-schema-gen dist/cog-schema-gen
+          # Also create platform-named copy for goreleaser pre-hook
+          cp dist/cog-schema-gen dist/cog-schema-gen-linux-amd64
+          echo "Built cog-schema-gen ($(du -h dist/cog-schema-gen | cut -f1))"
+      - name: Upload cog-schema-gen binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: CogSchemaGen
+          path: dist/cog-schema-gen*
+
   build-cog:
     name: Build cog CLI
-    needs: changes
-    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true'
+    needs: [changes, build-schema-gen]
+    if: |
+      !cancelled() &&
+      (needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true') &&
+      (needs.build-schema-gen.result == 'success' || needs.build-schema-gen.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -305,6 +337,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+      - name: Download cog-schema-gen
+        uses: actions/download-artifact@v7
+        with:
+          name: CogSchemaGen
+          path: dist
+        if: needs.build-schema-gen.result == 'success'
       - name: Get version from Cargo.toml
         id: version
         run: echo "version=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')" >> "$GITHUB_OUTPUT"
@@ -782,6 +820,7 @@ jobs:
       - build-cog
       - build-sdk
       - build-rust
+      - build-schema-gen
       - fmt-go
       - fmt-rust
       - fmt-python
@@ -806,6 +845,7 @@ jobs:
           echo "  changes: ${{ needs.changes.result }}"
           echo "  build-sdk: ${{ needs.build-sdk.result }}"
           echo "  build-rust: ${{ needs.build-rust.result }}"
+          echo "  build-schema-gen: ${{ needs.build-schema-gen.result }}"
           echo "  fmt-go: ${{ needs.fmt-go.result }}"
           echo "  fmt-rust: ${{ needs.fmt-rust.result }}"
           echo "  fmt-python: ${{ needs.fmt-python.result }}"
@@ -827,6 +867,7 @@ jobs:
             "${{ needs.changes.result }}" \
             "${{ needs.build-sdk.result }}" \
             "${{ needs.build-rust.result }}" \
+            "${{ needs.build-schema-gen.result }}" \
             "${{ needs.fmt-go.result }}" \
             "${{ needs.fmt-rust.result }}" \
             "${{ needs.fmt-python.result }}" \

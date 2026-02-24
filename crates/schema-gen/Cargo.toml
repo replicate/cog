@@ -1,0 +1,32 @@
+[package]
+name = "schema-gen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Static OpenAPI schema generator for Cog predictors"
+
+[[bin]]
+name = "cog-schema-gen"
+path = "src/main.rs"
+
+[lib]
+name = "schema_gen"
+
+[dependencies]
+# Tree-sitter for Python parsing
+tree-sitter = "0.24"
+tree-sitter-python = "0.23"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Ordered maps (preserve field order)
+indexmap = { version = "2", features = ["serde"] }
+
+# Error handling
+thiserror = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }

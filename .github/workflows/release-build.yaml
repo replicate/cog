@@ -194,9 +194,75 @@ jobs:
           name: coglet-wheel-${{ matrix.artifact-suffix }}
           path: dist/*.whl
 
+  build-schema-gen:
+    name: Build cog-schema-gen (${{ matrix.artifact-name }})
+    needs: verify-tag
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact-name: cog-schema-gen-linux-amd64
+            cross: false
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact-name: cog-schema-gen-linux-arm64
+            cross: true
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact-name: cog-schema-gen-darwin-arm64
+            cross: false
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact-name: cog-schema-gen-darwin-amd64
+            cross: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          key: schema-gen-${{ matrix.target }}
+
+      # cargo-zigbuild for Linux cross-compilation (aarch64 from x86_64)
+      - name: Install cargo-zigbuild
+        if: matrix.cross
+        run: pip install cargo-zigbuild
+
+      - name: Build cog-schema-gen (native)
+        if: "!matrix.cross"
+        run: |
+          cargo build --manifest-path crates/Cargo.toml -p schema-gen --profile release-small --target ${{ matrix.target }}
+          mkdir -p dist
+          cp crates/target/${{ matrix.target }}/release-small/cog-schema-gen dist/${{ matrix.artifact-name }}
+          echo "Built ${{ matrix.artifact-name }} ($(du -h dist/${{ matrix.artifact-name }} | cut -f1))"
+
+      - name: Build cog-schema-gen (cross)
+        if: matrix.cross
+        run: |
+          cargo zigbuild --manifest-path crates/Cargo.toml -p schema-gen --profile release-small --target ${{ matrix.target }}
+          mkdir -p dist
+          cp crates/target/${{ matrix.target }}/release-small/cog-schema-gen dist/${{ matrix.artifact-name }}
+          echo "Built ${{ matrix.artifact-name }} ($(du -h dist/${{ matrix.artifact-name }} | cut -f1))"
+
+      - name: Upload cog-schema-gen binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: dist/${{ matrix.artifact-name }}
+
   create-release:
     name: Create release
-    needs: [verify-tag, build-sdk, build-coglet-wheels]
+    needs: [verify-tag, build-sdk, build-coglet-wheels, build-schema-gen]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -207,6 +273,24 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+
+      # Download schema-gen binaries into dist/ for goreleaser pre-hook embedding
+      - name: Download cog-schema-gen binaries
+        uses: actions/download-artifact@v7
+        with:
+          pattern: cog-schema-gen-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify schema-gen binaries
+        run: |
+          echo "Schema-gen binaries in dist/:"
+          ls -lh dist/cog-schema-gen-*
+          # Goreleaser pre-hook expects: dist/cog-schema-gen-{os}-{arch}
+          for f in dist/cog-schema-gen-linux-amd64 dist/cog-schema-gen-linux-arm64 \
+                   dist/cog-schema-gen-darwin-amd64 dist/cog-schema-gen-darwin-arm64; do
+            test -f "$f" || { echo "::error::Missing $f"; exit 1; }
+          done
 
       - name: Check for existing release
         run: |
@@ -220,7 +304,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Goreleaser builds CLI binaries and creates draft release
+      # Goreleaser builds CLI binaries (with schema-gen embedded via pre-hook) and creates draft release
       - name: Build CLI and create draft release
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -235,25 +319,39 @@ jobs:
         with:
           path: artifacts
 
-      - name: Upload wheels to release
+      - name: Upload wheels and schema-gen binaries to release
         run: |
           TAG="${{ github.ref_name }}"
 
-          # Collect all wheels
-          mkdir -p release-wheels
-          cp artifacts/sdk-dist/* release-wheels/
-          cp artifacts/coglet-wheel-*/*.whl release-wheels/
+          # Collect all additional release assets
+          mkdir -p release-extras
+          cp artifacts/sdk-dist/* release-extras/
+          cp artifacts/coglet-wheel-*/*.whl release-extras/
 
-          # Download goreleaser's checksums.txt and append wheel checksums
-          gh release download "$TAG" -p checksums.txt -D release-wheels
-          cd release-wheels
-          sha256sum *.whl *.tar.gz >> checksums.txt
+          # Standalone cog-schema-gen binaries (named to match cog convention)
+          for f in artifacts/cog-schema-gen-*/cog-schema-gen-*; do
+            name=$(basename "$f")
+            # Convert to title case OS to match goreleaser naming: cog-schema-gen_Linux_x86_64
+            case "$name" in
+              *-linux-amd64)  release_name="cog-schema-gen_Linux_x86_64" ;;
+              *-linux-arm64)  release_name="cog-schema-gen_Linux_arm64" ;;
+              *-darwin-amd64) release_name="cog-schema-gen_Darwin_x86_64" ;;
+              *-darwin-arm64) release_name="cog-schema-gen_Darwin_arm64" ;;
+              *)              release_name="$name" ;;
+            esac
+            cp "$f" "release-extras/$release_name"
+          done
+
+          # Download goreleaser's checksums.txt and append checksums for all extras
+          gh release download "$TAG" -p checksums.txt -D release-extras
+          cd release-extras
+          sha256sum *.whl *.tar.gz cog-schema-gen_* >> checksums.txt 2>/dev/null || true
           echo "Checksums:"
           cat checksums.txt
           cd ..
 
-          echo "Uploading wheels and updated checksums..."
-          gh release upload "$TAG" release-wheels/* --clobber
+          echo "Uploading extras and updated checksums..."
+          gh release upload "$TAG" release-extras/* --clobber
 
           echo "Release assets:"
           gh release view "$TAG" --json assets --jq '.assets[].name'

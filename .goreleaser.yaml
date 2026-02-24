@@ -15,6 +15,13 @@ builds:
       - amd64
       - arm64
     main: ./cmd/cog
+    hooks:
+      # Embed the platform-matched cog-schema-gen binary before each Go compilation.
+      # The binary must exist at dist/cog-schema-gen-{os}-{arch} (built by Rust prior to goreleaser).
+      # For snapshot/dev builds: mise run build:schema-gen copies the native binary.
+      # For release builds: the CI workflow builds all 4 platform binaries first.
+      pre:
+        - cmd: cp dist/cog-schema-gen-{{ .Os }}-{{ .Arch }} pkg/schemagen/embedded/cog-schema-gen
     ldflags:
       # COG_VERSION (from Cargo.toml via mise build:cog) overrides git-derived version for snapshots.
       # For tagged releases, COG_VERSION is unset and envOrDefault falls back to .Version (from tag).

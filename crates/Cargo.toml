@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["coglet", "coglet-python"]
+members = ["coglet", "coglet-python", "schema-gen"]
 
 [workspace.package]
 version = "0.17.0"
@@ -46,3 +46,13 @@ pyo3-stub-gen = "0.18"
 
 # Testing
 insta = { version = "1", features = ["json"] }
+
+# Size-optimized release profile for cog-schema-gen (embedded in the cog Go binary).
+# Applied via: cargo build --profile release-small -p schema-gen
+[profile.release-small]
+inherits = "release"
+opt-level = "z"          # Optimize for size over speed
+lto = true               # Full link-time optimization — eliminates dead code across crates
+codegen-units = 1        # Single codegen unit — maximizes LTO effectiveness
+panic = "abort"          # No unwind tables — smaller binary, we never catch panics
+strip = "symbols"        # Strip all symbol tables and debug info
