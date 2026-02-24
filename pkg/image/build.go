@@ -11,6 +11,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -114,6 +115,11 @@ func Build(
 	}
 
 	if !skipSchemaValidation {
+		// Ensure the .cog/ directory exists before writing the schema file.
+		if err := os.MkdirAll(filepath.Dir(bundledSchemaFile), 0o755); err != nil {
+			return "", fmt.Errorf("failed to create directory for %s: %w", bundledSchemaFile, err)
+		}
+
 		// Write schema file and validate OpenAPI spec
 		if err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644); err != nil {
 			return "", fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
