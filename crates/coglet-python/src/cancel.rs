@@ -1,26 +1,41 @@
 //! Cancellation support for predictions.
 //!
-//! Sync predictors use SIGUSR1 signal handling (like cog):
-//! - Install Python signal handler at startup
-//! - When cancel requested, send SIGUSR1 to self
-//! - Handler raises CancelationException in Python
+//! Sync predictors use `PyThreadState_SetAsyncExc` to inject a
+//! `CancelationException` (a `BaseException` subclass) into the Python
+//! thread running `predict()`.  A SIGUSR1 signal handler is also installed
+//! as a secondary mechanism.
 //!
 //! Async predictors use asyncio task cancellation:
 //! - Store task reference when prediction starts
 //! - Call task.cancel() when cancel requested
 //! - Python raises asyncio.CancelledError
+//!
+//! `CancelationException` deliberately derives from `BaseException` (not
+//! `Exception`) so that bare `except Exception` blocks in user code cannot
+//! swallow it — matching the semantics of `KeyboardInterrupt` and
+//! `asyncio.CancelledError`.
 
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::prelude::*;
 
+// Static exception type with automatic stub generation.
+// Derives from BaseException so `except Exception` does not catch it.
+pyo3_stub_gen::create_exception!(
+    coglet,
+    CancelationException,
+    pyo3::exceptions::PyBaseException,
+    "Raised when a running prediction or training is cancelled.\n\
+     \n\
+     Derives from ``BaseException`` (not ``Exception``) so that bare\n\
+     ``except Exception`` blocks do not accidentally swallow cancellation.\n\
+     This matches the semantics of ``KeyboardInterrupt`` and\n\
+     ``asyncio.CancelledError``."
+);
+
 /// Global flag indicating if a sync prediction is currently cancelable.
 /// Only set to true while inside predict() for sync predictors.
 static CANCELABLE: AtomicBool = AtomicBool::new(false);
-
-/// CancelationException class, stored once at startup.
-static CANCELATION_EXCEPTION: OnceLock<Py<PyAny>> = OnceLock::new();
 
 /// SIGUSR1 signal handler implemented in Rust.
 ///
@@ -28,13 +43,9 @@ static CANCELATION_EXCEPTION: OnceLock<Py<PyAny>> = OnceLock::new();
 #[pyfunction]
 fn _sigusr1_handler(_signum: i32, _frame: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
     if is_cancelable() {
-        if let Some(exc) = CANCELATION_EXCEPTION.get() {
-            Python::attach(|py| Err(PyErr::from_value(exc.bind(py).clone())))
-        } else {
-            Err(pyo3::exceptions::PyRuntimeError::new_err(
-                "CancelationException not initialized",
-            ))
-        }
+        Err(PyErr::new::<CancelationException, _>(
+            "prediction was cancelled",
+        ))
     } else {
         Ok(())
     }
@@ -46,24 +57,6 @@ fn _sigusr1_handler(_signum: i32, _frame: Option<&Bound<'_, PyAny>>) -> PyResult
 /// CancelationException when SIGUSR1 is received and CANCELABLE is true.
 pub fn install_signal_handler(py: Python<'_>) -> PyResult<()> {
     let signal = py.import("signal")?;
-
-    // Import or define CancelationException.
-    // MUST be a proper exception *class* (not an instance) because
-    // PyThreadState_SetAsyncExc requires a type as its second argument.
-    let cancel_exc = if let Ok(exceptions) = py.import("cog.server.exceptions") {
-        exceptions.getattr("CancelationException")?
-    } else {
-        // Create a proper exception subclass: type("CancelationException", (Exception,), {})
-        let builtins = py.import("builtins")?;
-        let base_exc = builtins.getattr("Exception")?;
-        let empty_dict = pyo3::types::PyDict::new(py);
-        builtins
-            .getattr("type")?
-            .call1(("CancelationException", (base_exc,), empty_dict))?
-    };
-
-    // Store in Rust static (no module setattr needed)
-    let _ = CANCELATION_EXCEPTION.set(cancel_exc.unbind());
 
     // Install the Rust handler for SIGUSR1
     let sigusr1 = signal.getattr("SIGUSR1")?;
@@ -107,17 +100,11 @@ impl Drop for CancelableGuard {
 /// Requires the GIL — `Python::attach` acquires it, blocking briefly if the
 /// prediction thread currently holds it (CPython releases it every ~5ms).
 pub fn cancel_sync_thread(py_thread_id: std::ffi::c_long) {
-    Python::attach(|_py| {
-        let exc = match CANCELATION_EXCEPTION.get() {
-            Some(exc) => exc.as_ptr(),
-            None => {
-                tracing::error!("CancelationException not initialized, cannot cancel");
-                return;
-            }
-        };
+    Python::attach(|py| {
+        let exc = py.get_type::<CancelationException>().as_ptr();
 
-        // SAFETY: We hold the GIL. exc is a valid Python object pointer
-        // stored in a static (kept alive for the process lifetime).
+        // SAFETY: We hold the GIL. exc is a valid Python type pointer
+        // obtained from the interpreter's type registry.
         let result = unsafe { pyo3::ffi::PyThreadState_SetAsyncExc(py_thread_id, exc) };
 
         match result {

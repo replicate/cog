@@ -19,7 +19,7 @@ use std::io::Write;
 /// for type checkers (PEP 484). `_sdk` is re-exported with `as _sdk` so
 /// the cog SDK can import it, but it is NOT included in `__all__` because
 /// it is an internal/private submodule.
-const PUBLIC_REEXPORTS: &[&str] = &["__build__", "__version__", "server"];
+const PUBLIC_REEXPORTS: &[&str] = &["__build__", "__version__", "server", "CancelationException"];
 const PRIVATE_REEXPORTS: &[&str] = &["_sdk"];
 
 fn main() -> Result<()> {

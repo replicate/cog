@@ -24,6 +24,7 @@ from .coder import Coder
 
 # Register built-in coders
 from .coders import DataclassCoder, JsonCoder, SetCoder
+from .exceptions import CancelationException
 from .input import FieldInfo, Input
 from .model import BaseModel
 from .predictor import BasePredictor
@@ -82,6 +83,8 @@ __all__ = [
     "AsyncConcatenateIterator",
     # Extensibility
     "Coder",
+    # Exceptions
+    "CancelationException",
     # Metrics
     "current_scope",
 ]

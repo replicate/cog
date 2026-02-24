@@ -6,6 +6,7 @@ import typing
 from . import _sdk
 __all__ = [
     "BuildInfo",
+    "CancelationException",
     "Server",
     "server",
 ]
@@ -27,6 +28,17 @@ class BuildInfo:
     @property
     def rustc_version(self) -> builtins.str: ...
     def __repr__(self) -> builtins.str: ...
+
+class CancelationException(builtins.BaseException):
+    r"""
+    Raised when a running prediction or training is cancelled.
+    
+    Derives from ``BaseException`` (not ``Exception``) so that bare
+    ``except Exception`` blocks do not accidentally swallow cancellation.
+    This matches the semantics of ``KeyboardInterrupt`` and
+    ``asyncio.CancelledError``.
+    """
+    ...
 
 @typing.final
 class Server:

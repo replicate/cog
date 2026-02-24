@@ -489,6 +489,13 @@ fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Frozen server object
     m.add("server", CogletServer {})?;
 
+    // CancelationException — a BaseException subclass for prediction cancellation.
+    // Re-exported through coglet → cog.exceptions → cog.CancelationException.
+    m.add(
+        "CancelationException",
+        py.get_type::<cancel::CancelationException>(),
+    )?;
+
     // _sdk submodule — internal Python runtime integration classes
     let sdk = PyModule::new(py, "_sdk")?;
     sdk.setattr(
