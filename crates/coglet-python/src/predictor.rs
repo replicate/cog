@@ -265,7 +265,8 @@ pub struct PythonPredictor {
     instance: PyObject,
     /// The predictor's kind (class or standalone function) and method execution types
     kind: PredictorKind,
-    /// The detected runtime type.
+    /// The detected runtime type (used during construction to select input processor).
+    #[allow(dead_code)]
     runtime: Runtime,
     /// Input processor for this runtime.
     input_processor: Box<dyn InputProcessor>,
@@ -414,53 +415,6 @@ impl PythonPredictor {
                 matches!(predict_kind, PredictKind::Async | PredictKind::AsyncGen)
             }
         }
-    }
-
-    /// Generate OpenAPI schema for this predictor.
-    ///
-    /// Uses cog's schema generation via the `cog._schemas` module.
-    ///
-    /// Returns None if schema generation fails (best-effort).
-    pub fn schema(&self, mode: crate::worker_bridge::HandlerMode) -> Option<serde_json::Value> {
-        Python::attach(|py| {
-            let result: PyResult<serde_json::Value> = (|| {
-                let json_module = py.import("json")?;
-
-                let predictor_info = match &self.runtime {
-                    Runtime::Cog { predictor_info } => predictor_info.bind(py).clone(),
-                };
-
-                // Get Python Mode enum value (Mode.TRAIN or Mode.PREDICT)
-                let mode_module = py.import("cog.mode")?;
-                let mode_enum = mode_module.getattr("Mode")?;
-                let py_mode = match mode {
-                    crate::worker_bridge::HandlerMode::Train => mode_enum.getattr("TRAIN")?,
-                    crate::worker_bridge::HandlerMode::Predict => mode_enum.getattr("PREDICT")?,
-                };
-
-                // Use cog schema generation
-                let schemas_module = py.import("cog._schemas")?;
-                let to_json_schema = schemas_module.getattr("to_json_schema")?;
-                let schema = to_json_schema.call1((&predictor_info, py_mode))?;
-
-                // Convert to JSON string then parse to serde_json::Value
-                let schema_str: String =
-                    json_module.call_method1("dumps", (&schema,))?.extract()?;
-
-                let schema_value: serde_json::Value = serde_json::from_str(&schema_str)
-                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-
-                Ok(schema_value)
-            })();
-
-            match result {
-                Ok(schema) => Some(schema),
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to generate OpenAPI schema");
-                    None
-                }
-            }
-        })
     }
 
     /// Call setup() on the predictor, handling weights parameter if present.

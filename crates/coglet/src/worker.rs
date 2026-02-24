@@ -322,11 +322,6 @@ pub trait PredictHandler: Send + Sync + 'static {
     /// Request cancellation of prediction on a slot.
     fn cancel(&self, slot: SlotId);
 
-    /// Get OpenAPI schema for the predictor.
-    fn schema(&self) -> Option<serde_json::Value> {
-        None
-    }
-
     /// Run user-defined healthcheck. Default: healthy.
     async fn healthcheck(&self) -> HealthcheckResult {
         HealthcheckResult::healthy()

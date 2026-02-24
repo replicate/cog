@@ -557,11 +557,6 @@ impl PredictHandler for PythonPredictHandler {
         }
     }
 
-    fn schema(&self) -> Option<serde_json::Value> {
-        let guard = self.predictor.lock().expect("predictor mutex poisoned");
-        guard.as_ref().and_then(|pred| pred.schema(self.mode))
-    }
-
     async fn healthcheck(&self) -> coglet_core::orchestrator::HealthcheckResult {
         // Get predictor
         let pred = {
