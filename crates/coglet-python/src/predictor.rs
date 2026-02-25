@@ -333,7 +333,96 @@ impl PythonPredictor {
             }
         };
 
-        Ok(Self { instance, kind })
+        let predictor = Self { instance, kind };
+
+        // Patch FieldInfo defaults on predict/train methods so Python uses actual
+        // default values instead of FieldInfo wrapper objects for missing inputs.
+        // Input(default=42, description="...") creates a FieldInfo; without patching,
+        // Python would pass the FieldInfo itself as the default value.
+        if is_function {
+            Self::unwrap_field_info_defaults(py, &predictor.instance, "")?;
+        } else {
+            Self::unwrap_field_info_defaults(py, &predictor.instance, "predict")?;
+            if matches!(predictor.kind, PredictorKind::Class { train, .. } if train != TrainKind::None)
+            {
+                Self::unwrap_field_info_defaults(py, &predictor.instance, "train")?;
+            }
+        }
+
+        Ok(predictor)
+    }
+
+    /// Replace FieldInfo defaults with their `.default` values on a method's signature.
+    ///
+    /// When users write `def predict(self, seed: int = Input(default=42, description="..."))`,
+    /// the Python default for `seed` is a `FieldInfo(default=42, ...)` object. If `seed` is
+    /// missing from the input dict, Python would use this FieldInfo as the value — not `42`.
+    ///
+    /// This patches `__defaults__` on the underlying function so Python natively resolves
+    /// to the actual default values.
+    fn unwrap_field_info_defaults(
+        py: Python<'_>,
+        instance: &PyObject,
+        method_name: &str,
+    ) -> PyResult<()> {
+        let field_info_class = py.import("cog.input")?.getattr("FieldInfo")?;
+
+        // Get the underlying function object
+        let func = if method_name.is_empty() {
+            // Standalone function
+            instance.bind(py).clone()
+        } else {
+            // Bound method — get __func__ for the raw function
+            instance
+                .bind(py)
+                .getattr(method_name)?
+                .getattr("__func__")?
+        };
+
+        // Patch __defaults__ (positional parameter defaults)
+        if let Ok(defaults) = func.getattr("__defaults__")
+            && !defaults.is_none()
+        {
+            let defaults_tuple = defaults.cast::<pyo3::types::PyTuple>()?;
+            let mut new_defaults: Vec<Bound<'_, PyAny>> = Vec::new();
+            let mut changed = false;
+
+            for item in defaults_tuple.iter() {
+                if item.is_instance(&field_info_class)? {
+                    new_defaults.push(item.getattr("default")?);
+                    changed = true;
+                } else {
+                    new_defaults.push(item);
+                }
+            }
+
+            if changed {
+                let new_tuple = pyo3::types::PyTuple::new(py, &new_defaults)?;
+                func.setattr("__defaults__", new_tuple)?;
+                tracing::debug!("Patched FieldInfo defaults on {}", method_name);
+            }
+        }
+
+        // Patch __kwdefaults__ (keyword-only parameter defaults)
+        if let Ok(kwdefaults) = func.getattr("__kwdefaults__")
+            && !kwdefaults.is_none()
+        {
+            let kwdefaults_dict = kwdefaults.cast::<pyo3::types::PyDict>()?;
+            let mut changed = false;
+
+            for (key, value) in kwdefaults_dict.iter() {
+                if value.is_instance(&field_info_class)? {
+                    kwdefaults_dict.set_item(&key, value.getattr("default")?)?;
+                    changed = true;
+                }
+            }
+
+            if changed {
+                tracing::debug!("Patched FieldInfo kwdefaults on {}", method_name);
+            }
+        }
+
+        Ok(())
     }
 
     /// Detect if a method is an async function.

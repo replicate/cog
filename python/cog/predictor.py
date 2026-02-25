@@ -10,7 +10,7 @@ import importlib.util
 import inspect
 import os
 import sys
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional, Union
 
 from .types import Path
 
@@ -133,30 +133,6 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     return predictor
 
 
-def get_predict(predictor: Any) -> Callable[..., Any]:
-    """Get the predict method from a predictor."""
-    # If predictor is a function, return it directly
-    if (
-        callable(predictor)
-        and not inspect.isclass(predictor)
-        and not hasattr(predictor, "predict")
-    ):
-        return predictor
-    return predictor.predict
-
-
-def get_train(predictor: Any) -> Callable[..., Any]:
-    """Get the train method from a predictor."""
-    # If predictor is a function (not a class instance), return it directly
-    if (
-        callable(predictor)
-        and not inspect.isclass(predictor)
-        and not hasattr(predictor, "train")
-    ):
-        return predictor
-    return predictor.train
-
-
 def has_setup_weights(predictor: BasePredictor) -> bool:
     """Check if predictor's setup accepts a weights parameter."""
     if not hasattr(predictor, "setup"):
@@ -170,16 +146,4 @@ def extract_setup_weights(predictor: BasePredictor) -> Optional[Union[Path, str]
     weights = os.environ.get("COG_WEIGHTS")
     if weights:
         return weights
-    return None
-
-
-def wait_for_env() -> None:
-    """Wait for environment to be ready (noop in dataclass version)."""
-    pass
-
-
-def get_healthcheck(predictor: Any) -> Optional[Callable[[], bool]]:
-    """Get the healthcheck method from a predictor if it exists."""
-    if hasattr(predictor, "healthcheck"):
-        return predictor.healthcheck
     return None
