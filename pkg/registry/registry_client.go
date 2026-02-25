@@ -583,13 +583,13 @@ func (c *RegistryClient) writeLayerMultipart(ctx context.Context, repo name.Repo
 	}
 
 	// Initiate upload
-	location, err := c.initiateUpload(ctx, client, repo)
+	session, err := c.initiateUpload(ctx, client, repo)
 	if err != nil {
 		return fmt.Errorf("initiating upload: %w", err)
 	}
 
 	// Upload the blob in chunks
-	finalLocation, err := c.uploadBlobChunks(ctx, client, repo, opts.Layer, location, size, opts.ProgressCh)
+	finalLocation, err := c.uploadBlobChunks(ctx, client, repo, opts.Layer, session, size, opts.ProgressCh)
 	if err != nil {
 		return fmt.Errorf("uploading blob chunks: %w", err)
 	}
@@ -629,8 +629,51 @@ func (c *RegistryClient) checkBlobExists(ctx context.Context, client *http.Clien
 	return resp.StatusCode == http.StatusOK, nil
 }
 
-// initiateUpload initiates a blob upload and returns the upload location URL.
-func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client, repo name.Repository) (string, error) {
+// uploadSession holds the result of initiating a blob upload, including the
+// upload location URL and any server-advertised chunk size constraints.
+type uploadSession struct {
+	// Location is the URL to which blob data should be uploaded.
+	Location string
+	// ChunkMinBytes is the minimum chunk size the server accepts (from OCI-Chunk-Min-Length).
+	// Zero means the server did not advertise a minimum.
+	ChunkMinBytes int64
+	// ChunkMaxBytes is the maximum chunk size the server accepts (from OCI-Chunk-Max-Length).
+	// Zero means the server did not advertise a maximum.
+	ChunkMaxBytes int64
+}
+
+// effectiveChunkSize returns the chunk size to use for uploads.
+// The server-advertised OCI-Chunk-Max-Length always takes precedence: when
+// present, we use (max - margin) to stay safely under the limit regardless
+// of any client-side configuration. The result is also clamped to be at least
+// OCI-Chunk-Min-Length when the server advertises one. The client default
+// (COG_PUSH_DEFAULT_CHUNK_SIZE env var or DefaultChunkSize) is only used when
+// the server does not advertise a maximum.
+func (s uploadSession) effectiveChunkSize() int64 {
+	var chunkSize int64
+	if s.ChunkMaxBytes > 0 {
+		// Server advertised a maximum — use it minus a small margin.
+		chunkSize = s.ChunkMaxBytes - chunkSizeMargin
+		if chunkSize <= 0 {
+			// Degenerate case: margin bigger than max. Use max directly.
+			chunkSize = s.ChunkMaxBytes
+		}
+	} else {
+		// No server limit: fall back to client-configured default.
+		chunkSize = getDefaultChunkSize()
+	}
+
+	// Enforce the server-advertised minimum.
+	if s.ChunkMinBytes > 0 && chunkSize < s.ChunkMinBytes {
+		chunkSize = s.ChunkMinBytes
+	}
+
+	return chunkSize
+}
+
+// initiateUpload initiates a blob upload and returns an uploadSession containing
+// the upload location URL and server-advertised chunk size limits.
+func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client, repo name.Repository) (uploadSession, error) {
 	u := url.URL{
 		Scheme: repo.Scheme(),
 		Host:   repo.RegistryStr(),
@@ -639,29 +682,29 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
 	if err != nil {
-		return "", err
+		return uploadSession{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return uploadSession{}, err
 	}
 	defer resp.Body.Close()
 
 	if err := transport.CheckError(resp, http.StatusAccepted); err != nil {
-		return "", err
+		return uploadSession{}, err
 	}
 
 	loc := resp.Header.Get("Location")
 	if loc == "" {
-		return "", errors.New("missing Location header in initiate upload response")
+		return uploadSession{}, errors.New("missing Location header in initiate upload response")
 	}
 
 	// Resolve relative URLs
 	locURL, err := url.Parse(loc)
 	if err != nil {
-		return "", fmt.Errorf("parsing location URL: %w", err)
+		return uploadSession{}, fmt.Errorf("parsing location URL: %w", err)
 	}
 
 	baseURL := url.URL{
@@ -669,18 +712,38 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 		Host:   repo.RegistryStr(),
 	}
 
-	return baseURL.ResolveReference(locURL).String(), nil
+	session := uploadSession{
+		Location: baseURL.ResolveReference(locURL).String(),
+	}
+
+	// Parse OCI chunk size headers if the registry advertises them.
+	if v := resp.Header.Get("OCI-Chunk-Min-Length"); v != "" {
+		if n, parseErr := strconv.ParseInt(v, 10, 64); parseErr == nil && n > 0 {
+			session.ChunkMinBytes = n
+		}
+	}
+	if v := resp.Header.Get("OCI-Chunk-Max-Length"); v != "" {
+		if n, parseErr := strconv.ParseInt(v, 10, 64); parseErr == nil && n > 0 {
+			session.ChunkMaxBytes = n
+		}
+	}
+
+	return session, nil
 }
 
 // uploadBlobChunks uploads a blob using either multipart or single-part upload depending on server support.
 // The repo parameter is needed to restart the upload session if multipart fails.
+// The session carries the upload location and any server-advertised chunk size limits
+// (OCI-Chunk-Min-Length / OCI-Chunk-Max-Length).
 // Returns the final upload location URL which must be used for committing the upload.
-func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, location string, totalSize int64, progressCh chan<- v1.Update) (string, error) {
-	// Multipart upload settings are configurable via environment variables:
-	// - COG_PUSH_MULTIPART_THRESHOLD: Minimum blob size for multipart upload (default: 50MB)
-	// - COG_PUSH_CHUNK_SIZE: Size of each chunk in multipart upload (default: 256MB)
+func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, session uploadSession, totalSize int64, progressCh chan<- v1.Update) (string, error) {
+	// The chunk size is determined by the server's OCI-Chunk-Max-Length header
+	// (minus a small margin). When the server does not advertise a maximum,
+	// the client falls back to COG_PUSH_DEFAULT_CHUNK_SIZE or DefaultChunkSize (95 MiB).
+	// COG_PUSH_MULTIPART_THRESHOLD controls the minimum blob size for multipart upload (default: 50MB).
 	multipartThreshold := getMultipartThreshold()
-	chunkSize := getChunkSize()
+	chunkSize := session.effectiveChunkSize()
+	location := session.Location
 
 	if totalSize > multipartThreshold {
 		finalLocation, newLocation, fallback, err := c.tryMultipartWithFallback(ctx, client, repo, layer, location, totalSize, chunkSize, progressCh)
@@ -730,11 +793,11 @@ func (c *RegistryClient) tryMultipartWithFallback(ctx context.Context, client *h
 	if errors.As(err, &transportErr) && (transportErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
 		transportErr.StatusCode == http.StatusBadRequest) {
 		// Multipart not supported - restart upload session for single-part fallback
-		newLocation, err = c.initiateUpload(ctx, client, repo)
+		newSession, err := c.initiateUpload(ctx, client, repo)
 		if err != nil {
 			return "", "", false, fmt.Errorf("restarting upload after multipart failure: %w", err)
 		}
-		return "", newLocation, true, nil
+		return "", newSession.Location, true, nil
 	}
 
 	return "", "", false, err
