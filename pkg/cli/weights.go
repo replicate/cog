@@ -2,15 +2,12 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
-	"github.com/vbauerster/mpb/v8"
-	"github.com/vbauerster/mpb/v8/decor"
 
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
@@ -194,66 +191,9 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 	regClient := registry.NewRegistryClient()
 	pusher := model.NewWeightPusher(regClient)
 
-	// Set up mpb progress container (writes to stderr, auto-detects TTY)
-	p := mpb.New(mpb.WithOutput(os.Stderr), mpb.WithWidth(80), mpb.WithAutoRefresh())
-
-	// Track per-artifact retry status for dynamic decorator display
-	var retryStatus sync.Map // name -> string
-
-	// Create a bar for each artifact
-	type barEntry struct {
-		bar  *mpb.Bar
-		name string
-		size int64
-	}
-	bars := make([]barEntry, len(artifacts))
-	for i, wa := range artifacts {
-		artName := wa.Name()
-		displayName := artName
-		if len(displayName) > 30 {
-			displayName = "..." + displayName[len(displayName)-27:]
-		}
-
-		// Capture artName for the closure
-		retryStatus.Store(artName, "")
-		statusFn := func(s decor.Statistics) string {
-			if v, ok := retryStatus.Load(artName); ok {
-				if msg, _ := v.(string); msg != "" {
-					return msg
-				}
-			}
-			return ""
-		}
-
-		// Start with total=0 so mpb doesn't set triggerComplete=true.
-		// This lets us call SetTotal(n, true) to explicitly complete the bar.
-		// The real total is set via ProgressFn → SetTotal(prog.Total, false).
-		bar := p.AddBar(0,
-			mpb.PrependDecorators(
-				decor.Name(fmt.Sprintf("  %-30s", displayName), decor.WC{C: decor.DindentRight}),
-			),
-			mpb.AppendDecorators(
-				decor.OnAbort(
-					decor.OnComplete(
-						decor.CountersKibiByte("% .1f / % .1f", decor.WCSyncWidth),
-						"done",
-					),
-					"FAILED",
-				),
-				decor.OnAbort(
-					decor.OnComplete(
-						decor.Percentage(decor.WC{W: 6}),
-						"",
-					),
-					"",
-				),
-				// Dynamic retry status decorator
-				decor.Any(statusFn, decor.WC{W: 1}),
-			),
-			mpb.BarFillerOnComplete(""),
-		)
-		bars[i] = barEntry{bar: bar, name: artName, size: wa.Descriptor().Size}
-	}
+	// Set up progress display using Docker's jsonmessage rendering.
+	pw := newProgressWriter()
+	defer pw.Close()
 
 	// Push each weight artifact concurrently
 	type pushResult struct {
@@ -267,27 +207,25 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 	results := make(chan pushResult, len(artifacts))
 	var wg sync.WaitGroup
 
-	for i, wa := range artifacts {
+	for _, wa := range artifacts {
+		artName := wa.Name()
+		artSize := wa.Descriptor().Size
+
 		wg.Add(1)
-		go func(wa *model.WeightArtifact, entry barEntry) {
+		go func(wa *model.WeightArtifact, name string, size int64) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			result, pushErr := pusher.Push(ctx, repo, wa, model.WeightPushOptions{
 				ProgressFn: func(prog model.PushProgress) {
-					retryStatus.Store(entry.name, "")
-					if prog.Total > 0 {
-						entry.bar.SetTotal(prog.Total, false)
-					}
-					entry.bar.SetCurrent(prog.Complete)
+					pw.Write(name, "Pushing", prog.Complete, prog.Total)
 				},
 				RetryFn: func(event model.WeightRetryEvent) bool {
-					msg := fmt.Sprintf("  retry %d/%d in %s",
+					status := fmt.Sprintf("Retrying (%d/%d) in %s",
 						event.Attempt, event.MaxAttempts,
 						event.NextRetryIn.Round(time.Second))
-					retryStatus.Store(event.Name, msg)
-					entry.bar.SetCurrent(0)
+					pw.WriteStatus(event.Name, status)
 					console.Warnf("  %s: retrying (%d/%d) in %s: %v",
 						event.Name, event.Attempt, event.MaxAttempts,
 						event.NextRetryIn.Round(time.Second), event.Err)
@@ -296,13 +234,13 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 			})
 
 			if pushErr != nil {
-				entry.bar.Abort(false) // keep the bar visible, show FAILED
-				results <- pushResult{name: entry.name, err: pushErr}
+				pw.WriteStatus(name, "FAILED")
+				results <- pushResult{name: name, err: pushErr}
 			} else {
-				entry.bar.SetTotal(entry.bar.Current(), true) // mark complete
-				results <- pushResult{name: entry.name, ref: result.Ref, size: entry.size}
+				pw.WriteStatus(name, "Pushed")
+				results <- pushResult{name: name, ref: result.Ref, size: size}
 			}
-		}(wa, bars[i])
+		}(wa, artName, artSize)
 	}
 
 	go func() {
@@ -323,13 +261,13 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Wait for mpb to finish rendering
-	p.Wait()
+	// Close progress display
+	pw.Close()
 
 	// Print final summary
-	for _, entry := range bars {
-		if ref, ok := refs[entry.name]; ok {
-			console.Infof("  %s: %s", entry.name, ref)
+	for _, wa := range artifacts {
+		if ref, ok := refs[wa.Name()]; ok {
+			console.Infof("  %s: %s", wa.Name(), ref)
 		}
 	}
 

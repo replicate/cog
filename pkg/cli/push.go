@@ -2,12 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"sync"
 
 	"github.com/spf13/cobra"
-	"github.com/vbauerster/mpb/v8"
-	"github.com/vbauerster/mpb/v8/decor"
 
 	"github.com/replicate/go/uuid"
 
@@ -108,57 +104,26 @@ func push(cmd *cobra.Command, args []string) error {
 	// Push the model (image + optional weights)
 	console.Infof("\nPushing image '%s'...", m.ImageRef())
 
-	// Set up dynamic mpb progress bars for OCI layer uploads.
-	// Bars are created on-the-fly as new layer digests appear in progress callbacks.
-	progress := mpb.New(mpb.WithOutput(os.Stderr), mpb.WithWidth(80), mpb.WithAutoRefresh())
-	var barsMu sync.Mutex
-	layerBars := make(map[string]*mpb.Bar)
+	// Set up progress display using Docker's jsonmessage rendering. This uses the
+	// same cursor movement and progress display as `docker push`, which handles
+	// terminal resizing correctly (each line is erased and rewritten individually,
+	// rather than relying on a bulk cursor-up count that can desync on resize).
+	pw := newProgressWriter()
+	defer pw.Close()
 
 	pushErr := resolver.Push(ctx, m, model.PushOptions{
 		ImageProgressFn: func(prog model.PushProgress) {
-			barsMu.Lock()
-			bar, exists := layerBars[prog.LayerDigest]
-			if !exists {
-				// Truncate digest for display: "sha256:abc123..." → "abc123..."
-				displayDigest := prog.LayerDigest
-				if len(displayDigest) > 7+12 { // "sha256:" + 12 hex chars
-					displayDigest = displayDigest[7:19] + "..."
-				}
-
-				bar = progress.AddBar(0,
-					mpb.PrependDecorators(
-						decor.Name(fmt.Sprintf("  %-18s", displayDigest), decor.WC{C: decor.DindentRight}),
-					),
-					mpb.AppendDecorators(
-						decor.OnComplete(
-							decor.CountersKibiByte("% .1f / % .1f", decor.WCSyncWidth),
-							"done",
-						),
-						decor.OnComplete(
-							decor.Percentage(decor.WC{W: 6}),
-							"",
-						),
-					),
-					mpb.BarFillerOnComplete(""),
-				)
-				layerBars[prog.LayerDigest] = bar
+			// Truncate digest for display: "sha256:abc123..." → "abc123..."
+			displayDigest := prog.LayerDigest
+			if len(displayDigest) > 7+12 { // "sha256:" + 12 hex chars
+				displayDigest = displayDigest[7:19] + "..."
 			}
-			barsMu.Unlock()
 
-			if prog.Total > 0 {
-				bar.SetTotal(prog.Total, false)
-			}
-			bar.SetCurrent(prog.Complete)
+			pw.Write(displayDigest, "Pushing", prog.Complete, prog.Total)
 		},
 	})
 
-	// Complete all bars and wait for mpb to finish rendering
-	barsMu.Lock()
-	for _, bar := range layerBars {
-		bar.SetTotal(bar.Current(), true)
-	}
-	barsMu.Unlock()
-	progress.Wait()
+	pw.Close()
 
 	// PostPush: the provider handles formatting errors and showing success messages
 	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {
