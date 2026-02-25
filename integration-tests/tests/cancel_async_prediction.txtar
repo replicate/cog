@@ -1,0 +1,45 @@
+# Test cancellation of a running async prediction.
+#
+# Submits an async prediction (PUT with Prefer: respond-async) that sleeps
+# for 60s via asyncio.sleep, waits for it to start processing, cancels via
+# the /cancel endpoint, and verifies the webhook receives "canceled" status.
+
+[short] skip 'requires Docker build'
+
+cog build -t $TEST_IMAGE
+
+webhook-server-start
+cog serve --upload-url http://unused/
+
+# Submit async prediction that would run for 60s
+curl -H Prefer:respond-async PUT /predictions/cancel-async-test '{"id":"cancel-async-test","input":{"duration":60},"webhook":"$WEBHOOK_URL","webhook_events_filter":["completed"]}'
+
+# Give the prediction time to start processing
+exec sleep 2
+
+# Cancel it
+curl POST /predictions/cancel-async-test/cancel '{}'
+
+# Wait for webhook callback
+webhook-server-wait 30s
+
+# Prediction should be canceled
+stdout '"status":"canceled"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import asyncio
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+
+    async def predict(self, duration: float = 60.0) -> str:
+        await asyncio.sleep(duration)
+        return "completed"

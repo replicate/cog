@@ -29,6 +29,8 @@ This document defines the API of the `cog` Python module, which is used to defin
   - [Accumulation modes](#accumulation-modes)
   - [Dot-path keys](#dot-path-keys)
   - [Type safety](#type-safety)
+- [Cancellation](#cancellation)
+  - [`CancelationException`](#cancelationexception)
 - [Input and output types](#input-and-output-types)
 - [`File()`](#file)
 - [`Path()`](#path)
@@ -406,6 +408,47 @@ self.record_metric("count", "now a string")
 ```
 
 Outside an active prediction, `self.record_metric()` and `self.scope` are silent no-ops — no need for `None` checks.
+
+## Cancellation
+
+When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `predict()` function. The exception raised depends on whether the predictor is sync or async:
+
+| Predictor type | Exception raised |
+|---|---|
+| Sync (`def predict`) | `CancelationException` |
+| Async (`async def predict`) | `asyncio.CancelledError` |
+
+### `CancelationException`
+
+```python
+from cog import CancelationException
+```
+
+`CancelationException` is raised in **sync** predictors when a prediction is cancelled. It is a `BaseException` subclass — **not** an `Exception` subclass. This means bare `except Exception` blocks in your predict code will not accidentally catch it, matching the behavior of `KeyboardInterrupt` and `asyncio.CancelledError`.
+
+You do **not** need to handle this exception in normal predictor code — the runtime manages cancellation automatically. However, if you need to run cleanup logic when a prediction is cancelled, you can catch it explicitly:
+
+```python
+from cog import BasePredictor, CancelationException, Path
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path) -> Path:
+        try:
+            return self.process(image)
+        except CancelationException:
+            self.cleanup()
+            raise  # always re-raise
+```
+
+> [!WARNING]
+> You **must** re-raise `CancelationException` after cleanup. Swallowing it will prevent the runtime from marking the prediction as canceled, and may result in the termination of the container.
+
+`CancelationException` is available as:
+
+- `cog.CancelationException` (recommended)
+- `cog.exceptions.CancelationException`
+
+For **async** predictors, cancellation follows standard Python async conventions and raises `asyncio.CancelledError` instead.
 
 ## Input and output types
 
