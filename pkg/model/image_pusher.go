@@ -11,8 +11,6 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/empty"
-	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -25,7 +23,7 @@ import (
 
 // ImagePusher pushes container images to a registry.
 //
-// It first attempts an OCI chunked push (export from Docker → OCI layout →
+// It first attempts an OCI chunked push (export from Docker → tarball →
 // push layers via registry client), then falls back to Docker's native push
 // on any non-fatal error. This bypasses size limits on Docker's monolithic
 // push path while maintaining backwards compatibility.
@@ -100,7 +98,7 @@ func (p *ImagePusher) canOCIPush() bool {
 	return os.Getenv("COG_PUSH_OCI") == "1" && p.registry != nil
 }
 
-// ociPush exports the image from Docker daemon to OCI layout, then pushes all layers,
+// ociPush exports the image from Docker daemon as a tar, then pushes all layers,
 // config, and manifest to the registry using chunked uploads.
 func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt ImagePushOptions) error {
 	console.Debugf("Exporting image %s from Docker daemon...", imageRef)
@@ -140,26 +138,6 @@ func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt ImagePus
 	img, err := tarball.ImageFromPath(tmpTar.Name(), &tag)
 	if err != nil {
 		return fmt.Errorf("load image from tar: %w", err)
-	}
-
-	// Create a temp directory for the OCI layout
-	dir, err := os.MkdirTemp("", "cog-oci-layout-*")
-	if err != nil {
-		return fmt.Errorf("create OCI layout directory: %w", err)
-	}
-	defer func() {
-		console.Debugf("Cleaning up OCI layout directory: %s", dir)
-		_ = os.RemoveAll(dir)
-	}()
-
-	console.Debugf("Writing OCI layout to %s", dir)
-	lp, err := layout.Write(dir, empty.Index)
-	if err != nil {
-		return fmt.Errorf("initialize OCI layout: %w", err)
-	}
-
-	if err := lp.AppendImage(img); err != nil {
-		return fmt.Errorf("write image to OCI layout: %w", err)
 	}
 
 	return p.pushImage(ctx, imageRef, img, opt)
@@ -276,13 +254,21 @@ func (p *ImagePusher) pushConfig(ctx context.Context, repo string, img v1.Image)
 }
 
 // shouldFallbackToDocker returns true if the error is safe to fall back from.
-// We do NOT fall back on context errors (cancellation/timeout).
+// We do NOT fall back on context errors (cancellation/timeout) or authentication
+// errors (401/403), since Docker push would fail with the same credentials.
 func shouldFallbackToDocker(err error) bool {
 	if err == nil {
 		return false
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
+	}
+	var transportErr *transport.Error
+	if errors.As(err, &transportErr) {
+		switch transportErr.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return false
+		}
 	}
 	return true
 }

@@ -226,9 +226,13 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 						event.Attempt, event.MaxAttempts,
 						event.NextRetryIn.Round(time.Second))
 					pw.WriteStatus(event.Name, status)
-					console.Warnf("  %s: retrying (%d/%d) in %s: %v",
-						event.Name, event.Attempt, event.MaxAttempts,
-						event.NextRetryIn.Round(time.Second), event.Err)
+					// In non-TTY mode, also log the error detail since the
+					// progress writer output won't be visible.
+					if !console.IsTerminal() {
+						console.Warnf("  %s: retrying (%d/%d) in %s: %v",
+							event.Name, event.Attempt, event.MaxAttempts,
+							event.NextRetryIn.Round(time.Second), event.Err)
+					}
 					return true
 				},
 			})

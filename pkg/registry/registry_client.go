@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,6 +28,10 @@ import (
 
 //nolint:staticcheck // ST1012: exported API, renaming would be breaking change
 var NotFoundError = errors.New("image reference not found")
+
+// chunkBufPool pools byte slices used for multipart chunk reads to avoid
+// re-allocating large buffers (up to ~95 MB each) on every layer upload.
+var chunkBufPool = sync.Pool{} //nolint:gochecknoglobals
 
 type RegistryClient struct{}
 
@@ -502,11 +508,10 @@ func (c *RegistryClient) WriteLayer(ctx context.Context, opts WriteLayerOptions)
 			break
 		}
 
-		// Calculate next delay with jitter
+		// Calculate next delay with randomized jitter to avoid thundering herd
 		nextDelay := currentDelay
 		if backoff.Jitter > 0 {
-			// Simple jitter: add up to jitter% of the delay
-			jitterAmount := time.Duration(float64(currentDelay) * backoff.Jitter)
+			jitterAmount := time.Duration(float64(currentDelay) * backoff.Jitter * rand.Float64()) //nolint:gosec
 			nextDelay = currentDelay + jitterAmount
 		}
 
@@ -807,7 +812,17 @@ func (c *RegistryClient) tryMultipartWithFallback(ctx context.Context, client *h
 // Returns the final location or an error.
 func (c *RegistryClient) tryMultipartUpload(ctx context.Context, client *http.Client, location string, blob io.Reader, totalSize int64, chunkSize int64, progressCh chan<- v1.Update) (string, error) {
 	var uploaded int64
-	buffer := make([]byte, chunkSize)
+
+	// Reuse chunk buffers via pool to reduce memory pressure when pushing
+	// multiple layers concurrently (default concurrency 4 × up to 95 MB each).
+	var buffer []byte
+	if v, ok := chunkBufPool.Get().(*[]byte); ok && int64(len(*v)) == chunkSize {
+		buffer = *v
+	} else {
+		buffer = make([]byte, chunkSize)
+	}
+	defer func() { chunkBufPool.Put(&buffer) }()
+
 	currentLocation := location
 
 	for uploaded < totalSize {

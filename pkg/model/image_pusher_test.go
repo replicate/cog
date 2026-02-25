@@ -364,6 +364,50 @@ func TestImagePusher_Fallback(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("does not fall back on 401 unauthorized", func(t *testing.T) {
+		mock := &ociMockClient{writeLayerErr: &transport.Error{StatusCode: 401}}
+		tag := "example.com/test/repo:v1"
+
+		img, err := random.Image(512, 1)
+		require.NoError(t, err)
+
+		docker := &mockDocker{
+			imageSaveFunc: fakeImageSaveFunc(img, tag),
+			pushFunc: func(_ context.Context, _ string) error {
+				t.Fatal("docker push should not be called on auth error")
+				return nil
+			},
+		}
+
+		pusher := newImagePusher(docker, mock)
+
+		err = pusher.Push(context.Background(), tag)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "OCI chunked push")
+	})
+
+	t.Run("does not fall back on 403 forbidden", func(t *testing.T) {
+		mock := &ociMockClient{writeLayerErr: &transport.Error{StatusCode: 403}}
+		tag := "example.com/test/repo:v1"
+
+		img, err := random.Image(512, 1)
+		require.NoError(t, err)
+
+		docker := &mockDocker{
+			imageSaveFunc: fakeImageSaveFunc(img, tag),
+			pushFunc: func(_ context.Context, _ string) error {
+				t.Fatal("docker push should not be called on auth error")
+				return nil
+			},
+		}
+
+		pusher := newImagePusher(docker, mock)
+
+		err = pusher.Push(context.Background(), tag)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "OCI chunked push")
+	})
+
 	t.Run("uses docker directly when registry is nil", func(t *testing.T) {
 		var dockerPushed bool
 		docker := &mockDocker{
@@ -394,6 +438,10 @@ func TestShouldFallbackToDocker(t *testing.T) {
 		{"nil error", nil, false},
 		{"context canceled", context.Canceled, false},
 		{"context deadline", context.DeadlineExceeded, false},
+		{"401 unauthorized", &transport.Error{StatusCode: 401}, false},
+		{"403 forbidden", &transport.Error{StatusCode: 403}, false},
+		{"wrapped 401", fmt.Errorf("push failed: %w", &transport.Error{StatusCode: 401}), false},
+		{"500 server error", &transport.Error{StatusCode: 500}, true},
 		{"network error", errors.New("connection refused"), true},
 		{"unknown error", errors.New("something unexpected"), true},
 		{"export error", errors.New("export OCI layout: daemon error"), true},
