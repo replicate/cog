@@ -115,6 +115,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -152,6 +153,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -204,6 +206,7 @@ RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.con
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
@@ -261,6 +264,7 @@ RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.con
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -431,6 +435,7 @@ COPY --from=weights --link /src/models /src/models
 COPY --from=weights --link /src/root-large /src/root-large
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -502,6 +507,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -535,6 +541,7 @@ FROM r8.im/cog-base:python3.12
 ` + testInstallCog(gen.strip) + `
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -582,6 +589,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
@@ -641,6 +649,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`, expectedTorchVersion)
 
@@ -699,6 +708,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -756,6 +766,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -850,6 +861,7 @@ RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -911,6 +923,7 @@ RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -1235,6 +1248,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 

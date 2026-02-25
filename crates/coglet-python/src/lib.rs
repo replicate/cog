@@ -154,20 +154,10 @@ fn detect_version(py: Python<'_>) -> VersionInfo {
     version
 }
 
-fn read_max_concurrency(py: Python<'_>) -> usize {
-    let result = (|| -> PyResult<usize> {
-        let cog_config = py.import("cog.config")?;
-        let config_class = cog_config.getattr("Config")?;
-        let config = config_class.call0()?;
-        config.getattr("max_concurrency")?.extract::<usize>()
-    })();
-
-    match result {
-        Ok(max) => max,
-        Err(e) => {
-            warn!(error = %e, "Failed to read concurrency config, using default=1");
-            1
-        }
+fn read_max_concurrency() -> usize {
+    match std::env::var("COG_MAX_CONCURRENCY") {
+        Ok(val) => val.parse::<usize>().unwrap_or(1),
+        Err(_) => 1,
     }
 }
 
@@ -327,7 +317,7 @@ fn serve_subprocess(
     mut setup_log_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
     upload_url: Option<String>,
 ) -> PyResult<()> {
-    let max_concurrency = read_max_concurrency(py);
+    let max_concurrency = read_max_concurrency();
     info!(
         max_concurrency,
         "Configuring subprocess worker via orchestrator"

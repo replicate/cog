@@ -2,31 +2,20 @@ import argparse
 import logging
 import os
 import sys
+from enum import Enum
 
 import coglet
-import structlog
 
-from ..config import Config
-from ..logging import setup_logging
-from ..mode import Mode
 
-log = structlog.get_logger("cog.server.http")
+class Mode(Enum):
+    PREDICT = "predict"
+    TRAIN = "train"
 
-_COG_LOG_LEVELS = {
-    "debug": logging.DEBUG,
-    "info": logging.INFO,
-    "warning": logging.WARNING,
-    "warn": logging.WARNING,
-    "error": logging.ERROR,
-}
+    def __str__(self) -> str:
+        return str(self.value)
+
 
 if __name__ == "__main__":
-    log_level = _COG_LOG_LEVELS.get(
-        os.environ.get("COG_LOG_LEVEL", "").lower(), logging.INFO
-    )
-    setup_logging(log_level=log_level)
-
-    # Parse minimal args needed for Rust server
     parser = argparse.ArgumentParser(description="Cog HTTP server")
     parser.add_argument(
         "-v", "--version", action="store_true", help="Show version and exit"
@@ -65,19 +54,22 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     is_train = args.mode == Mode.TRAIN
 
-    # Get predictor ref from config
-    config = Config()
-    try:
-        predictor_ref = config.get_predictor_ref(args.mode)
-    except ValueError as e:
-        log.error(f"Configuration error: {e}")
-        log.error(
-            f"Please add '{args.mode}' to your cog.yaml file. "
-            f"Example: {args.mode}: predict.py:Predictor"
+    # Resolve predictor ref from env vars (set by Dockerfile at build time)
+    if is_train:
+        predictor_ref = os.environ.get("COG_TRAIN_TYPE_STUB")
+    else:
+        predictor_ref = os.environ.get("COG_PREDICT_TYPE_STUB")
+
+    if not predictor_ref:
+        env_var = "COG_TRAIN_TYPE_STUB" if is_train else "COG_PREDICT_TYPE_STUB"
+        print(
+            f"ERROR: {env_var} environment variable is not set.\n"
+            f"This should be set automatically by 'cog build'. If running manually,\n"
+            f"set it to your predictor reference (e.g. {env_var}=predict.py:Predictor).",
+            file=sys.stderr,
         )
         sys.exit(1)
 
-    log.debug("Starting Rust coglet server")
     coglet.server.serve(  # type: ignore[attr-defined]
         predictor_ref=predictor_ref,
         host=args.host,

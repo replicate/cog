@@ -245,12 +245,14 @@ func (g *StandardGenerator) GenerateModelBase(ctx context.Context) (string, erro
 	if err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
+	steps := []string{
 		initialSteps,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
-		`CMD ["python", "-m", "cog.server.http"]`,
-	}, "\n"), nil
+	}
+	steps = append(steps, g.cogEnvVars()...)
+	steps = append(steps, `CMD ["python", "-m", "cog.server.http"]`)
+	return strings.Join(steps, "\n"), nil
 }
 
 // GenerateDockerfileWithoutSeparateWeights generates a Dockerfile that doesn't write model weights to a separate layer.
@@ -305,6 +307,9 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Con
 	base = append(base,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
+	)
+	base = append(base, g.cogEnvVars()...)
+	base = append(base,
 		`CMD ["python", "-m", "cog.server.http"]`,
 		`COPY . /src`,
 	)
@@ -314,6 +319,22 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Con
 
 	dockerignoreContents = makeDockerignoreForWeights(g.modelDirs, g.modelFiles)
 	return weightsBase, joinStringsWithoutLineSpace(base), dockerignoreContents, nil
+}
+
+// cogEnvVars returns ENV lines that pass cog.yaml config to the runtime
+// so the container doesn't need to parse cog.yaml at startup.
+func (g *StandardGenerator) cogEnvVars() []string {
+	var envs []string
+	if g.Config.Predict != "" {
+		envs = append(envs, fmt.Sprintf(`ENV COG_PREDICT_TYPE_STUB="%s"`, g.Config.Predict))
+	}
+	if g.Config.Train != "" {
+		envs = append(envs, fmt.Sprintf(`ENV COG_TRAIN_TYPE_STUB="%s"`, g.Config.Train))
+	}
+	if g.Config.Concurrency != nil && g.Config.Concurrency.Max > 0 {
+		envs = append(envs, fmt.Sprintf(`ENV COG_MAX_CONCURRENCY=%d`, g.Config.Concurrency.Max))
+	}
+	return envs
 }
 
 func (g *StandardGenerator) cpCogYaml() string {
