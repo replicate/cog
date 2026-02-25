@@ -240,10 +240,28 @@ func extractEmbedded() (string, error) {
 		return "", fmt.Errorf("failed to create cache directory %s: %w", cacheDir, err)
 	}
 
-	// Write atomically via temp file + rename.
-	tmpPath := cachedPath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o755); err != nil {
+	// Write atomically via unique temp file + rename.
+	// Each process gets its own temp file to avoid ETXTBSY races when
+	// multiple parallel builds extract the same embedded binary.
+	tmp, err := os.CreateTemp(cacheDir, BinaryName+".tmp.*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file in %s: %w", cacheDir, err)
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
 		return "", fmt.Errorf("failed to write %s: %w", tmpPath, err)
+	}
+	if err := tmp.Chmod(0o755); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to chmod %s: %w", tmpPath, err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to close %s: %w", tmpPath, err)
 	}
 	if err := os.Rename(tmpPath, cachedPath); err != nil {
 		_ = os.Remove(tmpPath)
