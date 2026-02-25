@@ -36,13 +36,28 @@ func testInstallCog(stripped bool) string {
 	if stripped {
 		strippedCall += " && find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 	}
-	// coglet is installed before cog — cog depends on coglet
+	// Modern path: only cog is installed explicitly; coglet comes via SDK dependency.
 	return fmt.Sprintf(`ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/uv uv pip install --no-cache coglet%s
+RUN --mount=type=cache,target=/root/.cache/uv uv pip install --no-cache cog%s
+ENV CFLAGS=`, strippedCall)
+}
+
+func testInstallCogWithCoglet(stripped bool, cogletVersion string) string {
+	strippedCall := ""
+	if stripped {
+		strippedCall += " && find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
+	}
+	cogletSpec := "coglet"
+	if cogletVersion != "" {
+		cogletSpec = "coglet==" + cogletVersion
+	}
+	// Explicit coglet path: coglet is installed before cog (e.g. pinned version, file, or URL).
+	return fmt.Sprintf(`ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
+RUN --mount=type=cache,target=/root/.cache/uv uv pip install --no-cache %s%s
 ENV CFLAGS=
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/uv uv pip install --no-cache cog%s
-ENV CFLAGS=`, strippedCall, strippedCall)
+ENV CFLAGS=`, cogletSpec, strippedCall, strippedCall)
 }
 
 // pypiWheels sets the generator to use unpinned PyPI for both cog and coglet,
@@ -880,8 +895,8 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// coglet in python_packages is stripped — the build system always installs coglet
-	// via installCog(), which runs before pip requirements.
+	// coglet in python_packages is stripped — the build system manages coglet installation.
+	// With default (unpinned) resolution, coglet comes via SDK dependency, not explicitly.
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
@@ -901,7 +916,7 @@ COPY . /src`
 
 	require.Equal(t, expected, actual)
 
-	// coglet URL is stripped from requirements — build system installs coglet itself
+	// coglet URL is stripped from requirements — build system manages coglet
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
@@ -932,9 +947,9 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain uv pip install cog and coglet from PyPI
+	// Modern path: cog installed from PyPI, coglet comes via SDK dependency (not explicit)
 	require.Contains(t, actual, "uv pip install --no-cache cog")
-	require.Contains(t, actual, "uv pip install --no-cache coglet")
+	require.NotContains(t, actual, "coglet")
 }
 
 func TestCOGWheelEnvPyPI(t *testing.T) {
@@ -1055,7 +1070,9 @@ predict: predict.py:Predictor
 	require.Contains(t, actual, "uv pip install --no-cache /tmp/test-cog-0.1.0-py3-none-any.whl")
 }
 
-func TestCogletAlwaysInstalledWhenInRequirements(t *testing.T) {
+func TestCogletStrippedFromUserRequirements(t *testing.T) {
+	// When a user puts coglet in python_packages, it must be stripped from requirements.
+	// With default (unpinned) PyPI, coglet is NOT explicitly installed — SDK dependency handles it.
 	tmpDir := t.TempDir()
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -1074,11 +1091,12 @@ predict: predict.py:Predictor
 	pypiWheels(gen)
 	dockerfile, err := gen.GenerateInitialSteps(t.Context())
 	require.NoError(t, err)
-	// coglet must be installed by the build system (not skipped)
-	require.Contains(t, dockerfile, "uv pip install")
-	require.Contains(t, dockerfile, "coglet")
-	// the user-supplied coglet==0.1.0 must be stripped from requirements
+	// cog is installed from PyPI
+	require.Contains(t, dockerfile, "uv pip install --no-cache cog")
+	// the user-supplied coglet==0.1.0 must be stripped (managed by build system)
 	require.NotContains(t, dockerfile, "coglet==0.1.0")
+	// coglet is NOT explicitly installed — SDK dependency handles it
+	require.NotContains(t, dockerfile, "uv pip install --no-cache coglet\n")
 }
 
 func TestInstallCogWithSDKVersion(t *testing.T) {
@@ -1108,7 +1126,8 @@ predict: predict.py:Predictor
 }
 
 func TestInstallCogWithPreReleaseSDKVersion(t *testing.T) {
-	// build.sdk_version with a pre-release version adds --pre to both cog and coglet installs
+	// build.sdk_version with a pre-release version adds --pre to both cog and coglet installs.
+	// Coglet must be explicitly pinned for it to appear in the Dockerfile.
 	tmpDir := t.TempDir()
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -1122,7 +1141,7 @@ predict: predict.py:Predictor
 	client := registrytest.NewMockRegistryClient()
 	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
 	require.NoError(t, err)
-	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
+	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI, Version: "0.18.0a1"}
 	gen.SetUseCogBaseImage(false)
 
 	dockerfile, err := gen.GenerateInitialSteps(t.Context())
@@ -1130,7 +1149,7 @@ predict: predict.py:Predictor
 	// cog install should have --pre and pinned version
 	require.Contains(t, dockerfile, "uv pip install --pre --no-cache cog==0.18.0a1")
 	// coglet install should also have --pre (sdk pre-release implies coglet pre-release)
-	require.Contains(t, dockerfile, "uv pip install --pre --no-cache coglet")
+	require.Contains(t, dockerfile, "uv pip install --pre --no-cache coglet==0.18.0a1")
 }
 
 func TestInstallCogSDKVersionBelowMinimum(t *testing.T) {
@@ -1181,4 +1200,74 @@ predict: predict.py:Predictor
 	// env var wins: should install 0.17.0, not 0.18.0
 	require.Contains(t, dockerfile, "uv pip install --no-cache cog==0.17.0")
 	require.NotContains(t, dockerfile, "cog==0.18.0")
+}
+
+func TestExplicitCogletInstall(t *testing.T) {
+	// When coglet is pinned to a specific version, it IS explicitly installed in the Dockerfile.
+	tmpDir := t.TempDir()
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+  python_version: "3.12"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	gen.cogWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
+	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI, Version: "0.17.0"}
+
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	expected := `#syntax=docker/dockerfile:1.4
+FROM r8.im/replicate/cog-test-weights AS weights
+FROM python:3.12-slim
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+` + testTini() + testInstallUVLine + "\n" + testInstallCogWithCoglet(gen.strip, "0.17.0") + `
+RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
+WORKDIR /src
+EXPOSE 5000
+CMD ["python", "-m", "cog.server.http"]
+COPY . /src`
+
+	require.Equal(t, expected, actual)
+	// Verify coglet is explicitly installed with pinned version
+	require.Contains(t, actual, "uv pip install --no-cache coglet==0.17.0")
+}
+
+func TestLegacySDK016NoCoglet(t *testing.T) {
+	// With an explicit 0.16.x SDK version and no explicit coglet,
+	// coglet should NOT appear in the Dockerfile. The 0.16.x SDK
+	// doesn't declare coglet as a dependency, so it won't be pulled in.
+	tmpDir := t.TempDir()
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+  python_version: "3.12"
+  sdk_version: "0.16.12"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
+
+	dockerfile, err := gen.GenerateInitialSteps(t.Context())
+	require.NoError(t, err)
+	// SDK is installed with pinned version
+	require.Contains(t, dockerfile, "uv pip install --no-cache cog==0.16.12")
+	// No coglet — 0.16.x SDK doesn't depend on it and no explicit coglet was configured
+	require.NotContains(t, dockerfile, "coglet")
 }

@@ -529,13 +529,12 @@ func (g *StandardGenerator) resolveCogWheelConfigs() error {
 // Older SDKs use the built-in Python HTTP server and are incompatible with coglet.
 const cogletMinSDKVersion = "0.17.0"
 
-// isLegacySDK returns true if the resolved cog SDK version is older than the
-// minimum version that supports coglet. When true, coglet should not be installed.
-func (g *StandardGenerator) isLegacySDK() bool {
+// isLegacySDKVersion returns true if the resolved cog SDK version is explicitly
+// pinned below the minimum version that supports coglet. Returns false for
+// unpinned, non-PyPI, or unparseable versions (assume modern).
+func (g *StandardGenerator) isLegacySDKVersion() bool {
 	cfg := g.resolvedCogConfig
 	if cfg == nil || cfg.Source != wheels.WheelSourcePyPI || cfg.Version == "" {
-		// Unpinned or non-PyPI: assume modern. The CLI and SDK are co-released,
-		// so unpinned PyPI installs resolve to the matching SDK version.
 		return false
 	}
 	base := cfg.Version
@@ -544,10 +543,9 @@ func (g *StandardGenerator) isLegacySDK() bool {
 	}
 	ver, err := version.NewVersion(base)
 	if err != nil {
-		return false // can't parse — assume modern
+		return false
 	}
-	minVer := version.MustVersion(cogletMinSDKVersion)
-	return !ver.GreaterOrEqual(minVer)
+	return !ver.GreaterOrEqual(version.MustVersion(cogletMinSDKVersion))
 }
 
 func (g *StandardGenerator) installCog() (string, error) {
@@ -564,12 +562,26 @@ func (g *StandardGenerator) installCog() (string, error) {
 	// Determine if we need --pre flag (pre-release SDK implies pre-release coglet too)
 	sdkIsPreRelease := wheelConfig.Source == wheels.WheelSourcePyPI && wheels.IsPreRelease(wheelConfig.Version)
 
-	// Skip coglet for legacy SDK versions (< 0.17.0). Coglet was introduced in
-	// 0.17.0; older SDK versions use the built-in Python HTTP server and are
-	// incompatible with coglet.
+	// Only install coglet explicitly when there's a specific source:
+	//   - COGLET_WHEEL env var (explicit override)
+	//   - Local wheel from dist/ (dev/CI auto-detect)
+	//   - PyPI with pinned version (e.g. COGLET_WHEEL=pypi:0.17.0)
+	// Otherwise, let the SDK's own dependency handle it — cog >= 0.17.0 declares
+	// coglet as a hard dependency, older versions don't install it.
+	//
+	// Never install coglet when the SDK is explicitly pinned to < 0.17.0 — those
+	// versions use the built-in Python HTTP server and are incompatible with coglet.
 	var installLines string
-	if !g.isLegacySDK() {
-		cogletConfig := g.resolvedCogletConfig
+	cogletConfig := g.resolvedCogletConfig
+	explicitCoglet := cogletConfig != nil &&
+		(cogletConfig.Source == wheels.WheelSourceFile ||
+			cogletConfig.Source == wheels.WheelSourceURL ||
+			(cogletConfig.Source == wheels.WheelSourcePyPI && cogletConfig.Version != ""))
+	if explicitCoglet && g.isLegacySDKVersion() {
+		console.Info("Skipping coglet install for legacy SDK")
+		explicitCoglet = false
+	}
+	if explicitCoglet {
 		switch cogletConfig.Source {
 		case wheels.WheelSourcePyPI:
 			console.Infof("Using coglet from PyPI: %s", cogletConfig.PyPIPackageURL("coglet"))
@@ -589,8 +601,6 @@ func (g *StandardGenerator) installCog() (string, error) {
 		if cogletInstall != "" {
 			installLines = cogletInstall
 		}
-	} else {
-		console.Info("Skipping coglet install for legacy SDK")
 	}
 
 	// Install cog SDK

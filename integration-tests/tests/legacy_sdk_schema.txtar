@@ -2,7 +2,9 @@
 # schema generation instead of using cog-schema-gen.
 #
 # SDK 0.16.12 uses pydantic-based runtime introspection for schema generation
-# and predates coglet, so we install from PyPI and verify the legacy path runs.
+# and predates coglet. Coglet is not installed because:
+#   1. No explicit COGLET_WHEEL is set
+#   2. The SDK dependency handles it — and 0.16.12 doesn't depend on coglet
 
 # Override SDK wheel to use PyPI 0.16.12 (legacy, pre-coglet)
 env COG_SDK_WHEEL=pypi:0.16.12
@@ -10,7 +12,6 @@ env COG_SDK_WHEEL=pypi:0.16.12
 # Build should succeed using legacy runtime schema generation
 cog build -t $TEST_IMAGE
 stderr 'using legacy runtime schema generation'
-stderr 'Skipping coglet install for legacy SDK'
 stderr 'Validating model schema'
 
 # Predict should work with the legacy SDK's built-in Python HTTP server

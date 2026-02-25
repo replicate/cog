@@ -83,7 +83,7 @@ run = "test -d .venv || uv venv --quiet"
 hide = true
 silent = true
 description = "Clean dist directory"
-run = "rm -f dist/cog-*.whl dist/cog-*.tar.gz dist/coglet-*.whl dist/cog-schema-gen*"
+run = "rm -f dist/cog-*.whl dist/cog-*.tar.gz dist/coglet-*.whl dist/cog-schema-gen* dist/schema-gen pkg/schemagen/embedded/cog-schema-gen"
 
 # =============================================================================
 # Build tasks
@@ -579,7 +579,7 @@ run = "cd crates && cargo clean"
 
 [tasks."clean:python"]
 description = "Clean Python build artifacts"
-run = "rm -rf .tox build python/cog.egg-info .venv crates/coglet-python/.venv crates/coglet-python/coglet/*.so"
+run = "rm -rf .tox .nox build python/cog.egg-info .venv crates/coglet-python/.venv crates/coglet-python/coglet/*.so"
 
 # =============================================================================
 # Docs tasks
