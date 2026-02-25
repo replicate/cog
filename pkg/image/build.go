@@ -414,12 +414,9 @@ func canUseStaticSchemaGen(cfg *config.Config) bool {
 		// Unparseable version — let it through to static gen
 	}
 
-	// Check if the binary is available.
-	if _, err := schemagen.ResolveBinary(); err != nil {
-		console.Infof("Static schema generator not available, using legacy runtime schema generation: %s", err)
-		return false
-	}
-
+	// For SDK >= 0.17.0 (or unpinned), always use static schema generation.
+	// If the binary is missing, generateStaticSchema will error — we do NOT
+	// fall back to legacy because cog.command was removed in 0.17.0.
 	return true
 }
 

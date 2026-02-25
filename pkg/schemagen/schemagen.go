@@ -2,7 +2,7 @@
 // schema from Python source files on disk, without booting a Docker container.
 //
 // The binary is resolved in this order:
-//  1. COG_SCHEMA_GEN_BINARY env var (explicit override)
+//  1. COG_SCHEMA_GEN_TOOL env var (local path or URL)
 //  2. Embedded binary (extracted to cache on first use)
 //  3. dist/cog-schema-gen relative to cwd (development builds)
 //  4. dist/cog-schema-gen relative to the cog executable (goreleaser layout)
@@ -12,9 +12,13 @@ package schemagen
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,8 +32,10 @@ import (
 const (
 	// BinaryName is the name of the schema generator binary.
 	BinaryName = "cog-schema-gen"
-	// EnvVar is the environment variable that overrides binary location.
-	EnvVar = "COG_SCHEMA_GEN_BINARY"
+	// EnvVar is the environment variable that overrides binary resolution.
+	// It accepts either a local file path or an https:// URL. When a URL is
+	// provided, the binary is downloaded once and cached under ~/.cache/cog/bin/.
+	EnvVar = "COG_SCHEMA_GEN_TOOL"
 )
 
 //go:embed embedded/*
@@ -140,19 +146,27 @@ func MergeSchemas(predict, train map[string]any) map[string]any {
 // ResolveBinary finds the cog-schema-gen binary.
 //
 // Resolution order:
-//  1. COG_SCHEMA_GEN_BINARY env var (explicit path)
+//  1. COG_SCHEMA_GEN_TOOL env var (local path or URL)
 //  2. Embedded binary (extracted to ~/.cache/cog/bin/cog-schema-gen-{version})
 //  3. dist/cog-schema-gen relative to cwd (development builds)
 //  4. dist/cog-schema-gen relative to the cog executable (goreleaser layout)
 //  5. cog-schema-gen on PATH
 func ResolveBinary() (string, error) {
-	// 1. Explicit env var
-	if envPath := os.Getenv(EnvVar); envPath != "" {
-		if _, err := os.Stat(envPath); err != nil {
-			return "", fmt.Errorf("%s=%s: %w", EnvVar, envPath, err)
+	// 1. Explicit env var (local path or URL)
+	if envVal := os.Getenv(EnvVar); envVal != "" {
+		if strings.HasPrefix(envVal, "https://") || strings.HasPrefix(envVal, "http://") {
+			path, err := downloadAndCache(envVal)
+			if err != nil {
+				return "", fmt.Errorf("%s=%s: %w", EnvVar, envVal, err)
+			}
+			console.Debugf("Using %s from %s (downloaded from %s)", BinaryName, path, envVal)
+			return path, nil
 		}
-		console.Debugf("Using %s from %s=%s", BinaryName, EnvVar, envPath)
-		return envPath, nil
+		if _, err := os.Stat(envVal); err != nil {
+			return "", fmt.Errorf("%s=%s: %w", EnvVar, envVal, err)
+		}
+		console.Debugf("Using %s from %s=%s", BinaryName, EnvVar, envVal)
+		return envVal, nil
 	}
 
 	// 2. Embedded binary
@@ -190,10 +204,12 @@ func ResolveBinary() (string, error) {
 		}
 	}
 
-	// 5. PATH lookup
-	if path, err := exec.LookPath(BinaryName); err == nil {
-		console.Debugf("Using %s from PATH: %s", BinaryName, path)
-		return path, nil
+	// 5. PATH lookup (dev builds only — production should always use the embedded binary)
+	if isDev {
+		if path, err := exec.LookPath(BinaryName); err == nil {
+			console.Debugf("Using %s from PATH: %s", BinaryName, path)
+			return path, nil
+		}
 	}
 
 	return "", fmt.Errorf("%s not found (set %s, run mise run build:schema-gen, or install it on PATH)", BinaryName, EnvVar)
@@ -250,4 +266,65 @@ func cacheDirectory() (string, error) {
 	}
 
 	return filepath.Join(home, ".cache", "cog", "bin"), nil
+}
+
+// downloadAndCache downloads a binary from the given URL and caches it under
+// ~/.cache/cog/bin/ keyed by a SHA-256 hash of the URL. Subsequent calls with
+// the same URL return the cached path without re-downloading.
+func downloadAndCache(url string) (string, error) {
+	cacheDir, err := cacheDirectory()
+	if err != nil {
+		return "", err
+	}
+
+	// Derive a stable cache key from the URL.
+	h := sha256.Sum256([]byte(url))
+	cacheKey := hex.EncodeToString(h[:12]) // 24 hex chars — plenty unique
+	cachedPath := filepath.Join(cacheDir, fmt.Sprintf("%s-%s", BinaryName, cacheKey))
+
+	// If already downloaded, reuse it.
+	if info, err := os.Stat(cachedPath); err == nil && info.Size() > 0 {
+		console.Debugf("Using cached %s from %s", BinaryName, cachedPath)
+		return cachedPath, nil
+	}
+
+	console.Infof("Downloading %s from %s...", BinaryName, url)
+
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create cache directory %s: %w", cacheDir, err)
+	}
+
+	resp, err := http.Get(url) //nolint:gosec // URL comes from user-set env var
+	if err != nil {
+		return "", fmt.Errorf("failed to download %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to download %s: HTTP %d", url, resp.StatusCode)
+	}
+
+	// Write atomically via temp file + rename.
+	tmpPath := cachedPath + ".tmp"
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file %s: %w", tmpPath, err)
+	}
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to write %s: %w", tmpPath, err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to close %s: %w", tmpPath, err)
+	}
+
+	if err := os.Rename(tmpPath, cachedPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to rename %s to %s: %w", tmpPath, cachedPath, err)
+	}
+
+	return cachedPath, nil
 }
