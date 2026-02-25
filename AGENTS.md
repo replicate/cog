@@ -200,8 +200,9 @@ The CLI follows a command pattern with subcommands. The main components are:
 - `python/cog/` - Core SDK
   - `base_predictor.py` - Base class for model predictors
   - `types.py` - Input/output type definitions
-  - `server/` - HTTP/queue server implementation
-  - `command/` - Runner implementations for predict/train
+  - `input.py` - `Input()` function and `FieldInfo` dataclass for parameter metadata
+  - `model.py` - `BaseModel` (auto-dataclass metaclass for structured outputs)
+  - `server/http.py` - Entry point (reads ENV vars, starts coglet server)
 
 ### Coglet Architecture (Rust)
 The prediction server that runs inside Cog containers. Uses a two-process architecture: a parent process (HTTP server + orchestrator) and a worker subprocess (Python predictor execution).

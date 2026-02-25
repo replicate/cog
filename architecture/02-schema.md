@@ -64,31 +64,24 @@ flowchart LR
         predict["def predict(self, prompt: str) -> str"]
     end
     
-    subgraph introspection["Introspection"]
-        sig["inspect.signature()"]
-        pydantic["Dynamic Pydantic Model"]
-    end
-    
-    subgraph fastapi["FastAPI"]
-        routes["Route definitions"]
-        openapi["get_openapi()"]
+    subgraph schemagen["cog-schema-gen (Rust)"]
+        parse["tree-sitter Python parser"]
+        build["Schema builder"]
     end
     
     subgraph output["Schema"]
         spec["OpenAPI 3.0.2 JSON"]
     end
     
-    predict --> sig --> pydantic --> routes --> openapi --> spec
+    predict --> parse --> build --> spec
 ```
 
-1. **Introspect** the `predict()` method signature
-2. **Create** a dynamic Pydantic model (`Input`) from the parameters
-3. **Create** an `Output` model from the return type
-4. **Define** FastAPI routes using these models
-5. **Generate** OpenAPI spec from FastAPI's `get_openapi()`
-6. **Apply fixes** for Pydantic v1/v2 compatibility
+1. **Parse** the Python source file statically using tree-sitter (no Python runtime needed)
+2. **Extract** the `predict()` or `train()` method signature, `Input()` metadata, and return type
+3. **Build** OpenAPI 3.0.2 JSON schema from the extracted types and constraints
+4. **Write** the schema to `.cog/openapi_schema.json` before the Docker build
 
-The same code path runs at build time (to embed in the image) and at runtime (to serve via HTTP).
+Schema generation runs **only at build time** via the `cog-schema-gen` Rust binary (embedded in the `cog` CLI). At runtime, coglet loads the schema from the bundled file.
 
 ## Where the Schema Lives
 
@@ -190,25 +183,12 @@ The schema includes custom extensions (`x-*` fields):
 | `x-cog-array-display` | Hints for how to display streaming output |
 | `x-cog-secret` | Marks sensitive inputs |
 
-## Pydantic v1/v2 Compatibility
-
-Cog supports both Pydantic 1.x and 2.x. They represent optional fields differently in OpenAPI:
-
-```python
-# Pydantic 1: nullable in allOf construct
-# Pydantic 2: anyOf with null type
-# Cog normalizes both to: {"type": "T", "nullable": true}
-```
-
-This normalization ensures consumers see consistent schemas regardless of which Pydantic version the model uses.
-
 ## Code References
 
 | File | Purpose |
 |------|---------|
-| `python/cog/predictor.py` | `get_input_type()`, `get_output_type()` |
-| `python/cog/types.py` | Type definitions with schema hooks |
-| `python/cog/server/http.py` | `custom_openapi()` |
-| `python/cog/server/helpers.py` | Pydantic v1/v2 normalization |
-| `python/cog/command/openapi_schema.py` | Build-time extraction |
-| `pkg/image/build.go` | Schema validation and labeling |
+| `crates/schema-gen/` | `cog-schema-gen` Rust binary (tree-sitter parser + schema builder) |
+| `python/cog/input.py` | `Input()` function and `FieldInfo` dataclass (defines parameter metadata) |
+| `python/cog/types.py` | Type definitions (`Path`, `Secret`, `ConcatenateIterator`, etc.) |
+| `pkg/image/build.go` | Invokes `cog-schema-gen`, bundles schema into Docker image |
+| `crates/coglet/src/input_validation.rs` | Runtime input validation against compiled schema |

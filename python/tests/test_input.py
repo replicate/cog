@@ -60,7 +60,7 @@ class TestFieldInfo:
 
     def test_fieldinfo_is_frozen(self) -> None:
         info = FieldInfo(default="test")
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             info.default = "new"  # type: ignore[misc]
 
     def test_fieldinfo_defaults(self) -> None:

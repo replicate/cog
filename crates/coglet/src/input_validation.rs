@@ -47,7 +47,11 @@ impl InputValidator {
         let required: Vec<String> = input_schema
             .get("required")
             .and_then(|r| r.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         // Clone and inject additionalProperties: false for pydantic parity
@@ -94,7 +98,9 @@ impl InputValidator {
                 seen_required = true;
                 let input_obj = input.as_object();
                 for field in &self.required {
-                    let present = input_obj.map(|obj| obj.contains_key(field)).unwrap_or(false);
+                    let present = input_obj
+                        .map(|obj| obj.contains_key(field))
+                        .unwrap_or(false);
                     if !present {
                         errors.push(ValidationError {
                             field: field.clone(),
@@ -204,7 +210,9 @@ mod tests {
         let validator = InputValidator::from_openapi_schema(&schema).unwrap();
 
         // Extra field should fail
-        let errs = validator.validate(&json!({"s": "hello", "extra": "bad"})).unwrap_err();
+        let errs = validator
+            .validate(&json!({"s": "hello", "extra": "bad"}))
+            .unwrap_err();
         assert_eq!(errs.len(), 1);
         assert_eq!(errs[0].field, "extra");
         assert!(errs[0].msg.contains("Unexpected"));
@@ -227,7 +235,10 @@ mod tests {
         assert!(errs.len() >= 2);
         let fields: Vec<&str> = errs.iter().map(|e| e.field.as_str()).collect();
         assert!(fields.contains(&"s"), "should report missing s: {fields:?}");
-        assert!(fields.contains(&"wrong"), "should report extra wrong: {fields:?}");
+        assert!(
+            fields.contains(&"wrong"),
+            "should report extra wrong: {fields:?}"
+        );
     }
 
     #[test]
@@ -244,7 +255,9 @@ mod tests {
 
         assert!(validator.validate(&json!({"count": 5})).is_ok());
 
-        let errs = validator.validate(&json!({"count": "not_a_number"})).unwrap_err();
+        let errs = validator
+            .validate(&json!({"count": "not_a_number"}))
+            .unwrap_err();
         assert_eq!(errs[0].field, "count");
     }
 

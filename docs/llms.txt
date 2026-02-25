@@ -2035,10 +2035,7 @@ class Predictor(BasePredictor):
 > [!WARNING]
 > You **must** re-raise `CancelationException` after cleanup. Swallowing it will prevent the runtime from marking the prediction as canceled, and may result in the termination of the container.
 
-`CancelationException` is available as:
-
-- `cog.CancelationException` (recommended)
-- `cog.exceptions.CancelationException`
+`CancelationException` is available as `cog.CancelationException`.
 
 For **async** predictors, cancellation follows standard Python async conventions and raises `asyncio.CancelledError` instead.
 

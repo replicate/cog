@@ -40,10 +40,7 @@ pub fn process_output_item<'py>(
 /// Handles Pydantic models, dataclasses, enums, datetime, numpy types,
 /// and collections. PathLike objects are passed through (handled later
 /// by encode_files).
-fn make_encodeable<'py>(
-    py: Python<'py>,
-    obj: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>> {
+fn make_encodeable<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     // Pydantic v2: model_dump()
     if let Ok(method) = obj.getattr("model_dump")
         && method.is_callable()
@@ -145,10 +142,7 @@ fn make_encodeable<'py>(
 }
 
 /// Recursively walk the output and encode any Path/IOBase objects to base64 data URLs.
-fn encode_files<'py>(
-    py: Python<'py>,
-    obj: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>> {
+fn encode_files<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     // str — return as-is (don't recurse into characters)
     if obj.is_instance_of::<PyString>() {
         return Ok(obj.clone());
@@ -199,10 +193,7 @@ fn encode_files<'py>(
 ///
 /// Seeks to start if seekable, reads all bytes, guesses MIME type from
 /// the file name, and returns "data:{mime};base64,{encoded}".
-fn file_to_base64<'py>(
-    py: Python<'py>,
-    fh: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>> {
+fn file_to_base64<'py>(py: Python<'py>, fh: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     // Seek to start if possible
     if let Ok(seekable) = fh.call_method0("seekable")
         && seekable.is_truthy()?
