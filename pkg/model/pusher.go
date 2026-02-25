@@ -32,6 +32,11 @@ type PushOptions struct {
 	// during OCI chunked image push. Each call includes the layer digest, bytes
 	// completed, and total bytes.
 	ImageProgressFn func(PushProgress)
+
+	// OnFallback is called when OCI push fails and the push is about to fall
+	// back to Docker push. This allows the caller to clean up any OCI-specific
+	// progress display before Docker push starts its own output.
+	OnFallback func()
 }
 
 // =============================================================================
@@ -72,8 +77,11 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 
 	// 1. Push image via OCI chunked push (falls back to Docker push on error)
 	var imagePushOpts []ImagePushOptions
-	if opts.ImageProgressFn != nil {
-		imagePushOpts = append(imagePushOpts, ImagePushOptions{ProgressFn: opts.ImageProgressFn})
+	if opts.ImageProgressFn != nil || opts.OnFallback != nil {
+		imagePushOpts = append(imagePushOpts, ImagePushOptions{
+			ProgressFn: opts.ImageProgressFn,
+			OnFallback: opts.OnFallback,
+		})
 	}
 	if err := p.imagePusher.Push(ctx, imgArtifact.Reference, imagePushOpts...); err != nil {
 		return fmt.Errorf("push image %q: %w", imgArtifact.Reference, err)

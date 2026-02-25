@@ -121,6 +121,12 @@ func push(cmd *cobra.Command, args []string) error {
 
 			pw.Write(displayDigest, "Pushing", prog.Complete, prog.Total)
 		},
+		OnFallback: func() {
+			// Close progress writer to finalize OCI progress bars before Docker
+			// push starts its own output. Without this, stale OCI progress lines
+			// remain on screen above Docker's progress output.
+			pw.Close()
+		},
 	})
 
 	pw.Close()

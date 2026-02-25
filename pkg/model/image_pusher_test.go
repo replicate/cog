@@ -14,6 +14,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
@@ -403,6 +404,111 @@ func TestShouldFallbackToDocker(t *testing.T) {
 			assert.Equal(t, tt.expected, shouldFallbackToDocker(tt.err))
 		})
 	}
+}
+
+// =============================================================================
+// sanitizeError tests
+// =============================================================================
+
+func TestSanitizeError(t *testing.T) {
+	t.Run("strips HTML body from transport error", func(t *testing.T) {
+		htmlBody := `<html><head><title>413 Request Entity Too Large</title></head><body><center><h1>413 Request Entity Too Large</h1></center><hr><center>cloudflare</center></body></html>`
+		transportErr := &transport.Error{
+			StatusCode: 413,
+			Errors:     nil,
+		}
+		// The rawBody field is unexported, so we test via the wrapped error behavior.
+		// A transport.Error with no Errors slice and status 413 produces a message
+		// that includes the raw body — sanitizeError should replace it.
+		_ = htmlBody // illustrates the problem scenario
+
+		result := sanitizeError(transportErr)
+		assert.Equal(t, "HTTP 413 Request Entity Too Large", result.Error())
+	})
+
+	t.Run("strips body from 502 transport error", func(t *testing.T) {
+		transportErr := &transport.Error{
+			StatusCode: 502,
+		}
+
+		result := sanitizeError(transportErr)
+		assert.Equal(t, "HTTP 502 Bad Gateway", result.Error())
+	})
+
+	t.Run("passes through non-transport errors unchanged", func(t *testing.T) {
+		err := errors.New("connection refused")
+		result := sanitizeError(err)
+		assert.Equal(t, "connection refused", result.Error())
+	})
+
+	t.Run("passes through wrapped transport errors", func(t *testing.T) {
+		transportErr := &transport.Error{
+			StatusCode: 413,
+		}
+		wrapped := fmt.Errorf("pushing layer: %w", transportErr)
+
+		result := sanitizeError(wrapped)
+		assert.Equal(t, "HTTP 413 Request Entity Too Large", result.Error())
+	})
+}
+
+// =============================================================================
+// OnFallback callback tests
+// =============================================================================
+
+func TestImagePusher_OnFallback(t *testing.T) {
+	t.Setenv("COG_PUSH_OCI", "1")
+
+	t.Run("calls OnFallback before docker push on OCI failure", func(t *testing.T) {
+		var callOrder []string
+
+		mock := &ociMockClient{writeLayerErr: errors.New("connection reset")}
+		tag := "example.com/test/repo:v1"
+
+		img, err := random.Image(512, 1)
+		require.NoError(t, err)
+
+		docker := &mockDocker{
+			imageSaveFunc: fakeImageSaveFunc(img, tag),
+			pushFunc: func(_ context.Context, _ string) error {
+				callOrder = append(callOrder, "docker-push")
+				return nil
+			},
+		}
+
+		pusher := newImagePusher(docker, mock)
+
+		err = pusher.Push(context.Background(), tag, ImagePushOptions{
+			OnFallback: func() {
+				callOrder = append(callOrder, "on-fallback")
+			},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"on-fallback", "docker-push"}, callOrder)
+	})
+
+	t.Run("does not call OnFallback when OCI push succeeds", func(t *testing.T) {
+		mock := &ociMockClient{}
+		tag := "example.com/test/repo:v1"
+
+		img, err := random.Image(512, 1)
+		require.NoError(t, err)
+
+		docker := &mockDocker{
+			imageSaveFunc: fakeImageSaveFunc(img, tag),
+		}
+
+		pusher := newImagePusher(docker, mock)
+
+		var fallbackCalled bool
+		err = pusher.Push(context.Background(), tag, ImagePushOptions{
+			OnFallback: func() {
+				fallbackCalled = true
+			},
+		})
+		require.NoError(t, err)
+		assert.False(t, fallbackCalled)
+	})
 }
 
 // =============================================================================

@@ -281,8 +281,11 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 	}
 
 	var imagePushOpts []ImagePushOptions
-	if opts.ImageProgressFn != nil {
-		imagePushOpts = append(imagePushOpts, ImagePushOptions{ProgressFn: opts.ImageProgressFn})
+	if opts.ImageProgressFn != nil || opts.OnFallback != nil {
+		imagePushOpts = append(imagePushOpts, ImagePushOptions{
+			ProgressFn: opts.ImageProgressFn,
+			OnFallback: opts.OnFallback,
+		})
 	}
 	return r.imagePusher.Push(ctx, imgArtifact.Reference, imagePushOpts...)
 }

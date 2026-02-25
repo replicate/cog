@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"golang.org/x/sync/errgroup"
@@ -46,6 +48,11 @@ func newImagePusher(docker command.Command, reg registry.Client) *ImagePusher {
 type ImagePushOptions struct {
 	// ProgressFn is an optional callback for reporting per-layer upload progress.
 	ProgressFn func(PushProgress)
+
+	// OnFallback is called when OCI push fails and the push is about to fall
+	// back to Docker push. This allows the caller to clean up any OCI-specific
+	// progress display before Docker push starts its own output.
+	OnFallback func()
 }
 
 // Push pushes a container image to the registry by reference.
@@ -66,7 +73,10 @@ func (p *ImagePusher) Push(ctx context.Context, imageRef string, opts ...ImagePu
 		if !shouldFallbackToDocker(err) {
 			return fmt.Errorf("OCI chunked push: %w", err)
 		}
-		console.Warnf("OCI chunked push failed, falling back to Docker push: %v", err)
+		if opt.OnFallback != nil {
+			opt.OnFallback()
+		}
+		console.Warnf("OCI chunked push failed, falling back to Docker push: %v", sanitizeError(err))
 	}
 
 	return p.docker.Push(ctx, imageRef)
@@ -275,6 +285,20 @@ func shouldFallbackToDocker(err error) bool {
 		return false
 	}
 	return true
+}
+
+// sanitizeError returns a clean, user-friendly error message.
+//
+// Registry errors from go-containerregistry's transport.Error can contain the
+// entire HTTP response body (e.g., Cloudflare's HTML error pages for 413
+// responses), which produces unreadable terminal output. This function extracts
+// just the HTTP status code and status text for those cases.
+func sanitizeError(err error) error {
+	var transportErr *transport.Error
+	if errors.As(err, &transportErr) {
+		return fmt.Errorf("HTTP %d %s", transportErr.StatusCode, http.StatusText(transportErr.StatusCode))
+	}
+	return err
 }
 
 // configBlobLayer wraps a config blob to satisfy the v1.Layer interface
