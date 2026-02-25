@@ -13,7 +13,7 @@ import (
 const (
 	// DefaultPushConcurrency is the default number of concurrent uploads
 	// for both image layers and weight artifacts.
-	DefaultPushConcurrency = 4
+	DefaultPushConcurrency = 5
 
 	// envPushConcurrency is the environment variable that overrides DefaultPushConcurrency.
 	envPushConcurrency = "COG_PUSH_CONCURRENCY"
