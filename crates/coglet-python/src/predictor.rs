@@ -520,6 +520,24 @@ impl PythonPredictor {
         Ok(())
     }
 
+    /// Get the predict function object for type annotation introspection.
+    pub fn predict_func<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let instance = self.instance.bind(py);
+        match &self.kind {
+            PredictorKind::Class { .. } => instance.getattr("predict"),
+            PredictorKind::StandaloneFunction(_) => Ok(instance.clone()),
+        }
+    }
+
+    /// Get the train function object for type annotation introspection.
+    pub fn train_func<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let instance = self.instance.bind(py);
+        match &self.kind {
+            PredictorKind::Class { .. } => instance.getattr("train"),
+            PredictorKind::StandaloneFunction(_) => Ok(instance.clone()),
+        }
+    }
+
     /// Call predict() with the given input dict, returning raw Python output.
     ///
     /// For standalone functions, calls the function directly.
@@ -611,7 +629,10 @@ impl PythonPredictor {
             })?;
 
             // PreparedInput cleans up temp files on drop (RAII)
-            let prepared = input::prepare_input(py, raw_input_dict)
+            let func = self.predict_func(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get predict function: {}", e))
+            })?;
+            let prepared = input::prepare_input(py, raw_input_dict, &func)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
@@ -681,7 +702,10 @@ impl PythonPredictor {
             })?;
 
             // PreparedInput cleans up temp files on drop (RAII)
-            let prepared = input::prepare_input(py, raw_input_dict)
+            let func = self.train_func(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get train function: {}", e))
+            })?;
+            let prepared = input::prepare_input(py, raw_input_dict, &func)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
@@ -866,7 +890,10 @@ impl PythonPredictor {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let prepared = input::prepare_input(py, raw_input_dict)
+            let func = self.predict_func(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get predict function: {}", e))
+            })?;
+            let prepared = input::prepare_input(py, raw_input_dict, &func)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
@@ -1000,7 +1027,10 @@ impl PythonPredictor {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let prepared = input::prepare_input(py, raw_input_dict)
+            let func = self.train_func(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get train function: {}", e))
+            })?;
+            let prepared = input::prepare_input(py, raw_input_dict, &func)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 

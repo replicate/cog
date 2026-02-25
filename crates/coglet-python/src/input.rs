@@ -4,6 +4,8 @@
 //! Input validation is performed at the HTTP edge using the OpenAPI schema;
 //! the worker only needs to download URLPath inputs and pass them through.
 
+use std::collections::HashSet;
+
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -62,37 +64,115 @@ unsafe impl Send for PreparedInput {}
 
 /// Prepare input for prediction.
 ///
-/// Coerces URL strings to URLPath objects (replacing the type coercion that
-/// was previously done by `_adt.py`), then downloads them in parallel.
+/// Coerces URL strings to the appropriate cog types based on the function's
+/// type annotations: `File`-annotated params get `File.validate()` (IO-like),
+/// `Path`-annotated params get `Path.validate()` (filesystem path + download).
 /// Returns a PreparedInput that cleans up temp files on drop.
 ///
 /// Input validation is handled at the HTTP edge via the OpenAPI schema —
-/// this function only handles URL→Path coercion and file downloads.
-pub fn prepare_input(py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput> {
-    coerce_url_strings_to_urlpaths(py, input)?;
+/// this function only handles URL→Path/File coercion and file downloads.
+///
+/// `func` is the Python predict/train callable used to introspect type annotations.
+pub fn prepare_input(
+    py: Python<'_>,
+    input: &Bound<'_, PyDict>,
+    func: &Bound<'_, PyAny>,
+) -> PyResult<PreparedInput> {
+    let file_fields = detect_file_fields(py, func)?;
+    coerce_url_strings(py, input, &file_fields)?;
     let cleanup_paths = download_url_paths_into_dict(py, input)?;
     Ok(PreparedInput::new(input.clone().unbind(), cleanup_paths))
 }
 
-/// Coerce URL string values in the input dict to URLPath objects.
+/// Inspect a Python function's type annotations to find parameters typed as
+/// `cog.File` (or `list[File]`). Returns a set of field names that should use
+/// `File.validate()` instead of `Path.validate()`.
+fn detect_file_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<HashSet<String>> {
+    let mut file_fields = HashSet::new();
+
+    let cog_file_class = py.import("cog.types")?.getattr("File")?;
+
+    // typing.get_type_hints resolves string annotations and handles forward refs
+    let typing = py.import("typing")?;
+    let get_type_hints = typing.getattr("get_type_hints")?;
+    let get_origin = typing.getattr("get_origin")?;
+    let get_args = typing.getattr("get_args")?;
+
+    let hints = match get_type_hints.call1((func,)) {
+        Ok(h) => h,
+        Err(_) => return Ok(file_fields), // If we can't get hints, don't coerce as File
+    };
+
+    let hints_dict = hints.cast::<PyDict>()?;
+    for (name, annotation) in hints_dict.iter() {
+        let name_str: String = match name.extract() {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if name_str == "return" {
+            continue;
+        }
+
+        // Direct File annotation: `param: File`
+        if annotation.is(&cog_file_class) {
+            file_fields.insert(name_str);
+            continue;
+        }
+
+        // Generic annotation like `list[File]`: check origin is list, arg is File
+        let origin = get_origin.call1((&annotation,))?;
+        if !origin.is_none() {
+            let builtins_list = py.eval(c"list", None, None)?;
+            if origin.is(&builtins_list) {
+                let args = get_args.call1((&annotation,))?;
+                if let Ok(args_tuple) = args.cast::<pyo3::types::PyTuple>()
+                    && !args_tuple.is_empty()
+                    && args_tuple.get_item(0)?.is(&cog_file_class)
+                {
+                    file_fields.insert(name_str);
+                }
+            }
+        }
+    }
+
+    if !file_fields.is_empty() {
+        tracing::debug!("Detected File-typed fields: {:?}", file_fields);
+    }
+
+    Ok(file_fields)
+}
+
+/// Coerce URL string values in the input dict to the appropriate cog types.
 ///
 /// After `json.loads()`, all values are plain Python types. URL strings
-/// (http://, https://, data:) that represent file inputs need to be converted
-/// to `URLPath` objects so the download step can find and process them.
+/// (http://, https://, data:) that represent file inputs need to be converted:
+///   - `File`-typed fields → `File.validate()` → returns IO-like `URLFile`
+///   - `Path`-typed fields → `Path.validate()` → returns `URLPath` (downloaded later)
 ///
 /// This replaces the type coercion that `_adt.py`'s `PrimitiveType.normalize()`
-/// previously performed via `Path.validate()`.
-fn coerce_url_strings_to_urlpaths(py: Python<'_>, payload: &Bound<'_, PyDict>) -> PyResult<()> {
-    let path_validate = py
-        .import("cog.types")?
-        .getattr("Path")?
-        .getattr("validate")?;
+/// previously performed.
+fn coerce_url_strings(
+    py: Python<'_>,
+    payload: &Bound<'_, PyDict>,
+    file_fields: &HashSet<String>,
+) -> PyResult<()> {
+    let cog_types = py.import("cog.types")?;
+    let path_validate = cog_types.getattr("Path")?.getattr("validate")?;
+    let file_validate = cog_types.getattr("File")?.getattr("validate")?;
 
     for (key, value) in payload.iter() {
+        let key_str: String = key.extract().unwrap_or_default();
+        let use_file = file_fields.contains(&key_str);
+        let validate = if use_file {
+            &file_validate
+        } else {
+            &path_validate
+        };
+
         // Single string value — check if it's a URL
         if let Ok(s) = value.extract::<String>() {
             if s.starts_with("http://") || s.starts_with("https://") || s.starts_with("data:") {
-                let coerced = path_validate.call1((&value,))?;
+                let coerced = validate.call1((&value,))?;
                 payload.set_item(&key, coerced)?;
             }
         }
@@ -106,7 +186,7 @@ fn coerce_url_strings_to_urlpaths(py: Python<'_>, payload: &Bound<'_, PyDict>) -
                         || s.starts_with("https://")
                         || s.starts_with("data:"))
                 {
-                    let coerced = path_validate.call1((&item,))?;
+                    let coerced = validate.call1((&item,))?;
                     new_items.append(coerced)?;
                     any_coerced = true;
                     continue;
