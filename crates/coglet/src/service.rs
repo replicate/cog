@@ -14,6 +14,7 @@ use tokio::sync::{RwLock, watch};
 
 use crate::bridge::protocol::SlotRequest;
 use crate::health::{Health, SetupResult};
+use crate::input_validation::InputValidator;
 use crate::orchestrator::{HealthcheckResult, Orchestrator};
 use crate::permit::{PermitPool, PredictionSlot, UnregisteredPredictionSlot};
 use crate::prediction::{Prediction, PredictionStatus};
@@ -87,6 +88,7 @@ pub struct PredictionService {
     version: VersionInfo,
 
     schema: RwLock<Option<serde_json::Value>>,
+    input_validator: RwLock<Option<InputValidator>>,
 }
 
 /// Orchestrator runtime state - pool and orchestrator together.
@@ -121,6 +123,7 @@ impl PredictionService {
             shutdown_rx,
             version: VersionInfo::new(),
             schema: RwLock::new(None),
+            input_validator: RwLock::new(None),
         }
     }
 
@@ -218,11 +221,36 @@ impl PredictionService {
     }
 
     pub async fn set_schema(&self, schema: serde_json::Value) {
+        // Compile an input validator from the Input schema component
+        let validator = InputValidator::from_openapi_schema(&schema);
+        if let Some(v) = &validator {
+            tracing::info!(
+                "Input validation enabled ({} required fields)",
+                v.required_count()
+            );
+        }
+        *self.input_validator.write().await = validator;
         *self.schema.write().await = Some(schema);
     }
 
     pub async fn schema(&self) -> Option<serde_json::Value> {
         self.schema.read().await.clone()
+    }
+
+    /// Validate prediction input against the OpenAPI schema.
+    ///
+    /// Returns Ok(()) if no schema is loaded or if validation passes.
+    /// Returns Err with per-field validation errors on failure.
+    pub async fn validate_input(
+        &self,
+        input: &serde_json::Value,
+    ) -> Result<(), Vec<crate::input_validation::ValidationError>> {
+        let guard = self.input_validator.read().await;
+        if let Some(ref validator) = *guard {
+            validator.validate(input)
+        } else {
+            Ok(())
+        }
     }
 
     /// Run user-defined healthcheck via orchestrator.

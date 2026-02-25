@@ -274,6 +274,24 @@ async fn create_prediction_with_id(
     respond_async: bool,
     trace_context: TraceContext,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    // Validate input against the OpenAPI schema before dispatching
+    if let Err(errors) = service.validate_input(&input).await {
+        let detail: Vec<serde_json::Value> = errors
+            .into_iter()
+            .map(|e| {
+                serde_json::json!({
+                    "loc": ["body", "input", e.field],
+                    "msg": e.msg,
+                    "type": e.error_type
+                })
+            })
+            .collect();
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({ "detail": detail })),
+        );
+    }
+
     let webhook_sender = build_webhook_sender(
         webhook.clone(),
         webhook_events_filter.clone(),

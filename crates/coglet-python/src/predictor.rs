@@ -817,7 +817,7 @@ impl PythonPredictor {
         }
 
         // Non-file output — process normally
-        let processed = output::process_output(py, result, None)
+        let processed = output::process_output(py, result)
             .map_err(|e| PredictionError::Failed(format!("Failed to process output: {}", e)))?;
 
         let result_str: String = json_module

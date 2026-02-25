@@ -8,6 +8,7 @@ mod version;
 
 pub mod bridge;
 mod fd_redirect;
+mod input_validation;
 pub mod orchestrator;
 pub mod permit;
 pub mod service;

@@ -25,6 +25,9 @@ serde_json.workspace = true
 base64 = "0.22.1"
 mime_guess = "2.0.5"
 
+# JSON Schema validation
+jsonschema = "0.29"
+
 # Identifiers
 uuid.workspace = true
 
