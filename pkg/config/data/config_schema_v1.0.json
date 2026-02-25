@@ -91,6 +91,11 @@
             ]
           }
         },
+        "sdk_version": {
+          "$id": "#/properties/build/properties/sdk_version",
+          "type": "string",
+          "description": "Pin the cog Python SDK version installed in the container (e.g. \"0.18.0\" or \"0.18.0a1\"). Defaults to latest. Overridden by the COG_SDK_WHEEL environment variable."
+        },
         "run": {
           "$id": "#/properties/build/properties/run",
           "type": [

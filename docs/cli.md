@@ -25,10 +25,30 @@ https://github.com/replicate/cog
 ```
 ## `cog build`
 
-Build an image from cog.yaml
+Build a Docker image from the cog.yaml in the current directory.
+
+The generated image contains your model code, dependencies, and the Cog
+runtime. It can be run locally with 'cog predict' or pushed to a registry
+with 'cog push'.
 
 ```
 cog build [flags]
+```
+
+**Examples**
+
+```
+  # Build with default settings
+  cog build
+
+  # Build and tag the image
+  cog build -t my-model:latest
+
+  # Build without using the cache
+  cog build --no-cache
+
+  # Build with model weights in a separate layer
+  cog build --separate-weights -t my-model:v1
 ```
 
 **Options**
@@ -47,10 +67,20 @@ cog build [flags]
 ```
 ## `cog init`
 
-Configure your project for use with Cog
+Create a cog.yaml and predict.py in the current directory.
+
+These files provide a starting template for defining your model's environment
+and prediction interface. Edit them to match your model's requirements.
 
 ```
 cog init [flags]
+```
+
+**Examples**
+
+```
+  # Set up a new Cog project in the current directory
+  cog init
 ```
 
 **Options**
@@ -92,6 +122,28 @@ the prediction on that.
 cog predict [image] [flags]
 ```
 
+**Examples**
+
+```
+  # Run a prediction with named inputs
+  cog predict -i prompt="a photo of a cat"
+
+  # Pass a file as input
+  cog predict -i image=@photo.jpg
+
+  # Save output to a file
+  cog predict -i image=@input.jpg -o output.png
+
+  # Pass multiple inputs
+  cog predict -i prompt="sunset" -i width=1024 -i height=768
+
+  # Run against a pre-built image
+  cog predict r8.im/your-username/my-model -i prompt="hello"
+
+  # Pass inputs as JSON
+  echo '{"prompt": "a cat"}' | cog predict --json @-
+```
+
 **Options**
 
 ```
@@ -110,7 +162,10 @@ cog predict [image] [flags]
 ```
 ## `cog push`
 
-Build and push model in current directory to a Docker registry
+Build a Docker image from cog.yaml and push it to a container registry.
+
+Cog can push to any OCI-compliant registry. When pushing to Replicate's
+registry (r8.im), run 'cog login' first to authenticate.
 
 ```
 cog push [IMAGE] [flags]
@@ -119,7 +174,14 @@ cog push [IMAGE] [flags]
 **Examples**
 
 ```
-cog push registry.example.com/your-username/model-name
+  # Push to Replicate
+  cog push r8.im/your-username/my-model
+
+  # Push to any OCI registry
+  cog push registry.example.com/your-username/model-name
+
+  # Push with model weights in a separate layer (Replicate only)
+  cog push r8.im/your-username/my-model --separate-weights
 ```
 
 **Options**
@@ -137,10 +199,30 @@ cog push registry.example.com/your-username/model-name
 ```
 ## `cog run`
 
-Run a command inside a Docker environment
+Run a command inside a Docker environment defined by cog.yaml.
+
+Cog builds a temporary image from your cog.yaml configuration and runs the
+given command inside it. This is useful for debugging, running scripts, or
+exploring the environment your model will run in.
 
 ```
 cog run <command> [arg...] [flags]
+```
+
+**Examples**
+
+```
+  # Open a Python interpreter inside the model environment
+  cog run python
+
+  # Run a script
+  cog run python train.py
+
+  # Run with environment variables
+  cog run -e HUGGING_FACE_HUB_TOKEN=abc123 python download.py
+
+  # Expose a port (e.g. for Jupyter)
+  cog run -p 8888 jupyter notebook
 ```
 
 **Options**
@@ -159,10 +241,27 @@ cog run <command> [arg...] [flags]
 
 Run a prediction HTTP server.
 
-Generate and run an HTTP server based on the declared model inputs and outputs.
+Builds the model and starts an HTTP server that exposes the model's inputs
+and outputs as a REST API. Compatible with the Cog HTTP protocol.
 
 ```
 cog serve [flags]
+```
+
+**Examples**
+
+```
+  # Start the server on the default port (8393)
+  cog serve
+
+  # Start on a custom port
+  cog serve -p 5000
+
+  # Test the server
+  curl http://localhost:8393/predictions \
+    -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"prompt": "a cat"}}'
 ```
 
 **Options**

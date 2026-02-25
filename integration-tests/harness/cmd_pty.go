@@ -75,8 +75,8 @@ func (c *PtyRunCommand) Run(ts *testscript.TestScript, neg bool, args []string) 
 	if v := ts.Getenv("REPO_ROOT"); v != "" {
 		cmd.Env = append(cmd.Env, "REPO_ROOT="+v)
 	}
-	if v := ts.Getenv("COG_WHEEL"); v != "" {
-		cmd.Env = append(cmd.Env, "COG_WHEEL="+v)
+	if v := ts.Getenv("COG_SDK_WHEEL"); v != "" {
+		cmd.Env = append(cmd.Env, "COG_SDK_WHEEL="+v)
 	}
 	if v := ts.Getenv("COGLET_WHEEL"); v != "" {
 		cmd.Env = append(cmd.Env, "COGLET_WHEEL="+v)

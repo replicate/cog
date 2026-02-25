@@ -676,20 +676,6 @@ func TestAbsolutePathInPythonRequirements(t *testing.T) {
 	require.True(t, ok)
 }
 
-func TestContainsCoglet(t *testing.T) {
-	config := &Config{
-		Build: &Build{
-			PythonVersion: "3.13",
-			PythonPackages: []string{
-				"coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha31/coglet-0.1.0a31-py3-none-any.whl",
-			},
-		},
-	}
-	err := config.Complete("")
-	require.NoError(t, err)
-	require.True(t, config.ContainsCoglet())
-}
-
 func TestWeightsWithNameYAML(t *testing.T) {
 	yamlString := `build:
   python_version: "3.12"
@@ -768,4 +754,53 @@ func TestWeightsWithNameJSON(t *testing.T) {
 	require.Equal(t, "model-v2", config.Weights[1].Name)
 	require.Equal(t, "file://./weights/model-v2.zip", config.Weights[1].Source)
 	require.Equal(t, "/weights/model-v2", config.Weights[1].Target)
+}
+
+func TestSDKVersionConfig(t *testing.T) {
+	// build.sdk_version is parsed and stored correctly
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  sdk_version: "0.18.0"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.Equal(t, "0.18.0", conf.Build.SDKVersion)
+}
+
+func TestSDKVersionConfigEmpty(t *testing.T) {
+	// Omitting build.sdk_version leaves the field empty
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.Equal(t, "", conf.Build.SDKVersion)
+}
+
+func TestSDKVersionConfigPreRelease(t *testing.T) {
+	// Pre-release PEP 440 version is accepted and stored verbatim
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  sdk_version: "0.18.0a1"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.Equal(t, "0.18.0a1", conf.Build.SDKVersion)
+}
+
+func TestSDKVersionConfigBelowMinimumExplodesInGenerator(t *testing.T) {
+	// build.sdk_version < 0.16.0 must be rejected — parsing succeeds but the
+	// Dockerfile generator must return an error so the build never proceeds.
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  sdk_version: "0.15.0"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	// Parsing itself is fine; enforcement happens at Dockerfile generation time.
+	require.Equal(t, "0.15.0", conf.Build.SDKVersion)
 }

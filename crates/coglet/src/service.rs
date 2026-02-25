@@ -125,11 +125,17 @@ impl PredictionService {
     }
 
     /// Configure orchestrator mode atomically.
+    ///
+    /// Also sets the orchestrator on the supervisor so cancellation can be
+    /// delegated from supervisor → orchestrator → worker.
     pub async fn set_orchestrator(
         &self,
         pool: Arc<PermitPool>,
         orchestrator: Arc<dyn Orchestrator>,
     ) {
+        self.supervisor
+            .set_orchestrator(Arc::clone(&orchestrator))
+            .await;
         *self.orchestrator.write().await = Some(OrchestratorState { pool, orchestrator });
     }
 
@@ -458,6 +464,13 @@ mod tests {
             if self.send_idle_ack {
                 let _ = idle_sender.send(InactiveSlotIdleToken::new(slot_id).activate());
             }
+        }
+
+        async fn cancel_by_prediction_id(
+            &self,
+            _prediction_id: &str,
+        ) -> Result<(), crate::orchestrator::OrchestratorError> {
+            Ok(())
         }
 
         async fn healthcheck(

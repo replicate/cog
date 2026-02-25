@@ -17,12 +17,22 @@ import (
 
 func newPushCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "push [IMAGE]",
+		Use:   "push [IMAGE]",
+		Short: "Build and push model in current directory to a Docker registry",
+		Long: `Build a Docker image from cog.yaml and push it to a container registry.
 
-		Short:   "Build and push model in current directory to a Docker registry",
-		Example: `cog push registry.example.com/your-username/model-name`,
-		RunE:    push,
-		Args:    cobra.MaximumNArgs(1),
+Cog can push to any OCI-compliant registry. When pushing to Replicate's
+registry (r8.im), run 'cog login' first to authenticate.`,
+		Example: `  # Push to Replicate
+  cog push r8.im/your-username/my-model
+
+  # Push to any OCI registry
+  cog push registry.example.com/your-username/model-name
+
+  # Push with model weights in a separate layer (Replicate only)
+  cog push r8.im/your-username/my-model --separate-weights`,
+		RunE: push,
+		Args: cobra.MaximumNArgs(1),
 	}
 	addSecretsFlag(cmd)
 	addNoCacheFlag(cmd)
