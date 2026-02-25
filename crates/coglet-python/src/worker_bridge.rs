@@ -283,8 +283,11 @@ impl PredictHandler for PythonPredictHandler {
                 .map_err(|e| SetupError::load(e.to_string()))?;
 
             // Detect SDK implementation
-            let sdk_impl = match py.import("cog._adt") {
-                Ok(_) => SdkImplementation::Cog,
+            let sdk_impl = match py.import("cog") {
+                Ok(cog) => match cog.getattr("BasePredictor") {
+                    Ok(_) => SdkImplementation::Cog,
+                    Err(_) => SdkImplementation::Unknown,
+                },
                 Err(_) => SdkImplementation::Unknown,
             };
             tracing::info!(sdk_implementation = %sdk_impl, "Detected Cog SDK implementation");

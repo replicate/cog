@@ -1,7 +1,7 @@
 """
 Request/Response schema for the Cog server.
 
-Validation is handled by _inspector.check_input().
+Input validation is handled at the HTTP edge using the OpenAPI schema.
 """
 
 import importlib.util

@@ -1,7 +1,7 @@
 //! Type system for Cog predictor schemas.
 //!
-//! Mirrors the Python ADT in `python/cog/_adt.py`. Maps Python type annotations
-//! to an intermediate representation, then to JSON Schema / OpenAPI types.
+//! Maps Python type annotations to an intermediate representation, then to
+//! JSON Schema / OpenAPI types.
 
 use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
@@ -15,7 +15,7 @@ pub type ModelClassMap = IndexMap<String, Vec<(String, TypeAnnotation, Option<De
 // Primitive types
 // ---------------------------------------------------------------------------
 
-/// Mirrors `PrimitiveType` in `_adt.py`.
+/// Primitive Python types mapped to JSON Schema types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {
     Bool,

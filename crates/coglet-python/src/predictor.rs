@@ -9,7 +9,7 @@ use coglet_core::worker::SlotSender;
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 
 use crate::cancel;
-use crate::input::{self, InputProcessor, PreparedInput, Runtime};
+use crate::input::{self, PreparedInput};
 use crate::output;
 
 // =============================================================================
@@ -262,11 +262,6 @@ pub struct PythonPredictor {
     instance: PyObject,
     /// The predictor's kind (class or standalone function) and method execution types
     kind: PredictorKind,
-    /// The detected runtime type (used during construction to select input processor).
-    #[allow(dead_code)]
-    runtime: Runtime,
-    /// Input processor for this runtime.
-    input_processor: Box<dyn InputProcessor>,
 }
 
 // PyObject is Send in PyO3 0.23+
@@ -338,17 +333,7 @@ impl PythonPredictor {
             }
         };
 
-        // Detect runtime and create input processor
-        let runtime = input::detect_runtime(py, predictor_ref, &instance)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        let input_processor = input::create_input_processor(&runtime);
-
-        Ok(Self {
-            instance,
-            kind,
-            runtime,
-            input_processor,
-        })
+        Ok(Self { instance, kind })
     }
 
     /// Detect if a method is an async function.
@@ -537,9 +522,7 @@ impl PythonPredictor {
             })?;
 
             // PreparedInput cleans up temp files on drop (RAII)
-            let prepared = self
-                .input_processor
-                .prepare(py, raw_input_dict)
+            let prepared = input::prepare_input(py, raw_input_dict)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
@@ -609,9 +592,7 @@ impl PythonPredictor {
             })?;
 
             // PreparedInput cleans up temp files on drop (RAII)
-            let prepared = self
-                .input_processor
-                .prepare(py, raw_input_dict)
+            let prepared = input::prepare_input(py, raw_input_dict)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
@@ -796,9 +777,7 @@ impl PythonPredictor {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let prepared = self
-                .input_processor
-                .prepare(py, raw_input_dict)
+            let prepared = input::prepare_input(py, raw_input_dict)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
@@ -932,9 +911,7 @@ impl PythonPredictor {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let prepared = self
-                .input_processor
-                .prepare(py, raw_input_dict)
+            let prepared = input::prepare_input(py, raw_input_dict)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
