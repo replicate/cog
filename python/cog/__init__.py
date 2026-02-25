@@ -19,8 +19,9 @@ Example:
             return self.model.generate(prompt, image)
 """
 
+from coglet import CancelationException as CancelationException
+
 from ._version import __version__
-from .exceptions import CancelationException
 from .input import FieldInfo, Input
 from .model import BaseModel
 from .predictor import BasePredictor
