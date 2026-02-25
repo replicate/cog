@@ -12,6 +12,7 @@ use std::time::Instant;
 use dashmap::DashMap;
 use tokio::sync::Notify;
 
+use crate::orchestrator::Orchestrator;
 use crate::prediction::{CancellationToken, PredictionStatus};
 use crate::webhook::{WebhookEventType, WebhookSender};
 
@@ -103,8 +104,12 @@ impl PredictionHandle {
     }
 
     /// Create a guard that cancels on drop (for sync predictions).
+    ///
+    /// On drop (e.g. HTTP connection closed), the guard calls
+    /// `supervisor.cancel(id)` which fires the CancellationToken AND
+    /// delegates to the orchestrator to cancel the worker subprocess.
     pub fn sync_guard(&self) -> SyncPredictionGuard {
-        SyncPredictionGuard::new(self.cancel_token.clone())
+        SyncPredictionGuard::new(self.id.clone(), Arc::clone(&self.supervisor))
     }
 
     pub fn cancel_token(&self) -> CancellationToken {
@@ -113,26 +118,33 @@ impl PredictionHandle {
 }
 
 /// Guard for sync predictions - cancels on drop unless disarmed.
+///
+/// When the HTTP connection drops (client disconnect), axum drops the
+/// response future which drops this guard. The guard calls
+/// `supervisor.cancel(id)` to trigger both the CancellationToken
+/// (Rust-side observers) and the orchestrator (worker subprocess cancel).
 pub struct SyncPredictionGuard {
-    cancel_token: Option<CancellationToken>,
+    prediction_id: Option<String>,
+    supervisor: Arc<PredictionSupervisor>,
 }
 
 impl SyncPredictionGuard {
-    pub fn new(cancel_token: CancellationToken) -> Self {
+    pub fn new(prediction_id: String, supervisor: Arc<PredictionSupervisor>) -> Self {
         Self {
-            cancel_token: Some(cancel_token),
+            prediction_id: Some(prediction_id),
+            supervisor,
         }
     }
 
     pub fn disarm(&mut self) {
-        self.cancel_token = None;
+        self.prediction_id = None;
     }
 }
 
 impl Drop for SyncPredictionGuard {
     fn drop(&mut self) {
-        if let Some(ref token) = self.cancel_token {
-            token.cancel();
+        if let Some(ref id) = self.prediction_id {
+            self.supervisor.cancel(id);
         }
     }
 }
@@ -147,13 +159,20 @@ struct PredictionEntry {
 /// Prediction supervisor with lock-free concurrent access.
 pub struct PredictionSupervisor {
     predictions: DashMap<String, PredictionEntry>,
+    orchestrator: tokio::sync::RwLock<Option<Arc<dyn Orchestrator>>>,
 }
 
 impl PredictionSupervisor {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             predictions: DashMap::new(),
+            orchestrator: tokio::sync::RwLock::new(None),
         })
+    }
+
+    /// Set the orchestrator handle for cancel delegation.
+    pub async fn set_orchestrator(&self, orchestrator: Arc<dyn Orchestrator>) {
+        *self.orchestrator.write().await = Some(orchestrator);
     }
 
     pub fn submit(
@@ -244,9 +263,33 @@ impl PredictionSupervisor {
         }
     }
 
+    /// Cancel a prediction by ID.
+    ///
+    /// Fires the CancellationToken (for Rust-side observers like upload tasks)
+    /// and delegates to the orchestrator to send `ControlRequest::Cancel` to the worker.
     pub fn cancel(&self, id: &str) -> bool {
         if let Some(entry) = self.predictions.get(id) {
             entry.cancel_token.cancel();
+
+            // Delegate to orchestrator to actually cancel the worker-side prediction.
+            // This must be non-blocking since cancel() is sync, so we spawn a task.
+            let id_owned = id.to_string();
+            let orchestrator = self
+                .orchestrator
+                .try_read()
+                .ok()
+                .and_then(|guard| guard.clone());
+            if let Some(orch) = orchestrator {
+                tokio::spawn(async move {
+                    if let Err(e) = orch.cancel_by_prediction_id(&id_owned).await {
+                        tracing::error!(
+                            prediction_id = %id_owned,
+                            error = %e,
+                            "Failed to send cancel to orchestrator"
+                        );
+                    }
+                });
+            }
             true
         } else {
             false
@@ -270,6 +313,7 @@ impl Default for PredictionSupervisor {
     fn default() -> Self {
         Self {
             predictions: DashMap::new(),
+            orchestrator: tokio::sync::RwLock::new(None),
         }
     }
 }
@@ -360,5 +404,29 @@ mod tests {
         }
 
         assert!(!cancel_token.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn repeated_cancel_is_idempotent() {
+        let supervisor = PredictionSupervisor::new();
+
+        let handle = supervisor.submit(
+            "test-repeat-cancel".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        let cancel_token = handle.cancel_token();
+
+        // First cancel should succeed
+        assert!(supervisor.cancel("test-repeat-cancel"));
+        assert!(cancel_token.is_cancelled());
+
+        // Subsequent cancels on the same prediction should still return true
+        // (prediction entry still exists) and must not panic.
+        assert!(supervisor.cancel("test-repeat-cancel"));
+        assert!(supervisor.cancel("test-repeat-cancel"));
+
+        // Cancelling a nonexistent prediction returns false
+        assert!(!supervisor.cancel("nonexistent"));
     }
 }

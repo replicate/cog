@@ -77,11 +77,8 @@ async def _ctx_wrapper(coro, prediction_id, contextvar):
 
 /// Check if a PyErr is a CancelationException or asyncio.CancelledError.
 fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
-    // Check for cog.server.exceptions.CancelationException
-    if let Ok(exceptions) = py.import("cog.server.exceptions")
-        && let Ok(cancel_exc) = exceptions.getattr("CancelationException")
-        && err.is_instance(py, &cancel_exc)
-    {
+    // Check for our static CancelationException type
+    if err.is_instance_of::<cancel::CancelationException>(py) {
         return true;
     }
 
@@ -491,14 +488,6 @@ impl PythonPredictor {
     ) -> PyResult<PyObject> {
         let instance = self.instance.bind(py);
 
-        // For sync methods, enter cancelable state so SIGUSR1 can interrupt
-        // The guard clears the flag on drop (even if we panic or error)
-        let _cancelable_guard = if !is_async {
-            Some(cancel::enter_cancelable())
-        } else {
-            None
-        };
-
         // Call the method - returns coroutine if async, result if sync
         // If method_name is empty, call the instance directly (standalone function)
         let method_result = if method_name.is_empty() {
@@ -514,9 +503,6 @@ impl PythonPredictor {
         } else {
             method_result
         };
-
-        // Drop the cancelable guard now that the call is done
-        drop(_cancelable_guard);
 
         Ok(result.unbind())
     }

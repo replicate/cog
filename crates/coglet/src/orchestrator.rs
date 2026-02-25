@@ -216,6 +216,12 @@ pub trait Orchestrator: Send + Sync {
         idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
     );
 
+    /// Cancel a prediction by its prediction ID.
+    ///
+    /// The orchestrator resolves the prediction ID to a slot ID and sends
+    /// a cancel request to the worker over the control socket.
+    async fn cancel_by_prediction_id(&self, prediction_id: &str) -> Result<(), OrchestratorError>;
+
     /// Run user-defined healthcheck if available.
     async fn healthcheck(&self) -> Result<HealthcheckResult, OrchestratorError>;
 
@@ -328,6 +334,7 @@ pub struct OrchestratorHandle {
         tokio::sync::oneshot::Sender<SlotIdleToken>,
     )>,
     healthcheck_tx: mpsc::Sender<tokio::sync::oneshot::Sender<HealthcheckResult>>,
+    cancel_tx: mpsc::Sender<String>,
     slot_ids: Vec<SlotId>,
 }
 
@@ -343,6 +350,13 @@ impl Orchestrator for OrchestratorHandle {
             .register_tx
             .send((slot_id, prediction, idle_sender))
             .await;
+    }
+
+    async fn cancel_by_prediction_id(&self, prediction_id: &str) -> Result<(), OrchestratorError> {
+        self.cancel_tx
+            .send(prediction_id.to_string())
+            .await
+            .map_err(|_| OrchestratorError::Protocol("cancel channel closed".to_string()))
     }
 
     async fn healthcheck(&self) -> Result<HealthcheckResult, OrchestratorError> {
@@ -545,6 +559,7 @@ pub async fn spawn_worker(
 
     let (register_tx, register_rx) = mpsc::channel(num_slots);
     let (healthcheck_tx, healthcheck_rx) = mpsc::channel(1);
+    let (cancel_tx, cancel_rx) = mpsc::channel(16);
 
     let ctrl_writer = Arc::new(tokio::sync::Mutex::new(ctrl_writer));
 
@@ -553,6 +568,7 @@ pub async fn spawn_worker(
         ctrl_writer: Arc::clone(&ctrl_writer),
         register_tx,
         healthcheck_tx,
+        cancel_tx,
         slot_ids: slot_ids.clone(),
     };
 
@@ -566,6 +582,7 @@ pub async fn spawn_worker(
             slot_readers,
             register_rx,
             healthcheck_rx,
+            cancel_rx,
             pool_for_loop,
             upload_url,
         )
@@ -580,6 +597,7 @@ pub async fn spawn_worker(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_event_loop(
     mut ctrl_reader: FramedRead<tokio::process::ChildStdout, JsonCodec<ControlResponse>>,
     ctrl_writer: Arc<
@@ -595,6 +613,7 @@ async fn run_event_loop(
         tokio::sync::oneshot::Sender<SlotIdleToken>,
     )>,
     mut healthcheck_rx: mpsc::Receiver<tokio::sync::oneshot::Sender<HealthcheckResult>>,
+    mut cancel_rx: mpsc::Receiver<String>,
     pool: Arc<PermitPool>,
     upload_url: Option<String>,
 ) {
@@ -760,6 +779,40 @@ async fn run_event_loop(
                         for tx in pending_healthchecks.drain(..) {
                             let _ = tx.send(result.clone());
                         }
+                    }
+                }
+            }
+
+            Some(prediction_id) = cancel_rx.recv() => {
+                // Resolve prediction_id → slot_id by iterating (fine for small concurrency)
+                let slot = predictions.iter().find_map(|(sid, pred)| {
+                    try_lock_prediction(pred)
+                        .filter(|p| p.id() == prediction_id)
+                        .map(|_| *sid)
+                });
+                match slot {
+                    Some(slot_id) => {
+                        tracing::info!(
+                            target: "coglet::prediction",
+                            %prediction_id,
+                            %slot_id,
+                            "Cancelling prediction"
+                        );
+                        let mut writer = ctrl_writer.lock().await;
+                        if let Err(e) = writer.send(ControlRequest::Cancel { slot: slot_id }).await {
+                            tracing::error!(
+                                %slot_id,
+                                error = %e,
+                                "Failed to send cancel request to worker"
+                            );
+                        }
+                        // Also abort any pending upload tasks for this slot
+                        if let Some(handles) = pending_uploads.remove(&slot_id) {
+                            for h in handles { h.abort(); }
+                        }
+                    }
+                    None => {
+                        tracing::debug!(%prediction_id, "Cancel requested for unknown prediction (may have already completed)");
                     }
                 }
             }
@@ -969,12 +1022,39 @@ async fn run_event_loop(
                                 }
                             } else {
                                 // Has pending uploads — must spawn to await them.
-                                // TODO(#2748): when cancellation is wired end-to-end,
-                                // this spawn should also observe the cancel token and
-                                // abort in-flight uploads on cancellation.
+                                // Clone the cancel token so we can abort uploads if
+                                // the prediction is cancelled while uploads are in flight.
+                                let (cancel_token, upload_pred_id) = match try_lock_prediction(&pred) {
+                                    Some(p) => (Some(p.cancel_token()), p.id().to_string()),
+                                    None => (None, id.clone()),
+                                };
                                 tokio::spawn(async move {
-                                    for h in uploads {
-                                        let _ = h.await;
+                                    if let Some(token) = cancel_token {
+                                        let upload_fut = futures::future::join_all(uploads);
+                                        tokio::pin!(upload_fut);
+                                        tokio::select! {
+                                            _ = &mut upload_fut => {}
+                                            _ = token.cancelled() => {
+                                                tracing::info!(
+                                                    target: "coglet::prediction",
+                                                    prediction_id = %upload_pred_id,
+                                                    "Aborting in-flight uploads due to cancellation"
+                                                );
+                                                // JoinAll drops the JoinHandles when it goes out of
+                                                // scope at the end of this branch, but JoinHandle::drop
+                                                // does NOT abort the spawned task. The upload tasks
+                                                // were already aborted by the cancel handler in the
+                                                // event loop (cancel_rx arm), so they will terminate.
+                                                if let Some(mut p) = try_lock_prediction(&pred) {
+                                                    p.set_canceled();
+                                                }
+                                                return;
+                                            }
+                                        }
+                                    } else {
+                                        for h in uploads {
+                                            let _ = h.await;
+                                        }
                                     }
                                     if let Some(mut p) = try_lock_prediction(&pred) {
                                         let pred_output = match p.take_outputs().as_slice() {
