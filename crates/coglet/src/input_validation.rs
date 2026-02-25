@@ -55,12 +55,18 @@ impl InputValidator {
             .unwrap_or_default();
 
         // Clone and inject additionalProperties: false for pydantic parity
-        let mut schema = input_schema.clone();
-        if let Some(obj) = schema.as_object_mut() {
+        let mut resolved = input_schema.clone();
+        if let Some(obj) = resolved.as_object_mut() {
             obj.insert("additionalProperties".to_string(), Value::Bool(false));
         }
 
-        let validator = jsonschema::validator_for(&schema)
+        // Inline $ref pointers so the validator can resolve them without
+        // the full OpenAPI document context. cog-schema-gen emits $ref for
+        // enum choices (e.g. "#/components/schemas/Color").
+        let all_schemas = schema.get("components").and_then(|c| c.get("schemas"));
+        inline_refs(&mut resolved, all_schemas);
+
+        let validator = jsonschema::validator_for(&resolved)
             .inspect_err(|e| {
                 tracing::warn!(error = %e, "Failed to compile input schema validator");
             })
@@ -158,6 +164,44 @@ impl InputValidator {
             Err(errors)
         }
     }
+}
+
+/// Recursively inline `$ref` pointers in a JSON Schema value.
+///
+/// Resolves `{"$ref": "#/components/schemas/Foo"}` by looking up `Foo` in the
+/// provided schemas map and replacing the `$ref` object with the referenced
+/// content. This allows the validator to work on an extracted subschema without
+/// needing the full OpenAPI document.
+fn inline_refs(value: &mut Value, all_schemas: Option<&Value>) {
+    match value {
+        Value::Object(obj) => {
+            // If this object is a $ref, resolve it
+            if let Some(Value::String(ref_str)) = obj.get("$ref")
+                && let Some(resolved) = resolve_ref(ref_str, all_schemas)
+            {
+                *value = resolved;
+                // Recurse into the resolved value (it may contain more $refs)
+                inline_refs(value, all_schemas);
+                return;
+            }
+            // Recurse into all values
+            for v in obj.values_mut() {
+                inline_refs(v, all_schemas);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                inline_refs(v, all_schemas);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Resolve a `$ref` string like `#/components/schemas/Foo` against the schemas map.
+fn resolve_ref(ref_str: &str, all_schemas: Option<&Value>) -> Option<Value> {
+    let name = ref_str.strip_prefix("#/components/schemas/")?;
+    all_schemas?.get(name).cloned()
 }
 
 #[cfg(test)]
@@ -265,6 +309,39 @@ mod tests {
     fn no_schema_returns_none() {
         let schema = json!({"components": {"schemas": {}}});
         assert!(InputValidator::from_openapi_schema(&schema).is_none());
+    }
+
+    #[test]
+    fn resolves_ref_for_choices() {
+        let schema = json!({
+            "components": {
+                "schemas": {
+                    "Input": {
+                        "type": "object",
+                        "properties": {
+                            "color": {
+                                "allOf": [{"$ref": "#/components/schemas/Color"}],
+                                "x-order": 0
+                            }
+                        },
+                        "required": ["color"]
+                    },
+                    "Color": {
+                        "title": "Color",
+                        "description": "An enumeration.",
+                        "enum": ["red", "green", "blue"],
+                        "type": "string"
+                    }
+                }
+            }
+        });
+
+        let validator = InputValidator::from_openapi_schema(&schema);
+        assert!(validator.is_some(), "validator should compile with $ref");
+
+        let validator = validator.unwrap();
+        assert!(validator.validate(&json!({"color": "red"})).is_ok());
+        assert!(validator.validate(&json!({"color": "purple"})).is_err());
     }
 
     #[test]

@@ -62,12 +62,63 @@ unsafe impl Send for PreparedInput {}
 
 /// Prepare input for prediction.
 ///
-/// Downloads URLPath inputs in parallel and returns a PreparedInput that
-/// cleans up temp files on drop. Input validation is handled at the HTTP
-/// edge via the OpenAPI schema — this function only handles file downloads.
+/// Coerces URL strings to URLPath objects (replacing the type coercion that
+/// was previously done by `_adt.py`), then downloads them in parallel.
+/// Returns a PreparedInput that cleans up temp files on drop.
+///
+/// Input validation is handled at the HTTP edge via the OpenAPI schema —
+/// this function only handles URL→Path coercion and file downloads.
 pub fn prepare_input(py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput> {
+    coerce_url_strings_to_urlpaths(py, input)?;
     let cleanup_paths = download_url_paths_into_dict(py, input)?;
     Ok(PreparedInput::new(input.clone().unbind(), cleanup_paths))
+}
+
+/// Coerce URL string values in the input dict to URLPath objects.
+///
+/// After `json.loads()`, all values are plain Python types. URL strings
+/// (http://, https://, data:) that represent file inputs need to be converted
+/// to `URLPath` objects so the download step can find and process them.
+///
+/// This replaces the type coercion that `_adt.py`'s `PrimitiveType.normalize()`
+/// previously performed via `Path.validate()`.
+fn coerce_url_strings_to_urlpaths(py: Python<'_>, payload: &Bound<'_, PyDict>) -> PyResult<()> {
+    let path_validate = py
+        .import("cog.types")?
+        .getattr("Path")?
+        .getattr("validate")?;
+
+    for (key, value) in payload.iter() {
+        // Single string value — check if it's a URL
+        if let Ok(s) = value.extract::<String>() {
+            if s.starts_with("http://") || s.starts_with("https://") || s.starts_with("data:") {
+                let coerced = path_validate.call1((&value,))?;
+                payload.set_item(&key, coerced)?;
+            }
+        }
+        // List of strings — check if any are URLs
+        else if let Ok(list) = value.extract::<Bound<'_, pyo3::types::PyList>>() {
+            let mut any_coerced = false;
+            let new_items = pyo3::types::PyList::empty(py);
+            for item in list.iter() {
+                if let Ok(s) = item.extract::<String>()
+                    && (s.starts_with("http://")
+                        || s.starts_with("https://")
+                        || s.starts_with("data:"))
+                {
+                    let coerced = path_validate.call1((&item,))?;
+                    new_items.append(coerced)?;
+                    any_coerced = true;
+                    continue;
+                }
+                new_items.append(item)?;
+            }
+            if any_coerced {
+                payload.set_item(&key, new_items)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Download URLPath inputs in parallel and replace them in the payload dict.
