@@ -75,6 +75,68 @@ func Generate(ctx context.Context, sourceDir string, predictRef string, mode str
 	return schema, nil
 }
 
+// GenerateCombined generates OpenAPI schemas for both predict and train modes
+// (when both are configured) and merges them into a single schema. If only one
+// mode is configured, it behaves identically to Generate.
+func GenerateCombined(ctx context.Context, sourceDir string, predictRef string, trainRef string) (map[string]any, error) {
+	if predictRef == "" && trainRef == "" {
+		return nil, fmt.Errorf("no predict or train reference provided")
+	}
+
+	// Single-mode: just generate the one schema
+	if predictRef == "" {
+		return Generate(ctx, sourceDir, trainRef, "train")
+	}
+	if trainRef == "" {
+		return Generate(ctx, sourceDir, predictRef, "predict")
+	}
+
+	// Both modes: generate each and merge
+	predictSchema, err := Generate(ctx, sourceDir, predictRef, "predict")
+	if err != nil {
+		return nil, fmt.Errorf("predict schema: %w", err)
+	}
+	trainSchema, err := Generate(ctx, sourceDir, trainRef, "train")
+	if err != nil {
+		return nil, fmt.Errorf("train schema: %w", err)
+	}
+
+	return MergeSchemas(predictSchema, trainSchema), nil
+}
+
+// MergeSchemas merges a predict-mode and train-mode OpenAPI schema into a single
+// combined schema. The predict schema is used as the base; paths and component
+// schemas from the train schema are added to it.
+func MergeSchemas(predict, train map[string]any) map[string]any {
+	// Merge paths: add train paths to predict paths
+	predictPaths, _ := predict["paths"].(map[string]any)
+	trainPaths, _ := train["paths"].(map[string]any)
+	if predictPaths != nil && trainPaths != nil {
+		for k, v := range trainPaths {
+			if _, exists := predictPaths[k]; !exists {
+				predictPaths[k] = v
+			}
+		}
+	}
+
+	// Merge component schemas: add train components to predict components
+	predictComponents, _ := predict["components"].(map[string]any)
+	trainComponents, _ := train["components"].(map[string]any)
+	if predictComponents != nil && trainComponents != nil {
+		predictSchemas, _ := predictComponents["schemas"].(map[string]any)
+		trainSchemas, _ := trainComponents["schemas"].(map[string]any)
+		if predictSchemas != nil && trainSchemas != nil {
+			for k, v := range trainSchemas {
+				if _, exists := predictSchemas[k]; !exists {
+					predictSchemas[k] = v
+				}
+			}
+		}
+	}
+
+	return predict
+}
+
 // ResolveBinary finds the cog-schema-gen binary.
 //
 // Resolution order:

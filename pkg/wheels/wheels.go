@@ -28,8 +28,8 @@ func IsPreRelease(version string) bool {
 // Versions older than this lack features required by the current CLI.
 const MinimumSDKVersion = "0.16.0"
 
-// baseVersionRe extracts the MAJOR.MINOR.PATCH prefix, ignoring pre-release suffixes.
-var baseVersionRe = regexp.MustCompile(`^(\d+\.\d+\.\d+)`)
+// BaseVersionRe extracts the MAJOR.MINOR.PATCH prefix, ignoring pre-release suffixes.
+var BaseVersionRe = regexp.MustCompile(`^(\d+\.\d+\.\d+)`)
 
 // ValidateSDKVersion checks that a PyPI WheelConfig does not request a version
 // older than MinimumSDKVersion. Non-PyPI sources, unpinned versions, and nil
@@ -39,7 +39,7 @@ func ValidateSDKVersion(config *WheelConfig, label string) error {
 		return nil
 	}
 	base := config.Version
-	if m := baseVersionRe.FindString(base); m != "" {
+	if m := BaseVersionRe.FindString(base); m != "" {
 		base = m
 	}
 	reqVer, err := cogversion.NewVersion(base)
@@ -214,6 +214,27 @@ func findWheelInAutoDetectDist(pattern string, platform string) string {
 		}
 	}
 
+	return ""
+}
+
+// DetectLocalSDKVersion checks dist/ (CWD and executable-relative) for a cog
+// SDK wheel and extracts the version from its filename. Returns empty string if
+// no local wheel is found. This bypasses the isDev gate used by ResolveCogWheel
+// so that resolveSDKVersion in build.go can detect the version unconditionally.
+func DetectLocalSDKVersion() string {
+	path := findWheelInAutoDetectDist("cog-*.whl", "")
+	if path == "" {
+		return ""
+	}
+	// Wheel filename format: cog-<version>-<python>-<abi>-<platform>.whl
+	base := filepath.Base(path)
+	if !strings.HasPrefix(base, "cog-") {
+		return ""
+	}
+	rest := strings.TrimPrefix(base, "cog-")
+	if idx := strings.Index(rest, "-"); idx > 0 {
+		return rest[:idx]
+	}
 	return ""
 }
 
