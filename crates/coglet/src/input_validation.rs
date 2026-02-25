@@ -36,7 +36,15 @@ impl InputValidator {
     ///
     /// Returns None if the schema doesn't contain an Input component.
     pub fn from_openapi_schema(schema: &Value) -> Option<Self> {
-        let input_schema = schema.get("components")?.get("schemas")?.get("Input")?;
+        Self::from_openapi_schema_key(schema, "Input")
+    }
+
+    /// Build a validator from a full OpenAPI schema document using a custom
+    /// schema key (e.g. "TrainingInput" for train endpoints).
+    ///
+    /// Returns None if the schema doesn't contain the specified component.
+    pub fn from_openapi_schema_key(schema: &Value, key: &str) -> Option<Self> {
+        let input_schema = schema.get("components")?.get("schemas")?.get(key)?;
 
         let properties: HashSet<String> = input_schema
             .get("properties")

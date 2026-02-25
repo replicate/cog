@@ -28,11 +28,28 @@ type Input struct {
 type Inputs map[string]Input
 
 func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) {
+	return NewInputsForMode(keyVals, schema, false)
+}
+
+func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain bool) (Inputs, error) {
+	schemaKey := "Input"
+	if isTrain {
+		schemaKey = "TrainingInput"
+	}
 	var inputComponent *openapi3.SchemaRef
 	for name, component := range schema.Components.Schemas {
-		if name == "Input" {
+		if name == schemaKey {
 			inputComponent = component
 			break
+		}
+	}
+	// Fallback: if TrainingInput not found, try Input (legacy schemas)
+	if inputComponent == nil && isTrain {
+		for name, component := range schema.Components.Schemas {
+			if name == "Input" {
+				inputComponent = component
+				break
+			}
 		}
 	}
 

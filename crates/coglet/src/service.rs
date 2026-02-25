@@ -89,6 +89,7 @@ pub struct PredictionService {
 
     schema: RwLock<Option<serde_json::Value>>,
     input_validator: RwLock<Option<InputValidator>>,
+    train_validator: RwLock<Option<InputValidator>>,
 }
 
 /// Orchestrator runtime state - pool and orchestrator together.
@@ -124,6 +125,7 @@ impl PredictionService {
             version: VersionInfo::new(),
             schema: RwLock::new(None),
             input_validator: RwLock::new(None),
+            train_validator: RwLock::new(None),
         }
     }
 
@@ -221,7 +223,7 @@ impl PredictionService {
     }
 
     pub async fn set_schema(&self, schema: serde_json::Value) {
-        // Compile an input validator from the Input schema component
+        // Compile input validators from the schema components
         let validator = InputValidator::from_openapi_schema(&schema);
         if let Some(v) = &validator {
             tracing::info!(
@@ -230,6 +232,17 @@ impl PredictionService {
             );
         }
         *self.input_validator.write().await = validator;
+
+        // Compile a separate validator for training inputs (TrainingInput)
+        let train_val = InputValidator::from_openapi_schema_key(&schema, "TrainingInput");
+        if let Some(v) = &train_val {
+            tracing::info!(
+                "Training input validation enabled ({} required fields)",
+                v.required_count()
+            );
+        }
+        *self.train_validator.write().await = train_val;
+
         *self.schema.write().await = Some(schema);
     }
 
@@ -251,6 +264,22 @@ impl PredictionService {
         } else {
             Ok(())
         }
+    }
+
+    /// Validate training input against the TrainingInput schema.
+    ///
+    /// Falls back to the predict validator if no training schema is present.
+    pub async fn validate_train_input(
+        &self,
+        input: &serde_json::Value,
+    ) -> Result<(), Vec<crate::input_validation::ValidationError>> {
+        let guard = self.train_validator.read().await;
+        if let Some(ref validator) = *guard {
+            return validator.validate(input);
+        }
+        drop(guard);
+        // Fallback: no TrainingInput schema — use predict validator (legacy compat)
+        self.validate_input(input).await
     }
 
     /// Run user-defined healthcheck via orchestrator.

@@ -189,6 +189,7 @@ async fn create_prediction(
         request.webhook_events_filter,
         respond_async,
         trace_context,
+        false,
     )
     .await
 }
@@ -237,6 +238,7 @@ async fn create_prediction_idempotent(
         request.webhook_events_filter,
         respond_async,
         trace_context,
+        false,
     )
     .await
 }
@@ -265,6 +267,7 @@ fn build_webhook_sender(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn create_prediction_with_id(
     service: Arc<PredictionService>,
     prediction_id: String,
@@ -273,9 +276,15 @@ async fn create_prediction_with_id(
     webhook_events_filter: Vec<WebhookEventType>,
     respond_async: bool,
     trace_context: TraceContext,
+    is_training: bool,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    // Validate input against the OpenAPI schema before dispatching
-    if let Err(errors) = service.validate_input(&input).await {
+    // Validate input against the appropriate schema
+    let validation_result = if is_training {
+        service.validate_train_input(&input).await
+    } else {
+        service.validate_input(&input).await
+    };
+    if let Err(errors) = validation_result {
         let detail: Vec<serde_json::Value> = errors
             .into_iter()
             .map(|e| {
@@ -568,15 +577,34 @@ async fn openapi_schema(State(service): State<Arc<PredictionService>>) -> impl I
     }
 }
 
-// Training routes - bug-for-bug compatibility with cog mainline
-// In cog, training routes actually call predict(), not train()
+// Training routes — same dispatch as predictions but validated against
+// TrainingInput schema instead of Input.
 
 async fn create_training(
     State(service): State<Arc<PredictionService>>,
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
 ) -> impl IntoResponse {
-    create_prediction(State(service), headers, body).await
+    let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
+        id: None,
+        input: serde_json::json!({}),
+        webhook: None,
+        webhook_events_filter: default_webhook_events_filter(),
+    });
+    let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
+    let respond_async = should_respond_async(&headers);
+    let trace_context = extract_trace_context(&headers);
+    create_prediction_with_id(
+        service,
+        prediction_id,
+        request.input,
+        request.webhook,
+        request.webhook_events_filter,
+        respond_async,
+        trace_context,
+        true,
+    )
+    .await
 }
 
 async fn create_training_idempotent(
@@ -585,7 +613,32 @@ async fn create_training_idempotent(
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
 ) -> impl IntoResponse {
-    create_prediction_idempotent(State(service), Path(training_id), headers, body).await
+    let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
+        id: None,
+        input: serde_json::json!({}),
+        webhook: None,
+        webhook_events_filter: default_webhook_events_filter(),
+    });
+
+    // Idempotent: return existing state if already submitted
+    let supervisor = service.supervisor();
+    if let Some(state) = supervisor.get_state(&training_id) {
+        return (StatusCode::ACCEPTED, Json(state.to_response()));
+    }
+
+    let respond_async = should_respond_async(&headers);
+    let trace_context = extract_trace_context(&headers);
+    create_prediction_with_id(
+        service,
+        training_id,
+        request.input,
+        request.webhook,
+        request.webhook_events_filter,
+        respond_async,
+        trace_context,
+        true,
+    )
+    .await
 }
 
 async fn cancel_training(

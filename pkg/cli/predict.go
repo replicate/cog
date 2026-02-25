@@ -351,7 +351,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
-	inputs, err := parseInputFlags(inputFlags, schema)
+	inputs, err := parseInputFlags(inputFlags, schema, isTrain)
 	if err != nil {
 		return err
 	}
@@ -622,7 +622,7 @@ func processFileOutputs(output any, schema *openapi3.Schema, destination string)
 	return output, nil
 }
 
-func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {
+func parseInputFlags(inputs []string, schema *openapi3.T, isTrain ...bool) (predict.Inputs, error) {
 	keyVals := map[string][]string{}
 	for _, input := range inputs {
 		var name, value string
@@ -644,7 +644,8 @@ func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error
 		keyVals[name] = append(keyVals[name], value)
 	}
 
-	return predict.NewInputs(keyVals, schema)
+	train := len(isTrain) > 0 && isTrain[0]
+	return predict.NewInputsForMode(keyVals, schema, train)
 }
 
 func addSetupTimeoutFlag(cmd *cobra.Command) {

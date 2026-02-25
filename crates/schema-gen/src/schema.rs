@@ -9,7 +9,7 @@ use crate::types::*;
 
 /// Generate a complete OpenAPI 3.0.2 specification from predictor info.
 pub fn generate_openapi_schema(info: &PredictorInfo) -> Value {
-    let (input_schema, enum_schemas) = build_input_schema(info);
+    let (mut input_schema, enum_schemas) = build_input_schema(info);
     let output_schema = info.output.json_type();
 
     let is_train = info.mode == Mode::Train;
@@ -52,18 +52,32 @@ pub fn generate_openapi_schema(info: &PredictorInfo) -> Value {
         "prediction_id"
     };
 
+    // Namespace input/output schema keys so predict and train don't collide
+    // when merged into a single spec.
+    let (input_key, output_key) = if is_train {
+        ("TrainingInput", "TrainingOutput")
+    } else {
+        ("Input", "Output")
+    };
+
     let mut components: Map<String, Value> = Map::new();
 
     // Input schema
-    components.insert("Input".into(), input_schema);
+    input_schema
+        .as_object_mut()
+        .map(|m| m.insert("title".into(), json!(input_key)));
+    components.insert(input_key.into(), input_schema);
 
     // Output schema
-    components.insert("Output".into(), output_schema);
+    components.insert(output_key.into(), output_schema);
 
     // Enum schemas (for choices)
     for (name, schema) in &enum_schemas {
         components.insert(name.clone(), schema.clone());
     }
+
+    let input_ref = format!("#/components/schemas/{input_key}");
+    let output_ref = format!("#/components/schemas/{output_key}");
 
     // Request schema
     components.insert(
@@ -73,7 +87,7 @@ pub fn generate_openapi_schema(info: &PredictorInfo) -> Value {
             "type": "object",
             "properties": {
                 "id": {"title": "Id", "type": "string"},
-                "input": {"$ref": "#/components/schemas/Input"}
+                "input": {"$ref": input_ref}
             }
         }),
     );
@@ -85,8 +99,8 @@ pub fn generate_openapi_schema(info: &PredictorInfo) -> Value {
             "title": response_name,
             "type": "object",
             "properties": {
-                "input": {"$ref": "#/components/schemas/Input"},
-                "output": {"$ref": "#/components/schemas/Output"},
+                "input": {"$ref": input_ref},
+                "output": {"$ref": output_ref},
                 "id": {"title": "Id", "type": "string"},
                 "version": {"title": "Version", "type": "string"},
                 "created_at": {"title": "Created At", "type": "string", "format": "date-time"},
