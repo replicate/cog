@@ -419,8 +419,12 @@ impl PredictionService {
             "logs": pred.logs(),
         });
 
+        // Include output: use final output if set (terminal), otherwise
+        // include accumulated streaming outputs for intermediate responses.
         if let Some(output) = pred.output() {
             response["output"] = serde_json::json!(output);
+        } else if !pred.outputs().is_empty() {
+            response["output"] = serde_json::json!(pred.outputs());
         }
 
         if let Some(error) = pred.error() {
