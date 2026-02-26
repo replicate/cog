@@ -6,16 +6,18 @@ import (
 )
 
 const (
-	// DefaultMultipartThreshold is the minimum blob size (in bytes) before using multipart upload.
-	// Blobs smaller than this are uploaded in a single request to avoid multipart overhead.
-	DefaultMultipartThreshold = 50 * 1024 * 1024 // 50 MB
-
 	// DefaultChunkSize is the size (in bytes) of each chunk in a multipart upload.
 	// This is used as a fallback when the registry does not advertise chunk size
 	// limits via OCI-Chunk-Min-Length / OCI-Chunk-Max-Length headers.
 	// 95 MB stays under common CDN/proxy request body limits while still being
 	// large enough to reduce HTTP round-trips for multi-GB files.
 	DefaultChunkSize = 95 * 1024 * 1024 // 95 MB
+
+	// DefaultMultipartThreshold is the minimum blob size (in bytes) before using multipart upload.
+	// Blobs smaller than this are uploaded in a single request to avoid multipart overhead.
+	// Set higher than DefaultChunkSize so that blobs that would fit in a single chunk
+	// are uploaded in one request, avoiding unnecessary multipart overhead.
+	DefaultMultipartThreshold = 128 * 1024 * 1024 // 128 MB
 
 	// chunkSizeMargin is subtracted from the server's OCI-Chunk-Max-Length to stay
 	// safely under the limit (e.g. for HTTP framing overhead).

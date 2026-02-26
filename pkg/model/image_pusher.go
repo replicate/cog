@@ -23,7 +23,7 @@ import (
 
 // ImagePusher pushes container images to a registry.
 //
-// It first attempts an OCI chunked push (export from Docker → tarball →
+// It first attempts an OCI chunked push (export from Docker -> tarball ->
 // push layers via registry client), then falls back to Docker's native push
 // on any non-fatal error. This bypasses size limits on Docker's monolithic
 // push path while maintaining backwards compatibility.
@@ -33,8 +33,6 @@ type ImagePusher struct {
 }
 
 // newImagePusher creates a new ImagePusher.
-//
-// If reg is nil, OCI chunked push is skipped and Docker push is used directly.
 func newImagePusher(docker command.Command, reg registry.Client) *ImagePusher {
 	return &ImagePusher{
 		docker:   docker,
@@ -53,15 +51,25 @@ type ImagePushOptions struct {
 	OnFallback func()
 }
 
-// Push pushes a container image to the registry by reference.
+// Push pushes a container image to the registry.
 //
-// Tries the OCI chunked push path first (if registry client is available),
-// then falls back to Docker push on any non-fatal error.
-func (p *ImagePusher) Push(ctx context.Context, imageRef string, opts ...ImagePushOptions) error {
+// Tries the OCI chunked push path first (if enabled and registry client is
+// available), then falls back to Docker push on any non-fatal error.
+// The artifact must have a valid Reference.
+func (p *ImagePusher) Push(ctx context.Context, artifact *ImageArtifact, opts ...ImagePushOptions) error {
+	if artifact == nil {
+		return fmt.Errorf("image artifact is nil")
+	}
+	if artifact.Reference == "" {
+		return fmt.Errorf("image artifact has no reference")
+	}
+
 	var opt ImagePushOptions
 	if len(opts) > 0 {
 		opt = opts[0]
 	}
+
+	imageRef := artifact.Reference
 
 	if p.canOCIPush() {
 		err := p.ociPush(ctx, imageRef, opt)
@@ -78,18 +86,6 @@ func (p *ImagePusher) Push(ctx context.Context, imageRef string, opts ...ImagePu
 	}
 
 	return p.docker.Push(ctx, imageRef)
-}
-
-// PushArtifact pushes a single image artifact by reference.
-// This is a convenience method used by BundlePusher.
-func (p *ImagePusher) PushArtifact(ctx context.Context, artifact *ImageArtifact) error {
-	if artifact == nil {
-		return fmt.Errorf("artifact is nil")
-	}
-	if artifact.Reference == "" {
-		return fmt.Errorf("image has no reference")
-	}
-	return p.Push(ctx, artifact.Reference)
 }
 
 // canOCIPush returns true if OCI chunked push is enabled.
@@ -128,7 +124,9 @@ func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt ImagePus
 	}
 	_ = rc.Close()
 
-	// Load image from Docker tar using go-containerregistry
+	// Load image from Docker tar using go-containerregistry.
+	// tarball.ImageFromPath returns a lazy image that reads layers on-demand
+	// from the tar file rather than loading them all into memory at once.
 	tag, ok := ref.(name.Tag)
 	if !ok {
 		// If reference is a digest, use tag "latest" as a fallback

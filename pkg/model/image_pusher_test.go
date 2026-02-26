@@ -76,6 +76,11 @@ func (m *ociMockClient) GetDescriptor(context.Context, string) (v1.Descriptor, e
 }
 func (m *ociMockClient) PushIndex(context.Context, string, v1.ImageIndex) error { return nil }
 
+// testArtifact creates an *ImageArtifact for testing with the given reference string.
+func testArtifact(ref string) *ImageArtifact {
+	return &ImageArtifact{Reference: ref}
+}
+
 // fakeImageSaveFunc creates a fake ImageSave function that produces a Docker-format tar
 // from the given v1.Image. This simulates Docker's ImageSave API.
 func fakeImageSaveFunc(img v1.Image, tagStr string) func(context.Context, string) (io.ReadCloser, error) {
@@ -109,7 +114,7 @@ func TestImagePusher_Push(t *testing.T) {
 		docker := &mockDocker{imageSaveFunc: fakeImageSaveFunc(img, tag)}
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), tag)
+		err = pusher.Push(context.Background(), testArtifact(tag))
 		require.NoError(t, err)
 
 		// Should have pushed 2 layers + 1 config blob = 3 WriteLayer calls
@@ -139,7 +144,7 @@ func TestImagePusher_Push(t *testing.T) {
 			},
 		}
 
-		err = pusher.Push(context.Background(), tag, opts)
+		err = pusher.Push(context.Background(), testArtifact(tag), opts)
 		require.NoError(t, err)
 
 		mu.Lock()
@@ -168,7 +173,7 @@ func TestImagePusher_Push(t *testing.T) {
 		}
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), tag)
+		err = pusher.Push(context.Background(), testArtifact(tag))
 		require.NoError(t, err)
 		assert.True(t, dockerPushed)
 	})
@@ -189,7 +194,7 @@ func TestImagePusher_Push(t *testing.T) {
 		}
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), tag)
+		err = pusher.Push(context.Background(), testArtifact(tag))
 		require.NoError(t, err)
 		assert.True(t, dockerPushed)
 	})
@@ -209,7 +214,7 @@ func TestImagePusher_Push(t *testing.T) {
 		}
 		pusher := newImagePusher(docker, mock)
 
-		err := pusher.Push(context.Background(), "example.com/test/repo:v1")
+		err := pusher.Push(context.Background(), testArtifact("example.com/test/repo:v1"))
 		require.NoError(t, err)
 		assert.True(t, dockerPushed)
 	})
@@ -224,7 +229,7 @@ func TestImagePusher_Push(t *testing.T) {
 		docker := &mockDocker{imageSaveFunc: fakeImageSaveFunc(img, tag)}
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), tag)
+		err = pusher.Push(context.Background(), testArtifact(tag))
 		require.NoError(t, err)
 
 		// Only config blob should be written (no layers)
@@ -234,7 +239,7 @@ func TestImagePusher_Push(t *testing.T) {
 }
 
 // =============================================================================
-// ImagePusher.PushArtifact tests
+// ImagePusher.Push with artifact tests
 // =============================================================================
 
 func TestImagePusher_PushArtifact(t *testing.T) {
@@ -251,7 +256,7 @@ func TestImagePusher_PushArtifact(t *testing.T) {
 		pusher := newImagePusher(docker, nil)
 		artifact := &ImageArtifact{Reference: "r8.im/user/model:latest"}
 
-		err := pusher.PushArtifact(context.Background(), artifact)
+		err := pusher.Push(context.Background(), artifact)
 
 		require.NoError(t, err)
 		require.Equal(t, "r8.im/user/model:latest", dockerPushed)
@@ -260,19 +265,19 @@ func TestImagePusher_PushArtifact(t *testing.T) {
 	t.Run("returns error for nil artifact", func(t *testing.T) {
 		pusher := newImagePusher(&mockDocker{}, nil)
 
-		err := pusher.PushArtifact(context.Background(), nil)
+		err := pusher.Push(context.Background(), nil)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "artifact is nil")
+		require.Contains(t, err.Error(), "nil")
 	})
 
 	t.Run("returns error for empty reference", func(t *testing.T) {
 		pusher := newImagePusher(&mockDocker{}, nil)
 
-		err := pusher.PushArtifact(context.Background(), &ImageArtifact{Reference: ""})
+		err := pusher.Push(context.Background(), &ImageArtifact{Reference: ""})
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "image has no reference")
+		require.Contains(t, err.Error(), "no reference")
 	})
 
 	t.Run("propagates docker push error", func(t *testing.T) {
@@ -285,7 +290,7 @@ func TestImagePusher_PushArtifact(t *testing.T) {
 		pusher := newImagePusher(docker, nil)
 		artifact := &ImageArtifact{Reference: "r8.im/user/model:latest"}
 
-		err := pusher.PushArtifact(context.Background(), artifact)
+		err := pusher.Push(context.Background(), artifact)
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unauthorized")
@@ -315,7 +320,7 @@ func TestImagePusher_Fallback(t *testing.T) {
 
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), tag)
+		err = pusher.Push(context.Background(), testArtifact(tag))
 		require.NoError(t, err)
 	})
 
@@ -337,7 +342,7 @@ func TestImagePusher_Fallback(t *testing.T) {
 
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), tag)
+		err = pusher.Push(context.Background(), testArtifact(tag))
 		require.NoError(t, err)
 		assert.True(t, dockerPushed)
 	})
@@ -360,7 +365,7 @@ func TestImagePusher_Fallback(t *testing.T) {
 
 		pusher := newImagePusher(docker, mock)
 
-		err := pusher.Push(ctx, tag)
+		err := pusher.Push(ctx, testArtifact(tag))
 		require.Error(t, err)
 	})
 
@@ -381,7 +386,7 @@ func TestImagePusher_Fallback(t *testing.T) {
 
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), tag)
+		err = pusher.Push(context.Background(), testArtifact(tag))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "OCI chunked push")
 	})
@@ -403,7 +408,7 @@ func TestImagePusher_Fallback(t *testing.T) {
 
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), tag)
+		err = pusher.Push(context.Background(), testArtifact(tag))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "OCI chunked push")
 	})
@@ -419,7 +424,7 @@ func TestImagePusher_Fallback(t *testing.T) {
 
 		pusher := newImagePusher(docker, nil)
 
-		err := pusher.Push(context.Background(), "example.com/test/repo:v1")
+		err := pusher.Push(context.Background(), testArtifact("example.com/test/repo:v1"))
 		require.NoError(t, err)
 		assert.True(t, dockerPushed)
 	})
@@ -526,7 +531,7 @@ func TestImagePusher_OnFallback(t *testing.T) {
 
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), tag, ImagePushOptions{
+		err = pusher.Push(context.Background(), testArtifact(tag), ImagePushOptions{
 			OnFallback: func() {
 				callOrder = append(callOrder, "on-fallback")
 			},
@@ -549,7 +554,7 @@ func TestImagePusher_OnFallback(t *testing.T) {
 		pusher := newImagePusher(docker, mock)
 
 		var fallbackCalled bool
-		err = pusher.Push(context.Background(), tag, ImagePushOptions{
+		err = pusher.Push(context.Background(), testArtifact(tag), ImagePushOptions{
 			OnFallback: func() {
 				fallbackCalled = true
 			},

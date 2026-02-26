@@ -118,7 +118,7 @@ func push(cmd *cobra.Command, args []string) error {
 	// same cursor movement and progress display as `docker push`, which handles
 	// terminal resizing correctly (each line is erased and rewritten individually,
 	// rather than relying on a bulk cursor-up count that can desync on resize).
-	pw := newProgressWriter()
+	pw := docker.NewProgressWriter()
 	defer pw.Close()
 
 	pushErr := resolver.Push(ctx, m, model.PushOptions{

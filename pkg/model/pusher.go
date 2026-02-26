@@ -9,6 +9,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
 )
 
@@ -52,10 +53,13 @@ type BundlePusher struct {
 	registry     registry.Client
 }
 
-// NewBundlePusher creates a new BundlePusher.
-func NewBundlePusher(imagePusher *ImagePusher, reg registry.Client) *BundlePusher {
+// NewBundlePusher creates a new BundlePusher from docker and registry clients.
+// Both sub-pushers (image and weight) are created internally to keep
+// construction unified — callers don't need to know about ImagePusher or
+// WeightPusher directly.
+func NewBundlePusher(docker command.Command, reg registry.Client) *BundlePusher {
 	return &BundlePusher{
-		imagePusher:  imagePusher,
+		imagePusher:  newImagePusher(docker, reg),
 		weightPusher: NewWeightPusher(reg),
 		registry:     reg,
 	}
@@ -83,7 +87,7 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 			OnFallback: opts.OnFallback,
 		})
 	}
-	if err := p.imagePusher.Push(ctx, imgArtifact.Reference, imagePushOpts...); err != nil {
+	if err := p.imagePusher.Push(ctx, imgArtifact, imagePushOpts...); err != nil {
 		return fmt.Errorf("push image %q: %w", imgArtifact.Reference, err)
 	}
 

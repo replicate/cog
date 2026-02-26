@@ -271,7 +271,7 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 // Falls back to legacy Docker push if OCI push is not available.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 	if m.OCIIndex {
-		pusher := NewBundlePusher(r.imagePusher, r.registry)
+		pusher := NewBundlePusher(r.docker, r.registry)
 		return pusher.Push(ctx, m, opts)
 	}
 
@@ -287,7 +287,7 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 			OnFallback: opts.OnFallback,
 		})
 	}
-	return r.imagePusher.Push(ctx, imgArtifact.Reference, imagePushOpts...)
+	return r.imagePusher.Push(ctx, imgArtifact, imagePushOpts...)
 }
 
 // loadLocal loads a Model from the local docker daemon.

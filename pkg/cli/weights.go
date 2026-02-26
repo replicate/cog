@@ -3,12 +3,13 @@ package cli
 import (
 	"fmt"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
@@ -192,34 +193,29 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 	pusher := model.NewWeightPusher(regClient)
 
 	// Set up progress display using Docker's jsonmessage rendering.
-	pw := newProgressWriter()
+	pw := docker.NewProgressWriter()
 	defer pw.Close()
 
-	// Push each weight artifact concurrently
+	// Push each weight artifact concurrently using errgroup for
+	// bounded concurrency and first-error cancellation.
 	type pushResult struct {
-		name string
 		ref  string
 		size int64
-		err  error
 	}
 
-	sem := make(chan struct{}, model.GetPushConcurrency())
-	results := make(chan pushResult, len(artifacts))
-	var wg sync.WaitGroup
+	ordered := make([]pushResult, len(artifacts))
 
-	for _, wa := range artifacts {
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(model.GetPushConcurrency())
+
+	for i, wa := range artifacts {
 		artName := wa.Name()
 		artSize := wa.Descriptor().Size
 
-		wg.Add(1)
-		go func(wa *model.WeightArtifact, name string, size int64) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
+		g.Go(func() error {
 			result, pushErr := pusher.Push(ctx, repo, wa, model.WeightPushOptions{
 				ProgressFn: func(prog model.PushProgress) {
-					pw.Write(name, "Pushing", prog.Complete, prog.Total)
+					pw.Write(artName, "Pushing", prog.Complete, prog.Total)
 				},
 				RetryFn: func(event model.WeightRetryEvent) bool {
 					status := fmt.Sprintf("Retrying (%d/%d) in %s",
@@ -238,45 +234,29 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 			})
 
 			if pushErr != nil {
-				pw.WriteStatus(name, "FAILED")
-				results <- pushResult{name: name, err: pushErr}
-			} else {
-				pw.WriteStatus(name, "Pushed")
-				results <- pushResult{name: name, ref: result.Ref, size: size}
+				pw.WriteStatus(artName, "FAILED")
+				return fmt.Errorf("push weight %q: %w", artName, pushErr)
 			}
-		}(wa, artName, artSize)
+
+			pw.WriteStatus(artName, "Pushed")
+			ordered[i] = pushResult{ref: result.Ref, size: artSize}
+			return nil
+		})
 	}
 
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Collect results
-	var totalSize int64
-	var errorCount int
-	refs := make(map[string]string) // name -> ref
-	for r := range results {
-		if r.err != nil {
-			errorCount++
-		} else {
-			totalSize += r.size
-			refs[r.name] = r.ref
-		}
+	if err := g.Wait(); err != nil {
+		pw.Close()
+		return err
 	}
 
 	// Close progress display
 	pw.Close()
 
 	// Print final summary
-	for _, wa := range artifacts {
-		if ref, ok := refs[wa.Name()]; ok {
-			console.Infof("  %s: %s", wa.Name(), ref)
-		}
-	}
-
-	if errorCount > 0 {
-		return fmt.Errorf("failed to push %d/%d weight files", errorCount, len(artifacts))
+	var totalSize int64
+	for i, wa := range artifacts {
+		console.Infof("  %s: %s", wa.Name(), ordered[i].ref)
+		totalSize += ordered[i].size
 	}
 
 	console.Infof("\nPushed %d weight artifact(s) to %s", len(artifacts), repo)

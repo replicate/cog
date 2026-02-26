@@ -33,10 +33,28 @@ var NotFoundError = errors.New("image reference not found")
 // re-allocating large buffers (up to ~95 MB each) on every layer upload.
 var chunkBufPool = sync.Pool{} //nolint:gochecknoglobals
 
-type RegistryClient struct{}
+type RegistryClient struct {
+	// transport is the HTTP transport used for all registry operations.
+	// Uses HTTP/1.1 only to avoid HTTP/2 head-of-line blocking and stream
+	// errors (RST_STREAM INTERNAL_ERROR) that occur when uploading large
+	// blobs through CDN/proxy edges.
+	transport http.RoundTripper
+}
 
 func NewRegistryClient() Client {
-	return &RegistryClient{}
+	return &RegistryClient{
+		transport: http1OnlyTransport(),
+	}
+}
+
+// remoteOptions returns the common remote.Option set for go-containerregistry calls,
+// including authentication, context, and HTTP/1.1 transport.
+func (c *RegistryClient) remoteOptions(ctx context.Context) []remote.Option {
+	return []remote.Option{
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithTransport(c.transport),
+	}
 }
 
 func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform *Platform) (*ManifestResult, error) {
@@ -45,12 +63,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 		return nil, fmt.Errorf("parsing reference: %w", err)
 	}
 
-	desc, err := remote.Get(ref,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-		// TODO[md]: map platform to remote.WithPlatform if necessary:
-		// remote.WithPlatform(...)
-	)
+	desc, err := remote.Get(ref, c.remoteOptions(ctx)...)
 	if err != nil {
 		if checkError(err, transport.ManifestUnknownErrorCode, transport.NameUnknownErrorCode) {
 			return nil, NotFoundError
@@ -90,7 +103,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 			}
 			// For indexes, pick a default image to get labels from.
 			// Prefer linux/amd64, otherwise use the first manifest.
-			defaultImg, err := pickDefaultImage(ctx, ref, indexManifest)
+			defaultImg, err := pickDefaultImage(ref, indexManifest, c.remoteOptions(ctx)...)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read image config from index: %w", err)
 			}
@@ -162,10 +175,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 	if err != nil {
 		return nil, fmt.Errorf("creating digest ref: %w", err)
 	}
-	manifestDesc, err := remote.Get(digestRef,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	manifestDesc, err := remote.Get(digestRef, c.remoteOptions(ctx)...)
 	if err != nil {
 		return nil, fmt.Errorf("fetching platform manifest: %w", err)
 	}
@@ -200,10 +210,7 @@ func (c *RegistryClient) GetImage(ctx context.Context, imageRef string, platform
 		return nil, fmt.Errorf("parsing reference: %w", err)
 	}
 
-	desc, err := remote.Get(ref,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	desc, err := remote.Get(ref, c.remoteOptions(ctx)...)
 	if err != nil {
 		return nil, fmt.Errorf("fetching descriptor: %w", err)
 	}
@@ -258,10 +265,7 @@ func (c *RegistryClient) GetImage(ctx context.Context, imageRef string, platform
 		return nil, fmt.Errorf("creating digest ref: %w", err)
 	}
 
-	manifestDesc, err := remote.Get(digestRef,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	manifestDesc, err := remote.Get(digestRef, c.remoteOptions(ctx)...)
 	if err != nil {
 		return nil, fmt.Errorf("fetching platform manifest: %w", err)
 	}
@@ -277,10 +281,7 @@ func (c *RegistryClient) GetDescriptor(ctx context.Context, imageRef string) (v1
 		return v1.Descriptor{}, fmt.Errorf("parsing reference: %w", err)
 	}
 
-	desc, err := remote.Head(ref,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	desc, err := remote.Head(ref, c.remoteOptions(ctx)...)
 	if err != nil {
 		return v1.Descriptor{}, fmt.Errorf("head request for %s: %w", imageRef, err)
 	}
@@ -321,12 +322,7 @@ func (c *RegistryClient) PushImage(ctx context.Context, ref string, img v1.Image
 		return fmt.Errorf("parsing reference: %w", err)
 	}
 
-	opts := []remote.Option{
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	}
-
-	if err := remote.Write(parsedRef, img, opts...); err != nil {
+	if err := remote.Write(parsedRef, img, c.remoteOptions(ctx)...); err != nil {
 		return fmt.Errorf("pushing image %s: %w", ref, err)
 	}
 
@@ -340,16 +336,11 @@ func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.Image
 		return fmt.Errorf("parsing reference: %w", err)
 	}
 
-	opts := []remote.Option{
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	}
-
 	// Use remote.Put instead of remote.WriteIndex because all child manifests
 	// (image + weights) are already pushed to the registry. WriteIndex would
 	// try to recursively resolve and push children via idx.Image(), which fails
 	// for our descriptor-only index. Put just writes the index manifest.
-	if err := remote.Put(parsedRef, idx, opts...); err != nil {
+	if err := remote.Put(parsedRef, idx, c.remoteOptions(ctx)...); err != nil {
 		return fmt.Errorf("pushing index %s: %w", ref, err)
 	}
 
@@ -357,8 +348,10 @@ func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.Image
 }
 
 // http1OnlyTransport returns an http.Transport that only speaks HTTP/1.1.
-// This avoids HTTP/2 stream errors (RST_STREAM INTERNAL_ERROR) that occur when
-// uploading large blobs through certain CDN/proxy edges.
+// HTTP/2 is avoided for all registry operations because high-throughput uploads
+// suffer from head-of-line blocking and stream errors (RST_STREAM INTERNAL_ERROR)
+// when pushed through CDN/proxy edges. Multiple concurrent HTTP/1.1 connections
+// outperform a single multiplexed HTTP/2 connection for large blob uploads.
 func http1OnlyTransport() *http.Transport {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.TLSClientConfig = tlsConfigHTTP1Only(t.TLSClientConfig)
@@ -565,10 +558,7 @@ func (c *RegistryClient) writeLayerMultipart(ctx context.Context, repo name.Repo
 	}
 
 	scopes := []string{repo.Scope(transport.PushScope)}
-	// Use HTTP/1.1-only transport to avoid HTTP/2 stream errors during chunked uploads.
-	// Some CDN/proxy edges can send RST_STREAM INTERNAL_ERROR on large HTTP/2
-	// PATCH requests, killing uploads before they reach the origin.
-	tr, err := transport.NewWithContext(ctx, repo.Registry, auth, http1OnlyTransport(), scopes)
+	tr, err := transport.NewWithContext(ctx, repo.Registry, auth, c.transport, scopes)
 	if err != nil {
 		return fmt.Errorf("creating transport: %w", err)
 	}
@@ -1027,7 +1017,7 @@ func (c *RegistryClient) commitUpload(ctx context.Context, client *http.Client, 
 // pickDefaultImage selects an image from a manifest index to use for fetching labels.
 // Prefers linux/amd64, otherwise returns the first image manifest.
 // Returns an error if no suitable image is found or if fetching fails.
-func pickDefaultImage(ctx context.Context, ref name.Reference, idx *v1.IndexManifest) (v1.Image, error) {
+func pickDefaultImage(ref name.Reference, idx *v1.IndexManifest, opts ...remote.Option) (v1.Image, error) {
 	var targetDigest string
 
 	// First, look for linux/amd64
@@ -1052,10 +1042,7 @@ func pickDefaultImage(ctx context.Context, ref name.Reference, idx *v1.IndexMani
 		return nil, fmt.Errorf("failed to create digest reference: %w", err)
 	}
 
-	desc, err := remote.Get(digestRef,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	desc, err := remote.Get(digestRef, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch image %s: %w", digestRef.String(), err)
 	}
