@@ -12,13 +12,9 @@ package schemagen
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,8 +29,7 @@ const (
 	// BinaryName is the name of the schema generator binary.
 	BinaryName = "cog-schema-gen"
 	// EnvVar is the environment variable that overrides binary resolution.
-	// It accepts either a local file path or an https:// URL. When a URL is
-	// provided, the binary is downloaded once and cached under ~/.cache/cog/bin/.
+	// It accepts a local file path to the cog-schema-gen binary.
 	EnvVar = "COG_SCHEMA_GEN_TOOL"
 )
 
@@ -146,24 +141,16 @@ func MergeSchemas(predict, train map[string]any) map[string]any {
 // ResolveBinary finds the cog-schema-gen binary.
 //
 // Resolution order:
-//  1. COG_SCHEMA_GEN_TOOL env var (local path or URL)
+//  1. COG_SCHEMA_GEN_TOOL env var (local file path only)
 //  2. Embedded binary (extracted to ~/.cache/cog/bin/cog-schema-gen-{version})
 //  3. dist/cog-schema-gen relative to cwd (development builds)
 //  4. dist/cog-schema-gen relative to the cog executable (goreleaser layout)
 //  5. cog-schema-gen on PATH
 func ResolveBinary() (string, error) {
-	// 1. Explicit env var (local path or URL)
+	// 1. Explicit env var (local path only — URLs not supported)
 	if envVal := os.Getenv(EnvVar); envVal != "" {
-		if strings.HasPrefix(envVal, "http://") {
-			return "", fmt.Errorf("%s: HTTPS required (got %s)", EnvVar, envVal)
-		}
-		if strings.HasPrefix(envVal, "https://") {
-			path, err := downloadAndCache(envVal)
-			if err != nil {
-				return "", fmt.Errorf("%s=%s: %w", EnvVar, envVal, err)
-			}
-			console.Debugf("Using %s from %s (downloaded from %s)", BinaryName, path, envVal)
-			return path, nil
+		if strings.HasPrefix(envVal, "http://") || strings.HasPrefix(envVal, "https://") {
+			return "", fmt.Errorf("%s must be a local file path, not a URL (got %s)", EnvVar, envVal)
 		}
 		if _, err := os.Stat(envVal); err != nil {
 			return "", fmt.Errorf("%s=%s: %w", EnvVar, envVal, err)
@@ -287,65 +274,4 @@ func cacheDirectory() (string, error) {
 	}
 
 	return filepath.Join(home, ".cache", "cog", "bin"), nil
-}
-
-// downloadAndCache downloads a binary from the given URL and caches it under
-// ~/.cache/cog/bin/ keyed by a SHA-256 hash of the URL. Subsequent calls with
-// the same URL return the cached path without re-downloading.
-func downloadAndCache(url string) (string, error) {
-	cacheDir, err := cacheDirectory()
-	if err != nil {
-		return "", err
-	}
-
-	// Derive a stable cache key from the URL.
-	h := sha256.Sum256([]byte(url))
-	cacheKey := hex.EncodeToString(h[:12]) // 24 hex chars — plenty unique
-	cachedPath := filepath.Join(cacheDir, fmt.Sprintf("%s-%s", BinaryName, cacheKey))
-
-	// If already downloaded, reuse it.
-	if info, err := os.Stat(cachedPath); err == nil && info.Size() > 0 {
-		console.Debugf("Using cached %s from %s", BinaryName, cachedPath)
-		return cachedPath, nil
-	}
-
-	console.Infof("Downloading %s from %s...", BinaryName, url)
-
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create cache directory %s: %w", cacheDir, err)
-	}
-
-	resp, err := http.Get(url) //nolint:gosec // URL comes from user-set env var
-	if err != nil {
-		return "", fmt.Errorf("failed to download %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download %s: HTTP %d", url, resp.StatusCode)
-	}
-
-	// Write atomically via temp file + rename.
-	tmpPath := cachedPath + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file %s: %w", tmpPath, err)
-	}
-
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to write %s: %w", tmpPath, err)
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to close %s: %w", tmpPath, err)
-	}
-
-	if err := os.Rename(tmpPath, cachedPath); err != nil {
-		_ = os.Remove(tmpPath)
-		return "", fmt.Errorf("failed to rename %s to %s: %w", tmpPath, cachedPath, err)
-	}
-
-	return cachedPath, nil
 }
