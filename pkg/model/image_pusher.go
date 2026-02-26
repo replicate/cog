@@ -40,15 +40,29 @@ func newImagePusher(docker command.Command, reg registry.Client) *ImagePusher {
 	}
 }
 
-// ImagePushOptions configures push behavior for ImagePusher.
-type ImagePushOptions struct {
-	// ProgressFn is an optional callback for reporting per-layer upload progress.
-	ProgressFn func(PushProgress)
+// imagePushOptions holds the resolved configuration for an image push.
+type imagePushOptions struct {
+	progressFn func(PushProgress)
+	onFallback func()
+}
 
-	// OnFallback is called when OCI push fails and the push is about to fall
-	// back to Docker push. This allows the caller to clean up any OCI-specific
-	// progress display before Docker push starts its own output.
-	OnFallback func()
+// ImagePushOption is a functional option for configuring ImagePusher.Push.
+type ImagePushOption func(*imagePushOptions)
+
+// WithProgressFn sets a callback for reporting per-layer upload progress.
+func WithProgressFn(fn func(PushProgress)) ImagePushOption {
+	return func(o *imagePushOptions) {
+		o.progressFn = fn
+	}
+}
+
+// WithOnFallback sets a callback invoked when OCI push fails and the push is
+// about to fall back to Docker push. This allows the caller to clean up any
+// OCI-specific progress display before Docker push starts its own output.
+func WithOnFallback(fn func()) ImagePushOption {
+	return func(o *imagePushOptions) {
+		o.onFallback = fn
+	}
 }
 
 // Push pushes a container image to the registry.
@@ -56,7 +70,7 @@ type ImagePushOptions struct {
 // Tries the OCI chunked push path first (if enabled and registry client is
 // available), then falls back to Docker push on any non-fatal error.
 // The artifact must have a valid Reference.
-func (p *ImagePusher) Push(ctx context.Context, artifact *ImageArtifact, opts ...ImagePushOptions) error {
+func (p *ImagePusher) Push(ctx context.Context, artifact *ImageArtifact, opts ...ImagePushOption) error {
 	if artifact == nil {
 		return fmt.Errorf("image artifact is nil")
 	}
@@ -64,9 +78,9 @@ func (p *ImagePusher) Push(ctx context.Context, artifact *ImageArtifact, opts ..
 		return fmt.Errorf("image artifact has no reference")
 	}
 
-	var opt ImagePushOptions
-	if len(opts) > 0 {
-		opt = opts[0]
+	var opt imagePushOptions
+	for _, apply := range opts {
+		apply(&opt)
 	}
 
 	imageRef := artifact.Reference
@@ -79,8 +93,8 @@ func (p *ImagePusher) Push(ctx context.Context, artifact *ImageArtifact, opts ..
 		if !shouldFallbackToDocker(err) {
 			return fmt.Errorf("OCI chunked push: %w", err)
 		}
-		if opt.OnFallback != nil {
-			opt.OnFallback()
+		if opt.onFallback != nil {
+			opt.onFallback()
 		}
 		console.Warnf("OCI chunked push failed, falling back to Docker push: %v", sanitizeError(err))
 	}
@@ -91,12 +105,12 @@ func (p *ImagePusher) Push(ctx context.Context, artifact *ImageArtifact, opts ..
 // canOCIPush returns true if OCI chunked push is enabled.
 // Requires COG_PUSH_OCI=1 and a registry client.
 func (p *ImagePusher) canOCIPush() bool {
-	return os.Getenv("COG_PUSH_OCI") == "1" && p.registry != nil
+	return os.Getenv("COG_PUSH_OCI") == "1"
 }
 
 // ociPush exports the image from Docker daemon as a tar, then pushes all layers,
 // config, and manifest to the registry using chunked uploads.
-func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt ImagePushOptions) error {
+func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePushOptions) error {
 	console.Debugf("Exporting image %s from Docker daemon...", imageRef)
 
 	ref, err := name.ParseReference(imageRef, name.Insecure)
@@ -142,7 +156,7 @@ func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt ImagePus
 }
 
 // pushImage pushes a v1.Image (layers, config, manifest) to the registry.
-func (p *ImagePusher) pushImage(ctx context.Context, imageRef string, img v1.Image, opt ImagePushOptions) error {
+func (p *ImagePusher) pushImage(ctx context.Context, imageRef string, img v1.Image, opt imagePushOptions) error {
 	repo := repoFromReference(imageRef)
 
 	if err := p.pushLayers(ctx, repo, img, opt); err != nil {
@@ -163,7 +177,7 @@ func (p *ImagePusher) pushImage(ctx context.Context, imageRef string, img v1.Ima
 
 // pushLayers pushes all image layers concurrently using the registry client's
 // WriteLayer method, which handles chunked uploads, retry, and progress reporting.
-func (p *ImagePusher) pushLayers(ctx context.Context, repo string, img v1.Image, opt ImagePushOptions) error {
+func (p *ImagePusher) pushLayers(ctx context.Context, repo string, img v1.Image, opt imagePushOptions) error {
 	layers, err := img.Layers()
 	if err != nil {
 		return fmt.Errorf("get image layers: %w", err)
@@ -189,7 +203,7 @@ func (p *ImagePusher) pushLayers(ctx context.Context, repo string, img v1.Image,
 }
 
 // pushLayer pushes a single layer with progress reporting.
-func (p *ImagePusher) pushLayer(ctx context.Context, repo string, layer v1.Layer, opt ImagePushOptions) error {
+func (p *ImagePusher) pushLayer(ctx context.Context, repo string, layer v1.Layer, opt imagePushOptions) error {
 	digest, err := layer.Digest()
 	if err != nil {
 		return fmt.Errorf("get layer digest: %w", err)
@@ -203,10 +217,10 @@ func (p *ImagePusher) pushLayer(ctx context.Context, repo string, layer v1.Layer
 	console.Debugf("Pushing layer %s (%d bytes)", digest, size)
 
 	var onProgress func(v1.Update)
-	if opt.ProgressFn != nil {
+	if opt.progressFn != nil {
 		digestStr := digest.String()
 		onProgress = func(update v1.Update) {
-			opt.ProgressFn(PushProgress{
+			opt.progressFn(PushProgress{
 				LayerDigest: digestStr,
 				Complete:    update.Complete,
 				Total:       update.Total,

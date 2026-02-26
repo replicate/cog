@@ -80,12 +80,12 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	repo := repoFromReference(imgArtifact.Reference)
 
 	// 1. Push image via OCI chunked push (falls back to Docker push on error)
-	var imagePushOpts []ImagePushOptions
-	if opts.ImageProgressFn != nil || opts.OnFallback != nil {
-		imagePushOpts = append(imagePushOpts, ImagePushOptions{
-			ProgressFn: opts.ImageProgressFn,
-			OnFallback: opts.OnFallback,
-		})
+	var imagePushOpts []ImagePushOption
+	if opts.ImageProgressFn != nil {
+		imagePushOpts = append(imagePushOpts, WithProgressFn(opts.ImageProgressFn))
+	}
+	if opts.OnFallback != nil {
+		imagePushOpts = append(imagePushOpts, WithOnFallback(opts.OnFallback))
 	}
 	if err := p.imagePusher.Push(ctx, imgArtifact, imagePushOpts...); err != nil {
 		return fmt.Errorf("push image %q: %w", imgArtifact.Reference, err)

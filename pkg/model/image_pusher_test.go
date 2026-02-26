@@ -136,15 +136,12 @@ func TestImagePusher_Push(t *testing.T) {
 
 		var mu sync.Mutex
 		var progressUpdates []PushProgress
-		opts := ImagePushOptions{
-			ProgressFn: func(p PushProgress) {
-				mu.Lock()
-				defer mu.Unlock()
-				progressUpdates = append(progressUpdates, p)
-			},
-		}
 
-		err = pusher.Push(context.Background(), testArtifact(tag), opts)
+		err = pusher.Push(context.Background(), testArtifact(tag), WithProgressFn(func(p PushProgress) {
+			mu.Lock()
+			defer mu.Unlock()
+			progressUpdates = append(progressUpdates, p)
+		}))
 		require.NoError(t, err)
 
 		mu.Lock()
@@ -531,11 +528,9 @@ func TestImagePusher_OnFallback(t *testing.T) {
 
 		pusher := newImagePusher(docker, mock)
 
-		err = pusher.Push(context.Background(), testArtifact(tag), ImagePushOptions{
-			OnFallback: func() {
-				callOrder = append(callOrder, "on-fallback")
-			},
-		})
+		err = pusher.Push(context.Background(), testArtifact(tag), WithOnFallback(func() {
+			callOrder = append(callOrder, "on-fallback")
+		}))
 		require.NoError(t, err)
 		assert.Equal(t, []string{"on-fallback", "docker-push"}, callOrder)
 	})
@@ -554,11 +549,9 @@ func TestImagePusher_OnFallback(t *testing.T) {
 		pusher := newImagePusher(docker, mock)
 
 		var fallbackCalled bool
-		err = pusher.Push(context.Background(), testArtifact(tag), ImagePushOptions{
-			OnFallback: func() {
-				fallbackCalled = true
-			},
-		})
+		err = pusher.Push(context.Background(), testArtifact(tag), WithOnFallback(func() {
+			fallbackCalled = true
+		}))
 		require.NoError(t, err)
 		assert.False(t, fallbackCalled)
 	})

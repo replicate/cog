@@ -280,12 +280,12 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 		return fmt.Errorf("no image artifact in model")
 	}
 
-	var imagePushOpts []ImagePushOptions
-	if opts.ImageProgressFn != nil || opts.OnFallback != nil {
-		imagePushOpts = append(imagePushOpts, ImagePushOptions{
-			ProgressFn: opts.ImageProgressFn,
-			OnFallback: opts.OnFallback,
-		})
+	var imagePushOpts []ImagePushOption
+	if opts.ImageProgressFn != nil {
+		imagePushOpts = append(imagePushOpts, WithProgressFn(opts.ImageProgressFn))
+	}
+	if opts.OnFallback != nil {
+		imagePushOpts = append(imagePushOpts, WithOnFallback(opts.OnFallback))
 	}
 	return r.imagePusher.Push(ctx, imgArtifact, imagePushOpts...)
 }
