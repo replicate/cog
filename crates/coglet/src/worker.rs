@@ -877,7 +877,10 @@ mod tests {
         let r = PredictResult::success(serde_json::json!([]), 0.5, true);
         assert!(matches!(
             r.outcome,
-            PredictionOutcome::Success { is_stream: true, .. }
+            PredictionOutcome::Success {
+                is_stream: true,
+                ..
+            }
         ));
     }
 

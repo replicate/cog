@@ -1262,7 +1262,10 @@ mod tests {
         // return Path("output.png") → single string
         let result = wrap_outputs(vec![json!("https://example.com/output.png")], false, false);
         assert!(!result.is_stream());
-        assert_eq!(result.final_value(), &json!("https://example.com/output.png"));
+        assert_eq!(
+            result.final_value(),
+            &json!("https://example.com/output.png")
+        );
     }
 
     #[test]
@@ -1286,7 +1289,10 @@ mod tests {
             is_stream: false,
         };
         let json = serde_json::to_value(&msg).unwrap();
-        assert!(json.get("is_stream").is_none(), "is_stream=false should be omitted");
+        assert!(
+            json.get("is_stream").is_none(),
+            "is_stream=false should be omitted"
+        );
     }
 
     #[test]
