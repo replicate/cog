@@ -620,6 +620,21 @@ async fn create_training_idempotent(
         webhook_events_filter: default_webhook_events_filter(),
     });
 
+    if let Some(ref req_id) = request.id
+        && req_id != &training_id
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({
+                "detail": [{
+                    "loc": ["body", "id"],
+                    "msg": "training ID must match the ID supplied in the URL",
+                    "type": "value_error"
+                }]
+            })),
+        );
+    }
+
     // Idempotent: return existing state if already submitted
     let supervisor = service.supervisor();
     if let Some(state) = supervisor.get_state(&training_id) {
@@ -1092,6 +1107,52 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let json = response_json(response).await;
         assert_eq!(json["status"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn training_idempotent_put() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/trainings/train-123")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = response_json(response).await;
+        assert_eq!(json["id"], "train-123");
+        assert_eq!(json["status"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn training_idempotent_id_mismatch() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/trainings/url-id")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"id":"body-id","input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let json = response_json(response).await;
+        assert!(
+            json["detail"][0]["msg"]
+                .as_str()
+                .unwrap()
+                .contains("must match")
+        );
     }
 
     #[tokio::test]

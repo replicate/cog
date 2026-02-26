@@ -101,31 +101,36 @@ const CogletWheelEnvVar = "COGLET_WHEEL"
 // Supported values:
 //   - "pypi" - Install from PyPI (latest version)
 //   - "pypi:0.12.0" - Install specific version from PyPI
-//   - "https://..." or "http://..." - Direct wheel URL
+//   - "https://..." - Direct wheel URL (HTTPS only; HTTP is rejected)
 //   - "/path/to/file.whl" or "relative/path" - Local file or directory (resolved to abspath)
 //
 // Paths that point to directories are resolved later by the Resolve functions,
 // which glob for the appropriate wheel inside the directory.
 //
-// Returns nil if the value is empty (caller should use auto-detection).
-func ParseWheelValue(value string) *WheelConfig {
+// Returns (nil, nil) if the value is empty (caller should use auto-detection).
+func ParseWheelValue(value string) (*WheelConfig, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return nil
+		return nil, nil
 	}
 
 	// "pypi" or "pypi:version" requests PyPI
 	if strings.EqualFold(value, "pypi") {
-		return &WheelConfig{Source: WheelSourcePyPI}
+		return &WheelConfig{Source: WheelSourcePyPI}, nil
 	}
 	if strings.HasPrefix(strings.ToLower(value), "pypi:") {
 		// Extract version after "pypi:" prefix, preserving original case
-		return &WheelConfig{Source: WheelSourcePyPI, Version: value[5:]}
+		return &WheelConfig{Source: WheelSourcePyPI, Version: value[5:]}, nil
 	}
 
-	// Check for URL (http:// or https://)
-	if strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "http://") {
-		return &WheelConfig{Source: WheelSourceURL, URL: value}
+	// Reject plain HTTP URLs — only HTTPS is allowed to avoid supply-chain risks
+	if strings.HasPrefix(value, "http://") {
+		return nil, fmt.Errorf("HTTPS required (got %s)", value)
+	}
+
+	// Check for HTTPS URL
+	if strings.HasPrefix(value, "https://") {
+		return &WheelConfig{Source: WheelSourceURL, URL: value}, nil
 	}
 
 	// Treat everything else as a file/directory path - resolve to absolute
@@ -133,7 +138,7 @@ func ParseWheelValue(value string) *WheelConfig {
 	if err != nil {
 		absPath = value
 	}
-	return &WheelConfig{Source: WheelSourceFile, Path: absPath}
+	return &WheelConfig{Source: WheelSourceFile, Path: absPath}, nil
 }
 
 var executablePath = os.Executable
@@ -291,7 +296,11 @@ func resolveWheelPath(path string, pattern string, platform string, envVar strin
 //  3. Default: PyPI latest (use build.sdk_version in cog.yaml to pin)
 func ResolveCogWheel(envValue string, version string) (*WheelConfig, error) {
 	// Check explicit env var first
-	if config := ParseWheelValue(envValue); config != nil {
+	config, err := ParseWheelValue(envValue)
+	if err != nil {
+		return nil, err
+	}
+	if config != nil {
 		if config.Source == WheelSourceFile {
 			// cog SDK is pure Python (py3-none-any), no platform filtering needed
 			resolved, err := resolveWheelPath(config.Path, "cog-*.whl", "", CogSDKWheelEnvVar)
@@ -337,7 +346,11 @@ func GetCogWheelConfig() (*WheelConfig, error) {
 // the correct platform-specific wheel from a directory. Pass "" to skip filtering.
 func ResolveCogletWheel(envValue string, version string, platform string) (*WheelConfig, error) {
 	// Check explicit env var first
-	if config := ParseWheelValue(envValue); config != nil {
+	config, err := ParseWheelValue(envValue)
+	if err != nil {
+		return nil, err
+	}
+	if config != nil {
 		if config.Source == WheelSourceFile {
 			resolved, err := resolveWheelPath(config.Path, "coglet-*.whl", platform, CogletWheelEnvVar)
 			if err != nil {

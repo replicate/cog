@@ -429,7 +429,7 @@ func canUseStaticSchemaGen(cfg *config.Config) bool {
 func resolveSDKVersion(cfg *config.Config) string {
 	// 1. Env var
 	if envVal := os.Getenv(wheels.CogSDKWheelEnvVar); envVal != "" {
-		wc := wheels.ParseWheelValue(envVal)
+		wc, _ := wheels.ParseWheelValue(envVal)
 		if wc != nil {
 			if wc.Source == wheels.WheelSourcePyPI && wc.Version != "" {
 				return wc.Version

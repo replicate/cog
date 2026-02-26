@@ -35,6 +35,7 @@ func TestParseWheelValue(t *testing.T) {
 		name     string
 		input    string
 		expected *WheelConfig
+		wantErr  string
 	}{
 		// Empty/nil cases
 		{
@@ -98,12 +99,9 @@ func TestParseWheelValue(t *testing.T) {
 			},
 		},
 		{
-			name:  "http URL",
-			input: "http://example.com/wheel.whl",
-			expected: &WheelConfig{
-				Source: WheelSourceURL,
-				URL:    "http://example.com/wheel.whl",
-			},
+			name:    "http URL rejected",
+			input:   "http://example.com/wheel.whl",
+			wantErr: "HTTPS required",
 		},
 		{
 			name:  "github release URL",
@@ -143,7 +141,14 @@ func TestParseWheelValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ParseWheelValue(tt.input)
+			result, err := ParseWheelValue(tt.input)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.wantErr)
+				require.Nil(t, result)
+				return
+			}
+			require.NoError(t, err)
 			if tt.expected == nil {
 				require.Nil(t, result)
 			} else {

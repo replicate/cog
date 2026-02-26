@@ -154,7 +154,10 @@ func MergeSchemas(predict, train map[string]any) map[string]any {
 func ResolveBinary() (string, error) {
 	// 1. Explicit env var (local path or URL)
 	if envVal := os.Getenv(EnvVar); envVal != "" {
-		if strings.HasPrefix(envVal, "https://") || strings.HasPrefix(envVal, "http://") {
+		if strings.HasPrefix(envVal, "http://") {
+			return "", fmt.Errorf("%s: HTTPS required (got %s)", EnvVar, envVal)
+		}
+		if strings.HasPrefix(envVal, "https://") {
 			path, err := downloadAndCache(envVal)
 			if err != nil {
 				return "", fmt.Errorf("%s=%s: %w", EnvVar, envVal, err)
