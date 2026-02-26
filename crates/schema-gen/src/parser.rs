@@ -7,11 +7,18 @@
 //! - Parameters with type annotations and default values
 //! - `Input()` call keyword arguments
 
+use std::collections::HashMap;
+
 use indexmap::IndexMap;
 use tree_sitter::{Node, Parser, Tree};
 
 use crate::error::{Result, SchemaError};
 use crate::types::*;
+
+/// Module-level scope: maps variable names to their statically-resolved values.
+/// Only populated for top-level assignments whose right-hand side is a literal
+/// (list, dict, set, tuple, string, number, etc.).
+type ModuleScope = HashMap<String, DefaultValue>;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -29,14 +36,17 @@ pub fn parse_predictor(source: &str, predict_ref: &str, mode: Mode) -> Result<Pr
     // 1. Collect imports
     let imports = collect_imports(root, src);
 
-    // 2. Collect BaseModel subclasses (for structured output types)
+    // 2. Collect module-level variable assignments (for resolving choices=MY_VAR etc.)
+    let module_scope = collect_module_scope(root, src);
+
+    // 3. Collect BaseModel subclasses (for structured output types)
     let model_classes = collect_model_classes(root, src, &imports);
 
-    // 3. Collect Input() references from class attributes and static methods
+    // 4. Collect Input() references from class attributes and static methods
     //    (e.g. `Inputs.prompt`, `Inputs.go_fast_with_default(True)`)
-    let input_registry = collect_input_registry(root, src, &imports);
+    let input_registry = collect_input_registry(root, src, &imports, &module_scope);
 
-    // 4. Find the target predict/train function
+    // 5. Find the target predict/train function
     let method_name = match mode {
         Mode::Predict => "predict",
         Mode::Train => "train",
@@ -44,14 +54,14 @@ pub fn parse_predictor(source: &str, predict_ref: &str, mode: Mode) -> Result<Pr
 
     let func_node = find_target_function(root, src, predict_ref, method_name)?;
 
-    // 5. Determine if this is a method (has `self` first param) or standalone function
+    // 6. Determine if this is a method (has `self` first param) or standalone function
     let params_node = func_node
         .child_by_field_name("parameters")
         .ok_or_else(|| SchemaError::ParseError("function has no parameters node".into()))?;
 
     let is_method = first_param_is_self(&params_node, src);
 
-    // 6. Extract parameters
+    // 7. Extract parameters
     let inputs = extract_inputs(
         &params_node,
         src,
@@ -59,9 +69,10 @@ pub fn parse_predictor(source: &str, predict_ref: &str, mode: Mode) -> Result<Pr
         is_method,
         &imports,
         &input_registry,
+        &module_scope,
     )?;
 
-    // 7. Extract return type
+    // 8. Extract return type
     let return_ann = func_node
         .child_by_field_name("return_type")
         .ok_or_else(|| SchemaError::MissingReturnType {
@@ -283,7 +294,12 @@ struct InputMethodInfo {
 }
 
 /// Collect all class-level `Input()` attributes and static methods returning `Input()`.
-fn collect_input_registry(root: Node, src: &[u8], imports: &ImportContext) -> InputRegistry {
+fn collect_input_registry(
+    root: Node,
+    src: &[u8],
+    imports: &ImportContext,
+    module_scope: &ModuleScope,
+) -> InputRegistry {
     let mut registry = InputRegistry::default();
     let mut cursor = root.walk();
 
@@ -324,7 +340,14 @@ fn collect_input_registry(root: Node, src: &[u8], imports: &ImportContext) -> In
             };
 
             if inner.kind() == "assignment" {
-                collect_input_attribute(&class_name, &inner, src, imports, &mut registry);
+                collect_input_attribute(
+                    &class_name,
+                    &inner,
+                    src,
+                    imports,
+                    module_scope,
+                    &mut registry,
+                );
             }
 
             // Look for annotated assignments: `attr: X = Input(...)`
@@ -339,7 +362,7 @@ fn collect_input_registry(root: Node, src: &[u8], imports: &ImportContext) -> In
                 _ => None,
             };
             if let Some(func) = func {
-                collect_input_method(&class_name, &func, src, imports, &mut registry);
+                collect_input_method(&class_name, &func, src, imports, module_scope, &mut registry);
             }
         }
     }
@@ -353,6 +376,7 @@ fn collect_input_attribute(
     assignment: &Node,
     src: &[u8],
     imports: &ImportContext,
+    module_scope: &ModuleScope,
     registry: &mut InputRegistry,
 ) {
     // Get the left side (attribute name)
@@ -373,7 +397,7 @@ fn collect_input_attribute(
 
     // Parse the Input() call — use a dummy param name for error reporting
     let key = format!("{class_name}.{left}");
-    if let Ok(info) = parse_input_call(&right, src, &key) {
+    if let Ok(info) = parse_input_call(&right, src, &key, module_scope) {
         registry.attributes.insert(key, info);
     }
 }
@@ -384,6 +408,7 @@ fn collect_input_method(
     func: &Node,
     src: &[u8],
     imports: &ImportContext,
+    module_scope: &ModuleScope,
     registry: &mut InputRegistry,
 ) {
     let method_name = match func.child_by_field_name("name") {
@@ -435,7 +460,7 @@ fn collect_input_method(
 
     if let Some(input_call) = find_return_input_call(&body, src, imports) {
         let key = format!("{class_name}.{method_name}");
-        if let Ok(info) = parse_input_call(&input_call, src, &key) {
+        if let Ok(info) = parse_input_call(&input_call, src, &key, module_scope) {
             registry.method_input_calls.insert(
                 key,
                 InputMethodInfo {
@@ -886,6 +911,7 @@ fn extract_inputs(
     skip_self: bool,
     imports: &ImportContext,
     input_registry: &InputRegistry,
+    module_scope: &ModuleScope,
 ) -> Result<IndexMap<String, InputField>> {
     let mut inputs = IndexMap::new();
     let mut order: usize = 0;
@@ -919,6 +945,7 @@ fn extract_inputs(
                     method_name,
                     imports,
                     input_registry,
+                    module_scope,
                 )?;
                 inputs.insert(input.name.clone(), input);
                 order += 1;
@@ -990,6 +1017,7 @@ fn parse_typed_default_parameter(
     method_name: &str,
     imports: &ImportContext,
     input_registry: &InputRegistry,
+    module_scope: &ModuleScope,
 ) -> Result<InputField> {
     let name = node
         .child_by_field_name("name")
@@ -1011,7 +1039,7 @@ fn parse_typed_default_parameter(
     if let Some(ref val) = value_node {
         // 1. Direct Input() call: `param: type = Input(...)`
         if is_input_call(val, src, imports) {
-            let input_info = parse_input_call(val, src, &name)?;
+            let input_info = parse_input_call(val, src, &name, module_scope)?;
             return Ok(InputField {
                 name,
                 order,
@@ -1048,9 +1076,9 @@ fn parse_typed_default_parameter(
         }
     }
 
-    // 3. Plain default value — must be a statically resolvable literal
+    // 3. Plain default value — must be a statically resolvable literal or module-level constant
     if let Some(ref val) = value_node {
-        match parse_default_value(val, src) {
+        match resolve_default_expr(val, src, module_scope) {
             Some(default) => {
                 return Ok(InputField {
                     name,
@@ -1239,7 +1267,12 @@ struct InputCallInfo {
     deprecated: Option<bool>,
 }
 
-fn parse_input_call(node: &Node, src: &[u8], param_name: &str) -> Result<InputCallInfo> {
+fn parse_input_call(
+    node: &Node,
+    src: &[u8],
+    param_name: &str,
+    module_scope: &ModuleScope,
+) -> Result<InputCallInfo> {
     let mut info = InputCallInfo::default();
 
     let args = match node.child_by_field_name("arguments") {
@@ -1265,8 +1298,10 @@ fn parse_input_call(node: &Node, src: &[u8], param_name: &str) -> Result<InputCa
         let key = node_text(&key_node, src);
         match key {
             "default" => {
-                info.default =
-                    Some(parse_default_value(&val_node, src).unwrap_or(DefaultValue::None));
+                info.default = Some(
+                    resolve_default_expr(&val_node, src, module_scope)
+                        .unwrap_or(DefaultValue::None),
+                );
             }
             "default_factory" => {
                 return Err(SchemaError::DefaultFactoryNotSupported {
@@ -1292,7 +1327,19 @@ fn parse_input_call(node: &Node, src: &[u8], param_name: &str) -> Result<InputCa
                 info.regex = parse_string_literal(&val_node, src);
             }
             "choices" => {
-                info.choices = parse_list_literal(&val_node, src);
+                // Try literal list first, then resolve against module scope.
+                // Hard error if the expression can't be statically resolved.
+                info.choices = match parse_list_literal(&val_node, src) {
+                    Some(items) => Some(items),
+                    None => match resolve_choices_expr(&val_node, src, module_scope) {
+                        Some(items) => Some(items),
+                        None => {
+                            return Err(SchemaError::ChoicesNotResolvable {
+                                param: param_name.into(),
+                            });
+                        }
+                    },
+                };
             }
             "deprecated" => {
                 info.deprecated = parse_bool_literal(&val_node, src);
@@ -1305,6 +1352,174 @@ fn parse_input_call(node: &Node, src: &[u8], param_name: &str) -> Result<InputCa
 
     // If Input() is called with no `default` keyword, it means required (default stays None)
     Ok(info)
+}
+
+// ---------------------------------------------------------------------------
+// Module-level scope collection
+// ---------------------------------------------------------------------------
+
+/// Walk top-level statements and collect assignments whose right-hand side is a
+/// statically-resolvable literal (list, dict, set, number, string, etc.).
+///
+/// This enables resolving `choices=MY_LIST` or `choices=list(MY_DICT.keys())`
+/// when the referenced variable is defined at module scope with a literal value.
+fn collect_module_scope(root: Node, src: &[u8]) -> ModuleScope {
+    let mut scope = ModuleScope::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        // `expression_statement` → `assignment`
+        let assign = if child.kind() == "expression_statement" {
+            match child.named_child(0) {
+                Some(n) if n.kind() == "assignment" => n,
+                _ => continue,
+            }
+        } else if child.kind() == "assignment" {
+            child
+        } else {
+            continue;
+        };
+
+        // Left side must be a simple identifier (not tuple unpacking, not dotted)
+        let left = match assign.child_by_field_name("left") {
+            Some(n) if n.kind() == "identifier" => node_text(&n, src).to_string(),
+            _ => continue,
+        };
+
+        // Right side must be a statically-parseable literal
+        if let Some(right) = assign.child_by_field_name("right") {
+            if let Some(val) = parse_default_value(&right, src) {
+                scope.insert(left, val);
+            }
+        }
+    }
+    scope
+}
+
+/// Try to resolve any expression to a `DefaultValue` by first attempting literal
+/// parsing, then falling back to module scope lookup for identifiers.
+///
+/// This handles `default=MY_CONSTANT` where `MY_CONSTANT = "value"` is defined
+/// at module scope, as well as plain literals.
+fn resolve_default_expr(
+    node: &Node,
+    src: &[u8],
+    scope: &ModuleScope,
+) -> Option<DefaultValue> {
+    // 1. Try literal parsing first (covers all literal node kinds)
+    if let Some(val) = parse_default_value(node, src) {
+        return Some(val);
+    }
+
+    // 2. Identifier referencing a module-level variable
+    if node.kind() == "identifier" {
+        let name = node_text(node, src);
+        return scope.get(name).cloned();
+    }
+
+    None
+}
+
+/// Try to statically resolve a `choices=` expression against the module scope.
+///
+/// Handles these patterns:
+///   - Literal list:          `choices=["a", "b"]`       → already works via parse_list_literal
+///   - Identifier:            `choices=MY_LIST`           → look up in scope
+///   - Dict keys call:        `choices=list(D.keys())`    → look up D, extract keys
+///   - Dict values call:      `choices=list(D.values())`  → look up D, extract values
+///   - Concatenation:         `choices=expr + expr`        → resolve both sides, concatenate
+///
+/// Returns `None` if the expression cannot be resolved.
+fn resolve_choices_expr(
+    node: &Node,
+    src: &[u8],
+    scope: &ModuleScope,
+) -> Option<Vec<DefaultValue>> {
+    match node.kind() {
+        // 1. Literal list — delegate to existing parser
+        "list" => parse_list_literal(node, src),
+
+        // 2. Identifier referencing a module-level variable
+        "identifier" => {
+            let name = node_text(node, src);
+            match scope.get(name)? {
+                DefaultValue::List(items) => Some(items.clone()),
+                _ => None, // e.g. referencing a dict or string directly isn't a valid choices list
+            }
+        }
+
+        // 3. Call expression: `list(DICT.keys())` or `list(DICT.values())`
+        "call" => resolve_choices_call(node, src, scope),
+
+        // 4. Binary `+` concatenation: `list(D.keys()) + ["custom"]`
+        "binary_operator" => {
+            let op_node = node
+                .children(&mut node.walk())
+                .find(|c| c.kind() == "+" || (c.kind() == "binary_operator" && false))?;
+            if op_node.kind() != "+" {
+                return None;
+            }
+            // tree-sitter binary_operator has fields: left, right, operator
+            // but the operator is an anonymous "+" child. The named children are left and right.
+            let left = node.child_by_field_name("left")?;
+            let right = node.child_by_field_name("right")?;
+            let mut result = resolve_choices_expr(&left, src, scope)?;
+            result.extend(resolve_choices_expr(&right, src, scope)?);
+            Some(result)
+        }
+
+        _ => None,
+    }
+}
+
+/// Resolve `list(X.keys())` or `list(X.values())` against module scope.
+fn resolve_choices_call(
+    node: &Node,
+    src: &[u8],
+    scope: &ModuleScope,
+) -> Option<Vec<DefaultValue>> {
+    // The call must be `list(...)`
+    let func = node.child_by_field_name("function")?;
+    if node_text(&func, src) != "list" {
+        return None;
+    }
+
+    let args = node.child_by_field_name("arguments")?;
+    // Should have exactly one positional argument
+    let arg = {
+        let mut cursor = args.walk();
+        args.children(&mut cursor)
+            .find(|c| c.is_named() && c.kind() != "(" && c.kind() != ")")?
+    };
+
+    // The argument should be a method call: `X.keys()` or `X.values()`
+    if arg.kind() != "call" {
+        return None;
+    }
+    let inner_func = arg.child_by_field_name("function")?;
+    if inner_func.kind() != "attribute" {
+        return None;
+    }
+
+    // attribute node has: object, attribute
+    let obj = inner_func.child_by_field_name("object")?;
+    let attr = inner_func.child_by_field_name("attribute")?;
+
+    if obj.kind() != "identifier" {
+        return None;
+    }
+    let var_name = node_text(&obj, src);
+    let method_name = node_text(&attr, src);
+
+    let dict_val = scope.get(var_name)?;
+    match (dict_val, method_name) {
+        (DefaultValue::Dict(pairs), "keys") => {
+            Some(pairs.iter().map(|(k, _)| k.clone()).collect())
+        }
+        (DefaultValue::Dict(pairs), "values") => {
+            Some(pairs.iter().map(|(_, v)| v.clone()).collect())
+        }
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1640,6 +1855,382 @@ class Predictor:
         assert_eq!(
             info.inputs["text"].default,
             Some(DefaultValue::String("hello".into()))
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // choices= resolution tests
+    // -----------------------------------------------------------------------
+
+    /// Literal list in choices= — the baseline that always worked.
+    #[test]
+    fn test_choices_literal_list() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, x: str = Input(choices=["a", "b", "c"])) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        let choices = info.inputs["x"].choices.as_ref().unwrap();
+        assert_eq!(choices.len(), 3);
+        assert_eq!(choices[0], DefaultValue::String("a".into()));
+        assert_eq!(choices[1], DefaultValue::String("b".into()));
+        assert_eq!(choices[2], DefaultValue::String("c".into()));
+    }
+
+    /// choices= referencing a module-level list variable.
+    #[test]
+    fn test_choices_module_level_list_var() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+MY_CHOICES = ["x", "y", "z"]
+
+class Predictor(BasePredictor):
+    def predict(self, v: str = Input(choices=MY_CHOICES)) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        let choices = info.inputs["v"].choices.as_ref().unwrap();
+        assert_eq!(choices.len(), 3);
+        assert_eq!(choices[0], DefaultValue::String("x".into()));
+        assert_eq!(choices[1], DefaultValue::String("y".into()));
+        assert_eq!(choices[2], DefaultValue::String("z".into()));
+    }
+
+    /// choices=list(DICT.keys()) �� the cog-flux pattern.
+    #[test]
+    fn test_choices_list_dict_keys() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+ASPECT_RATIOS = {
+    "1:1": (1024, 1024),
+    "16:9": (1344, 768),
+    "2:3": (832, 1216),
+}
+
+class Predictor(BasePredictor):
+    def predict(self, ar: str = Input(choices=list(ASPECT_RATIOS.keys()), default="1:1")) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        let choices = info.inputs["ar"].choices.as_ref().unwrap();
+        assert_eq!(choices.len(), 3);
+        assert_eq!(choices[0], DefaultValue::String("1:1".into()));
+        assert_eq!(choices[1], DefaultValue::String("16:9".into()));
+        assert_eq!(choices[2], DefaultValue::String("2:3".into()));
+    }
+
+    /// choices=list(DICT.values()) — extract values instead of keys.
+    #[test]
+    fn test_choices_list_dict_values() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+LABELS = {"fast": "Fast Mode", "slow": "Slow Mode"}
+
+class Predictor(BasePredictor):
+    def predict(self, m: str = Input(choices=list(LABELS.values()))) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        let choices = info.inputs["m"].choices.as_ref().unwrap();
+        assert_eq!(choices.len(), 2);
+        assert_eq!(choices[0], DefaultValue::String("Fast Mode".into()));
+        assert_eq!(choices[1], DefaultValue::String("Slow Mode".into()));
+    }
+
+    /// choices=list(DICT.keys()) + ["custom"] — concatenation with a literal.
+    #[test]
+    fn test_choices_dict_keys_plus_literal() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+SIZES = {"small": 256, "large": 1024}
+
+class Predictor(BasePredictor):
+    def predict(self, s: str = Input(choices=list(SIZES.keys()) + ["custom"])) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        let choices = info.inputs["s"].choices.as_ref().unwrap();
+        assert_eq!(choices.len(), 3);
+        assert_eq!(choices[0], DefaultValue::String("small".into()));
+        assert_eq!(choices[1], DefaultValue::String("large".into()));
+        assert_eq!(choices[2], DefaultValue::String("custom".into()));
+    }
+
+    /// choices= with integer values from a dict.
+    #[test]
+    fn test_choices_integer_dict_keys() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+STEP_LABELS = {1: "one", 2: "two", 4: "four"}
+
+class Predictor(BasePredictor):
+    def predict(self, steps: int = Input(choices=list(STEP_LABELS.keys()), default=1)) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        let choices = info.inputs["steps"].choices.as_ref().unwrap();
+        assert_eq!(choices.len(), 3);
+        assert_eq!(choices[0], DefaultValue::Integer(1));
+        assert_eq!(choices[1], DefaultValue::Integer(2));
+        assert_eq!(choices[2], DefaultValue::Integer(4));
+    }
+
+    /// choices= referencing a variable that is NOT a list → hard error.
+    #[test]
+    fn test_choices_var_not_a_list_errors() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+NOT_A_LIST = "oops"
+
+class Predictor(BasePredictor):
+    def predict(self, x: str = Input(choices=NOT_A_LIST)) -> str:
+        pass
+"#;
+        let err = parse_predictor(source, "Predictor", Mode::Predict).unwrap_err();
+        assert!(
+            matches!(err, SchemaError::ChoicesNotResolvable { .. }),
+            "expected ChoicesNotResolvable, got: {err}"
+        );
+    }
+
+    /// choices= referencing a variable that doesn't exist → hard error.
+    #[test]
+    fn test_choices_undefined_var_errors() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, x: str = Input(choices=DOES_NOT_EXIST)) -> str:
+        pass
+"#;
+        let err = parse_predictor(source, "Predictor", Mode::Predict).unwrap_err();
+        assert!(
+            matches!(err, SchemaError::ChoicesNotResolvable { .. }),
+            "expected ChoicesNotResolvable, got: {err}"
+        );
+    }
+
+    /// choices= with a function call that isn't list(X.keys()) → hard error.
+    #[test]
+    fn test_choices_arbitrary_call_errors() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, x: str = Input(choices=get_choices())) -> str:
+        pass
+"#;
+        let err = parse_predictor(source, "Predictor", Mode::Predict).unwrap_err();
+        assert!(
+            matches!(err, SchemaError::ChoicesNotResolvable { .. }),
+            "expected ChoicesNotResolvable, got: {err}"
+        );
+    }
+
+    /// choices= with a list comprehension → hard error.
+    #[test]
+    fn test_choices_list_comprehension_errors() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, x: str = Input(choices=[f"{i}x" for i in range(5)])) -> str:
+        pass
+"#;
+        let err = parse_predictor(source, "Predictor", Mode::Predict).unwrap_err();
+        assert!(
+            matches!(err, SchemaError::ChoicesNotResolvable { .. }),
+            "expected ChoicesNotResolvable, got: {err}"
+        );
+    }
+
+    /// choices= via InputRegistry attribute (class-level Input() with dict keys).
+    #[test]
+    fn test_choices_input_registry_dict_keys() {
+        let source = r#"
+from dataclasses import dataclass
+from cog import BasePredictor, Input
+
+RATIOS = {"1:1": (1024, 1024), "16:9": (1344, 768)}
+
+@dataclass(frozen=True)
+class Inputs:
+    ar = Input(description="Aspect ratio", choices=list(RATIOS.keys()), default="1:1")
+
+class Predictor(BasePredictor):
+    def predict(self, ar: str = Inputs.ar) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        let choices = info.inputs["ar"].choices.as_ref().unwrap();
+        assert_eq!(choices.len(), 2);
+        assert_eq!(choices[0], DefaultValue::String("1:1".into()));
+        assert_eq!(choices[1], DefaultValue::String("16:9".into()));
+    }
+
+    /// choices= with concatenation of two module-level lists.
+    #[test]
+    fn test_choices_concat_two_vars() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+BASE = ["a", "b"]
+EXTRA = ["c"]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str = Input(choices=BASE + EXTRA)) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        let choices = info.inputs["x"].choices.as_ref().unwrap();
+        assert_eq!(choices.len(), 3);
+        assert_eq!(choices[0], DefaultValue::String("a".into()));
+        assert_eq!(choices[1], DefaultValue::String("b".into()));
+        assert_eq!(choices[2], DefaultValue::String("c".into()));
+    }
+
+    /// Verify that the error message includes the parameter name.
+    #[test]
+    fn test_choices_error_includes_param_name() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, my_param: str = Input(choices=some_func())) -> str:
+        pass
+"#;
+        let err = parse_predictor(source, "Predictor", Mode::Predict).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("my_param"),
+            "error should mention param name, got: {msg}"
+        );
+    }
+
+    /// Module scope only collects top-level assignments, not nested ones.
+    #[test]
+    fn test_choices_nested_var_not_in_scope() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+def helper():
+    NESTED = ["a", "b"]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str = Input(choices=NESTED)) -> str:
+        pass
+"#;
+        let err = parse_predictor(source, "Predictor", Mode::Predict).unwrap_err();
+        assert!(matches!(err, SchemaError::ChoicesNotResolvable { .. }));
+    }
+
+    // -----------------------------------------------------------------------
+    // default= resolution tests
+    // -----------------------------------------------------------------------
+
+    /// default= referencing a module-level string constant inside Input().
+    #[test]
+    fn test_default_module_level_string_in_input() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+DEFAULT_RATIO = "1:1"
+
+class Predictor(BasePredictor):
+    def predict(self, ar: str = Input(default=DEFAULT_RATIO)) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        assert_eq!(
+            info.inputs["ar"].default,
+            Some(DefaultValue::String("1:1".into()))
+        );
+    }
+
+    /// default= referencing a module-level integer constant inside Input().
+    #[test]
+    fn test_default_module_level_int_in_input() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+DEFAULT_STEPS = 50
+
+class Predictor(BasePredictor):
+    def predict(self, steps: int = Input(default=DEFAULT_STEPS)) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        assert_eq!(
+            info.inputs["steps"].default,
+            Some(DefaultValue::Integer(50))
+        );
+    }
+
+    /// default= referencing a module-level list constant inside Input().
+    #[test]
+    fn test_default_module_level_list_in_input() {
+        let source = r#"
+from cog import BasePredictor, Input
+
+DEFAULT_TAGS = ["a", "b"]
+
+class Predictor(BasePredictor):
+    def predict(self, tags: list[str] = Input(default=DEFAULT_TAGS)) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        assert_eq!(
+            info.inputs["tags"].default,
+            Some(DefaultValue::List(vec![
+                DefaultValue::String("a".into()),
+                DefaultValue::String("b".into()),
+            ]))
+        );
+    }
+
+    /// Plain default (no Input()) referencing a module-level constant.
+    #[test]
+    fn test_default_module_level_var_plain() {
+        let source = r#"
+from cog import BasePredictor
+
+MY_DEFAULT = "hello"
+
+class Predictor(BasePredictor):
+    def predict(self, text: str = MY_DEFAULT) -> str:
+        pass
+"#;
+        let info = parse(source, "Predictor");
+        assert_eq!(
+            info.inputs["text"].default,
+            Some(DefaultValue::String("hello".into()))
+        );
+    }
+
+    /// Plain default referencing an undefined variable → hard error.
+    #[test]
+    fn test_default_undefined_var_plain_errors() {
+        let source = r#"
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str = UNDEFINED_VAR) -> str:
+        pass
+"#;
+        let err = parse_predictor(source, "Predictor", Mode::Predict).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("cannot be statically resolved"),
+            "expected resolution error, got: {msg}"
         );
     }
 }

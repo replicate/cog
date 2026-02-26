@@ -42,6 +42,11 @@ pub enum SchemaError {
     #[error("ConcatenateIterator element type must be str, got {0}")]
     ConcatIteratorNotStr(String),
 
+    #[error(
+        "choices for parameter '{param}' cannot be statically resolved — use a literal list instead (e.g. choices=[\"a\", \"b\"])"
+    )]
+    ChoicesNotResolvable { param: String },
+
     #[error("{0}")]
     Other(String),
 }
