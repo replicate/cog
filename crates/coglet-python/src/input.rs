@@ -107,23 +107,22 @@ fn detect_file_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<HashS
     };
 
     // Helper closure: returns true if `ty` is `File` or `list[File]`.
-    let is_file_like =
-        |ty: &Bound<'_, PyAny>| -> PyResult<bool> {
-            if ty.is(&cog_file_class) {
+    let is_file_like = |ty: &Bound<'_, PyAny>| -> PyResult<bool> {
+        if ty.is(&cog_file_class) {
+            return Ok(true);
+        }
+        let inner_origin = get_origin.call1((ty,))?;
+        if !inner_origin.is_none() && inner_origin.is(&builtins_list) {
+            let inner_args = get_args.call1((ty,))?;
+            if let Ok(t) = inner_args.cast::<pyo3::types::PyTuple>()
+                && !t.is_empty()
+                && t.get_item(0)?.is(&cog_file_class)
+            {
                 return Ok(true);
             }
-            let inner_origin = get_origin.call1((ty,))?;
-            if !inner_origin.is_none() && inner_origin.is(&builtins_list) {
-                let inner_args = get_args.call1((ty,))?;
-                if let Ok(t) = inner_args.cast::<pyo3::types::PyTuple>()
-                    && !t.is_empty()
-                    && t.get_item(0)?.is(&cog_file_class)
-                {
-                    return Ok(true);
-                }
-            }
-            Ok(false)
-        };
+        }
+        Ok(false)
+    };
 
     let hints_dict = hints.cast::<PyDict>()?;
     for (name, annotation) in hints_dict.iter() {
@@ -151,7 +150,7 @@ fn detect_file_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<HashS
             if let Ok(args_tuple) = args.cast::<pyo3::types::PyTuple>() {
                 for arg in args_tuple.iter() {
                     // Skip NoneType
-                    if arg.is_none() || arg.is(&py.None().into_bound(py)) {
+                    if arg.is_none() || arg.is(py.None().into_bound(py)) {
                         continue;
                     }
                     // Check if this variant is NoneType by comparing to type(None)
@@ -381,12 +380,8 @@ mod tests {
         prepare_freethreaded_python();
         Python::with_gil(|py| {
             // Ensure cog.types.File is importable
-            py.run(
-                c"import cog.types",
-                None,
-                None,
-            )
-            .expect("cog.types must be importable for tests");
+            py.run(c"import cog.types", None, None)
+                .expect("cog.types must be importable for tests");
 
             let locals = PyDict::new(py);
             py.run(
@@ -403,18 +398,14 @@ mod tests {
 
     #[test]
     fn detect_direct_file() {
-        let fields = file_fields_for(
-            "from cog import File\ndef func(a: File, b: str): ...",
-        );
+        let fields = file_fields_for("from cog import File\ndef func(a: File, b: str): ...");
         assert!(fields.contains("a"), "direct File annotation not detected");
         assert!(!fields.contains("b"), "str incorrectly flagged as File");
     }
 
     #[test]
     fn detect_list_file() {
-        let fields = file_fields_for(
-            "from cog import File\ndef func(a: list[File]): ...",
-        );
+        let fields = file_fields_for("from cog import File\ndef func(a: list[File]): ...");
         assert!(fields.contains("a"), "list[File] annotation not detected");
     }
 
@@ -423,7 +414,10 @@ mod tests {
         let fields = file_fields_for(
             "from typing import Optional\nfrom cog import File\ndef func(a: Optional[File]): ...",
         );
-        assert!(fields.contains("a"), "Optional[File] annotation not detected");
+        assert!(
+            fields.contains("a"),
+            "Optional[File] annotation not detected"
+        );
     }
 
     #[test]
@@ -432,7 +426,10 @@ mod tests {
         let fields = file_fields_for(
             "from typing import Union\nfrom cog import File\ndef func(a: Union[File, None]): ...",
         );
-        assert!(fields.contains("a"), "File | None / Union[File, None] annotation not detected");
+        assert!(
+            fields.contains("a"),
+            "File | None / Union[File, None] annotation not detected"
+        );
     }
 
     #[test]
@@ -440,7 +437,10 @@ mod tests {
         let fields = file_fields_for(
             "from typing import Optional\nfrom cog import File\ndef func(a: Optional[list[File]]): ...",
         );
-        assert!(fields.contains("a"), "Optional[list[File]] annotation not detected");
+        assert!(
+            fields.contains("a"),
+            "Optional[list[File]] annotation not detected"
+        );
     }
 
     #[test]
@@ -448,6 +448,10 @@ mod tests {
         let fields = file_fields_for(
             "from pathlib import Path\nfrom typing import Optional\ndef func(a: str, b: int, c: Optional[str], d: Path): ...",
         );
-        assert!(fields.is_empty(), "non-File types incorrectly detected: {:?}", fields);
+        assert!(
+            fields.is_empty(),
+            "non-File types incorrectly detected: {:?}",
+            fields
+        );
     }
 }

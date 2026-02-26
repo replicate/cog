@@ -362,7 +362,14 @@ fn collect_input_registry(
                 _ => None,
             };
             if let Some(func) = func {
-                collect_input_method(&class_name, &func, src, imports, module_scope, &mut registry);
+                collect_input_method(
+                    &class_name,
+                    &func,
+                    src,
+                    imports,
+                    module_scope,
+                    &mut registry,
+                );
             }
         }
     }
@@ -1386,10 +1393,10 @@ fn collect_module_scope(root: Node, src: &[u8]) -> ModuleScope {
         };
 
         // Right side must be a statically-parseable literal
-        if let Some(right) = assign.child_by_field_name("right") {
-            if let Some(val) = parse_default_value(&right, src) {
-                scope.insert(left, val);
-            }
+        if let Some(right) = assign.child_by_field_name("right")
+            && let Some(val) = parse_default_value(&right, src)
+        {
+            scope.insert(left, val);
         }
     }
     scope
@@ -1400,11 +1407,7 @@ fn collect_module_scope(root: Node, src: &[u8]) -> ModuleScope {
 ///
 /// This handles `default=MY_CONSTANT` where `MY_CONSTANT = "value"` is defined
 /// at module scope, as well as plain literals.
-fn resolve_default_expr(
-    node: &Node,
-    src: &[u8],
-    scope: &ModuleScope,
-) -> Option<DefaultValue> {
+fn resolve_default_expr(node: &Node, src: &[u8], scope: &ModuleScope) -> Option<DefaultValue> {
     // 1. Try literal parsing first (covers all literal node kinds)
     if let Some(val) = parse_default_value(node, src) {
         return Some(val);
@@ -1429,11 +1432,7 @@ fn resolve_default_expr(
 ///   - Concatenation:         `choices=expr + expr`        → resolve both sides, concatenate
 ///
 /// Returns `None` if the expression cannot be resolved.
-fn resolve_choices_expr(
-    node: &Node,
-    src: &[u8],
-    scope: &ModuleScope,
-) -> Option<Vec<DefaultValue>> {
+fn resolve_choices_expr(node: &Node, src: &[u8], scope: &ModuleScope) -> Option<Vec<DefaultValue>> {
     match node.kind() {
         // 1. Literal list — delegate to existing parser
         "list" => parse_list_literal(node, src),
@@ -1452,14 +1451,11 @@ fn resolve_choices_expr(
 
         // 4. Binary `+` concatenation: `list(D.keys()) + ["custom"]`
         "binary_operator" => {
-            let op_node = node
-                .children(&mut node.walk())
-                .find(|c| c.kind() == "+" || (c.kind() == "binary_operator" && false))?;
-            if op_node.kind() != "+" {
+            // Only handle `+` operator (list concatenation)
+            let has_plus = node.children(&mut node.walk()).any(|c| c.kind() == "+");
+            if !has_plus {
                 return None;
             }
-            // tree-sitter binary_operator has fields: left, right, operator
-            // but the operator is an anonymous "+" child. The named children are left and right.
             let left = node.child_by_field_name("left")?;
             let right = node.child_by_field_name("right")?;
             let mut result = resolve_choices_expr(&left, src, scope)?;
@@ -1472,11 +1468,7 @@ fn resolve_choices_expr(
 }
 
 /// Resolve `list(X.keys())` or `list(X.values())` against module scope.
-fn resolve_choices_call(
-    node: &Node,
-    src: &[u8],
-    scope: &ModuleScope,
-) -> Option<Vec<DefaultValue>> {
+fn resolve_choices_call(node: &Node, src: &[u8], scope: &ModuleScope) -> Option<Vec<DefaultValue>> {
     // The call must be `list(...)`
     let func = node.child_by_field_name("function")?;
     if node_text(&func, src) != "list" {
@@ -1512,9 +1504,7 @@ fn resolve_choices_call(
 
     let dict_val = scope.get(var_name)?;
     match (dict_val, method_name) {
-        (DefaultValue::Dict(pairs), "keys") => {
-            Some(pairs.iter().map(|(k, _)| k.clone()).collect())
-        }
+        (DefaultValue::Dict(pairs), "keys") => Some(pairs.iter().map(|(k, _)| k.clone()).collect()),
         (DefaultValue::Dict(pairs), "values") => {
             Some(pairs.iter().map(|(_, v)| v.clone()).collect())
         }
