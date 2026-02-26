@@ -1,15 +1,18 @@
 //! PredictionService: Transport-agnostic prediction lifecycle management.
 //!
-//! This service owns:
+//! This service is the single owner of prediction state. It manages:
 //! - Slot management (PermitPool for concurrency control)
+//! - Prediction lifecycle (DashMap of active predictions)
+//! - Cancellation (cancel tokens + orchestrator delegation)
 //! - Health tracking (state, setup result)
 //! - Shutdown coordination (bidirectional)
 //!
-//! Prediction lifecycle (state, cancellation, webhooks) is managed by PredictionSupervisor.
-//! Transports (HTTP, gRPC, etc.) delegate to this service for prediction handling.
+//! Webhooks are fired from Prediction mutation methods (set_processing,
+//! set_succeeded, etc.) where the real state lives — no dual state tracking.
 
 use std::sync::{Arc, Mutex as StdMutex};
 
+use dashmap::DashMap;
 use tokio::sync::{RwLock, watch};
 
 use crate::bridge::protocol::SlotRequest;
@@ -17,9 +20,8 @@ use crate::health::{Health, SetupResult};
 use crate::input_validation::InputValidator;
 use crate::orchestrator::{HealthcheckResult, Orchestrator};
 use crate::permit::{PermitPool, PredictionSlot, UnregisteredPredictionSlot};
-use crate::prediction::{Prediction, PredictionStatus};
+use crate::prediction::{CancellationToken, Prediction, PredictionStatus};
 use crate::predictor::{PredictionError, PredictionOutput, PredictionResult};
-use crate::supervisor::PredictionSupervisor;
 use crate::version::VersionInfo;
 use crate::webhook::WebhookSender;
 
@@ -69,27 +71,71 @@ impl HealthSnapshot {
     }
 }
 
-/// Transport-agnostic prediction service.
+/// Entry in the predictions DashMap.
 ///
-/// Created with `new_no_pool()`, then configured with `set_orchestrator()` once
-/// the worker subprocess is ready.
-pub struct PredictionService {
-    /// Orchestrator state (pool + handle together).
-    orchestrator: RwLock<Option<OrchestratorState>>,
+/// Holds the real prediction (via Arc), cancel token, and input
+/// (for API responses — Prediction doesn't store input).
+struct PredictionEntry {
+    prediction: Arc<StdMutex<Prediction>>,
+    cancel_token: CancellationToken,
+    input: serde_json::Value,
+}
 
-    health: RwLock<Health>,
-    setup_result: RwLock<Option<SetupResult>>,
+/// Handle to a submitted prediction for cancellation on disconnect.
+pub struct PredictionHandle {
+    id: String,
+    cancel_token: CancellationToken,
+}
 
-    supervisor: Arc<PredictionSupervisor>,
+impl PredictionHandle {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
 
-    shutdown_tx: watch::Sender<bool>,
-    shutdown_rx: watch::Receiver<bool>,
+    pub fn cancel_token(&self) -> CancellationToken {
+        self.cancel_token.clone()
+    }
 
-    version: VersionInfo,
+    /// Create a guard that cancels on drop (for sync predictions).
+    ///
+    /// On drop (e.g. HTTP connection closed), the guard calls
+    /// `service.cancel(id)` which fires the CancellationToken AND
+    /// delegates to the orchestrator to cancel the worker subprocess.
+    pub fn sync_guard(&self, service: Arc<PredictionService>) -> SyncPredictionGuard {
+        SyncPredictionGuard::new(self.id.clone(), service)
+    }
+}
 
-    schema: RwLock<Option<serde_json::Value>>,
-    input_validator: RwLock<Option<InputValidator>>,
-    train_validator: RwLock<Option<InputValidator>>,
+/// Guard for sync predictions - cancels on drop unless disarmed.
+///
+/// When the HTTP connection drops (client disconnect), axum drops the
+/// response future which drops this guard. The guard calls
+/// `service.cancel(id)` to trigger both the CancellationToken
+/// (Rust-side observers) and the orchestrator (worker subprocess cancel).
+pub struct SyncPredictionGuard {
+    prediction_id: Option<String>,
+    service: Arc<PredictionService>,
+}
+
+impl SyncPredictionGuard {
+    pub fn new(prediction_id: String, service: Arc<PredictionService>) -> Self {
+        Self {
+            prediction_id: Some(prediction_id),
+            service,
+        }
+    }
+
+    pub fn disarm(&mut self) {
+        self.prediction_id = None;
+    }
+}
+
+impl Drop for SyncPredictionGuard {
+    fn drop(&mut self) {
+        if let Some(ref id) = self.prediction_id {
+            self.service.cancel(id);
+        }
+    }
 }
 
 /// Orchestrator runtime state - pool and orchestrator together.
@@ -109,6 +155,30 @@ impl Clone for OrchestratorState {
     }
 }
 
+/// Transport-agnostic prediction service.
+///
+/// Created with `new_no_pool()`, then configured with `set_orchestrator()` once
+/// the worker subprocess is ready.
+pub struct PredictionService {
+    /// Orchestrator state (pool + handle together).
+    orchestrator: RwLock<Option<OrchestratorState>>,
+
+    health: RwLock<Health>,
+    setup_result: RwLock<Option<SetupResult>>,
+
+    /// Active predictions — single source of truth for prediction state.
+    predictions: DashMap<String, PredictionEntry>,
+
+    shutdown_tx: watch::Sender<bool>,
+    shutdown_rx: watch::Receiver<bool>,
+
+    version: VersionInfo,
+
+    schema: RwLock<Option<serde_json::Value>>,
+    input_validator: RwLock<Option<InputValidator>>,
+    train_validator: RwLock<Option<InputValidator>>,
+}
+
 impl PredictionService {
     /// Create without configuration (for early HTTP start).
     ///
@@ -119,7 +189,7 @@ impl PredictionService {
             orchestrator: RwLock::new(None),
             health: RwLock::new(Health::Unknown),
             setup_result: RwLock::new(None),
-            supervisor: PredictionSupervisor::new(),
+            predictions: DashMap::new(),
             shutdown_tx,
             shutdown_rx,
             version: VersionInfo::new(),
@@ -130,17 +200,11 @@ impl PredictionService {
     }
 
     /// Configure orchestrator mode atomically.
-    ///
-    /// Also sets the orchestrator on the supervisor so cancellation can be
-    /// delegated from supervisor → orchestrator → worker.
     pub async fn set_orchestrator(
         &self,
         pool: Arc<PermitPool>,
         orchestrator: Arc<dyn Orchestrator>,
     ) {
-        self.supervisor
-            .set_orchestrator(Arc::clone(&orchestrator))
-            .await;
         *self.orchestrator.write().await = Some(OrchestratorState { pool, orchestrator });
     }
 
@@ -158,10 +222,6 @@ impl PredictionService {
         {
             tracing::warn!(error = %e, "Error during orchestrator shutdown");
         }
-    }
-
-    pub fn supervisor(&self) -> &Arc<PredictionSupervisor> {
-        &self.supervisor
     }
 
     /// Set initial health state (for non-Ready states only).
@@ -296,14 +356,16 @@ impl PredictionService {
         }
     }
 
-    /// Create a new prediction, acquiring a slot permit.
+    /// Submit a new prediction: create Prediction, acquire slot, register in DashMap.
     ///
-    /// Caller should check for duplicates via supervisor first.
-    pub async fn create_prediction(
+    /// Returns a PredictionHandle (for cancel-on-disconnect) and the
+    /// UnregisteredPredictionSlot (for running the prediction).
+    pub async fn submit_prediction(
         &self,
         id: String,
+        input: serde_json::Value,
         webhook: Option<WebhookSender>,
-    ) -> Result<UnregisteredPredictionSlot, CreatePredictionError> {
+    ) -> Result<(PredictionHandle, UnregisteredPredictionSlot), CreatePredictionError> {
         let health = *self.health.read().await;
         if health != Health::Ready {
             return Err(CreatePredictionError::NotReady);
@@ -317,16 +379,72 @@ impl PredictionService {
             .try_acquire()
             .ok_or(CreatePredictionError::AtCapacity)?;
 
-        let prediction = Prediction::new(id, webhook);
+        let prediction = Prediction::new(id.clone(), webhook);
+        let cancel_token = prediction.cancel_token();
         let (idle_tx, idle_rx) = tokio::sync::oneshot::channel();
-        Ok(UnregisteredPredictionSlot::new(
-            PredictionSlot::new(prediction, permit, idle_rx),
-            idle_tx,
-        ))
+        let slot = PredictionSlot::new(prediction, permit, idle_rx);
+        let prediction_arc = slot.prediction();
+
+        // Register in DashMap — this is the single source of truth
+        self.predictions.insert(
+            id.clone(),
+            PredictionEntry {
+                prediction: prediction_arc,
+                cancel_token: cancel_token.clone(),
+                input,
+            },
+        );
+
+        let handle = PredictionHandle { id, cancel_token };
+
+        Ok((handle, UnregisteredPredictionSlot::new(slot, idle_tx)))
     }
 
+    /// Check if a prediction with this ID is already in-flight.
     pub fn prediction_exists(&self, id: &str) -> bool {
-        self.supervisor.exists(id)
+        self.predictions.contains_key(id)
+    }
+
+    /// Get a snapshot of prediction state for API responses.
+    ///
+    /// Locks the real Prediction to read current state — no stale copies.
+    pub fn get_prediction_response(&self, id: &str) -> Option<serde_json::Value> {
+        let entry = self.predictions.get(id)?;
+        let pred = entry.prediction.lock().ok()?;
+
+        let mut response = serde_json::json!({
+            "id": pred.id(),
+            "status": pred.status().as_str(),
+            "input": entry.input,
+            "logs": pred.logs(),
+        });
+
+        if let Some(output) = pred.output() {
+            response["output"] = serde_json::json!(output);
+        }
+
+        if let Some(error) = pred.error() {
+            response["error"] = serde_json::Value::String(error.to_string());
+        }
+
+        // Include metrics on terminal
+        if pred.is_terminal() {
+            let predict_time = pred.elapsed().as_secs_f64();
+            let mut metrics_obj = serde_json::Map::new();
+            for (k, v) in pred.metrics() {
+                metrics_obj.insert(k.clone(), v.clone());
+            }
+            metrics_obj.insert("predict_time".to_string(), serde_json::json!(predict_time));
+            response["metrics"] = serde_json::Value::Object(metrics_obj);
+        } else if !pred.metrics().is_empty() {
+            let mut metrics_obj = serde_json::Map::new();
+            for (k, v) in pred.metrics() {
+                metrics_obj.insert(k.clone(), v.clone());
+            }
+            response["metrics"] = serde_json::Value::Object(metrics_obj);
+        }
+
+        Some(response)
     }
 
     /// Run a prediction to completion via orchestrator.
@@ -451,13 +569,41 @@ impl PredictionService {
     }
 
     /// Cancel a prediction by ID. Returns true if found and cancelled.
+    ///
+    /// Fires the CancellationToken (for Rust-side observers like upload tasks)
+    /// and delegates to the orchestrator to send `ControlRequest::Cancel` to the worker.
     pub fn cancel(&self, id: &str) -> bool {
-        self.supervisor.cancel(id)
+        if let Some(entry) = self.predictions.get(id) {
+            entry.cancel_token.cancel();
+
+            // Delegate to orchestrator to actually cancel the worker-side prediction.
+            // This must be non-blocking since cancel() is sync, so we spawn a task.
+            let id_owned = id.to_string();
+            let orchestrator = self
+                .orchestrator
+                .try_read()
+                .ok()
+                .and_then(|guard| guard.as_ref().map(|s| Arc::clone(&s.orchestrator)));
+            if let Some(orch) = orchestrator {
+                tokio::spawn(async move {
+                    if let Err(e) = orch.cancel_by_prediction_id(&id_owned).await {
+                        tracing::error!(
+                            prediction_id = %id_owned,
+                            error = %e,
+                            "Failed to send cancel to orchestrator"
+                        );
+                    }
+                });
+            }
+            true
+        } else {
+            false
+        }
     }
 
-    /// Unregister a prediction after completion.
-    pub fn unregister_prediction(&self, id: &str) {
-        self.supervisor.remove(id);
+    /// Remove a prediction from the DashMap after completion.
+    pub fn remove_prediction(&self, id: &str) {
+        self.predictions.remove(id);
     }
 
     pub fn trigger_shutdown(&self) {
@@ -640,10 +786,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_prediction_fails_when_not_ready() {
+    async fn submit_fails_when_not_ready() {
         let svc = PredictionService::new_no_pool();
 
-        let result = svc.create_prediction("test".to_string(), None).await;
+        let result = svc
+            .submit_prediction("test".to_string(), serde_json::json!({}), None)
+            .await;
         assert!(matches!(result, Err(CreatePredictionError::NotReady)));
     }
 
@@ -678,7 +826,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_prediction_succeeds_when_ready() {
+    async fn submit_prediction_succeeds_when_ready() {
         let svc = PredictionService::new_no_pool();
         let pool = create_test_pool(1).await;
         let orchestrator = Arc::new(MockOrchestrator::new());
@@ -686,15 +834,17 @@ mod tests {
         svc.set_orchestrator(pool, orchestrator).await;
         svc.set_health(Health::Ready).await;
 
-        let unregistered_slot = svc.create_prediction("test-1".to_string(), None).await;
-        assert!(unregistered_slot.is_ok());
-        let (_idle_rx, slot) = unregistered_slot.unwrap().into_parts();
+        let (handle, _slot) = svc
+            .submit_prediction("test-1".to_string(), serde_json::json!({}), None)
+            .await
+            .unwrap();
 
-        assert_eq!(slot.id(), "test-1");
+        assert_eq!(handle.id(), "test-1");
+        assert!(svc.prediction_exists("test-1"));
     }
 
     #[tokio::test]
-    async fn create_prediction_returns_at_capacity_when_no_slots() {
+    async fn submit_returns_at_capacity_when_no_slots() {
         let svc = PredictionService::new_no_pool();
         let pool = create_test_pool(1).await;
         let orchestrator = Arc::new(MockOrchestrator::new());
@@ -703,13 +853,15 @@ mod tests {
         svc.set_health(Health::Ready).await;
 
         // First prediction takes the only slot
-        let _slot1 = svc
-            .create_prediction("test-1".to_string(), None)
+        let (_handle1, _slot1) = svc
+            .submit_prediction("test-1".to_string(), serde_json::json!({}), None)
             .await
             .unwrap();
 
         // Second should fail with AtCapacity
-        let result = svc.create_prediction("test-2".to_string(), None).await;
+        let result = svc
+            .submit_prediction("test-2".to_string(), serde_json::json!({}), None)
+            .await;
         assert!(matches!(result, Err(CreatePredictionError::AtCapacity)));
     }
 
@@ -723,13 +875,18 @@ mod tests {
         svc.set_orchestrator(pool, orchestrator).await;
         svc.set_health(Health::Ready).await;
 
-        let unregistered_slot = svc
-            .create_prediction("test-1".to_string(), None)
+        let (_handle, slot) = svc
+            .submit_prediction(
+                "test-1".to_string(),
+                serde_json::json!({"prompt": "hello"}),
+                None,
+            )
             .await
             .unwrap();
-        let input = serde_json::json!({"prompt": "hello"});
 
-        let result = svc.predict(unregistered_slot, input).await;
+        let result = svc
+            .predict(slot, serde_json::json!({"prompt": "hello"}))
+            .await;
 
         // MockOrchestrator completes immediately with success
         assert!(result.is_ok(), "predict failed: {:?}", result.err());
@@ -751,8 +908,8 @@ mod tests {
         assert_eq!(health.available_slots, 1);
 
         // After acquiring slot
-        let _slot = svc
-            .create_prediction("test-1".to_string(), None)
+        let (_handle, _slot) = svc
+            .submit_prediction("test-1".to_string(), serde_json::json!({}), None)
             .await
             .unwrap();
         let health = svc.health().await;
@@ -770,13 +927,18 @@ mod tests {
         svc.set_orchestrator(Arc::clone(&pool), orchestrator).await;
         svc.set_health(Health::Ready).await;
 
-        let unregistered_slot = svc
-            .create_prediction("test-1".to_string(), None)
+        let (_handle, slot) = svc
+            .submit_prediction(
+                "test-1".to_string(),
+                serde_json::json!({"prompt": "hello"}),
+                None,
+            )
             .await
             .unwrap();
-        let input = serde_json::json!({"prompt": "hello"});
 
-        let result = svc.predict(unregistered_slot, input).await;
+        let result = svc
+            .predict(slot, serde_json::json!({"prompt": "hello"}))
+            .await;
         assert!(result.is_ok(), "predict failed: {:?}", result.err());
 
         tokio::time::timeout(Duration::from_secs(1), async {
@@ -800,13 +962,18 @@ mod tests {
         svc.set_orchestrator(Arc::clone(&pool), orchestrator).await;
         svc.set_health(Health::Ready).await;
 
-        let unregistered_slot = svc
-            .create_prediction("test-1".to_string(), None)
+        let (_handle, slot) = svc
+            .submit_prediction(
+                "test-1".to_string(),
+                serde_json::json!({"prompt": "hello"}),
+                None,
+            )
             .await
             .unwrap();
-        let input = serde_json::json!({"prompt": "hello"});
 
-        let result = svc.predict(unregistered_slot, input).await;
+        let result = svc
+            .predict(slot, serde_json::json!({"prompt": "hello"}))
+            .await;
         assert!(result.is_ok(), "predict failed: {:?}", result.err());
 
         tokio::time::timeout(Duration::from_secs(1), async {
@@ -830,15 +997,113 @@ mod tests {
         svc.set_orchestrator(Arc::clone(&pool), orchestrator).await;
         svc.set_health(Health::Ready).await;
 
-        let unregistered_slot = svc
-            .create_prediction("test-1".to_string(), None)
+        let (_handle, slot) = svc
+            .submit_prediction(
+                "test-1".to_string(),
+                serde_json::json!({"prompt": "hello"}),
+                None,
+            )
             .await
             .unwrap();
-        let input = serde_json::json!({"prompt": "hello"});
 
-        let result = svc.predict(unregistered_slot, input).await;
+        let result = svc
+            .predict(slot, serde_json::json!({"prompt": "hello"}))
+            .await;
         assert!(matches!(result, Err(PredictionError::Failed(_))));
         assert!(pool.is_poisoned(slot_id));
         assert!(pool.try_acquire().is_none());
+    }
+
+    #[tokio::test]
+    async fn cancel_prediction_works() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (handle, _slot) = svc
+            .submit_prediction("test-cancel".to_string(), serde_json::json!({}), None)
+            .await
+            .unwrap();
+
+        let cancel_token = handle.cancel_token();
+        let cancelled = svc.cancel("test-cancel");
+        assert!(cancelled);
+        assert!(cancel_token.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn cancel_nonexistent_returns_false() {
+        let svc = PredictionService::new_no_pool();
+        assert!(!svc.cancel("nonexistent"));
+    }
+
+    #[tokio::test]
+    async fn sync_guard_cancels_on_drop() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (handle, _slot) = svc
+            .submit_prediction("test-guard".to_string(), serde_json::json!({}), None)
+            .await
+            .unwrap();
+
+        let cancel_token = handle.cancel_token();
+
+        {
+            let _guard = handle.sync_guard(Arc::clone(&svc));
+            assert!(!cancel_token.is_cancelled());
+        }
+
+        assert!(cancel_token.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn sync_guard_disarm_prevents_cancel() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (handle, _slot) = svc
+            .submit_prediction("test-disarm".to_string(), serde_json::json!({}), None)
+            .await
+            .unwrap();
+
+        let cancel_token = handle.cancel_token();
+
+        {
+            let mut guard = handle.sync_guard(Arc::clone(&svc));
+            guard.disarm();
+        }
+
+        assert!(!cancel_token.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn remove_prediction_cleans_up() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_handle, _slot) = svc
+            .submit_prediction("test-remove".to_string(), serde_json::json!({}), None)
+            .await
+            .unwrap();
+
+        assert!(svc.prediction_exists("test-remove"));
+        svc.remove_prediction("test-remove");
+        assert!(!svc.prediction_exists("test-remove"));
     }
 }

@@ -8,7 +8,7 @@ use tokio::sync::Notify;
 pub use tokio_util::sync::CancellationToken;
 
 use crate::bridge::protocol::MetricMode;
-use crate::webhook::WebhookSender;
+use crate::webhook::{WebhookEventType, WebhookSender};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredictionStatus {
@@ -119,11 +119,13 @@ impl Prediction {
 
     pub fn set_processing(&mut self) {
         self.status = PredictionStatus::Processing;
+        self.fire_webhook(WebhookEventType::Start);
     }
 
     pub fn set_succeeded(&mut self, output: PredictionOutput) {
         self.status = PredictionStatus::Succeeded;
         self.output = Some(output);
+        self.fire_terminal_webhook();
         // notify_one stores a permit so a future .notified().await will
         // consume it immediately.  notify_waiters only wakes currently-
         // registered waiters and would race with the service task that
@@ -136,11 +138,13 @@ impl Prediction {
     pub fn set_failed(&mut self, error: String) {
         self.status = PredictionStatus::Failed;
         self.error = Some(error);
+        self.fire_terminal_webhook();
         self.completion.notify_one();
     }
 
     pub fn set_canceled(&mut self) {
         self.status = PredictionStatus::Canceled;
+        self.fire_terminal_webhook();
         self.completion.notify_one();
     }
 
@@ -150,6 +154,7 @@ impl Prediction {
 
     pub fn append_log(&mut self, data: &str) {
         self.logs.push_str(data);
+        self.fire_webhook(WebhookEventType::Logs);
     }
 
     pub fn logs(&self) -> &str {
@@ -282,6 +287,7 @@ impl Prediction {
 
     pub fn append_output(&mut self, output: serde_json::Value) {
         self.outputs.push(output);
+        self.fire_webhook(WebhookEventType::Output);
     }
 
     pub fn outputs(&self) -> &[serde_json::Value] {
@@ -314,6 +320,71 @@ impl Prediction {
     /// Take the webhook sender (for sending on drop).
     pub fn take_webhook(&mut self) -> Option<WebhookSender> {
         self.webhook.take()
+    }
+
+    /// Fire a non-terminal webhook (throttled, fire-and-forget).
+    ///
+    /// Builds the current state as a JSON payload and sends it via the
+    /// stored WebhookSender. Spawns a tokio task — does not block.
+    fn fire_webhook(&self, event: WebhookEventType) {
+        if let Some(ref webhook) = self.webhook {
+            let payload = self.build_webhook_payload();
+            webhook.send(event, &payload);
+        }
+    }
+
+    /// Fire the terminal webhook and consume the WebhookSender.
+    ///
+    /// Takes ownership of the webhook sender so it can only fire once.
+    /// Spawns a tokio task with retry logic for reliability.
+    fn fire_terminal_webhook(&mut self) {
+        if let Some(webhook) = self.webhook.take() {
+            let payload = self.build_webhook_payload();
+            tokio::spawn(async move {
+                webhook
+                    .send_terminal(WebhookEventType::Completed, &payload)
+                    .await;
+            });
+        }
+    }
+
+    /// Build webhook payload with current prediction state.
+    ///
+    /// Includes id, status, logs, output (if set), error (if set), and
+    /// metrics (user metrics + predict_time on terminal states).
+    fn build_webhook_payload(&self) -> serde_json::Value {
+        let mut payload = serde_json::json!({
+            "id": self.id,
+            "status": self.status.as_str(),
+            "logs": self.logs,
+        });
+
+        // Include output: use final output if set (terminal), otherwise
+        // include accumulated streaming outputs for intermediate webhooks.
+        if let Some(ref output) = self.output {
+            payload["output"] = serde_json::json!(output);
+        } else if !self.outputs.is_empty() {
+            payload["output"] = serde_json::json!(self.outputs);
+        }
+
+        if let Some(ref error) = self.error {
+            payload["error"] = serde_json::Value::String(error.clone());
+        }
+
+        // Include metrics: always include user metrics, add predict_time on terminal
+        if !self.metrics.is_empty() || self.status.is_terminal() {
+            let mut metrics_obj = serde_json::Map::new();
+            for (k, v) in &self.metrics {
+                metrics_obj.insert(k.clone(), v.clone());
+            }
+            if self.status.is_terminal() {
+                let predict_time = self.elapsed().as_secs_f64();
+                metrics_obj.insert("predict_time".to_string(), serde_json::json!(predict_time));
+            }
+            payload["metrics"] = serde_json::Value::Object(metrics_obj);
+        }
+
+        payload
     }
 
     /// Build merged metrics object: user metrics + system metrics (predict_time).

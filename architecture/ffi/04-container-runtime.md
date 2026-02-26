@@ -27,14 +27,13 @@ The FFI runtime provides significant improvements over the legacy Python runtime
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                            PredictionService                                     │
 │  ┌────────────────────────────────────────────────────────────────────────────┐ │
-│  │                        PredictionSupervisor (DashMap)                      │ │
+│  │                    Active Predictions (DashMap)                            │ │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │ │
-│  │  │ PredictionEntry │  │ PredictionEntry │  │ PredictionEntry │  ...       │ │
+│  │  �� PredictionEntry │  │ PredictionEntry │  │ PredictionEntry │  ...       │ │
 │  │  │ ─────────────── │  │ ─────────────── │  │ ─────────────── │            │ │
-│  │  │ state           │  │ state           │  │ state           │            │ │
+│  │  │ prediction (Arc)│  │ prediction (Arc)│  │ prediction (Arc)│            │ │
 │  │  │ cancel_token    │  │ cancel_token    │  │ cancel_token    │            │ │
-│  │  │ webhook         │  │ webhook         │  │ webhook         │            │ │
-│  │  │ completion      │  │ completion      │  │ completion      │            │ │
+│  │  │ input           │  │ input           │  │ input           │            │ │
 │  │  └─────────────────┘  └─────────────────┘  └─────────────────┘            │ │
 │  └────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                  │
@@ -75,20 +74,30 @@ The FFI runtime uses clear ownership patterns to manage prediction lifecycle:
 ═══════════════════════════════════════════════════════════════════════════════════
                            COMPONENT OWNERSHIP
 ═══════════════════════════════════════════════════════════════════════════════════
-  PredictionSupervisor (DashMap - lock-free concurrent access)
-  ├── owns: prediction state (id, status, input, output, logs, error, timestamps)
-  ├── owns: webhook sender (sends terminal webhook, then cleans up entry)
+  PredictionService (single owner of prediction state)
+  ├── owns: DashMap<String, PredictionEntry> (active predictions)
+  ├── owns: OrchestratorState (pool + orchestrator handle)
+  ├── owns: health, setup_result, schema
+  └── method: cancel() fires token + delegates to orchestrator
+
+  PredictionEntry (in DashMap)
+  ├── has: Arc<Mutex<Prediction>> (the real state — single source of truth)
+  ├── has: CancellationToken
+  └── has: input (for API responses)
+
+  Prediction (state machine — webhooks fire from mutation methods)
+  ├── owns: status, logs, outputs, output, error, metrics
+  ├── owns: WebhookSender (fires on set_processing, append_log, etc.)
   └── owns: completion notifier (for waiting on result)
 
   PredictionSlot (RAII container)
-  ├── owns: Prediction (logs, outputs from worker event loop)
+  ├── owns: Arc<Mutex<Prediction>> (shared with DashMap entry)
   ├── owns: Permit (concurrency token, returns to pool on drop)
   └── Drop: marks permit idle, releases back to pool
 
   PredictionHandle (returned to route handler)
-  ├── has: reference to supervisor (for state queries)
-  ├── has: completion notifier clone (for waiting)
-  └── method: sync_guard() → SyncPredictionGuard (cancels on drop)
+  ├── has: CancellationToken clone
+  └── method: sync_guard(service) → SyncPredictionGuard (cancels on drop)
 
   Cancellation (via OrchestratorHandle)
   ├── Sync predictors: ControlRequest::Cancel → SIGUSR1 → KeyboardInterrupt
@@ -165,22 +174,19 @@ The health-check endpoint always returns HTTP 200 with the status in the JSON bo
 sequenceDiagram
     participant Client
     participant Routes
-    participant Supervisor
+    participant Service
     participant Worker
     
     Client->>Routes: POST /predictions
-    Routes->>Supervisor: submit(id, input)
-    Supervisor-->>Routes: PredictionHandle
+    Routes->>Service: submit_prediction(id, input, webhook)
+    Service-->>Routes: PredictionHandle + slot
     
-    Routes->>Routes: acquire permit
     Note over Routes: SyncPredictionGuard held<br/>(cancels on connection drop)
     
-    Routes->>Worker: predict(slot, input)
-    Worker-->>Routes: result
-    
-    Routes->>Supervisor: update_status(terminal)
-    Supervisor->>Supervisor: send webhook
-    Supervisor->>Supervisor: cleanup entry
+    Routes->>Service: predict(slot, input)
+    Service->>Worker: predict(slot, input)
+    Worker-->>Service: result
+    Note over Service: Prediction.set_succeeded() fires webhook
     
     Routes-->>Client: 200 {output}
 ```
@@ -193,25 +199,24 @@ sequenceDiagram
 sequenceDiagram
     participant Client
     participant Routes
-    participant Supervisor
+    participant Service
     participant Worker
     
     Client->>Routes: POST + respond-async
-    Routes->>Supervisor: submit(id, input)
-    Supervisor-->>Routes: PredictionHandle
+    Routes->>Service: submit_prediction(id, input, webhook)
+    Service-->>Routes: PredictionHandle + slot
     
     Routes-->>Client: 202 {status: "starting"}
     
     Note over Routes,Worker: spawned task continues independently
     
     par Background Task
-        Routes->>Worker: predict(slot, input)
-        Worker-->>Routes: result
-        Routes->>Supervisor: update_status(result)
-        Supervisor->>Supervisor: webhook + cleanup
+        Service->>Worker: predict(slot, input)
+        Worker-->>Service: result
+        Note over Service: Prediction mutations fire webhooks automatically
     end
     
-    Supervisor-->>Client: webhook (completed)
+    Service-->>Client: webhook (completed)
 ```
 
 **Key behavior**: No guard is held. The prediction continues even if the client disconnects.
@@ -222,16 +227,16 @@ sequenceDiagram
 sequenceDiagram
     participant Client
     participant Routes
-    participant Supervisor
+    participant Service
     
     Client->>Routes: PUT /predictions/X
-    Routes->>Supervisor: get_state("X")
+    Routes->>Service: get_prediction_response("X")
     
     alt Prediction exists
-        Supervisor-->>Routes: existing state
+        Service-->>Routes: existing state
         Routes-->>Client: 202 + full state
     else Prediction doesn't exist
-        Routes->>Supervisor: submit + run prediction
+        Routes->>Service: submit_prediction + predict
         Routes-->>Client: 202 + starting state
     end
 ```
@@ -242,7 +247,7 @@ sequenceDiagram
 sequenceDiagram
     participant Client
     participant Routes
-    participant Supervisor
+    participant Service
     participant Worker
     
     Client->>Routes: POST /predictions
@@ -252,9 +257,9 @@ sequenceDiagram
     Client-xRoutes: ✕ connection drops
     
     Note over Routes: guard.drop()
-    Routes->>Supervisor: cancel_token.cancel()
-    Supervisor->>Worker: Cancel
-    Worker-->>Supervisor: Cancelled
+    Routes->>Service: cancel(id)
+    Service->>Worker: Cancel
+    Worker-->>Service: Cancelled
 ```
 
 ## File Structure
@@ -262,8 +267,7 @@ sequenceDiagram
 ```
 crates/coglet/src/
 ├── lib.rs                    # Public API exports
-├── service.rs                # PredictionService (orchestrates everything)
-├── supervisor.rs             # PredictionSupervisor (lifecycle + webhooks)
+├── service.rs                # PredictionService (single owner of prediction state)
 ├── prediction.rs             # Prediction state (logs, outputs, status)
 ├── health.rs                 # Health enum + SetupResult
 ├── orchestrator.rs           # Worker subprocess management
@@ -280,7 +284,7 @@ crates/coglet/src/
 │   └── http/
 │       ├── mod.rs
 │       ├── server.rs         # Axum server setup
-│       └── routes.rs         # HTTP handlers (uses supervisor)
+│       └── routes.rs         # HTTP handlers (uses service)
 ├── webhook.rs                # WebhookSender (retry logic, trace context)
 ├── worker.rs                 # run_worker, PredictHandler trait, SetupError
 └── version.rs                # VersionInfo
@@ -322,7 +326,7 @@ How coglet gets invoked when running a Cog container:
 │                              │                                              │
 │                              ▼                                              │
 │   ┌───────────────────────────────────────────────────────────────────┐     │
-│   │  PredictionService + Supervisor                                   │     │
+│   │  PredictionService (state, webhooks, permits)                      │     │
 │   └───────────────────────────────────────────────────────────────────┘     │
 │                              │                                              │
 │                    Unix socket + pipes                                      │
@@ -390,7 +394,7 @@ How coglet gets invoked when running a Cog container:
 | File | Purpose |
 |------|---------|
 | `crates/coglet/src/service.rs` | Main orchestrator: PredictionService |
-| `crates/coglet/src/supervisor.rs` | Prediction lifecycle management |
+| `crates/coglet/src/prediction.rs` | Prediction state machine + webhook firing |
 | `crates/coglet/src/transport/http/routes.rs` | HTTP endpoint handlers |
 | `crates/coglet/src/permit/pool.rs` | Slot-based concurrency control |
 | `crates/coglet/src/orchestrator.rs` | Worker subprocess spawn/management |

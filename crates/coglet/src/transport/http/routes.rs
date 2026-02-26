@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use crate::health::Health;
 use crate::health::{HealthResponse, SetupResult};
-use crate::prediction::PredictionStatus;
 use crate::predictor::PredictionError;
 use crate::service::{CreatePredictionError, HealthSnapshot, PredictionService};
 use crate::version::VersionInfo;
@@ -223,9 +222,8 @@ async fn create_prediction_idempotent(
     }
 
     // Check if prediction with this ID is already in-flight
-    let supervisor = service.supervisor();
-    if let Some(state) = supervisor.get_state(&prediction_id) {
-        return (StatusCode::ACCEPTED, Json(state.to_response()));
+    if let Some(response) = service.get_prediction_response(&prediction_id) {
+        return (StatusCode::ACCEPTED, Json(response));
     }
 
     let respond_async = should_respond_async(&headers);
@@ -307,22 +305,14 @@ async fn create_prediction_with_id(
         trace_context.clone(),
     );
 
-    // Submit to supervisor (tracks lifecycle, owns webhook)
-    let supervisor = service.supervisor();
-    let handle = supervisor.submit(prediction_id.clone(), input.clone(), webhook_sender);
-
-    // Try to create prediction slot (acquires permit, checks health)
-    let unregistered_slot = match service.create_prediction(prediction_id.clone(), None).await {
-        Ok(p) => p,
+    // Submit prediction: creates Prediction, acquires slot, registers in service
+    let (handle, unregistered_slot) = match service
+        .submit_prediction(prediction_id.clone(), input.clone(), webhook_sender)
+        .await
+    {
+        Ok(r) => r,
         Err(CreatePredictionError::NotReady) => {
             let msg = PredictionError::NotReady.to_string();
-            supervisor.update_status(
-                &prediction_id,
-                PredictionStatus::Failed,
-                None,
-                Some(msg.clone()),
-                None,
-            );
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
@@ -332,13 +322,6 @@ async fn create_prediction_with_id(
             );
         }
         Err(CreatePredictionError::AtCapacity) => {
-            supervisor.update_status(
-                &prediction_id,
-                PredictionStatus::Failed,
-                None,
-                Some("At capacity".to_string()),
-                None,
-            );
             return (
                 StatusCode::CONFLICT,
                 Json(serde_json::json!({
@@ -350,53 +333,16 @@ async fn create_prediction_with_id(
     };
 
     let prediction = unregistered_slot.prediction();
-    supervisor.update_status(
-        &prediction_id,
-        PredictionStatus::Processing,
-        None,
-        None,
-        None,
-    );
 
     // Async mode: spawn background task, return immediately
     if respond_async {
         let service_clone = Arc::clone(&service);
-        let supervisor_clone = Arc::clone(supervisor);
         let id_for_cleanup = prediction_id.clone();
         tokio::spawn(async move {
-            let result = service_clone.predict(unregistered_slot, input).await;
-
-            match result {
-                Ok(r) => {
-                    supervisor_clone.update_status(
-                        &id_for_cleanup,
-                        PredictionStatus::Succeeded,
-                        Some(serde_json::json!(r.output)),
-                        None,
-                        Some(r.metrics),
-                    );
-                }
-                Err(PredictionError::Cancelled) => {
-                    supervisor_clone.update_status(
-                        &id_for_cleanup,
-                        PredictionStatus::Canceled,
-                        None,
-                        None,
-                        None,
-                    );
-                }
-                Err(e) => {
-                    supervisor_clone.update_status(
-                        &id_for_cleanup,
-                        PredictionStatus::Failed,
-                        None,
-                        Some(e.to_string()),
-                        None,
-                    );
-                }
-            }
-
-            service_clone.unregister_prediction(&id_for_cleanup);
+            let _result = service_clone.predict(unregistered_slot, input).await;
+            // Prediction state is already updated by predict() internally
+            // (set_succeeded/set_failed/set_canceled fire webhooks automatically)
+            service_clone.remove_prediction(&id_for_cleanup);
         });
 
         return (
@@ -412,47 +358,16 @@ async fn create_prediction_with_id(
     // is NOT tied to the HTTP connection. If the client disconnects, the
     // SyncPredictionGuard fires cancel, but the slot/permit stays alive in the
     // spawned task until the worker acknowledges the cancel.
-    let mut sync_guard = handle.sync_guard();
+    let mut sync_guard = handle.sync_guard(Arc::clone(&service));
 
     let service_bg = Arc::clone(&service);
-    let supervisor_bg = Arc::clone(supervisor);
     let id_bg = prediction_id.clone();
     let result_rx = {
         let (tx, rx) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {
             let result = service_bg.predict(unregistered_slot, input).await;
-
-            match &result {
-                Ok(r) => {
-                    supervisor_bg.update_status(
-                        &id_bg,
-                        PredictionStatus::Succeeded,
-                        Some(serde_json::json!(r.output)),
-                        None,
-                        Some(r.metrics.clone()),
-                    );
-                }
-                Err(PredictionError::Cancelled) => {
-                    supervisor_bg.update_status(
-                        &id_bg,
-                        PredictionStatus::Canceled,
-                        None,
-                        None,
-                        None,
-                    );
-                }
-                Err(e) => {
-                    supervisor_bg.update_status(
-                        &id_bg,
-                        PredictionStatus::Failed,
-                        None,
-                        Some(e.to_string()),
-                        None,
-                    );
-                }
-            }
-
-            service_bg.unregister_prediction(&id_bg);
+            // Prediction state is already updated by predict() internally
+            service_bg.remove_prediction(&id_bg);
             let _ = tx.send(result);
         });
         rx
@@ -636,9 +551,8 @@ async fn create_training_idempotent(
     }
 
     // Idempotent: return existing state if already submitted
-    let supervisor = service.supervisor();
-    if let Some(state) = supervisor.get_state(&training_id) {
-        return (StatusCode::ACCEPTED, Json(state.to_response()));
+    if let Some(response) = service.get_prediction_response(&training_id) {
+        return (StatusCode::ACCEPTED, Json(response));
     }
 
     let respond_async = should_respond_async(&headers);

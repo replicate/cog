@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures::{SinkExt, StreamExt};
+use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
@@ -797,9 +798,20 @@ async fn run_prediction<H: PredictHandler>(
 
     // Run prediction — slot_sender is moved in, dropped when predict returns,
     // which closes the log channel and lets the log forwarder exit.
-    let result = handler
-        .predict(slot_id, prediction_id.clone(), input, slot_sender)
-        .await;
+    //
+    // block_in_place tells tokio this thread will block (Python GIL acquisition),
+    // allowing the runtime to move other tasks (like log_forwarder) to free
+    // threads. Without this, the log forwarder can be work-stolen onto the
+    // same thread as the prediction and starved until predict returns, causing
+    // all logs to arrive in a single batch at prediction end.
+    let result = tokio::task::block_in_place(|| {
+        Handle::current().block_on(handler.predict(
+            slot_id,
+            prediction_id.clone(),
+            input,
+            slot_sender,
+        ))
+    });
     tracing::trace!(%slot_id, %prediction_id, "handler.predict returned");
 
     // Wait for log forwarder

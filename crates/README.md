@@ -159,7 +159,7 @@ crates/
 │       ├── prediction.rs   # Prediction state machine
 │       ├── predictor.rs    # PredictionResult, PredictionError
 │       ├── service.rs      # PredictionService
-│       ├── supervisor.rs   # PredictionSupervisor (state tracking)
+│       ├── webhook.rs      # WebhookSender (retry, trace context)
 │       ├── version.rs      # Version info
 │       ├── webhook.rs      # Webhook sender
 │       ├── orchestrator.rs # Worker lifecycle, event loop (parent)

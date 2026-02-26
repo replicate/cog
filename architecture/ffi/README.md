@@ -27,7 +27,7 @@ Enable this implementation by setting the `USE_COGLET` environment variable when
 ```
 HTTP Server (Rust/Axum)
   ↓
-PredictionService + Supervisor (DashMap)
+PredictionService (state, webhooks, DashMap)
   ↓
 PermitPool (slot-based concurrency)
   ↓
@@ -45,8 +45,7 @@ Predictor (setup/predict)
 
 Primary code location: `crates/coglet/`
 - `src/transport/http/` - Axum HTTP server
-- `src/service.rs` - PredictionService orchestrator
-- `src/supervisor.rs` - Prediction lifecycle management
+- `src/service.rs` - PredictionService (single owner of prediction state)
 - `src/permit/` - Slot-based concurrency control
 - `src/orchestrator.rs` - Worker subprocess management
 - `src/bridge/` - IPC protocol and transport
