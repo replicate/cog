@@ -626,7 +626,8 @@ type uploadSession struct {
 // (COG_PUSH_DEFAULT_CHUNK_SIZE env var or DefaultChunkSize) is only used when
 // the server does not advertise a maximum.
 func (s uploadSession) effectiveChunkSize() int64 {
-	var chunkSize int64
+	var chunkSize = getDefaultChunkSize() // Start with client default as baseline
+
 	if s.ChunkMaxBytes > 0 {
 		// Server advertised a maximum — use it minus a small margin.
 		chunkSize = s.ChunkMaxBytes - chunkSizeMargin
@@ -634,9 +635,6 @@ func (s uploadSession) effectiveChunkSize() int64 {
 			// Degenerate case: margin bigger than max. Use max directly.
 			chunkSize = s.ChunkMaxBytes
 		}
-	} else {
-		// No server limit: fall back to client-configured default.
-		chunkSize = getDefaultChunkSize()
 	}
 
 	// Enforce the server-advertised minimum.
@@ -717,9 +715,11 @@ func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Clie
 	// (minus a small margin). When the server does not advertise a maximum,
 	// the client falls back to COG_PUSH_DEFAULT_CHUNK_SIZE or DefaultChunkSize (96 MiB).
 	// COG_PUSH_MULTIPART_THRESHOLD controls the minimum blob size for multipart upload (default: 128 MiB).
-	multipartThreshold := getMultipartThreshold()
-	chunkSize := session.effectiveChunkSize()
-	location := session.Location
+	var (
+		multipartThreshold = getMultipartThreshold()
+		chunkSize          = session.effectiveChunkSize()
+		location           = session.Location
+	)
 
 	if totalSize > multipartThreshold {
 		finalLocation, newLocation, fallback, err := c.tryMultipartWithFallback(ctx, client, repo, layer, location, totalSize, chunkSize, progressCh)
