@@ -786,6 +786,8 @@ func (c *RegistryClient) tryMultipartUpload(ctx context.Context, client *http.Cl
 
 	// Reuse chunk buffers via pool to reduce memory pressure when pushing
 	// multiple layers concurrently (default concurrency 5 × up to 96 MB each).
+	// No need to zero the buffer before reuse: io.ReadFull overwrites from
+	// index 0, and we slice to buffer[:n] so stale bytes are never sent.
 	var buffer []byte
 	if v, ok := chunkBufPool.Get().(*[]byte); ok && int64(len(*v)) == chunkSize {
 		buffer = *v

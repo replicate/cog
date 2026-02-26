@@ -103,7 +103,6 @@ func (p *ImagePusher) Push(ctx context.Context, artifact *ImageArtifact, opts ..
 }
 
 // canOCIPush returns true if OCI chunked push is enabled.
-// Requires COG_PUSH_OCI=1 and a registry client.
 func (p *ImagePusher) canOCIPush() bool {
 	return os.Getenv("COG_PUSH_OCI") == "1"
 }
@@ -288,8 +287,7 @@ func shouldFallbackToDocker(err error) bool {
 // sanitizeError returns a clean, user-friendly error message.
 //
 // Registry errors from go-containerregistry's transport.Error can contain the
-// entire HTTP response body (e.g., Cloudflare's HTML error pages for 413
-// responses), which produces unreadable terminal output. This function extracts
+// entire HTTP response body which produces unreadable terminal output. This function extracts
 // just the HTTP status code and status text for those cases.
 func sanitizeError(err error) error {
 	var transportErr *transport.Error

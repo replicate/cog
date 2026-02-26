@@ -13,6 +13,7 @@ import (
 const (
 	// DefaultPushConcurrency is the default number of concurrent uploads
 	// for both image layers and weight artifacts.
+	// This matches Docker's default concurrency for layer uploads, which is a reasonable baseline for OCI pushes as well.
 	DefaultPushConcurrency = 5
 
 	// envPushConcurrency is the environment variable that overrides DefaultPushConcurrency.
