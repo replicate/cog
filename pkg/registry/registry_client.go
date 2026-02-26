@@ -3,14 +3,17 @@ package registry
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -25,10 +28,32 @@ import (
 //nolint:staticcheck // ST1012: exported API, renaming would be breaking change
 var NotFoundError = errors.New("image reference not found")
 
-type RegistryClient struct{}
+// chunkBufPool pools byte slices used for multipart chunk reads to avoid
+// re-allocating large buffers (up to ~96 MB each) on every layer upload.
+var chunkBufPool = sync.Pool{} //nolint:gochecknoglobals
+
+type RegistryClient struct {
+	// transport is the HTTP transport used for all registry operations.
+	// Uses HTTP/1.1 only to avoid HTTP/2 head-of-line blocking and stream
+	// errors (RST_STREAM INTERNAL_ERROR) that occur when uploading large
+	// blobs through CDN/proxy edges.
+	transport http.RoundTripper
+}
 
 func NewRegistryClient() Client {
-	return &RegistryClient{}
+	return &RegistryClient{
+		transport: http1OnlyTransport(),
+	}
+}
+
+// remoteOptions returns the common remote.Option set for go-containerregistry calls,
+// including authentication, context, and HTTP/1.1 transport.
+func (c *RegistryClient) remoteOptions(ctx context.Context) []remote.Option {
+	return []remote.Option{
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithTransport(c.transport),
+	}
 }
 
 func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform *Platform) (*ManifestResult, error) {
@@ -37,12 +62,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 		return nil, fmt.Errorf("parsing reference: %w", err)
 	}
 
-	desc, err := remote.Get(ref,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-		// TODO[md]: map platform to remote.WithPlatform if necessary:
-		// remote.WithPlatform(...)
-	)
+	desc, err := remote.Get(ref, c.remoteOptions(ctx)...)
 	if err != nil {
 		if checkError(err, transport.ManifestUnknownErrorCode, transport.NameUnknownErrorCode) {
 			return nil, NotFoundError
@@ -82,7 +102,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 			}
 			// For indexes, pick a default image to get labels from.
 			// Prefer linux/amd64, otherwise use the first manifest.
-			defaultImg, err := pickDefaultImage(ctx, ref, indexManifest)
+			defaultImg, err := pickDefaultImage(ref, indexManifest, c.remoteOptions(ctx)...)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read image config from index: %w", err)
 			}
@@ -154,10 +174,7 @@ func (c *RegistryClient) Inspect(ctx context.Context, imageRef string, platform 
 	if err != nil {
 		return nil, fmt.Errorf("creating digest ref: %w", err)
 	}
-	manifestDesc, err := remote.Get(digestRef,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	manifestDesc, err := remote.Get(digestRef, c.remoteOptions(ctx)...)
 	if err != nil {
 		return nil, fmt.Errorf("fetching platform manifest: %w", err)
 	}
@@ -192,10 +209,7 @@ func (c *RegistryClient) GetImage(ctx context.Context, imageRef string, platform
 		return nil, fmt.Errorf("parsing reference: %w", err)
 	}
 
-	desc, err := remote.Get(ref,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	desc, err := remote.Get(ref, c.remoteOptions(ctx)...)
 	if err != nil {
 		return nil, fmt.Errorf("fetching descriptor: %w", err)
 	}
@@ -250,10 +264,7 @@ func (c *RegistryClient) GetImage(ctx context.Context, imageRef string, platform
 		return nil, fmt.Errorf("creating digest ref: %w", err)
 	}
 
-	manifestDesc, err := remote.Get(digestRef,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	manifestDesc, err := remote.Get(digestRef, c.remoteOptions(ctx)...)
 	if err != nil {
 		return nil, fmt.Errorf("fetching platform manifest: %w", err)
 	}
@@ -269,10 +280,7 @@ func (c *RegistryClient) GetDescriptor(ctx context.Context, imageRef string) (v1
 		return v1.Descriptor{}, fmt.Errorf("parsing reference: %w", err)
 	}
 
-	desc, err := remote.Head(ref,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	desc, err := remote.Head(ref, c.remoteOptions(ctx)...)
 	if err != nil {
 		return v1.Descriptor{}, fmt.Errorf("head request for %s: %w", imageRef, err)
 	}
@@ -313,12 +321,7 @@ func (c *RegistryClient) PushImage(ctx context.Context, ref string, img v1.Image
 		return fmt.Errorf("parsing reference: %w", err)
 	}
 
-	opts := []remote.Option{
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	}
-
-	if err := remote.Write(parsedRef, img, opts...); err != nil {
+	if err := remote.Write(parsedRef, img, c.remoteOptions(ctx)...); err != nil {
 		return fmt.Errorf("pushing image %s: %w", ref, err)
 	}
 
@@ -332,20 +335,38 @@ func (c *RegistryClient) PushIndex(ctx context.Context, ref string, idx v1.Image
 		return fmt.Errorf("parsing reference: %w", err)
 	}
 
-	opts := []remote.Option{
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	}
-
 	// Use remote.Put instead of remote.WriteIndex because all child manifests
 	// (image + weights) are already pushed to the registry. WriteIndex would
 	// try to recursively resolve and push children via idx.Image(), which fails
 	// for our descriptor-only index. Put just writes the index manifest.
-	if err := remote.Put(parsedRef, idx, opts...); err != nil {
+	if err := remote.Put(parsedRef, idx, c.remoteOptions(ctx)...); err != nil {
 		return fmt.Errorf("pushing index %s: %w", ref, err)
 	}
 
 	return nil
+}
+
+// http1OnlyTransport returns an http.Transport that only speaks HTTP/1.1.
+// HTTP/2 is avoided for all registry operations because high-throughput uploads
+// suffer from head-of-line blocking and stream errors (RST_STREAM INTERNAL_ERROR)
+// when pushed through CDN/proxy edges. Multiple concurrent HTTP/1.1 connections
+// outperform a single multiplexed HTTP/2 connection for large blob uploads.
+func http1OnlyTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.TLSClientConfig = tlsConfigHTTP1Only(t.TLSClientConfig)
+	// ForceAttemptHTTP2 is true by default on cloned transports; disable it.
+	t.ForceAttemptHTTP2 = false
+	return t
+}
+
+// tlsConfigHTTP1Only returns a TLS config that only advertises HTTP/1.1 via ALPN.
+func tlsConfigHTTP1Only(base *tls.Config) *tls.Config {
+	if base == nil {
+		base = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	cfg := base.Clone()
+	cfg.NextProtos = []string{"http/1.1"}
+	return cfg
 }
 
 // DefaultRetryBackoff returns the default retry backoff configuration for weight pushes.
@@ -461,11 +482,10 @@ func (c *RegistryClient) WriteLayer(ctx context.Context, opts WriteLayerOptions)
 			break
 		}
 
-		// Calculate next delay with jitter
+		// Calculate next delay with randomized jitter to avoid thundering herd
 		nextDelay := currentDelay
 		if backoff.Jitter > 0 {
-			// Simple jitter: add up to jitter% of the delay
-			jitterAmount := time.Duration(float64(currentDelay) * backoff.Jitter)
+			jitterAmount := time.Duration(float64(currentDelay) * backoff.Jitter * rand.Float64()) //nolint:gosec
 			nextDelay = currentDelay + jitterAmount
 		}
 
@@ -519,7 +539,7 @@ func (c *RegistryClient) writeLayerMultipart(ctx context.Context, repo name.Repo
 	}
 
 	scopes := []string{repo.Scope(transport.PushScope)}
-	tr, err := transport.NewWithContext(ctx, repo.Registry, auth, http.DefaultTransport, scopes)
+	tr, err := transport.NewWithContext(ctx, repo.Registry, auth, c.transport, scopes)
 	if err != nil {
 		return fmt.Errorf("creating transport: %w", err)
 	}
@@ -539,13 +559,13 @@ func (c *RegistryClient) writeLayerMultipart(ctx context.Context, repo name.Repo
 	}
 
 	// Initiate upload
-	location, err := c.initiateUpload(ctx, client, repo)
+	session, err := c.initiateUpload(ctx, client, repo)
 	if err != nil {
 		return fmt.Errorf("initiating upload: %w", err)
 	}
 
 	// Upload the blob in chunks
-	finalLocation, err := c.uploadBlobChunks(ctx, client, repo, opts.Layer, location, size, opts.ProgressCh)
+	finalLocation, err := c.uploadBlobChunks(ctx, client, repo, opts.Layer, session, size, opts.ProgressCh)
 	if err != nil {
 		return fmt.Errorf("uploading blob chunks: %w", err)
 	}
@@ -585,8 +605,49 @@ func (c *RegistryClient) checkBlobExists(ctx context.Context, client *http.Clien
 	return resp.StatusCode == http.StatusOK, nil
 }
 
-// initiateUpload initiates a blob upload and returns the upload location URL.
-func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client, repo name.Repository) (string, error) {
+// uploadSession holds the result of initiating a blob upload, including the
+// upload location URL and any server-advertised chunk size constraints.
+type uploadSession struct {
+	// Location is the URL to which blob data should be uploaded.
+	Location string
+	// ChunkMinBytes is the minimum chunk size the server accepts (from OCI-Chunk-Min-Length).
+	// Zero means the server did not advertise a minimum.
+	ChunkMinBytes int64
+	// ChunkMaxBytes is the maximum chunk size the server accepts (from OCI-Chunk-Max-Length).
+	// Zero means the server did not advertise a maximum.
+	ChunkMaxBytes int64
+}
+
+// effectiveChunkSize returns the chunk size to use for uploads.
+// The server-advertised OCI-Chunk-Max-Length always takes precedence: when
+// present, we use (max - margin) to stay safely under the limit regardless
+// of any client-side configuration. The result is also clamped to be at least
+// OCI-Chunk-Min-Length when the server advertises one. The client default
+// (COG_PUSH_DEFAULT_CHUNK_SIZE env var or DefaultChunkSize) is only used when
+// the server does not advertise a maximum.
+func (s uploadSession) effectiveChunkSize() int64 {
+	var chunkSize = getDefaultChunkSize() // Start with client default as baseline
+
+	if s.ChunkMaxBytes > 0 {
+		// Server advertised a maximum — use it minus a small margin.
+		chunkSize = s.ChunkMaxBytes - chunkSizeMargin
+		if chunkSize <= 0 {
+			// Degenerate case: margin bigger than max. Use max directly.
+			chunkSize = s.ChunkMaxBytes
+		}
+	}
+
+	// Enforce the server-advertised minimum.
+	if s.ChunkMinBytes > 0 && chunkSize < s.ChunkMinBytes {
+		chunkSize = s.ChunkMinBytes
+	}
+
+	return chunkSize
+}
+
+// initiateUpload initiates a blob upload and returns an uploadSession containing
+// the upload location URL and server-advertised chunk size limits.
+func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client, repo name.Repository) (uploadSession, error) {
 	u := url.URL{
 		Scheme: repo.Scheme(),
 		Host:   repo.RegistryStr(),
@@ -595,29 +656,29 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
 	if err != nil {
-		return "", err
+		return uploadSession{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return uploadSession{}, err
 	}
 	defer resp.Body.Close()
 
 	if err := transport.CheckError(resp, http.StatusAccepted); err != nil {
-		return "", err
+		return uploadSession{}, err
 	}
 
 	loc := resp.Header.Get("Location")
 	if loc == "" {
-		return "", errors.New("missing Location header in initiate upload response")
+		return uploadSession{}, errors.New("missing Location header in initiate upload response")
 	}
 
 	// Resolve relative URLs
 	locURL, err := url.Parse(loc)
 	if err != nil {
-		return "", fmt.Errorf("parsing location URL: %w", err)
+		return uploadSession{}, fmt.Errorf("parsing location URL: %w", err)
 	}
 
 	baseURL := url.URL{
@@ -625,18 +686,40 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 		Host:   repo.RegistryStr(),
 	}
 
-	return baseURL.ResolveReference(locURL).String(), nil
+	session := uploadSession{
+		Location: baseURL.ResolveReference(locURL).String(),
+	}
+
+	// Parse OCI chunk size headers if the registry advertises them.
+	if v := resp.Header.Get("OCI-Chunk-Min-Length"); v != "" {
+		if n, parseErr := strconv.ParseInt(v, 10, 64); parseErr == nil && n > 0 {
+			session.ChunkMinBytes = n
+		}
+	}
+	if v := resp.Header.Get("OCI-Chunk-Max-Length"); v != "" {
+		if n, parseErr := strconv.ParseInt(v, 10, 64); parseErr == nil && n > 0 {
+			session.ChunkMaxBytes = n
+		}
+	}
+
+	return session, nil
 }
 
 // uploadBlobChunks uploads a blob using either multipart or single-part upload depending on server support.
 // The repo parameter is needed to restart the upload session if multipart fails.
+// The session carries the upload location and any server-advertised chunk size limits
+// (OCI-Chunk-Min-Length / OCI-Chunk-Max-Length).
 // Returns the final upload location URL which must be used for committing the upload.
-func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, location string, totalSize int64, progressCh chan<- v1.Update) (string, error) {
-	// Multipart upload settings:
-	// - Threshold: Use multipart only for blobs larger than 50MB (avoids MPU overhead for smaller files)
-	// - Chunk size: 256MB per chunk (large chunks reduce HTTP round-trips for multi-GB weight files)
-	const multipartThreshold = 50 * 1024 * 1024
-	const chunkSize = 256 * 1024 * 1024
+func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, session uploadSession, totalSize int64, progressCh chan<- v1.Update) (string, error) {
+	// The chunk size is determined by the server's OCI-Chunk-Max-Length header
+	// (minus a small margin). When the server does not advertise a maximum,
+	// the client falls back to COG_PUSH_DEFAULT_CHUNK_SIZE or DefaultChunkSize (96 MiB).
+	// COG_PUSH_MULTIPART_THRESHOLD controls the minimum blob size for multipart upload (default: 128 MiB).
+	var (
+		multipartThreshold = getMultipartThreshold()
+		chunkSize          = session.effectiveChunkSize()
+		location           = session.Location
+	)
 
 	if totalSize > multipartThreshold {
 		finalLocation, newLocation, fallback, err := c.tryMultipartWithFallback(ctx, client, repo, layer, location, totalSize, chunkSize, progressCh)
@@ -686,11 +769,11 @@ func (c *RegistryClient) tryMultipartWithFallback(ctx context.Context, client *h
 	if errors.As(err, &transportErr) && (transportErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
 		transportErr.StatusCode == http.StatusBadRequest) {
 		// Multipart not supported - restart upload session for single-part fallback
-		newLocation, err = c.initiateUpload(ctx, client, repo)
+		newSession, err := c.initiateUpload(ctx, client, repo)
 		if err != nil {
 			return "", "", false, fmt.Errorf("restarting upload after multipart failure: %w", err)
 		}
-		return "", newLocation, true, nil
+		return "", newSession.Location, true, nil
 	}
 
 	return "", "", false, err
@@ -700,7 +783,19 @@ func (c *RegistryClient) tryMultipartWithFallback(ctx context.Context, client *h
 // Returns the final location or an error.
 func (c *RegistryClient) tryMultipartUpload(ctx context.Context, client *http.Client, location string, blob io.Reader, totalSize int64, chunkSize int64, progressCh chan<- v1.Update) (string, error) {
 	var uploaded int64
-	buffer := make([]byte, chunkSize)
+
+	// Reuse chunk buffers via pool to reduce memory pressure when pushing
+	// multiple layers concurrently (default concurrency 5 × up to 96 MB each).
+	// No need to zero the buffer before reuse: io.ReadFull overwrites from
+	// index 0, and we slice to buffer[:n] so stale bytes are never sent.
+	var buffer []byte
+	if v, ok := chunkBufPool.Get().(*[]byte); ok && int64(len(*v)) == chunkSize {
+		buffer = *v
+	} else {
+		buffer = make([]byte, chunkSize)
+	}
+	defer func() { chunkBufPool.Put(&buffer) }()
+
 	currentLocation := location
 
 	for uploaded < totalSize {
@@ -905,7 +1000,7 @@ func (c *RegistryClient) commitUpload(ctx context.Context, client *http.Client, 
 // pickDefaultImage selects an image from a manifest index to use for fetching labels.
 // Prefers linux/amd64, otherwise returns the first image manifest.
 // Returns an error if no suitable image is found or if fetching fails.
-func pickDefaultImage(ctx context.Context, ref name.Reference, idx *v1.IndexManifest) (v1.Image, error) {
+func pickDefaultImage(ref name.Reference, idx *v1.IndexManifest, opts ...remote.Option) (v1.Image, error) {
 	var targetDigest string
 
 	// First, look for linux/amd64
@@ -930,10 +1025,7 @@ func pickDefaultImage(ctx context.Context, ref name.Reference, idx *v1.IndexMani
 		return nil, fmt.Errorf("failed to create digest reference: %w", err)
 	}
 
-	desc, err := remote.Get(digestRef,
-		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-	)
+	desc, err := remote.Get(digestRef, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch image %s: %w", digestRef.String(), err)
 	}

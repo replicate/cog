@@ -237,7 +237,7 @@ func TestWeightPusher_Push_ReportsProgressViaWriteLayer(t *testing.T) {
 	// Track progress updates received via callback
 	var (
 		mu       sync.Mutex
-		progress []WeightPushProgress
+		progress []PushProgress
 	)
 
 	// Mock WriteLayer to simulate progress updates (caller owns closing the channel)
@@ -257,7 +257,7 @@ func TestWeightPusher_Push_ReportsProgressViaWriteLayer(t *testing.T) {
 
 	pusher := NewWeightPusher(reg)
 	result, err := pusher.Push(context.Background(), "r8.im/user/model", artifact, WeightPushOptions{
-		ProgressFn: func(p WeightPushProgress) {
+		ProgressFn: func(p PushProgress) {
 			mu.Lock()
 			defer mu.Unlock()
 			progress = append(progress, p)

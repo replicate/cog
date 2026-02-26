@@ -30,7 +30,7 @@ func TestDefaultFactory_ReturnsDockerfileFactory(t *testing.T) {
 	docker := dockertest.NewMockCommand()
 	registry := registrytest.NewMockRegistryClient()
 
-	factory := DefaultFactory(docker, registry)
+	factory := defaultFactory(docker, registry)
 
 	require.Equal(t, "dockerfile", factory.Name())
 }

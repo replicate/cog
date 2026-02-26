@@ -76,17 +76,19 @@ func WithPlatform(p *registry.Platform) Option {
 
 // Resolver orchestrates building and loading Models.
 type Resolver struct {
-	docker   command.Command
-	registry registry.Client
-	factory  Factory
+	docker      command.Command
+	registry    registry.Client
+	factory     Factory
+	imagePusher *ImagePusher
 }
 
 // NewResolver creates a Resolver with the default factory.
 func NewResolver(docker command.Command, reg registry.Client) *Resolver {
 	return &Resolver{
-		docker:   docker,
-		registry: reg,
-		factory:  DefaultFactory(docker, reg),
+		docker:      docker,
+		registry:    reg,
+		factory:     defaultFactory(docker, reg),
+		imagePusher: newImagePusher(docker, reg),
 	}
 }
 
@@ -263,16 +265,29 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 }
 
 // Push pushes a Model to a container registry.
-// TODO(md): The OCIIndex gate is temporary. When true, pushes an OCI Image Index
-// with weight artifacts. When false, does a plain docker push. Remove the gate
-// once index pushes are validated with all registries.
+//
+// Uses the OCI chunked push path (via ImagePusher) which bypasses Docker's
+// monolithic push and supports layers of any size through chunked uploads.
+// Falls back to legacy Docker push if OCI push is not available.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 	if m.OCIIndex {
 		pusher := NewBundlePusher(r.docker, r.registry)
 		return pusher.Push(ctx, m, opts)
 	}
-	pusher := NewImagePusher(r.docker)
-	return pusher.Push(ctx, m, opts)
+
+	imgArtifact := m.GetImageArtifact()
+	if imgArtifact == nil {
+		return fmt.Errorf("no image artifact in model")
+	}
+
+	var imagePushOpts []ImagePushOption
+	if opts.ImageProgressFn != nil {
+		imagePushOpts = append(imagePushOpts, WithProgressFn(opts.ImageProgressFn))
+	}
+	if opts.OnFallback != nil {
+		imagePushOpts = append(imagePushOpts, WithOnFallback(opts.OnFallback))
+	}
+	return r.imagePusher.Push(ctx, imgArtifact, imagePushOpts...)
 }
 
 // loadLocal loads a Model from the local docker daemon.

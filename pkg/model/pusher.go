@@ -4,19 +4,14 @@ package model
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
 )
-
-// Pusher handles pushing a model to a registry.
-type Pusher interface {
-	Push(ctx context.Context, m *Model, opts PushOptions) error
-}
 
 // PushOptions configures push behavior.
 type PushOptions struct {
@@ -33,6 +28,16 @@ type PushOptions struct {
 	// Platform specifies the target platform for bundle indexes.
 	// Default: linux/amd64
 	Platform *Platform
+
+	// ImageProgressFn is an optional callback for reporting per-layer upload progress
+	// during OCI chunked image push. Each call includes the layer digest, bytes
+	// completed, and total bytes.
+	ImageProgressFn func(PushProgress)
+
+	// OnFallback is called when OCI push fails and the push is about to fall
+	// back to Docker push. This allows the caller to clean up any OCI-specific
+	// progress display before Docker push starts its own output.
+	OnFallback func()
 }
 
 // =============================================================================
@@ -48,10 +53,13 @@ type BundlePusher struct {
 	registry     registry.Client
 }
 
-// NewBundlePusher creates a new BundlePusher.
+// NewBundlePusher creates a new BundlePusher from docker and registry clients.
+// Both sub-pushers (image and weight) are created internally to keep
+// construction unified — callers don't need to know about ImagePusher or
+// WeightPusher directly.
 func NewBundlePusher(docker command.Command, reg registry.Client) *BundlePusher {
 	return &BundlePusher{
-		imagePusher:  NewImagePusher(docker),
+		imagePusher:  newImagePusher(docker, reg),
 		weightPusher: NewWeightPusher(reg),
 		registry:     reg,
 	}
@@ -71,8 +79,15 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	// Derive repo from image reference (strip tag/digest for weight pushes)
 	repo := repoFromReference(imgArtifact.Reference)
 
-	// 1. Push image via docker
-	if err := p.imagePusher.PushArtifact(ctx, imgArtifact); err != nil {
+	// 1. Push image via OCI chunked push (falls back to Docker push on error)
+	var imagePushOpts []ImagePushOption
+	if opts.ImageProgressFn != nil {
+		imagePushOpts = append(imagePushOpts, WithProgressFn(opts.ImageProgressFn))
+	}
+	if opts.OnFallback != nil {
+		imagePushOpts = append(imagePushOpts, WithOnFallback(opts.OnFallback))
+	}
+	if err := p.imagePusher.Push(ctx, imgArtifact, imagePushOpts...); err != nil {
 		return fmt.Errorf("push image %q: %w", imgArtifact.Reference, err)
 	}
 
@@ -85,7 +100,7 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	// 3. Push weight artifacts concurrently (if any)
 	var weightResults []*WeightPushResult
 	if len(weightArtifacts) > 0 {
-		weightResults, err = p.pushWeightsConcurrently(ctx, repo, weightArtifacts)
+		weightResults, err = p.pushWeights(ctx, repo, weightArtifacts)
 		if err != nil {
 			return err
 		}
@@ -121,50 +136,28 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	return nil
 }
 
-// pushWeightsConcurrently pushes all weight artifacts and returns their results.
+// pushWeights pushes all weight artifacts concurrently (bounded by GetPushConcurrency)
+// and returns their results in the same order as the input slice.
 // If any weight push fails, remaining pushes are canceled and the first error is returned.
-func (p *BundlePusher) pushWeightsConcurrently(ctx context.Context, repo string, weights []*WeightArtifact) ([]*WeightPushResult, error) {
-	// Create cancellable context so we can stop remaining pushes on first error
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+func (p *BundlePusher) pushWeights(ctx context.Context, repo string, weights []*WeightArtifact) ([]*WeightPushResult, error) {
+	ordered := make([]*WeightPushResult, len(weights))
 
-	type indexedResult struct {
-		index  int
-		result *WeightPushResult
-		err    error
-	}
-
-	results := make(chan indexedResult, len(weights))
-	var wg sync.WaitGroup
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(GetPushConcurrency())
 
 	for i, wa := range weights {
-		wg.Add(1)
-		go func(idx int, artifact *WeightArtifact) {
-			defer wg.Done()
-			result, err := p.weightPusher.Push(ctx, repo, artifact)
-			results <- indexedResult{index: idx, result: result, err: err}
-		}(i, wa)
+		g.Go(func() error {
+			result, err := p.weightPusher.Push(ctx, repo, wa)
+			if err != nil {
+				return fmt.Errorf("push weight %q: %w", wa.Name(), err)
+			}
+			ordered[i] = result
+			return nil
+		})
 	}
 
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Drain all results, canceling on first error
-	ordered := make([]*WeightPushResult, len(weights))
-	var firstErr error
-	for r := range results {
-		if r.err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("push weight %q: %w", weights[r.index].Name(), r.err)
-			cancel() // Signal remaining goroutines to stop
-		}
-		if r.err == nil {
-			ordered[r.index] = r.result
-		}
-	}
-	if firstErr != nil {
-		return nil, firstErr
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	return ordered, nil
