@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -30,7 +29,7 @@ import (
 var NotFoundError = errors.New("image reference not found")
 
 // chunkBufPool pools byte slices used for multipart chunk reads to avoid
-// re-allocating large buffers (up to ~95 MB each) on every layer upload.
+// re-allocating large buffers (up to ~96 MB each) on every layer upload.
 var chunkBufPool = sync.Pool{} //nolint:gochecknoglobals
 
 type RegistryClient struct {
@@ -370,19 +369,6 @@ func tlsConfigHTTP1Only(base *tls.Config) *tls.Config {
 	return cfg
 }
 
-// isHTTP2StreamError checks if the error is an HTTP/2 stream error.
-// These appear as "stream error: stream ID N; ERROR_CODE" from net/http2.
-func isHTTP2StreamError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// net/http2.StreamError is not exported in a stable way, so we match on
-	// the error string. The format is:
-	//   "stream error: stream ID <N>; <CODE>"
-	msg := err.Error()
-	return strings.Contains(msg, "stream error: stream ID")
-}
-
 // DefaultRetryBackoff returns the default retry backoff configuration for weight pushes.
 // It retries 5 times with exponential backoff starting at 2 seconds.
 func DefaultRetryBackoff() remote.Backoff {
@@ -446,11 +432,6 @@ func isRetryableError(err error) bool {
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
 		return dnsErr.Temporary()
-	}
-
-	// Check for HTTP/2 stream errors (RST_STREAM), which are transient.
-	if isHTTP2StreamError(err) {
-		return true
 	}
 
 	return false
@@ -734,8 +715,8 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 func (c *RegistryClient) uploadBlobChunks(ctx context.Context, client *http.Client, repo name.Repository, layer v1.Layer, session uploadSession, totalSize int64, progressCh chan<- v1.Update) (string, error) {
 	// The chunk size is determined by the server's OCI-Chunk-Max-Length header
 	// (minus a small margin). When the server does not advertise a maximum,
-	// the client falls back to COG_PUSH_DEFAULT_CHUNK_SIZE or DefaultChunkSize (95 MiB).
-	// COG_PUSH_MULTIPART_THRESHOLD controls the minimum blob size for multipart upload (default: 50MB).
+	// the client falls back to COG_PUSH_DEFAULT_CHUNK_SIZE or DefaultChunkSize (96 MiB).
+	// COG_PUSH_MULTIPART_THRESHOLD controls the minimum blob size for multipart upload (default: 128 MiB).
 	multipartThreshold := getMultipartThreshold()
 	chunkSize := session.effectiveChunkSize()
 	location := session.Location
@@ -804,7 +785,7 @@ func (c *RegistryClient) tryMultipartUpload(ctx context.Context, client *http.Cl
 	var uploaded int64
 
 	// Reuse chunk buffers via pool to reduce memory pressure when pushing
-	// multiple layers concurrently (default concurrency 4 × up to 95 MB each).
+	// multiple layers concurrently (default concurrency 5 × up to 96 MB each).
 	var buffer []byte
 	if v, ok := chunkBufPool.Get().(*[]byte); ok && int64(len(*v)) == chunkSize {
 		buffer = *v
