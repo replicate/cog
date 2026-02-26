@@ -66,7 +66,7 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	}
 
 	// Semantic validation
-	validatePredict(cfg, result)
+	validateRun(cfg, result)
 	validateTrain(cfg, result)
 	validateBuild(cfg, options, result)
 	validateEnvironment(cfg, result)
@@ -105,18 +105,33 @@ func validateSchema(cfg *configFile) error {
 	return nil
 }
 
-// validatePredict validates the predict field.
-func validatePredict(cfg *configFile, result *ValidationResult) {
-	if cfg.Predict == nil || *cfg.Predict == "" {
+// validateRun validates the run/predict field.
+// Both "run" and "predict" are accepted (predict is the legacy name),
+// but they cannot both be set.
+func validateRun(cfg *configFile, result *ValidationResult) {
+	if cfg.Run != nil && cfg.Predict != nil && *cfg.Run != "" && *cfg.Predict != "" {
+		result.AddError(&ValidationError{
+			Field:   "run",
+			Message: "'run' and 'predict' cannot both be set in cog.yaml; use 'run' (predict is deprecated)",
+		})
 		return
 	}
 
-	predict := *cfg.Predict
-	if len(strings.Split(predict, ".py:")) != 2 {
+	ref := cfg.resolvedRun()
+	if ref == nil || *ref == "" {
+		return
+	}
+
+	field := "run"
+	if cfg.Run == nil {
+		field = "predict"
+	}
+
+	if len(strings.Split(*ref, ".py:")) != 2 {
 		result.AddError(&ValidationError{
-			Field:   "predict",
-			Value:   predict,
-			Message: "must be in the form 'predict.py:Predictor'",
+			Field:   field,
+			Value:   *ref,
+			Message: "must be in the form 'run.py:Runner'",
 		})
 	}
 }

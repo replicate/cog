@@ -63,7 +63,14 @@ class Config:
         env_val = os.environ.get(COG_PREDICT_TYPE_STUB_ENV_VAR)
         if env_val:
             return env_val
-        return self._cog_config.get(str(Mode.PREDICT))
+        run_ref = self._cog_config.get("run")
+        predict_ref = self._cog_config.get("predict")
+        if run_ref and predict_ref:
+            raise ValueError(
+                "cog.yaml contains both 'run' and 'predict' keys. "
+                "Please use only 'run' ('predict' is deprecated)."
+            )
+        return run_ref or predict_ref
 
     @property
     def predictor_train_ref(self) -> Optional[str]:
@@ -93,9 +100,12 @@ class Config:
         elif mode == Mode.TRAIN:
             predictor_ref = self.predictor_train_ref
         if predictor_ref is None:
-            raise ValueError(
-                f"Can't run predictions: '{mode}' option not found in cog.yaml"
-            )
+            if mode == Mode.PREDICT:
+                raise ValueError(
+                    "'run' option not found in cog.yaml. "
+                    'Add it, e.g.: run: "run.py:Runner"'
+                )
+            raise ValueError(f"'{mode}' option not found in cog.yaml")
         return predictor_ref
 
     def get_predictor_types(self, mode: Mode) -> Tuple[Any, Any, bool]:

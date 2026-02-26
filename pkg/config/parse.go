@@ -148,8 +148,9 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 	if cfg.Image != nil {
 		config.Image = *cfg.Image
 	}
-	if cfg.Predict != nil {
-		config.Predict = *cfg.Predict
+	// "run" takes precedence over legacy "predict" key
+	if ref := cfg.resolvedRun(); ref != nil {
+		config.Predict = *ref
 	}
 	if cfg.Train != nil {
 		config.Train = *cfg.Train

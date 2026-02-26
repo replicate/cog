@@ -76,7 +76,7 @@ func TestValidateConfigFileNullListsAllowed(t *testing.T) {
 }
 
 func TestValidateConfigFilePredictFormat(t *testing.T) {
-	// Valid predict format
+	// Valid predict format (legacy key)
 	cfg := &configFile{
 		Build: &buildFile{
 			PythonVersion: strPtr("3.10"),
@@ -91,7 +91,53 @@ func TestValidateConfigFilePredictFormat(t *testing.T) {
 	cfg.Predict = strPtr("invalid_format")
 	result = ValidateConfigFile(cfg)
 	require.True(t, result.HasErrors())
-	require.Contains(t, result.Err().Error(), "predict.py:Predictor")
+	require.Contains(t, result.Err().Error(), "run.py:Runner")
+}
+
+func TestValidateConfigFileRunFormat(t *testing.T) {
+	// Valid run format
+	cfg := &configFile{
+		Build: &buildFile{
+			PythonVersion: strPtr("3.10"),
+		},
+		Run: strPtr("run.py:Runner"),
+	}
+
+	result := ValidateConfigFile(cfg)
+	require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
+
+	// Invalid run format
+	cfg.Run = strPtr("invalid_format")
+	result = ValidateConfigFile(cfg)
+	require.True(t, result.HasErrors())
+	require.Contains(t, result.Err().Error(), "run.py:Runner")
+}
+
+func TestValidateConfigFileRunAndPredictConflict(t *testing.T) {
+	cfg := &configFile{
+		Build: &buildFile{
+			PythonVersion: strPtr("3.10"),
+		},
+		Run:     strPtr("run.py:Runner"),
+		Predict: strPtr("predict.py:Predictor"),
+	}
+
+	result := ValidateConfigFile(cfg)
+	require.True(t, result.HasErrors())
+	require.Contains(t, result.Err().Error(), "cannot both be set")
+}
+
+func TestValidateConfigFileRunTakesPrecedenceOverPredict(t *testing.T) {
+	// When only run is set, it should be used
+	cfg := &configFile{
+		Build: &buildFile{
+			PythonVersion: strPtr("3.10"),
+		},
+		Run: strPtr("run.py:Runner"),
+	}
+
+	result := ValidateConfigFile(cfg)
+	require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
 }
 
 func TestValidateConfigFileConcurrencyType(t *testing.T) {

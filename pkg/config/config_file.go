@@ -14,11 +14,21 @@ import (
 type configFile struct {
 	Build       *buildFile       `json:"build,omitempty" yaml:"build,omitempty"`
 	Image       *string          `json:"image,omitempty" yaml:"image,omitempty"`
+	Run         *string          `json:"run,omitempty" yaml:"run,omitempty"`
 	Predict     *string          `json:"predict,omitempty" yaml:"predict,omitempty"`
 	Train       *string          `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *concurrencyFile `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
 	Environment []string         `json:"environment,omitempty" yaml:"environment,omitempty"`
 	Weights     []weightFile     `json:"weights,omitempty" yaml:"weights,omitempty"`
+}
+
+// resolvedRun returns the effective run/predict reference.
+// "run" takes precedence over "predict" (which is the legacy name).
+func (c *configFile) resolvedRun() *string {
+	if c.Run != nil {
+		return c.Run
+	}
+	return c.Predict
 }
 
 // buildFile represents the raw build configuration from cog.yaml.
