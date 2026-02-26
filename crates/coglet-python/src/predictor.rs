@@ -747,6 +747,22 @@ impl PythonPredictor {
             return Ok(PredictionOutput::Single(serde_json::Value::Null));
         }
 
+        // List/tuple output — iterate items so file outputs (Path, IOBase)
+        // go through the FileOutput IPC path for upload instead of being
+        // base64-encoded inline by process_output.
+        if let Ok(list) = result.cast::<pyo3::types::PyList>() {
+            for item in list.iter() {
+                send_output_item(py, &item, json_module, slot_sender)?;
+            }
+            return Ok(PredictionOutput::Stream(vec![]));
+        }
+        if let Ok(tuple) = result.cast::<pyo3::types::PyTuple>() {
+            for item in tuple.iter() {
+                send_output_item(py, &item, json_module, slot_sender)?;
+            }
+            return Ok(PredictionOutput::Stream(vec![]));
+        }
+
         // Non-file output — process normally
         let processed = output::process_output(py, result, None)
             .map_err(|e| PredictionError::Failed(format!("Failed to process output: {}", e)))?;
