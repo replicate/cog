@@ -43,37 +43,15 @@ var (
 	inputJSON            string
 )
 
+// newPredictCommand creates a hidden alias for "cog run" to maintain backwards compatibility.
 func newPredictCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "predict [image]",
-		Short: "Run a prediction",
-		Long: `Run a prediction.
-
-If 'image' is passed, it will run the prediction on that Docker image.
-It must be an image that has been built by Cog.
-
-Otherwise, it will build the model in the current directory and run
-the prediction on that.`,
-		Example: `  # Run a prediction with named inputs
-  cog predict -i prompt="a photo of a cat"
-
-  # Pass a file as input
-  cog predict -i image=@photo.jpg
-
-  # Save output to a file
-  cog predict -i image=@input.jpg -o output.png
-
-  # Pass multiple inputs
-  cog predict -i prompt="sunset" -i width=1024 -i height=768
-
-  # Run against a pre-built image
-  cog predict r8.im/your-username/my-model -i prompt="hello"
-
-  # Pass inputs as JSON
-  echo '{"prompt": "a cat"}' | cog predict --json @-`,
-		RunE:       cmdPredict,
-		Args:       cobra.MaximumNArgs(1),
-		SuggestFor: []string{"infer"},
+		Use:    "predict [image]",
+		Short:  "Run a prediction (alias for 'cog run')",
+		Long:   `Run a prediction. This is an alias for "cog run". See "cog run --help" for details.`,
+		RunE:   cmdPredict,
+		Args:   cobra.MaximumNArgs(1),
+		Hidden: true,
 	}
 
 	addUseCudaBaseImageFlag(cmd)

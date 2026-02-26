@@ -18,8 +18,11 @@ func NewRootCommand() (*cobra.Command, error) {
 
 To get started, take a look at the documentation:
 https://github.com/replicate/cog`,
-		Example: `   To run a command inside a Docker environment defined with Cog:
-      $ cog run echo hello world`,
+		Example: `   To run a prediction:
+      $ cog run -i prompt="hello world"
+
+   To run a command inside the Docker environment:
+      $ cog exec python`,
 		Version: fmt.Sprintf("%s (built %s)", global.Version, global.BuildTime),
 		// This stops errors being printed because we print them in cmd/cog/cog.go
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -38,6 +41,7 @@ https://github.com/replicate/cog`,
 	rootCmd.AddCommand(
 		newBuildCommand(),
 		newDebugCommand(),
+		newExecCommand(),
 		newInitCommand(),
 		newInspectCommand(),
 		newLoginCommand(),
