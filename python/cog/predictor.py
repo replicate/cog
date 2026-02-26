@@ -1,8 +1,9 @@
 """
-Cog SDK BasePredictor definition.
+Cog SDK BaseRunner (and legacy BasePredictor) definition.
 
-This module provides the BasePredictor class that users subclass to define
-their model's prediction interface.
+This module provides the BaseRunner class that users subclass to define
+their model's prediction interface. BasePredictor is kept as an alias for
+backwards compatibility.
 """
 
 import importlib
@@ -15,22 +16,22 @@ from typing import Any, Callable, Optional, Union
 from .types import Path
 
 
-class BasePredictor:
+class BaseRunner:
     """
-    Base class for Cog predictors.
+    Base class for Cog runners.
 
     Subclass this to define your model's prediction interface. Override
-    the `setup` method to load your model, and the `predict` method to
+    the `setup` method to load your model, and the `run` method to
     run predictions.
 
     Example:
-        from cog import BasePredictor, Input, Path
+        from cog import BaseRunner, Input, Path
 
-        class Predictor(BasePredictor):
+        class Runner(BaseRunner):
             def setup(self):
                 self.model = load_model()
 
-            def predict(self, prompt: str = Input(description="Input text")) -> str:
+            def run(self, prompt: str = Input(description="Input text")) -> str:
                 self.record_metric("temperature", 0.7)
                 return self.model.generate(prompt)
     """
@@ -42,7 +43,7 @@ class BasePredictor:
         """
         Prepare the model for predictions.
 
-        This method is called once when the predictor is initialized. Use it
+        This method is called once when the runner is initialized. Use it
         to load model weights and do any other one-time setup.
 
         Args:
@@ -50,7 +51,7 @@ class BasePredictor:
         """
         pass
 
-    def predict(self, **kwargs: Any) -> Any:
+    def run(self, **kwargs: Any) -> Any:
         """
         Run a single prediction.
 
@@ -65,9 +66,18 @@ class BasePredictor:
             The prediction output.
 
         Raises:
-            NotImplementedError: If predict is not implemented.
+            NotImplementedError: If run is not implemented.
         """
-        raise NotImplementedError("predict has not been implemented by parent class.")
+        raise NotImplementedError("run has not been implemented by subclass.")
+
+    def predict(self, **kwargs: Any) -> Any:
+        """
+        Legacy alias for run().
+
+        Override `run` instead. If only `predict` is overridden (for backwards
+        compatibility), the framework will call it automatically.
+        """
+        raise NotImplementedError("predict has not been implemented by subclass.")
 
     @property
     def scope(self) -> Any:
@@ -103,8 +113,8 @@ class BasePredictor:
 
         Example::
 
-            class Predictor(BasePredictor):
-                def predict(self, prompt: str) -> str:
+            class Runner(BaseRunner):
+                def run(self, prompt: str) -> str:
                     self.record_metric("temperature", 0.7)
                     self.record_metric("token_count", 1, mode="incr")
                     return self.model.generate(prompt)
@@ -112,8 +122,37 @@ class BasePredictor:
         self.scope.record_metric(key, value, mode=mode)
 
 
-def load_predictor_from_ref(ref: str) -> BasePredictor:
-    """Load a predictor from a module:class reference (e.g. 'predict.py:Predictor')."""
+# Legacy alias for backwards compatibility
+BasePredictor = BaseRunner
+
+
+def _has_custom_run(obj: Any) -> bool:
+    """Check if the object has a user-defined run() method (not the base class default)."""
+    if not hasattr(obj, "run"):
+        return False
+    # Check if run() is overridden from the BaseRunner default
+    method = (
+        getattr(type(obj), "run", None)
+        if inspect.isclass(type(obj))
+        else getattr(obj, "run", None)
+    )
+    return method is not None and method is not BaseRunner.run
+
+
+def _has_custom_predict(obj: Any) -> bool:
+    """Check if the object has a user-defined predict() method (not the base class default)."""
+    if not hasattr(obj, "predict"):
+        return False
+    method = (
+        getattr(type(obj), "predict", None)
+        if inspect.isclass(type(obj))
+        else getattr(obj, "predict", None)
+    )
+    return method is not None and method is not BaseRunner.predict
+
+
+def load_predictor_from_ref(ref: str) -> BaseRunner:
+    """Load a runner from a module:class reference (e.g. 'run.py:Runner')."""
     module_path, class_name = ref.split(":", 1) if ":" in ref else (ref, "Predictor")
     module_name = os.path.basename(module_path).replace(".py", "")
 
@@ -134,14 +173,32 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
 
 
 def get_predict(predictor: Any) -> Callable[..., Any]:
-    """Get the predict method from a predictor."""
+    """Get the run/predict method from a runner.
+
+    Prefers `run()` if defined, falls back to `predict()` for backwards
+    compatibility. If both are overridden, raises an error.
+    """
     # If predictor is a function, return it directly
     if (
         callable(predictor)
         and not inspect.isclass(predictor)
         and not hasattr(predictor, "predict")
+        and not hasattr(predictor, "run")
     ):
         return predictor
+
+    has_run = _has_custom_run(predictor)
+    has_predict = _has_custom_predict(predictor)
+
+    if has_run and has_predict:
+        raise ValueError(
+            "Cannot define both run() and predict() on the same class. "
+            "Use run() (predict() is deprecated)."
+        )
+
+    if has_run:
+        return predictor.run
+    # Fall back to predict() for backwards compatibility
     return predictor.predict
 
 
@@ -157,7 +214,7 @@ def get_train(predictor: Any) -> Callable[..., Any]:
     return predictor.train
 
 
-def has_setup_weights(predictor: BasePredictor) -> bool:
+def has_setup_weights(predictor: BaseRunner) -> bool:
     """Check if predictor's setup accepts a weights parameter."""
     if not hasattr(predictor, "setup"):
         return False
@@ -165,7 +222,7 @@ def has_setup_weights(predictor: BasePredictor) -> bool:
     return "weights" in sig.parameters
 
 
-def extract_setup_weights(predictor: BasePredictor) -> Optional[Union[Path, str]]:
+def extract_setup_weights(predictor: BaseRunner) -> Optional[Union[Path, str]]:
     """Extract weights from environment for setup."""
     weights = os.environ.get("COG_WEIGHTS")
     if weights:
