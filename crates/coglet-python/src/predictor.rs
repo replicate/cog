@@ -218,10 +218,12 @@ pub enum TrainKind {
 /// The predictor's structure and invocation target
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PredictorKind {
-    /// Class instance with predict() method, optionally train()
+    /// Class instance with run()/predict() method, optionally train()
     Class {
         predict: PredictKind,
         train: TrainKind,
+        /// The actual method name: "run" (preferred) or "predict" (legacy)
+        predict_method: String,
     },
     /// Standalone function (e.g., train.py:train)
     /// The PredictKind describes how the function executes (sync/async/async_gen)
@@ -304,16 +306,34 @@ impl PythonPredictor {
             };
             PredictorKind::StandaloneFunction(predict_kind)
         } else {
-            // Class instance - detect predict() and train() methods
-            let (is_async, is_async_gen) = Self::detect_async(py, &instance, "predict")?;
+            // Class instance - detect run() vs predict() method.
+            // Use cog.predictor.get_predict to resolve which method to call,
+            // matching the Python SDK's logic (prefers run(), falls back to predict()).
+            let cog_predictor_mod = py.import("cog.predictor")?;
+            let has_custom_run = cog_predictor_mod.getattr("_has_custom_run")?;
+            let has_custom_predict = cog_predictor_mod.getattr("_has_custom_predict")?;
+            let has_run: bool = has_custom_run.call1((instance.bind(py),))?.extract()?;
+            let has_predict: bool = has_custom_predict.call1((instance.bind(py),))?.extract()?;
+
+            if has_run && has_predict {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "Cannot define both run() and predict() on the same class. \
+                     Use run() (predict() is deprecated).",
+                ));
+            }
+
+            let predict_method = if has_run { "run" } else { "predict" };
+            tracing::info!("Using {} method for predictions", predict_method);
+
+            let (is_async, is_async_gen) = Self::detect_async(py, &instance, predict_method)?;
             let predict_kind = if is_async_gen {
-                tracing::info!("Detected async generator predict()");
+                tracing::info!("Detected async generator {}()", predict_method);
                 PredictKind::AsyncGen
             } else if is_async {
-                tracing::info!("Detected async predict()");
+                tracing::info!("Detected async {}()", predict_method);
                 PredictKind::Async
             } else {
-                tracing::info!("Detected sync predict()");
+                tracing::info!("Detected sync {}()", predict_method);
                 PredictKind::Sync
             };
 
@@ -334,6 +354,7 @@ impl PythonPredictor {
             PredictorKind::Class {
                 predict: predict_kind,
                 train: train_kind,
+                predict_method: predict_method.to_string(),
             }
         };
 
@@ -492,13 +513,17 @@ impl PythonPredictor {
         Ok(())
     }
 
-    /// Call predict() with the given input dict, returning raw Python output.
+    /// Call run()/predict() with the given input dict, returning raw Python output.
     ///
     /// For standalone functions, calls the function directly.
     pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PyObject> {
         let (method_name, is_async) = match &self.kind {
-            PredictorKind::Class { predict, .. } => (
-                "predict",
+            PredictorKind::Class {
+                predict,
+                predict_method,
+                ..
+            } => (
+                predict_method.as_str(),
                 matches!(predict, PredictKind::Async | PredictKind::AsyncGen),
             ),
             PredictorKind::StandaloneFunction(predict_kind) => (
@@ -848,11 +873,17 @@ impl PythonPredictor {
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
-            // Call predict - returns coroutine
+            // Call run/predict - returns coroutine
             let instance = self.instance.bind(py);
+            let predict_method = match &self.kind {
+                PredictorKind::Class { predict_method, .. } => predict_method.as_str(),
+                PredictorKind::StandaloneFunction(_) => "predict",
+            };
             let coro = instance
-                .call_method("predict", (), Some(&input_dict))
-                .map_err(|e| PredictionError::Failed(format!("Failed to call predict: {}", e)))?;
+                .call_method(predict_method, (), Some(&input_dict))
+                .map_err(|e| {
+                    PredictionError::Failed(format!("Failed to call {}: {}", predict_method, e))
+                })?;
 
             // For async generators, wrap to collect all values
             let is_async_gen = matches!(
