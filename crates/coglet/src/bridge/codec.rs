@@ -156,6 +156,7 @@ mod tests {
             id: "test".to_string(),
             output: Some(serde_json::json!("result")),
             predict_time: 1.5,
+            is_stream: false,
         };
         codec.encode(resp, &mut buf).unwrap();
         let decoded = codec.decode(&mut buf).unwrap().unwrap();
@@ -165,10 +166,12 @@ mod tests {
                 id,
                 output,
                 predict_time,
+                is_stream,
             } => {
                 assert_eq!(id, "test");
                 assert_eq!(output, Some(serde_json::json!("result")));
                 assert!((predict_time - 1.5).abs() < 0.001);
+                assert!(!is_stream);
             }
             _ => panic!("wrong variant"),
         }

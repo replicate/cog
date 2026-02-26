@@ -271,6 +271,11 @@ pub enum SlotResponse {
         #[serde(skip_serializing_if = "Option::is_none")]
         output: Option<serde_json::Value>,
         predict_time: f64,
+        /// Predictor signal: true when the output is a list, generator, or
+        /// iterator — used as fallback when the schema Output type is `Any`
+        /// or unavailable.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        is_stream: bool,
     },
 
     Failed {
@@ -436,6 +441,7 @@ mod tests {
             id: "pred_123".to_string(),
             output: Some(json!("final result")),
             predict_time: 1.234,
+            is_stream: false,
         };
         insta::assert_json_snapshot!(resp);
     }
