@@ -20,18 +20,10 @@ import (
 	"github.com/replicate/cog/pkg/registry"
 )
 
-// WeightPushProgress reports progress for a weight artifact upload.
-type WeightPushProgress struct {
-	// Complete is the number of bytes uploaded so far.
-	Complete int64
-	// Total is the total number of bytes to upload.
-	Total int64
-}
-
 // WeightPushOptions configures optional behavior for WeightPusher.Push.
 type WeightPushOptions struct {
 	// ProgressFn is an optional callback for reporting upload progress.
-	ProgressFn func(WeightPushProgress)
+	ProgressFn func(PushProgress)
 	// RetryFn is an optional callback for reporting retry attempts.
 	// Return false to abort the retry.
 	RetryFn func(WeightRetryEvent) bool
@@ -111,21 +103,15 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 	}
 	layer := layers[0]
 
-	// Set up progress channel if callback is provided
-	var progressCh chan v1.Update
-	var progressDone chan struct{}
+	// Build progress callback
+	var onProgress func(v1.Update)
 	if opt.ProgressFn != nil {
-		progressCh = make(chan v1.Update, 100)
-		progressDone = make(chan struct{})
-		go func() {
-			defer close(progressDone)
-			for update := range progressCh {
-				opt.ProgressFn(WeightPushProgress{
-					Complete: update.Complete,
-					Total:    update.Total,
-				})
-			}
-		}()
+		onProgress = func(update v1.Update) {
+			opt.ProgressFn(PushProgress{
+				Complete: update.Complete,
+				Total:    update.Total,
+			})
+		}
 	}
 
 	// Build retry configuration if callback is provided
@@ -145,21 +131,11 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 	}
 
 	// 1. Push layer blob via WriteLayer (multipart uploads, progress, retry)
-	writeErr := p.registry.WriteLayer(ctx, registry.WriteLayerOptions{
-		Repo:       repo,
-		Layer:      layer,
-		ProgressCh: progressCh,
-		Retry:      retryConfig,
-	})
-
-	// Close the progress channel ourselves — WriteLayer sends to it but does not close it.
-	// This unblocks the goroutine's `range progressCh` loop so it can exit cleanly.
-	if progressCh != nil {
-		close(progressCh)
-	}
-	if progressDone != nil {
-		<-progressDone
-	}
+	writeErr := writeLayerWithProgress(ctx, p.registry, registry.WriteLayerOptions{
+		Repo:  repo,
+		Layer: layer,
+		Retry: retryConfig,
+	}, onProgress)
 
 	if writeErr != nil {
 		return nil, fmt.Errorf("push weight layer: %w", writeErr)

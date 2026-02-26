@@ -7,13 +7,12 @@ import (
 
 	"github.com/replicate/go/uuid"
 
+	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/provider"
 	"github.com/replicate/cog/pkg/provider/setup"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
-
-	"github.com/replicate/cog/pkg/docker"
 )
 
 func newPushCommand() *cobra.Command {
@@ -112,9 +111,35 @@ func push(cmd *cobra.Command, args []string) error {
 		console.Infof("\n%d weight artifact(s)", len(weights))
 	}
 
-	// Push the model as an OCI index
+	// Push the model (image + optional weights)
 	console.Infof("\nPushing image '%s'...", m.ImageRef())
-	pushErr := resolver.Push(ctx, m, model.PushOptions{})
+
+	// Set up progress display using Docker's jsonmessage rendering. This uses the
+	// same cursor movement and progress display as `docker push`, which handles
+	// terminal resizing correctly (each line is erased and rewritten individually,
+	// rather than relying on a bulk cursor-up count that can desync on resize).
+	pw := docker.NewProgressWriter()
+	defer pw.Close()
+
+	pushErr := resolver.Push(ctx, m, model.PushOptions{
+		ImageProgressFn: func(prog model.PushProgress) {
+			// Truncate digest for display: "sha256:abc123..." → "abc123..."
+			displayDigest := prog.LayerDigest
+			if len(displayDigest) > 7+12 { // "sha256:" + 12 hex chars
+				displayDigest = displayDigest[7:19] + "..."
+			}
+
+			pw.Write(displayDigest, "Pushing", prog.Complete, prog.Total)
+		},
+		OnFallback: func() {
+			// Close progress writer to finalize OCI progress bars before Docker
+			// push starts its own output. Without this, stale OCI progress lines
+			// remain on screen above Docker's progress output.
+			pw.Close()
+		},
+	})
+
+	pw.Close()
 
 	// PostPush: the provider handles formatting errors and showing success messages
 	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {

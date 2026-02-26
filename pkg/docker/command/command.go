@@ -26,6 +26,10 @@ type Command interface {
 	ImageBuild(ctx context.Context, options ImageBuildOptions) (string, error)
 	Run(ctx context.Context, options RunOptions) error
 	ContainerStart(ctx context.Context, options RunOptions) (string, error)
+
+	// ImageSave exports a Docker image as a tar stream.
+	// The caller must close the returned ReadCloser.
+	ImageSave(ctx context.Context, imageRef string) (io.ReadCloser, error)
 }
 
 type ImageBuildOptions struct {

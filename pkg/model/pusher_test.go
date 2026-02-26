@@ -510,7 +510,7 @@ func TestResolver_Push(t *testing.T) {
 
 		err := resolver.Push(context.Background(), m, PushOptions{})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "artifact is nil")
+		require.Contains(t, err.Error(), "no image artifact")
 	})
 
 	t.Run("OCIIndex true returns error when no image artifact", func(t *testing.T) {

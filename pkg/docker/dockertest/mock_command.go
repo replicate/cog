@@ -113,3 +113,7 @@ func (c *MockCommand) Run(ctx context.Context, options command.RunOptions) error
 func (c *MockCommand) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
 	panic("not implemented")
 }
+
+func (c *MockCommand) ImageSave(ctx context.Context, imageRef string) (io.ReadCloser, error) {
+	panic("not implemented")
+}

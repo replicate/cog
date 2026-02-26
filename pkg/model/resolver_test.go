@@ -22,9 +22,10 @@ import (
 
 // mockDocker implements command.Command for testing.
 type mockDocker struct {
-	inspectFunc func(ctx context.Context, ref string) (*image.InspectResponse, error)
-	pullFunc    func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
-	pushFunc    func(ctx context.Context, ref string) error
+	inspectFunc   func(ctx context.Context, ref string) (*image.InspectResponse, error)
+	pullFunc      func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
+	pushFunc      func(ctx context.Context, ref string) error
+	imageSaveFunc func(ctx context.Context, imageRef string) (io.ReadCloser, error)
 }
 
 func (m *mockDocker) Inspect(ctx context.Context, ref string) (*image.InspectResponse, error) {
@@ -82,6 +83,13 @@ func (m *mockDocker) Run(ctx context.Context, options command.RunOptions) error 
 
 func (m *mockDocker) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
 	return "", errors.New("mockDocker.ContainerStart not implemented")
+}
+
+func (m *mockDocker) ImageSave(ctx context.Context, imageRef string) (io.ReadCloser, error) {
+	if m.imageSaveFunc != nil {
+		return m.imageSaveFunc(ctx, imageRef)
+	}
+	return nil, errors.New("mockDocker.ImageSave not implemented")
 }
 
 // mockRegistry implements registry.Client for testing.
