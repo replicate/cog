@@ -30,22 +30,22 @@ build:
     - "libglib2.0-0"
   python_version: "3.12"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
-Define how predictions are run on your model with `predict.py`:
+Define how your model runs with `run.py`:
 
 ```python
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 import torch
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.model = torch.load("./weights.pth")
 
     # The arguments and types the model takes as input
-    def predict(self,
+    def run(self,
           image: Path = Input(description="Grayscale input image")
     ) -> Path:
         """Run a single prediction on the model"""
@@ -59,7 +59,7 @@ In the above we accept a path to the image as an input, and return a path to our
 Now, you can run predictions on this model:
 
 ```console
-$ cog predict -i image=@input.jpg
+$ cog run -i image=@input.jpg
 --> Building Docker image...
 --> Running Prediction...
 --> Output written to output.jpg
@@ -94,14 +94,14 @@ $ curl http://localhost:8080/predictions -X POST \
 In development, you can also run arbitrary commands inside the Docker environment:
 
 ```console
-$ cog run python train.py
+$ cog exec python train.py
 ...
 ```
 
 Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
 ```console
-$ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
+$ cog exec -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
 ```
 -->
 
@@ -182,7 +182,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
-- [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
+- [Runner interface reference](docs/python.md) to learn how the `Runner` interface works
 - [Training interface reference](docs/training.md) to learn how to add a fine-tuning API to your model
 - [HTTP API reference](docs/http.md) to learn how to use the HTTP API that models serve
 
@@ -192,6 +192,275 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/replicate/cog)
 
+
+
+---
+
+# Cog: Containers for machine learning
+
+Cog is an open-source tool that lets you package machine learning models in a standard, production-ready container.
+
+You can deploy your packaged model to your own infrastructure, or to [Replicate](https://replicate.com/).
+
+## Highlights
+
+- 📦 **Docker containers without the pain.** Writing your own `Dockerfile` can be a bewildering process. With Cog, you define your environment with a [simple configuration file](#how-it-works) and it generates a Docker image with all the best practices: Nvidia base images, efficient caching of dependencies, installing specific Python versions, sensible environment variable defaults, and so on.
+
+- 🤬️ **No more CUDA hell.** Cog knows which CUDA/cuDNN/PyTorch/Tensorflow/Python combos are compatible and will set it all up correctly for you.
+
+- ✅ **Define the inputs and outputs for your model with standard Python.** Then, Cog generates an OpenAPI schema and validates the inputs and outputs.
+
+- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
+
+- 🥞 **Automatic queue worker.** Long-running deep learning models or batch processing is best architected with a queue. Cog models do this out of the box. Redis is currently supported, with more in the pipeline.
+
+- 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
+
+## How it works
+
+Define the Docker environment your model runs in with `cog.yaml`:
+
+```yaml
+build:
+  gpu: true
+  system_packages:
+    - "libgl1-mesa-glx"
+    - "libglib2.0-0"
+  python_version: "3.12"
+  python_packages:
+    - "torch==2.3"
+run: "run.py:Runner"
+```
+
+Define how your model runs with `run.py`:
+
+```python
+from cog import BaseRunner, Input, Path
+import torch
+
+class Runner(BaseRunner):
+    def setup(self):
+        """Load the model into memory to make running multiple predictions efficient"""
+        self.model = torch.load("./weights.pth")
+
+    # The arguments and types the model takes as input
+    def run(self,
+          image: Path = Input(description="Grayscale input image")
+    ) -> Path:
+        """Run a single prediction on the model"""
+        processed_image = preprocess(image)
+        output = self.model(processed_image)
+        return postprocess(output)
+```
+
+In the above we accept a path to the image as an input, and return a path to our transformed image after running it through our model.
+
+Now, you can run predictions on this model:
+
+```console
+$ cog run -i image=@input.jpg
+--> Building Docker image...
+--> Running Prediction...
+--> Output written to output.jpg
+```
+
+Or, build a Docker image for deployment:
+
+```console
+$ cog build -t my-classification-model
+--> Building Docker image...
+--> Built my-classification-model:latest
+
+$ docker run -d -p 5000:5000 --gpus all my-classification-model
+
+$ curl http://localhost:5000/predictions -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"image": "https://.../input.jpg"}}'
+```
+
+Or, combine build and run via the `serve` command:
+
+```console
+$ cog serve -p 8080
+
+$ curl http://localhost:8080/predictions -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"image": "https://.../input.jpg"}}'
+```
+
+<!-- NOTE (bfirsh): Development environment instructions intentionally left out of readme for now, so as not to confuse the "ship a model to production" message.
+
+In development, you can also run arbitrary commands inside the Docker environment:
+
+```console
+$ cog exec python train.py
+...
+```
+
+Or, [spin up a Jupyter notebook](notebooks.md):
+
+```console
+$ cog exec -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
+```
+-->
+
+## Why are we building this?
+
+It's really hard for researchers to ship machine learning models to production.
+
+Part of the solution is Docker, but it is so complex to get it to work: Dockerfiles, pre-/post-processing, Flask servers, CUDA versions. More often than not the researcher has to sit down with an engineer to get the damn thing deployed.
+
+[Andreas](https://github.com/andreasjansson) and [Ben](https://github.com/bfirsh) created Cog. Andreas used to work at Spotify, where he built tools for building and deploying ML models with Docker. Ben worked at Docker, where he created [Docker Compose](https://github.com/docker/compose).
+
+We realized that, in addition to Spotify, other companies were also using Docker to build and deploy machine learning models. [Uber](https://eng.uber.com/michelangelo-pyml/) and others have built similar systems. So, we're making an open source version so other people can do this too.
+
+Hit us up if you're interested in using it or want to collaborate with us. [We're on Discord](https://discord.gg/replicate) or email us at [team@replicate.com](mailto:team@replicate.com).
+
+## Prerequisites
+
+- **macOS, Linux or Windows 11**. Cog works on macOS, Linux and Windows 11 with [WSL 2](wsl2/wsl2.md)
+- **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog. If you install Docker Engine instead of Docker Desktop, you will need to [install Buildx](https://docs.docker.com/build/architecture/#buildx) as well.
+
+## Install
+
+If you're using macOS, you can install Cog using Homebrew:
+
+```console
+brew install cog
+```
+
+You can also download and install the latest release using our 
+[install script](https://cog.run/install):
+
+```sh
+# bash, zsh, and other shells
+sh <(curl -fsSL https://cog.run/install.sh)
+
+# fish shell
+sh (curl -fsSL https://cog.run/install.sh | psub)
+
+# download with wget and run in a separate command
+wget -qO- https://cog.run/install.sh
+sh ./install.sh
+```
+
+You can manually install the latest release of Cog directly from GitHub 
+by running the following commands in a terminal:
+
+```console
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
+sudo chmod +x /usr/local/bin/cog
+```
+
+Or if you are on docker:
+
+```
+RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
+```
+
+## Upgrade
+
+If you're using macOS and you previously installed Cog with Homebrew, run the following:
+
+```console
+brew upgrade cog
+```
+
+Otherwise, you can upgrade to the latest version by running the same commands you used to install it.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environment and build from source.
+
+## Next steps
+
+- [Get started with an example model](getting-started.md)
+- [Get started with your own model](getting-started-own-model.md)
+- [Using Cog with notebooks](notebooks.md)
+- [Using Cog with Windows 11](wsl2/wsl2.md)
+- [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
+- [Deploy models with Cog](deploy.md)
+- [`cog.yaml` reference](yaml.md) to learn how to define your model's environment
+- [Runner interface reference](python.md) to learn how the `Runner` interface works
+- [Training interface reference](training.md) to learn how to add a fine-tuning API to your model
+- [HTTP API reference](http.md) to learn how to use the HTTP API that models serve
+
+## Need help?
+
+[Join us in #cog on Discord.](https://discord.gg/replicate)
+
+## Contributors ✨
+
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://fir.sh/"><img src="https://avatars.githubusercontent.com/u/40906?v=4?s=100" width="100px;" alt="Ben Firshman"/><br /><sub><b>Ben Firshman</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bfirsh" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=bfirsh" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://replicate.ai/"><img src="https://avatars.githubusercontent.com/u/713993?v=4?s=100" width="100px;" alt="Andreas Jansson"/><br /><sub><b>Andreas Jansson</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=andreasjansson" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=andreasjansson" title="Documentation">📖</a> <a href="#maintenance-andreasjansson" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://zeke.sikelianos.com/"><img src="https://avatars.githubusercontent.com/u/2289?v=4?s=100" width="100px;" alt="Zeke Sikelianos"/><br /><sub><b>Zeke Sikelianos</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=zeke" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=zeke" title="Documentation">📖</a> <a href="#tool-zeke" title="Tools">🔧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://rory.bio/"><img src="https://avatars.githubusercontent.com/u/9436784?v=4?s=100" width="100px;" alt="Rory Byrne"/><br /><sub><b>Rory Byrne</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=synek" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=synek" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=synek" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/hangtwenty"><img src="https://avatars.githubusercontent.com/u/2420688?v=4?s=100" width="100px;" alt="Michael Floering"/><br /><sub><b>Michael Floering</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=hangtwenty" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=hangtwenty" title="Documentation">📖</a> <a href="#ideas-hangtwenty" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://bencevans.io/"><img src="https://avatars.githubusercontent.com/u/638535?v=4?s=100" width="100px;" alt="Ben Evans"/><br /><sub><b>Ben Evans</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bencevans" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://shashank.pw/"><img src="https://avatars.githubusercontent.com/u/778870?v=4?s=100" width="100px;" alt="shashank agarwal"/><br /><sub><b>shashank agarwal</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=imshashank" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=imshashank" title="Documentation">📖</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://victorxlr.me/"><img src="https://avatars.githubusercontent.com/u/22397950?v=4?s=100" width="100px;" alt="VictorXLR"/><br /><sub><b>VictorXLR</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=VictorXLR" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=VictorXLR" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=VictorXLR" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://annahung31.github.io/"><img src="https://avatars.githubusercontent.com/u/39179888?v=4?s=100" width="100px;" alt="hung anna"/><br /><sub><b>hung anna</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aannahung31" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://notes.variogr.am/"><img src="https://avatars.githubusercontent.com/u/76612?v=4?s=100" width="100px;" alt="Brian Whitman"/><br /><sub><b>Brian Whitman</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Abwhitman" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/JimothyJohn"><img src="https://avatars.githubusercontent.com/u/24216724?v=4?s=100" width="100px;" alt="JimothyJohn"/><br /><sub><b>JimothyJohn</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3AJimothyJohn" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ericguizzo"><img src="https://avatars.githubusercontent.com/u/26746670?v=4?s=100" width="100px;" alt="ericguizzo"/><br /><sub><b>ericguizzo</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aericguizzo" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://www.dominicbaggott.com"><img src="https://avatars.githubusercontent.com/u/74812?v=4?s=100" width="100px;" alt="Dominic Baggott"/><br /><sub><b>Dominic Baggott</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=evilstreak" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=evilstreak" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/dashstander"><img src="https://avatars.githubusercontent.com/u/7449128?v=4?s=100" width="100px;" alt="Dashiell Stander"/><br /><sub><b>Dashiell Stander</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Adashstander" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=dashstander" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=dashstander" title="Tests">⚠️</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Hurricane-eye"><img src="https://avatars.githubusercontent.com/u/31437546?v=4?s=100" width="100px;" alt="Shuwei Liang"/><br /><sub><b>Shuwei Liang</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3AHurricane-eye" title="Bug reports">🐛</a> <a href="#question-Hurricane-eye" title="Answering Questions">💬</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ericallam"><img src="https://avatars.githubusercontent.com/u/534?v=4?s=100" width="100px;" alt="Eric Allam"/><br /><sub><b>Eric Allam</b></sub></a><br /><a href="#ideas-ericallam" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://perdomo.me"><img src="https://avatars.githubusercontent.com/u/178474?v=4?s=100" width="100px;" alt="Iván Perdomo"/><br /><sub><b>Iván Perdomo</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aiperdomo" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://charlesfrye.github.io"><img src="https://avatars.githubusercontent.com/u/10442975?v=4?s=100" width="100px;" alt="Charles Frye"/><br /><sub><b>Charles Frye</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=charlesfrye" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/phamquiluan"><img src="https://avatars.githubusercontent.com/u/24642166?v=4?s=100" width="100px;" alt="Luan Pham"/><br /><sub><b>Luan Pham</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aphamquiluan" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=phamquiluan" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/TommyDew42"><img src="https://avatars.githubusercontent.com/u/46992350?v=4?s=100" width="100px;" alt="TommyDew"/><br /><sub><b>TommyDew</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=TommyDew42" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://m4ke.org"><img src="https://avatars.githubusercontent.com/u/27?v=4?s=100" width="100px;" alt="Jesse Andrews"/><br /><sub><b>Jesse Andrews</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=anotherjesse" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=anotherjesse" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=anotherjesse" title="Tests">⚠️</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://whiteink.com"><img src="https://avatars.githubusercontent.com/u/3602?v=4?s=100" width="100px;" alt="Nick Stenning"/><br /><sub><b>Nick Stenning</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Documentation">📖</a> <a href="#design-nickstenning" title="Design">🎨</a> <a href="#infra-nickstenning" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="https://github.com/replicate/cog/commits?author=nickstenning" title="Tests">⚠️</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://merrell.io/"><img src="https://avatars.githubusercontent.com/u/14996837?v=4?s=100" width="100px;" alt="Justin Merrell"/><br /><sub><b>Justin Merrell</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=justinmerrell" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ruriky"><img src="https://avatars.githubusercontent.com/u/19946546?v=4?s=100" width="100px;" alt="Rurik Ylä-Onnenvuori"/><br /><sub><b>Rurik Ylä-Onnenvuori</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aruriky" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://www.youka.club/"><img src="https://avatars.githubusercontent.com/u/59315275?v=4?s=100" width="100px;" alt="Youka"/><br /><sub><b>Youka</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Ayoukaclub" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/afiaka87"><img src="https://avatars.githubusercontent.com/u/3994972?v=4?s=100" width="100px;" alt="Clay Mullis"/><br /><sub><b>Clay Mullis</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=afiaka87" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/mattt"><img src="https://avatars.githubusercontent.com/u/7659?v=4?s=100" width="100px;" alt="Mattt"/><br /><sub><b>Mattt</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=mattt" title="Code">💻</a> <a href="https://github.com/replicate/cog/commits?author=mattt" title="Documentation">📖</a> <a href="#infra-mattt" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Juneezee"><img src="https://avatars.githubusercontent.com/u/20135478?v=4?s=100" width="100px;" alt="Eng Zer Jun"/><br /><sub><b>Eng Zer Jun</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=Juneezee" title="Tests">⚠️</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/bbedward"><img src="https://avatars.githubusercontent.com/u/550752?v=4?s=100" width="100px;" alt="BB"/><br /><sub><b>BB</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=bbedward" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/williamluer"><img src="https://avatars.githubusercontent.com/u/85975676?v=4?s=100" width="100px;" alt="williamluer"/><br /><sub><b>williamluer</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=williamluer" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://sirupsen.com"><img src="https://avatars.githubusercontent.com/u/97400?v=4?s=100" width="100px;" alt="Simon Eskildsen"/><br /><sub><b>Simon Eskildsen</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=sirupsen" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://erbridge.co.uk"><img src="https://avatars.githubusercontent.com/u/1027364?v=4?s=100" width="100px;" alt="F"/><br /><sub><b>F</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aerbridge" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=erbridge" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/philandstuff"><img src="https://avatars.githubusercontent.com/u/581269?v=4?s=100" width="100px;" alt="Philip Potter"/><br /><sub><b>Philip Potter</b></sub></a><br /><a href="https://github.com/replicate/cog/issues?q=author%3Aphilandstuff" title="Bug reports">🐛</a> <a href="https://github.com/replicate/cog/commits?author=philandstuff" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/joannejchen"><img src="https://avatars.githubusercontent.com/u/33409024?v=4?s=100" width="100px;" alt="Joanne Chen"/><br /><sub><b>Joanne Chen</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=joannejchen" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://technillogue.github.io"><img src="https://avatars.githubusercontent.com/u/945691?v=4?s=100" width="100px;" alt="technillogue"/><br /><sub><b>technillogue</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=technillogue" title="Code">💻</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="http://aroncarroll.com"><img src="https://avatars.githubusercontent.com/u/47144?v=4?s=100" width="100px;" alt="Aron Carroll"/><br /><sub><b>Aron Carroll</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=aron" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/commits?author=aron" title="Code">💻</a> <a href="#ideas-aron" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Theodotus1243"><img src="https://avatars.githubusercontent.com/u/32220358?v=4?s=100" width="100px;" alt="Bohdan Mykhailenko"/><br /><sub><b>Bohdan Mykhailenko</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=Theodotus1243" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/issues?q=author%3ATheodotus1243" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/one1zero1one"><img src="https://avatars.githubusercontent.com/u/724604?v=4?s=100" width="100px;" alt="Daniel Radu"/><br /><sub><b>Daniel Radu</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=one1zero1one" title="Documentation">📖</a> <a href="https://github.com/replicate/cog/issues?q=author%3Aone1zero1one" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Etelis"><img src="https://avatars.githubusercontent.com/u/92247226?v=4?s=100" width="100px;" alt="Itay Etelis"/><br /><sub><b>Itay Etelis</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=Etelis" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://www.wavefunction.dev"><img src="https://avatars.githubusercontent.com/u/54407820?v=4?s=100" width="100px;" alt="Gennaro Schiano"/><br /><sub><b>Gennaro Schiano</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=gschian0" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://andreknoerig.de"><img src="https://avatars.githubusercontent.com/u/481350?v=4?s=100" width="100px;" alt="André Knörig"/><br /><sub><b>André Knörig</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=aknoerig" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://condense.live"><img src="https://avatars.githubusercontent.com/u/24726?v=4?s=100" width="100px;" alt="Dan Fairs"/><br /><sub><b>Dan Fairs</b></sub></a><br /><a href="https://github.com/replicate/cog/commits?author=danfairs" title="Code">💻</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
 
 
 ---
@@ -210,8 +479,11 @@ https://github.com/replicate/cog
 **Examples**
 
 ```
-   To run a command inside a Docker environment defined with Cog:
-      $ cog run echo hello world
+   To run a prediction:
+      $ cog run -i prompt="hello world"
+
+   To run a command inside the Docker environment:
+      $ cog exec python
 ```
 
 **Options**
@@ -226,7 +498,7 @@ https://github.com/replicate/cog
 Build a Docker image from the cog.yaml in the current directory.
 
 The generated image contains your model code, dependencies, and the Cog
-runtime. It can be run locally with 'cog predict' or pushed to a registry
+runtime. It can be run locally with 'cog run' or pushed to a registry
 with 'cog push'.
 
 ```
@@ -263,9 +535,49 @@ cog build [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
+## `cog exec`
+
+Run a command inside a Docker environment defined by cog.yaml.
+
+Cog builds a temporary image from your cog.yaml configuration and runs the
+given command inside it. This is useful for debugging, running scripts, or
+exploring the environment your model will run in.
+
+```
+cog exec <command> [arg...] [flags]
+```
+
+**Examples**
+
+```
+  # Open a Python interpreter inside the model environment
+  cog exec python
+
+  # Run a script
+  cog exec python train.py
+
+  # Run with environment variables
+  cog exec -e HUGGING_FACE_HUB_TOKEN=abc123 python download.py
+
+  # Expose a port (e.g. for Jupyter)
+  cog exec -p 8888 jupyter notebook
+```
+
+**Options**
+
+```
+  -e, --env stringArray              Environment variables, in the form name=value
+  -f, --file string                  The name of the config file. (default "cog.yaml")
+      --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
+  -h, --help                         help for exec
+      --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
+  -p, --publish stringArray          Publish a container's port to the host, e.g. -p 8000
+      --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
+      --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
+```
 ## `cog init`
 
-Create a cog.yaml and predict.py in the current directory.
+Create a cog.yaml and run.py in the current directory.
 
 These files provide a starting template for defining your model's environment
 and prediction interface. Edit them to match your model's requirements.
@@ -306,58 +618,6 @@ cog login [flags]
   -h, --help          help for login
       --token-stdin   Pass login token on stdin instead of opening a browser. You can find your Replicate login token at https://replicate.com/auth/token
 ```
-## `cog predict`
-
-Run a prediction.
-
-If 'image' is passed, it will run the prediction on that Docker image.
-It must be an image that has been built by Cog.
-
-Otherwise, it will build the model in the current directory and run
-the prediction on that.
-
-```
-cog predict [image] [flags]
-```
-
-**Examples**
-
-```
-  # Run a prediction with named inputs
-  cog predict -i prompt="a photo of a cat"
-
-  # Pass a file as input
-  cog predict -i image=@photo.jpg
-
-  # Save output to a file
-  cog predict -i image=@input.jpg -o output.png
-
-  # Pass multiple inputs
-  cog predict -i prompt="sunset" -i width=1024 -i height=768
-
-  # Run against a pre-built image
-  cog predict r8.im/your-username/my-model -i prompt="hello"
-
-  # Pass inputs as JSON
-  echo '{"prompt": "a cat"}' | cog predict --json @-
-```
-
-**Options**
-
-```
-  -e, --env stringArray              Environment variables, in the form name=value
-  -f, --file string                  The name of the config file. (default "cog.yaml")
-      --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
-  -h, --help                         help for predict
-  -i, --input stringArray            Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg
-      --json string                  Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)
-  -o, --output string                Output path
-      --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
-      --setup-timeout uint32         The timeout for a container to setup (in seconds). (default 300)
-      --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
-      --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
-      --use-replicate-token          Pass REPLICATE_API_TOKEN from local environment into the model context
-```
 ## `cog push`
 
 Build a Docker image from cog.yaml and push it to a container registry.
@@ -397,30 +657,38 @@ cog push [IMAGE] [flags]
 ```
 ## `cog run`
 
-Run a command inside a Docker environment defined by cog.yaml.
+Run a prediction.
 
-Cog builds a temporary image from your cog.yaml configuration and runs the
-given command inside it. This is useful for debugging, running scripts, or
-exploring the environment your model will run in.
+If 'image' is passed, it will run the prediction on that Docker image.
+It must be an image that has been built by Cog.
+
+Otherwise, it will build the model in the current directory and run
+the prediction on that.
 
 ```
-cog run <command> [arg...] [flags]
+cog run [image] [flags]
 ```
 
 **Examples**
 
 ```
-  # Open a Python interpreter inside the model environment
-  cog run python
+  # Run a prediction with named inputs
+  cog run -i prompt="a photo of a cat"
 
-  # Run a script
-  cog run python train.py
+  # Pass a file as input
+  cog run -i image=@photo.jpg
 
-  # Run with environment variables
-  cog run -e HUGGING_FACE_HUB_TOKEN=abc123 python download.py
+  # Save output to a file
+  cog run -i image=@input.jpg -o output.png
 
-  # Expose a port (e.g. for Jupyter)
-  cog run -p 8888 jupyter notebook
+  # Pass multiple inputs
+  cog run -i prompt="sunset" -i width=1024 -i height=768
+
+  # Run against a pre-built image
+  cog run r8.im/your-username/my-model -i prompt="hello"
+
+  # Pass inputs as JSON
+  echo '{"prompt": "a cat"}' | cog run --json @-
 ```
 
 **Options**
@@ -430,10 +698,14 @@ cog run <command> [arg...] [flags]
   -f, --file string                  The name of the config file. (default "cog.yaml")
       --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
   -h, --help                         help for run
+  -i, --input stringArray            Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg
+      --json string                  Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)
+  -o, --output string                Output path
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
-  -p, --publish stringArray          Publish a container's port to the host, e.g. -p 8000
+      --setup-timeout uint32         The timeout for a container to setup (in seconds). (default 300)
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
+      --use-replicate-token          Pass REPLICATE_API_TOKEN from local environment into the model context
 ```
 ## `cog serve`
 
@@ -665,7 +937,7 @@ sudo chmod +x /usr/local/bin/cog
 To configure your project for use with Cog, you'll need to add two files:
 
 - [`cog.yaml`](yaml.md) defines system requirements, Python package dependencies, etc
-- [`predict.py`](python.md) describes the prediction interface for your model
+- [`run.py`](python.md) describes the prediction interface for your model
 
 Use the `cog init` command to generate these files in your project:
 
@@ -714,18 +986,18 @@ With `cog.yaml`, you can also install system packages and other things. [Take a 
 
 ## Define how to run predictions
 
-The next step is to update `predict.py` to define the interface for running predictions on your model. The `predict.py` generated by `cog init` looks something like this:
+The next step is to update `run.py` to define the interface for running predictions on your model. The `run.py` generated by `cog init` looks something like this:
 
 ```python
-from cog import BasePredictor, Path, Input
+from cog import BaseRunner, Path, Input
 import torch
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.net = torch.load("weights.pth")
 
-    def predict(self,
+    def run(self,
             image: Path = Input(description="Image to enlarge"),
             scale: float = Input(description="Factor to scale image by", default=1.5)
     ) -> Path:
@@ -736,9 +1008,9 @@ class Predictor(BasePredictor):
         return output
 ```
 
-Edit your `predict.py` file and fill in the functions with your own model's setup and prediction code. You might need to import parts of your model from another file.
+Edit your `run.py` file and fill in the functions with your own model's setup and prediction code. You might need to import parts of your model from another file.
 
-You also need to define the inputs to your model as arguments to the `predict()` function, as demonstrated above. For each argument, you need to annotate with a type. The supported types are:
+You also need to define the inputs to your model as arguments to the `run()` function, as demonstrated above. For each argument, you need to annotate with a type. The supported types are:
 
 - `str`: a string
 - `int`: an integer
@@ -757,19 +1029,19 @@ You can provide more information about the input with the `Input()` function, as
 
 There are some more advanced options you can pass, too. For more details, [take a look at the prediction interface documentation](python.md).
 
-Next, add the line `predict: "predict.py:Predictor"` to your `cog.yaml`, so it looks something like this:
+Next, add the line `run: "run.py:Runner"` to your `cog.yaml`, so it looks something like this:
 
 ```yaml
 build:
   python_version: "3.12"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
 That's it! To test this works, try running a prediction on the model:
 
 ```
-$ cog predict -i image=@input.jpg
+$ cog run -i image=@input.jpg
 ✓ Building Docker image from cog.yaml... Successfully built 664ef88bc1f4
 ✓ Model running in Docker image 664ef88bc1f4
 
@@ -779,7 +1051,7 @@ Written output to output.png
 To pass more inputs to the model, you can add more `-i` options:
 
 ```
-$ cog predict -i image=@image.jpg -i scale=2.0
+$ cog run -i image=@image.jpg -i scale=2.0
 ```
 
 In this case it is just a number, not a file, so you don't need the `@` prefix.
@@ -902,28 +1174,28 @@ Let's pretend we've trained a model. With Cog, we can define how to run predicti
 
 We need to write some code to describe how predictions are run on the model.
 
-Save this to `predict.py`:
+Save this to `run.py`:
 
 ```python
 import os
 os.environ["TORCH_HOME"] = "."
 
 import torch
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 from PIL import Image
 from torchvision import models
 
 WEIGHTS = models.ResNet50_Weights.IMAGENET1K_V1
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = models.resnet50(weights=WEIGHTS).to(self.device)
         self.model.eval()
 
-    def predict(self, image: Path = Input(description="Image to classify")) -> dict:
+    def run(self, image: Path = Input(description="Image to classify")) -> dict:
         """Run a single prediction on the model"""
         img = Image.open(image).convert("RGB")
         preds = self.model(WEIGHTS.transforms()(img).unsqueeze(0).to(self.device))
@@ -948,7 +1220,7 @@ Then update `cog.yaml` to look like this:
 build:
   python_version: "3.12"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
 > [!TIP]
@@ -965,7 +1237,7 @@ curl $IMAGE_URL > input.jpg
 Now, let's run the model using Cog:
 
 ```bash
-cog predict -i image=@input.jpg
+cog run -i image=@input.jpg
 
 ```
 
@@ -981,7 +1253,7 @@ If you see the following output
 
 then it worked!
 
-Note: The first time you run `cog predict`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog predict` the pre-built container will be used.
+Note: The first time you run `cog run`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog run` the pre-built container will be used.
 
 ## Build an image
 
@@ -994,10 +1266,10 @@ cog build -t resnet
 
 ```
 
-You can run this image with `cog predict` by passing the filename as an argument:
+You can run this image with `cog run` by passing the filename as an argument:
 
 ```bash
-cog predict resnet -i image=@input.jpg
+cog run resnet -i image=@input.jpg
 
 ```
 
@@ -1125,10 +1397,10 @@ at the following times.
   Once, when the prediction starts
   (`status` is `starting`).
 - `output`: 
-  Each time a predict function generates an output 
+  Each time a run function generates an output 
   (either once using `return` or multiple times using `yield`)
 - `logs`: 
-  Each time the predict function writes to `stdout`
+  Each time the run function writes to `stdout`
 - `completed`: 
   Once, when the prediction reaches a terminal state 
   (`status` is `succeeded`, `canceled`, or `failed`)
@@ -1181,7 +1453,7 @@ This produces a random identifier that is 26 ASCII characters long.
 
 ## File uploads
 
-A model's `predict` function can produce file output by yielding or returning
+A model's `run` function can produce file output by yielding or returning
 a `cog.Path` or `cog.File` value.
 
 By default,
@@ -1325,13 +1597,13 @@ The request body is a JSON object with the following fields:
 
 - `input`: 
   A JSON object with the same keys as the 
-  [arguments to the `predict()` function](python.md).
+  [arguments to the `run()` function](python.md).
   Any `File` or `Path` inputs are passed as URLs.
 
 The response body is a JSON object with the following fields:
 
 - `status`: Either `succeeded` or `failed`.
-- `output`: The return value of the `predict()` function.
+- `output`: The return value of the `run()` function.
 - `error`: If `status` is `failed`, the error message.
 - `metrics`: An object containing prediction metrics.
   Always includes `predict_time` (elapsed seconds).
@@ -1479,7 +1751,7 @@ Failure to re-raise the exception may result in the termination of the container
 ```python
 from cog import CancelationException, Path
 
-def predict(image: Path) -> Path:
+def run(image: Path) -> Path:
     try:
         return process(image)
     except CancelationException:
@@ -1518,9 +1790,9 @@ Cog can run notebooks in the environment you've defined in `cog.yaml` with the f
 cog run -p 8888 jupyter lab --allow-root --ip=0.0.0.0
 ```
 
-## Use notebook code in your predictor
+## Use notebook code in your runner
 
-You can also import a notebook into your Cog [Predictor](python.md) file.
+You can also import a notebook into your Cog [Runner](python.md) file.
 
 First, export your notebook to a Python file:
 
@@ -1528,15 +1800,15 @@ First, export your notebook to a Python file:
 jupyter nbconvert --to script my_notebook.ipynb # creates my_notebook.py
 ```
 
-Then import the exported Python script into your `predict.py` file. Any functions or variables defined in your notebook will be available to your predictor:
+Then import the exported Python script into your `run.py` file. Any functions or variables defined in your notebook will be available to your runner:
 
 ```python
-from cog import BasePredictor, Input
+from cog import BaseRunner, Input
 
 import my_notebook
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str = Input(description="string prompt")) -> str:
+class Runner(BaseRunner):
+    def run(self, prompt: str = Input(description="string prompt")) -> str:
       output = my_notebook.do_stuff(prompt)
       return output
 ```
@@ -1595,7 +1867,7 @@ Using a secret mount allows the private registry credentials to be securely pass
 This document defines the API of the `cog` Python module, which is used to define the interface for running predictions on your model.
 
 > [!TIP]
-> Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `predict.py` file that can be used as a starting point for setting up your model.
+> Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `run.py` file that can be used as a starting point for setting up your model.
 
 > [!TIP]
 > Using a language model to help you write the code for your new Cog model?
@@ -1605,9 +1877,9 @@ This document defines the API of the `cog` Python module, which is used to defin
 ## Contents
 
 - [Contents](#contents)
-- [`BasePredictor`](#basepredictor)
-  - [`Predictor.setup()`](#predictorsetup)
-  - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
+- [`BaseRunner`](#baserunner)
+  - [`Runner.setup()`](#runnersetup)
+  - [`Runner.run(**kwargs)`](#runnerrunkwargs)
 - [`async` predictors and concurrency](#async-predictors-and-concurrency)
 - [`Input(**kwargs)`](#inputkwargs)
   - [Deprecating inputs](#deprecating-inputs)
@@ -1630,20 +1902,20 @@ This document defines the API of the `cog` Python module, which is used to defin
 - [`Optional`](#optional)
 - [`List`](#list)
 
-## `BasePredictor`
+## `BaseRunner`
 
-You define how Cog runs predictions on your model by defining a class that inherits from `BasePredictor`. It looks something like this:
+You define how Cog runs predictions on your model by defining a class that inherits from `BaseRunner`. It looks something like this:
 
 ```python
-from cog import BasePredictor, Path, Input
+from cog import BaseRunner, Path, Input
 import torch
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.model = torch.load("weights.pth")
 
-    def predict(self,
+    def run(self,
             image: Path = Input(description="Image to enlarge"),
             scale: float = Input(description="Factor to scale image by", default=1.5)
     ) -> Path:
@@ -1654,9 +1926,9 @@ class Predictor(BasePredictor):
         return output
 ```
 
-Your Predictor class should define two methods: `setup()` and `predict()`.
+Your Runner class should define two methods: `setup()` and `run()`.
 
-### `Predictor.setup()`
+### `Runner.setup()`
 
 Prepare the model so multiple predictions run efficiently.
 
@@ -1680,43 +1952,43 @@ While this will increase your image size and build time, it offers other advanta
 
 > When using this method, you should use the `--separate-weights` flag on `cog build` to store weights in a [separate layer](https://github.com/replicate/cog/blob/12ac02091d93beebebed037f38a0c99cd8749806/docs/getting-started.md?plain=1#L219).
 
-### `Predictor.predict(**kwargs)`
+### `Runner.run(**kwargs)`
 
 Run a single prediction.
 
 This _required_ method is where you call the model that was loaded during `setup()`, but you may also want to add pre- and post-processing code here.
 
-The `predict()` method takes an arbitrary list of named arguments, where each argument name must correspond to an [`Input()`](#inputkwargs) annotation.
+The `run()` method takes an arbitrary list of named arguments, where each argument name must correspond to an [`Input()`](#inputkwargs) annotation.
 
-`predict()` can return strings, numbers, [`cog.Path`](#path) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
+`run()` can return strings, numbers, [`cog.Path`](#path) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
 
 ## `async` predictors and concurrency
 
 > Added in cog 0.14.0.
 
-You may specify your `predict()` method as `async def predict(...)`.  In
-addition, if you have an async `predict()` function you may also have an async
+You may specify your `run()` method as `async def run(...)`.  In
+addition, if you have an async `run()` function you may also have an async
 `setup()` function:
 
 ```py
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     async def setup(self) -> None:
         print("async setup is also supported...")
 
-    async def predict(self) -> str:
-        print("async predict");
+    async def run(self) -> str:
+        print("async run");
         return "hello world";
 ```
 
-Models that have an async `predict()` function can run predictions concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
+Models that have an async `run()` function can run predictions concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
 
 ## `Input(**kwargs)`
 
-Use cog's `Input()` function to define each of the parameters in your `predict()` method:
+Use cog's `Input()` function to define each of the parameters in your `run()` method:
 
 ```py
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
             image: Path = Input(description="Image to enlarge"),
             scale: float = Input(description="Factor to scale image by", default=1.5, ge=1.0, le=10.0)
     ) -> Path:
@@ -1734,13 +2006,13 @@ The `Input()` function takes these keyword arguments:
 - `choices`: For `str` or `int` types, a list of possible values for this input.
 - `deprecated`: (optional) If set to `True`, marks this input as deprecated. Deprecated inputs will still be accepted, but tools and UIs may warn users that the input is deprecated and may be removed in the future. See [Deprecating inputs](#deprecating-inputs).
 
-Each parameter of the `predict()` method must be annotated with a type like `str`, `int`, `float`, `bool`, etc. See [Input and output types](#input-and-output-types) for the full list of supported types.
+Each parameter of the `run()` method must be annotated with a type like `str`, `int`, `float`, `bool`, etc. See [Input and output types](#input-and-output-types) for the full list of supported types.
 
 Using the `Input` function provides better documentation and validation constraints to the users of your model, but it is not strictly required. You can also specify default values for your parameters using plain Python, or omit default assignment entirely:
 
 ```py
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
         prompt: str = "default prompt", # this is valid
         iterations: int                 # also valid
     ) -> str:
@@ -1754,10 +2026,10 @@ You can mark an input as deprecated by passing `deprecated=True` to the `Input()
 This is useful when you want to phase out an input without breaking existing clients immediately:
 
 ```py
-from cog import BasePredictor, Input
+from cog import BaseRunner, Input
 
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
         text: str = Input(description="Some deprecated text", deprecated=True),
         prompt: str = Input(description="Prompt for the model")
     ) -> str:
@@ -1772,26 +2044,26 @@ Cog predictors can return a simple data type like a string, number, float, or bo
 Here's an example of a predictor that returns a string:
 
 ```py
-from cog import BasePredictor
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self) -> str:
+class Runner(BaseRunner):
+    def run(self) -> str:
         return "hello"
 ```
 
 ### Returning an object
 
-To return a complex object with multiple values, define an `Output` object with multiple fields to return from your `predict()` method:
+To return a complex object with multiple values, define an `Output` object with multiple fields to return from your `run()` method:
 
 ```py
-from cog import BasePredictor, BaseModel, File
+from cog import BaseRunner, BaseModel, File
 
 class Output(BaseModel):
     file: File
     text: str
 
-class Predictor(BasePredictor):
-    def predict(self) -> Output:
+class Runner(BaseRunner):
+    def run(self) -> Output:
         return Output(text="hello", file=io.StringIO("hello"))
 ```
 
@@ -1799,13 +2071,13 @@ Each of the output object's properties must be one of the supported output types
 
 ### Returning a list
 
-The `predict()` method can return a list of any of the supported output types. Here's an example that outputs multiple files:
+The `run()` method can return a list of any of the supported output types. Here's an example that outputs multiple files:
 
 ```py
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
-class Predictor(BasePredictor):
-    def predict(self) -> list[Path]:
+class Runner(BaseRunner):
+    def run(self) -> list[Path]:
         predictions = ["foo", "bar", "baz"]
         output = []
         for i, prediction in enumerate(predictions):
@@ -1823,15 +2095,15 @@ Files are named in the format `output.<index>.<extension>`, e.g. `output.0.txt`,
 To conditionally omit properties from the Output object, define them using `typing.Optional`:
 
 ```py
-from cog import BaseModel, BasePredictor, Path
+from cog import BaseModel, BaseRunner, Path
 from typing import Optional
 
 class Output(BaseModel):
     score: Optional[float]
     file: Optional[Path]
 
-class Predictor(BasePredictor):
-    def predict(self) -> Output:
+class Runner(BaseRunner):
+    def run(self) -> Output:
         if condition:
             return Output(score=1.5)
         else:
@@ -1840,29 +2112,29 @@ class Predictor(BasePredictor):
 
 ### Streaming output
 
-Cog models can stream output as the `predict()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output images as they are being generated.
+Cog models can stream output as the `run()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output images as they are being generated.
 
-To support streaming output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, or `cog.Path`.
+To support streaming output in your Cog model, add `from typing import Iterator` to your run.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `run()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, or `cog.Path`.
 
 ```py
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 from typing import Iterator
 
-class Predictor(BasePredictor):
-    def predict(self) -> Iterator[Path]:
+class Runner(BaseRunner):
+    def run(self) -> Iterator[Path]:
         done = False
         while not done:
             output_path, done = do_stuff()
             yield Path(output_path)
 ```
 
-If you have an [async `predict()` method](#async-predictors-and-concurrency), you must use `cog.AsyncIterator` instead:
+If you have an [async `run()` method](#async-predictors-and-concurrency), you must use `cog.AsyncIterator` instead:
 
 ```py
-from cog import AsyncIterator, BasePredictor, Path
+from cog import AsyncIterator, BaseRunner, Path
 
-class Predictor(BasePredictor):
-    async def predict(self) -> AsyncIterator[Path]:
+class Runner(BaseRunner):
+    async def run(self) -> AsyncIterator[Path]:
         done = False
         while not done:
             output_path, done = do_stuff()
@@ -1872,22 +2144,22 @@ class Predictor(BasePredictor):
 If you're streaming text output, you can use `ConcatenateIterator` to hint that the output should be concatenated together into a single string. This is useful on Replicate to display the output as a string instead of a list of strings.
 
 ```py
-from cog import BasePredictor, Path, ConcatenateIterator
+from cog import BaseRunner, Path, ConcatenateIterator
 
-class Predictor(BasePredictor):
-    def predict(self) -> ConcatenateIterator[str]:
+class Runner(BaseRunner):
+    def run(self) -> ConcatenateIterator[str]:
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:
             yield token + " "
 ```
 
-Or for async `predict()` methods, use `AsyncConcatenateIterator`:
+Or for async `run()` methods, use `AsyncConcatenateIterator`:
 
 ```py
-from cog import BasePredictor, Path, AsyncConcatenateIterator
+from cog import BaseRunner, Path, AsyncConcatenateIterator
 
-class Predictor(BasePredictor):
-    async def predict(self) -> AsyncConcatenateIterator[str]:
+class Runner(BaseRunner):
+    async def run(self) -> AsyncConcatenateIterator[str]:
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:
             yield token + " "
@@ -1895,17 +2167,17 @@ class Predictor(BasePredictor):
 
 ## Metrics
 
-You can record custom metrics from your `predict()` function to track model-specific data like token counts, timing breakdowns, or confidence scores. Metrics are included in the prediction response alongside the output.
+You can record custom metrics from your `run()` function to track model-specific data like token counts, timing breakdowns, or confidence scores. Metrics are included in the prediction response alongside the output.
 
 ### Recording metrics
 
-Use `self.record_metric()` inside your `predict()` method:
+Use `self.record_metric()` inside your `run()` method:
 
 ```python
-from cog import BasePredictor
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> str:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
         self.record_metric("temperature", 0.7)
         self.record_metric("token_count", 42)
 
@@ -2003,12 +2275,12 @@ Outside an active prediction, `self.record_metric()` and `self.scope` are silent
 
 ## Cancellation
 
-When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `predict()` function. The exception raised depends on whether the predictor is sync or async:
+When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `run()` function. The exception raised depends on whether the predictor is sync or async:
 
 | Predictor type | Exception raised |
 |---|---|
-| Sync (`def predict`) | `CancelationException` |
-| Async (`async def predict`) | `asyncio.CancelledError` |
+| Sync (`def run`) | `CancelationException` |
+| Async (`async def run`) | `asyncio.CancelledError` |
 
 ### `CancelationException`
 
@@ -2021,10 +2293,10 @@ from cog import CancelationException
 You do **not** need to handle this exception in normal predictor code — the runtime manages cancellation automatically. However, if you need to run cleanup logic when a prediction is cancelled, you can catch it explicitly:
 
 ```python
-from cog import BasePredictor, CancelationException, Path
+from cog import BaseRunner, CancelationException, Path
 
-class Predictor(BasePredictor):
-    def predict(self, image: Path) -> Path:
+class Runner(BaseRunner):
+    def run(self, image: Path) -> Path:
         try:
             return self.process(image)
         except CancelationException:
@@ -2044,7 +2316,7 @@ For **async** predictors, cancellation follows standard Python async conventions
 
 ## Input and output types
 
-Each parameter of the `predict()` method must be annotated with a type. The method's return type must also be annotated. The supported types are:
+Each parameter of the `run()` method must be annotated with a type. The method's return type must also be annotated. The supported types are:
 
 - `str`: a string
 - `int`: an integer
@@ -2064,11 +2336,11 @@ The `cog.File` object is used to get files in and out of models. It represents a
 For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
 
 ```python
-from cog import BasePredictor, File, Input, Path
+from cog import BaseRunner, File, Input, Path
 from PIL import Image
 
-class Predictor(BasePredictor):
-    def predict(self, source_image: File = Input(description="Image to enlarge")) -> File:
+class Runner(BaseRunner):
+    def run(self, source_image: File = Input(description="Image to enlarge")) -> File:
         pillow_img = Image.open(source_image)
         upscaled_image = do_some_processing(pillow_img)
         return File(upscaled_image)
@@ -2086,10 +2358,10 @@ This example takes an input file, resizes it, and returns the resized image:
 
 ```python
 import tempfile
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 
-class Predictor(BasePredictor):
-    def predict(self, image: Path = Input(description="Image to enlarge")) -> Path:
+class Runner(BaseRunner):
+    def run(self, image: Path = Input(description="Image to enlarge")) -> Path:
         upscaled_image = do_some_processing(image)
 
         # To output `cog.Path` objects the file needs to exist, so create a temporary file first.
@@ -2108,11 +2380,11 @@ like a password or API token.
 You can access its contents with the `get_secret_value()` method.
 
 ```python
-from cog import BasePredictor, Secret
+from cog import BaseRunner, Secret
 
 
-class Predictor(BasePredictor):
-    def predict(self, api_token: Secret) -> None:
+class Runner(BaseRunner):
+    def run(self, api_token: Secret) -> None:
         # Prints '**********'
         print(api_token)        
 
@@ -2145,16 +2417,16 @@ Optional inputs should be explicitly defined as `Optional[T]` so that type check
 For example, the following code might fail if `prompt` is not specified in the inputs:
 
 ```python
-class Predictor(BasePredictor):
-    def predict(self, prompt: str=Input(description="prompt", default=None)) -> str:
+class Runner(BaseRunner):
+    def run(self, prompt: str=Input(description="prompt", default=None)) -> str:
         return "hello" + prompt  # TypeError: can only concatenate str (not "NoneType") to str
 ```
 
 We can improve it by making `prompt` an `Optional[str]`. Note that `default=None` is now redundant as `Optional` implies it.
 
 ```python
-class Predictor(BasePredictor):
-    def predict(self, prompt: Optional[str]=Input(description="prompt")) -> str:
+class Runner(BaseRunner):
+    def run(self, prompt: Optional[str]=Input(description="prompt")) -> str:
         if prompt is None:  # type check can warn us if we forget this
             return "hello"
         else:
@@ -2169,8 +2441,8 @@ The List type is also supported in inputs. It can hold any supported type.
 
 Example for **List[Path]**:
 ```py
-class Predictor(BasePredictor):
-   def predict(self, paths: list[Path]) -> str:
+class Runner(BaseRunner):
+   def run(self, paths: list[Path]) -> str:
        output_parts = []  # Use a list to collect file contents
        for path in paths:
            with open(path) as f:
@@ -2181,7 +2453,7 @@ The corresponding cog command:
 ```bash
 $ echo test1 > 1.txt
 $ echo test2 > 2.txt
-$ cog predict -i paths=@1.txt -i paths=@2.txt
+$ cog run -i paths=@1.txt -i paths=@2.txt
 Running prediction...
 test1
 
@@ -2208,7 +2480,7 @@ Cog's training API allows you to define a fine-tuning interface for an existing 
 
 ## How it works
 
-If you've used Cog before, you've probably seen the [Predictor](./python.md) class, which defines the interface for creating predictions against your model. Cog's training API works similarly: You define a Python function that describes the inputs and outputs of the training process. The inputs are things like training data, epochs, batch size, seed, etc. The output is typically a file with the fine-tuned weights.
+If you've used Cog before, you've probably seen the [Runner](./python.md) class, which defines the interface for creating predictions against your model. Cog's training API works similarly: You define a Python function that describes the inputs and outputs of the training process. The inputs are things like training data, epochs, batch size, seed, etc. The output is typically a file with the fine-tuned weights.
 
 `cog.yaml`:
 
@@ -2221,7 +2493,7 @@ train: "train.py:train"
 `train.py`:
 
 ```python
-from cog import BasePredictor, File
+from cog import BaseRunner, File
 import io
 
 def train(param: str) -> File:
@@ -2238,7 +2510,7 @@ $ cat weights
 hello train
 ```
 
-You can also use classes if you want to run many model trainings and save on setup time. This works the same way as the [Predictor](./python.md) class with the only difference being the `train` method.
+You can also use classes if you want to run many model trainings and save on setup time. This works the same way as the [Runner](./python.md) class with the only difference being the `train` method.
 
 `cog.yaml`:
 
@@ -2251,7 +2523,7 @@ train: "train.py:Trainer"
 `train.py`:
 
 ```python
-from cog import BasePredictor, File
+from cog import BaseRunner, File
 import io
 
 class Trainer:
@@ -2293,7 +2565,7 @@ Each parameter of the `train()` function must be annotated with a type like `str
 Using the `Input` function provides better documentation and validation constraints to the users of your model, but it is not strictly required. You can also specify default values for your parameters using plain Python, or omit default assignment entirely:
 
 ```py
-def predict(self,
+def run(self,
   training_data: str = "foo bar", # this is valid
   iterations: int                 # also valid
 ) -> str:
@@ -2321,10 +2593,10 @@ def train(
 
 ## Testing
 
-If you are doing development of a Cog model like Llama or SDXL, you can test that the fine-tuned code path works before pushing by specifying a `COG_WEIGHTS` environment variable when running `predict`:
+If you are doing development of a Cog model like Llama or SDXL, you can test that the fine-tuned code path works before pushing by specifying a `COG_WEIGHTS` environment variable when running `run`:
 
 ```console
-cog predict -e COG_WEIGHTS=https://replicate.delivery/pbxt/xyz/weights.tar -i prompt="a photo of TOK"
+cog run -e COG_WEIGHTS=https://replicate.delivery/pbxt/xyz/weights.tar -i prompt="a photo of TOK"
 ```
 
 
@@ -2506,7 +2778,7 @@ cog --version # should output the cog version number.
 Finally, make sure it works. Let's try running `afiaka87/glid-3-xl` locally:
 
 ```bash
-cog predict 'r8.im/afiaka87/glid-3-xl' -i prompt="a fresh avocado floating in the water" -o prediction.json
+cog run 'r8.im/afiaka87/glid-3-xl' -i prompt="a fresh avocado floating in the water" -o prediction.json
 ```
 
 ![Output from a running cog prediction in Windows Terminal](images/cog_model_output.png)
@@ -2554,7 +2826,7 @@ explorer.exe prediction.png
 
 `cog.yaml` defines how to build a Docker image and how to run predictions on your model inside that image.
 
-It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predict). It looks a bit like this:
+It has three keys: [`build`](#build), [`image`](#image), and [`run`](#run). It looks a bit like this:
 
 ```yaml
 build:
@@ -2563,7 +2835,7 @@ build:
   system_packages:
     - "ffmpeg"
     - "git"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
 Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `cog.yaml` file that can be used as a starting point for setting up your model.
@@ -2596,7 +2868,7 @@ build:
   gpu: true
 ```
 
-When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
+When you use `cog run`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
 
 ### `python_requirements`
 
@@ -2742,7 +3014,7 @@ This stanza describes the concurrency capabilities of the model. It has one opti
 
 ### `max`
 
-The maximum number of concurrent predictions the model can process.  If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
+The maximum number of concurrent predictions the model can process.  If this is set, the model must specify an [async `run()` method](python.md#async-predictors-and-concurrency).
 
 For example:
 
@@ -2769,14 +3041,14 @@ If you set this, then you can run `cog push` without specifying the model name.
 
 If you specify an image name argument when pushing (like `cog push your-username/custom-model-name`), the argument will be used and the value of `image` in cog.yaml will be ignored.
 
-## `predict`
+## `run`
 
-The pointer to the `Predictor` object in your code, which defines how predictions are run on your model.
+The pointer to the `Runner` object in your code, which defines how predictions are run on your model.
 
 For example:
 
 ```yaml
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
 See [the Python API documentation for more information](python.md).
