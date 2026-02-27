@@ -32,12 +32,12 @@ func TestPostNewVersion(t *testing.T) {
 
 	dir := t.TempDir()
 
-	// Create mock predict
-	predictPyPath := filepath.Join(dir, "predict.py")
-	handle, err := os.Create(predictPyPath)
+	// Create mock runner
+	runPyPath := filepath.Join(dir, "run.py")
+	handle, err := os.Create(runPyPath)
 	require.NoError(t, err)
 	handle.WriteString("import cog")
-	dockertest.MockCogConfig = "{\"build\":{\"python_version\":\"3.12\",\"python_packages\":[\"torch==2.5.0\",\"beautifulsoup4==4.12.3\"],\"system_packages\":[\"git\"]},\"image\":\"test\",\"predict\":\"" + predictPyPath + ":Predictor\"}"
+	dockertest.MockCogConfig = "{\"build\":{\"python_version\":\"3.12\",\"python_packages\":[\"torch==2.5.0\",\"beautifulsoup4==4.12.3\"],\"system_packages\":[\"git\"]},\"image\":\"test\",\"predict\":\"" + runPyPath + ":Predictor\"}"
 
 	// Setup mock command
 	command := dockertest.NewMockCommand()
@@ -51,13 +51,13 @@ func TestVersionFromManifest(t *testing.T) {
 	// Setup mock command
 	command := dockertest.NewMockCommand()
 
-	// Create mock predict
+	// Create mock runner
 	dir := t.TempDir()
-	predictPyPath := filepath.Join(dir, "predict.py")
-	handle, err := os.Create(predictPyPath)
+	runPyPath := filepath.Join(dir, "run.py")
+	handle, err := os.Create(runPyPath)
 	require.NoError(t, err)
 	handle.WriteString("import cog")
-	dockertest.MockCogConfig = "{\"build\":{\"python_version\":\"3.12\",\"python_packages\":[\"torch==2.5.0\",\"beautifulsoup4==4.12.3\"],\"system_packages\":[\"git\"]},\"image\":\"test\",\"predict\":\"" + predictPyPath + ":Predictor\"}"
+	dockertest.MockCogConfig = "{\"build\":{\"python_version\":\"3.12\",\"python_packages\":[\"torch==2.5.0\",\"beautifulsoup4==4.12.3\"],\"system_packages\":[\"git\"]},\"image\":\"test\",\"predict\":\"" + runPyPath + ":Predictor\"}"
 	dockertest.MockOpenAPISchema = "{\"test\": true}"
 
 	client := NewClient(command, http.DefaultClient)

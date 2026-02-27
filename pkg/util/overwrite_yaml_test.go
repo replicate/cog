@@ -11,7 +11,7 @@ func TestOverwriteYAML(t *testing.T) {
 	var yamlData1 = `build:
     command: "build.sh"
 image: "my-image"
-predict: "predict.py"
+run: "run.py"
 train: "train.py"
 concurrency:
     max: 5
@@ -23,7 +23,7 @@ environment:
 	var yamlData2 = `build:
   command: "build_new.sh"
 image: "new-image"
-predict: "new_predict.py"
+run: "new_run.py"
 concurrency:
   max: 10
 environment:
@@ -40,7 +40,7 @@ func TestOverwriteYAMLWithComments(t *testing.T) {
 	var sourceYaml = `build:
   command: "build_new.sh"
 image: "new-image"
-predict: "new_predict.py"
+run: "new_run.py"
 concurrency:
   max: 10
 environment:
@@ -52,7 +52,7 @@ environment:
 build:
     command: "build.sh"
 image: "my-image"
-predict: "predict.py"
+run: "run.py"
 train: "train.py"
 concurrency:
     max: 5
@@ -65,7 +65,7 @@ environment:
 build:
     command: "build_new.sh"
 image: "new-image"
-predict: "new_predict.py"
+run: "new_run.py"
 concurrency:
     max: 10
 environment:
@@ -82,7 +82,7 @@ func TestOverwriteYAMLWithLineComments(t *testing.T) {
 	var sourceYaml = `build:
   command: "build_new.sh"
 image: "new-image"
-predict: "new_predict.py"
+run: "new_run.py"
 concurrency:
   max: 10
 environment:
@@ -95,7 +95,7 @@ build:
     # And we put this comment here for good measure
     command: "build.sh"
 image: "my-image"
-predict: "predict.py"
+run: "run.py"
 train: "train.py"
 concurrency:
     max: 5
@@ -109,7 +109,7 @@ build:
     # And we put this comment here for good measure
     command: "build_new.sh"
 image: "new-image"
-predict: "new_predict.py"
+run: "new_run.py"
 concurrency:
     max: 10
 environment:
@@ -129,7 +129,7 @@ func TestStep1XYaml(t *testing.T) {
     - "libglib2.0-0"
   python_version: "3.11"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 `
 
 	var destinationYaml = `# Configuration for Cog ⚙️
@@ -155,8 +155,8 @@ build:
   - curl -o /usr/local/bin/pget -L "https://github.com/replicate/pget/releases/latest/download/pget_$(uname -s)_$(uname -m)"
   - chmod +x /usr/local/bin/pget
 
-# predict.py defines how predictions are run on your model
-predict: "predict.py:Predictor"`
+# run.py defines how your model runs on your model
+run: "run.py:Runner"`
 
 	expected := `# Configuration for Cog ⚙️
 # Reference: https://cog.run/yaml
@@ -172,8 +172,8 @@ build:
     python_version: "3.11"
     # path to a Python requirements.txt file
     python_requirements: requirements.txt
-# predict.py defines how predictions are run on your model
-predict: "predict.py:Predictor"
+# run.py defines how your model runs on your model
+run: "run.py:Runner"
 `
 	content, err := OverwriteYAML([]byte(sourceYaml), []byte(destinationYaml))
 	require.NoError(t, err)

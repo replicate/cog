@@ -150,7 +150,7 @@ func TestValidateConfigFileConcurrencyType(t *testing.T) {
 				"torch==2.0.1",
 			},
 		},
-		Predict: strPtr("predict.py:Predictor"),
+		Run: strPtr("run.py:Runner"),
 		Concurrency: &concurrencyFile{
 			Max: intPtr(5),
 		},

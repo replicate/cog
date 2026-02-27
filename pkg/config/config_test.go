@@ -679,7 +679,7 @@ func TestAbsolutePathInPythonRequirements(t *testing.T) {
 func TestWeightsWithNameYAML(t *testing.T) {
 	yamlString := `build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
 weights:
   - name: model-v1
@@ -706,7 +706,7 @@ weights:
 func TestWeightsWithoutNameYAML(t *testing.T) {
 	yamlString := `build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
 weights:
   - source: file://./weights/model.zip
@@ -762,7 +762,7 @@ func TestSDKVersionConfig(t *testing.T) {
 build:
   python_version: "3.12"
   sdk_version: "0.18.0"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.Equal(t, "0.18.0", conf.Build.SDKVersion)
@@ -773,7 +773,7 @@ func TestSDKVersionConfigEmpty(t *testing.T) {
 	conf, err := FromYAML([]byte(`
 build:
   python_version: "3.12"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.Equal(t, "", conf.Build.SDKVersion)
@@ -785,7 +785,7 @@ func TestSDKVersionConfigPreRelease(t *testing.T) {
 build:
   python_version: "3.12"
   sdk_version: "0.18.0a1"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.Equal(t, "0.18.0a1", conf.Build.SDKVersion)
@@ -798,7 +798,7 @@ func TestSDKVersionConfigBelowMinimumExplodesInGenerator(t *testing.T) {
 build:
   python_version: "3.12"
   sdk_version: "0.15.0"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	// Parsing itself is fine; enforcement happens at Dockerfile generation time.
