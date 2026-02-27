@@ -253,6 +253,7 @@ name = "coglet-python"
 version = "0.17.0-rc.1"
 dependencies = [
  "async-trait",
+ "base64",
  "coglet",
  "futures",
  "libc",
