@@ -58,6 +58,8 @@ _.file = [".env"]
 _.python.venv = ".venv"
 # Set REPO_ROOT only if not already set (e.g., by CI)
 REPO_ROOT = "{{env.REPO_ROOT | default(value=config_root)}}"
+# CGo required for go-tree-sitter (static Python schema parser)
+CGO_ENABLED = "1"
 
 [settings]
 lockfile = true
