@@ -123,6 +123,9 @@ impl Prediction {
     }
 
     pub fn set_succeeded(&mut self, output: PredictionOutput) {
+        if self.status.is_terminal() {
+            return;
+        }
         self.status = PredictionStatus::Succeeded;
         self.output = Some(output);
         self.fire_terminal_webhook();
@@ -136,6 +139,9 @@ impl Prediction {
     }
 
     pub fn set_failed(&mut self, error: String) {
+        if self.status.is_terminal() {
+            return;
+        }
         self.status = PredictionStatus::Failed;
         self.error = Some(error);
         self.fire_terminal_webhook();
@@ -143,6 +149,9 @@ impl Prediction {
     }
 
     pub fn set_canceled(&mut self) {
+        if self.status.is_terminal() {
+            return;
+        }
         self.status = PredictionStatus::Canceled;
         self.fire_terminal_webhook();
         self.completion.notify_one();
@@ -348,11 +357,12 @@ impl Prediction {
         }
     }
 
-    /// Build webhook payload with current prediction state.
+    /// Build a JSON snapshot of the current prediction state.
     ///
-    /// Includes id, status, logs, output (if set), error (if set), and
-    /// metrics (user metrics + predict_time on terminal states).
-    fn build_webhook_payload(&self) -> serde_json::Value {
+    /// This is the single source of truth for prediction JSON. Used by
+    /// webhook payloads, GET responses, and terminal responses. Callers
+    /// can merge additional fields (e.g. `input`) into the result.
+    pub fn build_state_snapshot(&self) -> serde_json::Value {
         let mut payload = serde_json::json!({
             "id": self.id,
             "status": self.status.as_str(),
@@ -360,7 +370,7 @@ impl Prediction {
         });
 
         // Include output: use final output if set (terminal), otherwise
-        // include accumulated streaming outputs for intermediate webhooks.
+        // include accumulated streaming outputs for intermediate states.
         if let Some(ref output) = self.output {
             payload["output"] = serde_json::json!(output);
         } else if !self.outputs.is_empty() {
@@ -387,59 +397,13 @@ impl Prediction {
         payload
     }
 
-    /// Build merged metrics object: user metrics + system metrics (predict_time).
-    /// System metrics (predict_time) always win on conflict.
-    fn build_metrics(&self) -> serde_json::Value {
-        let predict_time = self.elapsed().as_secs_f64();
-        let mut merged = serde_json::Map::new();
-
-        // User metrics first
-        for (k, v) in &self.metrics {
-            merged.insert(k.clone(), v.clone());
-        }
-
-        // System metrics override — predict_time is always authoritative
-        merged.insert("predict_time".to_string(), serde_json::json!(predict_time));
-
-        serde_json::Value::Object(merged)
+    /// Build webhook payload (delegates to build_state_snapshot).
+    fn build_webhook_payload(&self) -> serde_json::Value {
+        self.build_state_snapshot()
     }
 
     pub fn build_terminal_response(&self) -> serde_json::Value {
-        let metrics = self.build_metrics();
-
-        match self.status {
-            PredictionStatus::Succeeded => {
-                serde_json::json!({
-                    "id": self.id,
-                    "status": "succeeded",
-                    "output": self.output,
-                    "metrics": metrics
-                })
-            }
-            PredictionStatus::Failed => {
-                serde_json::json!({
-                    "id": self.id,
-                    "status": "failed",
-                    "error": self.error,
-                    "metrics": metrics
-                })
-            }
-            PredictionStatus::Canceled => {
-                serde_json::json!({
-                    "id": self.id,
-                    "status": "canceled",
-                    "metrics": metrics
-                })
-            }
-            _ => {
-                serde_json::json!({
-                    "id": self.id,
-                    "status": "failed",
-                    "error": "Prediction in non-terminal state",
-                    "metrics": metrics
-                })
-            }
-        }
+        self.build_state_snapshot()
     }
 }
 
@@ -717,31 +681,60 @@ mod tests {
     }
 
     #[test]
-    fn build_metrics_merges_with_predict_time() {
+    fn terminal_snapshot_merges_metrics_with_predict_time() {
         let mut pred = Prediction::new("test".to_string(), None);
         pred.set_metric("temp".into(), serde_json::json!(0.7), MetricMode::Replace);
         pred.set_metric("count".into(), serde_json::json!(42), MetricMode::Replace);
+        pred.set_succeeded(PredictionOutput::Single(serde_json::json!("ok")));
 
-        let metrics = pred.build_metrics();
-        let obj = metrics.as_object().unwrap();
-        assert_eq!(obj["temp"], serde_json::json!(0.7));
-        assert_eq!(obj["count"], serde_json::json!(42));
-        assert!(obj.contains_key("predict_time"));
+        let snapshot = pred.build_state_snapshot();
+        let metrics = snapshot["metrics"].as_object().unwrap();
+        assert_eq!(metrics["temp"], serde_json::json!(0.7));
+        assert_eq!(metrics["count"], serde_json::json!(42));
+        assert!(metrics.contains_key("predict_time"));
     }
 
     #[test]
-    fn build_metrics_predict_time_overrides_user() {
+    fn terminal_snapshot_predict_time_overrides_user() {
         let mut pred = Prediction::new("test".to_string(), None);
-        // User tries to set predict_time — system should override
+        // User tries to set predict_time - system should override
         pred.set_metric(
             "predict_time".into(),
             serde_json::json!(999.0),
             MetricMode::Replace,
         );
+        pred.set_succeeded(PredictionOutput::Single(serde_json::json!("ok")));
 
-        let metrics = pred.build_metrics();
-        let obj = metrics.as_object().unwrap();
+        let snapshot = pred.build_state_snapshot();
+        let metrics = snapshot["metrics"].as_object().unwrap();
         // predict_time should be the actual elapsed, not 999.0
-        assert_ne!(obj["predict_time"], serde_json::json!(999.0));
+        assert_ne!(metrics["predict_time"], serde_json::json!(999.0));
+    }
+
+    #[test]
+    fn terminal_state_guard_set_failed_after_succeeded() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_succeeded(PredictionOutput::Single(serde_json::json!("ok")));
+        pred.set_failed("Slot dropped unexpectedly".to_string());
+        // Must stay succeeded, not overwritten to failed
+        assert_eq!(pred.status(), PredictionStatus::Succeeded);
+        assert!(pred.error().is_none());
+    }
+
+    #[test]
+    fn terminal_state_guard_set_succeeded_after_failed() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_failed("error".to_string());
+        pred.set_succeeded(PredictionOutput::Single(serde_json::json!("late")));
+        assert_eq!(pred.status(), PredictionStatus::Failed);
+        assert_eq!(pred.error(), Some("error"));
+    }
+
+    #[test]
+    fn terminal_state_guard_set_canceled_after_succeeded() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_succeeded(PredictionOutput::Single(serde_json::json!("done")));
+        pred.set_canceled();
+        assert_eq!(pred.status(), PredictionStatus::Succeeded);
     }
 }

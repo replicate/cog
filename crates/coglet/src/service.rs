@@ -408,45 +408,13 @@ impl PredictionService {
     /// Get a snapshot of prediction state for API responses.
     ///
     /// Locks the real Prediction to read current state — no stale copies.
+    /// Adds `input` from the PredictionEntry on top of the shared snapshot.
     pub fn get_prediction_response(&self, id: &str) -> Option<serde_json::Value> {
         let entry = self.predictions.get(id)?;
         let pred = entry.prediction.lock().ok()?;
 
-        let mut response = serde_json::json!({
-            "id": pred.id(),
-            "status": pred.status().as_str(),
-            "input": entry.input,
-            "logs": pred.logs(),
-        });
-
-        // Include output: use final output if set (terminal), otherwise
-        // include accumulated streaming outputs for intermediate responses.
-        if let Some(output) = pred.output() {
-            response["output"] = serde_json::json!(output);
-        } else if !pred.outputs().is_empty() {
-            response["output"] = serde_json::json!(pred.outputs());
-        }
-
-        if let Some(error) = pred.error() {
-            response["error"] = serde_json::Value::String(error.to_string());
-        }
-
-        // Include metrics on terminal
-        if pred.is_terminal() {
-            let predict_time = pred.elapsed().as_secs_f64();
-            let mut metrics_obj = serde_json::Map::new();
-            for (k, v) in pred.metrics() {
-                metrics_obj.insert(k.clone(), v.clone());
-            }
-            metrics_obj.insert("predict_time".to_string(), serde_json::json!(predict_time));
-            response["metrics"] = serde_json::Value::Object(metrics_obj);
-        } else if !pred.metrics().is_empty() {
-            let mut metrics_obj = serde_json::Map::new();
-            for (k, v) in pred.metrics() {
-                metrics_obj.insert(k.clone(), v.clone());
-            }
-            response["metrics"] = serde_json::Value::Object(metrics_obj);
-        }
+        let mut response = pred.build_state_snapshot();
+        response["input"] = entry.input.clone();
 
         Some(response)
     }
