@@ -91,28 +91,28 @@ Let's pretend we've trained a model. With Cog, we can define how to run predicti
 
 We need to write some code to describe how predictions are run on the model.
 
-Save this to `predict.py`:
+Save this to `run.py`:
 
 ```python
 import os
 os.environ["TORCH_HOME"] = "."
 
 import torch
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 from PIL import Image
 from torchvision import models
 
 WEIGHTS = models.ResNet50_Weights.IMAGENET1K_V1
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = models.resnet50(weights=WEIGHTS).to(self.device)
         self.model.eval()
 
-    def predict(self, image: Path = Input(description="Image to classify")) -> dict:
+    def run(self, image: Path = Input(description="Image to classify")) -> dict:
         """Run a single prediction on the model"""
         img = Image.open(image).convert("RGB")
         preds = self.model(WEIGHTS.transforms()(img).unsqueeze(0).to(self.device))
@@ -137,7 +137,7 @@ Then update `cog.yaml` to look like this:
 build:
   python_version: "3.12"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
 > [!TIP]
@@ -154,7 +154,7 @@ curl $IMAGE_URL > input.jpg
 Now, let's run the model using Cog:
 
 ```bash
-cog predict -i image=@input.jpg
+cog run -i image=@input.jpg
 
 ```
 
@@ -170,7 +170,7 @@ If you see the following output
 
 then it worked!
 
-Note: The first time you run `cog predict`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog predict` the pre-built container will be used.
+Note: The first time you run `cog run`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog run` the pre-built container will be used.
 
 ## Build an image
 
@@ -183,10 +183,10 @@ cog build -t resnet
 
 ```
 
-You can run this image with `cog predict` by passing the filename as an argument:
+You can run this image with `cog run` by passing the filename as an argument:
 
 ```bash
-cog predict resnet -i image=@input.jpg
+cog run resnet -i image=@input.jpg
 
 ```
 

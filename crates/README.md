@@ -34,10 +34,10 @@ running ML predictions.
 │  ┌─────────────────────────────────────────────────────────────────────────┐ │
 │  │                        Python Runtime (GIL)                             │ │
 │  │  ┌─────────────────┐   ┌─────────────────┐   ┌───────────────────────┐  │ │
-│  │  │ PythonPredictor │   │  SlotLogWriter  │   │    Audit Hook        │  │ │
+│  │  │ PythonRunner    │   │  SlotLogWriter  │   │    Audit Hook        │  │ │
 │  │  │ - load()        │   │ (sys.stdout/err)│   │ - Protects streams   │  │ │
 │  │  │ - setup()       │   │  Routes via     │   │ - Tee pattern for    │  │ │
-│  │  │ - predict()     │   │  ContextVar     │   │   user overrides     │  │ │
+│  │  │ - run()         │   │  ContextVar     │   │   user overrides     │  │ │
 │  │  └─────────────────┘   └─────────────────┘   └───────────────────────┘  │ │
 │  └─────────────────────────────────────────────────────────────────────────┘ │
 │                                                                              │
@@ -45,7 +45,7 @@ running ML predictions.
 │  │                         Tokio Runtime                                 │    │
 │  │  - Async event loop for slot socket I/O                              │    │
 │  │  - Releases GIL during I/O (py.detach)                               │    │
-│  │  - Single async executor for async predictors                        │    │
+│  │  - Single async executor for async runners                           │    │
 │  └──────────────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -70,7 +70,7 @@ HTTP Request                     Parent Process                    Worker Subpro
      │                                │                                  │
      │                                │                      ┌───────────┴───────────┐
      │                                │                      │ 3. Set ContextVar     │
-     │                                │                      │ 4. Call predict()     │
+     │                                │                      │ 4. Call run()         │
      │                                │                      └───────────┬───────────┘
      │                                │                                  │
      │                                │  SlotResponse::Log               │
@@ -111,7 +111,7 @@ HTTP Request                     Parent Process                    Worker Subpro
        │     │
        │     │   ┌────────────────────────────────────────────────┐
        │     └──▶│ Worker: connect sockets, install log writers, │
-       │         │ install audit hook, load predictor, run setup │
+       │         │ install audit hook, load runner, run setup    │
        │         └────────────────────────────────────────────────┘
        │
        ├─▶ Wait for Ready {slots, schema} or Failed {error}
@@ -137,11 +137,11 @@ Pure Rust library with no Python dependencies. Provides:
 ### coglet-python (PyO3 bindings)
 Bridges coglet to Python via PyO3. Provides:
 - **lib.rs** - Python module with `serve()`, `active()`, `_run_worker()`
-- **predictor.rs** - Wraps Python predictor class (sync/async detection)
+- **predictor.rs** - Wraps Python runner class (sync/async detection)
 - **worker_bridge.rs** - Implements `PredictHandler` trait for Python
 - **log_writer.rs** - ContextVar-based stdout/stderr routing
 - **audit.rs** - Protects runtime streams from user code
-- **cancel.rs** - SIGUSR1-based cancellation for sync predictors
+- **cancel.rs** - SIGUSR1-based cancellation for sync runners
 
 ## Directory Structure
 
@@ -185,7 +185,7 @@ crates/
     ├── coglet.pyi          # Type stubs for Python
     └── src/
         ├── lib.rs          # Python module definition
-        ├── predictor.rs    # PythonPredictor wrapper
+        ├── predictor.rs    # PythonRunner wrapper
         ├── worker_bridge.rs # PredictHandler impl
         ├── input.rs        # Input processing (Pydantic/ADT)
         ├── output.rs       # Output serialization
@@ -204,7 +204,7 @@ Used for lifecycle messages. JSON lines, one message per line.
 
 **Parent → Worker:**
 ```json
-{"type": "init", "predictor_ref": "predict.py:Predictor", "num_slots": 2, ...}
+{"type": "init", "predictor_ref": "run.py:Runner", "num_slots": 2, ...}
 {"type": "cancel", "slot": "uuid"}
 {"type": "shutdown"}
 ```

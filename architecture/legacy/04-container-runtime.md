@@ -37,7 +37,7 @@ flowchart TB
             direction TB
             subgraph child_components["Components"]
                 direction LR
-                predictor["User Predictor<br/>(predict.py)<br/>---<br/>setup()<br/>predict()<br/>train()"]
+                runner["User Runner<br/>(run.py)<br/>---<br/>setup()<br/>run()<br/>train()"]
                 redirector["StreamRedirector<br/>stdout/stderr<br/>capture"]
                 eventloop["Event Loop<br/>(sync/async)"]
             end
@@ -72,9 +72,9 @@ flowchart TB
 - **What**: Isolated Python process for user code
 - **Spawned via**: `multiprocessing.get_context("spawn").Process`
 - **Responsibilities**:
-  - Load user's predictor module
+  - Load user's runner module
   - Run `setup()` once at startup
-  - Execute `predict()` / `train()` methods
+  - Execute `run()` / `train()` methods
   - Capture stdout/stderr
   - Send events back to parent
 
@@ -134,7 +134,7 @@ sequenceDiagram
     participant Worker as Worker (parent)
     participant Pool as ThreadPool
     participant Child as _ChildWorker
-    participant Predictor as User predict()
+    participant UserRunner as User run()
 
     Client->>FastAPI: POST /predictions<br/>{"input": {"prompt": "..."}}
     FastAPI->>Runner: predict(request)
@@ -144,16 +144,16 @@ sequenceDiagram
     Pool-->>Worker: Local file paths
     
     Worker->>Child: PredictionInput event
-    Child->>Predictor: predict(**payload)
+    Child->>UserRunner: run(**payload)
     
     loop Generator yields / prints
-        Predictor-->>Child: yield output / print()
+        UserRunner-->>Child: yield output / print()
         Child-->>Worker: PredictionOutput / Log events
         Worker-->>Runner: handle_event()
         Runner-->>Client: Webhook (if configured)
     end
     
-    Predictor-->>Child: return
+    UserRunner-->>Child: return
     Child-->>Worker: Done event
     Worker-->>Runner: handle_event()
     
@@ -204,7 +204,7 @@ The child process captures stdout/stderr including native library output (CUDA, 
 flowchart LR
     subgraph child["Child Process"]
         subgraph usercode["User Code"]
-            predict["predict()"]
+            run_method["run()"]
         end
         
         subgraph redirector["StreamRedirector"]
@@ -213,7 +213,7 @@ flowchart LR
             reader["Reader Thread"]
         end
         
-        predict -->|"print()<br/>CUDA logs"| pipewrite
+        run_method -->|"print()<br/>CUDA logs"| pipewrite
         pipewrite --> reader
     end
     
@@ -224,11 +224,11 @@ flowchart LR
 
 ### Default: Sequential (`max_concurrency=1`)
 - One prediction at a time
-- Sync `def predict()` supported
+- Sync `def run()` supported
 - Cancellation via `SIGUSR1` signal
 
 ### Concurrent (`max_concurrency > 1`)
-- Requires `async def predict()`
+- Requires `async def run()`
 - Python 3.11+ for `asyncio.TaskGroup`
 - Configure in `cog.yaml`:
   ```yaml

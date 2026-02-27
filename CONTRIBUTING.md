@@ -78,7 +78,7 @@ As much as possible, this is attempting to follow the [Standard Go Project Layou
 - `pkg/docker/` - Low-level interface for Docker commands.
 - `pkg/dockerfile/` - Creates Dockerfiles.
 - `pkg/image/` - Creates and manipulates Cog Docker images.
-- `pkg/predict/` - Runs predictions on models.
+- `pkg/run/` - Runs predictions on models.
 - `pkg/util/` - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.
 - `python/` - The Cog Python library.
 - `integration-tests/` - Go-based integration tests using testscript.
@@ -134,7 +134,7 @@ There are a few concepts used throughout Cog that might be helpful to understand
 - **Model**: A user's machine learning model, consisting of code and weights.
 - **Output**: Output from a **prediction**, as arbitrarily complex JSON object.
 - **Prediction**: A single run of the model, that takes **input** and produces **output**.
-- **Predictor**: Defines how Cog runs **predictions** on a **model**.
+- **Runner**: Defines how Cog runs **predictions** on a **model**.
 
 ## Running tests
 
@@ -191,19 +191,19 @@ Example test structure:
 ```txtar
 # Test string predictor
 cog build -t $TEST_IMAGE
-cog predict $TEST_IMAGE -i s=world
+cog run $TEST_IMAGE -i s=world
 stdout 'hello world'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, s: str) -> str:
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
         return "hello " + s
 ```
 
@@ -239,12 +239,12 @@ cog serve
 retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
 stdout '"output":"hello test"'
 
--- predict.py --
-class Predictor(BasePredictor):
+-- run.py --
+class Runner(BaseRunner):
     def setup(self):
         self.process = subprocess.Popen(["./background.sh"])
     
-    def predict(self, s: str) -> str:
+    def run(self, s: str) -> str:
         return "hello " + s
 ```
 

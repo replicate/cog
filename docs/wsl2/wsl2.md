@@ -174,7 +174,7 @@ cog --version # should output the cog version number.
 Finally, make sure it works. Let's try running `afiaka87/glid-3-xl` locally:
 
 ```bash
-cog predict 'r8.im/afiaka87/glid-3-xl' -i prompt="a fresh avocado floating in the water" -o prediction.json
+cog run 'r8.im/afiaka87/glid-3-xl' -i prompt="a fresh avocado floating in the water" -o prediction.json
 ```
 
 ![Output from a running cog prediction in Windows Terminal](images/cog_model_output.png)

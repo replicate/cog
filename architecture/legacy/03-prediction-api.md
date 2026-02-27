@@ -63,7 +63,7 @@ What clients send to start a prediction:
 | `webhook_events_filter` | array (optional) | Which events to send |
 | `created_at` | datetime (optional) | Client-provided timestamp |
 
-The `input` object is validated against the `Input` schema generated from the predictor's `predict()` signature. Unknown fields are rejected; missing required fields raise validation errors.
+The `input` object is validated against the `Input` schema generated from the runner's `run()` signature. Unknown fields are rejected; missing required fields raise validation errors.
 
 ## PredictionResponse
 
@@ -95,7 +95,7 @@ What comes back from the API:
 | `status` | enum | `starting`, `processing`, `succeeded`, `canceled`, `failed` |
 | `input` | object | Echo of the input (for reference) |
 | `output` | any | **Model-specific** - type defined by schema |
-| `logs` | string | Captured stdout/stderr from predict() |
+| `logs` | string | Captured stdout/stderr from run() |
 | `error` | string | Error message if status is `failed` |
 | `metrics` | object | Timing and other metrics |
 | `created_at` | datetime | When request was received |
@@ -107,9 +107,9 @@ What comes back from the API:
 ```mermaid
 stateDiagram-v2
     [*] --> starting: Request received
-    starting --> processing: predict() called
-    processing --> succeeded: predict() returns
-    processing --> failed: predict() raises exception
+    starting --> processing: run() called
+    processing --> succeeded: run() returns
+    processing --> failed: run() raises exception
     processing --> canceled: Cancel requested
     succeeded --> [*]
     failed --> [*]
@@ -138,7 +138,7 @@ flowchart LR
         coerce["Type Coercion"]
     end
     
-    subgraph predict["predict()"]
+    subgraph run_method["run()"]
         kwargs["**kwargs"]
     end
     
@@ -153,13 +153,13 @@ flowchart LR
 2. **Validate against schema** - Pydantic checks types, required fields, constraints
 3. **Download files** - URLs in `cog.Path` fields are fetched to local temp files
 4. **Coerce types** - Strings become Paths, etc.
-5. **Call predict()** - Validated input passed as `**kwargs`
+5. **Call run()** - Validated input passed as `**kwargs`
 
 ### Output Handling Flow
 
 ```mermaid
 flowchart LR
-    subgraph predict["predict()"]
+    subgraph run_method["run()"]
         result["Return value / yields"]
     end
     
@@ -177,7 +177,7 @@ flowchart LR
     serialize --> output
 ```
 
-1. **Capture output** - Return value or yielded values from predict()
+1. **Capture output** - Return value or yielded values from run()
 2. **Upload files** - `cog.Path` outputs are uploaded, replaced with URLs
 3. **Serialize** - Convert to JSON-compatible format
 4. **Return** - Place in `output` field of response
@@ -188,12 +188,12 @@ Input files (cog.Path):
 ```
 Client sends:    {"input": {"image": "https://example.com/photo.jpg"}}
 Server downloads: /tmp/inputabc123.jpg
-predict() sees:  image = Path("/tmp/inputabc123.jpg")
+run() sees:      image = Path("/tmp/inputabc123.jpg")
 ```
 
 Output files (cog.Path):
 ```
-predict() returns: Path("/tmp/output.png")
+run() returns:     Path("/tmp/output.png")
 Server uploads:    https://storage.example.com/output-xyz.png
 Client receives:   {"output": "https://storage.example.com/output-xyz.png"}
 ```
@@ -212,7 +212,7 @@ sequenceDiagram
     Cog-->>Client: 202 {status: "starting"}
     
     Cog->>Webhook: {status: "starting"}
-    Note over Cog: predict() starts
+    Note over Cog: run() starts
     Cog->>Webhook: {status: "processing"}
     
     loop Output yields
@@ -245,7 +245,7 @@ Filter events with `webhook_events_filter`:
 For models that yield output progressively:
 
 ```python
-def predict(self, prompt: str) -> Iterator[str]:
+def run(self, prompt: str) -> Iterator[str]:
     for token in generate(prompt):
         yield token
 ```
@@ -262,7 +262,7 @@ The training API (`/trainings`) uses the same envelope pattern:
 
 - `TrainingRequest` extends `PredictionRequest`
 - `TrainingResponse` extends `PredictionResponse`
-- Calls `train()` method instead of `predict()`
+- Calls `train()` method instead of `run()`
 
 ## Code References
 

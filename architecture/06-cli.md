@@ -2,7 +2,7 @@
 
 The Cog CLI is a Go binary that provides commands for the full model lifecycle: development, building, testing, and deployment. This document covers what each command does and how it connects to the systems described in previous docs.
 
-**Important**: Model code always runs inside a container, never on the host machine. Commands like `cog predict`, `cog train`, and `cog serve` build an image, start a container, and interact with it via the [Prediction API](./03-prediction-api.md). The CLI orchestrates this, but the model execution happens in the containerized [Container Runtime](./04-container-runtime.md).
+**Important**: Model code always runs inside a container, never on the host machine. Commands like `cog run`, `cog train`, and `cog serve` build an image, start a container, and interact with it via the [Prediction API](./03-prediction-api.md). The CLI orchestrates this, but the model execution happens in the containerized [Container Runtime](./04-container-runtime.md).
 
 ## Commands Overview
 
@@ -10,7 +10,7 @@ The Cog CLI is a Go binary that provides commands for the full model lifecycle: 
 |---------|----------------|
 | `cog init` | Bootstrap a new model project |
 | `cog build` | Create a container image |
-| `cog predict` | Run a prediction in a container |
+| `cog run` | Run a prediction in a container |
 | `cog train` | Run training in a container |
 | `cog run` | Run arbitrary commands in a container |
 | `cog serve` | Start HTTP server in a container |
@@ -21,7 +21,7 @@ The Cog CLI is a Go binary that provides commands for the full model lifecycle: 
 
 ### cog init
 
-**Job**: Create a starter `cog.yaml` and `predict.py` for a new model.
+**Job**: Create a starter `cog.yaml` and `run.py` for a new model.
 
 ```bash
 cog init
@@ -29,18 +29,18 @@ cog init
 
 Creates:
 - `cog.yaml` with sensible defaults
-- `predict.py` with a skeleton Predictor class
+- `run.py` with a skeleton Runner class
 
 **Code**: `pkg/cli/init.go`
 
 ---
 
-### cog predict
+### cog run
 
 **Job**: Run a prediction in a container.
 
 ```bash
-cog predict -i prompt="A photo of a cat" -i steps=50
+cog run -i prompt="A photo of a cat" -i steps=50
 ```
 
 What happens:
@@ -68,7 +68,7 @@ Input types are inferred from the schema:
 cog train -i data=@dataset.zip -i epochs=10
 ```
 
-Same as `cog predict` but calls the `train()` method instead of `predict()`.
+Same as `cog run` but calls the `train()` method instead of `run()`.
 
 **Code**: `pkg/cli/train.go`
 
@@ -171,7 +171,7 @@ Stores credentials for `cog push`.
 
 ## How CLI Commands Interact with Containers
 
-Commands like `predict`, `train`, and `serve` follow the same pattern: build an image, start a container, communicate via HTTP. The CLI never runs model code directly.
+Commands like `run`, `train`, and `serve` follow the same pattern: build an image, start a container, communicate via HTTP. The CLI never runs model code directly.
 
 ```mermaid
 sequenceDiagram
@@ -193,13 +193,13 @@ sequenceDiagram
     end
     
     CLI->>Container: POST /predictions
-    Container->>Container: Run predict()
+    Container->>Container: Run run()
     Container-->>CLI: Response JSON
     
     CLI->>Docker: Stop container
 ```
 
-For what happens inside the container (setup, predict, IPC), see [Container Runtime](./04-container-runtime.md).
+For what happens inside the container (setup, run, IPC), see [Container Runtime](./04-container-runtime.md).
 
 ## CLI Architecture
 
@@ -212,7 +212,7 @@ cmd/cog/
 pkg/cli/
 ├── root.go         # Root command, subcommand registration
 ├── build.go        # cog build
-├── predict.go      # cog predict
+├── predict.go      # cog run
 ├── train.go        # cog train
 ├── run.go          # cog run
 ├── serve.go        # cog serve
@@ -227,7 +227,7 @@ Commands delegate to packages:
 - `pkg/docker/` - Docker client operations
 - `pkg/config/` - cog.yaml parsing
 - `pkg/api/` - Replicate API client
-- `pkg/predict/` - Local prediction execution
+- `pkg/run/` - Local prediction execution
 
 ## Code References
 
@@ -235,7 +235,7 @@ Commands delegate to packages:
 |------|---------|
 | `pkg/cli/root.go` | Command registration |
 | `pkg/cli/build.go` | Build command |
-| `pkg/cli/predict.go` | Predict command, input parsing |
+| `pkg/cli/predict.go` | Run command, input parsing |
 | `pkg/cli/push.go` | Push command |
 | `pkg/image/build.go` | Build orchestration |
-| `pkg/predict/predictor.go` | Local prediction client |
+| `pkg/run/runner.go` | Local prediction client |

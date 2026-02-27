@@ -103,7 +103,7 @@ tokio::spawn(async move {
 
 **Legacy**: Sends `SIGUSR1` signal to child process
 
-**FFI**: Uses IPC message + different strategies for sync vs async predictors:
+**FFI**: Uses IPC message + different strategies for sync vs async runners:
 
 ```
 Parent: ControlRequest::Cancel { slot }
@@ -111,7 +111,7 @@ Parent: ControlRequest::Cancel { slot }
     └─▶ Worker: handler.cancel(slot)
 ```
 
-**Sync Predictors:**
+**Sync Runners:**
 ```
 handler.cancel(slot)
     │
@@ -123,11 +123,11 @@ handler.cancel(slot)
 
 Prediction code:
     with CancelableGuard():  # Sets CANCELABLE=true
-        predictor.predict()  # Can be interrupted
+        runner.run()  # Can be interrupted
     # CANCELABLE=false on exit
 ```
 
-**Async Predictors:**
+**Async Runners:**
 ```
 handler.cancel(slot)
     │
@@ -231,9 +231,9 @@ The status lifecycle is identical to legacy:
 ```mermaid
 stateDiagram-v2
     [*] --> starting: Request received
-    starting --> processing: predict() called
-    processing --> succeeded: predict() returns
-    processing --> failed: predict() raises exception
+    starting --> processing: run() called
+    processing --> succeeded: run() returns
+    processing --> failed: run() raises exception
     processing --> canceled: Cancel requested
     succeeded --> [*]
     failed --> [*]
@@ -257,7 +257,7 @@ Input validation and output serialization work the same as legacy:
 2. **Validate against schema** → Pydantic checks types (in worker subprocess)
 3. **Download files** → Rust HTTP client fetches URLs
 4. **Send to worker** → JSON-framed message via Unix socket
-5. **Call predict()** → Python worker executes user code
+5. **Call run()** → Python worker executes user code
 6. **Capture output** → Worker sends back via slot channel
 7. **Upload files** → Rust uploads to storage
 8. **Serialize** → Return JSON response
@@ -336,7 +336,7 @@ When switching from legacy to FFI runtime:
 ✅ **No changes needed**:
 - HTTP API endpoints
 - Request/response format
-- Predictor code
+- Runner code
 - Client code
 
 ⚠️ **Behavioral differences**:

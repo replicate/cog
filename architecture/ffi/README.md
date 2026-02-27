@@ -19,7 +19,7 @@ Enable this implementation by setting the `USE_COGLET` environment variable when
 - **Rust HTTP server (Axum)**: Faster, better backpressure handling
 - **Worker isolation**: Python crashes don't kill the server
 - **Slot-based concurrency**: Predictable resource management with permit pool
-- **Subprocess reuse**: Predictor stays loaded between requests
+- **Subprocess reuse**: Runner stays loaded between requests
 - **Better cancellation**: Sync predictions cancel on connection drop via RAII guards
 
 ## Architecture Overview
@@ -33,7 +33,7 @@ PermitPool (slot-based concurrency)
   ↓
 Orchestrator → Worker Subprocess (Python)
   ↓ (Unix socket + pipes)
-Predictor (setup/predict)
+Runner (setup/run)
 ```
 
 ## Documentation

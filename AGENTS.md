@@ -8,7 +8,7 @@ Cog is a tool that packages machine learning models in production-ready containe
 
 It consists of:
 - **Cog CLI** (`cmd/cog/`) - Command-line interface for building, running, and deploying models, written in Go
-- **Python SDK** (`python/cog/`) - Python library for defining model predictors and training in Python
+- **Python SDK** (`python/cog/`) - Python library for defining model runners and training in Python
 - **Coglet** (`crates/`) - Rust-based prediction server that runs inside containers, with Python bindings via PyO3
 
 Documentation for the CLI and SDK is available by reading ./docs/llms.txt.
@@ -146,13 +146,13 @@ Coglet is the Rust-based prediction server that runs inside Cog containers, hand
 
 The code is in the `crates/` directory:
 - `crates/coglet/` - Core Rust library (HTTP server, worker orchestration, IPC)
-- `crates/coglet-python/` - PyO3 bindings for Python predictor integration (requires Python 3.10+)
+- `crates/coglet-python/` - PyO3 bindings for Python runner integration (requires Python 3.10+)
 
 For detailed architecture documentation, see `crates/README.md` and `crates/coglet/README.md`.
 
 The main commands for working on Coglet are:
 - `mise run build:coglet` - Build and install coglet wheel for development (macOS, for local Rust/Python tests)
-- `mise run build:coglet:wheel:linux-x64` - Build Linux x86_64 wheel (required to test Rust changes in Docker containers via `cog predict`/`cog train`)
+- `mise run build:coglet:wheel:linux-x64` - Build Linux x86_64 wheel (required to test Rust changes in Docker containers via `cog run`/`cog train`)
 - `mise run test:rust` - Run Rust unit tests
 - `mise run lint:rust` - Run clippy linter
 - `mise run fmt:rust:fix` - Format code
@@ -190,7 +190,7 @@ COG_BINARY=dist/go/*/cog mise run test:integration
 
 ### CLI Architecture (Go)
 The CLI follows a command pattern with subcommands. The main components are:
-- `pkg/cli/` - Command definitions (build, run, predict, serve, etc.)
+- `pkg/cli/` - Command definitions (build, run, serve, etc.)
 - `pkg/docker/` - Docker client and container management
 - `pkg/dockerfile/` - Dockerfile generation and templating
 - `pkg/config/` - cog.yaml parsing and validation
@@ -198,18 +198,18 @@ The CLI follows a command pattern with subcommands. The main components are:
 
 ### Python SDK Architecture
 - `python/cog/` - Core SDK
-  - `base_predictor.py` - Base class for model predictors
+  - `base_runner.py` - Base class for model runners
   - `types.py` - Input/output type definitions
   - `server/` - HTTP/queue server implementation
-  - `command/` - Runner implementations for predict/train
+  - `command/` - Runner implementations for run/train
 
 ### Coglet Architecture (Rust)
-The prediction server that runs inside Cog containers. Uses a two-process architecture: a parent process (HTTP server + orchestrator) and a worker subprocess (Python predictor execution).
+The prediction server that runs inside Cog containers. Uses a two-process architecture: a parent process (HTTP server + orchestrator) and a worker subprocess (Python runner execution).
 
 See `crates/README.md` for detailed architecture documentation.
 
 - `crates/coglet/` - Core Rust library (HTTP server, worker orchestration, IPC bridge)
-- `crates/coglet-python/` - PyO3 bindings for Python predictor integration
+- `crates/coglet-python/` - PyO3 bindings for Python runner integration
 
 ### Key Design Patterns
 1. **Local Wheel Resolution**: The CLI discovers SDK and coglet wheels from `dist/` at Docker build time (not embedded in the binary)
@@ -271,7 +271,7 @@ Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
 - `cog.yaml` - User-facing model configuration
 - `pkg/config/config.go` - Go code for parsing and validating `cog.yaml`
 - `pkg/config/data/config_schema_v1.0.json` - JSON schema for `cog.yaml`
-- `python/cog/base_predictor.py` - Predictor interface
+- `python/cog/base_runner.py` - Runner interface
 - `crates/Cargo.toml` - Rust workspace configuration
 - `crates/README.md` - Coglet architecture overview
 - `mise.toml` - Task definitions for development workflow

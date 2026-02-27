@@ -29,7 +29,8 @@ build:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
   python_version: "3.12"
-  python_requirements: requirements.txt
+  python_packages:
+    - "torch==2.3"
 run: "run.py:Runner"
 ```
 
@@ -98,7 +99,7 @@ $ cog exec python train.py
 ...
 ```
 
-Or, [spin up a Jupyter notebook](docs/notebooks.md):
+Or, [spin up a Jupyter notebook](notebooks.md):
 
 ```console
 $ cog exec -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
@@ -119,7 +120,7 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Prerequisites
 
-- **macOS, Linux or Windows 11**. Cog works on macOS, Linux and Windows 11 with [WSL 2](docs/wsl2/wsl2.md)
+- **macOS, Linux or Windows 11**. Cog works on macOS, Linux and Windows 11 with [WSL 2](wsl2/wsl2.md)
 - **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog. If you install Docker Engine instead of Docker Desktop, you will need to [install Buildx](https://docs.docker.com/build/architecture/#buildx) as well.
 
 ## Install
@@ -127,7 +128,7 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 If you're using macOS, you can install Cog using Homebrew:
 
 ```console
-brew install replicate/tap/cog
+brew install cog
 ```
 
 You can also download and install the latest release using our 
@@ -164,7 +165,7 @@ RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run
 If you're using macOS and you previously installed Cog with Homebrew, run the following:
 
 ```console
-brew upgrade replicate/tap/cog
+brew upgrade cog
 ```
 
 Otherwise, you can upgrade to the latest version by running the same commands you used to install it.
@@ -175,26 +176,24 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 
 ## Next steps
 
-- [Get started with an example model](docs/getting-started.md)
-- [Get started with your own model](docs/getting-started-own-model.md)
-- [Using Cog with notebooks](docs/notebooks.md)
-- [Using Cog with Windows 11](docs/wsl2/wsl2.md)
+- [Get started with an example model](getting-started.md)
+- [Get started with your own model](getting-started-own-model.md)
+- [Using Cog with notebooks](notebooks.md)
+- [Using Cog with Windows 11](wsl2/wsl2.md)
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
-- [Deploy models with Cog](docs/deploy.md)
-- [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
-- [Runner interface reference](docs/python.md) to learn how the `Runner` interface works
-- [Training interface reference](docs/training.md) to learn how to add a fine-tuning API to your model
-- [HTTP API reference](docs/http.md) to learn how to use the HTTP API that models serve
+- [Deploy models with Cog](deploy.md)
+- [`cog.yaml` reference](yaml.md) to learn how to define your model's environment
+- [Runner interface reference](python.md) to learn how the `Runner` interface works
+- [Training interface reference](training.md) to learn how to add a fine-tuning API to your model
+- [HTTP API reference](http.md) to learn how to use the HTTP API that models serve
 
 ## Need help?
 
 [Join us in #cog on Discord.](https://discord.gg/replicate)
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/replicate/cog)
-
 ## Contributors ✨
 
-Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/en/emoji-key)):
 
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
 <!-- prettier-ignore-start -->

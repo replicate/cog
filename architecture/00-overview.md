@@ -30,7 +30,7 @@ flowchart LR
 
 ### Model Source
 
-What the model author provides: `cog.yaml` for environment config, a Predictor class with `setup()` and `predict()` methods, and optionally model weights.
+What the model author provides: `cog.yaml` for environment config, a Runner class with `setup()` and `run()` methods, and optionally model weights.
 
 **Deep dive**: [Model Source](./01-model-source.md)
 
@@ -38,7 +38,7 @@ What the model author provides: `cog.yaml` for environment config, a Predictor c
 
 ### Schema
 
-An OpenAPI specification generated from the predictor's type hints. Describes what inputs the model accepts and what outputs it produces.
+An OpenAPI specification generated from the runner's type hints. Describes what inputs the model accepts and what outputs it produces.
 
 **Deep dive**: [Schema](./02-schema.md)
 
@@ -89,7 +89,7 @@ The command-line tool for building, testing, and deploying models.
 flowchart TB
     subgraph source["Model Source"]
         yaml["cog.yaml"]
-        code["predict.py"]
+        code["run.py"]
         weights["weights"]
     end
     
@@ -107,7 +107,7 @@ flowchart TB
     subgraph runtime["Runtime"]
         server["HTTP Server"]
         worker["Worker Process"]
-        predictor["Predictor"]
+        runner["Runner"]
     end
     
     yaml --> config
@@ -121,14 +121,14 @@ flowchart TB
     
     image --> server
     server --> worker
-    worker --> predictor
+    worker --> runner
 ```
 
 ## Terminology
 
 | Term | Meaning |
 |------|---------|
-| **Predictor** | User's model class with `setup()` and `predict()` methods |
+| **Runner** | User's model class with `setup()` and `run()` methods |
 | **Schema** | OpenAPI spec describing the model's input/output interface |
 | **Envelope** | Fixed request/response structure wrapping model-specific data |
 | **Worker** | Isolated subprocess running user code |

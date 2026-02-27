@@ -1,6 +1,6 @@
 # Build System
 
-The build system transforms [Model Source](./01-model-source.md) (cog.yaml + predict.py + weights) into a production-ready OCI image containing the [Container Runtime](./04-container-runtime.md).
+The build system transforms [Model Source](./01-model-source.md) (cog.yaml + run.py + weights) into a production-ready OCI image containing the [Container Runtime](./04-container-runtime.md).
 
 ## Build Flow
 
@@ -8,7 +8,7 @@ The build system transforms [Model Source](./01-model-source.md) (cog.yaml + pre
 flowchart TB
     subgraph input["Inputs"]
         yaml["cog.yaml"]
-        code["predict.py"]
+        code["run.py"]
         weights["weights"]
     end
     

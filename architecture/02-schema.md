@@ -29,16 +29,16 @@ Without the schema, consumers would have no way to know:
 |----------|------------------------------|
 | **Replicate platform** | Generate input forms in the web UI, validate requests before routing to models |
 | **HTTP server (Pydantic)** | Validate incoming JSON, reject malformed requests before they reach user code |
-| **CLI (`cog predict`)** | Parse `-i key=value` flags into correctly-typed Python objects |
+| **CLI (`cog run`)** | Parse `-i key=value` flags into correctly-typed Python objects |
 | **Swagger UI** | Interactive `/docs` endpoint for testing models locally |
 | **API clients** | Know what to send and what to expect back without reading source code |
 
 ## What the Schema Captures
 
-Given this predictor:
+Given this runner:
 
 ```python
-def predict(
+def run(
     self,
     prompt: str = Input(description="Text prompt"),
     steps: int = Input(default=50, ge=1, le=100),
@@ -61,7 +61,7 @@ The schema captures:
 ```mermaid
 flowchart LR
     subgraph source["Model Source"]
-        predict["def predict(self, prompt: str) -> str"]
+        run_method["def run(self, prompt: str) -> str"]
     end
     
     subgraph introspection["Introspection"]
@@ -78,10 +78,10 @@ flowchart LR
         spec["OpenAPI 3.0.2 JSON"]
     end
     
-    predict --> sig --> pydantic --> routes --> openapi --> spec
+    run_method --> sig --> pydantic --> routes --> openapi --> spec
 ```
 
-1. **Introspect** the `predict()` method signature
+1. **Introspect** the `run()` method signature
 2. **Create** a dynamic Pydantic model (`Input`) from the parameters
 3. **Create** an `Output` model from the return type
 4. **Define** FastAPI routes using these models
