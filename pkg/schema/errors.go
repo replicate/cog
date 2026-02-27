@@ -43,23 +43,23 @@ func WrapError(kind SchemaErrorKind, msg string, inner error) *SchemaError {
 	return &SchemaError{Kind: kind, Message: msg}
 }
 
-func errParse(msg string) error {
+func errParse(msg string) error { //nolint:unused // used by generator.go (not yet written)
 	return &SchemaError{Kind: ErrParse, Message: fmt.Sprintf("failed to parse Python source: %s", msg)}
 }
 
-func errPredictorNotFound(name string) error {
+func errPredictorNotFound(name string) error { //nolint:unused // used by generator.go (not yet written)
 	return &SchemaError{Kind: ErrPredictorNotFound, Message: fmt.Sprintf("predictor not found: %s", name)}
 }
 
-func errMethodNotFound(class, method string) error {
+func errMethodNotFound(class, method string) error { //nolint:unused // used by generator.go (not yet written)
 	return &SchemaError{Kind: ErrMethodNotFound, Message: fmt.Sprintf("%s method not found on %s", method, class)}
 }
 
-func errMissingReturnType(method string) error {
+func errMissingReturnType(method string) error { //nolint:unused // used by generator.go (not yet written)
 	return &SchemaError{Kind: ErrMissingReturnType, Message: fmt.Sprintf("missing return type annotation on %s", method)}
 }
 
-func errMissingTypeAnnotation(method, param string) error {
+func errMissingTypeAnnotation(method, param string) error { //nolint:unused // used by generator.go (not yet written)
 	return &SchemaError{Kind: ErrMissingTypeAnnotation, Message: fmt.Sprintf("missing type annotation for parameter '%s' on %s", param, method)}
 }
 
@@ -67,14 +67,14 @@ func errUnsupportedType(msg string) error {
 	return &SchemaError{Kind: ErrUnsupportedType, Message: fmt.Sprintf("unsupported type: %s", msg)}
 }
 
-func errDefaultFactoryNotSupported(param string) error {
+func errDefaultFactoryNotSupported(param string) error { //nolint:unused // used by generator.go (not yet written)
 	return &SchemaError{
 		Kind:    ErrDefaultFactoryNotSupported,
 		Message: fmt.Sprintf("default_factory is not supported in Input() — use a literal default value instead (parameter '%s')", param),
 	}
 }
 
-func errInvalidPredictRef(ref string) error {
+func errInvalidPredictRef(ref string) error { //nolint:unused // used by generator.go (not yet written)
 	return &SchemaError{
 		Kind:    ErrInvalidPredictRef,
 		Message: fmt.Sprintf("invalid predict reference '%s' — expected format: file.py:ClassName or file.py:function_name", ref),
@@ -89,14 +89,14 @@ func errConcatIteratorNotStr(got string) error {
 	return &SchemaError{Kind: ErrConcatIteratorNotStr, Message: fmt.Sprintf("ConcatenateIterator element type must be str, got %s", got)}
 }
 
-func errChoicesNotResolvable(param string) error {
+func errChoicesNotResolvable(param string) error { //nolint:unused // used by generator.go (not yet written)
 	return &SchemaError{
 		Kind:    ErrChoicesNotResolvable,
 		Message: fmt.Sprintf("choices for parameter '%s' cannot be statically resolved — use a literal list instead (e.g. choices=[\"a\", \"b\"])", param),
 	}
 }
 
-func errDefaultNotResolvable(param, expr string) error {
+func errDefaultNotResolvable(param, expr string) error { //nolint:unused // used by generator.go (not yet written)
 	return &SchemaError{
 		Kind: ErrDefaultNotResolvable,
 		Message: fmt.Sprintf(

@@ -98,7 +98,7 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode) (*schema
 func namedChildren(n *sitter.Node) []*sitter.Node {
 	count := int(n.NamedChildCount())
 	result := make([]*sitter.Node, 0, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		result = append(result, n.NamedChild(i))
 	}
 	return result
@@ -108,7 +108,7 @@ func namedChildren(n *sitter.Node) []*sitter.Node {
 func allChildren(n *sitter.Node) []*sitter.Node {
 	count := int(n.ChildCount())
 	result := make([]*sitter.Node, 0, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		result = append(result, n.Child(i))
 	}
 	return result
@@ -473,7 +473,7 @@ func parseBareAnnotation(node *sitter.Node, source []byte) (schema.ModelField, b
 	name := strings.TrimSpace(parts[0])
 	typeStr := strings.TrimSpace(parts[1])
 
-	if name == "" || !(name[0] == '_' || (name[0] >= 'a' && name[0] <= 'z') || (name[0] >= 'A' && name[0] <= 'Z')) {
+	if name == "" || (name[0] != '_' && (name[0] < 'a' || name[0] > 'z') && (name[0] < 'A' || name[0] > 'Z')) {
 		return schema.ModelField{}, false
 	}
 
@@ -522,7 +522,7 @@ func parseTypeFromString(s string) (schema.TypeAnnotation, bool) {
 
 	// Simple identifier
 	for _, c := range s {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
 			return schema.TypeAnnotation{}, false
 		}
 	}
@@ -729,11 +729,9 @@ func resolveInputReference(node *sitter.Node, source []byte, registry *inputRegi
 				if nameNode != nil && valNode != nil {
 					argValues[content(nameNode, source)] = valNode
 				}
-			} else {
-				if positionalIdx < len(methodInfo.ParamNames) {
-					argValues[methodInfo.ParamNames[positionalIdx]] = arg
-					positionalIdx++
-				}
+			} else if positionalIdx < len(methodInfo.ParamNames) {
+				argValues[methodInfo.ParamNames[positionalIdx]] = arg
+				positionalIdx++
 			}
 		}
 
