@@ -170,7 +170,7 @@ fn send_output_item(
         return Ok(());
     }
 
-    // Non-file output �� process normally
+    // Non-file output - process normally
     let processed = output::process_output_item(py, item)
         .map_err(|e| PredictionError::Failed(format!("Failed to process output item: {}", e)))?;
 
