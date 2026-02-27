@@ -1,6 +1,7 @@
 //! coglet: Rust execution engine for cog models.
 
 mod health;
+pub mod input_validation;
 mod prediction;
 mod predictor;
 mod supervisor;
@@ -24,6 +25,7 @@ pub use supervisor::{
 };
 
 pub use health::{Health, SetupResult, SetupStatus};
+pub use input_validation::InputValidator;
 pub use prediction::{CancellationToken, Prediction, PredictionOutput, PredictionStatus};
 pub use predictor::{PredictionError, PredictionGuard, PredictionMetrics, PredictionResult};
 pub use service::{CreatePredictionError, HealthSnapshot, PredictionService};

@@ -197,8 +197,12 @@ jobs:
   create-release:
     name: Create release
     needs: [verify-tag, build-sdk, build-coglet-wheels]
-    runs-on: ubuntu-latest
+    # macOS arm64 runner: native clang for darwin targets, zig for linux targets.
+    # CGo required for go-tree-sitter (static Python schema parser).
+    runs-on: macos-14
     timeout-minutes: 30
+    env:
+      CGO_ENABLED: "1"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -207,6 +211,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Check for existing release
         run: |
@@ -247,7 +255,7 @@ jobs:
           # Download goreleaser's checksums.txt and append wheel checksums
           gh release download "$TAG" -p checksums.txt -D release-wheels
           cd release-wheels
-          sha256sum *.whl *.tar.gz >> checksums.txt
+          shasum -a 256 *.whl *.tar.gz >> checksums.txt
           echo "Checksums:"
           cat checksums.txt
           cd ..

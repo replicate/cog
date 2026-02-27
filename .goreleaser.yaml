@@ -4,7 +4,10 @@ before:
     - go mod tidy
 dist: ./dist/go
 env:
-  - CGO_ENABLED=0
+  # CGo required for go-tree-sitter (static Python schema parser).
+  # Linux cross-compilation uses zig cc — see per-build overrides.
+  # Darwin builds use the native compiler (zig lacks macOS SDK stubs).
+  - CGO_ENABLED=1
 builds:
   - binary: cog
     id: cog
@@ -19,6 +22,15 @@ builds:
       # COG_VERSION (from Cargo.toml via mise build:cog) overrides git-derived version for snapshots.
       # For tagged releases, COG_VERSION is unset and envOrDefault falls back to .Version (from tag).
       - "-s -w -X github.com/replicate/cog/pkg/global.Version={{ envOrDefault \"COG_VERSION\" .Version }} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=zig cc -target x86_64-linux-gnu
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=zig cc -target aarch64-linux-gnu
   - binary: base-image
     id: base-image
     goos:
@@ -30,6 +42,15 @@ builds:
     main: ./cmd/base-image
     ldflags:
       - "-s -w -X github.com/replicate/cog/pkg/global.Version={{ envOrDefault \"COG_VERSION\" .Version }} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=zig cc -target x86_64-linux-gnu
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=zig cc -target aarch64-linux-gnu
 archives:
   - formats: [binary]
     ids:

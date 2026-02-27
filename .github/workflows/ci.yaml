@@ -26,6 +26,8 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
   CARGO_TERM_COLOR: always
+  # CGo required for go-tree-sitter (static Python schema parser)
+  CGO_ENABLED: "1"
   # Disable tools in mise that CI installs via dedicated GitHub Actions for
   # better reliability (avoids transient GitHub Releases 502s from aqua downloads),
   # better caching, and guaranteed tool ordering.
@@ -305,6 +307,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
       - name: Get version from Cargo.toml
         id: version
         run: echo "version=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')" >> "$GITHUB_OUTPUT"
@@ -883,6 +888,9 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Check coglet crates.io publish
         run: cargo publish --dry-run -p coglet --manifest-path crates/Cargo.toml
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'

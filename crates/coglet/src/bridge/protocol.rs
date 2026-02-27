@@ -525,7 +525,7 @@ mod tests {
         let emoji = "🦀"; // 4-byte UTF-8 character
         // known size of truncate target, add one more character
         let count = 10;
-        let message: String = truncate_worker_log(std::iter::repeat(emoji).take(count).collect());
+        let message: String = truncate_worker_log(emoji.repeat(count));
         assert!(
             !message.ends_with(WORKER_LOG_TRUNCATE_NOTICE),
             "short log message was truncated"
