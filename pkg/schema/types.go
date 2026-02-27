@@ -378,6 +378,10 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error)
 			}
 			return FieldType{Primitive: inner.Primitive, Repetition: Optional}, nil
 		}
+		if outer == "Union" {
+			// typing.Union[X, Y] → treat as union type
+			return ResolveFieldType(TypeAnnotation{Kind: TypeAnnotUnion, Args: ann.Args}, ctx)
+		}
 		if outer == "List" || outer == "list" {
 			if len(ann.Args) != 1 {
 				return FieldType{}, errUnsupportedType(fmt.Sprintf("List expects exactly 1 type argument, got %d", len(ann.Args)))

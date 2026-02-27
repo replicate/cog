@@ -1,0 +1,69 @@
+# Test that the static schema generator (Go tree-sitter) produces a correct
+# OpenAPI schema that is embedded in the Docker image label and served by coglet.
+#
+# This exercises the full pipeline:
+#   1. cog build runs the Go parser on predict.py
+#   2. Schema is written to .cog/openapi_schema.json inside the image
+#   3. Schema is embedded as the run.cog.openapi_schema Docker label
+#   4. coglet loads the schema from disk and serves it at /openapi.json
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Verify schema is in Docker label with correct structure
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+
+# Top-level OpenAPI structure
+stdout '"openapi":"3.0.2"'
+
+# Input schema: required string field
+stdout '"text":'
+stdout '"type":"string"'
+
+# Input schema: optional int with default
+stdout '"count":'
+stdout '"type":"integer"'
+stdout '"default":5'
+
+# Input schema: choices generate enum
+stdout '"enum":\["fast","balanced","quality"\]'
+
+# Input schema: Path type → uri format
+stdout '"format":"uri"'
+
+# Input schema: required array
+stdout '"required":\["text","image"\]'
+
+# Output type
+stdout '"type":"string"'
+
+# Predict should work end-to-end
+cog predict $TEST_IMAGE -i text=hello -i image=@test.jpg
+stdout 'hello-5-fast-jpg'
+
+# Prediction with overrides
+cog predict $TEST_IMAGE -i text=world -i count=3 -i mode=quality -i image=@test.jpg
+stdout 'world-3-quality-jpg'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input, Path
+
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        text: str,
+        image: Path,
+        count: int = Input(description="Number of iterations", default=5, ge=1, le=100),
+        mode: str = Input(description="Quality mode", default="fast", choices=["fast", "balanced", "quality"]),
+    ) -> str:
+        ext = str(image).split(".")[-1]
+        return f"{text}-{count}-{mode}-{ext}"
+
+-- test.jpg --
+fake image content

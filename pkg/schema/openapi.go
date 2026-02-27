@@ -7,7 +7,7 @@ import (
 )
 
 // GenerateOpenAPISchema produces a complete OpenAPI 3.0.2 specification
-// from a PredictorInfo. The returned bytes are indented JSON.
+// from a PredictorInfo. The returned bytes are compact JSON.
 func GenerateOpenAPISchema(info *PredictorInfo) ([]byte, error) {
 	spec := buildOpenAPISpec(info)
 
@@ -15,7 +15,7 @@ func GenerateOpenAPISchema(info *PredictorInfo) ([]byte, error) {
 	removeTitleNextToRef(spec)
 	fixNullableAnyOf(spec)
 
-	return json.MarshalIndent(spec, "", "  ")
+	return json.Marshal(spec)
 }
 
 // buildOpenAPISpec constructs the full OpenAPI 3.0.2 map.

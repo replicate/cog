@@ -1001,3 +1001,223 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.DefaultFloat, conf.Default.Kind)
 	require.Equal(t, 0.0, conf.Default.Float)
 }
+
+// ---------------------------------------------------------------------------
+// No-input predictor (only self)
+// ---------------------------------------------------------------------------
+
+func TestNoInputPredictor(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, 0, info.Inputs.Len())
+	require.Equal(t, schema.OutputSingle, info.Output.Kind)
+}
+
+// ---------------------------------------------------------------------------
+// Falsy defaults (False, 0, 0.0, "")
+// ---------------------------------------------------------------------------
+
+func TestDefaultFalse(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, flag: bool = False) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	f, ok := info.Inputs.Get("flag")
+	require.True(t, ok)
+	require.NotNil(t, f.Default)
+	require.Equal(t, schema.DefaultBool, f.Default.Kind)
+	require.Equal(t, false, f.Default.Bool)
+	require.False(t, f.IsRequired())
+}
+
+func TestDefaultZeroInt(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, count: int = 0) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	c, ok := info.Inputs.Get("count")
+	require.True(t, ok)
+	require.NotNil(t, c.Default)
+	require.Equal(t, schema.DefaultInt, c.Default.Kind)
+	require.Equal(t, int64(0), c.Default.Int)
+	require.False(t, c.IsRequired())
+}
+
+func TestDefaultZeroFloat(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, weight: float = 0.0) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	w, ok := info.Inputs.Get("weight")
+	require.True(t, ok)
+	require.NotNil(t, w.Default)
+	require.Equal(t, schema.DefaultFloat, w.Default.Kind)
+	require.Equal(t, 0.0, w.Default.Float)
+	require.False(t, w.IsRequired())
+}
+
+func TestDefaultEmptyString(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str = "") -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	text, ok := info.Inputs.Get("text")
+	require.True(t, ok)
+	require.NotNil(t, text.Default)
+	require.Equal(t, schema.DefaultString, text.Default.Kind)
+	require.Equal(t, "", text.Default.Str)
+	require.False(t, text.IsRequired())
+}
+
+func TestDefaultNegativeInt(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, offset: int = -1) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	o, ok := info.Inputs.Get("offset")
+	require.True(t, ok)
+	require.NotNil(t, o.Default)
+	require.Equal(t, schema.DefaultInt, o.Default.Kind)
+	require.Equal(t, int64(-1), o.Default.Int)
+}
+
+// ---------------------------------------------------------------------------
+// Async iterators
+// ---------------------------------------------------------------------------
+
+func TestAsyncIteratorOutput(t *testing.T) {
+	source := `
+from typing import AsyncIterator
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def predict(self, s: str) -> AsyncIterator[str]:
+        yield s
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.OutputIterator, info.Output.Kind)
+	require.NotNil(t, info.Output.Primitive)
+	require.Equal(t, schema.TypeString, *info.Output.Primitive)
+}
+
+func TestAsyncConcatenateIteratorOutput(t *testing.T) {
+	source := `
+from cog import BasePredictor, ConcatenateIterator
+
+class Predictor(BasePredictor):
+    async def predict(self, s: str) -> ConcatenateIterator[str]:
+        yield s
+`
+	// Note: AsyncConcatenateIterator is also valid via typing import,
+	// but ConcatenateIterator in async context works the same way
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.OutputConcatenateIterator, info.Output.Kind)
+	require.NotNil(t, info.Output.Primitive)
+	require.Equal(t, schema.TypeString, *info.Output.Primitive)
+}
+
+// ---------------------------------------------------------------------------
+// typing.List and typing.Union syntax
+// ---------------------------------------------------------------------------
+
+func TestTypingListCapitalL(t *testing.T) {
+	source := `
+from typing import List
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, items: List[str]) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	items, ok := info.Inputs.Get("items")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, items.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, items.FieldType.Repetition)
+}
+
+func TestTypingUnionStrNone(t *testing.T) {
+	source := `
+from typing import Union
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: Union[str, None] = None) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	text, ok := info.Inputs.Get("text")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, text.FieldType.Primitive)
+	require.Equal(t, schema.Optional, text.FieldType.Repetition)
+	require.False(t, text.IsRequired())
+}
+
+// ---------------------------------------------------------------------------
+// All-optional inputs (no required array)
+// ---------------------------------------------------------------------------
+
+func TestAllOptionalInputs(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, a: str = "x", b: int = Input(default=5)) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, 2, info.Inputs.Len())
+
+	a, ok := info.Inputs.Get("a")
+	require.True(t, ok)
+	require.False(t, a.IsRequired())
+
+	b, ok := info.Inputs.Get("b")
+	require.True(t, ok)
+	require.False(t, b.IsRequired())
+}
+
+// ---------------------------------------------------------------------------
+// list[Path] as input
+// ---------------------------------------------------------------------------
+
+func TestListPathInput(t *testing.T) {
+	source := `
+from cog import BasePredictor, Path
+
+class Predictor(BasePredictor):
+    def predict(self, files: list[Path]) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	files, ok := info.Inputs.Get("files")
+	require.True(t, ok)
+	require.Equal(t, schema.TypePath, files.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, files.FieldType.Repetition)
+}

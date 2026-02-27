@@ -508,16 +508,26 @@ func parseTypeFromString(s string) (schema.TypeAnnotation, bool) {
 		return schema.TypeAnnotation{}, false
 	}
 
-	// Generic: X[Y]
+	// Generic: X[Y] or X[Y, Z]
 	bracketPos := strings.Index(s, "[")
 	if bracketPos >= 0 && strings.HasSuffix(s, "]") {
 		outer := strings.TrimSpace(s[:bracketPos])
 		innerStr := s[bracketPos+1 : len(s)-1]
-		inner, ok := parseTypeFromString(innerStr)
-		if !ok {
+
+		// Split on top-level commas (handles Union[str, None], etc.)
+		parts := splitTopLevelCommas(innerStr)
+		var args []schema.TypeAnnotation
+		for _, p := range parts {
+			arg, ok := parseTypeFromString(strings.TrimSpace(p))
+			if !ok {
+				return schema.TypeAnnotation{}, false
+			}
+			args = append(args, arg)
+		}
+		if len(args) == 0 {
 			return schema.TypeAnnotation{}, false
 		}
-		return schema.TypeAnnotation{Kind: schema.TypeAnnotGeneric, Name: outer, Args: []schema.TypeAnnotation{inner}}, true
+		return schema.TypeAnnotation{Kind: schema.TypeAnnotGeneric, Name: outer, Args: args}, true
 	}
 
 	// Simple identifier
@@ -527,6 +537,29 @@ func parseTypeFromString(s string) (schema.TypeAnnotation, bool) {
 		}
 	}
 	return schema.TypeAnnotation{Kind: schema.TypeAnnotSimple, Name: s}, true
+}
+
+// splitTopLevelCommas splits a string on commas that are not nested inside brackets.
+// e.g. "str, None" → ["str", "None"], "List[str], None" → ["List[str]", "None"]
+func splitTopLevelCommas(s string) []string {
+	var parts []string
+	depth := 0
+	start := 0
+	for i, c := range s {
+		switch c {
+		case '[':
+			depth++
+		case ']':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	parts = append(parts, s[start:])
+	return parts
 }
 
 // ---------------------------------------------------------------------------
