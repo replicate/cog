@@ -36,13 +36,11 @@ func testInstallCog(stripped bool) string {
 	if stripped {
 		strippedCall += " && find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 	}
-	// coglet is installed before cog — cog depends on coglet
+	// When coglet has no explicit version pin (empty version via pypiWheels()),
+	// the SDK's own dependency handles coglet installation — no explicit coglet line.
 	return fmt.Sprintf(`ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/uv uv pip install --no-cache coglet%s
-ENV CFLAGS=
-ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/uv uv pip install --no-cache cog%s
-ENV CFLAGS=`, strippedCall, strippedCall)
+ENV CFLAGS=`, strippedCall)
 }
 
 // pypiWheels sets the generator to use unpinned PyPI for both cog and coglet,
@@ -100,6 +98,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -137,6 +136,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -189,6 +189,7 @@ RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.con
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
@@ -246,6 +247,7 @@ RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.con
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -416,6 +418,7 @@ COPY --from=weights --link /src/models /src/models
 COPY --from=weights --link /src/root-large /src/root-large
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -487,6 +490,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -520,6 +524,7 @@ FROM r8.im/cog-base:python3.12
 ` + testInstallCog(gen.strip) + `
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -567,6 +572,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 	require.Equal(t, expected, actual)
@@ -626,6 +632,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`, expectedTorchVersion)
 
@@ -684,6 +691,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -741,6 +749,7 @@ ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -835,6 +844,7 @@ RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -896,6 +906,7 @@ RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
+ENV COG_PREDICT_TYPE_STUB="predict.py:Predictor"
 CMD ["python", "-m", "cog.server.http"]
 COPY . /src`
 
@@ -932,9 +943,9 @@ predict: predict.py:Predictor
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 
-	// Should contain uv pip install cog and coglet from PyPI
+	// Should contain uv pip install cog from PyPI.
+	// Coglet is not explicitly installed when unpinned — the SDK dependency handles it.
 	require.Contains(t, actual, "uv pip install --no-cache cog")
-	require.Contains(t, actual, "uv pip install --no-cache coglet")
 }
 
 func TestCOGWheelEnvPyPI(t *testing.T) {
@@ -1055,7 +1066,7 @@ predict: predict.py:Predictor
 	require.Contains(t, actual, "uv pip install --no-cache /tmp/test-cog-0.1.0-py3-none-any.whl")
 }
 
-func TestCogletAlwaysInstalledWhenInRequirements(t *testing.T) {
+func TestCogletStrippedFromRequirements(t *testing.T) {
 	tmpDir := t.TempDir()
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -1074,10 +1085,9 @@ predict: predict.py:Predictor
 	pypiWheels(gen)
 	dockerfile, err := gen.GenerateInitialSteps(t.Context())
 	require.NoError(t, err)
-	// coglet must be installed by the build system (not skipped)
-	require.Contains(t, dockerfile, "uv pip install")
-	require.Contains(t, dockerfile, "coglet")
-	// the user-supplied coglet==0.1.0 must be stripped from requirements
+	// coglet is NOT explicitly installed — SDK dependency handles it.
+	// But the user-supplied coglet==0.1.0 must be stripped from requirements
+	// to avoid conflicting with whatever version the SDK pulls in.
 	require.NotContains(t, dockerfile, "coglet==0.1.0")
 }
 
@@ -1108,7 +1118,7 @@ predict: predict.py:Predictor
 }
 
 func TestInstallCogWithPreReleaseSDKVersion(t *testing.T) {
-	// build.sdk_version with a pre-release version adds --pre to both cog and coglet installs
+	// build.sdk_version with a pre-release version adds --pre to cog install
 	tmpDir := t.TempDir()
 	conf, err := config.FromYAML([]byte(`
 build:
@@ -1129,8 +1139,8 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	// cog install should have --pre and pinned version
 	require.Contains(t, dockerfile, "uv pip install --pre --no-cache cog==0.18.0a1")
-	// coglet install should also have --pre (sdk pre-release implies coglet pre-release)
-	require.Contains(t, dockerfile, "uv pip install --pre --no-cache coglet")
+	// coglet is NOT explicitly installed — SDK dependency pulls it in.
+	// No separate coglet install line expected.
 }
 
 func TestInstallCogSDKVersionBelowMinimum(t *testing.T) {

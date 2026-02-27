@@ -245,12 +245,14 @@ func (g *StandardGenerator) GenerateModelBase(ctx context.Context) (string, erro
 	if err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
+	steps := []string{
 		initialSteps,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
-		`CMD ["python", "-m", "cog.server.http"]`,
-	}, "\n"), nil
+	}
+	steps = append(steps, g.cogEnvVars()...)
+	steps = append(steps, `CMD ["python", "-m", "cog.server.http"]`)
+	return strings.Join(steps, "\n"), nil
 }
 
 // GenerateDockerfileWithoutSeparateWeights generates a Dockerfile that doesn't write model weights to a separate layer.
@@ -305,6 +307,9 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Con
 	base = append(base,
 		`WORKDIR /src`,
 		`EXPOSE 5000`,
+	)
+	base = append(base, g.cogEnvVars()...)
+	base = append(base,
 		`CMD ["python", "-m", "cog.server.http"]`,
 		`COPY . /src`,
 	)
@@ -314,6 +319,22 @@ func (g *StandardGenerator) GenerateModelBaseWithSeparateWeights(ctx context.Con
 
 	dockerignoreContents = makeDockerignoreForWeights(g.modelDirs, g.modelFiles)
 	return weightsBase, joinStringsWithoutLineSpace(base), dockerignoreContents, nil
+}
+
+// cogEnvVars returns ENV lines that pass cog.yaml config to the runtime
+// so the container doesn't need to parse cog.yaml at startup.
+func (g *StandardGenerator) cogEnvVars() []string {
+	var envs []string
+	if g.Config.Predict != "" {
+		envs = append(envs, fmt.Sprintf(`ENV COG_PREDICT_TYPE_STUB="%s"`, g.Config.Predict))
+	}
+	if g.Config.Train != "" {
+		envs = append(envs, fmt.Sprintf(`ENV COG_TRAIN_TYPE_STUB="%s"`, g.Config.Train))
+	}
+	if g.Config.Concurrency != nil && g.Config.Concurrency.Max > 0 {
+		envs = append(envs, fmt.Sprintf(`ENV COG_MAX_CONCURRENCY=%d`, g.Config.Concurrency.Max))
+	}
+	return envs
 }
 
 func (g *StandardGenerator) cpCogYaml() string {
@@ -525,6 +546,29 @@ func (g *StandardGenerator) resolveCogWheelConfigs() error {
 	return nil
 }
 
+// cogletMinSDKVersion is the minimum SDK version that supports coglet.
+// Older SDKs use the built-in Python HTTP server and are incompatible with coglet.
+const cogletMinSDKVersion = "0.17.0"
+
+// isLegacySDKVersion returns true if the resolved cog SDK version is explicitly
+// pinned below the minimum version that supports coglet. Returns false for
+// unpinned, non-PyPI, or unparseable versions (assume modern).
+func (g *StandardGenerator) isLegacySDKVersion() bool {
+	cfg := g.resolvedCogConfig
+	if cfg == nil || cfg.Source != wheels.WheelSourcePyPI || cfg.Version == "" {
+		return false
+	}
+	base := cfg.Version
+	if m := wheels.BaseVersionRe.FindString(base); m != "" {
+		base = m
+	}
+	ver, err := version.NewVersion(base)
+	if err != nil {
+		return false
+	}
+	return !ver.GreaterOrEqual(version.MustVersion(cogletMinSDKVersion))
+}
+
 func (g *StandardGenerator) installCog() (string, error) {
 	// Do not install Cog in base images
 	if !g.requiresCog {
@@ -535,32 +579,54 @@ func (g *StandardGenerator) installCog() (string, error) {
 		return "", err
 	}
 	wheelConfig := g.resolvedCogConfig
-	cogletConfig := g.resolvedCogletConfig
-	switch cogletConfig.Source {
-	case wheels.WheelSourcePyPI:
-		console.Infof("Using coglet from PyPI: %s", cogletConfig.PyPIPackageURL("coglet"))
-	case wheels.WheelSourceURL:
-		console.Infof("Using coglet wheel from URL: %s", cogletConfig.URL)
-	case wheels.WheelSourceFile:
-		console.Infof("Using local coglet wheel: %s", cogletConfig.Path)
-	}
 
 	// Determine if we need --pre flag (pre-release SDK implies pre-release coglet too)
 	sdkIsPreRelease := wheelConfig.Source == wheels.WheelSourcePyPI && wheels.IsPreRelease(wheelConfig.Version)
-	cogletIsPreRelease := sdkIsPreRelease ||
-		(cogletConfig.Source == wheels.WheelSourcePyPI && wheels.IsPreRelease(cogletConfig.Version))
 
+	// Only install coglet explicitly when there's a specific source:
+	//   - COGLET_WHEEL env var (explicit override)
+	//   - Local wheel from dist/ (dev/CI auto-detect)
+	//   - PyPI with pinned version (e.g. COGLET_WHEEL=pypi:0.17.0)
+	// Otherwise, let the SDK's own dependency handle it — cog >= 0.17.0 declares
+	// coglet as a hard dependency, older versions don't install it.
+	//
+	// Never install coglet when the SDK is explicitly pinned to < 0.17.0 — those
+	// versions use the built-in Python HTTP server and are incompatible with coglet.
 	var installLines string
-	cogletInstall, err := g.installCogletWheel(cogletConfig, cogletIsPreRelease)
-	if err != nil {
-		return "", fmt.Errorf("failed to install coglet wheel: %w", err)
+	cogletConfig := g.resolvedCogletConfig
+	explicitCoglet := cogletConfig != nil &&
+		(cogletConfig.Source == wheels.WheelSourceFile ||
+			cogletConfig.Source == wheels.WheelSourceURL ||
+			(cogletConfig.Source == wheels.WheelSourcePyPI && cogletConfig.Version != ""))
+	if explicitCoglet && g.isLegacySDKVersion() {
+		console.Info("Skipping coglet install for legacy SDK")
+		explicitCoglet = false
 	}
-	if cogletInstall != "" {
-		installLines = cogletInstall
+	if explicitCoglet {
+		switch cogletConfig.Source {
+		case wheels.WheelSourcePyPI:
+			console.Infof("Using coglet from PyPI: %s", cogletConfig.PyPIPackageURL("coglet"))
+		case wheels.WheelSourceURL:
+			console.Infof("Using coglet wheel from URL: %s", cogletConfig.URL)
+		case wheels.WheelSourceFile:
+			console.Infof("Using local coglet wheel: %s", cogletConfig.Path)
+		}
+
+		cogletIsPreRelease := sdkIsPreRelease ||
+			(cogletConfig.Source == wheels.WheelSourcePyPI && wheels.IsPreRelease(cogletConfig.Version))
+
+		cogletInstall, err := g.installCogletWheel(cogletConfig, cogletIsPreRelease)
+		if err != nil {
+			return "", fmt.Errorf("failed to install coglet wheel: %w", err)
+		}
+		if cogletInstall != "" {
+			installLines = cogletInstall
+		}
 	}
 
 	// Install cog SDK
 	var cogInstall string
+	var err error
 	switch wheelConfig.Source {
 	case wheels.WheelSourcePyPI:
 		cogInstall, err = g.installCogFromPyPI(wheelConfig, sdkIsPreRelease)
