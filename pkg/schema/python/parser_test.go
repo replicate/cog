@@ -1003,6 +1003,78 @@ class Predictor(BasePredictor):
 }
 
 // ---------------------------------------------------------------------------
+// Pydantic BaseModel output
+// ---------------------------------------------------------------------------
+
+func TestPydanticBaseModelOutput(t *testing.T) {
+	source := `
+from pydantic import BaseModel as PydanticBaseModel
+from cog import BasePredictor
+
+class Result(PydanticBaseModel):
+    name: str
+    score: float
+    tags: list[str]
+
+class Predictor(BasePredictor):
+    def predict(self, name: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.OutputObject, info.Output.Kind)
+	require.NotNil(t, info.Output.Fields)
+	require.Equal(t, 3, info.Output.Fields.Len())
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, name.FieldType.Primitive)
+
+	score, ok := info.Output.Fields.Get("score")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeFloat, score.FieldType.Primitive)
+}
+
+func TestPydanticBaseModelDottedOutput(t *testing.T) {
+	source := `
+import pydantic
+from cog import BasePredictor
+
+class Result(pydantic.BaseModel):
+    text: str
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.OutputObject, info.Output.Kind)
+
+	text, ok := info.Output.Fields.Get("text")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, text.FieldType.Primitive)
+}
+
+func TestPydanticBaseModelDirectImport(t *testing.T) {
+	source := `
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Output(BaseModel):
+    value: int
+
+class Predictor(BasePredictor):
+    def predict(self, x: int) -> Output:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.OutputObject, info.Output.Kind)
+
+	val, ok := info.Output.Fields.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeInteger, val.FieldType.Primitive)
+}
+
+// ---------------------------------------------------------------------------
 // No-input predictor (only self)
 // ---------------------------------------------------------------------------
 
