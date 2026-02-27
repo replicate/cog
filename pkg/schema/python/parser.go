@@ -161,6 +161,19 @@ func parseImportFrom(node *sitter.Node, source []byte, ctx *schema.ImportContext
 				name := content(child, source)
 				ctx.Names.Set(name, schema.ImportEntry{Module: module, Original: name})
 			}
+		case "aliased_import":
+			// Single aliased import: `from X import name as alias`
+			origNode := child.ChildByFieldName("name")
+			aliasNode := child.ChildByFieldName("alias")
+			orig := ""
+			if origNode != nil {
+				orig = content(origNode, source)
+			}
+			alias := orig
+			if aliasNode != nil {
+				alias = content(aliasNode, source)
+			}
+			ctx.Names.Set(alias, schema.ImportEntry{Module: module, Original: orig})
 		case "import_list":
 			for _, importChild := range allChildren(child) {
 				switch importChild.Type() {
@@ -404,9 +417,16 @@ func inheritsFromBaseModel(classNode *sitter.Node, source []byte, imports *schem
 		return false
 	}
 	for _, child := range allChildren(supers) {
-		if child.Type() == "identifier" {
+		switch child.Type() {
+		case "identifier":
 			name := content(child, source)
 			if imports.IsBaseModel(name) || name == "BaseModel" {
+				return true
+			}
+		case "attribute":
+			// Handle dotted access: pydantic.BaseModel, cog.BaseModel
+			text := content(child, source)
+			if strings.HasSuffix(text, ".BaseModel") {
 				return true
 			}
 		}

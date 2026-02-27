@@ -340,10 +340,10 @@ func (ctx *ImportContext) IsTypingType(name string) bool {
 	return false
 }
 
-// IsBaseModel returns true if name resolves to cog.BaseModel.
+// IsBaseModel returns true if name resolves to cog.BaseModel or pydantic.BaseModel.
 func (ctx *ImportContext) IsBaseModel(name string) bool {
 	if e, ok := ctx.Names.Get(name); ok {
-		return e.Module == "cog" && e.Original == "BaseModel"
+		return (e.Module == "cog" || e.Module == "pydantic" || e.Module == "pydantic.v1") && e.Original == "BaseModel"
 	}
 	return false
 }
