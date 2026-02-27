@@ -12,8 +12,8 @@ import (
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/model"
-	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/run"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -110,7 +110,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Infof("Starting Docker image %s...", imageName)
 
-	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
+	predictor, err := run.NewRunner(ctx, command.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,

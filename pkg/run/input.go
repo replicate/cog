@@ -1,4 +1,4 @@
-package predict
+package run
 
 import (
 	"encoding/json"
