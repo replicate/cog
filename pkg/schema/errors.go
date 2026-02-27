@@ -74,7 +74,7 @@ func errDefaultFactoryNotSupported(param string) error { //nolint:unused // used
 	}
 }
 
-func errInvalidPredictRef(ref string) error { //nolint:unused // used by generator.go (not yet written)
+func errInvalidPredictRef(ref string) error {
 	return &SchemaError{
 		Kind:    ErrInvalidPredictRef,
 		Message: fmt.Sprintf("invalid predict reference '%s' — expected format: file.py:ClassName or file.py:function_name", ref),
