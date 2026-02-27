@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 async-trait = "0.1.89"
+base64 = "0.22"
 coglet_core = { path = "../coglet", package = "coglet" }
 futures.workspace = true
 pyo3.workspace = true

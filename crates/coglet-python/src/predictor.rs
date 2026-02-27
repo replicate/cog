@@ -9,7 +9,7 @@ use coglet_core::worker::SlotSender;
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
 
 use crate::cancel;
-use crate::input::{self, InputProcessor, PreparedInput, Runtime};
+use crate::input::{self, PreparedInput};
 use crate::output;
 
 // =============================================================================
@@ -170,7 +170,7 @@ fn send_output_item(
         return Ok(());
     }
 
-    // Non-file output — process normally
+    // Non-file output - process normally
     let processed = output::process_output_item(py, item)
         .map_err(|e| PredictionError::Failed(format!("Failed to process output item: {}", e)))?;
 
@@ -230,44 +230,12 @@ pub enum PredictorKind {
 
 /// A loaded Python predictor instance.
 ///
-/// # GIL and Concurrency
-///
-/// This struct wraps a Python predictor object. The concurrency model depends on
-/// the Python runtime:
-///
-/// ## GIL Python (default, 3.8-3.12, 3.13 default)
-/// - `Python::attach()` acquires the GIL before calling into Python
-/// - Only one thread can execute Python bytecode at a time
-/// - However, native extensions (torch, numpy) release the GIL during compute
-/// - CUDA operations in torch run without holding GIL, allowing I/O concurrency
-/// - For sync predictors, max_concurrency=1 is appropriate
-///
-/// ## Free-threaded Python (3.13t+)
-/// - No GIL, multiple threads can run Python simultaneously  
-/// - `Python::attach()` still works but doesn't serialize execution
-/// - Most ML models are NOT thread-safe (shared weights, CUDA contexts)
-/// - Still need max_concurrency=1 for sync predictors unless model is thread-safe
-///
-/// ## Async Predictors
-/// - `async def predict()` allows Python to manage concurrency
-/// - Python's asyncio handles yielding during I/O
-/// - Can support max_concurrency > 1 safely
-///
-/// # Runtime Detection
-///
-/// The predictor uses cog's ADT (Algebraic Data Type) system for input
-/// validation and schema generation. The runtime is detected on load
-/// and the appropriate input processor is used.
+/// Input coercion (URL->Path/File) and FieldInfo default unwrapping are handled
+/// in Rust. The Python `_adt` and `_inspector` modules are no longer called.
 pub struct PythonPredictor {
     instance: PyObject,
     /// The predictor's kind (class or standalone function) and method execution types
     kind: PredictorKind,
-    /// The detected runtime type.
-    /// Retained for input_processor construction; will be used by input coercion (follow-up).
-    #[allow(dead_code)]
-    runtime: Runtime,
-    /// Input processor for this runtime.
-    input_processor: Box<dyn InputProcessor>,
 }
 
 // PyObject is Send in PyO3 0.23+
@@ -339,17 +307,96 @@ impl PythonPredictor {
             }
         };
 
-        // Detect runtime and create input processor
-        let runtime = input::detect_runtime(py, predictor_ref, &instance)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        let input_processor = input::create_input_processor(&runtime);
+        let predictor = Self { instance, kind };
 
-        Ok(Self {
-            instance,
-            kind,
-            runtime,
-            input_processor,
-        })
+        // Patch FieldInfo defaults on predict/train methods so Python uses actual
+        // default values instead of FieldInfo wrapper objects for missing inputs.
+        // Input(default=42, description="...") creates a FieldInfo; without patching,
+        // Python would pass the FieldInfo itself as the default value.
+        if is_function {
+            Self::unwrap_field_info_defaults(py, &predictor.instance, "")?;
+        } else {
+            Self::unwrap_field_info_defaults(py, &predictor.instance, "predict")?;
+            if matches!(predictor.kind, PredictorKind::Class { train, .. } if train != TrainKind::None)
+            {
+                Self::unwrap_field_info_defaults(py, &predictor.instance, "train")?;
+            }
+        }
+
+        Ok(predictor)
+    }
+
+    /// Replace FieldInfo defaults with their `.default` values on a method's signature.
+    ///
+    /// When users write `def predict(self, seed: int = Input(default=42, description="..."))`,
+    /// the Python default for `seed` is a `FieldInfo(default=42, ...)` object. If `seed` is
+    /// missing from the input dict, Python would use this FieldInfo as the value — not `42`.
+    ///
+    /// This patches `__defaults__` on the underlying function so Python natively resolves
+    /// to the actual default values.
+    fn unwrap_field_info_defaults(
+        py: Python<'_>,
+        instance: &PyObject,
+        method_name: &str,
+    ) -> PyResult<()> {
+        let field_info_class = py.import("cog.input")?.getattr("FieldInfo")?;
+
+        // Get the underlying function object
+        let func = if method_name.is_empty() {
+            // Standalone function
+            instance.bind(py).clone()
+        } else {
+            // Bound method — get __func__ for the raw function
+            instance
+                .bind(py)
+                .getattr(method_name)?
+                .getattr("__func__")?
+        };
+
+        // Patch __defaults__ (positional parameter defaults)
+        if let Ok(defaults) = func.getattr("__defaults__")
+            && !defaults.is_none()
+        {
+            let defaults_tuple = defaults.cast::<pyo3::types::PyTuple>()?;
+            let mut new_defaults: Vec<Bound<'_, PyAny>> = Vec::new();
+            let mut changed = false;
+
+            for item in defaults_tuple.iter() {
+                if item.is_instance(&field_info_class)? {
+                    new_defaults.push(item.getattr("default")?);
+                    changed = true;
+                } else {
+                    new_defaults.push(item);
+                }
+            }
+
+            if changed {
+                let new_tuple = pyo3::types::PyTuple::new(py, &new_defaults)?;
+                func.setattr("__defaults__", new_tuple)?;
+                tracing::debug!("Patched FieldInfo defaults on {}", method_name);
+            }
+        }
+
+        // Patch __kwdefaults__ (keyword-only parameter defaults)
+        if let Ok(kwdefaults) = func.getattr("__kwdefaults__")
+            && !kwdefaults.is_none()
+        {
+            let kwdefaults_dict = kwdefaults.cast::<pyo3::types::PyDict>()?;
+            let mut changed = false;
+
+            for (key, value) in kwdefaults_dict.iter() {
+                if value.is_instance(&field_info_class)? {
+                    kwdefaults_dict.set_item(&key, value.getattr("default")?)?;
+                    changed = true;
+                }
+            }
+
+            if changed {
+                tracing::debug!("Patched FieldInfo kwdefaults on {}", method_name);
+            }
+        }
+
+        Ok(())
     }
 
     /// Detect if a method is an async function.
@@ -447,6 +494,24 @@ impl PythonPredictor {
         Ok(())
     }
 
+    /// Get the predict function object for type annotation introspection.
+    pub fn predict_func<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let instance = self.instance.bind(py);
+        match &self.kind {
+            PredictorKind::Class { .. } => instance.getattr("predict"),
+            PredictorKind::StandaloneFunction(_) => Ok(instance.clone()),
+        }
+    }
+
+    /// Get the train function object for type annotation introspection.
+    pub fn train_func<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let instance = self.instance.bind(py);
+        match &self.kind {
+            PredictorKind::Class { .. } => instance.getattr("train"),
+            PredictorKind::StandaloneFunction(_) => Ok(instance.clone()),
+        }
+    }
+
     /// Call predict() with the given input dict, returning raw Python output.
     ///
     /// For standalone functions, calls the function directly.
@@ -538,9 +603,10 @@ impl PythonPredictor {
             })?;
 
             // PreparedInput cleans up temp files on drop (RAII)
-            let prepared = self
-                .input_processor
-                .prepare(py, raw_input_dict)
+            let func = self.predict_func(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get predict function: {}", e))
+            })?;
+            let prepared = input::prepare_input(py, raw_input_dict, &func)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
@@ -610,9 +676,10 @@ impl PythonPredictor {
             })?;
 
             // PreparedInput cleans up temp files on drop (RAII)
-            let prepared = self
-                .input_processor
-                .prepare(py, raw_input_dict)
+            let func = self.train_func(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get train function: {}", e))
+            })?;
+            let prepared = input::prepare_input(py, raw_input_dict, &func)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
@@ -748,7 +815,7 @@ impl PythonPredictor {
         }
 
         // Non-file output — process normally
-        let processed = output::process_output(py, result, None)
+        let processed = output::process_output(py, result)
             .map_err(|e| PredictionError::Failed(format!("Failed to process output: {}", e)))?;
 
         let result_str: String = json_module
@@ -797,9 +864,10 @@ impl PythonPredictor {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let prepared = self
-                .input_processor
-                .prepare(py, raw_input_dict)
+            let func = self.predict_func(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get predict function: {}", e))
+            })?;
+            let prepared = input::prepare_input(py, raw_input_dict, &func)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
@@ -933,9 +1001,10 @@ impl PythonPredictor {
                 PredictionError::InvalidInput("Input must be a JSON object".to_string())
             })?;
 
-            let prepared = self
-                .input_processor
-                .prepare(py, raw_input_dict)
+            let func = self.train_func(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to get train function: {}", e))
+            })?;
+            let prepared = input::prepare_input(py, raw_input_dict, &func)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
