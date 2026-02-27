@@ -2,7 +2,7 @@
 # Source: test_run.py::test_run_with_piped_stdin_returned_to_stdout
 
 stdin input.txt
-cog run cat
+cog exec cat
 stdout 'hello world'
 
 -- cog.yaml --

@@ -1,9 +1,9 @@
 # Test -o flag writes Path output to specified file
-# Source: test_predict.py::test_predict_writes_files_to_files_with_custom_name
+# Source: test_run.py::test_run_writes_files_to_files_with_custom_name
 
 # Build and run prediction with custom output filename
 cog build -t $TEST_IMAGE
-cog predict $TEST_IMAGE -o myoutput.bmp
+cog run $TEST_IMAGE -o myoutput.bmp
 
 # Verify file exists and has non-zero size
 exists myoutput.bmp
@@ -14,18 +14,18 @@ build:
   python_version: "3.12"
   python_packages:
     - "pillow==10.4.0"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import os
 import tempfile
 
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 from PIL import Image
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> Path:
+class Runner(BaseRunner):
+    def run(self) -> Path:
         temp_dir = tempfile.mkdtemp()
         temp_path = os.path.join(temp_dir, "prediction.bmp")
         img = Image.new("RGB", (255, 255), "red")

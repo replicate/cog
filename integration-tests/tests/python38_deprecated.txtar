@@ -7,12 +7,12 @@ stderr 'invalid build.python_version "3.8": minimum supported Python version is 
 build:
   gpu: false
   python_version: "3.8"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, num: int) -> int:
+class Runner(BaseRunner):
+    def run(self, num: int) -> int:
         return num * 2

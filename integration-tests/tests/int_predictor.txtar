@@ -2,21 +2,21 @@
 cog build -t $TEST_IMAGE
 
 # Integer input and output works
-cog predict $TEST_IMAGE -i num=5
+cog run $TEST_IMAGE -i num=5
 stdout '10'
 
 # Negative numbers work
-cog predict $TEST_IMAGE -i num=-3
+cog run $TEST_IMAGE -i num=-3
 stdout '-6'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, num: int) -> int:
+class Runner(BaseRunner):
+    def run(self, num: int) -> int:
         return num * 2

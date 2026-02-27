@@ -1,21 +1,21 @@
 # Test --json flag with inline JSON input
-# Source: test_predict.py::test_predict_json_input
+# Source: test_run.py::test_run_json_input
 
 # Build and run prediction with inline JSON
 cog build -t $TEST_IMAGE
-cog predict $TEST_IMAGE --json '{"s": "sackfield"}'
+cog run $TEST_IMAGE --json '{"s": "sackfield"}'
 stdout '"status": "succeeded"'
 stdout '"output": "hello sackfield"'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, s: str) -> str:
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
         return "hello " + s

@@ -4,7 +4,7 @@
 cog build -t $TEST_IMAGE
 
 # Predict with text and path input, returns path output
-cog predict $TEST_IMAGE -i text=bar -i path=@input.txt
+cog run $TEST_IMAGE -i text=bar -i path=@input.txt
 
 # Verify output file was created and contains expected content
 exec test -f output.txt
@@ -13,19 +13,19 @@ exec grep -q foobarbaz output.txt
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: predict.py:Predictor
+run: run.py:Runner
 
--- predict.py --
+-- run.py --
 import tempfile
 
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         self.foo = "foo"
 
-    def predict(self, text: str, path: Path) -> Path:
+    def run(self, text: str, path: Path) -> Path:
         with open(path) as f:
             output = self.foo + text + f.read()
         tmpdir = Path(tempfile.mkdtemp())

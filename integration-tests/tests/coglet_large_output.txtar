@@ -28,13 +28,13 @@ stdout '"output_size":9437184'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> str:
+class Runner(BaseRunner):
+    def run(self) -> str:
         # 9MiB string — exceeds the 8MiB IPC frame limit
         return "x" * (9 * 1024 * 1024)

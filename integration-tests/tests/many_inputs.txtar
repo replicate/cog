@@ -1,24 +1,24 @@
 
-# Test predictor with many different input types
+# Test runner with many different input types
 
 # Build the image
 cog build -t $TEST_IMAGE
 
 # Predict with various input types
-cog predict $TEST_IMAGE -i no_default=hello -i path=@path.txt -i image=@image.jpg -i choices=foo -i int_choices=3
+cog run $TEST_IMAGE -i no_default=hello -i path=@path.txt -i image=@image.jpg -i choices=foo -i int_choices=3
 stdout 'hello default 20 world jpg foo 6'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, Input, Path
+-- run.py --
+from cog import BaseRunner, Input, Path
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self,
         no_default: str,
         default_without_input: str = "default",

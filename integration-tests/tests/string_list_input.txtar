@@ -4,18 +4,18 @@
 cog build -t $TEST_IMAGE
 
 # Predict with list input
-cog predict $TEST_IMAGE -i s=world
+cog run $TEST_IMAGE -i s=world
 stdout 'hello world'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, Input
+-- run.py --
+from cog import BaseRunner, Input
 
 
-class Predictor(BasePredictor):
-    def predict(self, s: list[str] = Input(description="A list of strings to print.")) -> str:
+class Runner(BaseRunner):
+    def run(self, s: list[str] = Input(description="A list of strings to print.")) -> str:
         return "hello " + "|".join(s)

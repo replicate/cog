@@ -4,7 +4,7 @@
 cog build -t $TEST_IMAGE
 
 # Predict writes multiple files
-cog predict $TEST_IMAGE
+cog run $TEST_IMAGE
 
 # Verify files were created with expected content
 exec cat output.0.txt
@@ -17,16 +17,16 @@ stdout 'baz'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 from typing import List
 
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> List[Path]:
+class Runner(BaseRunner):
+    def run(self) -> List[Path]:
         predictions = ["foo", "bar", "baz"]
         output = []
         for i, prediction in enumerate(predictions):

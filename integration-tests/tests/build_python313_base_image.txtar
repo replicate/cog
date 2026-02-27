@@ -5,19 +5,19 @@
 cog build -t $TEST_IMAGE --use-cog-base-image
 
 # Verify build succeeded by running a prediction
-cog predict $TEST_IMAGE -i num=7
+cog run $TEST_IMAGE -i num=7
 stdout '14'
 
 -- cog.yaml --
 build:
   gpu: false
   python_version: "3.13"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, num: int) -> int:
+class Runner(BaseRunner):
+    def run(self, num: int) -> int:
         return num * 2

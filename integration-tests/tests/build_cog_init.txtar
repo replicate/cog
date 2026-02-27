@@ -10,4 +10,4 @@ stderr 'Image built as cog-'
 
 # Verify the expected files were created
 exists cog.yaml
-exists predict.py
+exists run.py

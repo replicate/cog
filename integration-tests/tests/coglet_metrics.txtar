@@ -28,14 +28,14 @@ stdout '"predict_time":'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, current_scope
+-- run.py --
+from cog import BaseRunner, current_scope
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> str:
+class Runner(BaseRunner):
+    def run(self) -> str:
         scope = current_scope()
 
         # Replace mode (default)

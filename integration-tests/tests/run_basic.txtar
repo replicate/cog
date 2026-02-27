@@ -1,7 +1,7 @@
-# Test basic cog run functionality
+# Test basic cog exec functionality
 # Source: test_run.py::test_run
 
-cog run echo hello world
+cog exec echo hello world
 stdout 'hello world'
 
 -- cog.yaml --

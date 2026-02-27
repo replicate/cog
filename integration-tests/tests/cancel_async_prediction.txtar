@@ -29,17 +29,17 @@ stdout '"status":"canceled"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import asyncio
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         pass
 
-    async def predict(self, duration: float = 60.0) -> str:
+    async def run(self, duration: float = 60.0) -> str:
         await asyncio.sleep(duration)
         return "completed"

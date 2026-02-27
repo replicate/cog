@@ -1,24 +1,24 @@
 [short] skip 'slow test - requires Docker build'
 
-# Test that cog run /bin/bash works with interactive PTY
+# Test that cog exec /bin/bash works with interactive PTY
 # This verifies bidirectional PTY interaction (send input, receive output)
 
 # Run bash with PTY input file - send commands and verify output
-# cog run builds from current directory and runs the command
-pty-run pty_input.txt cog run /bin/bash
+# cog exec builds from current directory and runs the command
+pty-run pty_input.txt cog exec /bin/bash
 stdout 'SENTINEL_12345'
 stdout 'HELLO_WORLD'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, s: str = "world") -> str:
+class Runner(BaseRunner):
+    def run(self, s: str = "world") -> str:
         return "hello " + s
 
 -- pty_input.txt --

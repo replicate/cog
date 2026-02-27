@@ -22,9 +22,9 @@ stdout 'received .* from background job'
 -- cog.yaml --
 build:
   python_version: "3.10"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import atexit
 import multiprocessing
 import pathlib
@@ -34,7 +34,7 @@ import sys
 import time
 
 from cog.types import Path
-from cog import BasePredictor
+from cog import BaseRunner
 
 from bg import ponger
 
@@ -47,9 +47,9 @@ def cleanup():
 atexit.register(cleanup)
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     """
-    This predictor checks the case where a process is spawned during setup via
+    This runner checks the case where a process is spawned during setup via
     multiprocessing and then each prediction causes that process to write to stdout.
     """
 
@@ -67,7 +67,7 @@ class Predictor(BasePredictor):
 
         print(f"---> started background process pid={self.bg.pid}")
 
-    def predict(self, s: str) -> Path:
+    def run(self, s: str) -> Path:
         if self.bg.is_alive():
             print(f"---> sending ping to background job pid={self.bg.pid}")
 
