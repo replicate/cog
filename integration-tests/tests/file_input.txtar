@@ -2,19 +2,19 @@
 cog build -t $TEST_IMAGE
 
 # File input works
-cog predict $TEST_IMAGE -i file=@input.txt
+cog run $TEST_IMAGE -i file=@input.txt
 stdout 'hello from file'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, Path
+-- run.py --
+from cog import BaseRunner, Path
 
-class Predictor(BasePredictor):
-    def predict(self, file: Path) -> str:
+class Runner(BaseRunner):
+    def run(self, file: Path) -> str:
         return file.read_text()
 
 -- input.txt --

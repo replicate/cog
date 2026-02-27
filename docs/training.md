@@ -7,7 +7,7 @@ Cog's training API allows you to define a fine-tuning interface for an existing 
 
 ## How it works
 
-If you've used Cog before, you've probably seen the [Predictor](./python.md) class, which defines the interface for creating predictions against your model. Cog's training API works similarly: You define a Python function that describes the inputs and outputs of the training process. The inputs are things like training data, epochs, batch size, seed, etc. The output is typically a file with the fine-tuned weights.
+If you've used Cog before, you've probably seen the [Runner](./python.md) class, which defines the interface for creating predictions against your model. Cog's training API works similarly: You define a Python function that describes the inputs and outputs of the training process. The inputs are things like training data, epochs, batch size, seed, etc. The output is typically a file with the fine-tuned weights.
 
 `cog.yaml`:
 
@@ -20,7 +20,7 @@ train: "train.py:train"
 `train.py`:
 
 ```python
-from cog import BasePredictor, File
+from cog import BaseRunner, File
 import io
 
 def train(param: str) -> File:
@@ -37,7 +37,7 @@ $ cat weights
 hello train
 ```
 
-You can also use classes if you want to run many model trainings and save on setup time. This works the same way as the [Predictor](./python.md) class with the only difference being the `train` method.
+You can also use classes if you want to run many model trainings and save on setup time. This works the same way as the [Runner](./python.md) class with the only difference being the `train` method.
 
 `cog.yaml`:
 
@@ -50,7 +50,7 @@ train: "train.py:Trainer"
 `train.py`:
 
 ```python
-from cog import BasePredictor, File
+from cog import BaseRunner, File
 import io
 
 class Trainer:
@@ -92,7 +92,7 @@ Each parameter of the `train()` function must be annotated with a type like `str
 Using the `Input` function provides better documentation and validation constraints to the users of your model, but it is not strictly required. You can also specify default values for your parameters using plain Python, or omit default assignment entirely:
 
 ```py
-def predict(self,
+def run(self,
   training_data: str = "foo bar", # this is valid
   iterations: int                 # also valid
 ) -> str:
@@ -120,8 +120,8 @@ def train(
 
 ## Testing
 
-If you are doing development of a Cog model like Llama or SDXL, you can test that the fine-tuned code path works before pushing by specifying a `COG_WEIGHTS` environment variable when running `predict`:
+If you are doing development of a Cog model like Llama or SDXL, you can test that the fine-tuned code path works before pushing by specifying a `COG_WEIGHTS` environment variable when running `run`:
 
 ```console
-cog predict -e COG_WEIGHTS=https://replicate.delivery/pbxt/xyz/weights.tar -i prompt="a photo of TOK"
+cog run -e COG_WEIGHTS=https://replicate.delivery/pbxt/xyz/weights.tar -i prompt="a photo of TOK"
 ```

@@ -36,7 +36,7 @@ stdout 'vnd.cog.weight.name.*beta'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 weights:
   - name: alpha
     source: weights/model-a.bin
@@ -45,9 +45,9 @@ weights:
     source: weights/model-b.bin
     target: /weights/model-b.bin
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, text: str) -> str:
+class Runner(BaseRunner):
+    def run(self, text: str) -> str:
         return f"processed: {text}"

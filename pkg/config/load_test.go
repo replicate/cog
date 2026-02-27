@@ -15,7 +15,7 @@ build:
   system_packages:
     - libgl1-mesa-glx
     - libglib2.0-0
-predict: "predict.py:SomePredictor"
+run: "run.py:SomeRunner"
 `
 
 func TestFindProjectRootDirShouldFindParentDir(t *testing.T) {

@@ -2,7 +2,7 @@
 # Source: test_run.py::test_run_with_unconsumed_piped_stdin
 
 stdin input.txt
-cog run echo hello-from-echo
+cog exec echo hello-from-echo
 stdout 'hello-from-echo'
 
 -- cog.yaml --

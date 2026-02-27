@@ -1,8 +1,8 @@
 [short] skip 'slow test - run without -short flag'
 
-# Test TensorFlow build and predict
+# Test TensorFlow build and run
 cog build -t $TEST_IMAGE
-cog predict $TEST_IMAGE
+cog run $TEST_IMAGE
 stdout '2.11.1'
 
 -- cog.yaml --
@@ -15,16 +15,16 @@ build:
     - "libglib2.0-0"
     - "xvfb"
   python_requirements: "requirements.txt"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 import tensorflow
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> str:
+class Runner(BaseRunner):
+    def run(self) -> str:
         return tensorflow.__version__
 
 -- requirements.txt --

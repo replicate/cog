@@ -6,7 +6,7 @@
 cog build -t $TEST_IMAGE
 
 # Predict - creates and returns an image
-cog predict $TEST_IMAGE
+cog run $TEST_IMAGE
 
 # Verify output file was created
 exec test -f output.png
@@ -16,17 +16,17 @@ build:
   python_version: "3.12"
   python_packages:
     - pillow==10.0.0
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 from __future__ import annotations
 
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 from PIL import Image
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> Path:
+class Runner(BaseRunner):
+    def run(self) -> Path:
         """Create and return a simple test image."""
         # Create a simple red image
         img = Image.new("RGB", (100, 100), color="red")

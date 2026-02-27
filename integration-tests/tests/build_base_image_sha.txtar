@@ -11,19 +11,19 @@ stdout 'sha256:'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: predict.py:Predictor
+run: run.py:Runner
 
--- predict.py --
+-- run.py --
 import tempfile
 
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         self.foo = "foo"
 
-    def predict(self, text: str, path: Path) -> Path:
+    def run(self, text: str, path: Path) -> Path:
         with open(path) as f:
             output = self.foo + text + f.read()
         tmpdir = Path(tempfile.mkdtemp())

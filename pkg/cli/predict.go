@@ -25,8 +25,8 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/model"
 	r8_path "github.com/replicate/cog/pkg/path"
-	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/run"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/util/mime"
@@ -43,37 +43,15 @@ var (
 	inputJSON            string
 )
 
+// newPredictCommand creates a hidden alias for "cog run" to maintain backwards compatibility.
 func newPredictCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "predict [image]",
-		Short: "Run a prediction",
-		Long: `Run a prediction.
-
-If 'image' is passed, it will run the prediction on that Docker image.
-It must be an image that has been built by Cog.
-
-Otherwise, it will build the model in the current directory and run
-the prediction on that.`,
-		Example: `  # Run a prediction with named inputs
-  cog predict -i prompt="a photo of a cat"
-
-  # Pass a file as input
-  cog predict -i image=@photo.jpg
-
-  # Save output to a file
-  cog predict -i image=@input.jpg -o output.png
-
-  # Pass multiple inputs
-  cog predict -i prompt="sunset" -i width=1024 -i height=768
-
-  # Run against a pre-built image
-  cog predict r8.im/your-username/my-model -i prompt="hello"
-
-  # Pass inputs as JSON
-  echo '{"prompt": "a cat"}' | cog predict --json @-`,
-		RunE:       cmdPredict,
-		Args:       cobra.MaximumNArgs(1),
-		SuggestFor: []string{"infer"},
+		Use:    "predict [image]",
+		Short:  "Run a prediction (alias for 'cog run')",
+		Long:   `Run a prediction. This is an alias for "cog run". See "cog run --help" for details.`,
+		RunE:   cmdPredict,
+		Args:   cobra.MaximumNArgs(1),
+		Hidden: true,
 	}
 
 	addUseCudaBaseImageFlag(cmd)
@@ -245,7 +223,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		env = append(env, "RUST_LOG="+rustLog)
 	}
 
-	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
+	predictor, err := run.NewRunner(ctx, command.RunOptions{
 		GPUs:    gpus,
 		Image:   imageName,
 		Volumes: volumes,
@@ -275,7 +253,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			console.Info("Missing device driver, re-trying without GPU")
 
 			_ = predictor.Stop(ctx)
-			predictor, err = predict.NewPredictor(ctx, command.RunOptions{
+			predictor, err = run.NewRunner(ctx, command.RunOptions{
 				Image:   imageName,
 				Volumes: volumes,
 				Env:     env,
@@ -315,7 +293,7 @@ func isURI(ref *openapi3.Schema) bool {
 	return ref != nil && ref.Type.Is("string") && ref.Format == "uri"
 }
 
-func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath string, isTrain bool) error {
+func predictJSONInputs(predictor run.Runner, jsonInput string, outputPath string, isTrain bool) error {
 	jsonInputs, err := parseJSONInput(jsonInput)
 	if err != nil {
 		return err
@@ -326,11 +304,11 @@ func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath
 		return err
 	}
 
-	// Convert to predict.Inputs format
-	inputs := make(predict.Inputs)
+	// Convert to run.Inputs format
+	inputs := make(run.Inputs)
 	for key, value := range transformedInputs {
 		if strValue, ok := value.(string); ok {
-			inputs[key] = predict.Input{String: &strValue}
+			inputs[key] = run.Input{String: &strValue}
 		} else {
 			// For non-string values, marshal to JSON
 			jsonBytes, err := json.Marshal(value)
@@ -338,14 +316,14 @@ func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath
 				return fmt.Errorf("Failed to marshal input %q to JSON: %w", key, err)
 			}
 			jsonRaw := json.RawMessage(jsonBytes)
-			inputs[key] = predict.Input{Json: &jsonRaw}
+			inputs[key] = run.Input{Json: &jsonRaw}
 		}
 	}
 
 	return runPrediction(predictor, inputs, outputPath, isTrain, true)
 }
 
-func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool) error {
+func predictIndividualInputs(predictor run.Runner, inputFlags []string, outputPath string, isTrain bool) error {
 	schema, err := predictor.GetSchema()
 	if err != nil {
 		return err
@@ -359,7 +337,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 	return runPrediction(predictor, inputs, outputPath, isTrain, false)
 }
 
-func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPath string, isTrain bool, needsJSON bool) error {
+func runPrediction(predictor run.Runner, inputs run.Inputs, outputPath string, isTrain bool, needsJSON bool) error {
 	if isTrain {
 		console.Info("Running training...")
 	} else {
@@ -387,7 +365,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		console.Warnf("--output value does not have a .json suffix: %s", path.Base(outputPath))
 	}
 
-	context := predict.RequestContext{}
+	context := run.RequestContext{}
 
 	if useReplicateAPIToken {
 		context.ReplicateAPIToken = os.Getenv("REPLICATE_API_TOKEN")
@@ -396,7 +374,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 		}
 	}
 
-	prediction, err := predictor.Predict(inputs, context)
+	prediction, err := predictor.Run(inputs, context)
 	if err != nil {
 		return fmt.Errorf("Failed to predict: %w", err)
 	}
@@ -622,7 +600,7 @@ func processFileOutputs(output any, schema *openapi3.Schema, destination string)
 	return output, nil
 }
 
-func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {
+func parseInputFlags(inputs []string, schema *openapi3.T) (run.Inputs, error) {
 	keyVals := map[string][]string{}
 	for _, input := range inputs {
 		var name, value string
@@ -644,7 +622,7 @@ func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error
 		keyVals[name] = append(keyVals[name], value)
 	}
 
-	return predict.NewInputs(keyVals, schema)
+	return run.NewInputs(keyVals, schema)
 }
 
 func addSetupTimeoutFlag(cmd *cobra.Command) {

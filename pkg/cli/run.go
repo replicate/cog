@@ -1,21 +1,10 @@
 package cli
 
 import (
-	"os"
-	"strconv"
-	"strings"
-
 	"github.com/spf13/cobra"
-
-	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/model"
-	"github.com/replicate/cog/pkg/registry"
-	"github.com/replicate/cog/pkg/util/console"
 )
 
 var (
-	runPorts []string
 	gpusFlag string
 )
 
@@ -25,112 +14,55 @@ func addGpusFlag(cmd *cobra.Command) {
 
 func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "run <command> [arg...]",
-		Short: "Run a command inside a Docker environment",
-		Long: `Run a command inside a Docker environment defined by cog.yaml.
+		Use:   "run [image]",
+		Short: "Run a prediction",
+		Long: `Run a prediction.
 
-Cog builds a temporary image from your cog.yaml configuration and runs the
-given command inside it. This is useful for debugging, running scripts, or
-exploring the environment your model will run in.`,
-		Example: `  # Open a Python interpreter inside the model environment
-  cog run python
+If 'image' is passed, it will run the prediction on that Docker image.
+It must be an image that has been built by Cog.
 
-  # Run a script
-  cog run python train.py
+Otherwise, it will build the model in the current directory and run
+the prediction on that.`,
+		Example: `  # Run a prediction with named inputs
+  cog run -i prompt="a photo of a cat"
 
-  # Run with environment variables
-  cog run -e HUGGING_FACE_HUB_TOKEN=abc123 python download.py
+  # Pass a file as input
+  cog run -i image=@photo.jpg
 
-  # Expose a port (e.g. for Jupyter)
-  cog run -p 8888 jupyter notebook`,
-		RunE:    run,
-		PreRunE: checkMutuallyExclusiveFlags,
-		Args:    cobra.MinimumNArgs(1),
+  # Save output to a file
+  cog run -i image=@input.jpg -o output.png
+
+  # Pass multiple inputs
+  cog run -i prompt="sunset" -i width=1024 -i height=768
+
+  # Run against a pre-built image
+  cog run r8.im/your-username/my-model -i prompt="hello"
+
+  # Pass inputs as JSON
+  echo '{"prompt": "a cat"}' | cog run --json @-`,
+		RunE:       runRun,
+		Args:       cobra.MaximumNArgs(1),
+		SuggestFor: []string{"predict", "infer"},
 	}
-	addBuildProgressOutputFlag(cmd)
-	addDockerfileFlag(cmd)
+
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
+	addBuildProgressOutputFlag(cmd)
+	addDockerfileFlag(cmd)
 	addGpusFlag(cmd)
+	addSetupTimeoutFlag(cmd)
 	addConfigFlag(cmd)
 
-	flags := cmd.Flags()
-	// Flags after first argument are considered args and passed to command
-
-	// This is called `publish` for consistency with `docker run`
-	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000")
+	cmd.Flags().StringArrayVarP(&inputFlags, "input", "i", []string{}, "Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg")
+	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Output path")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
-
-	flags.SetInterspersed(false)
+	cmd.Flags().BoolVar(&useReplicateAPIToken, "use-replicate-token", false, "Pass REPLICATE_API_TOKEN from local environment into the model context")
+	cmd.Flags().StringVar(&inputJSON, "json", "", "Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)")
 
 	return cmd
 }
 
-func run(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-
-	dockerClient, err := docker.NewClient(ctx)
-	if err != nil {
-		return err
-	}
-
-	src, err := model.NewSource(configFilename)
-	if err != nil {
-		return err
-	}
-
-	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
-
-	opts := serveBuildOptions(cmd)
-	opts.SkipSchemaValidation = true
-	m, err := resolver.Build(ctx, src, opts)
-	if err != nil {
-		return err
-	}
-
-	gpus := ""
-	if gpusFlag != "" {
-		gpus = gpusFlag
-	} else if m.HasGPU() {
-		gpus = "all"
-	}
-
-	// Automatically propagate RUST_LOG for Rust coglet debugging
-	env := envFlags
-	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
-		env = append(env, "RUST_LOG="+rustLog)
-	}
-
-	runOptions := command.RunOptions{
-		Args:    args,
-		Env:     env,
-		GPUs:    gpus,
-		Image:   m.ImageRef(),
-		Volumes: []command.Volume{{Source: src.ProjectDir, Destination: "/src"}},
-		Workdir: "/src",
-	}
-
-	for _, portString := range runPorts {
-		port, err := strconv.Atoi(portString)
-		if err != nil {
-			return err
-		}
-
-		runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: port})
-	}
-
-	console.Info("")
-	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
-
-	err = docker.Run(ctx, dockerClient, runOptions)
-	// Only retry if we're using a GPU but the user didn't explicitly select a GPU with --gpus
-	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
-	if runOptions.GPUs == "all" && err == docker.ErrMissingDeviceDriver {
-		console.Info("Missing device driver, re-trying without GPU")
-
-		runOptions.GPUs = ""
-		err = docker.Run(ctx, dockerClient, runOptions)
-	}
-
-	return err
+func runRun(cmd *cobra.Command, args []string) error {
+	// This is the same handler as cog predict
+	return cmdPredict(cmd, args)
 }

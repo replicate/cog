@@ -44,8 +44,8 @@ func TestConcurrentPredictions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tmpDir, "cog.yaml"), []byte(cogYAML), 0o644); err != nil {
 		t.Fatalf("failed to write cog.yaml: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte(predictPy), 0o644); err != nil {
-		t.Fatalf("failed to write predict.py: %v", err)
+	if err := os.WriteFile(filepath.Join(tmpDir, "run.py"), []byte(predictPy), 0o644); err != nil {
+		t.Fatalf("failed to write run.py: %v", err)
 	}
 
 	// Get the cog binary
@@ -233,17 +233,17 @@ func allocatePort() (int, error) {
 
 const cogYAML = `build:
   python_version: "3.11"
-predict: "predict.py:Predictor"
+predict: "run.py:Runner"
 concurrency:
   max: 5
 `
 
 const predictPy = `import asyncio
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    async def predict(self, s: str, sleep: float) -> str:
+class Runner(BaseRunner):
+    async def run(self, s: str, sleep: float) -> str:
         await asyncio.sleep(sleep)
         return f"wake up {s}"
 `

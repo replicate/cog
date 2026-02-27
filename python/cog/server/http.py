@@ -65,16 +65,22 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     is_train = args.mode == Mode.TRAIN
 
-    # Get predictor ref from config
+    # Get runner/predictor ref from config
     config = Config()
     try:
         predictor_ref = config.get_predictor_ref(args.mode)
     except ValueError as e:
         log.error(f"Configuration error: {e}")
-        log.error(
-            f"Please add '{args.mode}' to your cog.yaml file. "
-            f"Example: {args.mode}: predict.py:Predictor"
-        )
+        if args.mode == Mode.PREDICT:
+            log.error(
+                "Please add 'run' to your cog.yaml file. "
+                'Example: run: "run.py:Runner"'
+            )
+        else:
+            log.error(
+                f"Please add '{args.mode}' to your cog.yaml file. "
+                f'Example: {args.mode}: "train.py:Train"'
+            )
         sys.exit(1)
 
     log.debug("Starting Rust coglet server")

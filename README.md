@@ -30,22 +30,22 @@ build:
     - "libglib2.0-0"
   python_version: "3.12"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
-Define how predictions are run on your model with `predict.py`:
+Define how your model runs with `run.py`:
 
 ```python
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 import torch
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.model = torch.load("./weights.pth")
 
     # The arguments and types the model takes as input
-    def predict(self,
+    def run(self,
           image: Path = Input(description="Grayscale input image")
     ) -> Path:
         """Run a single prediction on the model"""
@@ -59,7 +59,7 @@ In the above we accept a path to the image as an input, and return a path to our
 Now, you can run predictions on this model:
 
 ```console
-$ cog predict -i image=@input.jpg
+$ cog run -i image=@input.jpg
 --> Building Docker image...
 --> Running Prediction...
 --> Output written to output.jpg
@@ -94,14 +94,14 @@ $ curl http://localhost:8080/predictions -X POST \
 In development, you can also run arbitrary commands inside the Docker environment:
 
 ```console
-$ cog run python train.py
+$ cog exec python train.py
 ...
 ```
 
 Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
 ```console
-$ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
+$ cog exec -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
 ```
 -->
 
@@ -182,7 +182,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
-- [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
+- [Runner interface reference](docs/python.md) to learn how the `Runner` interface works
 - [Training interface reference](docs/training.md) to learn how to add a fine-tuning API to your model
 - [HTTP API reference](docs/http.md) to learn how to use the HTTP API that models serve
 

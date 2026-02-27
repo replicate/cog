@@ -1,4 +1,4 @@
-package predict
+package run
 
 import (
 	"bytes"
@@ -48,7 +48,8 @@ type ValidationErrorResponse struct {
 	} `json:"detail"`
 }
 
-type Predictor struct {
+// Runner manages a Cog model container for running predictions or training.
+type Runner struct {
 	runOptions   command.RunOptions
 	isTrain      bool
 	dockerClient command.Command
@@ -58,21 +59,21 @@ type Predictor struct {
 	port        int
 }
 
-func NewPredictor(ctx context.Context, runOptions command.RunOptions, isTrain bool, dockerCommand command.Command) (*Predictor, error) {
+func NewRunner(ctx context.Context, runOptions command.RunOptions, isTrain bool, dockerCommand command.Command) (*Runner, error) {
 	if global.Debug {
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=debug")
 	} else {
 		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=warning")
 	}
 
-	return &Predictor{
+	return &Runner{
 		runOptions:   runOptions,
 		isTrain:      isTrain,
 		dockerClient: dockerCommand,
 	}, nil
 }
 
-func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout time.Duration) error {
+func (p *Runner) Start(ctx context.Context, logsWriter io.Writer, timeout time.Duration) error {
 	var err error
 	containerPort := 5000
 
@@ -100,7 +101,7 @@ func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout tim
 	return p.waitForContainerReady(ctx, timeout)
 }
 
-func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Duration) error {
+func (p *Runner) waitForContainerReady(ctx context.Context, timeout time.Duration) error {
 	url := fmt.Sprintf("http://localhost:%d/health-check", p.port)
 
 	start := time.Now()
@@ -162,11 +163,11 @@ func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Dura
 	}
 }
 
-func (p *Predictor) Stop(ctx context.Context) error {
+func (p *Runner) Stop(ctx context.Context) error {
 	return p.dockerClient.ContainerStop(ctx, p.containerID)
 }
 
-func (p *Predictor) Predict(inputs Inputs, context RequestContext) (*Response, error) {
+func (p *Runner) Run(inputs Inputs, context RequestContext) (*Response, error) {
 	inputMap, err := inputs.toMap()
 	if err != nil {
 		return nil, err
@@ -216,7 +217,7 @@ func (p *Predictor) Predict(inputs Inputs, context RequestContext) (*Response, e
 	return prediction, nil
 }
 
-func (p *Predictor) GetSchema() (*openapi3.T, error) {
+func (p *Runner) GetSchema() (*openapi3.T, error) {
 	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/openapi.json", p.port))
 	if err != nil {
 		return nil, err
@@ -232,18 +233,18 @@ func (p *Predictor) GetSchema() (*openapi3.T, error) {
 	return openapi3.NewLoader().LoadFromData(body)
 }
 
-func (p *Predictor) endpoint() string {
+func (p *Runner) endpoint() string {
 	if p.isTrain {
 		return "trainings"
 	}
-	return "predictions"
+	return "runs"
 }
 
-func (p *Predictor) url() string {
+func (p *Runner) url() string {
 	return fmt.Sprintf("http://localhost:%d/%s", p.port, p.endpoint())
 }
 
-func (p *Predictor) buildInputValidationErrorMessage(errorResponse *ValidationErrorResponse) error {
+func (p *Runner) buildInputValidationErrorMessage(errorResponse *ValidationErrorResponse) error {
 	errorMessages := []string{}
 
 	for _, validationError := range errorResponse.Detail {
@@ -255,7 +256,7 @@ func (p *Predictor) buildInputValidationErrorMessage(errorResponse *ValidationEr
 		errorMessages = append(errorMessages, fmt.Sprintf("- %s: %s", validationError.Location[2], validationError.Message))
 	}
 
-	command := "predict"
+	command := "run"
 	if p.isTrain {
 		command = "train"
 	}

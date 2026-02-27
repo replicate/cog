@@ -450,13 +450,14 @@ async fn create_prediction_with_id(
     // Disarm guard - prediction completed normally (connection still alive)
     sync_guard.disarm();
 
-    // Build metrics object: user metrics + predict_time
+    // Build metrics object: user metrics + predict_time + run_time
     let build_metrics = |user_metrics: &std::collections::HashMap<String, serde_json::Value>| {
         let mut m = serde_json::Map::new();
         for (k, v) in user_metrics {
             m.insert(k.clone(), v.clone());
         }
         m.insert("predict_time".to_string(), serde_json::json!(predict_time));
+        m.insert("run_time".to_string(), serde_json::json!(predict_time));
         serde_json::Value::Object(m)
     };
 
@@ -481,7 +482,7 @@ async fn create_prediction_with_id(
                 "error": msg,
                 "logs": "",
                 "status": "failed",
-                "metrics": { "predict_time": predict_time }
+                "metrics": { "predict_time": predict_time, "run_time": predict_time }
             })),
         ),
         Err(PredictionError::NotReady) => {
@@ -504,7 +505,7 @@ async fn create_prediction_with_id(
                 "error": msg,
                 "logs": "",
                 "status": "failed",
-                "metrics": { "predict_time": predict_time }
+                "metrics": { "predict_time": predict_time, "run_time": predict_time }
             })),
         ),
         Err(PredictionError::Cancelled) => (
@@ -513,7 +514,7 @@ async fn create_prediction_with_id(
                 "id": prediction_id,
                 "logs": "",
                 "status": "canceled",
-                "metrics": { "predict_time": predict_time }
+                "metrics": { "predict_time": predict_time, "run_time": predict_time }
             })),
         ),
     }
@@ -550,6 +551,31 @@ async fn openapi_schema(State(service): State<Arc<PredictionService>>) -> impl I
     }
 }
 
+// Run routes - aliases for prediction routes under the new /runs path
+async fn create_run(
+    State(service): State<Arc<PredictionService>>,
+    headers: HeaderMap,
+    body: Option<Json<PredictionRequest>>,
+) -> impl IntoResponse {
+    create_prediction(State(service), headers, body).await
+}
+
+async fn create_run_idempotent(
+    State(service): State<Arc<PredictionService>>,
+    Path(run_id): Path<String>,
+    headers: HeaderMap,
+    body: Option<Json<PredictionRequest>>,
+) -> impl IntoResponse {
+    create_prediction_idempotent(State(service), Path(run_id), headers, body).await
+}
+
+async fn cancel_run(
+    State(service): State<Arc<PredictionService>>,
+    Path(run_id): Path<String>,
+) -> impl IntoResponse {
+    cancel_prediction(State(service), Path(run_id)).await
+}
+
 // Training routes - bug-for-bug compatibility with cog mainline
 // In cog, training routes actually call predict(), not train()
 
@@ -582,9 +608,15 @@ pub fn routes(service: Arc<PredictionService>) -> Router {
         .route("/health-check", get(health_check))
         .route("/openapi.json", get(openapi_schema))
         .route("/shutdown", post(shutdown))
+        // Primary routes (new)
+        .route("/runs", post(create_run))
+        .route("/runs/{id}", put(create_run_idempotent))
+        .route("/runs/{id}/cancel", post(cancel_run))
+        // Legacy prediction routes (backwards compat)
         .route("/predictions", post(create_prediction))
         .route("/predictions/{id}", put(create_prediction_idempotent))
         .route("/predictions/{id}/cancel", post(cancel_prediction))
+        // Training routes
         .route("/trainings", post(create_training))
         .route("/trainings/{id}", put(create_training_idempotent))
         .route("/trainings/{id}/cancel", post(cancel_training))
@@ -1001,6 +1033,30 @@ mod tests {
 
         let json = response_json(response).await;
         assert_eq!(json["status"], "BUSY");
+    }
+
+    #[tokio::test]
+    async fn run_routes_work() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/runs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = response_json(response).await;
+        assert_eq!(json["status"], "succeeded");
+        assert_eq!(json["output"], "mock output");
+        // Check both predict_time and run_time are present in metrics
+        assert!(json["metrics"]["predict_time"].is_f64());
+        assert!(json["metrics"]["run_time"].is_f64());
     }
 
     #[tokio::test]

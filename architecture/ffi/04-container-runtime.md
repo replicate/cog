@@ -6,10 +6,10 @@ This document covers the FFI runtime implementation using Rust with PyO3 binding
 
 The FFI runtime provides significant improvements over the legacy Python runtime:
 - **Rust HTTP server (Axum)**: Faster request handling, better backpressure management
-- **Worker isolation**: Python predictor crashes don't kill the server
+- **Worker isolation**: Python runner crashes don't kill the server
 - **Slot-based concurrency**: Predictable resource control with permit pools
 - **Same API surface**: Drop-in replacement for the legacy runtime
-- **Subprocess reuse**: Predictor stays loaded between requests
+- **Subprocess reuse**: Runner stays loaded between requests
 
 ## High-Level Architecture
 
@@ -58,10 +58,10 @@ The FFI runtime provides significant improvements over the legacy Python runtime
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                         Worker Subprocess (Python)                               │
 │  ┌────────────────────────────────────────────────────────────────────────────┐ │
-│  │                              Predictor                                     │ │
+│  │                              Runner                                       │ │
 │  │  ┌─────────────────────────────────────────────────────────────────────┐  │ │
 │  │  │  setup()    →  runs once at startup                                 │  │ │
-│  │  │  predict()  →  handles SlotRequest::Predict                         │  │ │
+│  │  │  run()      →  handles SlotRequest::Predict                         │  │ │
 │  │  └─────────────────────────────────────────────────────────────────────┘  │ │
 │  └────────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────┘
@@ -91,8 +91,8 @@ The FFI runtime uses clear ownership patterns to manage prediction lifecycle:
   └── method: sync_guard() → SyncPredictionGuard (cancels on drop)
 
   Cancellation (via OrchestratorHandle)
-  ├── Sync predictors: ControlRequest::Cancel → SIGUSR1 → KeyboardInterrupt
-  └── Async predictors: ControlRequest::Cancel → future.cancel() → CancelledError
+  ├── Sync runners: ControlRequest::Cancel → SIGUSR1 → KeyboardInterrupt
+  └── Async runners: ControlRequest::Cancel → future.cancel() → CancelledError
 ═══════════════════════════════════════════════════════════════════════════════════
 ```
 
@@ -295,7 +295,7 @@ How coglet gets invoked when running a Cog container:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        cog predict / cog run                                │
+│                              cog run                                        │
 │                               (CLI)                                         │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   │
@@ -332,7 +332,7 @@ How coglet gets invoked when running a Cog container:
 │   │  Worker subprocess (Python)                                       │     │
 │   │    - loads predictor_ref                                          │     │
 │   │    - runs setup()                                                 │     │
-│   │    - handles predict() requests                                   │     │
+│   │    - handles run() requests                                       │     │
 │   └───────────────────────────────────────────────────────────────────┘     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -348,7 +348,7 @@ How coglet gets invoked when running a Cog container:
 ### Why PyO3 FFI?
 - **ABI3 wheel**: Single wheel works across Python 3.10-3.13
 - **Native performance**: Direct C API calls, no serialization overhead
-- **Same predictor code**: Users don't change anything
+- **Same runner code**: Users don't change anything
 - **Drop-in replacement**: Same HTTP API, same behavior
 
 ### Why Subprocess (not in-process)?

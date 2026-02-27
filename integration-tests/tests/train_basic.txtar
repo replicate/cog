@@ -12,15 +12,15 @@ stdout '42'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 train: "train.py:train"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, s: str) -> str:
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
         return "hello " + s
 
 -- train.py --

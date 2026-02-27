@@ -99,13 +99,28 @@ if __name__ == "__main__":
     schema: Dict[str, Any] = {}
     try:
         config = Config()
-        # Determine mode: prefer predict, fall back to train
+        # Determine mode: prefer predict/run, fall back to train
+        ref = None
+        mode = Mode.PREDICT
         try:
             ref = config.get_predictor_ref(Mode.PREDICT)
-            mode = Mode.PREDICT
         except ValueError:
-            ref = config.get_predictor_ref(Mode.TRAIN)
-            mode = Mode.TRAIN
+            pass
+
+        if ref is None:
+            try:
+                ref = config.get_predictor_ref(Mode.TRAIN)
+                mode = Mode.TRAIN
+            except ValueError:
+                pass
+
+        if ref is None:
+            print(
+                "Error: 'run' option not found in cog.yaml. "
+                'Add it, e.g.: run: "run.py:Runner"',
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         module_name, class_name = _load_module_from_ref(ref)
 
@@ -115,7 +130,8 @@ if __name__ == "__main__":
         schema = to_json_schema(predictor_info, mode)
         remove_title_next_to_ref(schema)
         fix_nullable_anyof(schema)
-    except FileNotFoundError:
-        raise ConfigDoesNotExist("cog.yaml not found") from None
+    except ConfigDoesNotExist:
+        print("Error: cog.yaml not found", file=sys.stderr)
+        sys.exit(1)
 
     print(json.dumps(schema, indent=2))

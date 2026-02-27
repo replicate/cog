@@ -1,12 +1,70 @@
-"""Tests for cog.predictor module (BasePredictor)."""
+"""Tests for cog.predictor module (BaseRunner and legacy BasePredictor)."""
 
 from typing import Optional
 
+import pytest
+
 from cog import BasePredictor, Path
+from cog.predictor import BaseRunner, get_predict
+
+
+class TestBaseRunner:
+    """Tests for BaseRunner class (new API)."""
+
+    def test_subclass_can_override_run(self) -> None:
+        class MyRunner(BaseRunner):
+            def run(self, text: str) -> str:
+                return text.upper()
+
+        runner = MyRunner()
+        result = runner.run(text="hello")
+        assert result == "HELLO"
+
+    def test_default_run_raises(self) -> None:
+        runner = BaseRunner()
+        with pytest.raises(NotImplementedError, match="run has not been implemented"):
+            runner.run()
+
+    def test_get_predict_prefers_run(self) -> None:
+        class MyRunner(BaseRunner):
+            def run(self, x: int) -> int:
+                return x * 2
+
+        runner = MyRunner()
+        func = get_predict(runner)
+        assert func == runner.run
+        assert func(x=5) == 10
+
+    def test_get_predict_falls_back_to_predict(self) -> None:
+        class MyPredictor(BaseRunner):
+            def predict(self, x: int) -> int:
+                return x * 3
+
+        predictor = MyPredictor()
+        func = get_predict(predictor)
+        assert func == predictor.predict
+        assert func(x=5) == 15
+
+    def test_get_predict_errors_on_both(self) -> None:
+        class Confused(BaseRunner):
+            def run(self, x: int) -> int:
+                return x
+
+            def predict(self, x: int) -> int:
+                return x
+
+        runner = Confused()
+        with pytest.raises(
+            ValueError, match="Cannot define both run\\(\\) and predict\\(\\)"
+        ):
+            get_predict(runner)
 
 
 class TestBasePredictor:
-    """Tests for BasePredictor class."""
+    """Tests for BasePredictor class (legacy alias, backwards compatibility)."""
+
+    def test_base_predictor_is_base_runner(self) -> None:
+        assert BasePredictor is BaseRunner
 
     def test_subclass_can_override_predict(self) -> None:
         class MyPredictor(BasePredictor):
@@ -19,11 +77,10 @@ class TestBasePredictor:
 
     def test_default_predict_raises(self) -> None:
         predictor = BasePredictor()
-        try:
+        with pytest.raises(
+            NotImplementedError, match="predict has not been implemented"
+        ):
             predictor.predict()
-            assert False, "Should have raised NotImplementedError"
-        except NotImplementedError as e:
-            assert "predict has not been implemented" in str(e)
 
     def test_setup_is_optional(self) -> None:
         class MyPredictor(BasePredictor):

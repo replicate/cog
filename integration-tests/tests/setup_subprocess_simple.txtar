@@ -23,26 +23,26 @@ stdout '"output":"hello friendo3"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import signal
 import subprocess
 import sys
 
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     """
-    This predictor checks the case where a process is spawned during setup and then each
+    This runner checks the case where a process is spawned during setup and then each
     prediction causes that process to write to stdout. In the event that stream
     redirection is not working correctly, the forked process will not be able to write to
     stdout/stderr and will likely exit. Any state other than "running" is considered an
     error condition and raises SystemExit to interrupt any more prediction serving.
 
     This variant runs a simple subprocess to which SIGUSR1 is sent during each call to
-    `predict`.
+    `run`.
     """
 
     def setup(self) -> None:
@@ -52,7 +52,7 @@ class Predictor(BasePredictor):
 
         print(f"---> started background process pid={self.bg.pid}")
 
-    def predict(self, s: str) -> str:
+    def run(self, s: str) -> str:
         status = self.bg.poll()
 
         if status is None:
@@ -72,7 +72,7 @@ class Predictor(BasePredictor):
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This _pong function and associated trap ensures that any SIGUSR1 sent during `predict`
+# This _pong function and associated trap ensures that any SIGUSR1 sent during `run`
 # will cause this process to write a decent amount of text to stdout. In the event that
 # stream redirection is not working correctly, this process will likely be in a defunct
 # state before the first SIGUSR1 can be sent.

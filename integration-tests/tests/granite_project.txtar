@@ -4,23 +4,23 @@
 cog build -t $TEST_IMAGE
 
 # Predict and verify pydantic version is preserved
-cog predict $TEST_IMAGE
+cog run $TEST_IMAGE
 stdout '2.11.9'
 
 -- cog.yaml --
 build:
   python_version: "3.11"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
 -- requirements.txt --
 pydantic==2.11.9
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 import pydantic
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> str:
+class Runner(BaseRunner):
+    def run(self) -> str:
         return pydantic.__version__

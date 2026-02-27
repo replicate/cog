@@ -19,6 +19,7 @@ from . import _adt as adt
 from .coder import Coder
 from .input import FieldInfo
 from .model import BaseModel
+from .predictor import BaseRunner
 from .types import AsyncConcatenateIterator, ConcatenateIterator
 
 
@@ -410,13 +411,23 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
     p = getattr(module, predictor_name)
 
     if inspect.isclass(p):
-        if not hasattr(p, "predict"):
-            raise ValueError(f"predict method not found: {fullname}")
+        # Prefer run() over predict() for the new API
+        has_run = hasattr(p, "run") and p.run is not BaseRunner.run  # type: ignore[attr-defined]
+        has_predict = hasattr(p, "predict") and p.predict is not BaseRunner.predict  # type: ignore[attr-defined]
+
+        if has_run and has_predict:
+            raise ValueError(
+                f"cannot define both run() and predict() on {fullname}; "
+                "use run() (predict() is deprecated)"
+            )
+
+        if not has_run and not has_predict:
+            raise ValueError(f"run or predict method not found: {fullname}")
 
         if hasattr(p, "setup"):
             _validate_setup(_unwrap(p.setup))
 
-        predict_fn_name = "predict"
+        predict_fn_name = "run" if has_run else "predict"
         predict_fn = _unwrap(getattr(p, predict_fn_name))
         is_class_fn = True
 

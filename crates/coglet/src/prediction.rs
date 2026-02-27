@@ -316,8 +316,9 @@ impl Prediction {
         self.webhook.take()
     }
 
-    /// Build merged metrics object: user metrics + system metrics (predict_time).
-    /// System metrics (predict_time) always win on conflict.
+    /// Build merged metrics object: user metrics + system metrics (predict_time, run_time).
+    /// System metrics always win on conflict. Both predict_time (legacy) and run_time
+    /// are emitted for backwards compatibility.
     fn build_metrics(&self) -> serde_json::Value {
         let predict_time = self.elapsed().as_secs_f64();
         let mut merged = serde_json::Map::new();
@@ -327,8 +328,9 @@ impl Prediction {
             merged.insert(k.clone(), v.clone());
         }
 
-        // System metrics override — predict_time is always authoritative
+        // System metrics override — predict_time/run_time are always authoritative
         merged.insert("predict_time".to_string(), serde_json::json!(predict_time));
+        merged.insert("run_time".to_string(), serde_json::json!(predict_time));
 
         serde_json::Value::Object(merged)
     }
@@ -646,7 +648,7 @@ mod tests {
     }
 
     #[test]
-    fn build_metrics_merges_with_predict_time() {
+    fn build_metrics_merges_with_predict_time_and_run_time() {
         let mut pred = Prediction::new("test".to_string(), None);
         pred.set_metric("temp".into(), serde_json::json!(0.7), MetricMode::Replace);
         pred.set_metric("count".into(), serde_json::json!(42), MetricMode::Replace);
@@ -656,6 +658,9 @@ mod tests {
         assert_eq!(obj["temp"], serde_json::json!(0.7));
         assert_eq!(obj["count"], serde_json::json!(42));
         assert!(obj.contains_key("predict_time"));
+        assert!(obj.contains_key("run_time"));
+        // predict_time and run_time should be equal
+        assert_eq!(obj["predict_time"], obj["run_time"]);
     }
 
     #[test]

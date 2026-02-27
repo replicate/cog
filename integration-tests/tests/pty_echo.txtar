@@ -1,21 +1,21 @@
 [short] skip 'slow test - requires Docker build'
 
-# Test that cog run works with PTY for simple commands
+# Test that cog exec works with PTY for simple commands
 # This is a simpler variant that just tests echo works
 
 # Run echo command with PTY (no input needed)
-# cog run builds from current directory and runs the command
-pty-run /dev/null cog run echo "hello from cog run"
-stdout 'hello from cog run'
+# cog exec builds from current directory and runs the command
+pty-run /dev/null cog exec echo "hello from cog exec"
+stdout 'hello from cog exec'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, s: str = "world") -> str:
+class Runner(BaseRunner):
+    def run(self, s: str = "world") -> str:
         return "hello " + s

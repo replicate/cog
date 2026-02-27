@@ -76,7 +76,7 @@ func TestGenerateEmptyCPU(t *testing.T) {
 build:
   gpu: false
   python_version: "3.12"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -113,7 +113,7 @@ func TestGenerateEmptyGPU(t *testing.T) {
 build:
   gpu: true
   python_version: "3.12"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -158,7 +158,7 @@ build:
     - pandas==1.2.0.12
   run:
     - "cowsay moo"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -216,7 +216,7 @@ build:
     - pandas==2.0.3
   run:
     - "cowsay moo"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -365,7 +365,7 @@ build:
     - pandas==2.0.3
   run:
     - "cowsay moo"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -464,7 +464,7 @@ func TestGenerateDockerfileWithoutSeparateWeights(t *testing.T) {
 build:
   gpu: false
   python_version: "3.12"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -499,7 +499,7 @@ func TestGenerateEmptyCPUWithCogBaseImage(t *testing.T) {
 build:
   gpu: false
   python_version: "3.12"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -540,7 +540,7 @@ build:
     - pandas==1.2.0.12
   run:
     - "cowsay moo"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -595,7 +595,7 @@ build:
     - pandas==2.0.3
   run:
     - "cowsay moo"
-predict: predict.py:Predictor
+run: run.py:Runner
 `, torchVersion)
 		conf, err := config.FromYAML([]byte(yaml))
 		require.NoError(t, err)
@@ -656,7 +656,7 @@ build:
     - pandas==2.0.3
   run:
     - "cowsay moo"
-predict: predict.py:Predictor
+run: run.py:Runner
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
@@ -712,7 +712,7 @@ build:
     - pandas==2.0.3
   run:
     - "cowsay moo"
-predict: predict.py:Predictor
+run: run.py:Runner
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
@@ -769,7 +769,7 @@ build:
     - pandas==2.0.3
   run:
     - "cowsay moo"
-predict: predict.py:Predictor
+run: run.py:Runner
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
@@ -804,7 +804,7 @@ build:
     - pandas==2.0.3
   run:
     - "cowsay moo"
-predict: predict.py:Predictor
+run: run.py:Runner
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
@@ -864,7 +864,7 @@ build:
     - coglet @ https://github.com/replicate/cog-runtime/releases/download/v0.1.0-alpha31/coglet-0.1.0a31-py3-none-any.whl
   run:
     - "cowsay moo"
-predict: predict.py:Predictor
+run: run.py:Runner
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
@@ -917,7 +917,7 @@ func TestCOGWheelDefault(t *testing.T) {
 build:
   gpu: false
   python_version: "3.11"
-predict: predict.py:Predictor
+run: run.py:Runner
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
@@ -947,7 +947,7 @@ func TestCOGWheelEnvPyPI(t *testing.T) {
 build:
   gpu: false
   python_version: "3.11"
-predict: predict.py:Predictor
+run: run.py:Runner
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
@@ -975,7 +975,7 @@ func TestCOGWheelEnvPyPIWithVersion(t *testing.T) {
 build:
   gpu: false
   python_version: "3.11"
-predict: predict.py:Predictor
+run: run.py:Runner
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
@@ -1004,7 +1004,7 @@ func TestCOGWheelEnvURL(t *testing.T) {
 build:
   gpu: false
   python_version: "3.11"
-predict: predict.py:Predictor
+run: run.py:Runner
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
@@ -1037,7 +1037,7 @@ func TestCOGWheelEnvFile(t *testing.T) {
 build:
   gpu: false
   python_version: "3.11"
-predict: predict.py:Predictor
+run: run.py:Runner
 `
 	conf, err := config.FromYAML([]byte(yaml))
 	require.NoError(t, err)
@@ -1062,7 +1062,7 @@ build:
   python_version: "3.12"
   python_packages:
     - "coglet==0.1.0"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -1088,7 +1088,7 @@ func TestInstallCogWithSDKVersion(t *testing.T) {
 build:
   python_version: "3.12"
   sdk_version: "0.18.0"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -1114,7 +1114,7 @@ func TestInstallCogWithPreReleaseSDKVersion(t *testing.T) {
 build:
   python_version: "3.12"
   sdk_version: "0.18.0a1"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -1140,7 +1140,7 @@ func TestInstallCogSDKVersionBelowMinimum(t *testing.T) {
 build:
   python_version: "3.12"
   sdk_version: "0.15.0"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))
@@ -1165,7 +1165,7 @@ func TestCOGSDKWheelEnvVarOverridesSDKVersion(t *testing.T) {
 build:
   python_version: "3.12"
   sdk_version: "0.18.0"
-predict: predict.py:Predictor
+run: run.py:Runner
 `))
 	require.NoError(t, err)
 	require.NoError(t, conf.Complete(""))

@@ -1,0 +1,19 @@
+# Test backwards compatibility: cog.yaml "predict:" key still works
+# The legacy "predict" key should be accepted and work identically to "run"
+
+cog build -t $TEST_IMAGE
+
+cog run $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BaseRunner
+
+class Predictor(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s

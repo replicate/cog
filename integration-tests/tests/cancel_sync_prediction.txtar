@@ -29,18 +29,18 @@ stdout '"status":"canceled"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import time
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         pass
 
-    def predict(self, duration: float = 60.0) -> str:
+    def run(self, duration: float = 60.0) -> str:
         # Busy-loop (hits bytecode boundaries, cancellable via PyThreadState_SetAsyncExc)
         deadline = time.monotonic() + duration
         while time.monotonic() < deadline:

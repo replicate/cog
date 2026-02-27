@@ -25,7 +25,7 @@ make test-integration
 cd integration-tests && go test -short -v
 
 # Run a specific test
-cd integration-tests && go test -v -run TestIntegration/string_predictor
+cd integration-tests && go test -v -run TestIntegration/string_runner
 
 # Run with a custom cog binary
 COG_BINARY=/path/to/cog make test-integration
@@ -83,29 +83,29 @@ Install via Zed extensions panel or add to your extensions.
 
 ```txtar
 # Comments describe what the test does
-# This is a test for basic string prediction
+# This is a test for basic string run
 
 # Build the Docker image
 cog build -t $TEST_IMAGE
 
 # Run a prediction
-cog predict $TEST_IMAGE -i s=world
+cog run $TEST_IMAGE -i s=world
 stdout 'hello world'
 
 # Test that invalid input fails
-! cog predict $TEST_IMAGE -i wrong=value
+! cog run $TEST_IMAGE -i wrong=value
 stderr 'Field required'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, s: str) -> str:
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
         return "hello " + s
 ```
 
@@ -143,8 +143,8 @@ Use `go test -short` to skip slow tests.
 
 ```txtar
 cog build -t $TEST_IMAGE
-cog predict $TEST_IMAGE -i name=value
-! cog predict $TEST_IMAGE -i invalid=input  # Expected to fail
+cog run $TEST_IMAGE -i name=value
+! cog run $TEST_IMAGE -i invalid=input  # Expected to fail
 ```
 
 Special handling for `cog serve`:
@@ -190,11 +190,11 @@ Run a command with a pseudo-terminal (PTY), sending input from a file and captur
 
 ```txtar
 # Run bash interactively with commands from input file
-pty-run input.txt cog run $TEST_IMAGE /bin/bash
+pty-run input.txt cog exec $TEST_IMAGE /bin/bash
 stdout 'expected output'
 
 # Run a simple command (no input needed)
-pty-run /dev/null cog run $TEST_IMAGE echo "hello"
+pty-run /dev/null cog exec $TEST_IMAGE echo "hello"
 stdout 'hello'
 ```
 
@@ -307,7 +307,7 @@ See [testscript documentation](https://pkg.go.dev/github.com/rogpeppe/go-interna
 
 ```txtar
 cog build -t $TEST_IMAGE
-cog predict $TEST_IMAGE -i s=hello
+cog run $TEST_IMAGE -i s=hello
 stdout 'hello'
 ```
 
@@ -323,14 +323,14 @@ stdout '"output":'
 ### Testing expected failures
 
 ```txtar
-# Build should fail without predictor
+# Build should fail without runner
 ! cog build -t $TEST_IMAGE
-stderr 'predict'
+stderr 'run'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-# Note: no predict field
+# Note: no run field
 ```
 
 ### Testing with subprocess initialization
@@ -343,15 +343,15 @@ cog serve
 curl POST /predictions '{"input":{"s":"test"}}'
 stdout '"output":"hello test"'
 
--- predict.py --
+-- run.py --
 import subprocess
-from cog import BasePredictor
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         self.bg = subprocess.Popen(["./background.sh"])
     
-    def predict(self, s: str) -> str:
+    def run(self, s: str) -> str:
         return "hello " + s
 ```
 
@@ -361,7 +361,7 @@ class Predictor(BasePredictor):
 [fast] skip 'requires long build time'
 
 cog build -t $TEST_IMAGE
-cog predict $TEST_IMAGE
+cog run $TEST_IMAGE
 stdout 'torch'
 
 -- cog.yaml --
@@ -416,7 +416,7 @@ docker images | grep cog-test
 ## Adding New Tests
 
 1. Create a new `.txtar` file in `tests/`
-2. Name it descriptively (e.g., `async_predictor.txtar`)
+2. Name it descriptively (e.g., `async_runner.txtar`)
 3. Add comments explaining what's being tested
 4. Include all necessary fixture files inline
 5. Run your test: `go test -v -run TestIntegration/your_test_name`
@@ -427,7 +427,7 @@ docker images | grep cog-test
 
 The server health check has a 30-second timeout. If your model takes longer to load:
 - Consider if it should be a `[slow]` test
-- Check for errors in the predictor's `setup()` method
+- Check for errors in the runner's `setup()` method
 
 ### "SERVER_URL not set" error
 

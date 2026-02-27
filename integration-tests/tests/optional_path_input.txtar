@@ -4,7 +4,7 @@
 cog build -t $TEST_IMAGE
 
 # Predict without providing optional input - should return red image
-cog predict $TEST_IMAGE
+cog run $TEST_IMAGE
 
 # Verify output file was created
 exec test -f output.webp
@@ -14,15 +14,15 @@ build:
   python_version: "3.12"
   python_packages:
     - "pillow"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, Path, Input
+-- run.py --
+from cog import BaseRunner, Path, Input
 from PIL import Image
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self,
         test_image: Path | None = Input(description="Test image", default=None)
     ) -> Path:

@@ -1,15 +1,15 @@
-# Prediction interface for Cog ⚙️
+# Runner interface for Cog ⚙️
 # https://cog.run/python
 
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self) -> None:
         """Load the model into memory to make running multiple predictions efficient"""
         # self.model = torch.load("./weights.pth")
 
-    def predict(
+    def run(
         self,
         image: Path = Input(description="Grayscale input image"),
         scale: float = Input(

@@ -16,14 +16,14 @@ stdout 'Async healthcheck error'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 import asyncio
 
-class Predictor(BasePredictor):
-    async def predict(self, text: str) -> str:
+class Runner(BaseRunner):
+    async def run(self, text: str) -> str:
         return f"hello {text}"
     
     async def healthcheck(self) -> bool:

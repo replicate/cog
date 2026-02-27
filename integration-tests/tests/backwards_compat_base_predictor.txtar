@@ -1,0 +1,19 @@
+# Test backwards compatibility: BasePredictor class and def predict() still work
+# Legacy code using predict: key, BasePredictor, and predict() method should work unchanged
+
+cog build -t $TEST_IMAGE
+
+cog run $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
