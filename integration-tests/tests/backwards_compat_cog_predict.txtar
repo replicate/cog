@@ -1,0 +1,19 @@
+# Test backwards compatibility: "cog predict" command still works as alias for "cog run"
+
+cog build -t $TEST_IMAGE
+
+# Use the old "cog predict" command - should work as alias
+cog predict $TEST_IMAGE -i s=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+run: "run.py:Runner"
+
+-- run.py --
+from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s
