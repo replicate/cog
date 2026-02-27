@@ -1,6 +1,6 @@
 """Tests for cog.input module (Input, FieldInfo)."""
 
-from dataclasses import Field
+import pytest
 
 from cog import Input
 from cog.input import FieldInfo
@@ -39,47 +39,20 @@ class TestInput:
         result = Input(deprecated=True)
         assert result.deprecated is True
 
-    def test_input_mutable_default_list_empty(self) -> None:
-        # Empty list should become list factory
-        result = Input(default=[])
-        assert isinstance(result.default, Field)
-        assert result.default.default_factory is list
+    def test_input_default_factory_raises_error(self) -> None:
+        with pytest.raises(TypeError, match="default_factory is not supported"):
+            Input(default_factory=list)
 
-    def test_input_mutable_default_dict_empty(self) -> None:
-        # Empty dict should become dict factory
-        result = Input(default={})
-        assert isinstance(result.default, Field)
-        assert result.default.default_factory is dict
-
-    def test_input_mutable_default_list_populated(self) -> None:
-        # Populated list should become deepcopy factory
-        result = Input(default=[1, 2, 3])
-        assert isinstance(result.default, Field)
-        assert result.default.default_factory is not None
-        # Factory should produce a copy
-        value1 = result.default.default_factory()
-        value2 = result.default.default_factory()
-        assert value1 == [1, 2, 3]
-        assert value1 is not value2  # Different instances
-
-    def test_input_default_factory_explicit(self) -> None:
-        result = Input(default_factory=list)
-        assert isinstance(result.default, Field)
-        assert result.default.default_factory is list
-
-    def test_input_default_and_factory_mutually_exclusive(self) -> None:
-        try:
-            Input(default="value", default_factory=str)
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "Cannot specify both" in str(e)
-
-    def test_input_immutable_defaults_not_converted(self) -> None:
-        # Immutable defaults should stay as-is
+    def test_input_immutable_defaults_stored_directly(self) -> None:
         for default in ["string", 42, 3.14, True, None, (1, 2), frozenset([1, 2])]:
             result = Input(default=default)
             assert result.default == default
-            assert not isinstance(result.default, Field)
+
+    def test_input_no_default(self) -> None:
+        # No default means the parameter is required
+        result = Input(description="Required input")
+        assert result.default is None
+        assert result.description == "Required input"
 
 
 class TestFieldInfo:
@@ -87,25 +60,18 @@ class TestFieldInfo:
 
     def test_fieldinfo_is_frozen(self) -> None:
         info = FieldInfo(default="test")
-        try:
+        with pytest.raises(AttributeError):
             info.default = "new"  # type: ignore[misc]
-            assert False, "Should have raised FrozenInstanceError"
-        except Exception:
-            pass  # Expected
 
-    def test_fieldinfo_repr(self) -> None:
+    def test_fieldinfo_defaults(self) -> None:
         info = FieldInfo(default=5, ge=0, le=10, description="A number")
-        repr_str = repr(info)
-        assert "FieldInfo" in repr_str
-        assert "default=5" in repr_str
-        assert "ge=0" in repr_str
-        assert "le=10" in repr_str
-        assert "description=" in repr_str
+        assert info.default == 5
+        assert info.ge == 0
+        assert info.le == 10
+        assert info.description == "A number"
 
-    def test_fieldinfo_repr_omits_none(self) -> None:
+    def test_fieldinfo_none_defaults(self) -> None:
         info = FieldInfo(description="Just a description")
-        repr_str = repr(info)
-        assert "description=" in repr_str
-        # None values should not appear
-        assert "ge=" not in repr_str
-        assert "le=" not in repr_str
+        assert info.default is None
+        assert info.ge is None
+        assert info.le is None

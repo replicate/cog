@@ -19,12 +19,9 @@ Example:
             return self.model.generate(prompt, image)
 """
 
-from ._version import __version__
-from .coder import Coder
+from coglet import CancelationException as CancelationException
 
-# Register built-in coders
-from .coders import DataclassCoder, JsonCoder, SetCoder
-from .exceptions import CancelationException
+from ._version import __version__
 from .input import FieldInfo, Input
 from .model import BaseModel
 from .predictor import BasePredictor
@@ -60,10 +57,6 @@ def current_scope() -> object:
     return coglet._sdk.current_scope()  # type: ignore[attr-defined]  # PyO3 native submodule
 
 
-Coder.register(DataclassCoder)
-Coder.register(JsonCoder)
-Coder.register(SetCoder)
-
 __all__ = [
     # Version
     "__version__",
@@ -81,8 +74,6 @@ __all__ = [
     "URLPath",
     "ConcatenateIterator",
     "AsyncConcatenateIterator",
-    # Extensibility
-    "Coder",
     # Exceptions
     "CancelationException",
     # Metrics
