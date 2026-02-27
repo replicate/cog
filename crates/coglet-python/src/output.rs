@@ -241,3 +241,334 @@ fn is_generator<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<bool>
     let gen_type = types_mod.getattr("GeneratorType")?;
     obj.is_instance(&gen_type)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine as _;
+    use pyo3::types::PyDict;
+
+    /// Helper: evaluate a Python expression and run make_encodeable on it.
+    fn encodeable(py_expr: &str) -> String {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            // Run any setup + expression, storing result in `obj`
+            let code = format!("import json\n{}\nresult = obj", py_expr);
+            py.run(&std::ffi::CString::new(code).unwrap(), None, Some(&locals))
+                .expect("failed to evaluate test expression");
+
+            let obj = locals.get_item("result").unwrap().unwrap();
+            let encoded = make_encodeable(py, &obj).expect("make_encodeable failed");
+
+            // Convert to JSON string for easy assertion
+            let json_mod = py.import("json").unwrap();
+            let json_str = json_mod
+                .call_method1("dumps", (&encoded,))
+                .expect("json.dumps failed");
+            json_str.extract::<String>().unwrap()
+        })
+    }
+
+    /// Helper: evaluate a Python expression and run process_output on it.
+    fn processed(py_expr: &str) -> String {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            let code = format!("import json\n{}\nresult = obj", py_expr);
+            py.run(&std::ffi::CString::new(code).unwrap(), None, Some(&locals))
+                .expect("failed to evaluate test expression");
+
+            let obj = locals.get_item("result").unwrap().unwrap();
+            let output = process_output(py, &obj).expect("process_output failed");
+
+            let json_mod = py.import("json").unwrap();
+            let json_str = json_mod
+                .call_method1("dumps", (&output,))
+                .expect("json.dumps failed");
+            json_str.extract::<String>().unwrap()
+        })
+    }
+
+    // ── make_encodeable: primitives ──────────────────────────────────
+
+    #[test]
+    fn encodeable_string() {
+        assert_eq!(encodeable("obj = 'hello'"), r#""hello""#);
+    }
+
+    #[test]
+    fn encodeable_int() {
+        assert_eq!(encodeable("obj = 42"), "42");
+    }
+
+    #[test]
+    fn encodeable_float() {
+        assert_eq!(encodeable("obj = 3.14"), "3.14");
+    }
+
+    #[test]
+    fn encodeable_bool() {
+        assert_eq!(encodeable("obj = True"), "true");
+    }
+
+    #[test]
+    fn encodeable_none() {
+        assert_eq!(encodeable("obj = None"), "null");
+    }
+
+    // ── make_encodeable: collections ─────────────────────────────────
+
+    #[test]
+    fn encodeable_list() {
+        assert_eq!(encodeable("obj = [1, 2, 3]"), "[1, 2, 3]");
+    }
+
+    #[test]
+    fn encodeable_dict() {
+        assert_eq!(
+            encodeable(r#"obj = {"a": 1, "b": 2}"#),
+            r#"{"a": 1, "b": 2}"#
+        );
+    }
+
+    #[test]
+    fn encodeable_tuple_to_list() {
+        assert_eq!(encodeable("obj = (1, 2, 3)"), "[1, 2, 3]");
+    }
+
+    #[test]
+    fn encodeable_set_to_list() {
+        // Set with single element to avoid ordering issues
+        assert_eq!(encodeable("obj = {42}"), "[42]");
+    }
+
+    #[test]
+    fn encodeable_frozenset_to_list() {
+        assert_eq!(encodeable("obj = frozenset([99])"), "[99]");
+    }
+
+    #[test]
+    fn encodeable_nested_dict() {
+        assert_eq!(
+            encodeable(r#"obj = {"outer": {"inner": [1, 2]}}"#),
+            r#"{"outer": {"inner": [1, 2]}}"#
+        );
+    }
+
+    // ── make_encodeable: enum ────────────────────────────────────────
+
+    #[test]
+    fn encodeable_enum() {
+        assert_eq!(
+            encodeable("import enum\nclass Color(enum.Enum):\n    RED = 'red'\nobj = Color.RED"),
+            r#""red""#
+        );
+    }
+
+    #[test]
+    fn encodeable_int_enum() {
+        assert_eq!(
+            encodeable(
+                "import enum\nclass Priority(enum.IntEnum):\n    HIGH = 1\nobj = Priority.HIGH"
+            ),
+            "1"
+        );
+    }
+
+    // ── make_encodeable: datetime ────────────────────────────────────
+
+    #[test]
+    fn encodeable_datetime() {
+        let result =
+            encodeable("from datetime import datetime\nobj = datetime(2025, 1, 15, 10, 30, 0)");
+        assert_eq!(result, r#""2025-01-15T10:30:00""#);
+    }
+
+    // ── make_encodeable: dataclass ───────────────────────────────────
+
+    #[test]
+    fn encodeable_dataclass() {
+        assert_eq!(
+            encodeable(
+                "from dataclasses import dataclass\n\
+                 @dataclass\n\
+                 class Point:\n\
+                 \tx: int\n\
+                 \ty: int\n\
+                 obj = Point(x=1, y=2)"
+            ),
+            r#"{"x": 1, "y": 2}"#
+        );
+    }
+
+    #[test]
+    fn encodeable_nested_dataclass() {
+        assert_eq!(
+            encodeable(
+                "from dataclasses import dataclass, asdict\n\
+                 @dataclass\n\
+                 class Inner:\n\
+                 \tval: str\n\
+                 # Build nested via dict so class scoping isn't an issue\n\
+                 obj = {'inner': asdict(Inner(val='hello')), 'name': 'test'}"
+            ),
+            r#"{"inner": {"val": "hello"}, "name": "test"}"#
+        );
+    }
+
+    // ── make_encodeable: generator ───────────────────────────────────
+
+    #[test]
+    fn encodeable_generator() {
+        assert_eq!(encodeable("obj = (x * 2 for x in range(3))"), "[0, 2, 4]");
+    }
+
+    // ── make_encodeable: enum value in collection ────────────────────
+
+    #[test]
+    fn encodeable_enum_in_list() {
+        assert_eq!(
+            encodeable(
+                "import enum\n\
+                 class Status(enum.Enum):\n\
+                 \tOK = 'ok'\n\
+                 \tERR = 'err'\n\
+                 obj = [Status.OK, Status.ERR]"
+            ),
+            r#"["ok", "err"]"#
+        );
+    }
+
+    // ── encode_files / file_to_base64 ────────────────────────────────
+
+    #[test]
+    fn encode_pathlike_to_base64() {
+        let result = processed(
+            "import tempfile, pathlib\n\
+             f = tempfile.NamedTemporaryFile(suffix='.txt', delete=False)\n\
+             f.write(b'hello world')\n\
+             f.close()\n\
+             obj = pathlib.Path(f.name)",
+        );
+        assert!(
+            result.starts_with(r#""data:text/plain;base64,"#),
+            "expected data URL, got: {result}"
+        );
+        // Verify the base64 content decodes correctly
+        let b64_part = result.trim_matches('"').split(",").nth(1).unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(b64_part)
+            .unwrap();
+        assert_eq!(decoded, b"hello world");
+    }
+
+    #[test]
+    fn encode_iobase_to_base64() {
+        let result = processed(
+            "import io\n\
+             obj = io.BytesIO(b'test bytes')",
+        );
+        assert!(
+            result.starts_with(r#""data:application/octet-stream;base64,"#),
+            "expected data URL, got: {result}"
+        );
+        let b64_part = result.trim_matches('"').split(",").nth(1).unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(b64_part)
+            .unwrap();
+        assert_eq!(decoded, b"test bytes");
+    }
+
+    #[test]
+    fn encode_iobase_seeks_to_start() {
+        let result = processed(
+            "import io\n\
+             buf = io.BytesIO(b'rewind me')\n\
+             buf.read()  # advance to end\n\
+             obj = buf",
+        );
+        let b64_part = result.trim_matches('"').split(",").nth(1).unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(b64_part)
+            .unwrap();
+        assert_eq!(decoded, b"rewind me", "should seek to start before reading");
+    }
+
+    #[test]
+    fn encode_file_in_dict() {
+        let result = processed(
+            "import io\n\
+             obj = {'output': io.BytesIO(b'nested')}",
+        );
+        // Parse the JSON to verify structure
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let url = parsed["output"].as_str().unwrap();
+        assert!(
+            url.starts_with("data:application/octet-stream;base64,"),
+            "expected data URL in dict value"
+        );
+    }
+
+    #[test]
+    fn encode_file_in_list() {
+        let result = processed(
+            "import io\n\
+             obj = [io.BytesIO(b'item1'), io.BytesIO(b'item2')]",
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert!(parsed.as_array().unwrap().len() == 2);
+        for item in parsed.as_array().unwrap() {
+            assert!(item.as_str().unwrap().starts_with("data:"));
+        }
+    }
+
+    #[test]
+    fn encode_string_passthrough() {
+        // Strings should NOT be recursed into
+        assert_eq!(processed("obj = 'just a string'"), r#""just a string""#);
+    }
+
+    #[test]
+    fn encode_mime_type_guessing() {
+        let result = processed(
+            "import tempfile, pathlib\n\
+             f = tempfile.NamedTemporaryFile(suffix='.png', delete=False)\n\
+             f.write(b'\\x89PNG')\n\
+             f.close()\n\
+             obj = pathlib.Path(f.name)",
+        );
+        assert!(
+            result.contains("image/png"),
+            "expected image/png MIME type, got: {result}"
+        );
+    }
+
+    // ── process_output: end-to-end ───────────────────────────────────
+
+    #[test]
+    fn process_output_primitives_passthrough() {
+        assert_eq!(processed("obj = 'hello'"), r#""hello""#);
+        assert_eq!(processed("obj = 42"), "42");
+        assert_eq!(processed("obj = None"), "null");
+    }
+
+    #[test]
+    fn process_output_dataclass_with_file() {
+        let result = processed(
+            "from dataclasses import dataclass\n\
+             import pathlib, tempfile\n\
+             @dataclass\n\
+             class Output:\n\
+             \ttext: str\n\
+             \tdata: object\n\
+             f = tempfile.NamedTemporaryFile(suffix='.bin', delete=False)\n\
+             f.write(b'binary')\n\
+             f.close()\n\
+             obj = Output(text='result', data=pathlib.Path(f.name))",
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["text"], "result");
+        assert!(parsed["data"].as_str().unwrap().starts_with("data:"));
+    }
+}
