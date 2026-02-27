@@ -283,8 +283,11 @@ impl PredictHandler for PythonPredictHandler {
                 .map_err(|e| SetupError::load(e.to_string()))?;
 
             // Detect SDK implementation
-            let sdk_impl = match py.import("cog._adt") {
-                Ok(_) => SdkImplementation::Cog,
+            let sdk_impl = match py.import("cog") {
+                Ok(cog) => match cog.getattr("BasePredictor") {
+                    Ok(_) => SdkImplementation::Cog,
+                    Err(_) => SdkImplementation::Unknown,
+                },
                 Err(_) => SdkImplementation::Unknown,
             };
             tracing::info!(sdk_implementation = %sdk_impl, "Detected Cog SDK implementation");
@@ -593,11 +596,6 @@ impl PredictHandler for PythonPredictHandler {
         } else {
             tracing::trace!(%slot, "Cancel called on unknown slot");
         }
-    }
-
-    fn schema(&self) -> Option<serde_json::Value> {
-        let guard = self.predictor.lock().expect("predictor mutex poisoned");
-        guard.as_ref().and_then(|pred| pred.schema(self.mode))
     }
 
     async fn healthcheck(&self) -> coglet_core::orchestrator::HealthcheckResult {
