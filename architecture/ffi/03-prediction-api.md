@@ -52,10 +52,10 @@ The FFI runtime uses a concurrent-safe DashMap for prediction state:
 
 ```rust
 // Atomic check-or-insert
-match supervisor.get_state(id) {
-    Some(state) => return 202 + state,  // Already exists
+match service.get_prediction_response(id) {
+    Some(response) => return 202 + response,  // Already exists
     None => {
-        supervisor.submit(id, input);   // Create new
+        service.submit_prediction(id, input, webhook);  // Create new
         return 202 + starting_state;
     }
 }
@@ -92,10 +92,10 @@ Behavior is identical to legacy, but implemented differently:
 
 ```rust
 tokio::spawn(async move {
-    let result = service.predict(slot, input).await;
-    supervisor.update_status(id, result);
-    supervisor.send_webhook(id).await;
-    supervisor.cleanup(id);
+    let _result = service.predict(slot, input).await;
+    // Prediction state is already updated by predict() internally
+    // Webhooks fire automatically from Prediction mutation methods
+    service.remove_prediction(id);
 });
 ```
 
@@ -240,13 +240,13 @@ stateDiagram-v2
     canceled --> [*]
 ```
 
-However, state transitions are managed by the PredictionSupervisor with atomic updates:
+State transitions happen on the `Prediction` struct directly, which fires webhooks as a side effect:
 
 ```rust
-// Atomic state transition
-supervisor.update_status(id, Status::Processing);
-// ... prediction runs ...
-supervisor.update_status(id, Status::Succeeded { output });
+// State transitions fire webhooks automatically
+pred.set_processing();    // fires Start webhook
+// ... prediction runs, logs/outputs append ...
+pred.set_succeeded(output);  // fires terminal Completed webhook
 ```
 
 ## Dynamic Payload Handling
@@ -324,7 +324,7 @@ Legacy variables like `COG_MAX_CONCURRENCY` are ignored when using FFI.
 | File | Purpose |
 |------|---------|
 | `crates/coglet/src/transport/http/routes.rs` | HTTP endpoint handlers |
-| `crates/coglet/src/supervisor.rs` | Prediction state management |
+| `crates/coglet/src/prediction.rs` | Prediction state + webhook firing |
 | `crates/coglet/src/webhook.rs` | Webhook delivery with retries |
 | `crates/coglet/src/bridge/protocol.rs` | IPC message types |
 | `crates/coglet/src/permit/pool.rs` | Slot-based concurrency |

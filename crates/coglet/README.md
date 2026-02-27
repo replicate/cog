@@ -19,17 +19,17 @@ dependencies - the Python bindings live in `coglet-python`.
     │                                  │                              │
     │  ┌───────────────────────────────▼─────────────────────────┐   │
     │  │                     service.rs                          │   │
-    │  │  PredictionService: health, permits, predict routing    │   │
+    │  │  PredictionService: health, permits, state, webhooks    │   │
     │  └───────────────────────────────┬─────────────────────────┘   │
     │                                  │                              │
-    │         ┌────────────────────────┼────────────────────────┐    │
-    │         │                        │                        │    │
-    │         ▼                        ▼                        ▼    │
-    │  ┌─────────────┐    ┌────────────────────┐    ┌──────────────┐│
-    │  │ permit/     │    │   orchestrator.rs  │    │ supervisor.rs││
-    │  │ PermitPool  │    │   Parent-side:     │    │ State track  ││
-    │  │ Slot alloc  │    │   spawn, route     │    │ Webhooks     ││
-    │  └─────────────┘    └─────────┬──────────┘    └──────────────┘│
+    │         ┌────────────────────────┼────────────────┐            │
+    │         │                        │                │            │
+    │         ▼                        ▼                ▼            │
+    │  ┌─────────────┐    ┌────────────────────┐    ┌──────────┐   │
+    │  │ permit/     │    │   orchestrator.rs  │    │webhook.rs│   │
+    │  │ PermitPool  │    │   Parent-side:     │    │ Sender   │   │
+    │  │ Slot alloc  │    │   spawn, route     │    │ Retry    │   │
+    │  └─────────────┘    └─────────┬──────────┘    └──────────┘   │
     │                               │                                │
     │  ┌────────────────────────────▼────────────────────────────┐   │
     │  │                      bridge/                            │   │
@@ -61,8 +61,7 @@ coglet/
     ├── version.rs          # VersionInfo
     │
     │   # Service Layer
-    ├── service.rs          # PredictionService - main entry point
-    ├── supervisor.rs       # PredictionSupervisor - state/webhook management
+    ├── service.rs          # PredictionService - lifecycle, state, webhooks
     ├── webhook.rs          # WebhookSender, webhook types
     │
     │   # Orchestrator (Parent Process)
@@ -97,10 +96,12 @@ coglet/
 
 ### PredictionService (`service.rs`)
 
-Central coordination point. Owns:
+Single owner of prediction state. Manages:
 - Health state (Unknown → Starting → Ready/SetupFailed)
-- PermitPool or Orchestrator reference
-- PredictionSupervisor for state tracking
+- PermitPool + Orchestrator reference
+- Active predictions (DashMap — single source of truth)
+- Cancellation (cancel tokens + orchestrator delegation)
+- Webhooks fire from Prediction mutation methods (no dual state)
 
 ```rust
 let service = PredictionService::new_no_pool()
