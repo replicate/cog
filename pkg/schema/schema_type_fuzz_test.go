@@ -85,10 +85,7 @@ const maxFuzzDepth = 8
 
 // encodeAnnotation serializes a TypeAnnotation to bytes.
 func encodeAnnotation(ann TypeAnnotation) []byte {
-	var buf []byte
-	buf = append(buf, byte(ann.Kind))
-	buf = append(buf, byte(len(ann.Name)))
-	buf = append(buf, []byte(ann.Name)...)
+	buf := append([]byte{byte(ann.Kind), byte(len(ann.Name))}, []byte(ann.Name)...)
 	buf = append(buf, byte(len(ann.Args)))
 	for _, a := range ann.Args {
 		buf = append(buf, encodeAnnotation(a)...)
