@@ -1,0 +1,56 @@
+# Test that schema generation works when the output type is defined in a
+# separate Python module. This exercises the cross-file model resolution:
+# the predictor imports Output from output_types.py, and the static Go parser
+# finds and parses output_types.py to resolve the BaseModel fields.
+#
+# Covers:
+#   - Output type imported from a sibling module (from output_types import Output)
+#   - BaseModel fields appear correctly in the OpenAPI schema label
+#   - Prediction works end-to-end with the multi-file setup
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Verify schema is in Docker label with correct structure
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+
+# Output schema should be an object with fields from output_types.py
+stdout '"type":"object"'
+stdout '"text":'
+stdout '"score":'
+stdout '"tags":'
+
+# Input should have the prompt field
+stdout '"prompt":'
+stdout '"required":\["prompt"\]'
+
+# Predict should work end-to-end
+cog predict $TEST_IMAGE -i prompt=hello
+stdout '"text": "hello"'
+stdout '"score": 1'
+stdout '"tags"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_packages:
+    - "pydantic>2"
+predict: "predict.py:Predictor"
+
+-- output_types.py --
+from pydantic import BaseModel
+
+
+class Output(BaseModel):
+    text: str
+    score: float
+    tags: list[str]
+
+-- predict.py --
+from cog import BasePredictor
+from output_types import Output
+
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> Output:
+        return Output(text=prompt, score=1.0, tags=["default"])
