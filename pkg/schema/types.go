@@ -448,9 +448,15 @@ func ResolveOutputType(ann TypeAnnotation, ctx *ImportContext, models ModelClass
 			}
 			return OutputType{Kind: OutputObject, Fields: objFields}, nil
 		}
-		if ann.Name == "Any" {
+		// Unparameterized dict is opaque JSON object
+		if ann.Name == "Any" || ann.Name == "dict" || ann.Name == "Dict" {
 			p := TypeAny
 			return OutputType{Kind: OutputSingle, Primitive: &p}, nil
+		}
+		// Unparameterized list is array of opaque objects
+		if ann.Name == "list" || ann.Name == "List" {
+			p := TypeAny
+			return OutputType{Kind: OutputList, Primitive: &p}, nil
 		}
 		prim, ok := PrimitiveFromName(ann.Name)
 		if !ok {

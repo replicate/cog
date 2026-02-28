@@ -1075,6 +1075,38 @@ class Predictor(BasePredictor):
 }
 
 // ---------------------------------------------------------------------------
+// Unparameterized dict/list output (opaque JSON)
+// ---------------------------------------------------------------------------
+
+func TestDictOutput(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(description="Image")) -> dict:
+        return {"class": "hotdog", "score": 0.95}
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.OutputSingle, info.Output.Kind)
+	require.NotNil(t, info.Output.Primitive)
+	require.Equal(t, schema.TypeAny, *info.Output.Primitive)
+}
+
+func TestBareListOutput(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> list:
+        return [1, 2, 3]
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.OutputList, info.Output.Kind)
+	require.NotNil(t, info.Output.Primitive)
+	require.Equal(t, schema.TypeAny, *info.Output.Primitive)
+}
+
+// ---------------------------------------------------------------------------
 // No-input predictor (only self)
 // ---------------------------------------------------------------------------
 
