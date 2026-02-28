@@ -1,0 +1,1485 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../training/">
+      
+      
+        <link rel="next" href="../cli/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>HTTP API - Cog</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#http-api" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Cog" class="md-header__button md-logo" aria-label="Cog" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97s-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1s.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Cog
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              HTTP API
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/replicate/cog" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Cog" class="md-nav__button md-logo" aria-label="Cog" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97s-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1s.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64z"/></svg>
+
+    </a>
+    Cog
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/replicate/cog" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    README
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started-own-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using your own model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deploy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deploy your model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../yaml/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YAML spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prediction API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HTTP API
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HTTP API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#webhooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhooks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generating-unique-prediction-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generating unique prediction IDs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-uploads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File uploads
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-health-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /health-check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-openapijson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /openapi.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-predictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /predictions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#put-predictionsprediction_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PUT /predictions/&lt;prediction_id&gt;
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-predictionsprediction_idcancel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /predictions/&lt;prediction_id&gt;/cancel
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../private-package-registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Private registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../notebooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notebooks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wsl2/wsl2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CONTRIBUTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/replicate/cog/blob/main/LICENSE" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../llms.txt" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    llms.txt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#webhooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhooks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generating-unique-prediction-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generating unique prediction IDs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-uploads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File uploads
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-health-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /health-check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-openapijson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /openapi.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-predictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /predictions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#put-predictionsprediction_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PUT /predictions/&lt;prediction_id&gt;
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-predictionsprediction_idcancel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /predictions/&lt;prediction_id&gt;/cancel
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/replicate/cog/edit/main/docs/http.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="http-api">HTTP API<a class="headerlink" href="#http-api" title="Permanent link">#</a></h1>
+<blockquote>
+<p>[!TIP]
+For information about how to run the HTTP server, 
+see <a href="../deploy/">our documentation on deploying models</a>.</p>
+</blockquote>
+<p>When you run a Docker image built by Cog, 
+it serves an HTTP API for making predictions.</p>
+<p>The server supports both synchronous and asynchronous prediction creation:</p>
+<ul>
+<li><strong>Synchronous</strong>: 
+  The server waits until the prediction is completed
+  and responds with the result.</li>
+<li><strong>Asynchronous</strong>: 
+  The server immediately returns a response 
+  and processes the prediction in the background. </li>
+</ul>
+<p>The client can create a prediction asynchronously
+by setting the <code>Prefer: respond-async</code> header in their request.
+When provided, the server responds immediately after starting the prediction 
+with <code>202 Accepted</code> status and a prediction object in status <code>processing</code>.</p>
+<blockquote>
+<p>[!NOTE]
+The only supported way to receive updates on the status of predictions
+started asynchronously is using <a href="#webhooks">webhooks</a>. 
+Polling for prediction status is not currently supported.</p>
+</blockquote>
+<p>You can also use certain server endpoints to create predictions idempotently,
+such that if a client calls this endpoint more than once with the same ID 
+(for example, due to a network interruption) 
+while the prediction is still running, 
+no new prediction is created. 
+Instead, the client receives a <code>202 Accepted</code> response
+with the initial state of the prediction.</p>
+<hr />
+<p>Here's a summary of the prediction creation endpoints:</p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Header</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /predictions</code></td>
+<td>-</td>
+<td>Synchronous, non-idempotent</td>
+</tr>
+<tr>
+<td><code>POST /predictions</code></td>
+<td><code>Prefer: respond-async</code></td>
+<td>Asynchronous, non-idempotent</td>
+</tr>
+<tr>
+<td><code>PUT /predictions/&lt;prediction_id&gt;</code></td>
+<td>-</td>
+<td>Synchronous, idempotent</td>
+</tr>
+<tr>
+<td><code>PUT /predictions/&lt;prediction_id&gt;</code></td>
+<td><code>Prefer: respond-async</code></td>
+<td>Asynchronous, idempotent</td>
+</tr>
+</tbody>
+</table>
+<p>Choose the endpoint that best fits your needs:</p>
+<ul>
+<li>Use synchronous endpoints when you want to wait for the prediction result.</li>
+<li>Use asynchronous endpoints when you want to start a prediction 
+  and receive updates via webhooks.</li>
+<li>Use idempotent endpoints when you need to safely retry requests 
+  without creating duplicate predictions.</li>
+</ul>
+<h2 id="webhooks">Webhooks<a class="headerlink" href="#webhooks" title="Permanent link">#</a></h2>
+<p>You can provide a <code>webhook</code> parameter in the client request body
+when creating a prediction.</p>
+<div class="highlight"><pre><span></span><code><span class="nf">POST</span> <span class="nn">/predictions</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json; charset=utf-8</span>
+<span class="na">Prefer</span><span class="o">:</span> <span class="l">respond-async</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;A picture of an onion with sunglasses&quot;</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;webhook&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://example.com/webhook/prediction&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The server makes requests to the provided URL
+with the current state of the prediction object in the request body
+at the following times.</p>
+<ul>
+<li><code>start</code>: 
+  Once, when the prediction starts
+  (<code>status</code> is <code>starting</code>).</li>
+<li><code>output</code>: 
+  Each time a predict function generates an output 
+  (either once using <code>return</code> or multiple times using <code>yield</code>)</li>
+<li><code>logs</code>: 
+  Each time the predict function writes to <code>stdout</code></li>
+<li><code>completed</code>: 
+  Once, when the prediction reaches a terminal state 
+  (<code>status</code> is <code>succeeded</code>, <code>canceled</code>, or <code>failed</code>)</li>
+</ul>
+<p>Webhook requests for <code>start</code> and <code>completed</code> event types 
+are sent immediately.
+Webhook requests for <code>output</code> and <code>logs</code> event types 
+are sent at most once every 500ms.
+This interval is not configurable.</p>
+<p>By default, the server sends requests for all event types. 
+Clients can specify which events trigger webhook requests 
+with the <code>webhook_events_filter</code> parameter in the prediction request body. 
+For example,
+the following request specifies that webhooks are sent by the server
+only at the start and end of the prediction:</p>
+<div class="highlight"><pre><span></span><code><span class="nf">POST</span> <span class="nn">/predictions</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json; charset=utf-8</span>
+<span class="na">Prefer</span><span class="o">:</span> <span class="l">respond-async</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;A picture of an onion with sunglasses&quot;</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;webhook&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://example.com/webhook/prediction&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;webhook_events_filter&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;start&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;completed&quot;</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="generating-unique-prediction-ids">Generating unique prediction IDs<a class="headerlink" href="#generating-unique-prediction-ids" title="Permanent link">#</a></h2>
+<p>Endpoints for creating and canceling a prediction idempotently
+accept a <code>prediction_id</code> parameter in their path.
+The server can run only one prediction at a time.
+The client must ensure that the running prediction is complete
+before creating a new one with a different ID.</p>
+<p>Clients are responsible for providing unique prediction IDs.
+We recommend generating a UUIDv4 or <a href="https://uuid7.com">UUIDv7</a>,
+base32-encoding that value,
+and removing padding characters (<code>==</code>).
+This produces a random identifier that is 26 ASCII characters long.</p>
+<div class="highlight"><pre><span></span><code><span class="o">&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">uuid</span><span class="w"> </span><span class="kn">import</span> <span class="n">uuid4</span>
+<span class="o">&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">base64</span><span class="w"> </span><span class="kn">import</span> <span class="n">b32encode</span>
+<span class="o">&gt;&gt;</span> <span class="n">b32encode</span><span class="p">(</span><span class="n">uuid4</span><span class="p">()</span><span class="o">.</span><span class="n">bytes</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s1">&#39;=&#39;</span><span class="p">)</span>
+<span class="s1">&#39;wjx3whax6rf4vphkegkhcvpv6a&#39;</span>
+</code></pre></div>
+<h2 id="file-uploads">File uploads<a class="headerlink" href="#file-uploads" title="Permanent link">#</a></h2>
+<p>A model's <code>predict</code> function can produce file output by yielding or returning
+a <code>cog.Path</code> or <code>cog.File</code> value.</p>
+<p>By default,
+files are returned as a base64-encoded 
+<a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs">data URL</a>.</p>
+<div class="highlight"><pre><span></span><code><span class="nf">POST</span> <span class="nn">/predictions</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json; charset=utf-8</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;A picture of an onion with sunglasses&quot;</span><span class="p">},</span>
+<span class="p">}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span> <span class="m">200</span> <span class="ne">OK</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;succeeded&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;output&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;data:image/png;base64,...&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>When creating a prediction synchronously,
+the client can configure a base URL to upload output files to instead
+by setting the <code>output_file_prefix</code> parameter in the request body:</p>
+<div class="highlight"><pre><span></span><code><span class="nf">POST</span> <span class="nn">/predictions</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json; charset=utf-8</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;A picture of an onion with sunglasses&quot;</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;output_file_prefix&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://example.com/upload&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>When the model produces a file output,
+the server sends the following request to upload the file to the configured URL:</p>
+<div class="highlight"><pre><span></span><code><span class="nf">PUT</span> <span class="nn">/upload</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+<span class="na">Host</span><span class="o">:</span> <span class="l">example.com</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">multipart/form-data</span>
+
+--boundary
+Content-Disposition: form-data; name=&quot;file&quot;; filename=&quot;image.png&quot;
+Content-Type: image/png
+
+&lt;binary data&gt;
+--boundary--
+</code></pre></div>
+<p>If the upload succeeds, the server responds with output:</p>
+<div class="highlight"><pre><span></span><code><span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span> <span class="m">200</span> <span class="ne">OK</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;succeeded&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;output&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://example.com/upload/image.png&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>If the upload fails, the server responds with an error.</p>
+<blockquote>
+<p>[!IMPORTANT]<br />
+File uploads for predictions created asynchronously 
+require <code>--upload-url</code> to be specified when starting the HTTP server.</p>
+</blockquote>
+<p><a id="api"></a></p>
+<h2 id="endpoints">Endpoints<a class="headerlink" href="#endpoints" title="Permanent link">#</a></h2>
+<h3 id="get-health-check"><code>GET /health-check</code><a class="headerlink" href="#get-health-check" title="Permanent link">#</a></h3>
+<p>Returns the current health status of the model container.
+This endpoint always responds with <code>200 OK</code> —
+check the <code>status</code> field in the response body to determine readiness.</p>
+<p>The response body is a JSON object with the following fields:</p>
+<ul>
+<li><code>status</code>: One of the following values:</li>
+<li><code>STARTING</code>: The model's <code>setup()</code> method is still running.</li>
+<li><code>READY</code>: The model is ready to accept predictions.</li>
+<li><code>BUSY</code>: The model is ready but all prediction slots are in use.</li>
+<li><code>SETUP_FAILED</code>: The model's <code>setup()</code> method raised an exception.</li>
+<li><code>DEFUNCT</code>: The model encountered an unrecoverable error.</li>
+<li><code>UNHEALTHY</code>: The model is ready
+    but a user-defined <code>healthcheck()</code> method returned <code>False</code>.</li>
+<li><code>setup</code>: Setup phase details (included once setup has started):</li>
+<li><code>started_at</code>: ISO 8601 timestamp of when setup began.</li>
+<li><code>completed_at</code>: ISO 8601 timestamp of when setup finished (if complete).</li>
+<li><code>status</code>: One of <code>starting</code>, <code>succeeded</code>, or <code>failed</code>.</li>
+<li><code>logs</code>: Output captured during setup.</li>
+<li><code>version</code>: Runtime version information:</li>
+<li><code>coglet</code>: Coglet version.</li>
+<li><code>cog</code>: Cog Python SDK version (if available).</li>
+<li><code>python</code>: Python version (if available).</li>
+<li><code>user_healthcheck_error</code>:
+  Error message from a user-defined <code>healthcheck()</code> method (if applicable).</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nf">GET</span> <span class="nn">/health-check</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span> <span class="m">200</span> <span class="ne">OK</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;READY&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;setup&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;started_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2025-01-01T00:00:00.000000+00:00&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;completed_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2025-01-01T00:00:05.000000+00:00&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;succeeded&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;logs&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;coglet&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0.17.0&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;cog&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0.14.0&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;python&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;3.12.0&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="get-openapijson"><code>GET /openapi.json</code><a class="headerlink" href="#get-openapijson" title="Permanent link">#</a></h3>
+<p>The <a href="https://swagger.io/specification/">OpenAPI</a> specification of the API, 
+which is derived from the input and output types specified in your model's 
+<a href="../python/">Predictor</a> and <a href="../training/">Training</a> objects.</p>
+<h3 id="post-predictions"><code>POST /predictions</code><a class="headerlink" href="#post-predictions" title="Permanent link">#</a></h3>
+<p>Makes a single prediction.</p>
+<p>The request body is a JSON object with the following fields:</p>
+<ul>
+<li><code>input</code>: 
+  A JSON object with the same keys as the 
+  <a href="../python/">arguments to the <code>predict()</code> function</a>.
+  Any <code>File</code> or <code>Path</code> inputs are passed as URLs.</li>
+</ul>
+<p>The response body is a JSON object with the following fields:</p>
+<ul>
+<li><code>status</code>: Either <code>succeeded</code> or <code>failed</code>.</li>
+<li><code>output</code>: The return value of the <code>predict()</code> function.</li>
+<li><code>error</code>: If <code>status</code> is <code>failed</code>, the error message.</li>
+<li><code>metrics</code>: An object containing prediction metrics.
+  Always includes <code>predict_time</code> (elapsed seconds).
+  May also include custom metrics recorded by the model
+  using <a href="../python/#metrics"><code>self.record_metric()</code></a>.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nf">POST</span> <span class="nn">/predictions</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json; charset=utf-8</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;image&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://example.com/image.jpg&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello world!&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span> <span class="m">200</span> <span class="ne">OK</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;succeeded&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;output&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;data:image/png;base64,...&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;metrics&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;predict_time&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">4.52</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>If the client sets the <code>Prefer: respond-async</code> header in their request,
+the server responds immediately after starting the prediction 
+with <code>202 Accepted</code> status and a prediction object in status <code>processing</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="nf">POST</span> <span class="nn">/predictions</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json; charset=utf-8</span>
+<span class="na">Prefer</span><span class="o">:</span> <span class="l">respond-async</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;A picture of an onion with sunglasses&quot;</span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span> <span class="m">202</span> <span class="ne">Accepted</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;starting&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="put-predictionsprediction_id"><code>PUT /predictions/&lt;prediction_id&gt;</code><a class="headerlink" href="#put-predictionsprediction_id" title="Permanent link">#</a></h3>
+<p>Make a single prediction.
+This is the idempotent version of the <code>POST /predictions</code> endpoint.</p>
+<div class="highlight"><pre><span></span><code><span class="nf">PUT</span> <span class="nn">/predictions/wjx3whax6rf4vphkegkhcvpv6a</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json; charset=utf-8</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;A picture of an onion with sunglasses&quot;</span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span> <span class="m">200</span> <span class="ne">OK</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;succeeded&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;output&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;data:image/png;base64,...&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>If the client sets the <code>Prefer: respond-async</code> header in their request,
+the server responds immediately after starting the prediction 
+with <code>202 Accepted</code> status and a prediction object in status <code>processing</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="nf">PUT</span> <span class="nn">/predictions/wjx3whax6rf4vphkegkhcvpv6a</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json; charset=utf-8</span>
+<span class="na">Prefer</span><span class="o">:</span> <span class="l">respond-async</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;A picture of an onion with sunglasses&quot;</span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span> <span class="m">202</span> <span class="ne">Accepted</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;wjx3whax6rf4vphkegkhcvpv6a&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;starting&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="post-predictionsprediction_idcancel"><code>POST /predictions/&lt;prediction_id&gt;/cancel</code><a class="headerlink" href="#post-predictionsprediction_idcancel" title="Permanent link">#</a></h3>
+<p>A client can cancel an asynchronous prediction by making a
+<code>POST /predictions/&lt;prediction_id&gt;/cancel</code> request
+using the prediction <code>id</code> provided when the prediction was created.</p>
+<p>For example, 
+if the client creates a prediction by sending the request:</p>
+<div class="highlight"><pre><span></span><code><span class="nf">POST</span> <span class="nn">/predictions</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+<span class="na">Content-Type</span><span class="o">:</span> <span class="l">application/json; charset=utf-8</span>
+<span class="na">Prefer</span><span class="o">:</span> <span class="l">respond-async</span>
+
+<span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abcd1234&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;input&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;A picture of an onion with sunglasses&quot;</span><span class="p">},</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The client can cancel the prediction by sending the request:</p>
+<div class="highlight"><pre><span></span><code><span class="nf">POST</span> <span class="nn">/predictions/abcd1234/cancel</span> <span class="kr">HTTP</span><span class="o">/</span><span class="m">1.1</span>
+</code></pre></div>
+<p>A prediction cannot be canceled if it's
+created synchronously, without the <code>Prefer: respond-async</code> header,
+or created without a provided <code>id</code>.</p>
+<p>If a prediction exists with the provided <code>id</code>,
+the server responds with status <code>200 OK</code>.
+Otherwise, the server responds with status <code>404 Not Found</code>.</p>
+<p>When a prediction is canceled,
+Cog raises <a href="../python/#cancelationexception"><code>CancelationException</code></a>
+in sync predictors (or <code>asyncio.CancelledError</code> in async predictors).
+This exception may be caught by the model to perform necessary cleanup.
+The cleanup should be brief, ideally completing within a few seconds.
+After cleanup, the exception must be re-raised using a bare <code>raise</code> statement.
+Failure to re-raise the exception may result in the termination of the container.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">cog</span><span class="w"> </span><span class="kn">import</span> <span class="n">CancelationException</span><span class="p">,</span> <span class="n">Path</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">predict</span><span class="p">(</span><span class="n">image</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">process</span><span class="p">(</span><span class="n">image</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">CancelationException</span><span class="p">:</span>
+        <span class="n">cleanup</span><span class="p">()</span>
+        <span class="k">raise</span>  <span class="c1"># always re-raise</span>
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Cog is an open-source project from <a href="https://replicate.com">Replicate</a>
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/replicate/cog" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://discord.gg/replicate" target="_blank" rel="noopener" title="discord.gg" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.317 4.37a19.8 19.8 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.3 18.3 0 0 0-5.487 0 13 13 0 0 0-.617-1.25.08.08 0 0 0-.079-.037A19.7 19.7 0 0 0 3.677 4.37a.1.1 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.08.08 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.08.08 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13 13 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10 10 0 0 0 .372-.292.07.07 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.07.07 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.08.08 0 0 0 .084.028 19.8 19.8 0 0 0 6.002-3.03.08.08 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.03M8.02 15.33c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418m7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://x.com/replicate" target="_blank" rel="noopener" title="x.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://youtube.com/@replicatehq" target="_blank" rel="noopener" title="youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M23.498 6.186a3.02 3.02 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.02 3.02 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.02 3.02 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.02 3.02 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814M9.545 15.568V8.432L15.818 12z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

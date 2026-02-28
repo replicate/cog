@@ -1,0 +1,1666 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../wsl2/wsl2/">
+      
+      
+        <link rel="next" href="../llms.txt">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Contributing - Cog</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#contributing-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Cog" class="md-header__button md-logo" aria-label="Cog" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97s-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1s.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Cog
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Contributing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/replicate/cog" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Cog" class="md-nav__button md-logo" aria-label="Cog" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97s-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1s.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64z"/></svg>
+
+    </a>
+    Cog
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/replicate/cog" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    README
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started-own-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using your own model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deploy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deploy your model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../yaml/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YAML spec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prediction API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../http/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HTTP API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../private-package-registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Private registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../notebooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notebooks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wsl2/wsl2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#development-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Development environment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Development environment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build &amp; install
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common tasks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Project structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#updating-compatibility-matrices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updating compatibility matrices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ci-tool-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI tool dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#concepts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concepts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#integration-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writing-integration-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Integration Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Writing Integration Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#advanced-test-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced Test Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-docs-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the docs server
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publishing-a-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Publishing a release
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Publishing a release">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stable-pre-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stable / Pre-release
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dev-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dev release
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cog-command-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cog command not found
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/replicate/cog/blob/main/LICENSE" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../llms.txt" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    llms.txt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#development-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Development environment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Development environment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build &amp; install
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common tasks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Project structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#updating-compatibility-matrices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updating compatibility matrices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ci-tool-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI tool dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#concepts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concepts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#integration-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writing-integration-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing Integration Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Writing Integration Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#advanced-test-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced Test Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-docs-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the docs server
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publishing-a-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Publishing a release
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Publishing a release">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#stable-pre-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stable / Pre-release
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dev-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dev release
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cog-command-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cog command not found
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/replicate/cog/edit/main/docs/CONTRIBUTING.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="contributing-guide">Contributing guide<a class="headerlink" href="#contributing-guide" title="Permanent link">#</a></h1>
+<h2 id="development-environment">Development environment<a class="headerlink" href="#development-environment" title="Permanent link">#</a></h2>
+<p>Development tasks are managed with <a href="https://mise.jdx.dev/">mise</a>. Run <code>mise tasks</code> to see all available tasks.</p>
+<h3 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">#</a></h3>
+<ul>
+<li><a href="https://mise.jdx.dev/getting-started.html">mise</a>: Manages Go, Rust, Python, and other tools</li>
+<li><a href="https://docs.docker.com/desktop">Docker</a> or <a href="https://orbstack.dev">OrbStack</a></li>
+</ul>
+<h3 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">#</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Trust the mise configuration and install tools</span>
+mise<span class="w"> </span>trust
+mise<span class="w"> </span>install
+
+<span class="c1"># Create Python virtualenv and install dependencies</span>
+uv<span class="w"> </span>venv
+uv<span class="w"> </span>sync<span class="w"> </span>--all-groups
+</code></pre></div>
+<h3 id="build-install">Build &amp; install<a class="headerlink" href="#build-install" title="Permanent link">#</a></h3>
+<div class="highlight"><pre><span></span><code>mise<span class="w"> </span>run<span class="w"> </span>build
+
+<span class="c1"># symlink the binary to /usr/local/bin</span>
+sudo<span class="w"> </span>mise<span class="w"> </span>run<span class="w"> </span>install<span class="w">                     </span>
+</code></pre></div>
+<p>After making changes, run <code>mise run build</code> to rebuild and it will get picked up by the symlink.</p>
+<h3 id="common-tasks">Common tasks<a class="headerlink" href="#common-tasks" title="Permanent link">#</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Run all tests</span>
+mise<span class="w"> </span>run<span class="w"> </span>test:go
+mise<span class="w"> </span>run<span class="w"> </span>test:python
+mise<span class="w"> </span>run<span class="w"> </span>test:rust
+
+<span class="c1"># Run specific tests</span>
+mise<span class="w"> </span>run<span class="w"> </span>test:go<span class="w"> </span>--<span class="w"> </span>./pkg/config
+uv<span class="w"> </span>run<span class="w"> </span>tox<span class="w"> </span>-e<span class="w"> </span>py312-tests<span class="w"> </span>--<span class="w"> </span>python/tests/server/test_http.py<span class="w"> </span>-k<span class="w"> </span>test_name
+
+<span class="c1"># Format code (all languages)</span>
+mise<span class="w"> </span>run<span class="w"> </span>fmt:fix
+
+<span class="c1"># Lint code (all languages)</span>
+mise<span class="w"> </span>run<span class="w"> </span>lint
+</code></pre></div>
+<p>Run <code>mise tasks</code> for the complete list of available tasks.</p>
+<p>If you encounter any errors, see the troubleshooting section below.</p>
+<h2 id="project-structure">Project structure<a class="headerlink" href="#project-structure" title="Permanent link">#</a></h2>
+<p>As much as possible, this is attempting to follow the <a href="https://github.com/golang-standards/project-layout">Standard Go Project Layout</a>.</p>
+<ul>
+<li><code>cmd/</code> - The root <code>cog</code> command.</li>
+<li><code>pkg/cli/</code> - CLI commands.</li>
+<li><code>pkg/config</code> - Everything <code>cog.yaml</code> related.</li>
+<li><code>pkg/docker/</code> - Low-level interface for Docker commands.</li>
+<li><code>pkg/dockerfile/</code> - Creates Dockerfiles.</li>
+<li><code>pkg/image/</code> - Creates and manipulates Cog Docker images.</li>
+<li><code>pkg/predict/</code> - Runs predictions on models.</li>
+<li><code>pkg/util/</code> - Various packages that aren't part of Cog. They could reasonably be separate re-usable projects.</li>
+<li><code>python/</code> - The Cog Python library.</li>
+<li><code>integration-tests/</code> - Go-based integration tests using testscript.</li>
+<li><code>tools/compatgen/</code> - Tool for generating CUDA/PyTorch/TensorFlow compatibility matrices.</li>
+</ul>
+<p>For deeper architectural understanding, see the <a href="./architecture/00-overview.md">architecture documentation</a>.</p>
+<h2 id="updating-compatibility-matrices">Updating compatibility matrices<a class="headerlink" href="#updating-compatibility-matrices" title="Permanent link">#</a></h2>
+<p>The CUDA base images and framework compatibility matrices in <code>pkg/config/</code> are checked into source control and only need to be regenerated when adding support for new versions of CUDA, PyTorch, or TensorFlow.</p>
+<p>To regenerate the compatibility matrices, run:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Regenerate all matrices</span>
+mise<span class="w"> </span>run<span class="w"> </span>generate:compat
+
+<span class="c1"># Or regenerate specific matrices</span>
+mise<span class="w"> </span>run<span class="w"> </span>generate:compat<span class="w"> </span>cuda
+mise<span class="w"> </span>run<span class="w"> </span>generate:compat<span class="w"> </span>torch
+mise<span class="w"> </span>run<span class="w"> </span>generate:compat<span class="w"> </span>tensorflow
+</code></pre></div>
+<p>The generated files are:
+- <code>pkg/config/cuda_base_images.json</code> - Available NVIDIA CUDA base images
+- <code>pkg/config/torch_compatibility_matrix.json</code> - PyTorch/CUDA/Python compatibility
+- <code>pkg/config/tf_compatibility_matrix.json</code> - TensorFlow/CUDA/Python compatibility</p>
+<h2 id="ci-tool-dependencies">CI tool dependencies<a class="headerlink" href="#ci-tool-dependencies" title="Permanent link">#</a></h2>
+<p>Development tools are managed in <strong>two places</strong> that must be kept in sync:</p>
+<ol>
+<li><strong><code>mise.toml</code></strong> — Tool versions for local development (uses aqua backend for prebuilt binaries)</li>
+<li><strong><code>.github/workflows/ci.yaml</code></strong> — Tool installation for CI (uses dedicated GitHub Actions)</li>
+</ol>
+<p>CI deliberately avoids aqua downloads from GitHub Releases to prevent transient 502 failures. Instead, it uses dedicated actions (<code>taiki-e/install-action</code>, <code>go install</code>, <code>PyO3/maturin-action</code>, etc.) that are more reliable.</p>
+<p>Tools disabled in CI are listed in <code>MISE_DISABLE_TOOLS</code> in <code>ci.yaml</code>.</p>
+<p><strong>When updating a tool version</strong>, update both:
+- The version in <code>mise.toml</code> (for local dev)
+- The corresponding version pin in <code>.github/workflows/ci.yaml</code> (for CI)</p>
+<p>See the <a href="./AGENTS.md#ci-tool-dependencies">CI Tool Dependencies section in AGENTS.md</a> for the full mapping of tools to their CI installation methods.</p>
+<h2 id="concepts">Concepts<a class="headerlink" href="#concepts" title="Permanent link">#</a></h2>
+<p>There are a few concepts used throughout Cog that might be helpful to understand.</p>
+<ul>
+<li><strong>Config</strong>: The <code>cog.yaml</code> file.</li>
+<li><strong>Image</strong>: Represents a built Docker image that serves the Cog API, containing a <strong>model</strong>.</li>
+<li><strong>Input</strong>: Input from a <strong>prediction</strong>, as key/value JSON object.</li>
+<li><strong>Model</strong>: A user's machine learning model, consisting of code and weights.</li>
+<li><strong>Output</strong>: Output from a <strong>prediction</strong>, as arbitrarily complex JSON object.</li>
+<li><strong>Prediction</strong>: A single run of the model, that takes <strong>input</strong> and produces <strong>output</strong>.</li>
+<li><strong>Predictor</strong>: Defines how Cog runs <strong>predictions</strong> on a <strong>model</strong>.</li>
+</ul>
+<h2 id="running-tests">Running tests<a class="headerlink" href="#running-tests" title="Permanent link">#</a></h2>
+<p><strong>To run the entire test suite:</strong></p>
+<div class="highlight"><pre><span></span><code>mise<span class="w"> </span>run<span class="w"> </span>test:go
+mise<span class="w"> </span>run<span class="w"> </span>test:python
+mise<span class="w"> </span>run<span class="w"> </span>test:rust
+</code></pre></div>
+<p><strong>To run just the Go unit tests:</strong></p>
+<div class="highlight"><pre><span></span><code>mise<span class="w"> </span>run<span class="w"> </span>test:go
+</code></pre></div>
+<p><strong>To run just the Python tests:</strong></p>
+<div class="highlight"><pre><span></span><code>mise<span class="w"> </span>run<span class="w"> </span>test:python
+</code></pre></div>
+<blockquote>
+<p>[!INFO]
+This runs the Python test suite across all supported Python versions (3.10-3.13) using tox.</p>
+</blockquote>
+<h3 id="integration-tests">Integration Tests<a class="headerlink" href="#integration-tests" title="Permanent link">#</a></h3>
+<p>Integration tests are in <code>integration-tests/</code> using <a href="https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript">testscript</a>. Each test is a self-contained <code>.txtar</code> file in <code>integration-tests/tests/</code>, with some specialized tests as Go test functions in subpackages.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Run all integration tests</span>
+mise<span class="w"> </span>run<span class="w"> </span>test:integration
+
+<span class="c1"># Run a specific test</span>
+mise<span class="w"> </span>run<span class="w"> </span>test:integration<span class="w"> </span>string_predictor
+
+<span class="c1"># Run fast tests only (skip slow GPU/framework tests)</span>
+<span class="nb">cd</span><span class="w"> </span>integration-tests<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-short<span class="w"> </span>-v
+
+<span class="c1"># Run with a custom cog binary</span>
+<span class="nv">COG_BINARY</span><span class="o">=</span>/path/to/cog<span class="w"> </span>mise<span class="w"> </span>run<span class="w"> </span>test:integration
+</code></pre></div>
+<h3 id="writing-integration-tests">Writing Integration Tests<a class="headerlink" href="#writing-integration-tests" title="Permanent link">#</a></h3>
+<p>When adding new functionality, add integration tests in <code>integration-tests/tests/</code>. They are:
+- Self-contained (embedded fixtures in <code>.txtar</code> files)
+- Faster to run (parallel execution with automatic cleanup)
+- Easier to read and write (simple command script format)</p>
+<p>Example test structure:</p>
+<div class="highlight"><pre><span></span><code># Test string predictor
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE -i s=world
+stdout &#39;hello world&#39;
+
+-- cog.yaml --
+build:
+  python_version: &quot;3.12&quot;
+predict: &quot;predict.py:Predictor&quot;
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -&gt; str:
+        return &quot;hello &quot; + s
+</code></pre></div>
+<p>For testing <code>cog serve</code>, use <code>cog serve</code> and the <code>curl</code> command:</p>
+<div class="highlight"><pre><span></span><code>cog build -t $TEST_IMAGE
+cog serve
+curl POST /predictions &#39;{&quot;input&quot;:{&quot;s&quot;:&quot;test&quot;}}&#39;
+stdout &#39;&quot;output&quot;:&quot;hello test&quot;&#39;
+</code></pre></div>
+<h4 id="advanced-test-commands">Advanced Test Commands<a class="headerlink" href="#advanced-test-commands" title="Permanent link">#</a></h4>
+<p>For tests that require subprocess initialization or async operations, use <code>retry-curl</code>:</p>
+<p><strong><code>retry-curl</code> - HTTP request with automatic retries:</strong></p>
+<div class="highlight"><pre><span></span><code># Make HTTP request with retry logic (useful for subprocess initialization delays)
+# retry-curl [method] [path] [body] [max-attempts] [retry-delay]
+retry-curl POST /predictions &#39;{&quot;input&quot;:{&quot;s&quot;:&quot;test&quot;}}&#39; 30 1s
+stdout &#39;&quot;output&quot;:&quot;hello test&quot;&#39;
+</code></pre></div>
+<p><strong>Example: Testing predictor with subprocess in setup</strong></p>
+<div class="highlight"><pre><span></span><code>cog build -t $TEST_IMAGE
+cog serve
+
+# Use generous retries since setup spawns a background process
+retry-curl POST /predictions &#39;{&quot;input&quot;:{&quot;s&quot;:&quot;test&quot;}}&#39; 30 1s
+stdout &#39;&quot;output&quot;:&quot;hello test&quot;&#39;
+
+-- predict.py --
+class Predictor(BasePredictor):
+    def setup(self):
+        self.process = subprocess.Popen([&quot;./background.sh&quot;])
+
+    def predict(self, s: str) -&gt; str:
+        return &quot;hello &quot; + s
+</code></pre></div>
+<h4 id="test-conditions">Test Conditions<a class="headerlink" href="#test-conditions" title="Permanent link">#</a></h4>
+<p>Use conditions to control when tests run based on environment:</p>
+<p><strong><code>[short]</code> - Skip slow tests in short mode:</strong></p>
+<div class="highlight"><pre><span></span><code>[short] skip &#39;requires GPU or long build time&#39;
+
+cog build -t $TEST_IMAGE
+# ... rest of test
+</code></pre></div>
+<p>Run with <code>go test -short</code> to skip these tests.</p>
+<p><strong><code>[linux]</code> / <code>[!linux]</code> - Platform-specific tests:</strong></p>
+<div class="highlight"><pre><span></span><code>[!linux] skip &#39;requires Linux&#39;
+
+# Linux-specific test
+cog build -t $TEST_IMAGE
+</code></pre></div>
+<p><strong><code>[amd64]</code> / <code>[!amd64]</code> - Architecture-specific tests:</strong></p>
+<div class="highlight"><pre><span></span><code>[!amd64] skip &#39;requires amd64 architecture&#39;
+
+# amd64-specific test
+cog build -t $TEST_IMAGE
+</code></pre></div>
+<p><strong><code>[linux_amd64]</code> - Combined platform and architecture:</strong></p>
+<div class="highlight"><pre><span></span><code>[!linux_amd64] skip &#39;requires Linux on amd64&#39;
+
+# Test that requires both Linux and amd64
+cog build -t $TEST_IMAGE
+</code></pre></div>
+<p><strong>Combining conditions:</strong></p>
+<p>Conditions can be negated with <code>!</code>. Examples:
+- <code>[short]</code> - True when <code>go test -short</code> is used (skip this test in short mode)
+- <code>[!short]</code> - True when NOT running with <code>-short</code> flag (only run this in full test mode)
+- <code>[!linux]</code> - True when NOT on Linux
+- <code>[linux_amd64]</code> - True when on Linux AND amd64</p>
+<p>See existing tests in <code>integration-tests/tests/</code>, especially <code>setup_subprocess_*.txtar</code>, for more examples.</p>
+<h2 id="running-the-docs-server">Running the docs server<a class="headerlink" href="#running-the-docs-server" title="Permanent link">#</a></h2>
+<p>To run the docs website server locally:</p>
+<div class="highlight"><pre><span></span><code>mise<span class="w"> </span>run<span class="w"> </span>docs:serve
+</code></pre></div>
+<h2 id="publishing-a-release">Publishing a release<a class="headerlink" href="#publishing-a-release" title="Permanent link">#</a></h2>
+<p>Releases are managed by GitHub Actions workflows. See <a href=".github/workflows/README.md"><code>.github/workflows/README.md</code></a> for full details.</p>
+<p>All packages use <strong>lockstep versioning</strong> from <code>crates/Cargo.toml</code>. There are three release types:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Example tag</th>
+<th>Branch rule</th>
+<th>PyPI/crates.io?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Stable</strong></td>
+<td><code>v0.17.0</code></td>
+<td>Must be on main</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><strong>Pre-release</strong></td>
+<td><code>v0.17.0-alpha3</code></td>
+<td>Must be on main</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><strong>Dev</strong></td>
+<td><code>v0.17.0-dev1</code></td>
+<td>Any branch</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<h3 id="stable-pre-release">Stable / Pre-release<a class="headerlink" href="#stable-pre-release" title="Permanent link">#</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># 1. Update crates/Cargo.toml version (e.g. &quot;0.17.0&quot; or &quot;0.17.0-alpha3&quot;)</span>
+<span class="c1"># 2. Merge to main</span>
+<span class="c1"># 3. Tag and push</span>
+git<span class="w"> </span>tag<span class="w"> </span>v0.17.0
+git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>v0.17.0
+<span class="c1"># 4. Wait for release-build.yaml to create a draft release</span>
+<span class="c1"># 5. Review the draft in GitHub UI, then click &quot;Publish release&quot;</span>
+<span class="c1">#    This triggers release-publish.yaml -&gt; PyPI + crates.io</span>
+</code></pre></div>
+<h3 id="dev-release">Dev release<a class="headerlink" href="#dev-release" title="Permanent link">#</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># From any branch:</span>
+<span class="c1"># 1. Update crates/Cargo.toml version (e.g. &quot;0.17.0-dev1&quot;)</span>
+<span class="c1"># 2. Commit and push</span>
+<span class="c1"># 3. Tag and push</span>
+git<span class="w"> </span>tag<span class="w"> </span>v0.17.0-dev1
+git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>v0.17.0-dev1
+<span class="c1"># 4. Done. Artifacts are built and published as a GH pre-release.</span>
+<span class="c1">#    No PyPI/crates.io. No manual approval.</span>
+</code></pre></div>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">#</a></h2>
+<h3 id="cog-command-not-found"><code>cog command not found</code><a class="headerlink" href="#cog-command-not-found" title="Permanent link">#</a></h3>
+<p>The compiled <code>cog</code> binary will be installed in <code>$GOPATH/bin/cog</code>, e.g. <code>~/go/bin/cog</code>. Make sure that Golang's bin directory is present on your system PATH by adding it to your shell config (<code>.bashrc</code>, <code>.zshrc</code>, etc):</p>
+<div class="codehilite"><pre><span></span><code><span class="k">export</span><span class="w"> </span><span class="n">PATH</span><span class="o">=~/</span><span class="n">go</span><span class="o">/</span><span class="n">bin</span><span class="p">:</span><span class="o">$</span><span class="n">PATH</span>
+</code></pre></div>
+
+<hr />
+<p>Still having trouble? Please <a href="https://github.com/replicate/cog/issues">open an issue</a> on GitHub.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Cog is an open-source project from <a href="https://replicate.com">Replicate</a>
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/replicate/cog" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://discord.gg/replicate" target="_blank" rel="noopener" title="discord.gg" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.317 4.37a19.8 19.8 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.3 18.3 0 0 0-5.487 0 13 13 0 0 0-.617-1.25.08.08 0 0 0-.079-.037A19.7 19.7 0 0 0 3.677 4.37a.1.1 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.08.08 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.08.08 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13 13 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10 10 0 0 0 .372-.292.07.07 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.07.07 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.08.08 0 0 0 .084.028 19.8 19.8 0 0 0 6.002-3.03.08.08 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.03M8.02 15.33c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418m7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://x.com/replicate" target="_blank" rel="noopener" title="x.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://youtube.com/@replicatehq" target="_blank" rel="noopener" title="youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M23.498 6.186a3.02 3.02 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.02 3.02 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.02 3.02 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.02 3.02 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814M9.545 15.568V8.432L15.818 12z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
