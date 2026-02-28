@@ -101,6 +101,35 @@ fn try_lock_prediction(
     }
 }
 
+/// Wrap collected output items into the correct `PredictionOutput` variant.
+///
+/// Priority:
+/// 1. Schema says `"type": "array"` (`output_is_array = true`) → always `Stream`
+/// 2. Predictor signals `is_stream` (list/generator return) → always `Stream`
+/// 3. Otherwise → `Single` for one item, `Stream` for multiple
+///
+/// This ensures `List[Path]` with a single element returns `["url"]` not `"url"`.
+fn wrap_outputs(
+    outputs: Vec<serde_json::Value>,
+    output_is_array: bool,
+    is_stream: bool,
+) -> PredictionOutput {
+    let should_stream = output_is_array || is_stream;
+
+    match outputs.as_slice() {
+        [] => {
+            if should_stream {
+                PredictionOutput::Stream(vec![])
+            } else {
+                PredictionOutput::Single(serde_json::Value::Null)
+            }
+        }
+        _ if should_stream => PredictionOutput::Stream(outputs),
+        [single] => PredictionOutput::Single(single.clone()),
+        _ => PredictionOutput::Stream(outputs),
+    }
+}
+
 fn emit_worker_log(target: &str, level: &str, msg: &str) {
     use std::collections::HashMap;
     use std::sync::OnceLock;
@@ -543,6 +572,25 @@ pub async fn spawn_worker(
         tracing::trace!(target: "coglet::schema", schema = %json, "OpenAPI schema");
     }
 
+    // Determine whether the output type is an array from the schema so the
+    // event loop can correctly wrap single-element list returns as Stream
+    // instead of collapsing them to Single.
+    let output_is_array = schema
+        .as_ref()
+        .and_then(|s| s.get("components"))
+        .and_then(|c| c.get("schemas"))
+        .and_then(|schemas| {
+            let key = if config.is_train {
+                "TrainingOutput"
+            } else {
+                "Output"
+            };
+            schemas.get(key)
+        })
+        .and_then(|output| output.get("type"))
+        .and_then(|t| t.as_str())
+        .is_some_and(|t| t == "array");
+
     let pool = Arc::new(PermitPool::new(num_slots));
     let sockets = transport.drain_sockets();
 
@@ -585,6 +633,7 @@ pub async fn spawn_worker(
             cancel_rx,
             pool_for_loop,
             upload_url,
+            output_is_array,
         )
         .await;
     });
@@ -616,6 +665,10 @@ async fn run_event_loop(
     mut cancel_rx: mpsc::Receiver<String>,
     pool: Arc<PermitPool>,
     upload_url: Option<String>,
+    // Schema says Output is "type": "array" — always wrap as Stream.
+    // When false, the schema was unavailable or Output type is Any; fall
+    // back to the predictor's is_stream flag on the Done message.
+    output_is_array: bool,
 ) {
     let mut predictions: HashMap<SlotId, Arc<StdMutex<Prediction>>> = HashMap::new();
     let mut idle_senders: HashMap<SlotId, tokio::sync::oneshot::Sender<SlotIdleToken>> =
@@ -997,11 +1050,13 @@ async fn run_event_loop(
                             }
                         }
                     }
-                    Ok(SlotResponse::Done { id, output: _, predict_time }) => {
+                    Ok(SlotResponse::Done { id, output: _, predict_time, is_stream }) => {
                         tracing::info!(
                             target: "coglet::prediction",
                             prediction_id = %id,
                             predict_time,
+                            is_stream,
+                            output_is_array,
                             "Prediction succeeded"
                         );
                         let uploads = pending_uploads.remove(&slot_id).unwrap_or_default();
@@ -1013,11 +1068,11 @@ async fn run_event_loop(
                                 // registered waiters; spawning a task can fire the
                                 // notification before the service registers its waiter.
                                 if let Some(mut p) = try_lock_prediction(&pred) {
-                                    let pred_output = match p.take_outputs().as_slice() {
-                                        [] => PredictionOutput::Single(serde_json::Value::Null),
-                                        [single] => PredictionOutput::Single(single.clone()),
-                                        many => PredictionOutput::Stream(many.to_vec()),
-                                    };
+                                    let pred_output = wrap_outputs(
+                                        p.take_outputs(),
+                                        output_is_array,
+                                        is_stream,
+                                    );
                                     p.set_succeeded(pred_output);
                                 }
                             } else {
@@ -1040,11 +1095,6 @@ async fn run_event_loop(
                                                     prediction_id = %upload_pred_id,
                                                     "Aborting in-flight uploads due to cancellation"
                                                 );
-                                                // JoinAll drops the JoinHandles when it goes out of
-                                                // scope at the end of this branch, but JoinHandle::drop
-                                                // does NOT abort the spawned task. The upload tasks
-                                                // were already aborted by the cancel handler in the
-                                                // event loop (cancel_rx arm), so they will terminate.
                                                 if let Some(mut p) = try_lock_prediction(&pred) {
                                                     p.set_canceled();
                                                 }
@@ -1057,11 +1107,11 @@ async fn run_event_loop(
                                         }
                                     }
                                     if let Some(mut p) = try_lock_prediction(&pred) {
-                                        let pred_output = match p.take_outputs().as_slice() {
-                                            [] => PredictionOutput::Single(serde_json::Value::Null),
-                                            [single] => PredictionOutput::Single(single.clone()),
-                                            many => PredictionOutput::Stream(many.to_vec()),
-                                        };
+                                        let pred_output = wrap_outputs(
+                                            p.take_outputs(),
+                                            output_is_array,
+                                            is_stream,
+                                        );
                                         p.set_succeeded(pred_output);
                                     }
                                 });
@@ -1120,4 +1170,155 @@ async fn run_event_loop(
     }
 
     tracing::info!("Event loop exiting");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── wrap_outputs: schema says array (output_is_array = true) ──
+
+    #[test]
+    fn wrap_outputs_schema_array_empty() {
+        // List[Path] that returned no items → empty array
+        let result = wrap_outputs(vec![], true, true);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), Vec::<serde_json::Value>::new());
+    }
+
+    #[test]
+    fn wrap_outputs_schema_array_single_item() {
+        // List[Path] with num_outputs=1 → ["url"] not "url"
+        let result = wrap_outputs(vec![json!("https://example.com/img.png")], true, true);
+        assert!(result.is_stream());
+        assert_eq!(
+            result.into_values(),
+            vec![json!("https://example.com/img.png")]
+        );
+    }
+
+    #[test]
+    fn wrap_outputs_schema_array_multiple_items() {
+        // List[Path] with num_outputs=4
+        let items = vec![
+            json!("https://example.com/1.png"),
+            json!("https://example.com/2.png"),
+            json!("https://example.com/3.png"),
+            json!("https://example.com/4.png"),
+        ];
+        let result = wrap_outputs(items.clone(), true, true);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), items);
+    }
+
+    #[test]
+    fn wrap_outputs_schema_array_overrides_is_stream_false() {
+        // Schema says array but predictor didn't set is_stream (shouldn't happen,
+        // but schema is authoritative)
+        let result = wrap_outputs(vec![json!("url")], true, false);
+        assert!(result.is_stream());
+    }
+
+    // ── wrap_outputs: predictor signal (is_stream = true, no schema) ──
+
+    #[test]
+    fn wrap_outputs_predictor_stream_empty() {
+        // Generator that yielded nothing, no schema
+        let result = wrap_outputs(vec![], false, true);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), Vec::<serde_json::Value>::new());
+    }
+
+    #[test]
+    fn wrap_outputs_predictor_stream_single_item() {
+        // Any-typed list with one element, no schema
+        let result = wrap_outputs(vec![json!("only_item")], false, true);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), vec![json!("only_item")]);
+    }
+
+    #[test]
+    fn wrap_outputs_predictor_stream_multiple_items() {
+        // Generator yielding multiple, no schema
+        let items = vec![json!("a"), json!("b"), json!("c")];
+        let result = wrap_outputs(items.clone(), false, true);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), items);
+    }
+
+    // ── wrap_outputs: scalar output (neither schema array nor predictor stream) ──
+
+    #[test]
+    fn wrap_outputs_scalar_empty() {
+        // Single output that was null (e.g. Path sent via FileOutput, not yet resolved?)
+        let result = wrap_outputs(vec![], false, false);
+        assert!(!result.is_stream());
+        assert_eq!(result.final_value(), &json!(null));
+    }
+
+    #[test]
+    fn wrap_outputs_scalar_single() {
+        // return Path("output.png") → single string
+        let result = wrap_outputs(vec![json!("https://example.com/output.png")], false, false);
+        assert!(!result.is_stream());
+        assert_eq!(
+            result.final_value(),
+            &json!("https://example.com/output.png")
+        );
+    }
+
+    #[test]
+    fn wrap_outputs_scalar_multiple_falls_back_to_stream() {
+        // Shouldn't happen for scalar returns, but if multiple items arrive
+        // with neither flag set, Stream is the safe choice
+        let items = vec![json!("a"), json!("b")];
+        let result = wrap_outputs(items.clone(), false, false);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), items);
+    }
+
+    // ── Serialization: is_stream field on Done message ──
+
+    #[test]
+    fn done_is_stream_false_omitted_from_json() {
+        let msg = SlotResponse::Done {
+            id: "p1".into(),
+            output: None,
+            predict_time: 1.0,
+            is_stream: false,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert!(
+            json.get("is_stream").is_none(),
+            "is_stream=false should be omitted"
+        );
+    }
+
+    #[test]
+    fn done_is_stream_true_present_in_json() {
+        let msg = SlotResponse::Done {
+            id: "p1".into(),
+            output: None,
+            predict_time: 1.0,
+            is_stream: true,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json.get("is_stream"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn done_without_is_stream_deserializes_as_false() {
+        // Backward compat: old workers won't send is_stream
+        let json = json!({
+            "type": "done",
+            "id": "p1",
+            "predict_time": 1.0
+        });
+        let msg: SlotResponse = serde_json::from_value(json).unwrap();
+        match msg {
+            SlotResponse::Done { is_stream, .. } => assert!(!is_stream),
+            _ => panic!("wrong variant"),
+        }
+    }
 }

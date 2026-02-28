@@ -554,7 +554,12 @@ impl PredictHandler for PythonPredictHandler {
 
         match result {
             Ok(r) => {
-                PredictResult::success(output_to_json(r.output), start.elapsed().as_secs_f64())
+                let is_stream = r.output.is_stream();
+                PredictResult::success(
+                    output_to_json(r.output),
+                    start.elapsed().as_secs_f64(),
+                    is_stream,
+                )
             }
             Err(e) => {
                 if matches!(e, coglet_core::PredictionError::Cancelled) {

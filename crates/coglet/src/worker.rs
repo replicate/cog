@@ -373,6 +373,8 @@ pub enum PredictionOutcome {
     Success {
         output: serde_json::Value,
         predict_time: f64,
+        /// True when the predictor returned a list, generator, or iterator.
+        is_stream: bool,
     },
     /// Prediction failed with an error
     Failed { error: String, predict_time: f64 },
@@ -386,11 +388,12 @@ pub struct PredictResult {
 }
 
 impl PredictResult {
-    pub fn success(output: serde_json::Value, predict_time: f64) -> Self {
+    pub fn success(output: serde_json::Value, predict_time: f64, is_stream: bool) -> Self {
         Self {
             outcome: PredictionOutcome::Success {
                 output,
                 predict_time,
+                is_stream,
             },
         }
     }
@@ -827,6 +830,7 @@ async fn run_prediction<H: PredictHandler>(
         PredictionOutcome::Success {
             output,
             predict_time,
+            is_stream,
         } => {
             // Send output as a separate message (handles spilling for large values).
             // Skip if null or empty array — those mean "already streamed" (generators).
@@ -850,6 +854,7 @@ async fn run_prediction<H: PredictHandler>(
                 id: prediction_id.clone(),
                 output: None,
                 predict_time,
+                is_stream,
             }
         }
         PredictionOutcome::Cancelled { .. } => SlotResponse::Cancelled {
@@ -875,8 +880,20 @@ mod tests {
 
     #[test]
     fn predict_result_success() {
-        let r = PredictResult::success(serde_json::json!("hello"), 0.5);
+        let r = PredictResult::success(serde_json::json!("hello"), 0.5, false);
         assert!(matches!(r.outcome, PredictionOutcome::Success { .. }));
+    }
+
+    #[test]
+    fn predict_result_success_stream() {
+        let r = PredictResult::success(serde_json::json!([]), 0.5, true);
+        assert!(matches!(
+            r.outcome,
+            PredictionOutcome::Success {
+                is_stream: true,
+                ..
+            }
+        ));
     }
 
     #[test]
