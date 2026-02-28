@@ -19,6 +19,8 @@ Example:
             return self.model.generate(prompt, image)
 """
 
+import sys as _sys
+
 from coglet import CancelationException as CancelationException
 
 from ._version import __version__
@@ -34,6 +36,43 @@ from .types import (
     URLFile,
     URLPath,
 )
+
+
+# ---------------------------------------------------------------------------
+# Backwards-compatibility shim: ExperimentalFeatureWarning
+#
+# This class was removed when the Python HTTP server was replaced by coglet.
+# Existing models import it to suppress warnings, e.g.:
+#
+#     from cog import ExperimentalFeatureWarning
+#     warnings.filterwarnings("ignore", category=ExperimentalFeatureWarning)
+#
+# The shim keeps those models working. The stderr message is printed
+# directly so it cannot be swallowed by warnings.filterwarnings("ignore").
+# ---------------------------------------------------------------------------
+class _ExperimentalFeatureWarning(FutureWarning):
+    """Deprecated: ExperimentalFeatureWarning is no longer used by Cog.
+
+    This class exists only for backwards compatibility. Remove the import
+    and any associated ``warnings.filterwarnings(...)`` calls from your code.
+    """
+
+    pass
+
+
+def __getattr__(name: str) -> object:
+    if name == "ExperimentalFeatureWarning":
+        print(
+            "cog: ExperimentalFeatureWarning is deprecated and will be removed in a "
+            "future release. Remove `ExperimentalFeatureWarning` from your imports "
+            "and any associated `warnings.filterwarnings(...)` calls.",
+            file=_sys.stderr,
+        )
+        # Cache in module namespace so __getattr__ is not called again and
+        # the deprecation message prints at most once.
+        globals()["ExperimentalFeatureWarning"] = _ExperimentalFeatureWarning
+        return _ExperimentalFeatureWarning
+    raise AttributeError(f"module 'cog' has no attribute {name!r}")
 
 
 def current_scope() -> object:
@@ -78,4 +117,6 @@ __all__ = [
     "CancelationException",
     # Metrics
     "current_scope",
+    # Deprecated compat shims
+    "ExperimentalFeatureWarning",
 ]
