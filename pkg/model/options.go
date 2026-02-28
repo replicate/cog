@@ -61,6 +61,11 @@ type BuildOptions struct {
 	// Used by `cog run` which executes arbitrary commands and may not have
 	// a predictor or trainer defined in cog.yaml.
 	SkipSchemaValidation bool
+
+	// SkipLabels skips adding Cog metadata labels to the built image.
+	// Used by `cog run`, `cog predict`, `cog serve`, and `cog train` where
+	// the image is for local use only and not being distributed.
+	SkipLabels bool
 }
 
 // WithDefaults returns a copy of BuildOptions with defaults applied from Source.
