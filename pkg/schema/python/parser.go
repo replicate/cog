@@ -9,6 +9,7 @@ package python
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -431,7 +432,11 @@ func resolveExternalModels(sourceDir string, imports *schema.ImportContext, mode
 			fullPath := filepath.Join(sourceDir, pyPath)
 			source, err := os.ReadFile(fullPath)
 			if err != nil {
-				// File doesn't exist — it's an external package, not local.
+				if errors.Is(err, os.ErrNotExist) {
+					// File doesn't exist — it's an external package, not local.
+					return
+				}
+				fmt.Fprintf(os.Stderr, "cog: warning: failed to read %q: %v\n", fullPath, err)
 				return
 			}
 
@@ -440,6 +445,7 @@ func resolveExternalModels(sourceDir string, imports *schema.ImportContext, mode
 			parser.SetLanguage(python.GetLanguage())
 			tree, err := parser.ParseCtx(context.Background(), nil, source)
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "cog: warning: failed to parse %q: %v\n", fullPath, err)
 				return
 			}
 
