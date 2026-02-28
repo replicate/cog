@@ -27,6 +27,7 @@ const (
 	ErrConcatIteratorNotStr
 	ErrChoicesNotResolvable
 	ErrDefaultNotResolvable
+	ErrUnresolvableType
 	ErrOther
 )
 
@@ -93,6 +94,28 @@ func errChoicesNotResolvable(param string) error { //nolint:unused // used by ge
 	return &SchemaError{
 		Kind:    ErrChoicesNotResolvable,
 		Message: fmt.Sprintf("choices for parameter '%s' cannot be statically resolved — use a literal list instead (e.g. choices=[\"a\", \"b\"])", param),
+	}
+}
+
+func errUnresolvableImportedType(name, module string) error {
+	return &SchemaError{
+		Kind: ErrUnresolvableType,
+		Message: fmt.Sprintf(
+			"cannot resolve output type '%s' (imported from '%s') — "+
+				"external types cannot be statically analyzed. "+
+				"Define it as a BaseModel subclass in your predict file, or provide a .pyi stub",
+			name, module),
+	}
+}
+
+func errUnresolvableType(name string) error {
+	return &SchemaError{
+		Kind: ErrUnresolvableType,
+		Message: fmt.Sprintf(
+			"cannot resolve output type '%s' — "+
+				"it is not a primitive type (str, int, float, bool, Path) "+
+				"and no BaseModel definition was found in the predict file",
+			name),
 	}
 }
 
