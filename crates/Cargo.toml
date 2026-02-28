@@ -40,7 +40,7 @@ thiserror = "2"
 anyhow = "1"
 
 # Python bindings
-pyo3 = { version = "0.27", features = ["auto-initialize", "abi3-py310"] }
+pyo3 = { version = "0.27", features = ["abi3-py310"] }
 pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
 pyo3-stub-gen = "0.18"
 
