@@ -9,13 +9,13 @@ import (
 func TestValidateConfigFile(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU:           boolPtr(true),
-			PythonVersion: strPtr("3.10"),
+			GPU:           ptr(true),
+			PythonVersion: ptr("3.10"),
 			PythonPackages: []string{
 				"tensorflow==2.12.0",
 				"foo==1.0.0",
 			},
-			CUDA: strPtr("11.8"),
+			CUDA: ptr("11.8"),
 		},
 	}
 	result := ValidateConfigFile(cfg)
@@ -25,12 +25,12 @@ func TestValidateConfigFile(t *testing.T) {
 func TestValidateConfigFileSuccess(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU: boolPtr(true),
+			GPU: ptr(true),
 			SystemPackages: []string{
 				"libgl1-mesa-glx",
 				"libglib2.0-0",
 			},
-			PythonVersion: strPtr("3.10"),
+			PythonVersion: ptr("3.10"),
 			PythonPackages: []string{
 				"torch==1.8.1",
 			},
@@ -44,12 +44,12 @@ func TestValidateConfigFileSuccess(t *testing.T) {
 func TestValidateConfigFilePythonVersionNumerical(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU: boolPtr(true),
+			GPU: ptr(true),
 			SystemPackages: []string{
 				"libgl1-mesa-glx",
 				"libglib2.0-0",
 			},
-			PythonVersion: strPtr("3.10"),
+			PythonVersion: ptr("3.10"),
 			PythonPackages: []string{
 				"torch==1.8.1",
 			},
@@ -63,8 +63,8 @@ func TestValidateConfigFilePythonVersionNumerical(t *testing.T) {
 func TestValidateConfigFileNullListsAllowed(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU:            boolPtr(true),
-			PythonVersion:  strPtr("3.10"),
+			GPU:            ptr(true),
+			PythonVersion:  ptr("3.10"),
 			SystemPackages: nil,
 			PythonPackages: nil,
 			Run:            nil,
@@ -79,16 +79,16 @@ func TestValidateConfigFilePredictFormat(t *testing.T) {
 	// Valid predict format
 	cfg := &configFile{
 		Build: &buildFile{
-			PythonVersion: strPtr("3.10"),
+			PythonVersion: ptr("3.10"),
 		},
-		Predict: strPtr("predict.py:Predictor"),
+		Predict: ptr("predict.py:Predictor"),
 	}
 
 	result := ValidateConfigFile(cfg)
 	require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
 
 	// Invalid predict format
-	cfg.Predict = strPtr("invalid_format")
+	cfg.Predict = ptr("invalid_format")
 	result = ValidateConfigFile(cfg)
 	require.True(t, result.HasErrors())
 	require.Contains(t, result.Err().Error(), "predict.py:Predictor")
@@ -97,16 +97,16 @@ func TestValidateConfigFilePredictFormat(t *testing.T) {
 func TestValidateConfigFileConcurrencyType(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU:           boolPtr(true),
-			CUDA:          strPtr("11.8"),
-			PythonVersion: strPtr("3.11"),
+			GPU:           ptr(true),
+			CUDA:          ptr("11.8"),
+			PythonVersion: ptr("3.11"),
 			PythonPackages: []string{
 				"torch==2.0.1",
 			},
 		},
-		Predict: strPtr("predict.py:Predictor"),
+		Predict: ptr("predict.py:Predictor"),
 		Concurrency: &concurrencyFile{
-			Max: intPtr(5),
+			Max: ptr(5),
 		},
 	}
 
@@ -117,7 +117,7 @@ func TestValidateConfigFileConcurrencyType(t *testing.T) {
 func TestValidateConfigFileDeprecatedPythonPackages(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			PythonVersion: strPtr("3.10"),
+			PythonVersion: ptr("3.10"),
 			PythonPackages: []string{
 				"torch==1.8.1",
 			},
@@ -133,7 +133,7 @@ func TestValidateConfigFileDeprecatedPythonPackages(t *testing.T) {
 func TestValidateConfigFileDeprecatedPreInstall(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			PythonVersion: strPtr("3.10"),
+			PythonVersion: ptr("3.10"),
 			PreInstall: []string{
 				"echo hello",
 			},
@@ -149,7 +149,7 @@ func TestValidateConfigFileDeprecatedPreInstall(t *testing.T) {
 func TestValidateConfigFileMissingPythonVersion(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU: boolPtr(true),
+			GPU: ptr(true),
 		},
 	}
 
@@ -176,15 +176,5 @@ func TestValidateConfigFileNilBuildSkipsPythonVersionCheck(t *testing.T) {
 	require.False(t, result.HasErrors(), "expected no errors for nil build, got: %v", result.Errors)
 }
 
-// Helper functions
-func boolPtr(b bool) *bool {
-	return &b
-}
-
-func strPtr(s string) *string {
-	return &s
-}
-
-func intPtr(i int) *int {
-	return &i
-}
+// ptr returns a pointer to the given value.
+func ptr[T any](v T) *T { return &v }

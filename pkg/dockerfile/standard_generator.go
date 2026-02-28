@@ -356,7 +356,7 @@ func (g *StandardGenerator) generateForWeights() (string, []string, []string, er
 FROM scratch
 `)
 	for _, p := range append(modelDirs, modelFiles...) {
-		dockerfileContents.WriteString(fmt.Sprintf("\nCOPY %s %s", p, path.Join("/src", p)))
+		fmt.Fprintf(&dockerfileContents, "\nCOPY %s %s", p, path.Join("/src", p))
 	}
 
 	return dockerfileContents.String(), modelDirs, modelFiles, nil
@@ -365,10 +365,10 @@ FROM scratch
 func makeDockerignoreForWeights(dirs, files []string) string {
 	var contents strings.Builder
 	for _, p := range dirs {
-		contents.WriteString(fmt.Sprintf("%[1]s\n%[1]s/**/*\n", p))
+		fmt.Fprintf(&contents, "%[1]s\n%[1]s/**/*\n", p)
 	}
 	for _, p := range files {
-		contents.WriteString(fmt.Sprintf("%[1]s\n", p))
+		fmt.Fprintf(&contents, "%[1]s\n", p)
 	}
 	return DockerignoreHeader + contents.String()
 }

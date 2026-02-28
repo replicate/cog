@@ -28,10 +28,7 @@ func simplePredictor() *PredictorInfo {
 	}
 }
 
-func ptrStr(s string) *string     { return &s }
-func ptrFloat(f float64) *float64 { return &f }
-func ptrUint(u uint64) *uint64    { return &u }
-func ptrBool(b bool) *bool        { return &b }
+func ptr[T any](v T) *T { return &v }
 
 // parseSpec is a test helper that generates the schema and unmarshals
 // it into a generic map for assertion.
@@ -210,7 +207,7 @@ func TestInputDescription(t *testing.T) {
 		Name:        "text",
 		Order:       0,
 		FieldType:   FieldType{Primitive: TypeString, Repetition: Required},
-		Description: ptrStr("The input text"),
+		Description: ptr("The input text"),
 	})
 
 	p := TypeString
@@ -232,8 +229,8 @@ func TestInputNumericConstraints(t *testing.T) {
 		Name:      "temperature",
 		Order:     0,
 		FieldType: FieldType{Primitive: TypeFloat, Repetition: Required},
-		GE:        ptrFloat(0.0),
-		LE:        ptrFloat(1.0),
+		GE:        ptr(0.0),
+		LE:        ptr(1.0),
 	})
 
 	p := TypeString
@@ -256,9 +253,9 @@ func TestInputStringConstraints(t *testing.T) {
 		Name:      "name",
 		Order:     0,
 		FieldType: FieldType{Primitive: TypeString, Repetition: Required},
-		MinLength: ptrUint(1),
-		MaxLength: ptrUint(100),
-		Regex:     ptrStr("^[a-z]+$"),
+		MinLength: ptr[uint64](1),
+		MaxLength: ptr[uint64](100),
+		Regex:     ptr("^[a-z]+$"),
 	})
 
 	p := TypeString
@@ -282,7 +279,7 @@ func TestInputDeprecated(t *testing.T) {
 		Name:       "old_param",
 		Order:      0,
 		FieldType:  FieldType{Primitive: TypeString, Repetition: Required},
-		Deprecated: ptrBool(true),
+		Deprecated: ptr(true),
 	})
 
 	p := TypeString

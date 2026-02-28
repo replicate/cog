@@ -25,7 +25,7 @@ type Parser func(source []byte, predictRef string, mode Mode) (*PredictorInfo, e
 func Generate(predictRef string, sourceDir string, mode Mode, parse Parser) ([]byte, error) {
 	// "Bring your own schema" override
 	if schemaPath := os.Getenv("COG_OPENAPI_SCHEMA"); schemaPath != "" {
-		data, err := os.ReadFile(schemaPath)
+		data, err := os.ReadFile(schemaPath) //nolint:gosec // G703: path from trusted env var
 		if err != nil {
 			return nil, fmt.Errorf("COG_OPENAPI_SCHEMA: failed to read %s: %w", schemaPath, err)
 		}
@@ -72,7 +72,7 @@ func GenerateFromSource(source []byte, predictRef string, mode Mode, parse Parse
 func GenerateCombined(sourceDir string, predictRef string, trainRef string, parse Parser) ([]byte, error) {
 	// "Bring your own schema" override
 	if schemaPath := os.Getenv("COG_OPENAPI_SCHEMA"); schemaPath != "" {
-		data, err := os.ReadFile(schemaPath)
+		data, err := os.ReadFile(schemaPath) //nolint:gosec // G703: path from trusted env var
 		if err != nil {
 			return nil, fmt.Errorf("COG_OPENAPI_SCHEMA: failed to read %s: %w", schemaPath, err)
 		}

@@ -8,13 +8,13 @@ backend = "aqua:EmbarkStudios/cargo-deny"
 "platforms.windows-x64" = { checksum = "sha256:413f0e2ce780d0d14ba8e9339f9fb033419a8a971ec7714faec518e4a664bdb0", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-pc-windows-msvc.tar.gz"}
 
 [[tools."aqua:golangci/golangci-lint"]]
-version = "2.8.0"
+version = "2.10.1"
 backend = "aqua:golangci/golangci-lint"
-"platforms.linux-arm64" = { checksum = "sha256:2a58388db8af5ab9330791cea0ebdd4100723cd05ad7185d92febaaee272ec9a", url = "https://github.com/golangci/golangci-lint/releases/download/v2.8.0/golangci-lint-2.8.0-linux-arm64.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:7048bc6b25c9515ed092c83f9fa8709ca97937ead52d9ff317a143299ee97a50", url = "https://github.com/golangci/golangci-lint/releases/download/v2.8.0/golangci-lint-2.8.0-linux-amd64.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:6f8979a83117e0607d4b85ff486382ef0404440bbf54f0e6f003ceab6ccf641e", url = "https://github.com/golangci/golangci-lint/releases/download/v2.8.0/golangci-lint-2.8.0-darwin-arm64.tar.gz"}
-"platforms.macos-x64" = { checksum = "sha256:164c72806d0e31ab19da4f08fff748a3fdc57e241851279b666c945ed9b91830", url = "https://github.com/golangci/golangci-lint/releases/download/v2.8.0/golangci-lint-2.8.0-darwin-amd64.tar.gz"}
-"platforms.windows-x64" = { checksum = "sha256:22428168a9406f79853bf9a198b66e88ded9faa57cf85e5d225361f457f33513", url = "https://github.com/golangci/golangci-lint/releases/download/v2.8.0/golangci-lint-2.8.0-windows-amd64.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:6652b42ae02915eb2f9cb2a2e0cac99514c8eded8388d88ae3e06e1a52c00de8", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-linux-arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:dfa775874cf0561b404a02a8f4481fc69b28091da95aa697259820d429b09c99", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-linux-amd64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:03bfadf67e52b441b7ec21305e501c717df93c959836d66c7f97312654acb297", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-darwin-arm64.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:66fb0da81b8033b477f97eea420d4b46b230ca172b8bb87c6610109f3772b6b6", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-darwin-amd64.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:c60c87695e79db8e320f0e5be885059859de52bb5ee5f11be5577828570bc2a3", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-windows-amd64.zip"}
 
 [[tools."aqua:gotestyourself/gotestsum"]]
 version = "1.13.0"

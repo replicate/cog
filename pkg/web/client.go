@@ -155,7 +155,7 @@ func (c *Client) PostPushStart(ctx context.Context, pushID string, buildTime tim
 		return err
 	}
 
-	resp, err := c.client.Do(req)
+	resp, err := c.client.Do(req) //nolint:gosec // G704: URL from configured endpoint
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ func (c *Client) PostNewVersion(ctx context.Context, image string, weights []Fil
 		return err
 	}
 
-	resp, err := c.client.Do(req)
+	resp, err := c.client.Do(req) //nolint:gosec // G704: URL from configured endpoint
 	if err != nil {
 		return err
 	}
