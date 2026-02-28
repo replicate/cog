@@ -17,6 +17,9 @@ env:
   SUPPORTED_PYTHONS: '["3.10", "3.11", "3.12", "3.13"]'
   # Default Python version for non-matrix jobs
   PYTHON_VERSION: "3.13"
+  # Minimum supported Python — used for ABI3 wheel builds and glob patterns.
+  # Must match the lowest entry in SUPPORTED_PYTHONS.
+  MINIMUM_PYTHON: "3.10"
   # Number of runners to shard integration tests across (per runtime)
   # Slow tests ([short] skip) are distributed round-robin first, then fast tests fill in
   NUM_IT_RUNNER_SHARDS: "4"
@@ -59,6 +62,8 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       version_only: ${{ steps.filter.outputs.version_only }}
       version_changed: ${{ steps.filter.outputs.version_changed }}
+      # Pass through for matrix jobs (env context unavailable in strategy)
+      supported_pythons: ${{ env.SUPPORTED_PYTHONS }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -281,17 +286,26 @@ jobs:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # No mise needed - maturin-action bundles maturin and zig
+      # Explicitly request MINIMUM_PYTHON inside the manylinux container so
+      # maturin produces an ABI3 wheel (cp310-abi3). Without this, maturin
+      # picks up the container's default Python (3.8), which doesn't support
+      # ABI3, producing a cp38-cp38 wheel that the upload glob won't match.
       - name: Build coglet wheel (ABI3)
         uses: PyO3/maturin-action@v1
         with:
           target: x86_64-unknown-linux-gnu
-          args: --release --out dist -m crates/coglet-python/Cargo.toml
+          args: --release --out dist -m crates/coglet-python/Cargo.toml --interpreter python${{ env.MINIMUM_PYTHON }}
           manylinux: auto
+      - name: Verify ABI3 wheel exists
+        run: |
+          CPVER="cp${MINIMUM_PYTHON//.}"
+          ls -la dist/coglet-*-${CPVER}-abi3-*.whl
       - name: Upload coglet wheel
         uses: actions/upload-artifact@v6
         with:
           name: CogletRustWheel
-          path: dist/coglet-*-cp310-abi3-*.whl
+          # ABI3 wheels use cpXYZ-abi3 naming; just match any abi3 wheel
+          path: dist/coglet-*-abi3-*.whl
 
   build-cog:
     name: Build cog CLI
@@ -560,7 +574,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ${{ fromJSON(needs.changes.outputs.supported_pythons) }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v7
@@ -593,7 +607,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ${{ fromJSON(needs.changes.outputs.supported_pythons) }}
     steps:
       - uses: actions/checkout@v6
         with:

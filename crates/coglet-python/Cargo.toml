@@ -27,5 +27,8 @@ tracing-subscriber.workspace = true
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[dev-dependencies]
+pyo3 = { workspace = true, features = ["auto-initialize"] }
+
 [features]
 extension-module = ["pyo3/extension-module"]
