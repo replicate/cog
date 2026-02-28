@@ -267,6 +267,23 @@ description = "Run coglet Python binding tests on all supported Python versions"
 depends = ["build:coglet:wheel"]
 run = "nox -s coglet"
 
+[tasks."test:fuzz"]
+description = "Run Go fuzz tests (FUZZTIME=30s per target by default)"
+run = """
+#!/usr/bin/env bash
+set -e
+FUZZTIME="${FUZZTIME:-30s}"
+echo "Fuzzing schema type resolution ($FUZZTIME)..."
+go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime="$FUZZTIME"
+echo "Fuzzing JSON schema generation ($FUZZTIME)..."
+go test ./pkg/schema/ -run='^$' -fuzz=FuzzJSONSchema -fuzztime="$FUZZTIME"
+echo "Fuzzing Python parser ($FUZZTIME)..."
+go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParsePredictor -fuzztime="$FUZZTIME"
+echo "Fuzzing type annotation parsing ($FUZZTIME)..."
+go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParseTypeAnnotation -fuzztime="$FUZZTIME"
+echo "All fuzz targets passed."
+"""
+
 [tasks."test:integration"]
 description = "Run integration tests (skips slow tests by default, set SHORT=0 for full suite)"
 depends = ["build:cog", "build:sdk", "build:coglet:wheel:linux-x64"]
