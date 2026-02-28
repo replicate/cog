@@ -308,28 +308,35 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error)
 		return FieldType{}, errUnsupportedType(fmt.Sprintf("%s[...] is not a supported input type", outer))
 
 	case TypeAnnotUnion:
-		if len(ann.Args) == 2 {
-			hasNone := false
-			var nonNone *TypeAnnotation
-			for i := range ann.Args {
-				if ann.Args[i].Kind == TypeAnnotSimple && ann.Args[i].Name == "None" {
-					hasNone = true
-				} else {
-					a := ann.Args[i]
-					nonNone = &a
-				}
+		if inner, ok := UnwrapOptional(ann); ok {
+			ft, err := ResolveFieldType(inner, ctx)
+			if err != nil {
+				return FieldType{}, err
 			}
-			if hasNone && nonNone != nil {
-				inner, err := ResolveFieldType(*nonNone, ctx)
-				if err != nil {
-					return FieldType{}, err
-				}
-				return FieldType{Primitive: inner.Primitive, Repetition: Optional}, nil
-			}
+			return FieldType{Primitive: ft.Primitive, Repetition: Optional}, nil
 		}
 		return FieldType{}, errUnsupportedType("union types other than X | None are not supported")
 	}
 	return FieldType{}, errUnsupportedType("unknown type annotation")
+}
+
+// UnwrapOptional checks if a type annotation represents Optional[X] or Union[X, None].
+// If so, it returns the inner type and true. Otherwise it returns the original and false.
+func UnwrapOptional(ann TypeAnnotation) (TypeAnnotation, bool) {
+	// Optional[X]
+	if ann.Kind == TypeAnnotGeneric && ann.Name == "Optional" && len(ann.Args) == 1 {
+		return ann.Args[0], true
+	}
+	// Union[X, None] or X | None
+	args := ann.Args
+	if (ann.Kind == TypeAnnotGeneric && ann.Name == "Union" || ann.Kind == TypeAnnotUnion) && len(args) == 2 {
+		for i := range args {
+			if args[i].Kind == TypeAnnotSimple && args[i].Name == "None" {
+				return args[1-i], true
+			}
+		}
+	}
+	return ann, false
 }
 
 // ModelClassMap maps class names to their fields.

@@ -264,16 +264,18 @@ func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mod
 		if len(ann.Args) == 2 {
 			valType, err := ResolveSchemaType(ann.Args[1], ctx, models)
 			if err != nil {
-				// Fall back to opaque dict on unresolvable value type
-				return SchemaAnyType(), nil
+				return SchemaType{}, fmt.Errorf("resolving dict value type: %w", err)
 			}
 			return SchemaDictOf(valType), nil
 		}
-		// dict with wrong arity → opaque
-		return SchemaAnyType(), nil
+		// Bare dict (no type args) → opaque
+		if len(ann.Args) == 0 {
+			return SchemaAnyType(), nil
+		}
+		return SchemaType{}, errUnsupportedType("dict expects 0 or 2 type arguments")
 	}
 
-	// Optional[X] → resolve inner, set nullable
+	// Optional[X] → rejected as output type (nullable outputs not supported)
 	if outer == "Optional" {
 		if len(ann.Args) != 1 {
 			return SchemaType{}, errUnsupportedType("Optional expects exactly 1 type argument")
@@ -299,7 +301,7 @@ func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mod
 		return SchemaArrayOf(elemType), nil
 	}
 
-	// Cog iterators — single type arg, must be simple (no nested generics in iterators)
+	// Cog iterators — single type arg, recursively resolved (supports nested types)
 	if outer == "Iterator" || outer == "AsyncIterator" {
 		if len(ann.Args) != 1 {
 			return SchemaType{}, errUnsupportedType("Iterator expects exactly 1 type argument")
@@ -330,23 +332,26 @@ func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mod
 }
 
 func resolveUnionSchemaType(ann TypeAnnotation) (SchemaType, error) {
-	for _, m := range ann.Args {
-		if m.Kind == TypeAnnotSimple && m.Name == "None" {
-			return SchemaType{}, errOptionalOutput()
-		}
+	if _, ok := UnwrapOptional(ann); ok {
+		return SchemaType{}, errOptionalOutput()
 	}
 	return SchemaType{}, errUnsupportedType("union types are not supported as output")
 }
 
+// resolveModelToSchemaType converts a BaseModel's fields into a SchemaObject.
+// Fields are resolved via resolveFieldSchemaType which supports the full recursive
+// SchemaType system (dict[str, list[int]], nested BaseModels, etc.) plus Optional
+// wrapping (which is valid for fields but not for top-level output types).
 func resolveModelToSchemaType(modelFields []ModelField, ctx *ImportContext, models ModelClassMap) (SchemaType, error) {
 	fields := NewOrderedMap[string, SchemaField]()
 	for _, f := range modelFields {
-		ft, err := ResolveFieldType(f.Type, ctx)
+		st, required, err := resolveFieldSchemaType(f.Type, ctx, models)
 		if err != nil {
-			return SchemaType{}, err
+			return SchemaType{}, fmt.Errorf("field %q: %w", f.Name, err)
 		}
-		st := fieldTypeToSchemaType(ft)
-		required := ft.Repetition != Optional
+		if f.Default != nil {
+			required = false
+		}
 		fields.Set(f.Name, SchemaField{
 			Type:     st,
 			Default:  f.Default,
@@ -356,13 +361,22 @@ func resolveModelToSchemaType(modelFields []ModelField, ctx *ImportContext, mode
 	return SchemaObjectOf(fields), nil
 }
 
-func fieldTypeToSchemaType(ft FieldType) SchemaType {
-	base := SchemaPrim(ft.Primitive)
-	if ft.Repetition == Repeated {
-		return SchemaArrayOf(base)
+// resolveFieldSchemaType resolves a type annotation for a model field.
+// Unlike ResolveSchemaType (which rejects Optional as a top-level output),
+// this allows Optional[X] and Union[X, None] for fields, setting Nullable.
+func resolveFieldSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap) (SchemaType, bool, error) {
+	if inner, ok := UnwrapOptional(ann); ok {
+		st, err := ResolveSchemaType(inner, ctx, models)
+		if err != nil {
+			return SchemaType{}, false, err
+		}
+		st.Nullable = true
+		return st, false, nil
 	}
-	if ft.Repetition == Optional {
-		base.Nullable = true
+
+	st, err := ResolveSchemaType(ann, ctx, models)
+	if err != nil {
+		return SchemaType{}, false, err
 	}
-	return base
+	return st, true, nil
 }

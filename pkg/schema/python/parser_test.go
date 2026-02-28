@@ -1744,6 +1744,66 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeString, tags.Type.Items.Primitive)
 }
 
+func TestPydanticOutputWithDictField(t *testing.T) {
+	source := `
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Result(BaseModel):
+    metadata: dict[str, int]
+    nested: dict[str, list[str]]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 2, info.Output.Fields.Len())
+
+	// metadata: dict[str, int]
+	metadata, ok := info.Output.Fields.Get("metadata")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaDict, metadata.Type.Kind)
+	require.NotNil(t, metadata.Type.ValueType)
+	require.Equal(t, schema.SchemaPrimitive, metadata.Type.ValueType.Kind)
+	require.Equal(t, schema.TypeInteger, metadata.Type.ValueType.Primitive)
+
+	// nested: dict[str, list[str]]
+	nested, ok := info.Output.Fields.Get("nested")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaDict, nested.Type.Kind)
+	require.NotNil(t, nested.Type.ValueType)
+	require.Equal(t, schema.SchemaArray, nested.Type.ValueType.Kind)
+	require.NotNil(t, nested.Type.ValueType.Items)
+	require.Equal(t, schema.TypeString, nested.Type.ValueType.Items.Primitive)
+}
+
+func TestPydanticOutputWithOptionalDictField(t *testing.T) {
+	source := `
+from typing import Optional
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Result(BaseModel):
+    data: Optional[dict[str, float]]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	data, ok := info.Output.Fields.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaDict, data.Type.Kind)
+	require.True(t, data.Type.Nullable)
+	require.False(t, data.Required)
+	require.NotNil(t, data.Type.ValueType)
+	require.Equal(t, schema.TypeFloat, data.Type.ValueType.Primitive)
+}
+
 // ---------------------------------------------------------------------------
 // Cross-file model resolution
 // ---------------------------------------------------------------------------

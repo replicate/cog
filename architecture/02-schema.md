@@ -10,7 +10,7 @@ Every Cog model uses the same [Prediction API](./ffi/03-prediction-api.md) envel
 ┌─────────────────────────────────────────────────┐
 │  PredictionRequest (fixed envelope)             │
 │  ┌─────────────────────────────────────────┐    │
-│  │  "input": { ... }  ��� model-specific     │    │
+│  │  "input": { ... }  <- model-specific      │    │
 │  └─────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────┘
                       ↑
@@ -124,7 +124,7 @@ SchemaType
 ├── SchemaPrimitive   — str, int, float, bool, Path
 ├── SchemaAny         — untyped (bare dict, Any)
 ├── SchemaArray       — list[T], with Items → SchemaType
-├── SchemaDict        ��� dict[str, V], with ValueType → SchemaType
+├── SchemaDict        -- dict[str, V], with ValueType -> SchemaType
 ├── SchemaObject      — BaseModel subclass, with Fields → OrderedMap[name, SchemaField]
 ├── SchemaIterator    — Iterator[T], with Elem → SchemaType
 └── SchemaConcatIterator — ConcatenateIterator[str]
@@ -155,7 +155,7 @@ Each `SchemaType` produces its JSON Schema fragment via `JSONSchema()`:
 |-----------------|-------------|
 | `SchemaPrimitive(str)` | `{"type": "string"}` |
 | `SchemaPrimitive(Path)` | `{"type": "string", "format": "uri"}` |
-| `SchemaAny` | `{}` |
+| `SchemaAny` | `{"type": "object"}` |
 | `SchemaArray(items)` | `{"type": "array", "items": items.JSONSchema()}` |
 | `SchemaDict(valueType)` | `{"type": "object", "additionalProperties": valueType.JSONSchema()}` |
 | `SchemaObject(fields)` | `{"type": "object", "properties": {...}, "required": [...]}` |
