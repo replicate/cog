@@ -188,9 +188,9 @@ Each `SchemaType` produces its JSON Schema fragment via `JSONSchema()`:
 | `float` | `SchemaPrimitive` | `{"type": "number"}` |
 | `bool` | `SchemaPrimitive` | `{"type": "boolean"}` |
 | `Path` | `SchemaPrimitive` | `{"type": "string", "format": "uri"}` |
-| `dict` (bare) | `SchemaAny` | `{}` |
+| `dict` (bare) | `SchemaAny` | `{"type": "object"}` |
 | `dict[str, V]` | `SchemaDict` | `{"type": "object", "additionalProperties": V}` |
-| `list` (bare) | `SchemaArray(SchemaAny)` | `{"type": "array", "items": {}}` |
+| `list` (bare) | `SchemaArray(SchemaAny)` | `{"type": "array", "items": {"type": "object"}}` |
 | `list[T]` | `SchemaArray` | `{"type": "array", "items": T}` |
 | `BaseModel` subclass | `SchemaObject` | `{"type": "object", "properties": {...}}` |
 | `Iterator[T]` | `SchemaIterator` | `{"type": "array", "items": T, "x-cog-array-type": "iterator"}` |

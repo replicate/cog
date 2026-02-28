@@ -1660,6 +1660,41 @@ class Predictor(BasePredictor):
 	require.Contains(t, se.Message, "numpy")
 }
 
+func TestDictWithUnresolvableValueTypeErrors(t *testing.T) {
+	// Regression: dict[str, Tensor] used to silently collapse to SchemaAny.
+	// Now it propagates the error from the value type resolution.
+	source := `
+from torch import Tensor
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> dict[str, Tensor]:
+        return {}
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnresolvableType, se.Kind)
+	require.Contains(t, se.Message, "Tensor")
+}
+
+func TestModelFieldDictWithUnresolvableValueTypeErrors(t *testing.T) {
+	// Same bug but inside a BaseModel field.
+	source := `
+from torch import Tensor
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Result(BaseModel):
+    tensors: dict[str, Tensor]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Result:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnresolvableType, se.Kind)
+	require.Contains(t, se.Message, "Tensor")
+}
+
 // ---------------------------------------------------------------------------
 // Pydantic output still works after migration
 // ---------------------------------------------------------------------------
@@ -1718,6 +1753,83 @@ class Predictor(BasePredictor):
 	errField, ok := info.Output.Fields.Get("error")
 	require.True(t, ok)
 	require.True(t, errField.Type.Nullable)
+}
+
+func TestPydanticOutputDefaultedFieldNotNullable(t *testing.T) {
+	// Regression: a field with a default but NOT Optional must NOT be nullable.
+	// Previously !Required was incorrectly mapped to nullable in JSON Schema.
+	source := `
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Result(BaseModel):
+    text: str
+    debug: bool = False
+    count: int = 0
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	// text: required, not nullable
+	text, ok := info.Output.Fields.Get("text")
+	require.True(t, ok)
+	require.True(t, text.Required)
+	require.False(t, text.Type.Nullable)
+
+	// debug: has default so not required, but NOT nullable (not Optional)
+	debug, ok := info.Output.Fields.Get("debug")
+	require.True(t, ok)
+	require.False(t, debug.Required, "defaulted field should not be required")
+	require.False(t, debug.Type.Nullable, "non-Optional defaulted field must not be nullable")
+
+	// count: same — defaulted, not nullable
+	count, ok := info.Output.Fields.Get("count")
+	require.True(t, ok)
+	require.False(t, count.Required)
+	require.False(t, count.Type.Nullable)
+
+	// Verify JSON Schema output doesn't include "nullable" for these fields
+	js := info.Output.JSONSchema()
+	props, ok := js["properties"].(map[string]any)
+	require.True(t, ok)
+	debugProp, ok := props["debug"].(map[string]any)
+	require.True(t, ok)
+	_, hasNullable := debugProp["nullable"]
+	require.False(t, hasNullable, "JSON Schema for defaulted non-Optional field must not have nullable")
+}
+
+func TestPydanticOutputOptionalFieldNullable(t *testing.T) {
+	source := `
+from pydantic import BaseModel
+from typing import Optional
+from cog import BasePredictor
+
+class Result(BaseModel):
+    text: str
+    error: Optional[str] = None
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+
+	errField, ok := info.Output.Fields.Get("error")
+	require.True(t, ok)
+	require.True(t, errField.Type.Nullable, "Optional field should be nullable")
+	require.False(t, errField.Required, "Optional field with default should not be required")
+
+	// Verify JSON Schema output includes "nullable" for Optional field
+	js := info.Output.JSONSchema()
+	props, ok := js["properties"].(map[string]any)
+	require.True(t, ok)
+	errProp, ok := props["error"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, errProp["nullable"])
 }
 
 func TestPydanticOutputWithListField(t *testing.T) {

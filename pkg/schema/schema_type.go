@@ -32,11 +32,6 @@ type SchemaType struct {
 
 	// Nullable: wraps any type to allow null.
 	Nullable bool
-
-	// Cog-specific annotations.
-	// These carry through to x-cog-* keys in the OpenAPI output.
-	CogArrayType    string // "iterator" for Iterator/ConcatIterator
-	CogArrayDisplay string // "concatenate" for ConcatIterator
 }
 
 // SchemaTypeKind tags the active variant in SchemaType.
@@ -121,7 +116,7 @@ func (s SchemaType) coreSchema() map[string]any {
 		s.Fields.Entries(func(name string, field SchemaField) {
 			prop := field.Type.jsonSchema(false)
 			prop["title"] = TitleCase(name)
-			if !field.Required {
+			if field.Type.Nullable {
 				prop["nullable"] = true
 			}
 			if field.Required && field.Default == nil {
