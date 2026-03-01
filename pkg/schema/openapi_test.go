@@ -20,10 +20,9 @@ func simplePredictor() *PredictorInfo {
 		FieldType: FieldType{Primitive: TypeString, Repetition: Required},
 	})
 
-	p := TypeString
 	return &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 }
@@ -162,10 +161,9 @@ func TestInputOptionalFieldNotRequired(t *testing.T) {
 		Default:   &DefaultValue{Kind: DefaultNone},
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -190,10 +188,9 @@ func TestInputDefaultValue(t *testing.T) {
 		Default:   &DefaultValue{Kind: DefaultInt, Int: 42},
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -213,10 +210,9 @@ func TestInputDescription(t *testing.T) {
 		Description: ptrStr("The input text"),
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -236,10 +232,9 @@ func TestInputNumericConstraints(t *testing.T) {
 		LE:        ptrFloat(1.0),
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -261,10 +256,9 @@ func TestInputStringConstraints(t *testing.T) {
 		Regex:     ptrStr("^[a-z]+$"),
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -285,10 +279,9 @@ func TestInputDeprecated(t *testing.T) {
 		Deprecated: ptrBool(true),
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -311,10 +304,9 @@ func TestInputXOrder(t *testing.T) {
 		FieldType: FieldType{Primitive: TypeInteger, Repetition: Required},
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -332,10 +324,9 @@ func TestInputRepeatedType(t *testing.T) {
 		FieldType: FieldType{Primitive: TypeString, Repetition: Repeated},
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -363,10 +354,9 @@ func TestChoicesGenerateEnum(t *testing.T) {
 		},
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -401,10 +391,9 @@ func TestIntegerChoices(t *testing.T) {
 		},
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -429,10 +418,9 @@ func TestOutputSingle(t *testing.T) {
 
 func TestOutputList(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputList, Primitive: &p},
+		Output: SchemaArrayOf(SchemaPrim(TypeString)),
 		Mode:   ModePredict,
 	}
 
@@ -446,10 +434,9 @@ func TestOutputList(t *testing.T) {
 
 func TestOutputIterator(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputIterator, Primitive: &p},
+		Output: SchemaIteratorOf(SchemaPrim(TypeString)),
 		Mode:   ModePredict,
 	}
 
@@ -461,10 +448,9 @@ func TestOutputIterator(t *testing.T) {
 
 func TestOutputConcatenateIterator(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputConcatenateIterator, Primitive: &p},
+		Output: SchemaConcatIteratorOf(),
 		Mode:   ModePredict,
 	}
 
@@ -477,21 +463,24 @@ func TestOutputConcatenateIterator(t *testing.T) {
 
 func TestOutputObject(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
-	fields := NewOrderedMap[string, ObjectField]()
-	fields.Set("name", ObjectField{
-		FieldType: FieldType{Primitive: TypeString, Repetition: Required},
+	fields := NewOrderedMap[string, SchemaField]()
+	fields.Set("name", SchemaField{
+		Type:     SchemaPrim(TypeString),
+		Required: true,
 	})
-	fields.Set("score", ObjectField{
-		FieldType: FieldType{Primitive: TypeFloat, Repetition: Required},
+	fields.Set("score", SchemaField{
+		Type:     SchemaPrim(TypeFloat),
+		Required: true,
 	})
-	fields.Set("notes", ObjectField{
-		FieldType: FieldType{Primitive: TypeString, Repetition: Optional},
-		Default:   &DefaultValue{Kind: DefaultNone},
+	fields.Set("notes", SchemaField{
+		Type:     SchemaType{Kind: SchemaPrimitive, Primitive: TypeString, Nullable: true},
+		Required: false,
+		Default:  &DefaultValue{Kind: DefaultNone},
 	})
 
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputObject, Fields: fields},
+		Output: SchemaObjectOf(fields),
 		Mode:   ModePredict,
 	}
 
@@ -522,10 +511,9 @@ func TestOutputObject(t *testing.T) {
 
 func TestOutputPath(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
-	p := TypePath
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypePath),
 		Mode:   ModePredict,
 	}
 
@@ -653,10 +641,9 @@ func TestMultipleInputTypes(t *testing.T) {
 		Default:   &DefaultValue{Kind: DefaultNone},
 	})
 
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -704,10 +691,9 @@ func TestMultipleInputTypes(t *testing.T) {
 
 func TestNoInputs(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
-	p := TypeString
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   ModePredict,
 	}
 
@@ -722,7 +708,7 @@ func TestOutputObjectNoFields(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
 	info := &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputObject},
+		Output: SchemaType{Kind: SchemaObject},
 		Mode:   ModePredict,
 	}
 

@@ -450,6 +450,7 @@ func generateStaticSchema(cfg *config.Config, dir string) ([]byte, error) {
 		return nil, fmt.Errorf("no predict or train reference found in cog.yaml")
 	}
 	return schema.GenerateCombined(dir, cfg.Predict, cfg.Train, python.ParsePredictor)
+
 }
 
 // writeAndValidateSchema writes the schema JSON to the bundled schema file and

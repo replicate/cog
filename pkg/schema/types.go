@@ -194,100 +194,10 @@ func (f *InputField) IsRequired() bool {
 	return f.Default == nil && (f.FieldType.Repetition == Required || f.FieldType.Repetition == Repeated)
 }
 
-// OutputKind describes the shape of the output type.
-type OutputKind int
-
-const (
-	OutputSingle OutputKind = iota
-	OutputList
-	OutputIterator
-	OutputConcatenateIterator
-	OutputObject
-)
-
-// ObjectField represents a field in a BaseModel output type.
-type ObjectField struct {
-	FieldType FieldType
-	Default   *DefaultValue
-}
-
-// OutputType describes the return type of predict/train.
-type OutputType struct {
-	Kind      OutputKind
-	Primitive *PrimitiveType // for Single/List/Iterator/ConcatIterator
-	Fields    *OrderedMap[string, ObjectField]
-}
-
-// JSONType returns the JSON Schema fragment for this output type.
-func (o OutputType) JSONType() map[string]any {
-	switch o.Kind {
-	case OutputSingle:
-		v := o.elementJSONType()
-		v["title"] = "Output"
-		return v
-	case OutputList:
-		return map[string]any{
-			"title": "Output",
-			"type":  "array",
-			"items": o.elementJSONType(),
-		}
-	case OutputIterator:
-		return map[string]any{
-			"title":            "Output",
-			"type":             "array",
-			"items":            o.elementJSONType(),
-			"x-cog-array-type": "iterator",
-		}
-	case OutputConcatenateIterator:
-		return map[string]any{
-			"title":               "Output",
-			"type":                "array",
-			"items":               o.elementJSONType(),
-			"x-cog-array-type":    "iterator",
-			"x-cog-array-display": "concatenate",
-		}
-	case OutputObject:
-		if o.Fields == nil {
-			return map[string]any{"title": "Output", "type": "object"}
-		}
-		properties := make(map[string]any)
-		var required []string
-		o.Fields.Entries(func(name string, field ObjectField) {
-			prop := field.FieldType.JSONType()
-			prop["title"] = TitleCase(name)
-			if field.FieldType.Repetition == Optional {
-				prop["nullable"] = true
-			}
-			if field.Default == nil && field.FieldType.Repetition != Optional {
-				required = append(required, name)
-			}
-			properties[name] = prop
-		})
-		schema := map[string]any{
-			"title":      "Output",
-			"type":       "object",
-			"properties": properties,
-		}
-		if len(required) > 0 {
-			schema["required"] = required
-		}
-		return schema
-	default:
-		return map[string]any{"title": "Output", "type": "object"}
-	}
-}
-
-func (o OutputType) elementJSONType() map[string]any {
-	if o.Primitive != nil {
-		return o.Primitive.JSONType()
-	}
-	return map[string]any{"type": "object"}
-}
-
 // PredictorInfo is the top-level extraction result.
 type PredictorInfo struct {
 	Inputs *OrderedMap[string, InputField]
-	Output OutputType
+	Output SchemaType
 	Mode   Mode
 }
 
@@ -398,28 +308,35 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error)
 		return FieldType{}, errUnsupportedType(fmt.Sprintf("%s[...] is not a supported input type", outer))
 
 	case TypeAnnotUnion:
-		if len(ann.Args) == 2 {
-			hasNone := false
-			var nonNone *TypeAnnotation
-			for i := range ann.Args {
-				if ann.Args[i].Kind == TypeAnnotSimple && ann.Args[i].Name == "None" {
-					hasNone = true
-				} else {
-					a := ann.Args[i]
-					nonNone = &a
-				}
+		if inner, ok := UnwrapOptional(ann); ok {
+			ft, err := ResolveFieldType(inner, ctx)
+			if err != nil {
+				return FieldType{}, err
 			}
-			if hasNone && nonNone != nil {
-				inner, err := ResolveFieldType(*nonNone, ctx)
-				if err != nil {
-					return FieldType{}, err
-				}
-				return FieldType{Primitive: inner.Primitive, Repetition: Optional}, nil
-			}
+			return FieldType{Primitive: ft.Primitive, Repetition: Optional}, nil
 		}
 		return FieldType{}, errUnsupportedType("union types other than X | None are not supported")
 	}
 	return FieldType{}, errUnsupportedType("unknown type annotation")
+}
+
+// UnwrapOptional checks if a type annotation represents Optional[X] or Union[X, None].
+// If so, it returns the inner type and true. Otherwise it returns the original and false.
+func UnwrapOptional(ann TypeAnnotation) (TypeAnnotation, bool) {
+	// Optional[X]
+	if ann.Kind == TypeAnnotGeneric && ann.Name == "Optional" && len(ann.Args) == 1 {
+		return ann.Args[0], true
+	}
+	// Union[X, None] or X | None
+	args := ann.Args
+	if (ann.Kind == TypeAnnotGeneric && ann.Name == "Union" || ann.Kind == TypeAnnotUnion) && len(args) == 2 {
+		for i := range args {
+			if args[i].Kind == TypeAnnotSimple && args[i].Name == "None" {
+				return args[1-i], true
+			}
+		}
+	}
+	return ann, false
 }
 
 // ModelClassMap maps class names to their fields.
@@ -430,71 +347,6 @@ type ModelField struct {
 	Name    string
 	Type    TypeAnnotation
 	Default *DefaultValue
-}
-
-// ResolveOutputType resolves an output type annotation.
-func ResolveOutputType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap) (OutputType, error) {
-	switch ann.Kind {
-	case TypeAnnotSimple:
-		// Check for BaseModel subclass
-		if fields, ok := models.Get(ann.Name); ok {
-			objFields := NewOrderedMap[string, ObjectField]()
-			for _, f := range fields {
-				ft, err := ResolveFieldType(f.Type, ctx)
-				if err != nil {
-					return OutputType{}, err
-				}
-				objFields.Set(f.Name, ObjectField{FieldType: ft, Default: f.Default})
-			}
-			return OutputType{Kind: OutputObject, Fields: objFields}, nil
-		}
-		if ann.Name == "Any" {
-			p := TypeAny
-			return OutputType{Kind: OutputSingle, Primitive: &p}, nil
-		}
-		prim, ok := PrimitiveFromName(ann.Name)
-		if !ok {
-			return OutputType{}, errUnsupportedType(ann.Name)
-		}
-		return OutputType{Kind: OutputSingle, Primitive: &prim}, nil
-
-	case TypeAnnotGeneric:
-		if len(ann.Args) != 1 {
-			return OutputType{}, errUnsupportedType(fmt.Sprintf("%s expects exactly 1 type argument", ann.Name))
-		}
-		inner := ann.Args[0]
-		if inner.Kind != TypeAnnotSimple {
-			return OutputType{}, errUnsupportedType("nested generics in output type are not supported")
-		}
-		innerPrim, ok := PrimitiveFromName(inner.Name)
-		if !ok {
-			return OutputType{}, errUnsupportedType(inner.Name)
-		}
-		switch ann.Name {
-		case "Iterator", "AsyncIterator":
-			return OutputType{Kind: OutputIterator, Primitive: &innerPrim}, nil
-		case "ConcatenateIterator", "AsyncConcatenateIterator":
-			if innerPrim != TypeString {
-				return OutputType{}, errConcatIteratorNotStr(innerPrim.String())
-			}
-			return OutputType{Kind: OutputConcatenateIterator, Primitive: &innerPrim}, nil
-		case "List", "list":
-			return OutputType{Kind: OutputList, Primitive: &innerPrim}, nil
-		case "Optional":
-			return OutputType{}, errOptionalOutput()
-		default:
-			return OutputType{}, errUnsupportedType(fmt.Sprintf("%s[...] is not a supported output type", ann.Name))
-		}
-
-	case TypeAnnotUnion:
-		for _, m := range ann.Args {
-			if m.Kind == TypeAnnotSimple && m.Name == "None" {
-				return OutputType{}, errOptionalOutput()
-			}
-		}
-		return OutputType{}, errUnsupportedType("union types are not supported as output")
-	}
-	return OutputType{}, errUnsupportedType("unknown type annotation")
 }
 
 // TitleCase converts snake_case to Title Case.

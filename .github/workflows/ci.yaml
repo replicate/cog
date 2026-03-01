@@ -542,6 +542,28 @@ jobs:
           gotestsum -- -short -timeout 1200s -parallel 5 ./... &
           wait $!
 
+  fuzz-go:
+    name: Fuzz Go
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Fuzz schema type resolution
+        run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime=30s
+      - name: Fuzz JSON schema generation
+        run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzJSONSchema -fuzztime=30s
+      - name: Fuzz Python parser
+        run: go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParsePredictor -fuzztime=30s
+      - name: Fuzz type annotation parsing
+        run: go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParseTypeAnnotation -fuzztime=30s
+
   test-rust:
     name: Test Rust
     needs: changes

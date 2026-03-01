@@ -9,7 +9,10 @@ package python
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -22,7 +25,8 @@ import (
 // ParsePredictor parses Python source and extracts predictor information.
 // predictRef is the class or function name (e.g. "Predictor" or "predict").
 // mode controls whether we look for predict or train method.
-func ParsePredictor(source []byte, predictRef string, mode schema.Mode) (*schema.PredictorInfo, error) {
+// sourceDir is the project root for resolving cross-file imports. Pass "" if unknown.
+func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDir string) (*schema.PredictorInfo, error) {
 	parser := sitter.NewParser()
 	parser.SetLanguage(python.GetLanguage())
 
@@ -39,8 +43,11 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode) (*schema
 	// 2. Collect module-level variable assignments
 	moduleScope := collectModuleScope(root, source)
 
-	// 3. Collect BaseModel subclasses
+	// 3. Collect BaseModel subclasses (local file first, then cross-file)
 	modelClasses := collectModelClasses(root, source, imports)
+	if sourceDir != "" {
+		resolveExternalModels(sourceDir, imports, modelClasses)
+	}
 
 	// 4. Collect Input() references from class attributes and static methods
 	inputRegistry := collectInputRegistry(root, source, imports, moduleScope)
@@ -78,7 +85,7 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode) (*schema
 	if err != nil {
 		return nil, err
 	}
-	output, err := schema.ResolveOutputType(returnTypeAnn, imports, modelClasses)
+	output, err := schema.ResolveSchemaType(returnTypeAnn, imports, modelClasses)
 	if err != nil {
 		return nil, err
 	}
@@ -381,6 +388,134 @@ func collectModelClasses(root *sitter.Node, source []byte, imports *schema.Impor
 		models.Set(className, fields)
 	}
 	return models
+}
+
+// resolveExternalModels looks at imports that brought in names not yet in
+// modelClasses, attempts to find the corresponding .py file on disk, parses
+// it, and merges any BaseModel subclasses into modelClasses.
+//
+// This handles every local import permutation:
+//
+//	from .types import Output          → <sourceDir>/types.py
+//	from types import Output           → <sourceDir>/types.py
+//	from models.output import Result   → <sourceDir>/models/output.py
+//	from .models.output import Result  → <sourceDir>/models/output.py
+//	from my_app.types import Foo       → <sourceDir>/my_app/types.py
+//
+// Non-local imports (stdlib, pip packages) are skipped because the file
+// won't exist on disk.
+func resolveExternalModels(sourceDir string, imports *schema.ImportContext, models schema.ModelClassMap) {
+	// Track which modules we've already tried so we don't re-parse.
+	tried := make(map[string]bool)
+
+	imports.Names.Entries(func(localName string, entry schema.ImportEntry) {
+		// Already resolved locally — skip.
+		if _, ok := models.Get(localName); ok {
+			return
+		}
+
+		module := entry.Module
+		if !tried[module] {
+			tried[module] = true
+
+			// Skip known non-local modules.
+			if isKnownExternalModule(module) {
+				return
+			}
+
+			// Convert module path to filesystem path and try to find it.
+			pyPath := moduleToFilePath(module)
+			if pyPath == "" {
+				return
+			}
+
+			fullPath := filepath.Join(sourceDir, pyPath)
+			source, err := os.ReadFile(fullPath)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					// File doesn't exist — it's an external package, not local.
+					return
+				}
+				fmt.Fprintf(os.Stderr, "cog: warning: failed to read %q: %v\n", fullPath, err)
+				return
+			}
+
+			// Parse the file and extract BaseModel subclasses.
+			parser := sitter.NewParser()
+			parser.SetLanguage(python.GetLanguage())
+			tree, err := parser.ParseCtx(context.Background(), nil, source)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cog: warning: failed to parse %q: %v\n", fullPath, err)
+				return
+			}
+
+			fileImports := collectImports(tree.RootNode(), source)
+			fileModels := collectModelClasses(tree.RootNode(), source, fileImports)
+
+			// Merge discovered models into the caller's map.
+			fileModels.Entries(func(name string, fields []schema.ModelField) {
+				if _, exists := models.Get(name); !exists {
+					models.Set(name, fields)
+				}
+			})
+		}
+
+		// Handle aliases: "from X import MyOutput as Output"
+		// localName is "Output", entry.Original is "MyOutput".
+		// If we resolved "MyOutput" from the file, also register it under "Output".
+		if localName != entry.Original {
+			if fields, ok := models.Get(entry.Original); ok {
+				if _, exists := models.Get(localName); !exists {
+					models.Set(localName, fields)
+				}
+			}
+		}
+	})
+}
+
+// moduleToFilePath converts a Python module path to a relative .py file path.
+//
+//	".types"          → "types.py"
+//	"types"           → "types.py"
+//	".models.output"  → "models/output.py"
+//	"models.output"   → "models/output.py"
+//	"cog"             → "cog.py"  (will fail os.ReadFile → skipped)
+func moduleToFilePath(module string) string {
+	// Strip leading dots (relative import markers).
+	clean := strings.TrimLeft(module, ".")
+	if clean == "" {
+		return ""
+	}
+	// Replace dots with path separators.
+	parts := strings.Split(clean, ".")
+	return filepath.Join(parts...) + ".py"
+}
+
+// isKnownExternalModule returns true for modules that are definitely not
+// local project files — stdlib, well-known packages, etc.
+func isKnownExternalModule(module string) bool {
+	// Extract the top-level package name.
+	top := module
+	if i := strings.Index(module, "."); i > 0 {
+		top = module[:i]
+	}
+	top = strings.TrimLeft(top, ".")
+
+	switch top {
+	case "builtins", "typing", "typing_extensions",
+		"collections", "abc", "enum", "dataclasses",
+		"os", "sys", "io", "json", "re", "math", "pathlib",
+		"functools", "itertools", "contextlib",
+		"concurrent", "asyncio", "multiprocessing", "threading",
+		"logging", "warnings", "unittest", "pytest",
+		"numpy", "torch", "tensorflow", "jax", "scipy", "sklearn",
+		"transformers", "diffusers", "accelerate", "safetensors",
+		"PIL", "cv2", "skimage",
+		"requests", "httpx", "aiohttp", "fastapi", "flask",
+		"pydantic", "cog":
+		return true
+	}
+	return false
 }
 
 func unwrapClass(node *sitter.Node) *sitter.Node {
