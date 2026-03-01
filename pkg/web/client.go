@@ -225,7 +225,7 @@ func (c *Client) FetchAPIToken(ctx context.Context, entity string) (string, erro
 		return "", err
 	}
 
-	tokenResp, err := c.client.Do(req)
+	tokenResp, err := c.client.Do(req) //nolint:gosec // G704: URL from configured endpoint
 	if err != nil {
 		return "", err
 	}
@@ -421,7 +421,7 @@ func (c *Client) doSingleFileChallenge(ctx context.Context, file File, fileType 
 	if err != nil {
 		return answer, util.WrapError(err, "build HTTP request")
 	}
-	resp, err := c.client.Do(req)
+	resp, err := c.client.Do(req) //nolint:gosec // G704: URL from configured endpoint
 	if err != nil {
 		return answer, util.WrapError(err, "do HTTP request")
 	}

@@ -592,7 +592,7 @@ func (c *RegistryClient) checkBlobExists(ctx context.Context, client *http.Clien
 		return false, err
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: URL from registry reference, not user input
 	if err != nil {
 		return false, err
 	}
@@ -660,7 +660,7 @@ func (c *RegistryClient) initiateUpload(ctx context.Context, client *http.Client
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: URL from registry reference, not user input
 	if err != nil {
 		return uploadSession{}, err
 	}
@@ -864,7 +864,7 @@ func (c *RegistryClient) uploadBlobSingle(ctx context.Context, client *http.Clie
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.ContentLength = totalSize
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: URL from registry upload session, not user input
 	if err != nil {
 		return "", err
 	}
@@ -924,7 +924,7 @@ func (c *RegistryClient) uploadChunk(ctx context.Context, client *http.Client, l
 	req.Header.Set("Content-Length", strconv.FormatInt(int64(len(chunk)), 10))
 	req.Header.Set("Content-Range", fmt.Sprintf("%d-%d", start, end))
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: URL from registry upload session, not user input
 	if err != nil {
 		return "", err
 	}
@@ -988,7 +988,7 @@ func (c *RegistryClient) commitUpload(ctx context.Context, client *http.Client, 
 
 	req.Header.Set("Content-Type", "application/octet-stream")
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: URL from registry upload session, not user input
 	if err != nil {
 		return err
 	}

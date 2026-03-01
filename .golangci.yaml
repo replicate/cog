@@ -86,3 +86,8 @@ linters:
       - linters:
           - staticcheck
         text: 'ST1005:'
+      # modernize newexpr false positives: ptr(true) cannot be simplified to new(bool)
+      # because new(T) only produces zero-value pointers
+      - linters:
+          - modernize
+        text: 'newexpr:'
