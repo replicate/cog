@@ -127,7 +127,7 @@ func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Dura
 				return nil, fmt.Errorf("Failed to create HTTP request to %s: %w", url, err)
 			}
 
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL from localhost health check
 			if err != nil {
 				return nil, nil
 			}
@@ -190,7 +190,7 @@ func (p *Predictor) Predict(inputs Inputs, context RequestContext) (*Response, e
 	req.Close = true
 
 	httpClient := &http.Client{}
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // G704: URL from localhost prediction endpoint
 	if err != nil {
 		return nil, fmt.Errorf("Failed to POST HTTP request to %s: %w", url, err)
 	}
