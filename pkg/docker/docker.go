@@ -28,12 +28,12 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/replicate/go/types/ptr"
-
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
+
+func ptrVal[T any](v T) *T { return &v }
 
 func NewClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 	clientOptions := &clientOptions{
@@ -133,7 +133,7 @@ func (c *apiClient) ContainerStop(ctx context.Context, containerID string) error
 	console.Debugf("=== APIClient.ContainerStop %s", containerID)
 
 	err := c.client.ContainerStop(ctx, containerID, container.StopOptions{
-		Timeout: ptr.To(3),
+		Timeout: ptrVal(3),
 	})
 	if err != nil {
 		if errdefs.IsNotFound(err) {

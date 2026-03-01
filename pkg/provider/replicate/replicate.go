@@ -119,7 +119,7 @@ func readTokenInteractively(registryHost string) (string, error) {
 	console.Info("Hit enter to get started. A browser will open with an authentication token that you need to paste here.")
 
 	inputReader := os.Stdin
-	inputFd := int(os.Stdin.Fd())
+	inputFd := int(os.Stdin.Fd()) //nolint:gosec // G115: Fd() fits in int on all supported platforms
 
 	reader := bufio.NewReader(inputReader)
 	if _, err := reader.ReadString('\n'); err != nil {

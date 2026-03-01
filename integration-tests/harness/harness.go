@@ -521,7 +521,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 			req.Header.Set(h[0], h[1])
 		}
 
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) //nolint:gosec // G704: URL from test harness, not user input
 		if err != nil {
 			lastErr = err
 			time.Sleep(retryDelay)

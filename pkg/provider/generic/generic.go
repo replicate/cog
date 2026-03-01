@@ -50,7 +50,7 @@ func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions)
 
 	// Prompt for password (hidden input)
 	fmt.Print("Password: ")
-	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd())) //nolint:gosec // G115: Fd() fits in int on all supported platforms
 	if err != nil {
 		return fmt.Errorf("failed to read password: %w", err)
 	}

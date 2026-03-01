@@ -48,7 +48,7 @@ cargo-binstall = "1.16.6"
 "aqua:rust-lang/rustup/rustup-init" = "latest"
 "aqua:rust-cross/cargo-zigbuild" = "0.20.1"
 "aqua:gotestyourself/gotestsum" = "1.13.0"
-"aqua:golangci/golangci-lint" = "2.8.0"
+"aqua:golangci/golangci-lint" = "2.10.1"
 ruff = "0.14.13"
 ty = "0.0.10"
 

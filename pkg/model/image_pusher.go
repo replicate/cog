@@ -129,8 +129,8 @@ func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePus
 	if err != nil {
 		return fmt.Errorf("create temp tar file: %w", err)
 	}
-	defer func() { _ = os.Remove(tmpTar.Name()) }()
-	defer tmpTar.Close() //nolint:errcheck
+	defer func() { _ = os.Remove(tmpTar.Name()) }() //nolint:gosec // G703: path from os.CreateTemp, not user input
+	defer tmpTar.Close()                            //nolint:errcheck
 
 	if _, err := io.Copy(tmpTar, rc); err != nil {
 		return fmt.Errorf("write image tar: %w", err)
