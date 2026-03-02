@@ -92,10 +92,12 @@ func (c *Console) log(level Level, msg string) {
 
 	if c.Color {
 		switch level {
+		case DebugLevel, InfoLevel:
+			prompt = " " + aurora.Faint("⚙  ").String()
 		case WarnLevel:
-			prompt = aurora.Yellow("⚠ ").String()
+			prompt = " " + aurora.Bold(aurora.Yellow("⚠ ")).String()
 		case ErrorLevel, FatalLevel:
-			prompt = aurora.Red("ⅹ ").String()
+			prompt = " " + aurora.Bold(aurora.Red("✗ ")).String()
 		}
 	}
 
@@ -103,6 +105,10 @@ func (c *Console) log(level Level, msg string) {
 	defer c.mu.Unlock()
 
 	for line := range strings.SplitSeq(formattedMsg, "\n") {
+		if line == "" && (level == DebugLevel || level == InfoLevel) {
+			fmt.Fprintln(os.Stderr)
+			continue
+		}
 		if c.Color && level == DebugLevel {
 			line = aurora.Faint(line).String()
 		}
