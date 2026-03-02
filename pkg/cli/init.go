@@ -37,7 +37,8 @@ and prediction interface. Edit them to match your model's requirements.`,
 }
 
 func initCommand(cmd *cobra.Command, args []string) error {
-	console.Infof("\nSetting up the current directory for use with Cog...\n")
+	console.Info("Setting up the current directory for use with Cog...")
+	console.Info("")
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -142,11 +143,11 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 		}
 	}
 
+	console.Infof("Creating %s", console.Bold(filename))
+
 	if err := os.WriteFile(filePath, content, 0o644); err != nil {
 		return fmt.Errorf("Error writing %s: %w", filePath, err)
 	}
-
-	console.Successf("Created %s", console.Bold(filePath))
 	return nil
 }
 
