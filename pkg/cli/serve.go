@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -81,6 +82,8 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		return err
 	}
 
+	console.Info("Building Docker image from environment in cog.yaml...")
+	console.Info("")
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 	m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
 	if err != nil {
@@ -130,9 +133,9 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000})
 
 	console.Info("")
-	console.Infof("Running '%[1]s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
+	console.Infof("Running %[1]s in Docker with the current directory mounted as a volume...", console.Bold(strings.Join(args, " ")))
 	console.Info("")
-	console.Infof("Serving at http://127.0.0.1:%[1]v", port)
+	console.Infof("Serving at %s", console.Bold(fmt.Sprintf("http://127.0.0.1:%v", port)))
 	console.Info("")
 
 	err = docker.Run(ctx, dockerClient, runOptions)

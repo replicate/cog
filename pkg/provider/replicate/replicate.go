@@ -75,7 +75,7 @@ func (p *ReplicateProvider) Login(ctx context.Context, opts provider.LoginOption
 		return err
 	}
 
-	console.Infof("You've successfully authenticated as %s! You can now use the '%s' registry.", username, opts.Host)
+	console.Successf("You've successfully authenticated as %s! You can now use the %s registry.", console.Bold(username), console.Bold(opts.Host))
 	return nil
 }
 
@@ -91,9 +91,9 @@ If the model already exists, you may be getting this error because you're not lo
 	}
 
 	// Success - show Replicate model URL
-	console.Infof("Image '%s' pushed", opts.Image)
+	console.Successf("Image %s pushed", console.Bold(opts.Image))
 	replicatePage := fmt.Sprintf("https://%s", strings.Replace(opts.Image, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
-	console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
+	console.Infof("\nRun your model on Replicate:\n    %s", console.Bold(replicatePage))
 
 	return nil
 }
@@ -114,9 +114,9 @@ func readTokenInteractively(registryHost string) (string, error) {
 		return "", err
 	}
 
-	console.Infof("This command will authenticate Docker with Replicate's '%s' Docker registry. You will need a Replicate account.", registryHost)
-	console.Info("")
-	console.Info("Hit enter to get started. A browser will open with an authentication token that you need to paste here.")
+	console.InfoUnformattedf("This command will authenticate Docker with Replicate's '%s' Docker registry. You will need a Replicate account.", registryHost)
+	console.InfoUnformatted("")
+	console.InfoUnformatted("Hit enter to get started. A browser will open with an authentication token that you need to paste here.")
 
 	inputReader := os.Stdin
 	inputFd := int(os.Stdin.Fd()) //nolint:gosec // G115: Fd() fits in int on all supported platforms
@@ -126,14 +126,15 @@ func readTokenInteractively(registryHost string) (string, error) {
 		return "", err
 	}
 
-	console.Info("If it didn't open automatically, open this URL in a web browser:")
-	console.Info(tokenURL)
+	console.InfoUnformatted("If it didn't open automatically, open this URL in a web browser:")
+	console.InfoUnformatted(tokenURL)
 	maybeOpenBrowser(tokenURL)
 
-	console.Info("")
-	console.Info("Once you've signed in, copy the token from that web page, paste it here, then hit enter:")
+	console.InfoUnformatted("")
+	console.InfoUnformatted("Once you've signed in, copy the token from that web page, paste it here, then hit enter:")
+	console.InfoUnformatted("")
 
-	fmt.Print("CLI auth token: ")
+	fmt.Print("Token: ")
 	// Read the token securely, masking the input
 	tokenBytes, err := term.ReadPassword(inputFd)
 	if err != nil {
@@ -142,6 +143,7 @@ func readTokenInteractively(registryHost string) (string, error) {
 
 	// Print a newline after the hidden input
 	fmt.Println()
+	console.InfoUnformatted("")
 
 	return string(tokenBytes), nil
 }

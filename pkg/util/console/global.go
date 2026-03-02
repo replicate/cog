@@ -33,6 +33,11 @@ func Info(msg string) {
 	ConsoleInstance.Info(msg)
 }
 
+// Success level message.
+func Success(msg string) {
+	ConsoleInstance.Success(msg)
+}
+
 // Warn level message.
 func Warn(msg string) {
 	ConsoleInstance.Warn(msg)
@@ -58,6 +63,11 @@ func Infof(msg string, v ...any) {
 	ConsoleInstance.Infof(msg, v...)
 }
 
+// Success level message.
+func Successf(msg string, v ...any) {
+	ConsoleInstance.Successf(msg, v...)
+}
+
 // Warn level message.
 func Warnf(msg string, v ...any) {
 	ConsoleInstance.Warnf(msg, v...)
@@ -73,9 +83,24 @@ func Fatalf(msg string, v ...any) {
 	ConsoleInstance.Fatalf(msg, v...)
 }
 
+// InfoUnformatted writes to stderr without prefix. Useful for interactive/conversational output.
+func InfoUnformatted(msg string) {
+	ConsoleInstance.InfoUnformatted(msg)
+}
+
+// InfoUnformattedf writes to stderr without prefix, with formatting.
+func InfoUnformattedf(msg string, v ...any) {
+	ConsoleInstance.InfoUnformattedf(msg, v...)
+}
+
 // Output a line to stdout. Useful for printing primary output of a command, or the output of a subcommand.
 func Output(s string) {
 	ConsoleInstance.Output(s)
+}
+
+// Bold applies bold formatting to a string when color is enabled.
+func Bold(s string) string {
+	return ConsoleInstance.Bold(s)
 }
 
 // IsTTY checks if a file is a TTY or not. E.g. IsTTY(os.Stdin)
