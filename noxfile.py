@@ -68,9 +68,14 @@ def _install_coglet(session: nox.Session) -> None:
 def _install_package(session: nox.Session) -> None:
     """Install the cog SDK and coglet dependency."""
     _install_coglet(session)
-    # Always use editable install for the SDK so tests run against
-    # the working tree, not a stale wheel from a previous build.
-    session.install("-e", ".")
+    whl = _find_compatible_wheel("dist/cog-*.whl")
+    if whl:
+        session.install(whl)
+    else:
+        # No pre-built wheel — editable install from source.
+        # This fails in CI (setuptools_scm needs a full git checkout),
+        # so CI must run build:sdk first.
+        session.install("-e", ".")
 
 
 @nox.session(python=PYTHON_VERSIONS)
