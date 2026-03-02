@@ -133,7 +133,7 @@ jobs:
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ needs.verify-tag.outputs.pep440 }}
 
       - name: Upload SDK artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sdk-dist
           path: dist/*
@@ -189,7 +189,7 @@ jobs:
           args: --release --out dist -m crates/coglet-python/Cargo.toml ${{ matrix.zig && '--zig' || '' }}
 
       - name: Upload coglet wheel
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coglet-wheel-${{ matrix.artifact-suffix }}
           path: dist/*.whl

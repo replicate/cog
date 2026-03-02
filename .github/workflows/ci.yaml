@@ -262,7 +262,7 @@ jobs:
       - name: Build SDK
         run: mise run ci:build:sdk
       - name: Upload SDK package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: CogPackage
           path: dist/cog-*
@@ -301,7 +301,7 @@ jobs:
           CPVER="cp${MINIMUM_PYTHON//.}"
           ls -la dist/coglet-*-${CPVER}-abi3-*.whl
       - name: Upload coglet wheel
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: CogletRustWheel
           # ABI3 wheels use cpXYZ-abi3 naming; just match any abi3 wheel
@@ -337,7 +337,7 @@ jobs:
           # Use Cargo.toml as version source so snapshot builds match the wheel version
           COG_VERSION: ${{ steps.version.outputs.version }}
       - name: Upload cog binary
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: CogBinary
           path: cog
