@@ -241,7 +241,7 @@ func DetectLocalSDKVersion() string {
 // If path is a directory, globs for pattern inside it, filtering by platform if non-empty.
 // If path is a file, returns it directly.
 func resolveWheelPath(path string, pattern string, platform string, envVar string) (string, error) {
-	info, err := os.Stat(path)
+	info, err := os.Stat(path) //nolint:gosec // G703: path from build config, not user input
 	if err != nil {
 		return "", fmt.Errorf("%s: path not found: %s", envVar, path)
 	}

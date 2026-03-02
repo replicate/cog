@@ -43,7 +43,7 @@ func saveAuthToCredentialsStore(ctx context.Context, credsStore string, registry
 		Secret:    token,
 		ServerURL: registryHost,
 	}
-	cmd := exec.CommandContext(ctx, binary, "store")
+	cmd := exec.CommandContext(ctx, binary, "store") //nolint:gosec // G702: binary is from Docker config, not user input
 	cmd.Env = os.Environ()
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
