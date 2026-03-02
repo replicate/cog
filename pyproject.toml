@@ -125,6 +125,7 @@ src = ["python"]
   "S108", # Probable insecure usage of temp file
   "S110", # try-except-pass
   "S301", # pickle can be unsafe when used to deserialize untrusted data
+  "S603", # subprocess call — tests use subprocess for isolation
   "ANN",  # Type annotations not required in tests
   "B011", # Do not assert False
 ]
