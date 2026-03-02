@@ -82,6 +82,8 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		return err
 	}
 
+	console.Info("Building Docker image from environment in cog.yaml...")
+	console.Info("")
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 	m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
 	if err != nil {

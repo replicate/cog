@@ -197,6 +197,8 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
+		console.Info("Building Docker image from environment in cog.yaml...")
+		console.Info("")
 		m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
 		if err != nil {
 			return err
@@ -237,7 +239,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	}
 
 	console.Info("")
-	console.Infof("Starting Docker image %s and running setup()...", console.Bold(imageName))
+	console.Info("Starting Docker image and running setup()...")
 
 	// Automatically propagate RUST_LOG for Rust coglet debugging
 	env := envFlags

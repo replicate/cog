@@ -73,6 +73,8 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
+		console.Info("Building Docker image from environment in cog.yaml...")
+		console.Info("")
 		m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
 		if err != nil {
 			return err
@@ -108,7 +110,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	}
 
 	console.Info("")
-	console.Infof("Starting Docker image %s...", console.Bold(imageName))
+	console.Info("Starting Docker image and running setup()...")
 
 	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,

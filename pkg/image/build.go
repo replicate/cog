@@ -65,8 +65,6 @@ func Build(
 	annotations map[string]string,
 	dockerCommand command.Command,
 	client registry.Client) (string, error) {
-	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(imageName))
-
 	// remove bundled schema files that may be left from previous builds
 	_ = os.Remove(bundledSchemaFile)
 
@@ -145,7 +143,6 @@ func Build(
 			Epoch:              &config.BuildSourceEpochTimestamp,
 			ContextDir:         dockercontext.StandardBuildDirectory,
 		}
-		console.Info("")
 		if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
@@ -238,7 +235,6 @@ func Build(
 				BuildContexts:      buildContexts,
 			}
 
-			console.Info("")
 			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 				return "", fmt.Errorf("Failed to build Docker image: %w", err)
 			}

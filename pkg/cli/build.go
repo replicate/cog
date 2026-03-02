@@ -91,13 +91,17 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(src.ProjectDir)
 	}
 
+	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(imageName))
+	console.Info("")
+
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, nil))
 	if err != nil {
 		return err
 	}
 
-	console.Successf("\nImage built as %s", console.Bold(m.ImageRef()))
+	console.Info("")
+	console.Successf("Image built as %s", console.Bold(m.ImageRef()))
 
 	return nil
 }
