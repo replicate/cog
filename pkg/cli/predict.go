@@ -365,6 +365,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 	} else {
 		console.Info("Running prediction...")
 	}
+	console.Info("")
 
 	// Generate output depending on type in schema
 	url := "/predictions"
