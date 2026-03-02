@@ -99,6 +99,36 @@ func (c *Console) Fatalf(msg string, v ...any) {
 	os.Exit(1)
 }
 
+// InfoUnformatted writes a message to stderr without any prefix. Useful for conversational
+// or interactive output (e.g. login prompts) where the icon prefix would be noise.
+// Displayed at info level. Long lines are wrapped to terminal width when stderr is a TTY.
+func (c *Console) InfoUnformatted(msg string) {
+	if InfoLevel < c.Level {
+		return
+	}
+
+	termWidth := stderrTerminalWidth()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for line := range strings.SplitSeq(msg, "\n") {
+		if termWidth > 0 {
+			wrapped := wrapLine(line, termWidth)
+			for _, wl := range wrapped {
+				fmt.Fprintln(os.Stderr, wl)
+			}
+			continue
+		}
+		fmt.Fprintln(os.Stderr, line)
+	}
+}
+
+// InfoUnformattedf writes a formatted message to stderr without any prefix.
+func (c *Console) InfoUnformattedf(msg string, v ...any) {
+	c.InfoUnformatted(fmt.Sprintf(msg, v...))
+}
+
 // Output a string to stdout. Useful for printing primary output of a command, or the output of a subcommand.
 // A newline is added to the string.
 func (c *Console) Output(s string) {

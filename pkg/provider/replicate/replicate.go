@@ -114,9 +114,9 @@ func readTokenInteractively(registryHost string) (string, error) {
 		return "", err
 	}
 
-	console.Infof("This command will authenticate Docker with Replicate's '%s' Docker registry. You will need a Replicate account.", registryHost)
-	console.Info("")
-	console.Info("Hit enter to get started. A browser will open with an authentication token that you need to paste here.")
+	console.InfoUnformattedf("This command will authenticate Docker with Replicate's '%s' Docker registry. You will need a Replicate account.", registryHost)
+	console.InfoUnformatted("")
+	console.InfoUnformatted("Hit enter to get started. A browser will open with an authentication token that you need to paste here.")
 
 	inputReader := os.Stdin
 	inputFd := int(os.Stdin.Fd())
@@ -126,14 +126,15 @@ func readTokenInteractively(registryHost string) (string, error) {
 		return "", err
 	}
 
-	console.Info("If it didn't open automatically, open this URL in a web browser:")
-	console.Info(tokenURL)
+	console.InfoUnformatted("If it didn't open automatically, open this URL in a web browser:")
+	console.InfoUnformatted(tokenURL)
 	maybeOpenBrowser(tokenURL)
 
-	console.Info("")
-	console.Info("Once you've signed in, copy the token from that web page, paste it here, then hit enter:")
+	console.InfoUnformatted("")
+	console.InfoUnformatted("Once you've signed in, copy the token from that web page, paste it here, then hit enter:")
+	console.InfoUnformatted("")
 
-	fmt.Print("CLI auth token: ")
+	fmt.Print("Token: ")
 	// Read the token securely, masking the input
 	tokenBytes, err := term.ReadPassword(inputFd)
 	if err != nil {
@@ -142,6 +143,7 @@ func readTokenInteractively(registryHost string) (string, error) {
 
 	// Print a newline after the hidden input
 	fmt.Println()
+	console.InfoUnformatted("")
 
 	return string(tokenBytes), nil
 }

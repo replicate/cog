@@ -83,6 +83,16 @@ func Fatalf(msg string, v ...any) {
 	ConsoleInstance.Fatalf(msg, v...)
 }
 
+// InfoUnformatted writes to stderr without prefix. Useful for interactive/conversational output.
+func InfoUnformatted(msg string) {
+	ConsoleInstance.InfoUnformatted(msg)
+}
+
+// InfoUnformattedf writes to stderr without prefix, with formatting.
+func InfoUnformattedf(msg string, v ...any) {
+	ConsoleInstance.InfoUnformattedf(msg, v...)
+}
+
 // Output a line to stdout. Useful for printing primary output of a command, or the output of a subcommand.
 func Output(s string) {
 	ConsoleInstance.Output(s)

@@ -31,8 +31,8 @@ func (p *GenericProvider) MatchesRegistry(host string) bool {
 }
 
 func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions) error {
-	console.Infof("Logging in to %s", console.Bold(opts.Host))
-	console.Info("")
+	console.InfoUnformattedf("Logging in to %s", opts.Host)
+	console.InfoUnformatted("")
 
 	// TODO: support non-interactive login with token stdin for generic registries
 	// Prompt for username
