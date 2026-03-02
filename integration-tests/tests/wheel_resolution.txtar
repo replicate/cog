@@ -10,7 +10,7 @@
 
 # Test 1: COG_SDK_WHEEL pointing to repo dist/ directory finds wheel
 env COG_SDK_WHEEL=$REPO_ROOT/dist
-cog build -t $TEST_IMAGE
+cog build --debug -t $TEST_IMAGE
 stderr 'Using local cog wheel:'
 
 # Test 2: Relative path that doesn't exist gives clear error  

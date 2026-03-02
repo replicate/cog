@@ -6,7 +6,7 @@ cog init
 
 # Build the initialized project
 cog build -t $TEST_IMAGE
-stderr 'Image built as cog-'
+stderr 'Image built as'
 
 # Verify the expected files were created
 exists cog.yaml
