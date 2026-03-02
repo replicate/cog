@@ -68,7 +68,7 @@ func initCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	console.Infof("\nDone! For next steps, check out the docs at https://cog.run/getting-started")
+	console.Successf("\nDone! For next steps, check out the docs at https://cog.run/getting-started")
 
 	return nil
 }
@@ -146,7 +146,7 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 		return fmt.Errorf("Error writing %s: %w", filePath, err)
 	}
 
-	console.Infof("✅ Created %s", console.Bold(filePath))
+	console.Successf("Created %s", console.Bold(filePath))
 	return nil
 }
 

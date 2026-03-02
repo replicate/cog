@@ -10,6 +10,16 @@ import (
 	"github.com/logrusorgru/aurora"
 )
 
+// Style controls the icon/color used for a log line, independent of level.
+type Style int
+
+const (
+	// StyleDefault uses the default icon for the log level.
+	StyleDefault Style = iota
+	// StyleSuccess uses a green ✓ icon.
+	StyleSuccess
+)
+
 // Console represents a standardized interface for console UI. It is designed to abstract:
 // - Writing main output
 // - Giving information to user
@@ -30,6 +40,12 @@ func (c *Console) Debug(msg string) {
 // Info tells the user what's going on.
 func (c *Console) Info(msg string) {
 	c.log(InfoLevel, msg)
+}
+
+// Success tells the user something completed successfully.
+// Displays at info level with a green ✓ prefix.
+func (c *Console) Success(msg string) {
+	c.logStyled(InfoLevel, StyleSuccess, msg)
 }
 
 // Warn tells the user that something might break.
@@ -56,6 +72,11 @@ func (c *Console) Debugf(msg string, v ...any) {
 // Info level message
 func (c *Console) Infof(msg string, v ...any) {
 	c.log(InfoLevel, fmt.Sprintf(msg, v...))
+}
+
+// Success level message
+func (c *Console) Successf(msg string, v ...any) {
+	c.logStyled(InfoLevel, StyleSuccess, fmt.Sprintf(msg, v...))
 }
 
 // Warn level message
@@ -92,6 +113,10 @@ func (c *Console) Bold(s string) string {
 }
 
 func (c *Console) log(level Level, msg string) {
+	c.logStyled(level, StyleDefault, msg)
+}
+
+func (c *Console) logStyled(level Level, style Style, msg string) {
 	if level < c.Level {
 		return
 	}
@@ -100,13 +125,18 @@ func (c *Console) log(level Level, msg string) {
 	formattedMsg := msg
 
 	if c.Color {
-		switch level {
-		case DebugLevel, InfoLevel:
-			prompt = " " + aurora.Faint("⚙  ").String()
-		case WarnLevel:
-			prompt = " " + aurora.Bold(aurora.Yellow("⚠ ")).String()
-		case ErrorLevel, FatalLevel:
-			prompt = " " + aurora.Bold(aurora.Red("✗ ")).String()
+		switch style {
+		case StyleSuccess:
+			prompt = " " + aurora.Bold(aurora.Green("✔ ")).String()
+		default:
+			switch level {
+			case DebugLevel, InfoLevel:
+				prompt = " " + aurora.Faint("⚙  ").String()
+			case WarnLevel:
+				prompt = " " + aurora.Bold(aurora.Yellow("⚠ ")).String()
+			case ErrorLevel, FatalLevel:
+				prompt = " " + aurora.Bold(aurora.Red("✗ ")).String()
+			}
 		}
 	}
 

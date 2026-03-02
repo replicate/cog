@@ -33,6 +33,11 @@ func Info(msg string) {
 	ConsoleInstance.Info(msg)
 }
 
+// Success level message.
+func Success(msg string) {
+	ConsoleInstance.Success(msg)
+}
+
 // Warn level message.
 func Warn(msg string) {
 	ConsoleInstance.Warn(msg)
@@ -56,6 +61,11 @@ func Debugf(msg string, v ...any) {
 // Info level message.
 func Infof(msg string, v ...any) {
 	ConsoleInstance.Infof(msg, v...)
+}
+
+// Success level message.
+func Successf(msg string, v ...any) {
+	ConsoleInstance.Successf(msg, v...)
 }
 
 // Warn level message.

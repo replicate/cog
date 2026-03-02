@@ -66,7 +66,7 @@ func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions)
 		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 
-	console.Infof("Login succeeded for %s", console.Bold(opts.Host))
+	console.Successf("Login succeeded for %s", console.Bold(opts.Host))
 	return nil
 }
 
@@ -74,7 +74,7 @@ func (p *GenericProvider) PostPush(ctx context.Context, opts provider.PushOption
 	// No special post-push handling for generic registries
 	// Just show a simple success message if push succeeded
 	if pushErr == nil {
-		console.Infof("Image %s pushed", console.Bold(opts.Image))
+		console.Successf("Image %s pushed", console.Bold(opts.Image))
 	}
 	return nil
 }
