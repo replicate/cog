@@ -261,7 +261,7 @@ func (p *Predictor) buildInputValidationErrorMessage(errorResponse *ValidationEr
 	}
 
 	return fmt.Errorf(
-		`The inputs you passed to cog %[1]s could not be validated:
+		`The inputs you passed could not be validated:
 
 %[2]s
 

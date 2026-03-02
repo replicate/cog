@@ -399,7 +399,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 
 	prediction, err := predictor.Predict(inputs, context)
 	if err != nil {
-		return fmt.Errorf("Failed to predict: %w", err)
+		return fmt.Errorf("Failed to run prediction: %w", err)
 	}
 
 	schema, err := predictor.GetSchema()
