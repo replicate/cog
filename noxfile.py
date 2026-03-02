@@ -23,15 +23,13 @@ TEST_DEPS = [
 def _find_compatible_wheel(pattern: str) -> str | None:
     """Find a wheel matching the current platform from dist/.
 
-    When multiple wheels exist (e.g. macOS + Linux), pick the one
-    compatible with the running platform instead of relying on
-    filesystem ordering.
+    Returns None when no wheels exist at all.  Raises RuntimeError when
+    wheels exist but none are compatible — that means the build produced
+    the wrong platform and should be fixed, not silently papered over.
     """
     wheels = glob.glob(pattern)
     if not wheels:
         return None
-    if len(wheels) == 1:
-        return wheels[0]
 
     system = platform.system().lower()
     machine = platform.machine().lower()
@@ -44,35 +42,35 @@ def _find_compatible_wheel(pattern: str) -> str | None:
     tag = platform_tags.get((system, machine))
     if tag:
         for whl in wheels:
-            if tag in whl:
+            if tag in whl or "none-any" in whl:
                 return whl
+        raise RuntimeError(
+            f"Found wheel(s) in dist/ but none compatible with {system}/{machine}:\n"
+            + "\n".join(f"  {w}" for w in wheels)
+            + "\nRun 'mise run build:coglet:wheel' to build a native wheel."
+        )
 
-    # Fallback: let pip figure it out
+    # Unknown platform — let pip figure it out
     return wheels[0]
 
 
 def _install_coglet(session: nox.Session) -> None:
-    """Install coglet wheel (required dependency).
-
-    Falls back to PyPI with --prerelease=allow since coglet
-    may only have pre-release versions available.
-    """
+    """Install coglet wheel (required dependency)."""
     whl = _find_compatible_wheel("dist/coglet-*.whl")
     if whl:
         session.install(whl)
     else:
-        session.install("--prerelease=allow", "coglet")
+        session.error(
+            "No coglet wheel found in dist/. Run 'mise run build:coglet:wheel' first."
+        )
 
 
 def _install_package(session: nox.Session) -> None:
-    """Install the package, using pre-built wheel if available."""
+    """Install the cog SDK and coglet dependency."""
     _install_coglet(session)
-    whl = _find_compatible_wheel("dist/cog-*.whl")
-    if whl:
-        session.install(whl)
-    else:
-        # Editable install
-        session.install("-e", ".")
+    # Always use editable install for the SDK so tests run against
+    # the working tree, not a stale wheel from a previous build.
+    session.install("-e", ".")
 
 
 @nox.session(python=PYTHON_VERSIONS)

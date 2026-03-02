@@ -148,8 +148,9 @@ run = [
 
 [tasks."build:coglet:wheel"]
 description = "Build coglet Python wheel (native platform)"
-sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
-outputs = ["dist/coglet-*.whl"]
+# No sources/outputs caching: the output glob dist/coglet-*.whl is too broad
+# and falsely matches cross-compiled wheels (e.g. linux-x64), causing skips.
+# Use --force if you need to bypass mise's staleness check.
 run = [
   { tasks = ["_setup_dist", "_setup_venv"] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml",
@@ -251,10 +252,12 @@ run = "cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude
 
 [tasks."test:python"]
 description = "Run Python SDK tests (latest supported Python)"
+depends = ["build:coglet:wheel"]
 run = "nox -s tests -p 3.13"
 
 [tasks."test:python:all"]
 description = "Run Python SDK tests on all supported Python versions"
+depends = ["build:coglet:wheel"]
 run = "nox -s tests"
 
 [tasks."test:coglet:python"]
