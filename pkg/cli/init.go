@@ -146,7 +146,7 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 		return fmt.Errorf("Error writing %s: %w", filePath, err)
 	}
 
-	console.Infof("✅ Created %s", filePath)
+	console.Infof("✅ Created %s", console.Bold(filePath))
 	return nil
 }
 

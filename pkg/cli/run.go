@@ -120,7 +120,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	console.Info("")
-	console.Infof("Running '%s' in Docker with the current directory mounted as a volume...", strings.Join(args, " "))
+	console.Infof("Running %s in Docker with the current directory mounted as a volume...", console.Bold(strings.Join(args, " ")))
 
 	err = docker.Run(ctx, dockerClient, runOptions)
 	// Only retry if we're using a GPU but the user didn't explicitly select a GPU with --gpus

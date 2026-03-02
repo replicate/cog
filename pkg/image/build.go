@@ -65,7 +65,7 @@ func Build(
 	annotations map[string]string,
 	dockerCommand command.Command,
 	client registry.Client) (string, error) {
-	console.Infof("Building Docker image from environment in cog.yaml as %s...", imageName)
+	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(imageName))
 
 	// remove bundled schema files that may be left from previous builds
 	_ = os.Remove(bundledSchemaFile)

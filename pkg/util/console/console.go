@@ -82,6 +82,15 @@ func (c *Console) Output(s string) {
 	_, _ = fmt.Fprintln(os.Stdout, s)
 }
 
+// Bold applies bold formatting to a string when color is enabled.
+// Use this to highlight dynamic values (image names, paths, URLs) in log messages.
+func (c *Console) Bold(s string) string {
+	if c.Color {
+		return aurora.Bold(s).String()
+	}
+	return s
+}
+
 func (c *Console) log(level Level, msg string) {
 	if level < c.Level {
 		return

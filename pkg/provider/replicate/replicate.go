@@ -75,7 +75,7 @@ func (p *ReplicateProvider) Login(ctx context.Context, opts provider.LoginOption
 		return err
 	}
 
-	console.Infof("You've successfully authenticated as %s! You can now use the '%s' registry.", username, opts.Host)
+	console.Infof("You've successfully authenticated as %s! You can now use the %s registry.", console.Bold(username), console.Bold(opts.Host))
 	return nil
 }
 
@@ -91,9 +91,9 @@ If the model already exists, you may be getting this error because you're not lo
 	}
 
 	// Success - show Replicate model URL
-	console.Infof("Image '%s' pushed", opts.Image)
+	console.Infof("Image %s pushed", console.Bold(opts.Image))
 	replicatePage := fmt.Sprintf("https://%s", strings.Replace(opts.Image, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
-	console.Infof("\nRun your model on Replicate:\n    %s", replicatePage)
+	console.Infof("\nRun your model on Replicate:\n    %s", console.Bold(replicatePage))
 
 	return nil
 }

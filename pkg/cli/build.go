@@ -97,7 +97,7 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	console.Infof("\nImage built as %s", m.ImageRef())
+	console.Infof("\nImage built as %s", console.Bold(m.ImageRef()))
 
 	return nil
 }

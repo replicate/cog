@@ -112,7 +112,7 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	// Push the model (image + optional weights)
-	console.Infof("\nPushing image '%s'...", m.ImageRef())
+	console.Infof("\nPushing image %s...", console.Bold(m.ImageRef()))
 
 	// Set up progress display using Docker's jsonmessage rendering. This uses the
 	// same cursor movement and progress display as `docker push`, which handles

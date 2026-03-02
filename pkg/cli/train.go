@@ -108,7 +108,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	}
 
 	console.Info("")
-	console.Infof("Starting Docker image %s...", imageName)
+	console.Infof("Starting Docker image %s...", console.Bold(imageName))
 
 	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
 		GPUs:    gpus,

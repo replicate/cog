@@ -237,7 +237,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	}
 
 	console.Info("")
-	console.Infof("Starting Docker image %s and running setup()...", imageName)
+	console.Infof("Starting Docker image %s and running setup()...", console.Bold(imageName))
 
 	// Automatically propagate RUST_LOG for Rust coglet debugging
 	env := envFlags

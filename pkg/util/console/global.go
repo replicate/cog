@@ -78,6 +78,11 @@ func Output(s string) {
 	ConsoleInstance.Output(s)
 }
 
+// Bold applies bold formatting to a string when color is enabled.
+func Bold(s string) string {
+	return ConsoleInstance.Bold(s)
+}
+
 // IsTTY checks if a file is a TTY or not. E.g. IsTTY(os.Stdin)
 func IsTTY(f *os.File) bool {
 	return isatty.IsTerminal(f.Fd())
