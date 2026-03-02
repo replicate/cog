@@ -91,7 +91,7 @@ func Build(
 	var schemaJSON []byte
 	switch {
 	case useStatic:
-		console.Info("Generating model schema...")
+		console.Debug("Generating model schema...")
 		data, err := generateStaticSchema(cfg, dir)
 		if err != nil {
 			return "", fmt.Errorf("image build failed: %w", err)
@@ -145,6 +145,7 @@ func Build(
 			Epoch:              &config.BuildSourceEpochTimestamp,
 			ContextDir:         dockercontext.StandardBuildDirectory,
 		}
+		console.Info("")
 		if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
@@ -237,6 +238,7 @@ func Build(
 				BuildContexts:      buildContexts,
 			}
 
+			console.Info("")
 			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 				return "", fmt.Errorf("Failed to build Docker image: %w", err)
 			}
@@ -249,6 +251,8 @@ func Build(
 	if skipLabels {
 		return tmpImageId, nil
 	}
+
+	console.Info("")
 
 	// --- Post-build legacy schema generation ---
 	// For SDK < 0.17.0 (or when static gen was not used), generate the schema
@@ -272,6 +276,7 @@ func Build(
 	}
 
 	console.Info("Adding labels to image...")
+	console.Info("")
 
 	// We used to set the cog_version and config labels in Dockerfile, because we didn't require running the
 	// built image to get those. But, the escaping of JSON inside a label inside a Dockerfile was gnarly, and
@@ -334,13 +339,13 @@ func Build(
 	if commit, err := gitHead(ctx, dir); commit != "" && err == nil {
 		labels["org.opencontainers.image.revision"] = commit
 	} else {
-		console.Info("Unable to determine Git commit")
+		console.Debug("Unable to determine Git commit")
 	}
 
 	if tag, err := gitTag(ctx, dir); tag != "" && err == nil {
 		labels["org.opencontainers.image.version"] = tag
 	} else {
-		console.Info("Unable to determine Git tag")
+		console.Debug("Unable to determine Git tag")
 	}
 
 	maps.Copy(labels, annotations)
