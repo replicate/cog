@@ -3,11 +3,15 @@ package console
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/logrusorgru/aurora"
+	"github.com/mattn/go-isatty"
+	"golang.org/x/term"
 )
 
 // Style controls the icon/color used for a log line, independent of level.
@@ -122,28 +126,35 @@ func (c *Console) logStyled(level Level, style Style, msg string) {
 	}
 
 	prompt := ""
-	formattedMsg := msg
+	// promptWidth is the visual width of the prompt (excluding ANSI codes).
+	promptWidth := 0
 
 	if c.Color {
 		switch style {
 		case StyleSuccess:
 			prompt = " " + aurora.Bold(aurora.Green("✔ ")).String()
+			promptWidth = 4 // " ✔ "
 		default:
 			switch level {
 			case DebugLevel, InfoLevel:
 				prompt = " " + aurora.Faint("⚙  ").String()
+				promptWidth = 4 // " ⚙  "
 			case WarnLevel:
 				prompt = " " + aurora.Bold(aurora.Yellow("⚠ ")).String()
+				promptWidth = 4 // " ⚠ "
 			case ErrorLevel, FatalLevel:
 				prompt = " " + aurora.Bold(aurora.Red("✗ ")).String()
+				promptWidth = 4 // " ✗ "
 			}
 		}
 	}
 
+	termWidth := stderrTerminalWidth()
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	for line := range strings.SplitSeq(formattedMsg, "\n") {
+	for line := range strings.SplitSeq(msg, "\n") {
 		if line == "" && (level == DebugLevel || level == InfoLevel) {
 			fmt.Fprintln(os.Stderr)
 			continue
@@ -151,7 +162,114 @@ func (c *Console) logStyled(level Level, style Style, msg string) {
 		if c.Color && level == DebugLevel {
 			line = aurora.Faint(line).String()
 		}
-		line = prompt + line
-		fmt.Fprintln(os.Stderr, line)
+
+		// Wrap long lines to terminal width.
+		if termWidth > 0 && promptWidth > 0 {
+			maxWidth := termWidth - promptWidth
+			if maxWidth > 0 {
+				wrapped := wrapLine(line, maxWidth)
+				for _, wl := range wrapped {
+					fmt.Fprintln(os.Stderr, prompt+wl)
+				}
+				continue
+			}
+		}
+
+		fmt.Fprintln(os.Stderr, prompt+line)
 	}
+}
+
+// stderrTerminalWidth returns the terminal width of stderr, or 0 if stderr
+// is not a terminal or the width cannot be determined.
+func stderrTerminalWidth() int {
+	fd := os.Stderr.Fd()
+	if !isatty.IsTerminal(fd) && !isatty.IsCygwinTerminal(fd) {
+		return 0
+	}
+	if fd > math.MaxInt {
+		return 0
+	}
+	w, _, err := term.GetSize(int(fd)) //nolint:gosec // bounded above
+	if err != nil || w <= 0 {
+		return 0
+	}
+	return w
+}
+
+// wrapLine wraps a single line of text to the given width, breaking on word
+// boundaries where possible. It operates on the visible text (which may contain
+// ANSI escape codes — these are counted as zero-width for wrapping purposes).
+func wrapLine(line string, maxWidth int) []string {
+	if visibleWidth(line) <= maxWidth {
+		return []string{line}
+	}
+
+	var lines []string
+	for len(line) > 0 {
+		if visibleWidth(line) <= maxWidth {
+			lines = append(lines, line)
+			break
+		}
+
+		// Find the byte position where we exceed maxWidth visible chars.
+		cutByte := findCutPoint(line, maxWidth)
+
+		// Try to break at a space before the cut point.
+		breakAt := strings.LastIndex(line[:cutByte], " ")
+		if breakAt <= 0 {
+			// No good break point; hard-break at cutByte.
+			breakAt = cutByte
+		}
+
+		lines = append(lines, line[:breakAt])
+		line = strings.TrimLeft(line[breakAt:], " ")
+	}
+	return lines
+}
+
+// visibleWidth returns the number of visible characters in a string,
+// ignoring ANSI escape sequences.
+func visibleWidth(s string) int {
+	width := 0
+	inEscape := false
+	for _, r := range s {
+		if inEscape {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			continue
+		}
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		width += utf8.RuneLen(r) // approximate: 1 for ASCII, may differ for wide chars
+		if r > 127 {
+			width = width - utf8.RuneLen(r) + 1 // count non-ASCII runes as width 1
+		}
+	}
+	return width
+}
+
+// findCutPoint returns the byte index in s where the visible width reaches maxWidth.
+func findCutPoint(s string, maxWidth int) int {
+	width := 0
+	inEscape := false
+	for i, r := range s {
+		if inEscape {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			continue
+		}
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		width++
+		if width >= maxWidth {
+			return i + utf8.RuneLen(r)
+		}
+	}
+	return len(s)
 }
