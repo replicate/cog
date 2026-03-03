@@ -3,6 +3,7 @@ package config
 import (
 	// blank import for embeds
 	_ "embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -277,7 +278,7 @@ func validateRequirementsFile(reqPath string, opts *validateOptions) error {
 	}
 
 	// Use the real filesystem
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+	if _, err := os.Stat(fullPath); errors.Is(err, os.ErrNotExist) {
 		return &ValidationError{
 			Field:   "build.python_requirements",
 			Value:   reqPath,
