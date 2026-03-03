@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -25,6 +26,12 @@ https://github.com/replicate/cog`,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if global.Debug {
 				console.SetLevel(console.DebugLevel)
+			}
+			if global.NoColor || !console.ShouldUseColor() {
+				console.SetColor(false)
+			}
+			if global.NoColor {
+				os.Setenv("NO_COLOR", "1") //nolint:errcheck,gosec // best-effort
 			}
 			cmd.SilenceUsage = true
 			if err := update.DisplayAndCheckForRelease(cmd.Context()); err != nil {
@@ -54,6 +61,7 @@ https://github.com/replicate/cog`,
 
 func setPersistentFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(&global.Debug, "debug", false, "Show debugging output")
+	cmd.PersistentFlags().BoolVar(&global.NoColor, "no-color", false, "Disable colored output")
 	cmd.PersistentFlags().BoolVar(&global.ProfilingEnabled, "profile", false, "Enable profiling")
 	cmd.PersistentFlags().Bool("version", false, "Show version of Cog")
 	cmd.PersistentFlags().StringVar(&global.ReplicateRegistryHost, "registry", global.ReplicateRegistryHost, "Registry host")
