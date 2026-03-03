@@ -186,6 +186,8 @@ COG_BINARY=dist/go/*/cog mise run test:integration
 7. Run `mise run docs:llm` to regenerate `docs/llms.txt` after changing `README.md` or any `docs/*.md` file
 8. Read the `./docs` directory and make sure the documentation is up to date
 
+**IMPORTANT:** Always run `mise run lint` (or the language-specific variant, e.g. `mise run lint:go`) before committing to catch linter errors early. CI will reject PRs that fail lint checks.
+
 ## Architecture
 
 ### CLI Architecture (Go)
