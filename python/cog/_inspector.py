@@ -22,7 +22,9 @@ from .model import BaseModel
 from .types import AsyncConcatenateIterator, ConcatenateIterator
 
 try:
-    from pydantic import BaseModel as PydanticBaseModel
+    from pydantic import (  # pyright: ignore[reportMissingImports]
+        BaseModel as PydanticBaseModel,
+    )
 except ImportError:
     PydanticBaseModel = None  # type: ignore[assignment,misc]
 
@@ -357,9 +359,10 @@ def _create_predictor_info(
             raise ValueError(f"missing type annotation for input: {name}")
         inputs[name] = _create_input_field(i, name, tpe, field_info)
 
-    output = _create_output_type(
-        type_hints.get("return", spec.annotations.get("return"))
-    )
+    return_type = type_hints.get("return", spec.annotations.get("return"))
+    if return_type is None:
+        raise ValueError("missing return type annotation for predict method")
+    output = _create_output_type(return_type)
     return adt.PredictorInfo(module_name, predictor_name, inputs, output)
 
 
