@@ -73,9 +73,10 @@ func Build(
 	}
 
 	// Determine whether to use the static schema generator (Go tree-sitter) or
-	// fall back to the legacy runtime path (boot container + python introspection).
+	// the legacy runtime path (boot container + python introspection).
 	//
-	// Static generation is used when:
+	// The legacy runtime path is the default. Static generation is opt-in via
+	// the COG_STATIC_SCHEMA=1 environment variable and additionally requires:
 	//   - Schema is not skipped and no --schema file is provided, AND
 	//   - The SDK version is >= 0.17.0 (or unpinned/latest/dev)
 	//
@@ -89,12 +90,20 @@ func Build(
 	var schemaJSON []byte
 	switch {
 	case useStatic:
-		console.Debug("Generating model schema...")
+		console.Debug("Generating model schema (static)...")
 		data, err := generateStaticSchema(cfg, dir)
 		if err != nil {
-			return "", fmt.Errorf("image build failed: %w", err)
+			var se *schema.SchemaError
+			if errors.As(err, &se) && se.Kind == schema.ErrUnresolvableType {
+				console.Warnf("Static schema generation failed: %s", err)
+				console.Warn("Falling back to legacy runtime schema generation...")
+				// leave schemaJSON nil — the post-build legacy path will handle it
+			} else {
+				return "", fmt.Errorf("image build failed: %w", err)
+			}
+		} else {
+			schemaJSON = data
 		}
-		schemaJSON = data
 	case !skipSchemaValidation && schemaFile != "":
 		console.Infof("Validating model schema from %s...", schemaFile)
 		data, err := os.ReadFile(schemaFile)
@@ -402,8 +411,16 @@ const staticSchemaGenMinSDKVersion = "0.17.0"
 // canUseStaticSchemaGen returns true if we should use the static schema
 // generator (Go tree-sitter) instead of the legacy runtime path.
 //
-// Returns false (use legacy) when the SDK version is explicitly pinned < 0.17.0.
+// Static generation is opt-in: requires COG_STATIC_SCHEMA=1 (or "true").
+// Even when opted in, returns false when the SDK version is explicitly
+// pinned < 0.17.0, since older SDKs use pydantic-based schemas that the
+// static parser cannot analyze.
 func canUseStaticSchemaGen(cfg *config.Config) bool {
+	env := os.Getenv("COG_STATIC_SCHEMA")
+	if env != "1" && env != "true" {
+		return false
+	}
+
 	sdkVersion := resolveSDKVersion(cfg)
 	if sdkVersion != "" {
 		base := sdkVersion
