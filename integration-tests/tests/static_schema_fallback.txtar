@@ -2,10 +2,13 @@
 # unresolvable output type, the build falls back to legacy runtime schema
 # generation instead of failing.
 #
-# The predictor returns numpy.ndarray, which the static parser cannot resolve
-# (numpy is in the known-external module list). The static parser emits
-# ErrUnresolvableType, and build.go catches it and falls through to the
-# legacy Docker-based schema generation path.
+# The predictor returns a BaseModel subclass imported from a local package
+# (mypackage/__init__.py). The static parser's moduleToFilePath() converts
+# "mypackage" to "mypackage.py" instead of "mypackage/__init__.py", so the
+# file isn't found and the name stays unresolved (ErrUnresolvableType).
+# The legacy Python inspector imports modules normally via Python's import
+# system, which handles __init__.py packages correctly, so schema generation
+# succeeds at runtime.
 
 # Opt in to static schema generation
 env COG_STATIC_SCHEMA=1
@@ -24,19 +27,18 @@ build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
 
+-- mypackage/__init__.py --
+from cog import BaseModel
+
+
+class Output(BaseModel):
+    text: str
+
 -- predict.py --
 from cog import BasePredictor
-
-
-class MyOutput:
-    """A plain class (not BaseModel) that the static parser cannot resolve."""
-    def __init__(self, text: str) -> None:
-        self.text = text
-
-    def __str__(self) -> str:
-        return self.text
+from mypackage import Output
 
 
 class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> MyOutput:
-        return MyOutput(text=prompt + " world")
+    def predict(self, prompt: str) -> Output:
+        return Output(text=prompt + " world")

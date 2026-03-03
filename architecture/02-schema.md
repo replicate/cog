@@ -53,6 +53,8 @@ COG_STATIC_SCHEMA=1 cog build -t my-model
 
 The static path requires SDK >= 0.17.0. When opted in, if the static parser encounters a type it cannot resolve, it **falls back to the legacy runtime path** automatically with a warning — so builds never fail due to static parser limitations.
 
+For local commands (`cog train`, `cog serve`, `cog predict`), schema generation is skipped unless `COG_STATIC_SCHEMA=1` is set. Coglet gracefully handles a missing schema file — it warns and accepts all input types. This is safe because these commands produce local-only images that don't need strict schema validation.
+
 ```mermaid
 flowchart LR
     subgraph source["Model Source"]
@@ -332,3 +334,8 @@ A simplified example showing a multi-file predictor with structured output:
 | `pkg/schema/generator.go` | Top-level `Generate()`, `GenerateCombined()`, `Parser` type |
 | `pkg/schema/errors.go` | Typed error kinds (`ErrUnresolvableType`, `ErrOptionalOutput`, etc.) |
 | `pkg/image/build.go` | `canUseStaticSchemaGen()` — opt-in gate, `generateStaticSchema()` — entry point, fallback to legacy on `ErrUnresolvableType` |
+| `pkg/image/openapi_schema.go` | `GenerateOpenAPISchema()` — legacy runtime path (boots container, runs `python -m cog.command.openapi_schema`) |
+| `python/cog/_adt.py` | Internal ADT types for Python-side predictor introspection |
+| `python/cog/_inspector.py` | Python-side predictor inspector (runtime introspection for legacy path) |
+| `python/cog/_schemas.py` | Python-side OpenAPI schema generation from inspected predictor info |
+| `python/cog/command/openapi_schema.py` | CLI entry point for `python -m cog.command.openapi_schema` (invoked by legacy runtime path) |
