@@ -21,6 +21,11 @@ from .input import FieldInfo
 from .model import BaseModel
 from .types import AsyncConcatenateIterator, ConcatenateIterator
 
+try:
+    from pydantic import BaseModel as PydanticBaseModel
+except ImportError:
+    PydanticBaseModel = None  # type: ignore[assignment,misc]
+
 
 def _check_parent(child: type, parent: type) -> bool:
     """Check if a type has a parent in its MRO."""
@@ -271,6 +276,17 @@ def _create_output_type(tpe: type) -> adt.OutputType:
         fields = {}
         for name, t in tpe.__annotations__.items():
             ft = adt.FieldType.from_type(t)
+            fields[name] = ft
+        return adt.OutputType(kind=adt.OutputKind.OBJECT, fields=fields)
+
+    if (
+        PydanticBaseModel is not None
+        and inspect.isclass(tpe)
+        and _check_parent(tpe, PydanticBaseModel)
+    ):
+        fields = {}
+        for name, field_info in tpe.model_fields.items():
+            ft = adt.FieldType.from_type(field_info.annotation)
             fields[name] = ft
         return adt.OutputType(kind=adt.OutputKind.OBJECT, fields=fields)
 

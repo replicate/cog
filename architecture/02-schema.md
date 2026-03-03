@@ -53,7 +53,7 @@ COG_STATIC_SCHEMA=1 cog build -t my-model
 
 The static path requires SDK >= 0.17.0. When opted in, if the static parser encounters a type it cannot resolve, it **falls back to the legacy runtime path** automatically with a warning — so builds never fail due to static parser limitations.
 
-For local commands (`cog train`, `cog serve`, `cog predict`), schema generation is skipped unless `COG_STATIC_SCHEMA=1` is set. Coglet gracefully handles a missing schema file — it warns and accepts all input types. This is safe because these commands produce local-only images that don't need strict schema validation.
+For local commands (`cog train`, `cog serve`, `cog predict`), the static path is always used regardless of the `COG_STATIC_SCHEMA` flag, because these commands return before the post-build legacy generation step — the CLI needs the schema to parse `-i` input flags.
 
 ```mermaid
 flowchart LR
