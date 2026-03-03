@@ -14,6 +14,32 @@ import (
 	"golang.org/x/term"
 )
 
+// ShouldUseColor returns true if color output should be enabled, based on
+// environment detection. It checks (in order):
+//   - NO_COLOR env var is set and non-empty → no color
+//   - COG_NO_COLOR env var is set and non-empty → no color
+//   - TERM=dumb → no color
+//   - stderr is not a TTY → no color
+//
+// This follows the NO_COLOR standard (https://no-color.org/) and common CLI
+// conventions. The --no-color flag is handled separately at the CLI layer.
+func ShouldUseColor() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if os.Getenv("COG_NO_COLOR") != "" {
+		return false
+	}
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	fd := os.Stderr.Fd()
+	if !isatty.IsTerminal(fd) && !isatty.IsCygwinTerminal(fd) {
+		return false
+	}
+	return true
+}
+
 // Style controls the icon/color used for a log line, independent of level.
 type Style int
 
