@@ -97,6 +97,8 @@ func push(cmd *cobra.Command, args []string) error {
 	resolver := model.NewResolver(dockerClient, regClient)
 
 	// Build the model
+	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(imageName))
+	console.Info("")
 	buildOpts := buildOptionsFromFlags(cmd, imageName, annotations)
 	m, err := resolver.Build(ctx, src, buildOpts)
 	if err != nil {
@@ -112,7 +114,7 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	// Push the model (image + optional weights)
-	console.Infof("\nPushing image '%s'...", m.ImageRef())
+	console.Infof("\nPushing image %s...", console.Bold(m.ImageRef()))
 
 	// Set up progress display using Docker's jsonmessage rendering. This uses the
 	// same cursor movement and progress display as `docker push`, which handles

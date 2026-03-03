@@ -609,7 +609,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 		case wheels.WheelSourceURL:
 			console.Infof("Using coglet wheel from URL: %s", cogletConfig.URL)
 		case wheels.WheelSourceFile:
-			console.Infof("Using local coglet wheel: %s", cogletConfig.Path)
+			console.Debugf("Using local coglet wheel: %s", cogletConfig.Path)
 		}
 
 		cogletIsPreRelease := sdkIsPreRelease ||
@@ -634,7 +634,7 @@ func (g *StandardGenerator) installCog() (string, error) {
 		console.Infof("Using cog wheel from URL: %s", wheelConfig.URL)
 		cogInstall, err = g.installWheelFromURL(wheelConfig.URL)
 	case wheels.WheelSourceFile:
-		console.Infof("Using local cog wheel: %s", wheelConfig.Path)
+		console.Debugf("Using local cog wheel: %s", wheelConfig.Path)
 		cogInstall, err = g.installWheelFromFile(wheelConfig.Path)
 	default:
 		return "", fmt.Errorf("unknown wheel source: %v", wheelConfig.Source)
