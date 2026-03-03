@@ -61,7 +61,7 @@ func Build(
 	precompile bool,
 	excludeSource bool,
 	skipSchemaValidation bool,
-	skipLabels bool,
+	baseImageOnly bool,
 	annotations map[string]string,
 	dockerCommand command.Command,
 	client registry.Client) (string, error) {
@@ -241,10 +241,10 @@ func Build(
 		}
 	}
 
-	// When skipLabels is true (cog run/predict/serve/train), skip the expensive
+	// When baseImageOnly is true (cog run/predict/serve/train), skip the expensive
 	// label-adding phase. This image is for local use only and won't be distributed,
 	// so we don't need metadata labels, pip freeze, schema bundling, or git info.
-	if skipLabels {
+	if baseImageOnly {
 		return tmpImageId, nil
 	}
 
