@@ -12,6 +12,7 @@ var (
 	Commit                = ""
 	BuildTime             = "none"
 	Debug                 = false
+	NoColor               = false
 	ProfilingEnabled      = false
 	ReplicateRegistryHost = getDefaultRegistryHost()
 
