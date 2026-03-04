@@ -8,6 +8,9 @@
 #   - BaseModel fields appear correctly in the OpenAPI schema label
 #   - Prediction works end-to-end with the multi-file setup
 
+# Opt in to static schema generation
+env COG_STATIC_SCHEMA=1
+
 # Build the image
 cog build -t $TEST_IMAGE
 

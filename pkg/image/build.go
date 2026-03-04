@@ -73,15 +73,21 @@ func Build(
 	}
 
 	// Determine whether to use the static schema generator (Go tree-sitter) or
-	// fall back to the legacy runtime path (boot container + python introspection).
+	// the legacy runtime path (boot container + python introspection).
 	//
-	// Static generation is used when:
-	//   - Schema is not skipped and no --schema file is provided, AND
-	//   - The SDK version is >= 0.17.0 (or unpinned/latest/dev)
+	// For `cog build`, static generation is opt-in via COG_STATIC_SCHEMA=1.
+	// The legacy runtime path (boot container + python -m cog.command.openapi_schema)
+	// remains the default for builds.
 	//
-	// Legacy generation is needed for SDK < 0.17.0 which uses pydantic-based
-	// schemas that cannot be statically analyzed.
-	useStatic := !skipSchemaValidation && schemaFile == "" && canUseStaticSchemaGen(cfg)
+	// For `cog train`, `cog predict`, and `cog serve` (skipLabels=true), the static
+	// path is always used because these paths return before the post-build legacy
+	// schema generation step. The CLI needs the schema to parse -i flags.
+	//
+	// In both cases, the SDK version must be >= 0.17.0 (or unpinned/latest/dev)
+	// since older SDKs use pydantic-based schemas that cannot be statically
+	// analyzed.
+	needsSchema := !skipSchemaValidation && schemaFile == ""
+	useStatic := needsSchema && (skipLabels || canUseStaticSchemaGen(cfg))
 
 	// --- Pre-build static schema generation ---
 	// When using the static path, generate schema BEFORE the Docker build so we
@@ -89,12 +95,25 @@ func Build(
 	var schemaJSON []byte
 	switch {
 	case useStatic:
-		console.Debug("Generating model schema...")
+		console.Debug("Generating model schema (static)...")
 		data, err := generateStaticSchema(cfg, dir)
-		if err != nil {
-			return "", fmt.Errorf("image build failed: %w", err)
+		if err == nil {
+			schemaJSON = data
+			break
 		}
-		schemaJSON = data
+
+		// For `cog build` only: fall back to the post-build legacy runtime
+		// schema generation which can handle types that require Python import
+		// (e.g. package __init__.py modules, pydantic v2 BaseModel subclasses).
+		var se *schema.SchemaError
+		if !skipLabels && errors.As(err, &se) && se.Kind == schema.ErrUnresolvableType {
+			console.Warnf("Static schema generation failed: %s", err)
+			console.Warn("Falling back to legacy runtime schema generation...")
+			// leave schemaJSON nil — the post-build legacy path will handle it
+			break
+		}
+
+		return "", fmt.Errorf("image build failed: %w", err)
 	case !skipSchemaValidation && schemaFile != "":
 		console.Infof("Validating model schema from %s...", schemaFile)
 		data, err := os.ReadFile(schemaFile)
@@ -401,11 +420,22 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 // introspection and must fall back to the legacy Docker-based path.
 const staticSchemaGenMinSDKVersion = "0.17.0"
 
-// canUseStaticSchemaGen returns true if we should use the static schema
-// generator (Go tree-sitter) instead of the legacy runtime path.
+// canUseStaticSchemaGen returns true if the user has opted in to static schema
+// generation via COG_STATIC_SCHEMA=1 (or "true") for `cog build`.
 //
-// Returns false (use legacy) when the SDK version is explicitly pinned < 0.17.0.
+// Note: `cog train` and `cog serve` always use static schema generation
+// regardless of this flag because they return before the post-build legacy
+// path — see the useStatic logic in Build().
+//
+// Even when opted in, returns false when the SDK version is explicitly
+// pinned < 0.17.0, since older SDKs use pydantic-based schemas that the
+// static parser cannot analyze.
 func canUseStaticSchemaGen(cfg *config.Config) bool {
+	env := strings.ToLower(os.Getenv("COG_STATIC_SCHEMA"))
+	if env != "1" && env != "true" {
+		return false
+	}
+
 	sdkVersion := resolveSDKVersion(cfg)
 	if sdkVersion != "" {
 		base := sdkVersion
