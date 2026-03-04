@@ -125,13 +125,13 @@ func push(cmd *cobra.Command, args []string) error {
 
 	pushErr := resolver.Push(ctx, m, model.PushOptions{
 		ImageProgressFn: func(prog model.PushProgress) {
-			// Phase transitions: show status-only messages
+			// Phase transitions: use console.Info for pretty CLI formatting
 			if prog.Phase != "" {
 				switch prog.Phase {
 				case model.PushPhaseExporting:
-					pw.WriteStatus("image", "Exporting image from Docker daemon...")
+					console.Infof("Exporting image from Docker daemon...")
 				case model.PushPhasePushing:
-					pw.WriteStatus("image", "Pushing layers...")
+					console.Infof("Pushing layers...")
 				}
 				return
 			}
