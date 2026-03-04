@@ -191,19 +191,6 @@
         }
       }
     },
-    "tests": {
-      "$id": "#/properties/tests",
-      "type": [
-        "array",
-        "null"
-      ],
-      "description": "A list of test cog commands to run.",
-      "additionalItems": false,
-      "items": {
-        "type": "object",
-        "additionalItems": true
-      }
-    },
     "environment": {
       "$id": "#/properties/properties/environment",
       "type": [
