@@ -686,8 +686,9 @@ func parseTypeFromString(s string) (schema.TypeAnnotation, bool) {
 	}
 
 	// Forward reference: quoted string like "MyType" or 'MyType'
-	if (strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"")) ||
-		(strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'")) {
+	if len(s) >= 2 &&
+		((strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"")) ||
+			(strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'"))) {
 		inner := s[1 : len(s)-1]
 		return parseTypeFromString(inner)
 	}
