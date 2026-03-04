@@ -42,6 +42,12 @@ impl std::fmt::Display for SlotId {
     }
 }
 
+/// Maximum payload size (input or output) that can be sent inline over the IPC
+/// slot socket. Payloads exceeding this threshold are spilled to disk. The
+/// `LengthDelimitedCodec` default frame limit is 8 MiB, so 6 MiB provides a
+/// 2 MiB safety margin for framing overhead and other message fields.
+pub const MAX_INLINE_IPC_SIZE: usize = 1024 * 1024 * 6; // 6MiB
+
 const MAX_WORKER_LOG_SIZE: usize = 1024 * 1024 * 4; // 4MIB
 const WORKER_LOG_TRUNCATE_NOTICE: &str = "[**** LOG LINE TRUNCATED AT 4 MiB ****]";
 
@@ -200,11 +206,61 @@ impl SlotOutcome {
 pub enum SlotRequest {
     Predict {
         id: String,
-        input: serde_json::Value,
+        /// Inline input payload (present when input fits within the IPC frame limit).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        input: Option<serde_json::Value>,
+        /// Path to a spill file containing the JSON input (present when input exceeds
+        /// `MAX_INLINE_IPC_SIZE`). The worker reads, deserializes, and deletes the file.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        input_file: Option<String>,
         /// Directory for writing file outputs (created by coglet before dispatch).
         /// Not included in API responses — internal transport detail.
         output_dir: String,
     },
+}
+
+impl SlotRequest {
+    /// Returns the prediction ID without consuming the request.
+    pub fn prediction_id(&self) -> &str {
+        match self {
+            SlotRequest::Predict { id, .. } => id,
+        }
+    }
+
+    /// Rehydrate the input from either inline value or spill file.
+    ///
+    /// Returns `(id, input, output_dir)`. If the input was spilled to disk,
+    /// reads the file, deserializes, and deletes it.
+    pub fn rehydrate_input(self) -> std::io::Result<(String, serde_json::Value, String)> {
+        match self {
+            SlotRequest::Predict {
+                id,
+                input: Some(value),
+                output_dir,
+                ..
+            } => Ok((id, value, output_dir)),
+            SlotRequest::Predict {
+                id,
+                input: None,
+                input_file: Some(path),
+                output_dir,
+            } => {
+                let bytes = std::fs::read(&path)?;
+                // Clean up spill file immediately — bytes are already in memory.
+                // Do this before parsing so the file is removed even if JSON is corrupt.
+                if let Err(e) = std::fs::remove_file(&path) {
+                    tracing::warn!(path = %path, error = %e, "Failed to remove input spill file");
+                }
+                let value: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                Ok((id, value, output_dir))
+            }
+            SlotRequest::Predict { .. } => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "SlotRequest::Predict has neither input nor input_file",
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -412,8 +468,20 @@ mod tests {
     fn slot_predict_serializes() {
         let req = SlotRequest::Predict {
             id: "pred_123".to_string(),
-            input: json!({"text": "hello"}),
-            output_dir: "/tmp/coglet/outputs/pred_123".to_string(),
+            input: Some(json!({"text": "hello"})),
+            input_file: None,
+            output_dir: "/tmp/coglet/predictions/pred_123/outputs".to_string(),
+        };
+        insta::assert_json_snapshot!(req);
+    }
+
+    #[test]
+    fn slot_predict_file_input_serializes() {
+        let req = SlotRequest::Predict {
+            id: "pred_456".to_string(),
+            input: None,
+            input_file: Some("/tmp/coglet/predictions/pred_456/inputs/spill_abc.json".to_string()),
+            output_dir: "/tmp/coglet/predictions/pred_456/outputs".to_string(),
         };
         insta::assert_json_snapshot!(req);
     }
@@ -514,9 +582,71 @@ mod tests {
     }
 
     #[test]
+    fn rehydrate_input_inline() {
+        let req = SlotRequest::Predict {
+            id: "p1".to_string(),
+            input: Some(json!({"text": "hello"})),
+            input_file: None,
+            output_dir: "/tmp/out".to_string(),
+        };
+        let (id, input, output_dir) = req.rehydrate_input().unwrap();
+        assert_eq!(id, "p1");
+        assert_eq!(input, json!({"text": "hello"}));
+        assert_eq!(output_dir, "/tmp/out");
+    }
+
+    #[test]
+    fn rehydrate_input_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let spill_path = dir.path().join("spill_test.json");
+        std::fs::write(&spill_path, r#"{"key":"value"}"#).unwrap();
+
+        let req = SlotRequest::Predict {
+            id: "p2".to_string(),
+            input: None,
+            input_file: Some(spill_path.to_str().unwrap().to_string()),
+            output_dir: "/tmp/out".to_string(),
+        };
+        let (id, input, output_dir) = req.rehydrate_input().unwrap();
+        assert_eq!(id, "p2");
+        assert_eq!(input, json!({"key": "value"}));
+        assert_eq!(output_dir, "/tmp/out");
+        // Spill file should be deleted
+        assert!(!spill_path.exists());
+    }
+
+    #[test]
+    fn rehydrate_input_neither_errors() {
+        let req = SlotRequest::Predict {
+            id: "p3".to_string(),
+            input: None,
+            input_file: None,
+            output_dir: "/tmp/out".to_string(),
+        };
+        let err = req.rehydrate_input().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rehydrate_input_corrupt_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let spill_path = dir.path().join("corrupt.json");
+        std::fs::write(&spill_path, "not valid json!!!").unwrap();
+
+        let req = SlotRequest::Predict {
+            id: "p4".to_string(),
+            input: None,
+            input_file: Some(spill_path.to_str().unwrap().to_string()),
+            output_dir: "/tmp/out".to_string(),
+        };
+        let err = req.rehydrate_input().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
     fn truncate_worker_log_truncates_long_messages() {
         let emoji = "🦀"; // 4-byte UTF-8 character
-        // known size of truncate target, add one more character
+                          // known size of truncate target, add one more character
         let count = 1024 * 1024 * 1024 * 4 / emoji.len() + 1;
         let message: String = truncate_worker_log(emoji.repeat(count));
         assert!(
@@ -529,7 +659,7 @@ mod tests {
     #[test]
     fn truncate_worker_log_does_not_truncate_short_messages() {
         let emoji = "🦀"; // 4-byte UTF-8 character
-        // known size of truncate target, add one more character
+                          // known size of truncate target, add one more character
         let count = 10;
         let message: String = truncate_worker_log(emoji.repeat(count));
         assert!(
