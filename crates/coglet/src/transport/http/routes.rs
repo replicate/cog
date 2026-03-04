@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
     routing::{get, post, put},
@@ -577,6 +577,13 @@ async fn cancel_training(
     cancel_prediction(State(service), Path(training_id)).await
 }
 
+/// Maximum HTTP request body size (100 MiB).
+///
+/// Axum defaults to 2 MiB which is too small for models that accept large
+/// inline inputs (e.g. base64-encoded images).  Inputs that exceed the IPC
+/// frame limit are automatically spilled to disk by `build_slot_request`.
+const MAX_HTTP_BODY_SIZE: usize = 100 * 1024 * 1024;
+
 pub fn routes(service: Arc<PredictionService>) -> Router {
     Router::new()
         .route("/health-check", get(health_check))
@@ -588,6 +595,7 @@ pub fn routes(service: Arc<PredictionService>) -> Router {
         .route("/trainings", post(create_training))
         .route("/trainings/{id}", put(create_training_idempotent))
         .route("/trainings/{id}/cancel", post(cancel_training))
+        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_SIZE))
         .with_state(service)
 }
 

@@ -646,7 +646,7 @@ mod tests {
     #[test]
     fn truncate_worker_log_truncates_long_messages() {
         let emoji = "🦀"; // 4-byte UTF-8 character
-                          // known size of truncate target, add one more character
+        // known size of truncate target, add one more character
         let count = 1024 * 1024 * 1024 * 4 / emoji.len() + 1;
         let message: String = truncate_worker_log(emoji.repeat(count));
         assert!(
@@ -659,7 +659,7 @@ mod tests {
     #[test]
     fn truncate_worker_log_does_not_truncate_short_messages() {
         let emoji = "🦀"; // 4-byte UTF-8 character
-                          // known size of truncate target, add one more character
+        // known size of truncate target, add one more character
         let count = 10;
         let message: String = truncate_worker_log(emoji.repeat(count));
         assert!(
