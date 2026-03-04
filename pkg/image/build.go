@@ -97,21 +97,23 @@ func Build(
 	case useStatic:
 		console.Debug("Generating model schema (static)...")
 		data, err := generateStaticSchema(cfg, dir)
-		if err != nil {
-			var se *schema.SchemaError
-			if !skipLabels && errors.As(err, &se) && se.Kind == schema.ErrUnresolvableType {
-				// For `cog build` only: fall back to the post-build legacy runtime
-				// schema generation which can handle types that require Python import
-				// (e.g. package __init__.py modules, pydantic v2 BaseModel subclasses).
-				console.Warnf("Static schema generation failed: %s", err)
-				console.Warn("Falling back to legacy runtime schema generation...")
-				// leave schemaJSON nil — the post-build legacy path will handle it
-			} else {
-				return "", fmt.Errorf("image build failed: %w", err)
-			}
-		} else {
+		if err == nil {
 			schemaJSON = data
+			break
 		}
+
+		// For `cog build` only: fall back to the post-build legacy runtime
+		// schema generation which can handle types that require Python import
+		// (e.g. package __init__.py modules, pydantic v2 BaseModel subclasses).
+		var se *schema.SchemaError
+		if !skipLabels && errors.As(err, &se) && se.Kind == schema.ErrUnresolvableType {
+			console.Warnf("Static schema generation failed: %s", err)
+			console.Warn("Falling back to legacy runtime schema generation...")
+			// leave schemaJSON nil — the post-build legacy path will handle it
+			break
+		}
+
+		return "", fmt.Errorf("image build failed: %w", err)
 	case !skipSchemaValidation && schemaFile != "":
 		console.Infof("Validating model schema from %s...", schemaFile)
 		data, err := os.ReadFile(schemaFile)
@@ -427,7 +429,7 @@ const staticSchemaGenMinSDKVersion = "0.17.0"
 // pinned < 0.17.0, since older SDKs use pydantic-based schemas that the
 // static parser cannot analyze.
 func canUseStaticSchemaGen(cfg *config.Config) bool {
-	env := os.Getenv("COG_STATIC_SCHEMA")
+	env := strings.ToLower(os.Getenv("COG_STATIC_SCHEMA"))
 	if env != "1" && env != "true" {
 		return false
 	}

@@ -166,6 +166,18 @@ func TestCanUseStaticSchemaGen(t *testing.T) {
 			want:   true,
 		},
 		{
+			name:   "enabled when env is True (mixed case)",
+			cfg:    cfgWithSDK("0.18.0"),
+			envVar: "True",
+			want:   true,
+		},
+		{
+			name:   "enabled when env is TRUE (upper case)",
+			cfg:    cfgWithSDK("0.18.0"),
+			envVar: "TRUE",
+			want:   true,
+		},
+		{
 			name:   "disabled for old SDK even when opted in",
 			cfg:    cfgWithSDK("0.16.12"),
 			envVar: "1",
