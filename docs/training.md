@@ -13,7 +13,7 @@ If you've used Cog before, you've probably seen the [Predictor](./python.md) cla
 
 ```yaml
 build:
-  python_version: "3.10"
+  python_version: "3.13"
 train: "train.py:train"
 ```
 
@@ -43,7 +43,7 @@ You can also use classes if you want to run many model trainings and save on set
 
 ```yaml
 build:
-  python_version: "3.10"
+  python_version: "3.13"
 train: "train.py:Trainer"
 ```
 

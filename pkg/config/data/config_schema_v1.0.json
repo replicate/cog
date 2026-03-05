@@ -30,7 +30,7 @@
             "string",
             "number"
           ],
-          "description": "The minor (`3.8`) or patch (`3.8.1`) version of Python to use."
+          "description": "The minor (`3.13`) or patch (`3.13.1`) version of Python to use."
         },
         "python_packages": {
           "$id": "#/properties/build/properties/python_packages",
