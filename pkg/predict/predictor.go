@@ -75,15 +75,16 @@ func NewPredictor(ctx context.Context, runOptions command.RunOptions, isTrain bo
 func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout time.Duration) error {
 	var err error
 	containerPort := 5000
+	hostIP := "127.0.0.1"
 
-	p.runOptions.Ports = append(p.runOptions.Ports, command.Port{HostPort: 0, ContainerPort: containerPort})
+	p.runOptions.Ports = append(p.runOptions.Ports, command.Port{HostPort: 0, ContainerPort: containerPort, HostIP: hostIP})
 
 	p.containerID, err = docker.RunDaemon(ctx, p.dockerClient, p.runOptions, logsWriter)
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
 
-	p.port, err = docker.GetHostPortForContainer(ctx, p.dockerClient, p.containerID, containerPort)
+	p.port, err = docker.GetHostPortForContainer(ctx, p.dockerClient, p.containerID, containerPort, hostIP)
 	if err != nil {
 		return fmt.Errorf("Failed to determine container port: %w", err)
 	}

@@ -69,6 +69,7 @@ type RunOptions struct {
 type Port struct {
 	HostPort      int
 	ContainerPort int
+	HostIP        string // Host IP to bind to. Defaults to "127.0.0.1" if empty.
 }
 
 type Volume struct {
