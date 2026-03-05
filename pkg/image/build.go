@@ -258,22 +258,21 @@ func Build(
 		}
 	}
 
-	// When skipLabels is true (cog run/predict/serve/train), skip the expensive
-	// label-adding phase. This image is for local use only and won't be distributed,
-	// so we don't need metadata labels, pip freeze, schema bundling, or git info.
-	if skipLabels {
-		return tmpImageId, nil
-	}
-
-	console.Info("")
-
 	// --- Post-build legacy schema generation ---
 	// For SDK < 0.17.0 (or when static gen was not used), generate the schema
 	// by running the built image with python -m cog.command.openapi_schema.
+	// This must run before the skipLabels early return so that cog train/predict/serve
+	// have a schema available for input validation and -i flag parsing.
 	if len(schemaJSON) == 0 && !skipSchemaValidation {
 		console.Info("Validating model schema...")
 		enableGPU := cfg.Build != nil && cfg.Build.GPU
-		legacySchema, err := GenerateOpenAPISchema(ctx, dockerCommand, tmpImageId, enableGPU)
+		// When excludeSource is true (cog serve/predict/train), /src was not
+		// COPYed into the image, so volume-mount the project directory.
+		sourceDir := ""
+		if excludeSource {
+			sourceDir = dir
+		}
+		legacySchema, err := GenerateOpenAPISchema(ctx, dockerCommand, tmpImageId, enableGPU, sourceDir)
 		if err != nil {
 			return "", fmt.Errorf("Failed to get type signature: %w", err)
 		}
@@ -286,6 +285,28 @@ func Build(
 		if err := writeAndValidateSchema(schemaJSON); err != nil {
 			return "", err
 		}
+	}
+
+	// When skipLabels is true (cog run/predict/serve/train), skip the expensive
+	// label-adding phase. This image is for local use only and won't be distributed,
+	// so we don't need metadata labels, pip freeze, or git info.
+	// We still need the schema bundled, so do a minimal second build to add it.
+	if skipLabels {
+		if len(schemaJSON) > 0 {
+			// Use trailing "/" on the destination so Docker creates the .cog/
+			// directory even in ExcludeSource images where COPY . /src was
+			// skipped and .cog/ does not yet exist.
+			schemaDockerfile := fmt.Sprintf("FROM %s\nCOPY %s .cog/\n", tmpImageId, bundledSchemaFile)
+			buildOpts := command.ImageBuildOptions{
+				DockerfileContents: schemaDockerfile,
+				ImageName:          tmpImageId,
+				ProgressOutput:     progressOutput,
+			}
+			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
+				return "", fmt.Errorf("Failed to bundle schema into image: %w", err)
+			}
+		}
+		return tmpImageId, nil
 	}
 
 	console.Info("Adding labels to image...")
