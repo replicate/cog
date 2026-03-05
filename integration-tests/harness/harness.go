@@ -491,7 +491,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	path := args[1]
 	var body string
 	if len(args) > 2 {
-		body := os.Expand(args[2], ts.Getenv)
+		body = os.Expand(args[2], ts.Getenv)
 		if strings.HasPrefix(body, "@") {
 			filename := body[1:]
 			data, err := os.ReadFile(ts.MkAbs(filename))
