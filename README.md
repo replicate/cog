@@ -14,8 +14,6 @@ You can deploy your packaged model to your own infrastructure, or to [Replicate]
 
 - 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
 
-- 🥞 **Automatic queue worker.** Long-running deep learning models or batch processing is best architected with a queue. Cog models do this out of the box. Redis is currently supported, with more in the pipeline.
-
 - 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
 
 ## How it works
@@ -28,7 +26,7 @@ build:
   system_packages:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```

@@ -14,8 +14,6 @@ You can deploy your packaged model to your own infrastructure, or to [Replicate]
 
 - 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
 
-- 🥞 **Automatic queue worker.** Long-running deep learning models or batch processing is best architected with a queue. Cog models do this out of the box. Redis is currently supported, with more in the pipeline.
-
 - 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
 
 ## How it works
@@ -28,7 +26,7 @@ build:
   system_packages:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
@@ -683,7 +681,7 @@ For example:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 ```
 
@@ -762,7 +760,7 @@ Next, add the line `predict: "predict.py:Predictor"` to your `cog.yaml`, so it l
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
@@ -870,7 +868,7 @@ The first thing you need to do is create a file called `cog.yaml`:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
 ```
 
 Then, you can run any command inside this environment. For example, enter
@@ -947,7 +945,7 @@ Then update `cog.yaml` to look like this:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
@@ -1307,7 +1305,7 @@ Content-Type: application/json
     "version": {
         "coglet": "0.17.0",
         "cog": "0.14.0",
-        "python": "3.12.0"
+        "python": "3.13.0"
     }
 }
 ```
@@ -2215,7 +2213,7 @@ If you've used Cog before, you've probably seen the [Predictor](./python.md) cla
 
 ```yaml
 build:
-  python_version: "3.10"
+  python_version: "3.13"
 train: "train.py:train"
 ```
 
@@ -2245,7 +2243,7 @@ You can also use classes if you want to run many model trainings and save on set
 
 ```yaml
 build:
-  python_version: "3.10"
+  python_version: "3.13"
 train: "train.py:Trainer"
 ```
 
@@ -2466,6 +2464,7 @@ wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/
 sudo mv cuda-wsl-ubuntu.pin /etc/apt/preferences.d/cuda-repository-pin-600
 wget https://developer.download.nvidia.com/compute/cuda/11.7.0/local_installers/cuda-repo-wsl-ubuntu-11-7-local_11.7.0-1_amd64.deb
 sudo dpkg -i cuda-repo-wsl-ubuntu-11-7-local_11.7.0-1_amd64.deb
+sudo cp /var/cuda-repo-wsl-ubuntu-11-7-local/cuda-B81839D3-keyring.gpg /usr/share/keyrings/
 sudo apt-get update
 sudo apt-get -y install cuda-toolkit-11-7
 ```
@@ -2559,7 +2558,7 @@ It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predic
 
 ```yaml
 build:
-  python_version: "3.11"
+  python_version: "3.13"
   python_requirements: requirements.txt
   system_packages:
     - "ffmpeg"
@@ -2661,11 +2660,11 @@ Your `cog.yaml` file can set either `python_packages` or `python_requirements`, 
 
 ### `python_version`
 
-The minor (`3.11`) or patch (`3.11.1`) version of Python to use. For example:
+The minor (`3.13`) or patch (`3.13.1`) version of Python to use. For example:
 
 ```yaml
 build:
-  python_version: "3.11.1"
+  python_version: "3.13.1"
 ```
 
 Cog supports Python 3.10, 3.11, 3.12, and 3.13. If you don't define a version, Cog will use the latest version of Python 3.13 or a version of Python that is compatible with the versions of PyTorch or TensorFlow you specify.
@@ -2707,7 +2706,7 @@ Pin the version of the cog Python SDK installed in the container. Accepts a [PEP
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   sdk_version: "0.18.0"
 ```
 
