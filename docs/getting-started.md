@@ -58,7 +58,7 @@ The first thing you need to do is create a file called `cog.yaml`:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
 ```
 
 Then, you can run any command inside this environment. For example, enter
@@ -135,7 +135,7 @@ Then update `cog.yaml` to look like this:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```

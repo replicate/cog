@@ -36,7 +36,7 @@ For example:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 ```
 
@@ -115,7 +115,7 @@ Next, add the line `predict: "predict.py:Predictor"` to your `cog.yaml`, so it l
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
