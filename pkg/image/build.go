@@ -75,19 +75,17 @@ func Build(
 	// Determine whether to use the static schema generator (Go tree-sitter) or
 	// the legacy runtime path (boot container + python introspection).
 	//
-	// For `cog build`, static generation is opt-in via COG_STATIC_SCHEMA=1.
+	// Static generation is opt-in via COG_STATIC_SCHEMA=1 for all commands.
 	// The legacy runtime path (boot container + python -m cog.command.openapi_schema)
-	// remains the default for builds.
+	// remains the default for `cog build`. For `cog train`, `cog predict`, and
+	// `cog serve` (skipLabels=true), no schema is generated unless
+	// COG_STATIC_SCHEMA=1 is set, since these paths return before the post-build
+	// legacy schema generation step.
 	//
-	// For `cog train`, `cog predict`, and `cog serve` (skipLabels=true), the static
-	// path is always used because these paths return before the post-build legacy
-	// schema generation step. The CLI needs the schema to parse -i flags.
-	//
-	// In both cases, the SDK version must be >= 0.17.0 (or unpinned/latest/dev)
-	// since older SDKs use pydantic-based schemas that cannot be statically
-	// analyzed.
+	// The SDK version must be >= 0.17.0 (or unpinned/latest/dev) since older
+	// SDKs use pydantic-based schemas that cannot be statically analyzed.
 	needsSchema := !skipSchemaValidation && schemaFile == ""
-	useStatic := needsSchema && (skipLabels || canUseStaticSchemaGen(cfg))
+	useStatic := needsSchema && canUseStaticSchemaGen(cfg)
 
 	// --- Pre-build static schema generation ---
 	// When using the static path, generate schema BEFORE the Docker build so we
@@ -421,11 +419,7 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 const staticSchemaGenMinSDKVersion = "0.17.0"
 
 // canUseStaticSchemaGen returns true if the user has opted in to static schema
-// generation via COG_STATIC_SCHEMA=1 (or "true") for `cog build`.
-//
-// Note: `cog train` and `cog serve` always use static schema generation
-// regardless of this flag because they return before the post-build legacy
-// path — see the useStatic logic in Build().
+// generation via COG_STATIC_SCHEMA=1 (or "true").
 //
 // Even when opted in, returns false when the SDK version is explicitly
 // pinned < 0.17.0, since older SDKs use pydantic-based schemas that the
