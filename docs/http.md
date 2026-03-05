@@ -258,7 +258,7 @@ Content-Type: application/json
     "version": {
         "coglet": "0.17.0",
         "cog": "0.14.0",
-        "python": "3.12.0"
+        "python": "3.13.0"
     }
 }
 ```

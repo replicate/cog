@@ -6,7 +6,7 @@ It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predic
 
 ```yaml
 build:
-  python_version: "3.11"
+  python_version: "3.13"
   python_requirements: requirements.txt
   system_packages:
     - "ffmpeg"
@@ -108,11 +108,11 @@ Your `cog.yaml` file can set either `python_packages` or `python_requirements`, 
 
 ### `python_version`
 
-The minor (`3.11`) or patch (`3.11.1`) version of Python to use. For example:
+The minor (`3.13`) or patch (`3.13.1`) version of Python to use. For example:
 
 ```yaml
 build:
-  python_version: "3.11.1"
+  python_version: "3.13.1"
 ```
 
 Cog supports Python 3.10, 3.11, 3.12, and 3.13. If you don't define a version, Cog will use the latest version of Python 3.13 or a version of Python that is compatible with the versions of PyTorch or TensorFlow you specify.
@@ -154,7 +154,7 @@ Pin the version of the cog Python SDK installed in the container. Accepts a [PEP
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   sdk_version: "0.18.0"
 ```
 
