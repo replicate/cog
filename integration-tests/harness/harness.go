@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/rogpeppe/go-internal/testscript"
 
 	"github.com/replicate/cog/pkg/registry"
@@ -247,6 +248,7 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 		// Registry and OCI bundle testing commands
 		NewCommand("registry-start", h.cmdRegistryStart),
 		NewCommand("registry-inspect", h.cmdRegistryInspect),
+		NewCommand("registry-seed", h.cmdRegistrySeed),
 		NewCommand("docker-push", h.cmdDockerPush),
 		NewCommand("mock-weights", h.cmdMockWeights),
 
@@ -884,6 +886,61 @@ func (h *Harness) stopRegistryByWorkDir(workDir string) {
 	if info.cleanup != nil {
 		info.cleanup()
 	}
+}
+
+// cmdRegistrySeed copies an image into the test registry under a new repository:tag.
+// The source can be a local reference (relative to $TEST_REGISTRY) or an absolute
+// reference to an external registry (e.g., docker.io/library/python:3.12-slim).
+// The destination is always relative to $TEST_REGISTRY.
+//
+// Usage: registry-seed <source> <dest-repo:tag>
+// Examples:
+//
+//	registry-seed alpine:latest cog-base:cuda11.8-python3.10-torch2.0.1
+//	registry-seed docker.io/library/python:3.12-slim cog-base:python3.12
+func (h *Harness) cmdRegistrySeed(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("registry-seed: does not support negation")
+	}
+	if len(args) < 2 {
+		ts.Fatalf("registry-seed: usage: registry-seed <source> <dest-repo:tag>")
+	}
+
+	src := os.Expand(args[0], ts.Getenv)
+	dst := os.Expand(args[1], ts.Getenv)
+
+	testRegistry := ts.Getenv("TEST_REGISTRY")
+	if testRegistry == "" {
+		ts.Fatalf("registry-seed: TEST_REGISTRY not set (call registry-start first)")
+	}
+
+	// If the source looks like an absolute reference (contains a registry host
+	// with a dot, e.g. "docker.io/library/python:3.12-slim"), use it as-is.
+	// Otherwise treat it as relative to the test registry.
+	srcRef := src
+	if !isAbsoluteImageRef(src) {
+		srcRef = testRegistry + "/" + src
+	}
+	dstRef := testRegistry + "/" + dst
+
+	if err := crane.Copy(srcRef, dstRef, crane.Insecure); err != nil {
+		ts.Fatalf("registry-seed: failed to copy %s to %s: %v", srcRef, dstRef, err)
+	}
+
+	ts.Logf("registry-seed: copied %s to %s", srcRef, dstRef)
+}
+
+// isAbsoluteImageRef returns true if ref looks like it contains an explicit
+// registry host (e.g. "docker.io/library/python:3.12-slim" or
+// "ghcr.io/foo/bar:latest"). It checks whether the part before the first
+// slash contains a dot or a colon (port), which distinguishes a registry
+// host from a simple repository name like "alpine:latest".
+func isAbsoluteImageRef(ref string) bool {
+	host, _, ok := strings.Cut(ref, "/")
+	if !ok {
+		return false
+	}
+	return strings.Contains(host, ".") || strings.Contains(host, ":")
 }
 
 // cmdRegistryInspect inspects a registry manifest and outputs JSON.

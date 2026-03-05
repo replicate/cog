@@ -300,7 +300,9 @@ func Build(
 	if cogBaseImageName != "" {
 		labels[global.LabelNamespace+"cog-base-image-name"] = cogBaseImageName
 
-		ref, err := name.ParseReference(cogBaseImageName)
+		// name.Insecure allows HTTP fallback for local/test registries,
+		// consistent with ParseReference calls in pkg/registry/.
+		ref, err := name.ParseReference(cogBaseImageName, name.Insecure)
 		if err != nil {
 			return "", fmt.Errorf("Failed to parse cog base image reference: %w", err)
 		}
