@@ -126,6 +126,32 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 	require.Equal(t, "/path/to/weights.lock", result.WeightsLockPath)
 }
 
+func TestBuildOptions_WithDefaults_DevModeUsesBaseSuffix(t *testing.T) {
+	src := &Source{
+		Config:     &config.Config{Build: &config.Build{}},
+		ProjectDir: "/path/to/my-project",
+	}
+
+	// Dev-mode builds (BaseImageOnly=true) should get "-base" suffix
+	opts := BuildOptions{BaseImageOnly: true}
+	opts = opts.WithDefaults(src)
+
+	require.Equal(t, "cog-my-project-base", opts.ImageName)
+}
+
+func TestBuildOptions_WithDefaults_DevModePreservesExplicitImageName(t *testing.T) {
+	src := &Source{
+		Config:     &config.Config{Build: &config.Build{}},
+		ProjectDir: "/path/to/my-project",
+	}
+
+	// Explicit image name should be preserved even in dev mode
+	opts := BuildOptions{ImageName: "my-custom-image", BaseImageOnly: true}
+	opts = opts.WithDefaults(src)
+
+	require.Equal(t, "my-custom-image", opts.ImageName)
+}
+
 func TestBuildOptions_WeightsLockPath(t *testing.T) {
 	opts := BuildOptions{
 		WeightsLockPath: "/custom/weights.lock",

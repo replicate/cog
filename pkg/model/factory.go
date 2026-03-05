@@ -56,7 +56,7 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 		opts.Precompile,
 		opts.ExcludeSource,
 		opts.SkipSchemaValidation,
-		opts.SkipLabels,
+		opts.BaseImageOnly,
 		opts.Annotations,
 		f.docker,
 		f.registry,
