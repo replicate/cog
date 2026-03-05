@@ -491,17 +491,15 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	path := args[1]
 	var body string
 	if len(args) > 2 {
-		raw := os.Expand(args[2], ts.Getenv)
-		if strings.HasPrefix(raw, "@") {
-			filename := raw[1:]
+		body := os.Expand(args[2], ts.Getenv)
+		if strings.HasPrefix(body, "@") {
+			filename := body[1:]
 			data, err := os.ReadFile(ts.MkAbs(filename))
 			if err != nil {
 				ts.Fatalf("curl: failed to read body file %q: %v", filename, err)
 			}
 			body = string(data)
-		} else {
-			body = raw
-		}
+		} 
 	}
 
 	// Retry settings
