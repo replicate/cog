@@ -462,7 +462,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 //	curl -H Prefer:respond-async POST /predictions '{"input":{}}'
 func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) < 2 {
-		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body]")
+		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body | @file]")
 	}
 
 	// Parse -H flags for extra headers
@@ -481,7 +481,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	}
 
 	if len(args) < 2 {
-		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body]")
+		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body | @file]")
 	}
 
 	serverURL := ts.Getenv("SERVER_URL")
@@ -494,6 +494,14 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	var body string
 	if len(args) > 2 {
 		body = os.Expand(args[2], ts.Getenv)
+		if strings.HasPrefix(body, "@") {
+			filename := body[1:]
+			data, err := os.ReadFile(ts.MkAbs(filename))
+			if err != nil {
+				ts.Fatalf("curl: failed to read body file %q: %v", filename, err)
+			}
+			body = string(data)
+		} 
 	}
 
 	// Retry settings

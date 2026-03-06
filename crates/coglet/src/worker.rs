@@ -132,8 +132,8 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
 
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
-    ControlRequest, ControlResponse, FileOutputKind, LogSource, MetricMode, SlotId, SlotOutcome,
-    SlotRequest, SlotResponse,
+    ControlRequest, ControlResponse, FileOutputKind, LogSource, MAX_INLINE_IPC_SIZE, MetricMode,
+    SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
 use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
@@ -239,8 +239,6 @@ impl SlotSender {
     }
 }
 
-const MAX_INLINE_OUTPUT_SIZE: usize = 1024 * 1024 * 6; // 6MiB
-
 /// Build an output message, spilling to disk if larger than the IPC frame limit.
 fn build_output_message(
     output_dir: &std::path::Path,
@@ -249,7 +247,7 @@ fn build_output_message(
     let serialized =
         serde_json::to_vec(&output).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    if serialized.len() > MAX_INLINE_OUTPUT_SIZE {
+    if serialized.len() > MAX_INLINE_IPC_SIZE {
         let path = output_dir.join(format!("spill_{}.json", uuid::Uuid::new_v4()));
         std::fs::write(&path, &serialized)?;
         let filename = path
@@ -712,8 +710,12 @@ pub async fn run_worker<H: PredictHandler>(
                     continue;
                 }
 
-                match request {
-                    SlotRequest::Predict { id, input, output_dir } => {
+                // Extract the prediction ID before consuming the request, so we
+                // can report a failure even if rehydration itself fails.
+                let prediction_id = request.prediction_id().to_string();
+
+                match request.rehydrate_input() {
+                    Ok((id, input, output_dir)) => {
                         tracing::trace!(%slot_id, %id, "Prediction request received");
                         slot_busy.insert(slot_id, true);
 
@@ -738,6 +740,21 @@ pub async fn run_worker<H: PredictHandler>(
                             ).await;
                             let _ = completion_tx.send(completion).await;
                         });
+                    }
+                    Err(e) => {
+                        tracing::error!(%slot_id, %prediction_id, error = %e, "Failed to rehydrate input");
+                        // Send a failure response so the prediction doesn't hang forever.
+                        if let Some(writer) = slot_writers.get(&slot_id) {
+                            let mut w = writer.lock().await;
+                            let fail_msg = SlotResponse::Failed {
+                                id: prediction_id,
+                                error: format!("Failed to rehydrate input: {}", e),
+                            };
+                            if let Err(send_err) = w.send(fail_msg).await {
+                                tracing::error!(%slot_id, error = %send_err, "Failed to send rehydrate error response");
+                            }
+                        }
+                        let _ = completion_tx.send(SlotCompletion::idle(slot_id)).await;
                     }
                 }
             }

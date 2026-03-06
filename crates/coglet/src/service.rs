@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use dashmap::DashMap;
 use tokio::sync::{RwLock, watch};
 
-use crate::bridge::protocol::SlotRequest;
+use crate::bridge::protocol::{MAX_INLINE_IPC_SIZE, SlotRequest};
 use crate::health::{Health, SetupResult};
 use crate::input_validation::InputValidator;
 use crate::orchestrator::{HealthcheckResult, Orchestrator};
@@ -450,19 +450,26 @@ impl PredictionService {
             .register_prediction(slot_id, Arc::clone(&prediction_arc), idle_tx)
             .await;
 
-        // Create per-prediction output dir for file-based outputs
-        let output_dir = std::path::PathBuf::from("/tmp/coglet/outputs").join(&prediction_id);
+        // Create per-prediction dirs for file-based inputs/outputs
+        let prediction_dir =
+            std::path::PathBuf::from("/tmp/coglet/predictions").join(&prediction_id);
+        let output_dir = prediction_dir.join("outputs");
+        let input_dir = prediction_dir.join("inputs");
         std::fs::create_dir_all(&output_dir)
             .map_err(|e| PredictionError::Failed(format!("Failed to create output dir: {}", e)))?;
+        std::fs::create_dir_all(&input_dir)
+            .map_err(|e| PredictionError::Failed(format!("Failed to create input dir: {}", e)))?;
 
-        let request = SlotRequest::Predict {
-            id: prediction_id.clone(),
+        let request = build_slot_request(
+            prediction_id.clone(),
             input,
-            output_dir: output_dir
+            output_dir
                 .to_str()
                 .expect("output dir path is valid UTF-8")
                 .to_string(),
-        };
+            &input_dir,
+        )
+        .map_err(|e| PredictionError::Failed(format!("Failed to build slot request: {}", e)))?;
 
         // permit_mut returns None if permit isn't InUse (shouldn't happen here)
         let permit = slot
@@ -584,6 +591,45 @@ impl PredictionService {
 
     pub fn shutdown_rx(&self) -> watch::Receiver<bool> {
         self.shutdown_rx.clone()
+    }
+}
+
+/// Build a `SlotRequest::Predict`, spilling the input to disk if it exceeds
+/// `MAX_INLINE_IPC_SIZE`. This prevents IPC frame overflow on the slot socket.
+///
+/// NOTE: The input is serialized here to check its size against the threshold.
+/// For the inline path the original `Value` is kept and will be serialized again
+/// by `JsonCodec` — a double-serialize trade-off we accept to keep the codec
+/// generic. The spill path writes the pre-serialized bytes directly.
+fn build_slot_request(
+    id: String,
+    input: serde_json::Value,
+    output_dir: String,
+    input_dir: &std::path::Path,
+) -> std::io::Result<SlotRequest> {
+    let serialized = serde_json::to_vec(&input)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+    if serialized.len() > MAX_INLINE_IPC_SIZE {
+        let path = input_dir.join(format!("spill_{}.json", uuid::Uuid::new_v4()));
+        std::fs::write(&path, &serialized)?;
+        let input_file = path
+            .to_str()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "non-UTF-8 path"))?
+            .to_string();
+        Ok(SlotRequest::Predict {
+            id,
+            input: None,
+            input_file: Some(input_file),
+            output_dir,
+        })
+    } else {
+        Ok(SlotRequest::Predict {
+            id,
+            input: Some(input),
+            input_file: None,
+            output_dir,
+        })
     }
 }
 
@@ -1077,5 +1123,71 @@ mod tests {
         assert!(svc.prediction_exists("test-remove"));
         svc.remove_prediction("test-remove");
         assert!(!svc.prediction_exists("test-remove"));
+    }
+
+    #[test]
+    fn build_slot_request_small_input_inline() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = serde_json::json!({"text": "hello"});
+        let req =
+            build_slot_request("p1".into(), input.clone(), "/tmp/out".into(), dir.path()).unwrap();
+
+        match req {
+            SlotRequest::Predict {
+                id,
+                input: Some(v),
+                input_file: None,
+                output_dir,
+            } => {
+                assert_eq!(id, "p1");
+                assert_eq!(v, input);
+                assert_eq!(output_dir, "/tmp/out");
+            }
+            _ => panic!("expected inline input"),
+        }
+    }
+
+    #[test]
+    fn build_slot_request_large_input_spills() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create an input larger than 6 MiB
+        let big = "x".repeat(7 * 1024 * 1024);
+        let input = serde_json::json!({"data": big});
+        let req =
+            build_slot_request("p2".into(), input.clone(), "/tmp/out".into(), dir.path()).unwrap();
+
+        match req {
+            SlotRequest::Predict {
+                id,
+                input: None,
+                input_file: Some(ref path),
+                output_dir,
+            } => {
+                assert_eq!(id, "p2");
+                assert_eq!(output_dir, "/tmp/out");
+                // Spill file should exist on disk
+                assert!(std::path::Path::new(path).exists());
+                // Content should be valid JSON matching the original input
+                let bytes = std::fs::read(path).unwrap();
+                let roundtrip: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(roundtrip, input);
+            }
+            _ => panic!("expected file-backed input"),
+        }
+    }
+
+    #[test]
+    fn build_slot_request_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = "y".repeat(7 * 1024 * 1024);
+        let input = serde_json::json!({"payload": big});
+        let req =
+            build_slot_request("p3".into(), input.clone(), "/tmp/out".into(), dir.path()).unwrap();
+
+        // Rehydrate and verify we get back the same value
+        let (id, rehydrated, output_dir) = req.rehydrate_input().unwrap();
+        assert_eq!(id, "p3");
+        assert_eq!(rehydrated, input);
+        assert_eq!(output_dir, "/tmp/out");
     }
 }

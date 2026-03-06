@@ -8,5 +8,5 @@ expression: req
   "input": {
     "text": "hello"
   },
-  "output_dir": "/tmp/coglet/outputs/pred_123"
+  "output_dir": "/tmp/coglet/predictions/pred_123/outputs"
 }
