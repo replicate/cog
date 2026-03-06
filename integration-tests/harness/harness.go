@@ -501,7 +501,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 				ts.Fatalf("curl: failed to read body file %q: %v", filename, err)
 			}
 			body = string(data)
-		} 
+		}
 	}
 
 	// Retry settings
