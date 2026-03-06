@@ -11,23 +11,22 @@ import (
 )
 
 // mockParser is a test parser that returns a fixed PredictorInfo.
-func mockParser(source []byte, predictRef string, mode Mode) (*PredictorInfo, error) {
+func mockParser(source []byte, predictRef string, mode Mode, sourceDir string) (*PredictorInfo, error) {
 	inputs := NewOrderedMap[string, InputField]()
 	inputs.Set("prompt", InputField{
 		Name:      "prompt",
 		Order:     0,
 		FieldType: FieldType{Primitive: TypeString, Repetition: Required},
 	})
-	p := TypeString
 	return &PredictorInfo{
 		Inputs: inputs,
-		Output: OutputType{Kind: OutputSingle, Primitive: &p},
+		Output: SchemaPrim(TypeString),
 		Mode:   mode,
 	}, nil
 }
 
 // failParser always returns an error.
-func failParser(_ []byte, _ string, _ Mode) (*PredictorInfo, error) {
+func failParser(_ []byte, _ string, _ Mode, _ string) (*PredictorInfo, error) {
 	return nil, NewError(ErrParse, "mock parse failure")
 }
 
@@ -72,7 +71,7 @@ func TestParsePredictRef(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGenerateFromSource(t *testing.T) {
-	data, err := GenerateFromSource([]byte("unused"), "Predictor", ModePredict, mockParser)
+	data, err := GenerateFromSource([]byte("unused"), "Predictor", ModePredict, mockParser, "")
 	require.NoError(t, err)
 
 	var spec map[string]any
@@ -84,7 +83,7 @@ func TestGenerateFromSource(t *testing.T) {
 }
 
 func TestGenerateFromSourceTrainMode(t *testing.T) {
-	data, err := GenerateFromSource([]byte("unused"), "Trainer", ModeTrain, mockParser)
+	data, err := GenerateFromSource([]byte("unused"), "Trainer", ModeTrain, mockParser, "")
 	require.NoError(t, err)
 
 	var spec map[string]any
@@ -95,7 +94,7 @@ func TestGenerateFromSourceTrainMode(t *testing.T) {
 }
 
 func TestGenerateFromSourceParseError(t *testing.T) {
-	_, err := GenerateFromSource([]byte("unused"), "Predictor", ModePredict, failParser)
+	_, err := GenerateFromSource([]byte("unused"), "Predictor", ModePredict, failParser, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mock parse failure")
 }
