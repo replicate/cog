@@ -221,6 +221,15 @@ class FieldType:
             tpe = Set[Any]
             origin = typing.get_origin(tpe)
 
+        if origin is dict:
+            # dict / Dict[K, V] → opaque JSON object, consistent with the
+            # static Go schema generator's SchemaAnyType().
+            return FieldType(
+                primitive=PrimitiveType.ANY,
+                repetition=Repetition.REQUIRED,
+                coder=None,
+            )
+
         if origin in (list, List):
             t_args = typing.get_args(tpe)
             if t_args:
