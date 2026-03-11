@@ -291,7 +291,7 @@ echo "All fuzz targets passed."
 
 [tasks."test:integration"]
 description = "Run integration tests (skips slow tests by default, set SHORT=0 for full suite)"
-depends = ["build:cog", "build:sdk", "build:coglet:wheel:linux-x64"]
+depends = ["clean:integration", "build:cog", "build:sdk", "build:coglet:wheel:linux-x64"]
 run = """
 #!/usr/bin/env bash
 set -e
@@ -529,7 +529,7 @@ run = "ty check crates/coglet-python/coglet/__init__.pyi"
 [tasks.clean]
 description = "Clean all build artifacts"
 run = [
-  { tasks = ["clean:go", "clean:rust", "clean:python"] },
+  { tasks = ["clean:go", "clean:rust", "clean:python", "clean:integration"] },
   { task = "_clean_dist" },
 ]
 
@@ -544,6 +544,10 @@ run = "cd crates && cargo clean"
 [tasks."clean:python"]
 description = "Clean Python build artifacts"
 run = "rm -rf .tox build python/cog.egg-info .venv crates/coglet-python/.venv crates/coglet-python/coglet/*.so"
+
+[tasks."clean:integration"]
+description = "Clean cached integration test binary and embedded wheels"
+run = "rm -f integration-tests/.bin/cog pkg/wheels/cog-*.whl pkg/wheels/coglet-*.whl"
 
 # =============================================================================
 # Docs tasks
