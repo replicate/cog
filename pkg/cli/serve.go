@@ -46,6 +46,7 @@ and outputs as a REST API. Compatible with the Cog HTTP protocol.`,
 	addBuildProgressOutputFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
+	addPlatformFlag(cmd)
 	addGpusFlag(cmd)
 	addConfigFlag(cmd)
 
@@ -66,6 +67,7 @@ func serveBuildOptions(cmd *cobra.Command) model.BuildOptions {
 		ProgressOutput:   buildProgressOutput,
 		ExcludeSource:    true,
 		SkipLabels:       true,
+		Platform:         buildPlatform,
 	}
 }
 

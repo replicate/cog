@@ -62,6 +62,7 @@ func Build(
 	excludeSource bool,
 	skipSchemaValidation bool,
 	skipLabels bool,
+	platform string,
 	annotations map[string]string,
 	dockerCommand command.Command,
 	client registry.Client) (string, error) {
@@ -159,12 +160,13 @@ func Build(
 			ProgressOutput:     progressOutput,
 			Epoch:              &config.BuildSourceEpochTimestamp,
 			ContextDir:         dockercontext.StandardBuildDirectory,
+			Platform:           platform,
 		}
 		if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
-		generator, err := dockerfile.NewGenerator(cfg, dir, configFilename, dockerCommand, client, true)
+		generator, err := dockerfile.NewGenerator(cfg, dir, configFilename, dockerCommand, client, true, platform)
 		if err != nil {
 			return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}
@@ -212,7 +214,7 @@ func Build(
 			cachedManifest, _ := weights.LoadManifest(weightsManifestPath)
 			changed := cachedManifest == nil || !weightsManifest.Equal(cachedManifest)
 			if changed {
-				if err := buildWeightsImage(ctx, dockerCommand, dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
+				if err := buildWeightsImage(ctx, dockerCommand, dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput, contextDir, buildContexts, platform); err != nil {
 					return "", fmt.Errorf("Failed to build model weights Docker image: %w", err)
 				}
 				err := weightsManifest.Save(weightsManifestPath)
@@ -223,7 +225,7 @@ func Build(
 				console.Info("Weights unchanged, skip rebuilding and use cached image...")
 			}
 
-			if err := buildRunnerImage(ctx, dockerCommand, dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
+			if err := buildRunnerImage(ctx, dockerCommand, dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput, contextDir, buildContexts, platform); err != nil {
 				return "", fmt.Errorf("Failed to build runner Docker image: %w", err)
 			}
 		} else {
@@ -250,6 +252,7 @@ func Build(
 				Epoch:              &config.BuildSourceEpochTimestamp,
 				ContextDir:         contextDir,
 				BuildContexts:      buildContexts,
+				Platform:           platform,
 			}
 
 			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
@@ -575,7 +578,7 @@ func gitTag(ctx context.Context, dir string) (string, error) {
 	return "", fmt.Errorf("Failed to find ref name: %w", errGit)
 }
 
-func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string) error {
+func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string, platform string) error {
 	if err := makeDockerignoreForWeightsImage(); err != nil {
 		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
 	}
@@ -589,6 +592,7 @@ func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, d
 		Epoch:              &config.BuildSourceEpochTimestamp,
 		ContextDir:         contextDir,
 		BuildContexts:      buildContexts,
+		Platform:           platform,
 	}
 	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
@@ -596,7 +600,7 @@ func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, d
 	return nil
 }
 
-func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, dockerfileContents, dockerignoreContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string) error {
+func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, dockerfileContents, dockerignoreContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string, platform string) error {
 	if err := writeDockerignore(dockerignoreContents); err != nil {
 		return fmt.Errorf("Failed to write .dockerignore file with weights included: %w", err)
 	}
@@ -610,6 +614,7 @@ func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, do
 		Epoch:              &config.BuildSourceEpochTimestamp,
 		ContextDir:         contextDir,
 		BuildContexts:      buildContexts,
+		Platform:           platform,
 	}
 	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
