@@ -336,7 +336,7 @@ class TestHealthCheck:
             assert "version" in health
             assert "coglet" in health["version"]
             assert "python" in health["version"]
-            assert "cog" in health["version"]
+            assert "python_sdk" in health["version"]
 
 
 class TestSyncPredictor:
