@@ -322,6 +322,20 @@ func (h *Harness) Setup(env *testscript.Env) error {
 		}
 	}
 
+	// Auto-detect wheels from dist/ if not explicitly set via env vars.
+	// CI sets these env vars; locally we need to find them ourselves.
+	distDir := filepath.Join(h.repoRoot, "dist")
+	if os.Getenv("COGLET_WHEEL") == "" {
+		if matches, _ := filepath.Glob(filepath.Join(distDir, "coglet-*.whl")); len(matches) > 0 {
+			env.Setenv("COGLET_WHEEL", distDir)
+		}
+	}
+	if os.Getenv("COG_SDK_WHEEL") == "" {
+		if matches, _ := filepath.Glob(filepath.Join(distDir, "cog-*.whl")); len(matches) > 0 {
+			env.Setenv("COG_SDK_WHEEL", distDir)
+		}
+	}
+
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)
@@ -378,10 +392,6 @@ func removeDockerImage(imageName string) {
 // Usage: cog serve [flags]
 // Exports $SERVER_URL environment variable with the server address.
 func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string) {
-	if neg {
-		ts.Fatalf("serve command does not support negation")
-	}
-
 	workDir := ts.Getenv("WORK")
 
 	// Check if server is already running
@@ -445,9 +455,18 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	ts.Setenv("SERVER_URL", serverURL)
 
 	if !waitForServer(serverURL, 60*time.Second) {
+		if neg {
+			// Test expected the server to fail setup — keep it running
+			// so the test can inspect the health-check status.
+			return
+		}
 		// Try to get server output for debugging
 		_ = cmd.Process.Kill()
 		ts.Fatalf("server did not become healthy within timeout")
+	}
+
+	if neg {
+		ts.Fatalf("server became healthy, but expected setup failure")
 	}
 }
 

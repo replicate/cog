@@ -161,6 +161,27 @@ fn read_max_concurrency() -> usize {
     }
 }
 
+fn read_setup_timeout() -> Option<std::time::Duration> {
+    match std::env::var("COG_SETUP_TIMEOUT") {
+        Ok(val) => match val.parse::<u64>() {
+            Ok(0) => {
+                warn!("COG_SETUP_TIMEOUT=0 would cause immediate timeout, ignoring");
+                None
+            }
+            Ok(secs) => Some(std::time::Duration::from_secs(secs)),
+            Err(e) => {
+                warn!(
+                    value = %val,
+                    error = %e,
+                    "Invalid COG_SETUP_TIMEOUT value, ignoring (no timeout will be applied)"
+                );
+                None
+            }
+        },
+        Err(_) => None,
+    }
+}
+
 // =============================================================================
 // coglet.server — frozen Server object with serve() and active property
 // =============================================================================
@@ -323,10 +344,12 @@ fn serve_subprocess(
         "Configuring subprocess worker via orchestrator"
     );
 
+    let setup_timeout = read_setup_timeout();
     let orch_config = coglet_core::orchestrator::OrchestratorConfig::new(pred_ref)
         .with_num_slots(max_concurrency)
         .with_train(is_train)
-        .with_upload_url(upload_url);
+        .with_upload_url(upload_url)
+        .with_setup_timeout(setup_timeout);
 
     let service = Arc::new(
         PredictionService::new_no_pool()

@@ -296,7 +296,7 @@ pub struct OrchestratorConfig {
     pub num_slots: usize,
     pub is_train: bool,
     pub is_async: bool,
-    pub setup_timeout: Duration,
+    pub setup_timeout: Option<Duration>,
     pub spawner: Arc<dyn WorkerSpawner>,
     /// Upload URL prefix for file outputs (from --upload-url CLI arg).
     pub upload_url: Option<String>,
@@ -309,7 +309,7 @@ impl OrchestratorConfig {
             num_slots: 1,
             is_train: false,
             is_async: false,
-            setup_timeout: Duration::from_secs(300),
+            setup_timeout: None,
             spawner: Arc::new(SimpleSpawner),
             upload_url: None,
         }
@@ -335,7 +335,7 @@ impl OrchestratorConfig {
         self
     }
 
-    pub fn with_setup_timeout(mut self, timeout: Duration) -> Self {
+    pub fn with_setup_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.setup_timeout = timeout;
         self
     }
@@ -505,7 +505,7 @@ pub async fn spawn_worker(
         .map_err(|e| OrchestratorError::Spawn(format!("failed to accept connections: {}", e)))?;
 
     tracing::debug!("Waiting for Ready from worker");
-    let ready_result = tokio::time::timeout(config.setup_timeout, async {
+    let setup_fut = async {
         loop {
             match ctrl_reader.next().await {
                 Some(Ok(ControlResponse::Ready { slots, schema })) => {
@@ -516,15 +516,23 @@ pub async fn spawn_worker(
                         tracing::info!(target: "coglet::setup", source = ?source, "{}", line);
                     }
                 }
-                Some(Ok(ControlResponse::WorkerLog { target, level, message })) => {
+                Some(Ok(ControlResponse::WorkerLog {
+                    target,
+                    level,
+                    message,
+                })) => {
                     emit_worker_log(&target, &level, &message);
                 }
-                Some(Ok(ControlResponse::DroppedLogs { count, interval_millis })) => {
+                Some(Ok(ControlResponse::DroppedLogs {
+                    count,
+                    interval_millis,
+                })) => {
                     tracing::trace!(count, interval_millis, "Received DroppedLogs during setup");
                     let interval_secs = interval_millis as f64 / 1000.0;
                     tracing::warn!(
                         "Log production exceeds consumption rate during setup. {} logs dropped in last {:.1}s",
-                        count, interval_secs
+                        count,
+                        interval_secs
                     );
                 }
                 Some(Ok(ControlResponse::Failed { slot, error })) => {
@@ -553,13 +561,15 @@ pub async fn spawn_worker(
                 }
             }
         }
-    })
-    .await;
+    };
 
-    let (slot_ids, schema) = match ready_result {
-        Ok(Ok((slots, schema))) => (slots, schema),
-        Ok(Err(e)) => return Err(e),
-        Err(_) => return Err(OrchestratorError::SetupTimeout),
+    let (slot_ids, schema) = match config.setup_timeout {
+        Some(timeout) => match tokio::time::timeout(timeout, setup_fut).await {
+            Ok(Ok((slots, schema))) => (slots, schema),
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(OrchestratorError::SetupTimeout),
+        },
+        None => setup_fut.await?,
     };
 
     let setup_logs = crate::setup_log_accumulator::drain_accumulated_logs(setup_log_rx);
