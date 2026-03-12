@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"github.com/docker/docker/api/types/registry"
@@ -37,6 +38,12 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 		return buildkitclient.SolveOpt{}, err
 	}
 
+	// Resolve platform: use opts, fall back to host architecture.
+	platform := opts.Platform
+	if platform == "" {
+		platform = "linux/" + runtime.GOARCH
+	}
+
 	// first, configure the frontend, in this case, dockerfile.v0
 	frontendAttrs := map[string]string{
 		// filename is the path to the Dockerfile within the "dockerfile" LocalDir context
@@ -45,9 +52,7 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 		// TODO[md]: support multi-stage target
 		// target is the name of a stage in a multi-stage Dockerfile
 		// "target": opts.Target,
-		// Replicate only supports linux/amd64, but local Docker Engine could be running on ARM,
-		// including Apple Silicon. Force it to linux/amd64 for now.
-		"platform": "linux/amd64",
+		"platform": platform,
 	}
 
 	// disable cache if requested

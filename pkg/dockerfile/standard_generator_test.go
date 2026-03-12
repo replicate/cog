@@ -30,6 +30,7 @@ ENTRYPOINT ["/sbin/tini", "--"]
 }
 
 var testInstallUVLine = "COPY --from=ghcr.io/astral-sh/uv:" + UVVersion + " /uv /uvx /usr/local/bin/\nENV UV_SYSTEM_PYTHON=true"
+var testCreateVirtualEnvLine = "RUN --mount=type=cache,target=/root/.cache/uv UV_SYSTEM_PYTHON=false uv venv " + uvVenvPath + "\nENV VIRTUAL_ENV=" + uvVenvPath + "\nENV UV_SYSTEM_PYTHON=false\nENV PATH=\"" + uvVenvPath + "/bin:/usr/local/bin:$PATH\""
 
 func testInstallCog(stripped bool) string {
 	strippedCall := ""
@@ -80,7 +81,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	pypiWheels(gen)
@@ -94,7 +95,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + testInstallUVLine + "\n" + testInstallCog(gen.strip) + `
+` + testTini() + testInstallUVLine + "\n" + testCreateVirtualEnvLine + "\n" + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
@@ -118,7 +119,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	pypiWheels(gen)
@@ -132,7 +133,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + testInstallPython("3.12") + testInstallCog(gen.strip) + `
+` + testTini() + testInstallPython("3.12") + testCreateVirtualEnvLine + "\n" + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
@@ -164,7 +165,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	pypiWheels(gen)
@@ -180,9 +181,10 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
+` + testCreateVirtualEnvLine + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
@@ -223,7 +225,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	pypiWheels(gen)
@@ -238,9 +240,10 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
-` + testInstallPython("3.12") + `COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+` + testInstallPython("3.12") + testCreateVirtualEnvLine + `
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
@@ -276,7 +279,7 @@ build:
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	pypiWheels(gen)
@@ -292,6 +295,7 @@ ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
+` + testCreateVirtualEnvLine + `
 ` + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
@@ -316,14 +320,14 @@ build:
 	require.NoError(t, conf.Complete(tmpDir))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	pypiWheels(gen)
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 	fmt.Println(actual)
-	require.Contains(t, actual, `uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt`)
+	require.Contains(t, actual, `uv pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt`)
 }
 
 // mockFileInfo is a test type to mock os.FileInfo
@@ -373,7 +377,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 
@@ -406,9 +410,10 @@ ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*` + `
-` + testInstallPython("3.12") + `COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
+` + testInstallPython("3.12") + testCreateVirtualEnvLine + `
+COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
@@ -473,7 +478,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	pypiWheels(gen)
@@ -486,7 +491,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + testInstallUVLine + "\n" + testInstallCog(gen.strip) + `
+` + testTini() + testInstallUVLine + "\n" + testCreateVirtualEnvLine + "\n" + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
@@ -510,7 +515,7 @@ predict: predict.py:Predictor
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("", "3.12", ""))
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	pypiWheels(gen)
@@ -521,6 +526,7 @@ predict: predict.py:Predictor
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
 ` + testInstallUVLine + `
+` + testCreateVirtualEnvLine + `
 ` + testInstallCog(gen.strip) + `
 WORKDIR /src
 EXPOSE 5000
@@ -552,7 +558,7 @@ predict: predict.py:Predictor
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("", "3.12", ""))
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	pypiWheels(gen)
@@ -564,10 +570,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
+` + testCreateVirtualEnvLine + `
 ` + testInstallCog(gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
@@ -607,7 +614,7 @@ predict: predict.py:Predictor
 		require.NoError(t, err)
 		require.NoError(t, conf.Complete(""))
 		client.AddMockImage(BaseImageName("11.8", "3.11", torchVersion))
-		gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+		gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 		require.NoError(t, err)
 		gen.SetUseCogBaseImage(true)
 		pypiWheels(gen)
@@ -624,10 +631,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.11-torch%s
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 `+testInstallUVLine+`
+`+testCreateVirtualEnvLine+`
 `+testInstallCog(gen.strip)+`
 COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
@@ -671,7 +679,7 @@ predict: predict.py:Predictor
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	pypiWheels(gen)
@@ -683,10 +691,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
+` + testCreateVirtualEnvLine + `
 ` + testInstallCog(gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
@@ -728,7 +737,7 @@ predict: predict.py:Predictor
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)
@@ -741,10 +750,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
+` + testCreateVirtualEnvLine + `
 ` + testInstallCog(gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN --mount=type=cache,target=/root/.cache/pip uv pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
 RUN cowsay moo
 WORKDIR /src
@@ -786,7 +796,7 @@ predict: predict.py:Predictor
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	pypiWheels(gen)
@@ -821,7 +831,7 @@ predict: predict.py:Predictor
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)
@@ -835,10 +845,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
+` + testCreateVirtualEnvLine + `
 ` + testInstallCog(gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN --mount=type=cache,target=/root/.cache/pip uv pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
 RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec touch -t 197001010000 {} \; && find / -type f -name "*.py" -printf "%h\n" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0
 RUN cowsay moo
@@ -882,7 +893,7 @@ predict: predict.py:Predictor
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
 	client.AddMockImage(BaseImageName("11.8", "3.12", "2.3.1"))
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(true)
 	gen.SetStrip(true)
@@ -897,10 +908,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
+` + testCreateVirtualEnvLine + `
 ` + testInstallCog(true) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN --mount=type=cache,target=/root/.cache/pip uv pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
 RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec touch -t 197001010000 {} \; && find / -type f -name "*.py" -printf "%h\n" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0
 RUN cowsay moo
@@ -936,7 +948,7 @@ predict: predict.py:Predictor
 
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	pypiWheels(gen)
 
@@ -966,7 +978,7 @@ predict: predict.py:Predictor
 
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -994,7 +1006,7 @@ predict: predict.py:Predictor
 
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -1023,7 +1035,7 @@ predict: predict.py:Predictor
 
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -1056,7 +1068,7 @@ predict: predict.py:Predictor
 
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
@@ -1079,7 +1091,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.SetUseCogBaseImage(false)
 	pypiWheels(gen)
@@ -1104,7 +1116,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	// Only pin coglet to PyPI; leave cog to come from config sdk_version
 	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
@@ -1130,7 +1142,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
 	gen.SetUseCogBaseImage(false)
@@ -1156,7 +1168,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
 	gen.SetUseCogBaseImage(false)
@@ -1181,7 +1193,7 @@ predict: predict.py:Predictor
 	require.NoError(t, conf.Complete(""))
 	command := dockertest.NewMockCommand()
 	client := registrytest.NewMockRegistryClient()
-	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true, "linux/amd64")
 	require.NoError(t, err)
 	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
 	gen.SetUseCogBaseImage(false)

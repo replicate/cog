@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -106,8 +107,8 @@ func (c *apiClient) Pull(ctx context.Context, imageRef string, force bool) (*ima
 	}
 
 	output, err := c.client.ImagePull(ctx, imageRef, image.PullOptions{
-		// force image to linux/amd64 to match production
-		Platform: "linux/amd64",
+		// Pull for the host architecture — the image will run locally.
+		Platform: "linux/" + runtime.GOARCH,
 	})
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -461,9 +462,15 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 		EndpointsConfig: map[string]*network.EndpointSettings{},
 	}
 
+	// Resolve platform: use RunOptions.Platform, fall back to host architecture.
+	platformArch := runtime.GOARCH
+	if options.Platform != "" {
+		if parts := strings.SplitN(options.Platform, "/", 2); len(parts) == 2 && parts[1] != "" {
+			platformArch = parts[1]
+		}
+	}
 	platform := &ocispec.Platform{
-		// force platform to linux/amd64
-		Architecture: "amd64",
+		Architecture: platformArch,
 		OS:           "linux",
 	}
 

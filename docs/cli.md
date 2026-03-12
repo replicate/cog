@@ -59,6 +59,7 @@ cog build [flags]
   -h, --help                         help for build
       --no-cache                     Do not use cache when building the image
       --openapi-schema string        Load OpenAPI schema from a file
+      --platform string              Target platform for the build (e.g. 'linux/amd64', 'linux/arm64'). Defaults to host architecture.
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
       --secret stringArray           Secrets to pass to the build environment in the form 'id=foo,src=/path/to/file'
       --separate-weights             Separate model weights from code in image layers
@@ -155,6 +156,7 @@ cog predict [image] [flags]
   -i, --input stringArray            Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg
       --json string                  Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)
   -o, --output string                Output path
+      --platform string              Target platform for the build (e.g. 'linux/amd64', 'linux/arm64'). Defaults to host architecture.
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
       --setup-timeout uint32         The timeout for a container to setup (in seconds). (default 300)
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
@@ -233,6 +235,7 @@ cog run <command> [arg...] [flags]
   -f, --file string                  The name of the config file. (default "cog.yaml")
       --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
   -h, --help                         help for run
+      --platform string              Target platform for the build (e.g. 'linux/amd64', 'linux/arm64'). Defaults to host architecture.
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
   -p, --publish stringArray          Publish a container's port to the host, e.g. -p 8000
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
@@ -271,6 +274,7 @@ cog serve [flags]
   -f, --file string                  The name of the config file. (default "cog.yaml")
       --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
   -h, --help                         help for serve
+      --platform string              Target platform for the build (e.g. 'linux/amd64', 'linux/arm64'). Defaults to host architecture.
   -p, --port int                     Port on which to listen (default 8393)
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
       --upload-url string            Upload URL for file outputs (e.g. https://example.com/upload/)

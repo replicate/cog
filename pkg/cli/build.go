@@ -26,6 +26,7 @@ var buildDockerfileFile string
 var buildUseCogBaseImage bool
 var buildStrip bool
 var buildPrecompile bool
+var buildPlatform string
 var configFilename string
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
@@ -65,6 +66,7 @@ with 'cog push'.`,
 	addBuildTimestampFlag(cmd)
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
+	addPlatformFlag(cmd)
 	addConfigFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
@@ -167,6 +169,10 @@ func addPrecompileFlag(cmd *cobra.Command) {
 	_ = cmd.Flags().MarkHidden(precompileFlag)
 }
 
+func addPlatformFlag(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&buildPlatform, "platform", "", "Target platform for the build (e.g. 'linux/amd64', 'linux/arm64'). Defaults to host architecture.")
+}
+
 func addConfigFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&configFilename, "file", "f", "cog.yaml", "The name of the config file.")
 }
@@ -211,5 +217,6 @@ func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map
 		Precompile:       buildPrecompile,
 		Annotations:      annotations,
 		OCIIndex:         model.OCIIndexEnabled(),
+		Platform:         buildPlatform,
 	}
 }

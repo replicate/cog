@@ -80,6 +80,7 @@ the prediction on that.`,
 	addUseCogBaseImageFlag(cmd)
 	addBuildProgressOutputFlag(cmd)
 	addDockerfileFlag(cmd)
+	addPlatformFlag(cmd)
 	addGpusFlag(cmd)
 	addSetupTimeoutFlag(cmd)
 	addConfigFlag(cmd)
