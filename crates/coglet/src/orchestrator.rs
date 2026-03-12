@@ -389,7 +389,7 @@ impl Orchestrator for OrchestratorHandle {
     }
 
     async fn healthcheck(&self) -> Result<HealthcheckResult, OrchestratorError> {
-        tracing::debug!("Healthcheck requested via orchestrator handle");
+        tracing::trace!("Healthcheck requested via orchestrator handle");
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
         // Send our channel to the event loop. If a healthcheck is already
@@ -405,7 +405,7 @@ impl Orchestrator for OrchestratorHandle {
         // silent failure when the event loop eventually broadcasts.
         match tokio::time::timeout(Duration::from_secs(10), response_rx).await {
             Ok(Ok(result)) => {
-                tracing::debug!(healthy = result.is_healthy(), "Healthcheck completed");
+                tracing::trace!(healthy = result.is_healthy(), "Healthcheck completed");
                 Ok(result)
             }
             Ok(Err(_)) => {
@@ -818,7 +818,7 @@ async fn run_event_loop(
                         );
                     }
                     Some(Ok(ControlResponse::HealthcheckResult { id: _, status, error })) => {
-                        tracing::debug!(
+                        tracing::trace!(
                             ?status,
                             ?error,
                             pending_count = pending_healthchecks.len(),
@@ -833,7 +833,7 @@ async fn run_event_loop(
                                     HealthcheckResult::unhealthy(error.unwrap_or_else(|| "unhealthy".to_string()))
                                 }
                             };
-                            tracing::debug!(
+                            tracing::trace!(
                                 pending_count = pending_healthchecks.len(),
                                 "Distributing healthcheck result to pending callers"
                             );
@@ -876,7 +876,7 @@ async fn run_event_loop(
                 if !in_flight {
                     healthcheck_counter += 1;
                     let hc_id = format!("hc_{}", healthcheck_counter);
-                    tracing::debug!(%hc_id, "Sending healthcheck request to worker");
+                    tracing::trace!(%hc_id, "Sending healthcheck request to worker");
 
                     let mut writer = ctrl_writer.lock().await;
                     if let Err(e) = writer.send(ControlRequest::Healthcheck { id: hc_id }).await {
@@ -887,7 +887,7 @@ async fn run_event_loop(
                         }
                     }
                 } else {
-                    tracing::debug!(
+                    tracing::trace!(
                         pending_count = pending_healthchecks.len(),
                         "Healthcheck already in-flight, coalescing request"
                     );

@@ -672,9 +672,9 @@ pub async fn run_worker<H: PredictHandler>(
                         break;
                     }
                     Some(Ok(ControlRequest::Healthcheck { id })) => {
-                        tracing::debug!(%id, "Healthcheck requested, invoking handler");
+                        tracing::trace!(%id, "Healthcheck requested, invoking handler");
                         let result = handler.healthcheck().await;
-                        tracing::debug!(
+                        tracing::trace!(
                             %id,
                             status = ?result.status,
                             error = ?result.error,

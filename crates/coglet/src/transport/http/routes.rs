@@ -99,9 +99,9 @@ fn generate_prediction_id() -> String {
 }
 
 async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
-    tracing::debug!("Health check endpoint called");
+    tracing::trace!("Health check endpoint called");
     let snapshot = service.health().await;
-    tracing::debug!(
+    tracing::trace!(
         state = ?snapshot.state,
         available_slots = snapshot.available_slots,
         total_slots = snapshot.total_slots,
@@ -115,10 +115,10 @@ async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<Hea
         write_readiness_file();
 
         // Run user-defined healthcheck
-        tracing::debug!("Running user-defined healthcheck");
+        tracing::trace!("Running user-defined healthcheck");
         match service.healthcheck().await {
             Ok(result) if result.is_healthy() => {
-                tracing::debug!("User healthcheck passed");
+                tracing::trace!("User healthcheck passed");
                 None
             }
             Ok(result) => {
@@ -131,12 +131,12 @@ async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<Hea
             }
         }
     } else {
-        tracing::debug!(state = ?snapshot.state, "Skipping user healthcheck (not ready)");
+        tracing::trace!(state = ?snapshot.state, "Skipping user healthcheck (not ready)");
         None
     };
 
     let response = HealthCheckResponse::from_snapshot(snapshot, user_healthcheck_error);
-    tracing::debug!(status = ?response.status, "Health check response");
+    tracing::trace!(status = ?response.status, "Health check response");
     Json(response)
 }
 

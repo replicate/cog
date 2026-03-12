@@ -258,7 +258,7 @@ impl PredictionService {
             None => (0, 0),
         };
 
-        tracing::debug!(
+        tracing::trace!(
             ?state,
             available_slots,
             total_slots,
@@ -366,9 +366,9 @@ impl PredictionService {
         &self,
     ) -> Result<HealthcheckResult, crate::orchestrator::OrchestratorError> {
         if let Some(ref state) = *self.orchestrator.read().await {
-            tracing::debug!("Dispatching healthcheck to orchestrator");
+            tracing::trace!("Dispatching healthcheck to orchestrator");
             let result = state.orchestrator.healthcheck().await;
-            tracing::debug!(
+            tracing::trace!(
                 healthy = result.as_ref().map(|r| r.is_healthy()).unwrap_or(false),
                 error = ?result.as_ref().ok().and_then(|r| r.error.as_ref()),
                 "Healthcheck result from orchestrator"
