@@ -99,7 +99,15 @@ fn generate_prediction_id() -> String {
 }
 
 async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
+    tracing::debug!("Health check endpoint called");
     let snapshot = service.health().await;
+    tracing::debug!(
+        state = ?snapshot.state,
+        available_slots = snapshot.available_slots,
+        total_slots = snapshot.total_slots,
+        has_setup_result = snapshot.setup_result.is_some(),
+        "Health snapshot retrieved"
+    );
 
     // Run user healthcheck if ready (even when busy — healthcheck health
     // and slot availability are orthogonal concerns).
@@ -107,19 +115,29 @@ async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<Hea
         write_readiness_file();
 
         // Run user-defined healthcheck
+        tracing::debug!("Running user-defined healthcheck");
         match service.healthcheck().await {
-            Ok(result) if result.is_healthy() => None,
-            Ok(result) => result.error,
-            Err(e) => Some(format!("Healthcheck error: {}", e)),
+            Ok(result) if result.is_healthy() => {
+                tracing::debug!("User healthcheck passed");
+                None
+            }
+            Ok(result) => {
+                tracing::debug!(error = ?result.error, "User healthcheck reported unhealthy");
+                result.error
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "User healthcheck returned error");
+                Some(format!("Healthcheck error: {}", e))
+            }
         }
     } else {
+        tracing::debug!(state = ?snapshot.state, "Skipping user healthcheck (not ready)");
         None
     };
 
-    Json(HealthCheckResponse::from_snapshot(
-        snapshot,
-        user_healthcheck_error,
-    ))
+    let response = HealthCheckResponse::from_snapshot(snapshot, user_healthcheck_error);
+    tracing::debug!(status = ?response.status, "Health check response");
+    Json(response)
 }
 
 /// Write /var/run/cog/ready for K8s readiness probe.

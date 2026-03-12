@@ -544,13 +544,19 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Run setup
     tracing::info!("Worker starting setup");
+    let setup_start = std::time::Instant::now();
     let setup_result = handler.setup().await;
-    tracing::trace!("Setup handler returned");
+    let setup_elapsed = setup_start.elapsed();
+    tracing::debug!(
+        elapsed_ms = setup_elapsed.as_millis() as u64,
+        success = setup_result.is_ok(),
+        "Setup handler returned"
+    );
 
     // Unregister Python's setup sender, but keep log_forwarder running
     // The fd_redirect capture threads will continue sending subprocess logs
     if let Some(cleanup) = setup_cleanup {
-        tracing::trace!("Running cleanup (unregistering Python setup sender)");
+        tracing::debug!("Running cleanup (unregistering Python setup sender)");
         cleanup();
     }
     // Note: We DON'T drop setup_log_tx or wait for log_forwarder
@@ -558,7 +564,11 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Handle setup failure
     if let Err(e) = setup_result {
-        tracing::error!(error = %e, "Setup failed");
+        tracing::error!(
+            error = %e,
+            elapsed_ms = setup_elapsed.as_millis() as u64,
+            "Setup failed"
+        );
         let slot = slot_ids.first().copied().unwrap_or_else(SlotId::new);
         let mut w = ctrl_writer.lock().await;
         let _ = w
@@ -662,8 +672,14 @@ pub async fn run_worker<H: PredictHandler>(
                         break;
                     }
                     Some(Ok(ControlRequest::Healthcheck { id })) => {
-                        tracing::debug!(%id, "Healthcheck requested");
+                        tracing::debug!(%id, "Healthcheck requested, invoking handler");
                         let result = handler.healthcheck().await;
+                        tracing::debug!(
+                            %id,
+                            status = ?result.status,
+                            error = ?result.error,
+                            "Healthcheck handler returned"
+                        );
                         let mut w = ctrl_writer.lock().await;
                         let _ = w.send(ControlResponse::HealthcheckResult {
                             id,
