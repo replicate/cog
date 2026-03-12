@@ -96,7 +96,28 @@ alias = "build:all"
 description = "Build all components"
 run = [
   { tasks = ["build:cog", "build:coglet:wheel:linux-x64", "build:sdk"] },
+  { task = "_build_summary" },
 ]
+
+[tasks._build_summary]
+hide = true
+description = "Print build artifacts summary"
+run = """
+#!/usr/bin/env bash
+echo ""
+echo "=== Build Artifacts ==="
+if BINARY=$(ls dist/go/*/cog 2>/dev/null | head -1); then
+  VERSION=$("$BINARY" --version 2>/dev/null || echo "unknown")
+  echo "  cli:        $BINARY ($VERSION)"
+fi
+for whl in dist/coglet-*.whl; do
+  [ -f "$whl" ] && echo "  coglet:     $whl"
+done
+for whl in dist/cog-*.whl; do
+  [ -f "$whl" ] && echo "  python-sdk: $whl"
+done
+echo ""
+"""
 
 [tasks.install]
 depends = ["build:cog"]
@@ -535,7 +556,7 @@ run = [
 
 [tasks."clean:go"]
 description = "Clean Go build artifacts"
-run = "rm -f cog base-image"
+run = "rm -rf cog base-image dist/go"
 
 [tasks."clean:rust"]
 description = "Clean Rust build artifacts"
