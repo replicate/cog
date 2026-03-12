@@ -14,9 +14,9 @@ pub struct VersionInfo {
     /// Build timestamp (UTC, ISO 8601).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub build_time: Option<String>,
-    /// Cog Python SDK version (if available).
+    /// Python SDK version (if available).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cog: Option<String>,
+    pub python_sdk: Option<String>,
     /// Python version.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub python: Option<String>,
@@ -28,7 +28,7 @@ impl Default for VersionInfo {
             coglet: COGLET_VERSION,
             git_sha: None,
             build_time: None,
-            cog: None,
+            python_sdk: None,
             python: None,
         }
     }
@@ -52,9 +52,9 @@ impl VersionInfo {
         self
     }
 
-    /// Set cog SDK version.
-    pub fn with_cog(mut self, version: String) -> Self {
-        self.cog = Some(version);
+    /// Set Python SDK version.
+    pub fn with_python_sdk(mut self, version: String) -> Self {
+        self.python_sdk = Some(version);
         self
     }
 
@@ -73,7 +73,7 @@ mod tests {
     fn version_info_has_coglet_version() {
         let info = VersionInfo::new();
         assert_eq!(info.coglet, COGLET_VERSION);
-        assert!(info.cog.is_none());
+        assert!(info.python_sdk.is_none());
         assert!(info.python.is_none());
     }
 
@@ -82,12 +82,12 @@ mod tests {
         let info = VersionInfo::new()
             .with_git_sha("abc1234".to_string())
             .with_build_time("2026-03-12T18:00:00Z".to_string())
-            .with_cog("0.9.0".to_string())
+            .with_python_sdk("0.9.0".to_string())
             .with_python("3.11.0".to_string());
 
         assert_eq!(info.git_sha, Some("abc1234".to_string()));
         assert_eq!(info.build_time, Some("2026-03-12T18:00:00Z".to_string()));
-        assert_eq!(info.cog, Some("0.9.0".to_string()));
+        assert_eq!(info.python_sdk, Some("0.9.0".to_string()));
         assert_eq!(info.python, Some("3.11.0".to_string()));
     }
 
@@ -98,7 +98,7 @@ mod tests {
             coglet: "0.1.0",
             git_sha: None,
             build_time: None,
-            cog: None,
+            python_sdk: None,
             python: None,
         };
         insta::assert_json_snapshot!("version_minimal", info);
@@ -110,7 +110,7 @@ mod tests {
             coglet: "0.1.0",
             git_sha: Some("abc1234-dirty".to_string()),
             build_time: Some("2026-03-12T18:00:00Z".to_string()),
-            cog: Some("0.9.0".to_string()),
+            python_sdk: Some("0.9.0".to_string()),
             python: Some("3.11.0".to_string()),
         };
         insta::assert_json_snapshot!("version_full", info);

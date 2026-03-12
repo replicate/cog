@@ -166,7 +166,7 @@ fn detect_version(py: Python<'_>, build: &BuildInfo) -> VersionInfo {
         && let Ok(cog_version) = cog.getattr("__version__")
         && let Ok(v) = cog_version.extract::<String>()
     {
-        version = version.with_cog(v);
+        version = version.with_python_sdk(v);
     }
 
     version
@@ -306,7 +306,10 @@ fn serve_impl(
     }
 
     let version = detect_version(py, &build);
-    info!("cog sdk {}", version.cog.as_deref().unwrap_or("unknown"));
+    info!(
+        "python sdk {}",
+        version.python_sdk.as_deref().unwrap_or("unknown")
+    );
     info!("python {}", version.python.as_deref().unwrap_or("unknown"));
 
     let Some(pred_ref) = predictor_ref else {
