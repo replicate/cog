@@ -258,6 +258,14 @@ impl PredictionService {
             None => (0, 0),
         };
 
+        tracing::trace!(
+            ?state,
+            available_slots,
+            total_slots,
+            setup_status = ?setup_result.as_ref().map(|r| r.status),
+            "Building health snapshot"
+        );
+
         HealthSnapshot {
             state,
             available_slots,
@@ -275,10 +283,19 @@ impl PredictionService {
             tracing::warn!("Attempted to set READY without orchestrator, ignoring");
             return;
         }
+        let previous = *self.health.read().await;
+        tracing::debug!(from = ?previous, to = ?health, "Health state transition");
         *self.health.write().await = health;
     }
 
     pub async fn set_setup_result(&self, result: SetupResult) {
+        tracing::debug!(
+            status = ?result.status,
+            started_at = %result.started_at,
+            completed_at = ?result.completed_at,
+            logs_len = result.logs.len(),
+            "Setting setup result"
+        );
         *self.setup_result.write().await = Some(result);
     }
 
@@ -349,9 +366,16 @@ impl PredictionService {
         &self,
     ) -> Result<HealthcheckResult, crate::orchestrator::OrchestratorError> {
         if let Some(ref state) = *self.orchestrator.read().await {
-            state.orchestrator.healthcheck().await
+            tracing::trace!("Dispatching healthcheck to orchestrator");
+            let result = state.orchestrator.healthcheck().await;
+            tracing::trace!(
+                healthy = result.as_ref().map(|r| r.is_healthy()).unwrap_or(false),
+                error = ?result.as_ref().ok().and_then(|r| r.error.as_ref()),
+                "Healthcheck result from orchestrator"
+            );
+            result
         } else {
-            // No orchestrator = not ready, return healthy (healthcheck not applicable)
+            tracing::debug!("No orchestrator configured, returning default healthy");
             Ok(HealthcheckResult::healthy())
         }
     }

@@ -345,6 +345,10 @@ fn serve_subprocess(
     );
 
     let setup_timeout = read_setup_timeout();
+    debug!(
+        setup_timeout_secs = setup_timeout.map(|d| d.as_secs()),
+        is_train, "Orchestrator configuration"
+    );
     let orch_config = coglet_core::orchestrator::OrchestratorConfig::new(pred_ref)
         .with_num_slots(max_concurrency)
         .with_train(is_train)
@@ -369,20 +373,30 @@ fn serve_subprocess(
             let setup_service = Arc::clone(&service_clone);
             tokio::spawn(async move {
                 info!("Spawning worker subprocess");
+                let spawn_start = std::time::Instant::now();
                 match coglet_core::orchestrator::spawn_worker(orch_config, &mut setup_log_rx).await
                 {
                     Ok(ready) => {
-                        debug!("Worker ready, configuring service");
+                        let spawn_elapsed = spawn_start.elapsed();
+                        debug!(
+                            elapsed_ms = spawn_elapsed.as_millis() as u64,
+                            "Worker ready, configuring service"
+                        );
 
                         let num_slots = ready.handle.slot_ids().len();
+                        debug!(num_slots, "Setting up orchestrator on service");
 
                         setup_service
                             .set_orchestrator(ready.pool, Arc::new(ready.handle))
                             .await;
+                        debug!("Transitioning health to Ready");
                         setup_service.set_health(Health::Ready).await;
 
                         if let Some(s) = ready.schema {
+                            debug!("Setting OpenAPI schema on service");
                             setup_service.set_schema(s).await;
+                        } else {
+                            debug!("No OpenAPI schema provided by worker");
                         }
 
                         let mode = if is_train { "train" } else { "predict" };
@@ -390,6 +404,11 @@ fn serve_subprocess(
 
                         // Drain final logs (includes "Server ready" above)
                         let final_logs = coglet_core::drain_accumulated_logs(&mut setup_log_rx);
+                        debug!(
+                            initial_logs_len = ready.setup_logs.len(),
+                            final_logs_len = final_logs.len(),
+                            "Drained setup logs"
+                        );
                         drop(setup_log_rx);
 
                         // Combine initial + final logs
@@ -401,7 +420,13 @@ fn serve_subprocess(
                         info!("Setup complete, now accepting requests");
                     }
                     Err(e) => {
-                        error!(error = %e, "Worker initialization failed");
+                        let spawn_elapsed = spawn_start.elapsed();
+                        error!(
+                            error = %e,
+                            elapsed_ms = spawn_elapsed.as_millis() as u64,
+                            "Worker initialization failed"
+                        );
+                        debug!("Transitioning health to SetupFailed");
                         setup_service.set_health(Health::SetupFailed).await;
                         setup_service
                             .set_setup_result(setup_result.failed(e.to_string()))
