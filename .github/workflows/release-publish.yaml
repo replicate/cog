@@ -92,7 +92,7 @@ jobs:
       - name: Download coglet wheels from release
         run: |
           mkdir -p dist
-          gh release download "$TAG" -p "coglet-*.whl" -D dist
+          gh release download "$TAG" -p "coglet-*.whl" -D dist -R "${{ github.repository }}"
         env:
           TAG: ${{ github.event.release.tag_name }}
           GH_TOKEN: ${{ github.token }}
@@ -136,8 +136,8 @@ jobs:
       - name: Download SDK artifacts from release
         run: |
           mkdir -p dist
-          gh release download "$TAG" -p "cog-*.whl" -D dist
-          gh release download "$TAG" -p "cog-*.tar.gz" -D dist
+          gh release download "$TAG" -p "cog-*.whl" -D dist -R "${{ github.repository }}"
+          gh release download "$TAG" -p "cog-*.tar.gz" -D dist -R "${{ github.repository }}"
         env:
           TAG: ${{ github.event.release.tag_name }}
           GH_TOKEN: ${{ github.token }}
@@ -166,7 +166,7 @@ jobs:
           repositories: homebrew-tap
 
       - name: Download checksums from release
-        run: gh release download "$TAG" -p checksums.txt
+        run: gh release download "$TAG" -p checksums.txt -R "${{ github.repository }}"
         env:
           TAG: ${{ github.event.release.tag_name }}
           GH_TOKEN: ${{ github.token }}
