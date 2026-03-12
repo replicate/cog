@@ -43,6 +43,8 @@ pub struct BuildInfo {
     #[pyo3(get)]
     git_sha: String,
     #[pyo3(get)]
+    dirty: bool,
+    #[pyo3(get)]
     build_time: String,
     #[pyo3(get)]
     rustc_version: String,
@@ -53,8 +55,12 @@ pub struct BuildInfo {
 impl BuildInfo {
     fn __repr__(&self) -> String {
         format!(
-            "BuildInfo(version='{}', git_sha='{}', build_time='{}', rustc_version='{}')",
-            self.version, self.git_sha, self.build_time, self.rustc_version
+            "BuildInfo(version='{}', git_sha='{}', dirty={}, build_time='{}', rustc_version='{}')",
+            self.version,
+            self.git_sha,
+            if self.dirty { "True" } else { "False" },
+            self.build_time,
+            self.rustc_version
         )
     }
 }
@@ -64,8 +70,18 @@ impl BuildInfo {
         Self {
             version: env!("COGLET_PEP440_VERSION").to_string(),
             git_sha: env!("COGLET_GIT_SHA").to_string(),
+            dirty: env!("COGLET_GIT_DIRTY") == "true",
             build_time: env!("COGLET_BUILD_TIME").to_string(),
             rustc_version: env!("COGLET_RUSTC_VERSION").to_string(),
+        }
+    }
+
+    /// Git SHA with optional `-dirty` suffix.
+    fn sha_display(&self) -> String {
+        if self.dirty {
+            format!("{}-dirty", self.git_sha)
+        } else {
+            self.git_sha.clone()
         }
     }
 }
@@ -133,8 +149,10 @@ fn init_tracing(
     }
 }
 
-fn detect_version(py: Python<'_>) -> VersionInfo {
-    let mut version = VersionInfo::new();
+fn detect_version(py: Python<'_>, build: &BuildInfo) -> VersionInfo {
+    let mut version = VersionInfo::new()
+        .with_git_sha(build.sha_display())
+        .with_build_time(build.build_time.clone());
 
     if let Ok(sys) = py.import("sys")
         && let Ok(py_version) = sys.getattr("version")
@@ -148,7 +166,7 @@ fn detect_version(py: Python<'_>) -> VersionInfo {
         && let Ok(cog_version) = cog.getattr("__version__")
         && let Ok(v) = cog_version.extract::<String>()
     {
-        version = version.with_cog(v);
+        version = version.with_python_sdk(v);
     }
 
     version
@@ -280,7 +298,18 @@ fn serve_impl(
     let (setup_log_tx, setup_log_rx) = tokio::sync::mpsc::unbounded_channel();
     init_tracing(false, Some(setup_log_tx));
 
-    info!("coglet {}", env!("CARGO_PKG_VERSION"));
+    let build = BuildInfo::new();
+    info!(
+        "coglet {} ({}, built {}{})",
+        env!("CARGO_PKG_VERSION"),
+        build.sha_display(),
+        build.build_time,
+        if cfg!(debug_assertions) {
+            ", debug"
+        } else {
+            ""
+        },
+    );
 
     let config = ServerConfig {
         host,
@@ -297,7 +326,12 @@ fn serve_impl(
         info!("await_explicit_shutdown: installed SIGTERM ignore handler");
     }
 
-    let version = detect_version(py);
+    let version = detect_version(py, &build);
+    info!(
+        "python sdk {}",
+        version.python_sdk.as_deref().unwrap_or("unknown")
+    );
+    info!("python {}", version.python.as_deref().unwrap_or("unknown"));
 
     let Some(pred_ref) = predictor_ref else {
         info!("No predictor specified, serving health endpoints only");

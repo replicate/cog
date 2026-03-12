@@ -20,6 +20,22 @@ fn main() {
         .unwrap_or_else(|| "unknown".to_string());
     println!("cargo:rustc-env=COGLET_GIT_SHA={git_sha}");
 
+    // Git dirty flag
+    let git_dirty = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            if String::from_utf8_lossy(&o.stdout).trim().is_empty() {
+                "false"
+            } else {
+                "true"
+            }
+        })
+        .unwrap_or("unknown");
+    println!("cargo:rustc-env=COGLET_GIT_DIRTY={git_dirty}");
+
     // Build timestamp (UTC, ISO 8601)
     let build_time = Command::new("date")
         .args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])
@@ -40,9 +56,10 @@ fn main() {
         .unwrap_or_else(|| "unknown".to_string());
     println!("cargo:rustc-env=COGLET_RUSTC_VERSION={rustc_version}");
 
-    // Rebuild if git HEAD changes
+    // Rebuild if git HEAD changes or files are staged
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/refs");
+    println!("cargo:rerun-if-changed=../../.git/index");
 }
 
 /// Convert a semver version string to PEP 440 format.
