@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -58,7 +59,7 @@ exploring the environment your model will run in.`,
 	// Flags after first argument are considered args and passed to command
 
 	// This is called `publish` for consistency with `docker run`
-	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000")
+	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000 or -p 0.0.0.0:8000")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
 
 	flags.SetInterspersed(false)
@@ -113,12 +114,21 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, portString := range runPorts {
-		port, err := strconv.Atoi(portString)
-		if err != nil {
-			return err
+		hostIP := "127.0.0.1"
+		portStr := portString
+
+		// Support host:port syntax (e.g. "0.0.0.0:8000")
+		if idx := strings.LastIndex(portString, ":"); idx != -1 {
+			hostIP = portString[:idx]
+			portStr = portString[idx+1:]
 		}
 
-		runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: port})
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return fmt.Errorf("invalid port %q: %w", portString, err)
+		}
+
+		runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: port, HostIP: hostIP})
 	}
 
 	console.Info("")

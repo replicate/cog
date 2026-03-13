@@ -34,8 +34,12 @@ func RunDaemon(ctx context.Context, dockerClient command.Command, options comman
 	return dockerClient.ContainerStart(ctx, options)
 }
 
-func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command, containerID string, containerPort int) (int, error) {
+func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command, containerID string, containerPort int, hostIP string) (int, error) {
 	console.Debugf("=== DockerCommand.GetPort %s/%d", containerID, containerPort)
+
+	if hostIP == "" {
+		hostIP = "127.0.0.1"
+	}
 
 	inspect, err := dockerCommand.ContainerInspect(ctx, containerID)
 	if err != nil {
@@ -56,8 +60,7 @@ func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command,
 	}
 
 	for _, portBinding := range inspect.NetworkSettings.Ports[targetPort] {
-		// TODO[md]: this should not be hardcoded since docker may be bound to a different address
-		if portBinding.HostIP != "0.0.0.0" {
+		if portBinding.HostIP != hostIP {
 			continue
 		}
 		hostPort, err := nat.ParsePort(portBinding.HostPort)
@@ -67,5 +70,5 @@ func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command,
 		return hostPort, nil
 	}
 
-	return 0, fmt.Errorf("container %s does not have a port bound to 0.0.0.0", containerID)
+	return 0, fmt.Errorf("container %s does not have a port bound to %s", containerID, hostIP)
 }

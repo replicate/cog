@@ -15,6 +15,7 @@ import (
 )
 
 var (
+	host      = "127.0.0.1"
 	port      = 8393
 	uploadURL = ""
 )
@@ -33,6 +34,9 @@ and outputs as a REST API. Compatible with the Cog HTTP protocol.`,
   # Start on a custom port
   cog serve -p 5000
 
+  # Listen on all interfaces (e.g. to expose to the network)
+  cog serve --host 0.0.0.0
+
   # Test the server
   curl http://localhost:8393/predictions \
     -X POST \
@@ -49,6 +53,7 @@ and outputs as a REST API. Compatible with the Cog HTTP protocol.`,
 	addGpusFlag(cmd)
 	addConfigFlag(cmd)
 
+	cmd.Flags().StringVar(&host, "host", host, "Host to bind on (use 0.0.0.0 for all interfaces)")
 	cmd.Flags().IntVarP(&port, "port", "p", port, "Port on which to listen")
 	cmd.Flags().StringVar(&uploadURL, "upload-url", "", "Upload URL for file outputs (e.g. https://example.com/upload/)")
 
@@ -130,12 +135,17 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		runOptions.ExtraHosts = []string{"host.docker.internal:host-gateway"}
 	}
 
-	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000})
+	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000, HostIP: host})
+
+	displayHost := host
+	if displayHost == "0.0.0.0" {
+		displayHost = "localhost"
+	}
 
 	console.Info("")
 	console.Infof("Running %[1]s in Docker with the current directory mounted as a volume...", console.Bold(strings.Join(args, " ")))
 	console.Info("")
-	console.Infof("Serving at %s", console.Bold(fmt.Sprintf("http://127.0.0.1:%v", port)))
+	console.Infof("Serving at %s", console.Bold(fmt.Sprintf("http://%s:%v", displayHost, port)))
 	console.Info("")
 
 	err = docker.Run(ctx, dockerClient, runOptions)
