@@ -72,9 +72,12 @@ jobs:
       - name: Detect changed paths
         id: filter
         run: |
-          # For PRs, compare against base; for pushes, compare against previous commit
+          # For PRs, compare against base; for pushes, compare against previous commit;
+          # for merge_group, compare against the merge group base.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event_name }}" = "merge_group" ]; then
+            BASE="${{ github.event.merge_group.base_sha }}"
           else
             BASE="${{ github.event.before }}"
             # Handle initial push (no before)
