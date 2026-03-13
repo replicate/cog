@@ -177,7 +177,8 @@ func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
@@ -257,18 +258,6 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	go func() {
-		captureSignal := make(chan os.Signal, 1)
-		signal.Notify(captureSignal, syscall.SIGINT)
-
-		<-captureSignal
-
-		console.Info("Stopping container...")
-		if err := predictor.Stop(ctx); err != nil {
-			console.Warnf("Failed to stop container: %s", err)
-		}
-	}()
-
 	timeout := time.Duration(setupTimeout) * time.Second
 	if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
 		// Only retry if we're using a GPU but the user didn't explicitly select a GPU with --gpus
@@ -294,10 +283,9 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// FIXME: will not run on signal
+	// Use background context to ensure stop signal is still sent after root context is canceled by signal
 	defer func() {
 		console.Debugf("Stopping container...")
-		// use background context to ensure stop signal is still sent after root context is canceled
 		if err := predictor.Stop(context.Background()); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
