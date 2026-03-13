@@ -256,7 +256,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: false
       - name: Build SDK
@@ -357,7 +357,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: false
       - name: Check Go formatting
@@ -392,7 +392,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: false
       - name: Check Python formatting
@@ -409,7 +409,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: false
       - name: Check llms.txt is up to date
@@ -499,7 +499,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: false
       - name: Lint Python
@@ -611,7 +611,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test Python
