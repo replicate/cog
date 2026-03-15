@@ -111,13 +111,13 @@ func TestVerifyToken(t *testing.T) {
 		}))
 		defer server.Close()
 
-		username, err := verifyToken(server.URL, "valid-token")
+		username, err := verifyToken(context.Background(), server.URL, "valid-token")
 		require.NoError(t, err)
 		require.Equal(t, "testuser", username)
 	})
 
 	t.Run("empty token", func(t *testing.T) {
-		_, err := verifyToken("http://localhost", "")
+		_, err := verifyToken(context.Background(), "http://localhost", "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "empty")
 	})
@@ -128,7 +128,7 @@ func TestVerifyToken(t *testing.T) {
 		}))
 		defer server.Close()
 
-		_, err := verifyToken(server.URL, "unknown-token")
+		_, err := verifyToken(context.Background(), server.URL, "unknown-token")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "does not exist")
 	})
@@ -139,7 +139,7 @@ func TestVerifyToken(t *testing.T) {
 		}))
 		defer server.Close()
 
-		_, err := verifyToken(server.URL, "some-token")
+		_, err := verifyToken(context.Background(), server.URL, "some-token")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "500")
 	})
@@ -156,7 +156,7 @@ func TestGetDisplayTokenURL(t *testing.T) {
 		}))
 		defer server.Close()
 
-		url, err := getDisplayTokenURL(server.URL)
+		url, err := getDisplayTokenURL(context.Background(), server.URL)
 		require.NoError(t, err)
 		require.Equal(t, "https://replicate.com/auth/token", url)
 	})
@@ -167,7 +167,7 @@ func TestGetDisplayTokenURL(t *testing.T) {
 		}))
 		defer server.Close()
 
-		_, err := getDisplayTokenURL(server.URL)
+		_, err := getDisplayTokenURL(context.Background(), server.URL)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "not the Replicate registry")
 	})

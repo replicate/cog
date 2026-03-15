@@ -54,7 +54,7 @@ func (p *ReplicateProvider) Login(ctx context.Context, opts provider.LoginOption
 			return err
 		}
 	} else {
-		token, err = readTokenInteractively(opts.Host)
+		token, err = readTokenInteractively(ctx, opts.Host)
 		if err != nil {
 			return err
 		}
@@ -66,7 +66,7 @@ func (p *ReplicateProvider) Login(ctx context.Context, opts provider.LoginOption
 		return err
 	}
 
-	username, err := verifyToken(opts.Host, token)
+	username, err := verifyToken(ctx, opts.Host, token)
 	if err != nil {
 		return err
 	}
@@ -108,8 +108,8 @@ func readTokenFromStdin() (string, error) {
 }
 
 // readTokenInteractively guides user through browser-based token flow
-func readTokenInteractively(registryHost string) (string, error) {
-	tokenURL, err := getDisplayTokenURL(registryHost)
+func readTokenInteractively(ctx context.Context, registryHost string) (string, error) {
+	tokenURL, err := getDisplayTokenURL(ctx, registryHost)
 	if err != nil {
 		return "", err
 	}
@@ -149,8 +149,13 @@ func readTokenInteractively(registryHost string) (string, error) {
 }
 
 // getDisplayTokenURL fetches the token URL from Replicate's API
-func getDisplayTokenURL(registryHost string) (string, error) {
-	resp, err := http.Get(addressWithScheme(registryHost) + "/cog/v1/display-token-url")
+func getDisplayTokenURL(ctx context.Context, registryHost string) (string, error) {
+	reqURL := addressWithScheme(registryHost) + "/cog/v1/display-token-url"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is intentionally constructed from user-provided registry host
 	if err != nil {
 		return "", fmt.Errorf("failed to log in to %s: %w", registryHost, err)
 	}
@@ -201,14 +206,19 @@ func checkTokenFormat(token string) error {
 }
 
 // verifyToken validates the token with Replicate and returns the username
-func verifyToken(registryHost string, token string) (username string, err error) {
+func verifyToken(ctx context.Context, registryHost string, token string) (username string, err error) {
 	if token == "" {
 		return "", fmt.Errorf("token is empty")
 	}
 
-	resp, err := http.PostForm(addressWithScheme(registryHost)+"/cog/v1/verify-token", url.Values{
-		"token": []string{token},
-	})
+	formData := url.Values{"token": []string{token}}
+	reqURL := addressWithScheme(registryHost) + "/cog/v1/verify-token"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, strings.NewReader(formData.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is intentionally constructed from user-provided registry host
 	if err != nil {
 		return "", fmt.Errorf("failed to verify token: %w", err)
 	}
