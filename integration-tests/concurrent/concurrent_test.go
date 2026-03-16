@@ -247,3 +247,211 @@ class Predictor(BasePredictor):
         await asyncio.sleep(sleep)
         return f"wake up {s}"
 `
+
+// TestConcurrentAboveLimit tests that sending more predictions than max_concurrency
+// returns a 409 Conflict for the excess prediction.
+func TestConcurrentAboveLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "cog-above-limit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "cog.yaml"), []byte(aboveLimitCogYAML), 0o644); err != nil {
+		t.Fatalf("failed to write cog.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte(predictPy), 0o644); err != nil {
+		t.Fatalf("failed to write predict.py: %v", err)
+	}
+
+	cogBinary, err := harness.ResolveCogBinary()
+	if err != nil {
+		t.Fatalf("failed to resolve cog binary: %v", err)
+	}
+
+	imageName := fmt.Sprintf("cog-above-limit-test-%d", time.Now().UnixNano())
+	defer func() {
+		exec.Command("docker", "rmi", "-f", imageName).Run()
+	}()
+
+	t.Log("Building image...")
+	buildCmd := exec.Command(cogBinary, "build", "-t", imageName)
+	buildCmd.Dir = tmpDir
+	buildCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build image: %v\n%s", err, output)
+	}
+
+	t.Log("Starting server...")
+	port, err := allocatePort()
+	if err != nil {
+		t.Fatalf("failed to allocate port: %v", err)
+	}
+
+	serveCmd := exec.Command(cogBinary, "serve", "-p", fmt.Sprintf("%d", port))
+	serveCmd.Dir = tmpDir
+	serveCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+
+	if err := serveCmd.Start(); err != nil {
+		t.Fatalf("failed to start server: %v", err)
+	}
+	defer func() {
+		serveCmd.Process.Kill()
+		serveCmd.Wait()
+	}()
+
+	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	t.Log("Waiting for server to be ready...")
+	if !waitForServerReady(serverURL, 60*time.Second) {
+		t.Fatal("server did not become ready within timeout")
+	}
+
+	// Fill all 2 slots with long-running predictions
+	const maxConcurrency = 2
+	var wg sync.WaitGroup
+	for i := range maxConcurrency {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			makePrediction(serverURL, idx)
+		}(i)
+	}
+
+	// Wait for predictions to be accepted and start processing
+	time.Sleep(500 * time.Millisecond)
+
+	// Send one more — should be rejected with 409
+	t.Log("Sending prediction above limit...")
+	extraBody := `{"id":"extra","input":{"s":"overflow","sleep":1.0}}`
+	resp, err := http.Post(
+		serverURL+"/predictions",
+		"application/json",
+		strings.NewReader(extraBody),
+	)
+	if err != nil {
+		t.Fatalf("failed to send extra prediction: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("extra prediction status = %d, want %d (409 Conflict)", resp.StatusCode, http.StatusConflict)
+	}
+
+	var errResp struct {
+		Error  string `json:"error"`
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if errResp.Status != "failed" {
+		t.Errorf("error response status = %q, want \"failed\"", errResp.Status)
+	}
+	if !strings.Contains(strings.ToLower(errResp.Error), "capacity") {
+		t.Errorf("error response error = %q, want string containing \"capacity\"", errResp.Error)
+	}
+
+	wg.Wait()
+}
+
+const aboveLimitCogYAML = `build:
+  python_version: "3.11"
+predict: "predict.py:Predictor"
+concurrency:
+  max: 2
+`
+
+// TestSIGTERMDuringSetup tests that SIGTERM during setup() causes clean shutdown.
+func TestSIGTERMDuringSetup(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "cog-sigterm-setup-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	slowSetupCogYAML := `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`
+	slowSetupPredictPy := `import time
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self) -> None:
+        time.sleep(30)
+
+    def predict(self, s: str) -> str:
+        return "hello " + s
+`
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "cog.yaml"), []byte(slowSetupCogYAML), 0o644); err != nil {
+		t.Fatalf("failed to write cog.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte(slowSetupPredictPy), 0o644); err != nil {
+		t.Fatalf("failed to write predict.py: %v", err)
+	}
+
+	cogBinary, err := harness.ResolveCogBinary()
+	if err != nil {
+		t.Fatalf("failed to resolve cog binary: %v", err)
+	}
+
+	t.Log("Building image...")
+	imageName := fmt.Sprintf("cog-sigterm-setup-test-%d", time.Now().UnixNano())
+	defer func() {
+		exec.Command("docker", "rmi", "-f", imageName).Run()
+	}()
+
+	buildCmd := exec.Command(cogBinary, "build", "-t", imageName)
+	buildCmd.Dir = tmpDir
+	buildCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build image: %v\n%s", err, output)
+	}
+
+	t.Log("Starting server...")
+	port, err := allocatePort()
+	if err != nil {
+		t.Fatalf("failed to allocate port: %v", err)
+	}
+
+	serveCmd := exec.Command(cogBinary, "serve", "-p", fmt.Sprintf("%d", port))
+	serveCmd.Dir = tmpDir
+	serveCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+
+	if err := serveCmd.Start(); err != nil {
+		t.Fatalf("failed to start server: %v", err)
+	}
+
+	// Wait for setup to begin (but not complete — it sleeps 30s)
+	time.Sleep(3 * time.Second)
+
+	// Send SIGTERM
+	t.Log("Sending SIGTERM during setup...")
+	if err := serveCmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatalf("failed to send signal: %v", err)
+	}
+
+	// Wait for process to exit with a timeout
+	done := make(chan error, 1)
+	go func() {
+		done <- serveCmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		t.Logf("Server exited: %v", err)
+	case <-time.After(15 * time.Second):
+		serveCmd.Process.Kill()
+		t.Fatal("server did not exit within 15s after SIGTERM")
+	}
+}
