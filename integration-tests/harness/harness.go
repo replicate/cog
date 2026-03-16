@@ -70,10 +70,11 @@ type mockUploadServer struct {
 
 // webhookResult is the summary written to stdout by webhook-server-wait.
 type webhookResult struct {
-	Status     string          `json:"status"`
-	OutputSize int             `json:"output_size"`
-	HasError   bool            `json:"has_error"`
-	Metrics    json.RawMessage `json:"metrics,omitempty"`
+	Status       string          `json:"status"`
+	OutputSize   int             `json:"output_size"`
+	HasError     bool            `json:"has_error"`
+	ErrorMessage string          `json:"error_message,omitempty"`
+	Metrics      json.RawMessage `json:"metrics,omitempty"`
 }
 
 // webhookServer accepts prediction webhook callbacks from coglet.
@@ -574,7 +575,8 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 
 		if neg {
 			if !statusOK {
-				// Expected to fail - success!
+				// Expected to fail — write body to stderr so tests can assert
+				_, _ = ts.Stderr().Write([]byte(respBody))
 				return
 			}
 		} else {
@@ -1417,10 +1419,11 @@ func (h *Harness) cmdWebhookServerStart(ts *testscript.TestScript, neg bool, arg
 			return
 		}
 		ws.result = &webhookResult{
-			Status:     payload.Status,
-			OutputSize: len(payload.Output),
-			HasError:   payload.Error != "",
-			Metrics:    payload.Metrics,
+			Status:       payload.Status,
+			OutputSize:   len(payload.Output),
+			HasError:     payload.Error != "",
+			ErrorMessage: payload.Error,
+			Metrics:      payload.Metrics,
 		}
 		close(ws.done)
 	})
