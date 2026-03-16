@@ -1,0 +1,58 @@
+# Test deeply nested structured output types.
+#
+# Verifies that coglet correctly serializes:
+# - BaseModel containing another BaseModel
+# - List[BaseModel] field
+# - Optional nested fields
+
+cog serve
+
+curl POST /predictions '{"input":{"name":"test"}}'
+stdout '"status":"succeeded"'
+stdout '"name":"test"'
+stdout '"version":"1.0"'
+stdout '"score":0.95'
+stdout '"label":"positive"'
+stdout '"confidence":0.99'
+stdout '"label":"neutral"'
+stdout '"confidence":0.5'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import List, Optional
+
+from cog import BaseModel, BasePredictor
+
+
+class Metadata(BaseModel):
+    version: str
+    score: float
+
+
+class Item(BaseModel):
+    label: str
+    confidence: float
+
+
+class Output(BaseModel):
+    name: str
+    metadata: Metadata
+    items: List[Item]
+    extra: Optional[str]
+
+
+class Predictor(BasePredictor):
+    def predict(self, name: str) -> Output:
+        return Output(
+            name=name,
+            metadata=Metadata(version="1.0", score=0.95),
+            items=[
+                Item(label="positive", confidence=0.99),
+                Item(label="neutral", confidence=0.5),
+            ],
+            extra=None,
+        )
