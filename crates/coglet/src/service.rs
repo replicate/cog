@@ -240,6 +240,16 @@ impl PredictionService {
         self
     }
 
+    /// Get the runtime version info.
+    pub fn version(&self) -> &VersionInfo {
+        &self.version
+    }
+
+    /// Whether the model supports training (has a TrainingInput schema).
+    pub async fn supports_training(&self) -> bool {
+        self.train_validator.read().await.is_some()
+    }
+
     /// Get the permit pool from orchestrator.
     pub async fn pool(&self) -> Option<Arc<PermitPool>> {
         if let Some(ref state) = *self.orchestrator.read().await {
