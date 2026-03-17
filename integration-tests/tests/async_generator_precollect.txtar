@@ -10,8 +10,8 @@ curl POST /predictions '{"input":{}}'
 stdout '"status":"succeeded"'
 # All 5 items should be present in the output
 stdout '"output":\["chunk-0","chunk-1","chunk-2","chunk-3","chunk-4"\]'
-# predict_time should be at least 0.5s (5 items × 0.1s each)
-stdout '"predict_time":'
+# predict_time should be a positive number (at least 0.5s for 5 items × 0.1s each)
+stdout '"predict_time":[0-9]+\.[0-9]'
 
 -- cog.yaml --
 build:

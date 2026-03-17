@@ -7,6 +7,8 @@
 cog serve
 
 # First prediction — list starts empty, appends "a"
+# Note: "." in regexes below matches Python's single-quote characters
+# (testscript single-quoted args cannot embed literal single quotes)
 curl POST /predictions '{"input":{"item":"a"}}'
 stdout '"status":"succeeded"'
 stdout '"output":"\[.a.\]"'

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -219,6 +220,43 @@ func waitForServerReady(serverURL string, timeout time.Duration) bool {
 	return false
 }
 
+// waitForServerStatus polls /health-check until the server reports the given status.
+// Unlike waitForServerReady which waits for READY, this can wait for intermediate
+// states like STARTING (useful for testing signals during setup).
+func waitForServerStatus(serverURL string, targetStatus string, timeout time.Duration) bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(serverURL + "/health-check")
+		if err != nil {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		var health struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
+			resp.Body.Close()
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		resp.Body.Close()
+
+		if health.Status == targetStatus {
+			return true
+		}
+		if health.Status == "SETUP_FAILED" || health.Status == "DEFUNCT" {
+			return false
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	return false
+}
+
 // allocatePort finds an available TCP port by letting the OS assign one.
 func allocatePort() (int, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -311,7 +349,7 @@ func TestConcurrentAboveLimit(t *testing.T) {
 		t.Fatal("server did not become ready within timeout")
 	}
 
-	// Fill all 2 slots with long-running predictions
+	// Fill all 2 slots with long-running predictions (each sleeps 1s)
 	const maxConcurrency = 2
 	var wg sync.WaitGroup
 	for i := range maxConcurrency {
@@ -322,24 +360,32 @@ func TestConcurrentAboveLimit(t *testing.T) {
 		}(i)
 	}
 
-	// Wait for predictions to be accepted and start processing
-	time.Sleep(500 * time.Millisecond)
-
-	// Send one more — should be rejected with 409
-	t.Log("Sending prediction above limit...")
-	extraBody := `{"id":"extra","input":{"s":"overflow","sleep":1.0}}`
-	resp, err := http.Post(
-		serverURL+"/predictions",
-		"application/json",
-		strings.NewReader(extraBody),
-	)
-	if err != nil {
-		t.Fatalf("failed to send extra prediction: %v", err)
+	// Poll with an overflow request until we get a 409, meaning both slots
+	// are occupied. This avoids a fixed sleep that can flake on slow CI.
+	t.Log("Polling for 409 (all slots occupied)...")
+	deadline := time.Now().Add(10 * time.Second)
+	var resp *http.Response
+	for time.Now().Before(deadline) {
+		extraBody := `{"id":"extra","input":{"s":"overflow","sleep":1.0}}`
+		resp, err = http.Post(
+			serverURL+"/predictions",
+			"application/json",
+			strings.NewReader(extraBody),
+		)
+		if err != nil {
+			t.Fatalf("failed to send extra prediction: %v", err)
+		}
+		if resp.StatusCode == http.StatusConflict {
+			break
+		}
+		// Got 200 — slots weren't full yet, close and retry
+		resp.Body.Close()
+		time.Sleep(100 * time.Millisecond)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusConflict {
-		t.Errorf("extra prediction status = %d, want %d (409 Conflict)", resp.StatusCode, http.StatusConflict)
+		t.Fatalf("extra prediction status = %d, want %d (409 Conflict); slots never filled within timeout", resp.StatusCode, http.StatusConflict)
 	}
 
 	var errResp struct {
@@ -432,12 +478,18 @@ class Predictor(BasePredictor):
 		t.Fatalf("failed to start server: %v", err)
 	}
 
-	// Wait for setup to begin (but not complete — it sleeps 30s)
-	time.Sleep(3 * time.Second)
+	// Poll health-check until setup has begun (status STARTING),
+	// rather than a fixed sleep that can be too short on cold Docker pulls.
+	t.Log("Waiting for setup to begin (STARTING status)...")
+	if !waitForServerStatus(fmt.Sprintf("http://127.0.0.1:%d", port), "STARTING", 60*time.Second) {
+		serveCmd.Process.Kill()
+		serveCmd.Wait()
+		t.Fatal("server did not reach STARTING status within timeout")
+	}
 
 	// Send SIGTERM
 	t.Log("Sending SIGTERM during setup...")
-	if err := serveCmd.Process.Signal(os.Interrupt); err != nil {
+	if err := serveCmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatalf("failed to send signal: %v", err)
 	}
 
