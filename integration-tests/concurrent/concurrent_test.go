@@ -4,6 +4,7 @@ package concurrent_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -501,7 +502,22 @@ class Predictor(BasePredictor):
 
 	select {
 	case err := <-done:
-		t.Logf("Server exited: %v", err)
+		if err == nil {
+			t.Fatal("server exited cleanly after SIGTERM; expected termination by signal")
+		}
+
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("server exited with unexpected error type after SIGTERM: %T (%v)", err, err)
+		}
+
+		ws, ok := exitErr.Sys().(syscall.WaitStatus)
+		if !ok {
+			t.Fatalf("server exited after SIGTERM but wait status was unavailable: %v", err)
+		}
+		if !ws.Signaled() || ws.Signal() != syscall.SIGTERM {
+			t.Fatalf("server exit = %v, want signal %v", ws, syscall.SIGTERM)
+		}
 	case <-time.After(15 * time.Second):
 		serveCmd.Process.Kill()
 		t.Fatal("server did not exit within 15s after SIGTERM")
