@@ -1,0 +1,34 @@
+# Test that async generator output is pre-collected before response.
+#
+# Coglet collects all async generator yields into a list before sending
+# the response. This test verifies all items arrive in the response and
+# that predict_time reflects the full generation duration.
+
+cog serve
+
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+# All 5 items should be present in the output
+stdout '"output":\["chunk-0","chunk-1","chunk-2","chunk-3","chunk-4"\]'
+# predict_time should be a positive number (at least 0.5s for 5 items × 0.1s each)
+stdout '"predict_time":[0-9]+\.[0-9]'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+concurrency:
+  max: 1
+
+-- predict.py --
+import asyncio
+from typing import AsyncIterator
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    async def predict(self) -> AsyncIterator[str]:
+        for i in range(5):
+            await asyncio.sleep(0.1)
+            yield f"chunk-{i}"

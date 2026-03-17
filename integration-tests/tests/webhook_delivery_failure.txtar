@@ -1,0 +1,36 @@
+# Test that webhook delivery failure does not crash the server.
+#
+# When the webhook URL is unreachable, coglet retries with backoff
+# but eventually gives up. The server should remain healthy.
+#
+# --upload-url is set to a dummy so cog serve adds host networking.
+
+cog serve --upload-url http://unused/
+
+# Async prediction with a bogus webhook URL — delivery will fail
+curl -H Prefer:respond-async POST /predictions '{"id":"webhook-fail-test","webhook":"http://host.docker.internal:1/nonexistent","webhook_events_filter":["completed"]}'
+
+# Give coglet time to attempt delivery and fail (it retries with backoff)
+exec sleep 5
+
+# Server should still be healthy
+curl GET /health-check
+stdout '"status":"READY"'
+
+# A new sync prediction should still work
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+stdout '"output":"ok"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        return "ok"
