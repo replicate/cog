@@ -10,12 +10,9 @@ cog serve --upload-url http://unused/
 # Async prediction with a bogus webhook URL — delivery will fail
 curl -H Prefer:respond-async POST /predictions '{"id":"webhook-fail-test","webhook":"http://host.docker.internal:1/nonexistent","webhook_events_filter":["completed"]}'
 
-# Give coglet time to attempt delivery and fail (it retries with backoff)
-exec sleep 5
-
-# Server should still be healthy
-curl GET /health-check
-stdout '"status":"READY"'
+# Server should remain healthy while webhook delivery retries/fails.
+# Poll repeatedly instead of sleeping a fixed duration.
+exec bash -c 'for i in {1..10}; do curl -sf $SERVER_URL/health-check | grep -q "\"status\":\"READY\"" || exit 1; sleep 0.5; done'
 
 # A new sync prediction should still work
 curl POST /predictions '{"input":{}}'
