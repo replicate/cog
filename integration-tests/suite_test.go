@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/rogpeppe/go-internal/testscript"
+	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/integration-tests/harness"
 )
@@ -37,14 +38,10 @@ func TestIntegration(t *testing.T) {
 	dir := "tests"
 
 	h, err := harness.New()
-	if err != nil {
-		t.Fatalf("failed to create harness: %v", err)
-	}
+	require.NoError(t, err, "failed to create harness")
 
 	files, err := filepath.Glob(filepath.Join(dir, "*.txtar"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	sort.Strings(files)
 	for _, f := range files {
 		name := strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
