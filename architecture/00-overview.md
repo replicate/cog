@@ -21,8 +21,10 @@ flowchart LR
         api["HTTP API"]
     end
     
+    model -->|"imports"| sdk
     model --> cli
     cli -->|"builds"| image
+    sdk -.->|"packaged into"| image
     image -->|"runs"| coglet
     coglet -->|"serves"| api
 ```
@@ -34,6 +36,14 @@ flowchart LR
 What the model author provides: `cog.yaml` for environment config, a Predictor class with `setup()` and `predict()` methods, and optionally model weights.
 
 **Deep dive**: [Model Source](./01-model-source.md)
+
+---
+
+### Python SDK
+
+The `cog` Python package that model authors import. Provides `BasePredictor`, the type system (`Input`, `Path`, `Secret`, `ConcatenateIterator`), and the thin server entry point that launches coglet. Installed inside every Cog container as a wheel.
+
+**Deep dive**: [Model Source](./01-model-source.md) (covers the SDK's public API)
 
 ---
 
@@ -122,6 +132,7 @@ flowchart TB
 
 | Term | Meaning |
 |------|---------|
+| **SDK** | The `cog` Python package -- the framework users build models on |
 | **Predictor** | User's model class with `setup()` and `predict()` methods |
 | **Schema** | OpenAPI spec describing the model's input/output interface |
 | **Envelope** | Fixed request/response structure wrapping model-specific data |
