@@ -57,6 +57,9 @@ pub struct PredictionRequest {
         deserialize_with = "deserialize_input"
     )]
     pub input: serde_json::Value,
+    /// Per-prediction context made available to predictors via `current_scope().context`.
+    #[serde(default)]
+    pub context: std::collections::HashMap<String, String>,
     pub webhook: Option<String>,
     #[serde(default = "default_webhook_events_filter")]
     pub webhook_events_filter: Vec<WebhookEventType>,
@@ -227,6 +230,7 @@ async fn create_prediction(
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
+        context: Default::default(),
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
@@ -237,6 +241,7 @@ async fn create_prediction(
         service,
         prediction_id,
         request.input,
+        request.context,
         request.webhook,
         request.webhook_events_filter,
         respond_async,
@@ -255,6 +260,7 @@ async fn create_prediction_idempotent(
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
+        context: Default::default(),
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
@@ -285,6 +291,7 @@ async fn create_prediction_idempotent(
         service,
         prediction_id,
         request.input,
+        request.context,
         request.webhook,
         request.webhook_events_filter,
         respond_async,
@@ -323,6 +330,7 @@ async fn create_prediction_with_id(
     service: Arc<PredictionService>,
     prediction_id: String,
     input: serde_json::Value,
+    context: std::collections::HashMap<String, String>,
     webhook: Option<String>,
     webhook_events_filter: Vec<WebhookEventType>,
     respond_async: bool,
@@ -391,8 +399,11 @@ async fn create_prediction_with_id(
     if respond_async {
         let service_clone = Arc::clone(&service);
         let id_for_cleanup = prediction_id.clone();
+        let context_async = context.clone();
         tokio::spawn(async move {
-            let _result = service_clone.predict(unregistered_slot, input).await;
+            let _result = service_clone
+                .predict(unregistered_slot, input, context_async)
+                .await;
             // Prediction state is already updated by predict() internally
             // (set_succeeded/set_failed/set_canceled fire webhooks automatically)
             service_clone.remove_prediction(&id_for_cleanup);
@@ -418,7 +429,7 @@ async fn create_prediction_with_id(
     let result_rx = {
         let (tx, rx) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {
-            let result = service_bg.predict(unregistered_slot, input).await;
+            let result = service_bg.predict(unregistered_slot, input, context).await;
             // Prediction state is already updated by predict() internally
             service_bg.remove_prediction(&id_bg);
             let _ = tx.send(result);
@@ -556,6 +567,7 @@ async fn create_training(
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
+        context: Default::default(),
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
@@ -566,6 +578,7 @@ async fn create_training(
         service,
         prediction_id,
         request.input,
+        request.context,
         request.webhook,
         request.webhook_events_filter,
         respond_async,
@@ -584,6 +597,7 @@ async fn create_training_idempotent(
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
+        context: Default::default(),
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
@@ -614,6 +628,7 @@ async fn create_training_idempotent(
         service,
         training_id,
         request.input,
+        request.context,
         request.webhook,
         request.webhook_events_filter,
         respond_async,

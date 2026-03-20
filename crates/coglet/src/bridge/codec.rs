@@ -123,6 +123,7 @@ mod tests {
             input: Some(serde_json::json!({"x": 1})),
             input_file: None,
             output_dir: "/tmp/coglet/predictions/test/outputs".to_string(),
+            context: Default::default(),
         };
 
         codec.encode(req.clone(), &mut buf).unwrap();
@@ -135,12 +136,14 @@ mod tests {
                     input: input1,
                     input_file: file1,
                     output_dir: dir1,
+                    ..
                 },
                 SlotRequest::Predict {
                     id: id2,
                     input: input2,
                     input_file: file2,
                     output_dir: dir2,
+                    ..
                 },
             ) => {
                 assert_eq!(id1, id2);
