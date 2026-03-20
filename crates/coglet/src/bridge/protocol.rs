@@ -4,6 +4,8 @@
 //! - **Control channel** (stdin/stdout): Init, Cancel, Shutdown, Ready, Idle
 //! - **Slot sockets**: Prediction data, streaming logs (per-slot to avoid HOL blocking)
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use super::transport::ChildTransportInfo;
@@ -216,6 +218,10 @@ pub enum SlotRequest {
         /// Directory for writing file outputs (created by coglet before dispatch).
         /// Not included in API responses — internal transport detail.
         output_dir: String,
+        /// Per-prediction context from the request body (`dict[str, str]`).
+        /// Made available to predictors via `current_scope().context`.
+        #[serde(default)]
+        context: HashMap<String, String>,
     },
 }
 
@@ -229,21 +235,25 @@ impl SlotRequest {
 
     /// Rehydrate the input from either inline value or spill file.
     ///
-    /// Returns `(id, input, output_dir)`. If the input was spilled to disk,
+    /// Returns `(id, input, output_dir, context)`. If the input was spilled to disk,
     /// reads the file, deserializes, and deletes it.
-    pub fn rehydrate_input(self) -> std::io::Result<(String, serde_json::Value, String)> {
+    pub fn rehydrate_input(
+        self,
+    ) -> std::io::Result<(String, serde_json::Value, String, HashMap<String, String>)> {
         match self {
             SlotRequest::Predict {
                 id,
                 input: Some(value),
                 output_dir,
+                context,
                 ..
-            } => Ok((id, value, output_dir)),
+            } => Ok((id, value, output_dir, context)),
             SlotRequest::Predict {
                 id,
                 input: None,
                 input_file: Some(path),
                 output_dir,
+                context,
             } => {
                 let bytes = std::fs::read(&path)?;
                 // Clean up spill file immediately — bytes are already in memory.
@@ -253,7 +263,7 @@ impl SlotRequest {
                 }
                 let value: serde_json::Value = serde_json::from_slice(&bytes)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                Ok((id, value, output_dir))
+                Ok((id, value, output_dir, context))
             }
             SlotRequest::Predict { .. } => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -471,6 +481,7 @@ mod tests {
             input: Some(json!({"text": "hello"})),
             input_file: None,
             output_dir: "/tmp/coglet/predictions/pred_123/outputs".to_string(),
+            context: Default::default(),
         };
         insta::assert_json_snapshot!(req);
     }
@@ -482,6 +493,7 @@ mod tests {
             input: None,
             input_file: Some("/tmp/coglet/predictions/pred_456/inputs/spill_abc.json".to_string()),
             output_dir: "/tmp/coglet/predictions/pred_456/outputs".to_string(),
+            context: Default::default(),
         };
         insta::assert_json_snapshot!(req);
     }
@@ -588,8 +600,9 @@ mod tests {
             input: Some(json!({"text": "hello"})),
             input_file: None,
             output_dir: "/tmp/out".to_string(),
+            context: Default::default(),
         };
-        let (id, input, output_dir) = req.rehydrate_input().unwrap();
+        let (id, input, output_dir, _context) = req.rehydrate_input().unwrap();
         assert_eq!(id, "p1");
         assert_eq!(input, json!({"text": "hello"}));
         assert_eq!(output_dir, "/tmp/out");
@@ -606,8 +619,9 @@ mod tests {
             input: None,
             input_file: Some(spill_path.to_str().unwrap().to_string()),
             output_dir: "/tmp/out".to_string(),
+            context: Default::default(),
         };
-        let (id, input, output_dir) = req.rehydrate_input().unwrap();
+        let (id, input, output_dir, _context) = req.rehydrate_input().unwrap();
         assert_eq!(id, "p2");
         assert_eq!(input, json!({"key": "value"}));
         assert_eq!(output_dir, "/tmp/out");
@@ -622,6 +636,7 @@ mod tests {
             input: None,
             input_file: None,
             output_dir: "/tmp/out".to_string(),
+            context: Default::default(),
         };
         let err = req.rehydrate_input().unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
@@ -638,6 +653,7 @@ mod tests {
             input: None,
             input_file: Some(spill_path.to_str().unwrap().to_string()),
             output_dir: "/tmp/out".to_string(),
+            context: Default::default(),
         };
         let err = req.rehydrate_input().unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);

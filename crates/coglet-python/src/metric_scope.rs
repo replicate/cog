@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use pyo3_stub_gen::derive::*;
 
 use coglet_core::bridge::protocol::MetricMode;
@@ -186,26 +187,40 @@ impl MetricRecorder {
 
 /// Prediction scope, obtained via `current_scope()`.
 ///
-/// Provides access to `scope.metrics` for recording metrics, and
-/// `scope.record_metric()` as a convenience shorthand.
+/// Provides access to `scope.metrics` for recording metrics,
+/// `scope.record_metric()` as a convenience shorthand, and
+/// `scope.context` for per-prediction context passed in the request.
 #[gen_stub_pyclass]
 #[pyclass(name = "Scope", module = "coglet._sdk")]
 pub struct Scope {
     metrics_recorder: Py<MetricRecorder>,
+    /// Per-prediction context from the request body (`dict[str, str]`).
+    context: Py<PyDict>,
 }
 
 impl Scope {
-    pub fn new(py: Python<'_>, sender: Arc<SlotSender>) -> PyResult<Self> {
+    pub fn new(
+        py: Python<'_>,
+        sender: Arc<SlotSender>,
+        context: HashMap<String, String>,
+    ) -> PyResult<Self> {
         let recorder = Py::new(py, MetricRecorder::new(sender))?;
+        let dict = PyDict::new(py);
+        for (k, v) in &context {
+            dict.set_item(k, v)?;
+        }
         Ok(Self {
             metrics_recorder: recorder,
+            context: dict.unbind(),
         })
     }
 
     pub fn noop(py: Python<'_>) -> PyResult<Self> {
         let recorder = Py::new(py, MetricRecorder::noop())?;
+        let dict = PyDict::new(py);
         Ok(Self {
             metrics_recorder: recorder,
+            context: dict.unbind(),
         })
     }
 }
@@ -217,6 +232,14 @@ impl Scope {
     #[getter]
     fn metrics(&self, py: Python<'_>) -> Py<MetricRecorder> {
         self.metrics_recorder.clone_ref(py)
+    }
+
+    /// Per-prediction context passed in the request body.
+    ///
+    /// Returns a `dict[str, str]` (empty dict if no context was provided).
+    #[getter]
+    fn context(&self, py: Python<'_>) -> Py<PyDict> {
+        self.context.clone_ref(py)
     }
 
     /// Convenience: record a metric value.
@@ -419,8 +442,12 @@ pub struct ScopeGuard {
 
 impl ScopeGuard {
     /// Enter scope for a prediction.
-    pub fn enter(py: Python<'_>, sender: Arc<SlotSender>) -> PyResult<Self> {
-        let scope = Py::new(py, Scope::new(py, sender)?)?;
+    pub fn enter(
+        py: Python<'_>,
+        sender: Arc<SlotSender>,
+        context: HashMap<String, String>,
+    ) -> PyResult<Self> {
+        let scope = Py::new(py, Scope::new(py, sender, context)?)?;
 
         let token = set_current_scope(py, &scope)?;
         set_sync_scope(py, Some(&scope));
