@@ -62,6 +62,7 @@ This follows the standard [requirements.txt](https://pip.pypa.io/en/stable/refer
 To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
 
 `cog.yaml`:
+
 ```yaml
 build:
   system_packages:
@@ -70,6 +71,7 @@ build:
 ```
 
 `requirements.txt`:
+
 ```
 git+https://github.com/huggingface/transformers
 ```
@@ -77,6 +79,7 @@ git+https://github.com/huggingface/transformers
 You can also pin Python package installations to a specific git commit:
 
 `cog.yaml`:
+
 ```yaml
 build:
   system_packages:
@@ -85,6 +88,7 @@ build:
 ```
 
 `requirements.txt`:
+
 ```
 git+https://github.com/huggingface/transformers@2d1602a
 ```
@@ -190,7 +194,7 @@ This stanza describes the concurrency capabilities of the model. It has one opti
 
 ### `max`
 
-The maximum number of concurrent predictions the model can process.  If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
+The maximum number of concurrent predictions the model can process. If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
 
 For example:
 
@@ -213,7 +217,7 @@ r8.im is Replicate's registry, but this can be any Docker registry.
 
 If you don't set this, then a name will be generated from the directory name.
 
-If you set this, then you can run `cog push` without specifying the model name. 
+If you set this, then you can run `cog push` without specifying the model name.
 
 If you specify an image name argument when pushing (like `cog push your-username/custom-model-name`), the argument will be used and the value of `image` in cog.yaml will be ignored.
 
