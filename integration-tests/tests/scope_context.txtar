@@ -15,7 +15,7 @@ stdout '"output":"api_token:secret123, region:us-east-1"'
 # Prediction without context — should get empty dict
 curl POST /predictions '{"input":{"expect_empty":"true"}}'
 stdout '"status":"succeeded"'
-stdout '"output":"context_is_empty=true"'
+stdout '"output":"context_is_empty=True"'
 
 -- cog.yaml --
 build:
