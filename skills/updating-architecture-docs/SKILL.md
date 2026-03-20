@@ -40,6 +40,8 @@ The first gives you the mental model. The second just restates the code. A reade
 
 Reference source locations at the **package/directory level** with a description of what that package owns. Specific file paths and line numbers rot as code moves around. A pointer like "`crates/coglet/src/bridge/` -- IPC protocol and transport" stays accurate through refactors. "`bridge/protocol.rs:69` -- ControlRequest enum" doesn't.
 
+Only document packages that matter for understanding the system's shape. Generic utility packages (`pkg/util/`, `pkg/path/`, etc.) don't need a mention -- their existence is obvious and they don't help a reader build a mental model. If someone needs them, they'll find them.
+
 When a specific file reference is genuinely useful (a key entry point, a non-obvious starting point for understanding a subsystem), include it -- but prefer "the `PredictionService` in `service.rs`" over a line number.
 
 ### Document boundaries, not internals

@@ -169,6 +169,18 @@ Stores credentials for `cog push`.
 
 **Code**: `pkg/cli/login.go`
 
+---
+
+### Hidden / Internal Commands
+
+These commands exist but are hidden from `cog --help`:
+
+- **`cog debug`** -- Generates the Dockerfile from cog.yaml without building (useful for debugging build issues)
+- **`cog inspect`** -- Inspects model images and OCI indices
+- **`cog weights`** -- Parent command for `weights build`, `weights push`, `weights inspect`
+
+There's also a separate `base-image` binary (`cmd/base-image/`) with subcommands for managing Cog base images (`dockerfile`, `build`, `generate-matrix`). This isn't a `cog` subcommand.
+
 ## How CLI Commands Interact with Containers
 
 Commands like `predict`, `train`, and `serve` follow the same pattern: build an image, start a container, communicate via HTTP. The CLI never runs model code directly.
@@ -221,21 +233,31 @@ pkg/cli/
 └── init.go         # cog init
 ```
 
-Commands delegate to packages:
-- `pkg/image/` - Image building
-- `pkg/dockerfile/` - Dockerfile generation
-- `pkg/docker/` - Docker client operations
-- `pkg/config/` - cog.yaml parsing
-- `pkg/web/` - Replicate API client
-- `pkg/predict/` - Local prediction execution
+Commands delegate to packages under `pkg/`:
 
-## Code References
+**Core:**
+- `pkg/cli/` -- Cobra command definitions
+- `pkg/config/` -- cog.yaml parsing and validation, compatibility matrices
+- `pkg/image/` -- Build orchestration (ties together config, Dockerfile generation, schema gen)
+- `pkg/dockerfile/` -- Dockerfile generation and base image selection
+- `pkg/docker/` -- Docker client operations
+- `pkg/predict/` -- Local prediction execution (talks to container's HTTP API)
+- `pkg/schema/` -- Static schema generator (tree-sitter, experimental)
+- `pkg/wheels/` -- SDK and coglet wheel resolution
 
-| File | Purpose |
-|------|---------|
-| `pkg/cli/root.go` | Command registration |
-| `pkg/cli/build.go` | Build command |
-| `pkg/cli/predict.go` | Predict command, input parsing |
-| `pkg/cli/push.go` | Push command |
-| `pkg/image/build.go` | Build orchestration |
-| `pkg/predict/predictor.go` | Local prediction client |
+**Infrastructure:**
+- `pkg/web/` -- Replicate API client (for `cog push`)
+- `pkg/http/` -- Authenticated HTTP transport
+- `pkg/registry/` -- OCI/Docker registry client
+- `pkg/model/` -- OCI artifact domain model
+- `pkg/weights/` -- Weight file discovery and checksums
+- `pkg/errors/` -- `CodedError` for user-facing errors with error codes
+
+**Utilities:**
+- `pkg/dockercontext/` -- Docker build context directory management
+- `pkg/dockerignore/` -- `.dockerignore` parsing
+- `pkg/requirements/` -- `requirements.txt` parsing
+- `pkg/env/` -- `R8_*` environment variable config
+- `pkg/update/` -- CLI version update checker
+- `pkg/global/` -- Build-time metadata, process-wide config
+- `pkg/provider/` -- Abstracts registry-specific behavior for push workflows

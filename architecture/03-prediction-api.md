@@ -137,11 +137,13 @@ The `/health-check` endpoint always returns HTTP 200 with the status in the JSON
 
 | State | JSON `status` | Condition |
 |-------|---------------|-----------|
-| `STARTING` | `"STARTING"` | Worker subprocess initializing |
+| `UNKNOWN` | `"UNKNOWN"` | Process just started, not yet serving |
+| `STARTING` | `"STARTING"` | Worker subprocess initializing, running setup() |
 | `READY` | `"READY"` | Worker ready, slots available |
 | `BUSY` | `"BUSY"` | All slots occupied (backpressure) |
 | `SETUP_FAILED` | `"SETUP_FAILED"` | `setup()` threw exception |
 | `DEFUNCT` | `"DEFUNCT"` | Fatal error, worker crashed |
+| `UNHEALTHY` | `"UNHEALTHY"` | User-defined healthcheck failed (transient) |
 
 When all concurrency slots are occupied, new predictions receive `409 Conflict` instead of queuing. Clients should implement retry with backoff.
 

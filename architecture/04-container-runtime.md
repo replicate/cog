@@ -112,33 +112,66 @@ The `Prediction` struct is itself a state machine -- its mutation methods (`set_
 
 ## Worker Subprocess Protocol
 
-Communication between the Rust server and Python worker uses two channels:
+Communication between the Rust server and Python worker uses two channels. All messages are JSON, one per line.
 
-### Control Channel (stdin/stdout -- JSON framed)
+### Control Channel (stdin/stdout)
 
-| Parent → Child | Child → Parent |
-|----------------|----------------|
-| `Init { predictor_ref, num_slots, ... }` | `Ready { slots, schema }` |
-| `Cancel { slot }` | `Log { source, data }` |
-| `Shutdown` | `Idle { slot }` |
-| | `Failed { slot, error }` |
-| | `ShuttingDown` |
+Lifecycle messages for the worker as a whole.
 
-### Slot Channel (Unix socket per slot -- JSON framed)
+**Parent → Worker:**
 
-| Parent → Child | Child → Parent |
-|----------------|----------------|
-| `Predict { id, input }` | `Log { data }` |
-| | `Output { value }` (streaming) |
-| | `Done { output }` |
-| | `Failed { error }` |
-| | `Cancelled` |
+| Message | Purpose |
+|---------|---------|
+| `Init { predictor_ref, num_slots, is_train, is_async, ... }` | Bootstrap worker -- load predictor, create slots |
+| `Cancel { slot }` | Cancel a running prediction on a slot |
+| `Healthcheck { id }` | Request a user-defined healthcheck |
+| `Shutdown` | Graceful shutdown |
+
+**Worker → Parent:**
+
+| Message | Purpose |
+|---------|---------|
+| `Ready { slots, schema }` | Worker initialized, here are the slot IDs and OpenAPI schema |
+| `Log { source, data }` | Setup-time log line (stdout or stderr) |
+| `WorkerLog { target, level, message }` | Structured log from the worker runtime itself (not user code) |
+| `Idle { slot }` | Slot finished a prediction and is available |
+| `Cancelled { slot }` | Prediction on slot was cancelled |
+| `Failed { slot, error }` | Prediction on slot failed |
+| `Fatal { reason }` | Unrecoverable error -- worker is shutting down |
+| `DroppedLogs { count, interval_millis }` | Worker dropped log messages due to backpressure |
+| `HealthcheckResult { id, status, error }` | Result of a user-defined healthcheck |
+| `ShuttingDown` | Worker is shutting down |
+
+### Slot Channel (Unix socket per slot)
+
+Per-prediction data. Using separate sockets per slot avoids head-of-line blocking between concurrent predictions.
+
+**Parent → Worker:**
+
+| Message | Purpose |
+|---------|---------|
+| `Predict { id, input, input_file, output_dir }` | Run a prediction. `input` is inline JSON; for large payloads (>6MiB) it's `null` and `input_file` points to a spill file on disk |
+
+**Worker → Parent:**
+
+| Message | Purpose |
+|---------|---------|
+| `Log { source, data }` | Log line from predict() |
+| `Output { output }` | Yielded output value (for generators/streaming) |
+| `FileOutput { filename, kind, mime_type }` | File produced by predict() -- referenced by path, uploaded by parent |
+| `Metric { name, value, mode }` | Custom metric (mode: `replace`, `increment`, or `append`) |
+| `Done { id, output, predict_time, is_stream }` | Prediction completed successfully |
+| `Failed { id, error }` | Prediction failed |
+| `Cancelled { id }` | Prediction was cancelled |
 
 ## Health State Machine
 
 ```mermaid
 stateDiagram-v2
-    [*] --> STARTING: Container start
+    [*] --> UNKNOWN: Process starts
+    note right of UNKNOWN: Predictions return 503
+    
+    UNKNOWN --> STARTING: serve() called
     note right of STARTING: Predictions return 503
     
     STARTING --> READY: setup() succeeds
@@ -156,6 +189,8 @@ stateDiagram-v2
     SETUP_FAILED --> [*]
     DEFUNCT --> [*]
 ```
+
+There's a distinction between internal health state (`Health` enum) and what the HTTP response returns (`HealthResponse`). The HTTP response adds one extra state: `UNHEALTHY`, which is transient -- it's returned when a user-defined healthcheck fails but doesn't change the internal health state. See [User-Defined Healthchecks](#user-defined-healthchecks) below.
 
 ## Prediction Flow
 
@@ -302,13 +337,42 @@ How coglet gets invoked when running a Cog container:
 - **Observable**: Easy to monitor slot usage
 - **Simple**: No async complexity in worker subprocess
 
+## Input Spilling
+
+When a prediction input exceeds 6MiB, it's too large to send inline through the IPC socket. Instead, the parent writes it to a temporary file and sends the file path in `input_file` (with `input` set to null). The worker reads the file, deletes it, and proceeds normally. This is transparent to the predictor code.
+
+## File Outputs
+
+When predict() produces file outputs (`cog.Path`), the worker sends a `FileOutput` message with the filename and MIME type. The parent handles uploading the file (or base64-encoding it for inline responses). The `output_dir` field in the `Predict` request tells the worker where to write output files.
+
+`FileOutputKind` distinguishes between normal file outputs (`FileType`) and oversized outputs (`Oversized`) that exceeded an inline size limit.
+
+## Custom Metrics
+
+Models can record custom metrics via `self.record_metric(name, value, mode)` in their predict method. These are sent as `Metric` messages on the slot channel. The `mode` controls how metrics aggregate:
+
+- `replace` -- overwrite any existing value
+- `increment` -- add to the current value (numeric)
+- `append` -- append to a list
+
+Metrics appear in the prediction response's `metrics` object alongside the built-in `predict_time`.
+
+## User-Defined Healthchecks
+
+Models can implement a custom healthcheck that runs alongside the built-in health state machine. The parent sends `Healthcheck { id }` on the control channel; the worker runs the user's healthcheck and responds with `HealthcheckResult { id, status, error }`.
+
+If the healthcheck fails, the HTTP `/health-check` endpoint returns `UNHEALTHY` -- but this is transient and doesn't change the internal `Health` state. The model stays `READY` and continues accepting predictions.
+
 ## Environment Variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `PORT` | 5000 | HTTP server port |
-| `COG_LOG_LEVEL` | INFO | Logging verbosity |
+| `COG_LOG_LEVEL` | INFO | Logging verbosity (ignored if `RUST_LOG` is set) |
 | `COG_MAX_CONCURRENCY` | 1 | Number of concurrent prediction slots |
+| `COG_SETUP_TIMEOUT` | none | Setup timeout in seconds (0 is ignored) |
+| `COG_THROTTLE_RESPONSE_INTERVAL` | 0.5s | Webhook response throttling interval |
+| `LOG_FORMAT` | json | Set to `console` for human-readable log output |
 
 ## Where to Look
 
