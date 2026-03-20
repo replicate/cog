@@ -1,7 +1,7 @@
 # Training interface reference
 
 > [!WARNING]  
-> The `cog train` command is deprecated and will be removed in a future version of Cog. The training API described below may still be used with the HTTP API's `/trainings` endpoint, but the CLI command is no longer recommended for new projects.
+> The `cog train` command is deprecated and will be removed in the next version of Cog. The training API described below may still be used with the HTTP API's `/trainings` endpoint, but the CLI command is no longer recommended for new projects.
 
 Cog's training API allows you to define a fine-tuning interface for an existing Cog model, so users of the model can bring their own training data to create derivative fine-tuned models. Real-world examples of this API in use include [fine-tuning SDXL with images](https://replicate.com/blog/fine-tune-sdxl) or [fine-tuning Llama 2 with structured text](https://replicate.com/blog/fine-tune-llama-2).
 

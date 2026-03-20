@@ -93,6 +93,5 @@ See the [`cog.yaml` reference](yaml.md#concurrency) for more details.
 You can configure runtime behavior with environment variables:
 
 - `COG_SETUP_TIMEOUT`: Maximum time in seconds for the `setup()` method (default: no timeout).
-- `COG_WEIGHTS`: URL or path to model weights, passed to `setup(weights=)`.
 
 See the [environment variables reference](environment.md) for the full list.

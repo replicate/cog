@@ -86,10 +86,30 @@ Set to `0` to disable the timeout (same as default). Invalid values are ignored 
 $ COG_SETUP_TIMEOUT=300 docker run -p 5000:5000 my-model  # 5-minute setup timeout
 ```
 
-### `COG_WEIGHTS`
+### `COG_CA_CERT`
 
-Specifies a URL or local path for model weights. This is useful for testing fine-tuned models locally — the value is passed to your predictor's `setup(weights=)` method.
+Injects a custom CA certificate into the Docker image during `cog build`. This is useful when building behind a corporate proxy or VPN that uses custom certificate authorities (e.g. Cloudflare WARP).
+
+**Supported values:**
+
+| Value                            | Description                                                 |
+| -------------------------------- | ----------------------------------------------------------- |
+| `/path/to/cert.crt`              | Path to a single PEM certificate file                       |
+| `/path/to/certs/`                | Directory of `.crt` and `.pem` files (all are concatenated) |
+| `-----BEGIN CERTIFICATE-----...` | Inline PEM certificate                                      |
+| `LS0tLS1CRUdJTi...`              | Base64-encoded PEM certificate                              |
+
+The certificate is installed into the system CA store and the `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` environment variables are set automatically in the built image.
+
+**Examples:**
 
 ```console
-$ cog predict -e COG_WEIGHTS=https://example.com/weights.tar -i prompt="hello"
+# From a file
+$ COG_CA_CERT=/usr/local/share/ca-certificates/corporate-ca.crt cog build
+
+# From a directory of certs
+$ COG_CA_CERT=/etc/custom-certs/ cog build
+
+# Inline (e.g. from a CI secret)
+$ COG_CA_CERT="$(cat /path/to/cert.pem)" cog build
 ```
