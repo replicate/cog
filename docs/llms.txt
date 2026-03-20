@@ -672,12 +672,12 @@ Injects a custom CA certificate into the Docker image during `cog build`. This i
 
 **Supported values:**
 
-| Value | Description |
-| ----- | ----------- |
-| `/path/to/cert.crt` | Path to a single PEM certificate file |
-| `/path/to/certs/` | Directory of `.crt` and `.pem` files (all are concatenated) |
-| `-----BEGIN CERTIFICATE-----...` | Inline PEM certificate |
-| `LS0tLS1CRUdJTi...` | Base64-encoded PEM certificate |
+| Value                            | Description                                                 |
+| -------------------------------- | ----------------------------------------------------------- |
+| `/path/to/cert.crt`              | Path to a single PEM certificate file                       |
+| `/path/to/certs/`                | Directory of `.crt` and `.pem` files (all are concatenated) |
+| `-----BEGIN CERTIFICATE-----...` | Inline PEM certificate                                      |
+| `LS0tLS1CRUdJTi...`              | Base64-encoded PEM certificate                              |
 
 The certificate is installed into the system CA store and the `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` environment variables are set automatically in the built image.
 
