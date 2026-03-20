@@ -13,7 +13,7 @@ The Prediction API is the HTTP interface for running model inference. It uses a 
 | `GET /` | Index | List available endpoints |
 | `GET /openapi.json` | Schema | OpenAPI specification |
 
-By default, `POST /predictions` blocks until completion. For long-running predictions, use async mode with `Prefer: respond-async` header - the response returns immediately with status `processing`, and progress updates are delivered via webhook.
+By default, `POST /predictions` blocks until completion. For long-running predictions, use async mode with `Prefer: respond-async` header -- the response returns immediately with status `processing`, and progress updates are delivered via webhook.
 
 ## The Envelope Pattern
 
@@ -58,7 +58,7 @@ What clients send to start a prediction:
 | Field | Type | Purpose |
 |-------|------|---------|
 | `id` | string (optional) | Client-provided ID for idempotency |
-| `input` | object | **Model-specific** - validated against schema |
+| `input` | object | **Model-specific** -- validated against schema |
 | `webhook` | URL (optional) | Where to send progress updates |
 | `webhook_events_filter` | array (optional) | Which events to send |
 | `created_at` | datetime (optional) | Client-provided timestamp |
@@ -94,7 +94,7 @@ What comes back from the API:
 | `id` | string | Prediction identifier |
 | `status` | enum | `starting`, `processing`, `succeeded`, `canceled`, `failed` |
 | `input` | object | Echo of the input (for reference) |
-| `output` | any | **Model-specific** - type defined by schema |
+| `output` | any | **Model-specific** -- type defined by schema |
 | `logs` | string | Captured stdout/stderr from predict() |
 | `error` | string | Error message if status is `failed` |
 | `metrics` | object | Timing and other metrics |
@@ -116,9 +116,95 @@ stateDiagram-v2
     canceled --> [*]
 ```
 
-## Dynamic Payload Handling
+State transitions happen on the `Prediction` struct, which fires webhooks as a side effect:
 
-The magic of the envelope pattern is that the `input` and `output` fields are dynamically typed based on the schema.
+```rust
+pred.set_processing();       // fires Start webhook
+// ... prediction runs, logs/outputs append ...
+pred.set_succeeded(output);  // fires terminal Completed webhook
+```
+
+## Connection Drop Handling
+
+Synchronous predictions automatically cancel when the client connection drops. This prevents wasted computation on predictions where the client is no longer listening.
+
+```rust
+// SyncPredictionGuard is RAII -- drops when connection closes
+let guard = handle.sync_guard();
+let result = service.predict(slot, input).await;
+// If connection drops here, guard.drop() cancels the prediction
+```
+
+Async predictions (via `Prefer: respond-async`) are unaffected -- they continue running regardless of client connection state, delivering results via webhook.
+
+## Health States
+
+The `/health-check` endpoint always returns HTTP 200 with the status in the JSON body. This allows load balancers and orchestrators to distinguish between "server is running but not ready" vs "server is down."
+
+| State | JSON `status` | Condition |
+|-------|---------------|-----------|
+| `STARTING` | `"STARTING"` | Worker subprocess initializing |
+| `READY` | `"READY"` | Worker ready, slots available |
+| `BUSY` | `"BUSY"` | All slots occupied (backpressure) |
+| `SETUP_FAILED` | `"SETUP_FAILED"` | `setup()` threw exception |
+| `DEFUNCT` | `"DEFUNCT"` | Fatal error, worker crashed |
+
+When all concurrency slots are occupied, new predictions receive `409 Conflict` instead of queuing. Clients should implement retry with backoff.
+
+Prediction endpoints return 503 when health is not `READY`.
+
+## Idempotent PUT
+
+The runtime uses a concurrent-safe DashMap for prediction state:
+
+```rust
+// Atomic check-or-insert
+match service.get_prediction_response(id) {
+    Some(response) => return 202 + response,  // Already exists
+    None => {
+        service.submit_prediction(id, input, webhook);  // Create new
+        return 202 + starting_state;
+    }
+}
+```
+
+This is fully thread-safe without locks.
+
+## Concurrency Model
+
+### Slot-Based Permits
+
+The runtime uses explicit permit tokens for concurrency control:
+
+```rust
+// Acquire permit (blocks if all slots busy)
+let permit = permit_pool.acquire().await?;
+
+// Permit is held during prediction
+let slot_id = permit.slot_id();
+let result = orchestrator.predict(slot_id, input).await;
+
+// Permit automatically returned on drop
+drop(permit);
+```
+
+Advantages:
+- Fixed, predictable concurrency
+- Fair queuing (FIFO permit acquisition)
+- Observable slot usage in metrics
+- No task explosion
+
+### Configuration
+
+```yaml
+# cog.yaml
+concurrency:
+  max: 5
+```
+
+This creates 5 slots in the PermitPool. Each slot corresponds to one Unix socket connection to the worker subprocess.
+
+## Dynamic Payload Handling
 
 ### Input Validation Flow
 
@@ -130,7 +216,7 @@ flowchart LR
     
     subgraph validation["Validation"]
         schema["Schema (Input type)"]
-        pydantic["Pydantic Model"]
+        validate["Schema Validation"]
     end
     
     subgraph transform["Transformation"]
@@ -142,18 +228,18 @@ flowchart LR
         kwargs["**kwargs"]
     end
     
-    json --> pydantic
-    schema --> pydantic
-    pydantic --> download
+    json --> validate
+    schema --> validate
+    validate --> download
     download --> coerce
     coerce --> kwargs
 ```
 
-1. **Parse JSON** - Extract `input` from request body
-2. **Validate against schema** - Pydantic checks types, required fields, constraints
-3. **Download files** - URLs in `cog.Path` fields are fetched to local temp files
-4. **Coerce types** - Strings become Paths, etc.
-5. **Call predict()** - Validated input passed as `**kwargs`
+1. **Parse JSON** -- Extract `input` from request body
+2. **Validate against schema** -- Coglet validates types, required fields, and constraints at the HTTP edge using the OpenAPI schema
+3. **Download files** -- URLs in `cog.Path` fields are fetched to local temp files
+4. **Coerce types** -- Strings become Paths, etc.
+5. **Call predict()** -- Validated input passed as `**kwargs`
 
 ### Output Handling Flow
 
@@ -177,10 +263,10 @@ flowchart LR
     serialize --> output
 ```
 
-1. **Capture output** - Return value or yielded values from predict()
-2. **Upload files** - `cog.Path` outputs are uploaded, replaced with URLs
-3. **Serialize** - Convert to JSON-compatible format
-4. **Return** - Place in `output` field of response
+1. **Capture output** -- Return value or yielded values from predict()
+2. **Upload files** -- `cog.Path` outputs are uploaded, replaced with URLs
+3. **Serialize** -- Convert to JSON-compatible format
+4. **Return** -- Place in `output` field of response
 
 ### File Handling
 
@@ -196,6 +282,31 @@ Output files (cog.Path):
 predict() returns: Path("/tmp/output.png")
 Server uploads:    https://storage.example.com/output-xyz.png
 Client receives:   {"output": "https://storage.example.com/output-xyz.png"}
+```
+
+## Cancellation
+
+Cancellation uses IPC messages with different strategies for sync vs async predictors:
+
+```
+Parent: ControlRequest::Cancel { slot }
+    │
+    └─▶ Worker: handler.cancel(slot)
+```
+
+**Sync predictors:**
+```
+handler.cancel(slot)
+    ├─▶ Set CANCEL_REQUESTED flag for slot
+    ├─▶ Send SIGUSR1 to self
+    └─▶ Signal handler: raise KeyboardInterrupt (if in cancelable region)
+```
+
+**Async predictors:**
+```
+handler.cancel(slot)
+    ├─▶ Get future from slot state
+    └─▶ future.cancel() → Python raises asyncio.CancelledError
 ```
 
 ## Webhooks
@@ -240,6 +351,8 @@ Filter events with `webhook_events_filter`:
 }
 ```
 
+Webhook delivery includes structured retry with exponential backoff and automatic OpenTelemetry trace context propagation in headers.
+
 ## Streaming Output
 
 For models that yield output progressively:
@@ -252,9 +365,9 @@ def predict(self, prompt: str) -> Iterator[str]:
 
 The API can deliver these as:
 
-1. **Webhooks** - Each yield triggers an `output` webhook
-2. **Server-Sent Events** - Stream via `Accept: text/event-stream`
-3. **Final array** - Sync response collects all yields into `output: ["a", "b", "c"]`
+1. **Webhooks** -- Each yield triggers an `output` webhook
+2. **Server-Sent Events** -- Stream via `Accept: text/event-stream`
+3. **Final array** -- Sync response collects all yields into `output: ["a", "b", "c"]`
 
 ## Training API
 
@@ -264,11 +377,38 @@ The training API (`/trainings`) uses the same envelope pattern:
 - `TrainingResponse` extends `PredictionResponse`
 - Calls `train()` method instead of `predict()`
 
+## Error Handling
+
+### Worker Crashes
+
+The HTTP server marks health as `DEFUNCT` but continues serving other endpoints:
+
+```rust
+match worker.wait().await {
+    Ok(status) if !status.success() => {
+        health.set(Health::Defunct);
+        // HTTP server still runs, returns 503 for predictions
+    }
+}
+```
+
+### Setup Failures
+
+```rust
+match control_rx.recv().await? {
+    ControlResponse::Failed { error } => {
+        health.set(Health::SetupFailed { reason: error });
+        // Include error in health-check response
+    }
+}
+```
+
 ## Code References
 
 | File | Purpose |
 |------|---------|
-| `python/cog/schema.py` | `PredictionRequest`, `PredictionResponse`, `Status` |
-| `python/cog/server/http.py` | HTTP endpoints, request handling |
-| `python/cog/server/runner.py` | Prediction orchestration |
-| `python/cog/server/webhook.py` | Webhook delivery |
+| `crates/coglet/src/transport/http/routes.rs` | HTTP endpoint handlers |
+| `crates/coglet/src/prediction.rs` | Prediction state + webhook firing |
+| `crates/coglet/src/webhook.rs` | Webhook delivery with retries |
+| `crates/coglet/src/bridge/protocol.rs` | IPC message types |
+| `crates/coglet/src/permit/pool.rs` | Slot-based concurrency |

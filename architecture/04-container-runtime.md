@@ -1,15 +1,12 @@
-# Container Runtime (FFI/Rust)
+# Container Runtime
 
-This document covers the FFI runtime implementation using Rust with PyO3 bindings. This is a complete rewrite of the HTTP server, moving from Python/FastAPI to Rust/Axum with a PyO3 ABI3 wheel.
+This document covers what happens when a Cog container runs. It's where the [Model Source](./01-model-source.md), [Schema](./02-schema.md), and [Prediction API](./03-prediction-api.md) come together.
 
 ## Overview
 
-The FFI runtime provides significant improvements over the legacy Python runtime:
-- **Rust HTTP server (Axum)**: Faster request handling, better backpressure management
-- **Worker isolation**: Python predictor crashes don't kill the server
-- **Slot-based concurrency**: Predictable resource control with permit pools
-- **Same API surface**: Drop-in replacement for the legacy runtime
-- **Subprocess reuse**: Predictor stays loaded between requests
+When a Cog container runs, it executes a **two-process architecture**: a Rust parent process (HTTP server + orchestrator) and a Python worker subprocess (predictor execution). The design isolates user model code from the HTTP server for stability, resource management, and clean shutdown handling.
+
+The runtime is implemented in Rust using Axum for HTTP and PyO3 for Python integration, distributed as a Python wheel (`coglet`).
 
 ## High-Level Architecture
 
@@ -29,7 +26,7 @@ The FFI runtime provides significant improvements over the legacy Python runtime
 │  ┌────────────────────────────────────────────────────────────────────────────┐ │
 │  │                    Active Predictions (DashMap)                            │ │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │ │
-│  │  �� PredictionEntry │  │ PredictionEntry │  │ PredictionEntry │  ...       │ │
+│  │  │ PredictionEntry │  │ PredictionEntry │  │ PredictionEntry │  ...       │ │
 │  │  │ ─────────────── │  │ ─────────────── │  │ ─────────────── │            │ │
 │  │  │ prediction (Arc)│  │ prediction (Arc)│  │ prediction (Arc)│            │ │
 │  │  │ cancel_token    │  │ cancel_token    │  │ cancel_token    │            │ │
@@ -68,8 +65,6 @@ The FFI runtime provides significant improvements over the legacy Python runtime
 
 ## Component Ownership
 
-The FFI runtime uses clear ownership patterns to manage prediction lifecycle:
-
 ```
 ═══════════════════════════════════════════════════════════════════════════════════
                            COMPONENT OWNERSHIP
@@ -81,11 +76,11 @@ The FFI runtime uses clear ownership patterns to manage prediction lifecycle:
   └── method: cancel() fires token + delegates to orchestrator
 
   PredictionEntry (in DashMap)
-  ├── has: Arc<Mutex<Prediction>> (the real state — single source of truth)
+  ├── has: Arc<Mutex<Prediction>> (the real state -- single source of truth)
   ├── has: CancellationToken
   └── has: input (for API responses)
 
-  Prediction (state machine — webhooks fire from mutation methods)
+  Prediction (state machine -- webhooks fire from mutation methods)
   ├── owns: status, logs, outputs, output, error, metrics
   ├── owns: WebhookSender (fires on set_processing, append_log, etc.)
   └── owns: completion notifier (for waiting on result)
@@ -105,11 +100,46 @@ The FFI runtime uses clear ownership patterns to manage prediction lifecycle:
 ═══════════════════════════════════════════════════════════════════════════════════
 ```
 
+## Process Roles
+
+### tini (PID 1)
+- **What**: Minimal init system (~30KB binary)
+- **Why**: Proper signal forwarding to children, zombie process reaping
+- **Entry**: `ENTRYPOINT ["/sbin/tini", "--"]`
+
+### Parent Process (Rust HTTP Server)
+- **Entry**: `CMD ["python", "-m", "cog.server.http"]` -- this thin Python launcher calls `coglet.server.serve()`
+- **Responsibilities**:
+  - HTTP API on port 5000 (Axum)
+  - Request validation
+  - Input file downloading (from URLs)
+  - Webhook delivery with retry and trace context propagation
+  - Output file uploads
+  - Health state management
+  - Worker subprocess lifecycle
+
+### Worker Subprocess (Python)
+- **Spawned via**: `python -c "import coglet; coglet.server._run_worker()"`
+- **Responsibilities**:
+  - Load user's predictor module
+  - Run `setup()` once at startup
+  - Execute `predict()` / `train()` methods
+  - Capture stdout/stderr via ContextVar-based log routing
+  - Send events back to parent via slot sockets
+
+## Why Two Processes?
+
+1. **Isolation**: User code crashes don't bring down the HTTP server
+2. **Memory**: Fresh address space for model loading
+3. **CUDA**: Clean GPU context initialization in worker
+4. **Stability**: Server marks health as `DEFUNCT` and continues serving other endpoints if worker crashes
+5. **Monitoring**: Parent tracks worker health independently
+
 ## Worker Subprocess Protocol
 
 Communication between the Rust server and Python worker uses two channels:
 
-### Control Channel (stdin/stdout - JSON framed)
+### Control Channel (stdin/stdout -- JSON framed)
 
 | Parent → Child | Child → Parent |
 |----------------|----------------|
@@ -119,7 +149,7 @@ Communication between the Rust server and Python worker uses two channels:
 | | `Failed { slot, error }` |
 | | `ShuttingDown` |
 
-### Slot Channel (Unix socket per slot - JSON framed)
+### Slot Channel (Unix socket per slot -- JSON framed)
 
 | Parent → Child | Child → Parent |
 |----------------|----------------|
@@ -151,20 +181,6 @@ stateDiagram-v2
     SETUP_FAILED --> [*]
     DEFUNCT --> [*]
 ```
-
-### Health States
-
-The health-check endpoint always returns HTTP 200 with the status in the JSON body. This allows load balancers and orchestrators to distinguish between "server is running but not ready" vs "server is down".
-
-| State | JSON `status` | Meaning |
-|-------|---------------|---------|
-| `STARTING` | `"STARTING"` | Worker subprocess initializing, `setup()` running |
-| `READY` | `"READY"` | Worker ready, at least one slot available |
-| `BUSY` | `"BUSY"` | All slots occupied, no capacity for new predictions |
-| `SETUP_FAILED` | `"SETUP_FAILED"` | `setup()` threw exception, cannot serve predictions |
-| `DEFUNCT` | `"DEFUNCT"` | Fatal error or worker crash, server unusable |
-
-> **Note**: Prediction endpoints (`/predictions`) return 503 when health is not `READY`.
 
 ## Prediction Flow
 
@@ -221,26 +237,6 @@ sequenceDiagram
 
 **Key behavior**: No guard is held. The prediction continues even if the client disconnects.
 
-### Idempotent PUT (PUT /predictions/{id})
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Routes
-    participant Service
-    
-    Client->>Routes: PUT /predictions/X
-    Routes->>Service: get_prediction_response("X")
-    
-    alt Prediction exists
-        Service-->>Routes: existing state
-        Routes-->>Client: 202 + full state
-    else Prediction doesn't exist
-        Routes->>Service: submit_prediction + predict
-        Routes-->>Client: 202 + starting state
-    end
-```
-
 ### Connection Drop (Sync Mode)
 
 ```mermaid
@@ -262,37 +258,6 @@ sequenceDiagram
     Worker-->>Service: Cancelled
 ```
 
-## File Structure
-
-```
-crates/coglet/src/
-├── lib.rs                    # Public API exports
-├── service.rs                # PredictionService (single owner of prediction state)
-├── prediction.rs             # Prediction state (logs, outputs, status)
-├── health.rs                 # Health enum + SetupResult
-├── orchestrator.rs           # Worker subprocess management
-├── permit/
-│   ├── mod.rs
-│   ├── pool.rs               # PermitPool (concurrency control)
-│   └── slot.rs               # PredictionSlot (Prediction + Permit RAII)
-├── bridge/
-│   ├── mod.rs
-│   ├── protocol.rs           # Control/Slot request/response types
-│   ├── codec.rs              # JSON length-delimited framing
-│   └── transport.rs          # Unix socket transport
-├── transport/
-│   └── http/
-│       ├── mod.rs
-│       ├── server.rs         # Axum server setup
-│       └── routes.rs         # HTTP handlers (uses service)
-├── webhook.rs                # WebhookSender (retry logic, trace context)
-├── worker.rs                 # run_worker, PredictHandler trait, SetupError
-└── version.rs                # VersionInfo
-
-crates/coglet-python/src/
-└── lib.rs                    # PyO3 bindings (coglet.server.serve())
-```
-
 ## Invocation Path
 
 How coglet gets invoked when running a Cog container:
@@ -307,15 +272,11 @@ How coglet gets invoked when running a Cog container:
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     python -m cog.server.http                               │
 │                                                                             │
-│   if USE_COGLET env var:                                                    │
-│       import coglet                                                         │
-│       coglet.server.serve(predictor_ref, port=5000)  ──────────────────┐   │
-│   else:                                                                 │   │
-│       # original Python FastAPI server                                  │   │
-│       uvicorn.run(app, port=5000)                                       │   │
-└─────────────────────────────────────────────────────────────────────────┼───┘
-                                                                          │
-                                                                          ▼
+│   import coglet                                                             │
+│   coglet.server.serve(predictor_ref, port=5000)                             │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          coglet (Rust)                                      │
 │                                                                             │
@@ -344,22 +305,21 @@ How coglet gets invoked when running a Cog container:
 ## Key Design Decisions
 
 ### Why Rust?
-- **Performance**: Axum is faster than Uvicorn/FastAPI for HTTP handling
+- **Performance**: Axum is faster than Python HTTP frameworks for request handling
 - **Stability**: Server doesn't crash when user code fails
 - **Resource management**: Better backpressure and concurrency control
 - **Memory safety**: No Python GIL contention in HTTP layer
 
-### Why PyO3 FFI?
+### Why PyO3?
 - **ABI3 wheel**: Single wheel works across Python 3.10-3.13
 - **Native performance**: Direct C API calls, no serialization overhead
 - **Same predictor code**: Users don't change anything
-- **Drop-in replacement**: Same HTTP API, same behavior
+- **Drop-in**: Same HTTP API, same behavior
 
 ### Why Subprocess (not in-process)?
 - **Isolation**: Python crashes/segfaults don't kill server
 - **CUDA context**: Clean GPU initialization per worker
 - **Memory**: Fresh address space for model loading
-- **Restart potential**: Architecture enables future worker restart on fatal errors (not yet implemented)
 
 ### Why Slots (not async tasks)?
 - **Predictable**: Fixed number of concurrent predictions
@@ -371,23 +331,43 @@ How coglet gets invoked when running a Cog container:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `USE_COGLET` | unset | Enable FFI runtime (set to any value) |
 | `PORT` | 5000 | HTTP server port |
 | `COG_LOG_LEVEL` | INFO | Logging verbosity |
-| `COG_CONCURRENCY_SLOTS` | 1 | Number of concurrent prediction slots |
+| `COG_MAX_CONCURRENCY` | 1 | Number of concurrent prediction slots |
 
-## Comparison to Legacy Runtime
+## File Structure
 
-| Aspect | Legacy (Python) | FFI (Rust) |
-|--------|----------------|------------|
-| HTTP Server | FastAPI/Uvicorn | Axum |
-| Language | Pure Python | Rust + PyO3 |
-| IPC | multiprocessing.Pipe (pickled) | Unix socket + pipes (JSON) |
-| Concurrency | async tasks | Slot-based permits |
-| Cancellation | SIGUSR1 signal | IPC message + SIGUSR1 (sync) / future.cancel() (async) |
-| Connection drop | No effect on prediction | Cancels sync predictions |
-| Worker crash | Server unstable | Server stays up, marks DEFUNCT |
-| Performance | Baseline | ~2x faster HTTP layer |
+```
+crates/coglet/src/
+├── lib.rs                    # Public API exports
+├── service.rs                # PredictionService (single owner of prediction state)
+├── prediction.rs             # Prediction state (logs, outputs, status)
+├── health.rs                 # Health enum + SetupResult
+├── orchestrator.rs           # Worker subprocess management
+├── permit/
+│   ├── pool.rs               # PermitPool (concurrency control)
+│   └── slot.rs               # PredictionSlot (Prediction + Permit RAII)
+├── bridge/
+│   ├── protocol.rs           # Control/Slot request/response types
+│   ├── codec.rs              # JSON length-delimited framing
+│   └── transport.rs          # Unix socket transport
+├── transport/
+│   └── http/
+│       ├── server.rs         # Axum server setup
+│       └── routes.rs         # HTTP handlers (uses service)
+├── webhook.rs                # WebhookSender (retry logic, trace context)
+└── worker.rs                 # Worker event loop (child side)
+
+crates/coglet-python/src/
+├── lib.rs                    # PyO3 module: serve(), _run_worker()
+├── predictor.rs              # PythonPredictor wrapper (sync/async)
+├── worker_bridge.rs          # PredictHandler trait implementation
+├── log_writer.rs             # ContextVar-based stdout/stderr routing
+├── audit.rs                  # Audit hook, TeeWriter (protects streams)
+├── cancel.rs                 # SIGUSR1-based cancellation for sync predictors
+├── input.rs                  # Input processing (file downloads, normalization)
+└── output.rs                 # Output serialization
+```
 
 ## Code References
 
@@ -400,4 +380,4 @@ How coglet gets invoked when running a Cog container:
 | `crates/coglet/src/orchestrator.rs` | Worker subprocess spawn/management |
 | `crates/coglet/src/bridge/protocol.rs` | IPC message definitions |
 | `crates/coglet-python/src/lib.rs` | PyO3 Python bindings |
-| `python/cog/server/http.py` | Entry point (checks USE_COGLET) |
+| `python/cog/server/http.py` | Thin launcher that calls coglet |

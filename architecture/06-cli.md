@@ -103,8 +103,8 @@ cog serve
 
 Builds the image (if needed) and starts a container running the [Container Runtime](./04-container-runtime.md). The container's port 5000 is exposed to the host. You can then:
 - Send requests to `POST /predictions`
-- View Swagger UI at `/docs`
-- Test webhooks
+- View OpenAPI spec at `/openapi.json`
+- Check health at `/health-check`
 
 **Code**: `pkg/cli/serve.go`
 
@@ -151,7 +151,7 @@ What happens:
 
 The image tag must be a Replicate model reference (`r8.im/owner/name`).
 
-**Code**: `pkg/cli/push.go`, `pkg/api/client.go`
+**Code**: `pkg/cli/push.go`, `pkg/web/`
 
 ---
 
@@ -226,7 +226,7 @@ Commands delegate to packages:
 - `pkg/dockerfile/` - Dockerfile generation
 - `pkg/docker/` - Docker client operations
 - `pkg/config/` - cog.yaml parsing
-- `pkg/api/` - Replicate API client
+- `pkg/web/` - Replicate API client
 - `pkg/predict/` - Local prediction execution
 
 ## Code References

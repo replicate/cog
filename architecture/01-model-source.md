@@ -349,7 +349,7 @@ See [Container Runtime](./04-container-runtime.md) for concurrency details.
 | File | Purpose |
 |------|---------|
 | `python/cog/__init__.py` | Public API exports |
-| `python/cog/base_predictor.py` | BasePredictor class |
-| `python/cog/types.py` | Input, Path, Secret, ConcatenateIterator |
-| `python/cog/predictor.py` | Type introspection, weights handling |
+| `python/cog/predictor.py` | BasePredictor class, type introspection, weights handling |
+| `python/cog/types.py` | Path, Secret, ConcatenateIterator |
+| `python/cog/input.py` | `Input()` function and field metadata |
 | `pkg/config/config.go` | cog.yaml parsing |

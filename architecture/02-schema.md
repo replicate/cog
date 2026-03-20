@@ -4,7 +4,7 @@ The schema is an **OpenAPI 3.0.2 specification** that describes a model's interf
 
 ## Why the Schema Exists
 
-Every Cog model uses the same [Prediction API](./ffi/03-prediction-api.md) envelope format, but the `input` and `output` fields are model-specific. The schema captures what each model expects and produces.
+Every Cog model uses the same [Prediction API](./03-prediction-api.md) envelope format, but the `input` and `output` fields are model-specific. The schema captures what each model expects and produces.
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -37,23 +37,23 @@ Without the schema, consumers would have no way to know:
 
 Cog supports two schema generation paths:
 
-### Legacy Runtime Path (default)
+### Runtime Path (default)
 
-The **legacy path** boots the built Docker container and runs `python -m cog.command.openapi_schema` to introspect the model at runtime using pydantic. This is the default for all builds. It works with any Python type that pydantic can serialize, including third-party types, complex inheritance, and dynamically constructed classes.
+The **runtime path** boots the built Docker container and runs `python -m cog.command.openapi_schema` to introspect the model at runtime. This is the default for all builds. It uses Python's `inspect` module and `typing.get_type_hints()` to extract parameter types, then builds OpenAPI JSON from a hand-rolled ADT type system (dataclasses in `_adt.py`). No pydantic is involved in schema generation -- `cog.BaseModel` is a dataclass wrapper, not pydantic.
 
-### Static Path (opt-in)
+### Static Path (experimental)
 
-The **static path** parses Python source code at `cog build` time using [tree-sitter](https://tree-sitter.github.io/tree-sitter/) in Go. No Python runtime is invoked. This makes schema generation deterministic, fast, and independent of the model's dependencies.
+The **static path** parses Python source code at `cog build` time using [tree-sitter](https://tree-sitter.github.io/tree-sitter/) in Go. No Python runtime is invoked. The goal is to replace the runtime path entirely -- making schema generation deterministic, fast, and independent of the model's dependencies. It's not there yet.
 
-Enable it by setting the `COG_STATIC_SCHEMA` environment variable:
+Enable it for testing with the `COG_STATIC_SCHEMA` environment variable:
 
 ```bash
 COG_STATIC_SCHEMA=1 cog build -t my-model
 ```
 
-The static path requires SDK >= 0.17.0. When opted in, if the static parser encounters a type it cannot resolve, it **falls back to the legacy runtime path** automatically with a warning — so builds never fail due to static parser limitations.
+The static path requires SDK >= 0.17.0. If the static parser encounters a type it can't resolve, it **falls back to the runtime path** automatically with a warning -- so builds don't break due to static parser limitations.
 
-For local commands (`cog train`, `cog serve`, `cog predict`), the static path is always used regardless of the `COG_STATIC_SCHEMA` flag, because these commands return before the post-build legacy generation step — the CLI needs the schema to parse `-i` input flags.
+For local commands (`cog train`, `cog serve`, `cog predict`), the static path is always used regardless of the `COG_STATIC_SCHEMA` flag, because these commands run before the post-build runtime generation step -- the CLI needs the schema to parse `-i` input flags.
 
 ```mermaid
 flowchart LR
@@ -82,15 +82,15 @@ flowchart LR
 ### Static Path Pipeline Steps
 
 1. **Parse** the predictor file with tree-sitter (concrete syntax tree, not AST)
-2. **Collect imports** — track where each name came from (`from cog import Path`, `from pydantic import BaseModel`)
-3. **Collect module scope** — resolve module-level variable assignments (for default values, choices lists)
-4. **Collect BaseModel subclasses** — find all classes that inherit from `BaseModel` (cog or pydantic) in the current file
+2. **Collect imports** -- track where each name came from (`from cog import Path`, `from cog import BaseModel`)
+3. **Collect module scope** -- resolve module-level variable assignments (for default values, choices lists)
+4. **Collect BaseModel subclasses** -- find all classes that inherit from `BaseModel` (cog's dataclass-based version; pydantic BaseModel also supported for compatibility)
 5. **Resolve cross-file models** — for imported names not found locally, find the `.py` file on disk, parse it, and extract its BaseModel definitions
 6. **Extract inputs** — walk the `predict()` / `train()` method parameters, resolve types, defaults, and `Input()` metadata
 7. **Resolve output type** — recursively resolve the return type annotation into a `SchemaType`
 8. **Generate OpenAPI** — convert the extracted `PredictorInfo` into a full OpenAPI 3.0.2 JSON document
 
-If any step fails with an unresolvable type, the build falls back to the legacy runtime path.
+If any step fails with an unresolvable type, the build falls back to the runtime path.
 
 ### Cross-File Resolution
 
@@ -98,7 +98,7 @@ When a predictor imports types from other project files, the schema generator re
 
 ```python
 # output_types.py
-from pydantic import BaseModel
+from cog import BaseModel
 
 class Prediction(BaseModel):
     text: str
@@ -256,7 +256,7 @@ Also written to `.cog/openapi_schema.json` inside the image for the runtime to s
 
 | Environment Variable | Purpose |
 |---------------------|---------|
-| `COG_STATIC_SCHEMA=1` | Opt in to the static Go tree-sitter schema generator (falls back to legacy on failure) |
+| `COG_STATIC_SCHEMA=1` | Enable experimental static schema generator (falls back to runtime path on failure) |
 | `COG_OPENAPI_SCHEMA=path` | Skip generation entirely and use a pre-built schema file |
 
 ```bash
@@ -333,9 +333,9 @@ A simplified example showing a multi-file predictor with structured output:
 | `pkg/schema/openapi.go` | OpenAPI document assembly from `PredictorInfo` |
 | `pkg/schema/generator.go` | Top-level `Generate()`, `GenerateCombined()`, `Parser` type |
 | `pkg/schema/errors.go` | Typed error kinds (`ErrUnresolvableType`, `ErrOptionalOutput`, etc.) |
-| `pkg/image/build.go` | `canUseStaticSchemaGen()` — opt-in gate, `generateStaticSchema()` — entry point, fallback to legacy on `ErrUnresolvableType` |
-| `pkg/image/openapi_schema.go` | `GenerateOpenAPISchema()` — legacy runtime path (boots container, runs `python -m cog.command.openapi_schema`) |
+| `pkg/image/build.go` | `canUseStaticSchemaGen()` -- opt-in gate, `generateStaticSchema()` -- entry point, fallback to runtime path on `ErrUnresolvableType` |
+| `pkg/image/openapi_schema.go` | `GenerateOpenAPISchema()` -- runtime path (boots container, runs `python -m cog.command.openapi_schema`) |
 | `python/cog/_adt.py` | Internal ADT types for Python-side predictor introspection |
-| `python/cog/_inspector.py` | Python-side predictor inspector (runtime introspection for legacy path) |
+| `python/cog/_inspector.py` | Python-side predictor inspector (runtime introspection) |
 | `python/cog/_schemas.py` | Python-side OpenAPI schema generation from inspected predictor info |
-| `python/cog/command/openapi_schema.py` | CLI entry point for `python -m cog.command.openapi_schema` (invoked by legacy runtime path) |
+| `python/cog/command/openapi_schema.py` | CLI entry point for `python -m cog.command.openapi_schema` (invoked by runtime path) |
