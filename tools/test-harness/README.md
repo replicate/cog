@@ -1,8 +1,7 @@
 # Cog Model Test Harness
 
 Automated test harness for validating cog models against new SDK versions.
-Built for [AI-4229](https://jira.cfdata.org/browse/AI-4229) — testing cog-examples
-against `0.17.0-rc2` — but designed to test any cog model from any repo.
+Designed to test any cog model from any repo.
 
 ## Quick Start
 
