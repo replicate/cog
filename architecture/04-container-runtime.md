@@ -63,42 +63,17 @@ The runtime is implemented in Rust using Axum for HTTP and PyO3 for Python integ
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Component Ownership
+## Ownership Model
 
-```
-═══════════════════════════════════════════════════════════════════════════════════
-                           COMPONENT OWNERSHIP
-═══════════════════════════════════════════════════════════════════════════════════
-  PredictionService (single owner of prediction state)
-  ├── owns: DashMap<String, PredictionEntry> (active predictions)
-  ├── owns: OrchestratorState (pool + orchestrator handle)
-  ├── owns: health, setup_result, schema
-  └── method: cancel() fires token + delegates to orchestrator
+`PredictionService` is the single owner of all prediction state. Everything flows through it.
 
-  PredictionEntry (in DashMap)
-  ├── has: Arc<Mutex<Prediction>> (the real state -- single source of truth)
-  ├── has: CancellationToken
-  └── has: input (for API responses)
+A prediction's lifecycle involves three key objects:
 
-  Prediction (state machine -- webhooks fire from mutation methods)
-  ├── owns: status, logs, outputs, output, error, metrics
-  ├── owns: WebhookSender (fires on set_processing, append_log, etc.)
-  └── owns: completion notifier (for waiting on result)
+- **PredictionEntry** (in a concurrent DashMap) -- the source of truth for a prediction's state. Holds the `Prediction` state machine (shared via Arc), a cancellation token, and the original input.
+- **PredictionSlot** -- RAII container that pairs a prediction with a concurrency permit. When the slot drops, the permit returns to the pool automatically.
+- **PredictionHandle** -- returned to the HTTP route handler. For sync requests, calling `sync_guard()` creates a guard that cancels the prediction if the client connection drops.
 
-  PredictionSlot (RAII container)
-  ├── owns: Arc<Mutex<Prediction>> (shared with DashMap entry)
-  ├── owns: Permit (concurrency token, returns to pool on drop)
-  └── Drop: marks permit idle, releases back to pool
-
-  PredictionHandle (returned to route handler)
-  ├── has: CancellationToken clone
-  └── method: sync_guard(service) → SyncPredictionGuard (cancels on drop)
-
-  Cancellation (via OrchestratorHandle)
-  ├── Sync predictors: ControlRequest::Cancel → SIGUSR1 → KeyboardInterrupt
-  └── Async predictors: ControlRequest::Cancel → future.cancel() → CancelledError
-═══════════════════════════════════════════════════════════════════════════════════
-```
+The `Prediction` struct is itself a state machine -- its mutation methods (`set_processing`, `set_succeeded`, `append_log`, etc.) fire webhooks as a side effect. This keeps webhook delivery tightly coupled to state transitions rather than scattered across call sites.
 
 ## Process Roles
 
@@ -335,49 +310,20 @@ How coglet gets invoked when running a Cog container:
 | `COG_LOG_LEVEL` | INFO | Logging verbosity |
 | `COG_MAX_CONCURRENCY` | 1 | Number of concurrent prediction slots |
 
-## File Structure
+## Where to Look
 
-```
-crates/coglet/src/
-├── lib.rs                    # Public API exports
-├── service.rs                # PredictionService (single owner of prediction state)
-├── prediction.rs             # Prediction state (logs, outputs, status)
-├── health.rs                 # Health enum + SetupResult
-├── orchestrator.rs           # Worker subprocess management
-├── permit/
-│   ├── pool.rs               # PermitPool (concurrency control)
-│   └── slot.rs               # PredictionSlot (Prediction + Permit RAII)
-├── bridge/
-│   ├── protocol.rs           # Control/Slot request/response types
-│   ├── codec.rs              # JSON length-delimited framing
-│   └── transport.rs          # Unix socket transport
-├── transport/
-│   └── http/
-│       ├── server.rs         # Axum server setup
-│       └── routes.rs         # HTTP handlers (uses service)
-├── webhook.rs                # WebhookSender (retry logic, trace context)
-└── worker.rs                 # Worker event loop (child side)
+**coglet core** (`crates/coglet/src/`):
+- `service.rs` -- `PredictionService`, the central coordinator. Start here.
+- `orchestrator.rs` -- worker subprocess spawning and lifecycle
+- `bridge/` -- IPC protocol definitions (`protocol.rs`) and Unix socket transport
+- `permit/` -- slot-based concurrency control (`PermitPool`, `PredictionSlot`)
+- `transport/http/` -- Axum HTTP server and route handlers
+- `prediction.rs` -- prediction state machine, webhook firing on state transitions
 
-crates/coglet-python/src/
-├── lib.rs                    # PyO3 module: serve(), _run_worker()
-├── predictor.rs              # PythonPredictor wrapper (sync/async)
-├── worker_bridge.rs          # PredictHandler trait implementation
-├── log_writer.rs             # ContextVar-based stdout/stderr routing
-├── audit.rs                  # Audit hook, TeeWriter (protects streams)
-├── cancel.rs                 # SIGUSR1-based cancellation for sync predictors
-├── input.rs                  # Input processing (file downloads, normalization)
-└── output.rs                 # Output serialization
-```
+**coglet-python** (`crates/coglet-python/src/`):
+- `lib.rs` -- PyO3 module entry point: `serve()` and `_run_worker()`
+- `predictor.rs` -- wraps the Python predictor class, handles sync/async detection
+- `worker_bridge.rs` -- implements the `PredictHandler` trait for Python
+- `log_writer.rs` -- ContextVar-based stdout/stderr routing per prediction slot
 
-## Code References
-
-| File | Purpose |
-|------|---------|
-| `crates/coglet/src/service.rs` | Main orchestrator: PredictionService |
-| `crates/coglet/src/prediction.rs` | Prediction state machine + webhook firing |
-| `crates/coglet/src/transport/http/routes.rs` | HTTP endpoint handlers |
-| `crates/coglet/src/permit/pool.rs` | Slot-based concurrency control |
-| `crates/coglet/src/orchestrator.rs` | Worker subprocess spawn/management |
-| `crates/coglet/src/bridge/protocol.rs` | IPC message definitions |
-| `crates/coglet-python/src/lib.rs` | PyO3 Python bindings |
-| `python/cog/server/http.py` | Thin launcher that calls coglet |
+**Python launcher**: `python/cog/server/http.py` -- the thin entry point that calls `coglet.server.serve()`

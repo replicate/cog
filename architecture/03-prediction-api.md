@@ -116,13 +116,7 @@ stateDiagram-v2
     canceled --> [*]
 ```
 
-State transitions happen on the `Prediction` struct, which fires webhooks as a side effect:
-
-```rust
-pred.set_processing();       // fires Start webhook
-// ... prediction runs, logs/outputs append ...
-pred.set_succeeded(output);  // fires terminal Completed webhook
-```
+State transitions on the `Prediction` struct fire webhooks as a side effect -- calling `set_processing()` sends the Start webhook, `set_succeeded()` sends the terminal Completed webhook.
 
 ## Connection Drop Handling
 
@@ -155,20 +149,7 @@ Prediction endpoints return 503 when health is not `READY`.
 
 ## Idempotent PUT
 
-The runtime uses a concurrent-safe DashMap for prediction state:
-
-```rust
-// Atomic check-or-insert
-match service.get_prediction_response(id) {
-    Some(response) => return 202 + response,  // Already exists
-    None => {
-        service.submit_prediction(id, input, webhook);  // Create new
-        return 202 + starting_state;
-    }
-}
-```
-
-This is fully thread-safe without locks.
+`PUT /predictions/{id}` is idempotent -- if the prediction already exists, it returns the current state. If not, it creates a new one. This is backed by a concurrent `DashMap`, so it's thread-safe without locks and safe under concurrent requests with the same ID.
 
 ## Concurrency Model
 
@@ -377,38 +358,10 @@ The training API (`/trainings`) uses the same envelope pattern:
 - `TrainingResponse` extends `PredictionResponse`
 - Calls `train()` method instead of `predict()`
 
-## Error Handling
+## Where to Look
 
-### Worker Crashes
-
-The HTTP server marks health as `DEFUNCT` but continues serving other endpoints:
-
-```rust
-match worker.wait().await {
-    Ok(status) if !status.success() => {
-        health.set(Health::Defunct);
-        // HTTP server still runs, returns 503 for predictions
-    }
-}
-```
-
-### Setup Failures
-
-```rust
-match control_rx.recv().await? {
-    ControlResponse::Failed { error } => {
-        health.set(Health::SetupFailed { reason: error });
-        // Include error in health-check response
-    }
-}
-```
-
-## Code References
-
-| File | Purpose |
-|------|---------|
-| `crates/coglet/src/transport/http/routes.rs` | HTTP endpoint handlers |
-| `crates/coglet/src/prediction.rs` | Prediction state + webhook firing |
-| `crates/coglet/src/webhook.rs` | Webhook delivery with retries |
-| `crates/coglet/src/bridge/protocol.rs` | IPC message types |
-| `crates/coglet/src/permit/pool.rs` | Slot-based concurrency |
+- `crates/coglet/src/transport/http/` -- HTTP route handlers, request parsing, response construction
+- `crates/coglet/src/prediction.rs` -- the `Prediction` state machine (status transitions, webhook firing)
+- `crates/coglet/src/webhook.rs` -- webhook delivery, retry logic, trace context propagation
+- `crates/coglet/src/bridge/` -- IPC protocol definitions and transport
+- `crates/coglet/src/permit/` -- slot-based concurrency control
