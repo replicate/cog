@@ -107,8 +107,42 @@ The `Prediction` struct is itself a state machine -- its mutation methods (`set_
 1. **Isolation**: User code crashes don't bring down the HTTP server
 2. **Memory**: Fresh address space for model loading
 3. **CUDA**: Clean GPU context initialization in worker
-4. **Stability**: Server marks health as `DEFUNCT` and continues serving other endpoints if worker crashes
+4. **Stability**: Server continues running if worker crashes (health endpoints still respond)
 5. **Monitoring**: Parent tracks worker health independently
+
+## Predictor Lifecycle
+
+The predictor is a **singleton**. One instance is created per worker process, and it lives for the entire process lifetime.
+
+```mermaid
+stateDiagram-v2
+    [*] --> load: Worker starts
+    load --> instantiate: import module
+    instantiate --> setup: Predictor()
+    setup --> idle: setup() succeeds
+    setup --> dead: setup() raises
+
+    idle --> predict: SlotRequest::Predict
+    predict --> idle: predict() returns/raises
+
+    idle --> dead: Shutdown / crash
+
+    dead --> [*]
+```
+
+**What you can rely on:**
+
+- **`setup()` runs exactly once**, before any prediction is accepted. Use it to load weights, initialize GPU contexts, and warm caches. If it raises an exception, the worker exits and health becomes `SETUP_FAILED` -- there is no retry.
+
+- **`self` state persists across all `predict()` calls.** Storing your loaded model on `self.model` in `setup()` and using it in every `predict()` call is the intended pattern.
+
+- **No teardown hook.** There is no `teardown()`, `cleanup()`, or `__del__` contract. When the container shuts down, the process exits. If you need cleanup (e.g., flushing a log buffer), use `atexit`.
+
+- **`predict()` is sequential by default.** With `COG_MAX_CONCURRENCY=1` (the default), `predict()` is never called concurrently -- each call completes before the next begins.
+
+- **With `COG_MAX_CONCURRENCY > 1`, concurrent `predict()` calls share `self`.** Async predictors run multiple coroutines on a shared asyncio event loop -- not truly parallel, but interleaved at `await` points. If your model stores mutable state on `self` that could be accessed across `await` boundaries, take care. If your model isn't safe to call concurrently, leave concurrency at 1.
+
+- **A worker crash is terminal.** If the worker process crashes (segfault, OOM kill), the runtime fails all in-flight predictions and stops accepting new ones. The HTTP server stays up (health endpoints still respond) but the container must be restarted externally -- there is no automatic worker respawn.
 
 ## Worker Subprocess Protocol
 
@@ -267,6 +301,30 @@ sequenceDiagram
     Service->>Worker: Cancel
     Worker-->>Service: Cancelled
 ```
+
+## Life of a Prediction
+
+Following a single prediction from HTTP request to response:
+
+1. **Request arrives** at the Axum HTTP layer (`POST /predictions`).
+
+2. **Input validated** against the OpenAPI schema at the Rust edge -- type checking, required fields, and constraints all happen before Python sees anything.
+
+3. **Slot permit acquired** from the `PermitPool`. If all slots are busy, the request immediately gets `409 Conflict` -- there is no queuing.
+
+4. **Input sent to worker** via the slot's Unix socket as a `SlotRequest::Predict` message (inline JSON, or spilled to a temp file if >6 MiB).
+
+5. **URL inputs downloaded.** The worker fetches any `cog.Path` URL fields to local temp files (using a thread pool for parallel downloads). The predictor receives local file paths, never URLs.
+
+6. **`predict(**kwargs)` called** on the singleton predictor instance. Inputs arrive as native Python types -- strings, ints, `pathlib.Path` objects -- not as a request object or raw JSON.
+
+7. **Outputs stream back** over the slot socket. For generators, each `yield` sends an `Output` message immediately -- true streaming, not buffered. For single return values, one `Output` or `FileOutput` message is sent.
+
+8. **File outputs uploaded** by the parent process. `cog.Path` return values are uploaded to the configured storage (or base64-encoded for inline responses). This is transparent to the predictor.
+
+9. **Response assembled.** The `Prediction` state machine transitions to `succeeded`, the slot permit is released, and the response is returned to the client (or delivered via webhook for async requests).
+
+**On error:** If `predict()` raises an exception, the worker sends a `Failed` message. The prediction is marked `failed`, the slot returns to idle, and the predictor instance survives -- it handles the next request normally. Only a process-level crash (segfault, OOM kill) destroys the instance; see [Predictor Lifecycle](#predictor-lifecycle) for what happens then.
 
 ## Invocation Path
 

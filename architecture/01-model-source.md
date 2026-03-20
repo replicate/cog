@@ -73,6 +73,7 @@ class Predictor(BasePredictor):
 - Used to load model weights, initialize GPU contexts, warm up caches
 - Runs before the HTTP server accepts requests
 - Optional: if omitted, Cog proceeds directly to serving
+- See [Container Runtime: Predictor Lifecycle](./04-container-runtime.md#predictor-lifecycle) for details on instance lifetime, concurrency, crash recovery, and shutdown
 
 ### predict()
 
@@ -80,6 +81,7 @@ class Predictor(BasePredictor):
 - Signature defines the model's input schema (via type hints)
 - Return type defines the output schema
 - Can be sync (`def`) or async (`async def`)
+- See [Container Runtime: Life of a Prediction](./04-container-runtime.md#life-of-a-prediction) for the full request-to-response path through the runtime
 
 ### train() (optional)
 
