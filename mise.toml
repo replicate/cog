@@ -140,7 +140,7 @@ echo "Installed $DEST/cog -> $BINARY"
 
 [tasks."build:cog"]
 description = "Build cog CLI (development)"
-sources = ["cmd/**/*.go", "pkg/**/*.go", "go.mod", "go.sum", "crates/Cargo.toml"]
+sources = ["cmd/**/*.go", "pkg/**/*.go", "go.mod", "go.sum", "VERSION.txt"]
 outputs = ["dist/go/*/cog"]
 run = """
 #!/usr/bin/env bash
@@ -225,15 +225,15 @@ run = [
 
 [tasks."build:sdk"]
 description = "Build cog SDK wheel"
-sources = ["python/**/*.py", "pyproject.toml", "crates/Cargo.toml"]
+sources = ["python/**/*.py", "pyproject.toml", "VERSION.txt"]
 outputs = ["dist/cog-*.whl", "dist/cog-*.tar.gz"]
 run = [
   { tasks = ["_setup_dist", "_setup_venv"] },
   """
 #!/usr/bin/env bash
 set -euo pipefail
-# Version from Cargo.toml, converted to PEP 440
-RAW=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\\(.*\\)"/\\1/')
+# Version from VERSION.txt, converted to PEP 440
+RAW=$(tr -d '[:space:]' < VERSION.txt)
 export SETUPTOOLS_SCM_PRETEND_VERSION=$(echo "$RAW" | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/')
 echo "Building SDK wheel: $SETUPTOOLS_SCM_PRETEND_VERSION"
 uv build --out-dir=dist .
@@ -670,8 +670,8 @@ run = [
   """
 #!/usr/bin/env bash
 set -euo pipefail
-# Version from Cargo.toml, converted to PEP 440
-RAW=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\\(.*\\)"/\\1/')
+# Version from VERSION.txt, converted to PEP 440
+RAW=$(tr -d '[:space:]' < VERSION.txt)
 export SETUPTOOLS_SCM_PRETEND_VERSION=$(echo "$RAW" | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/')
 echo "Building SDK wheel: $SETUPTOOLS_SCM_PRETEND_VERSION"
 uv build --out-dir=dist .
@@ -711,3 +711,20 @@ set -e
 echo "TODO: Implement SDK PyPI publish"
 echo "Wheels in dist/: $(ls dist/cog-*.whl 2>/dev/null || echo 'none')"
 """
+
+# =============================================================================
+# Version tasks
+# =============================================================================
+
+[tasks."version"]
+description = "Show current version from VERSION.txt"
+run = "go run ./tools/version show"
+
+[tasks."version:bump"]
+description = "Bump version: updates VERSION.txt, Cargo.toml, Cargo.lock, and commits"
+usage = 'arg "<version>" help="New semver version (e.g. 0.17.1, 0.18.0-rc.1)"'
+run = "go run ./tools/version bump ${usage_version}"
+
+[tasks."version:check"]
+description = "Verify VERSION.txt matches crates/Cargo.toml"
+run = "go run ./tools/version check"

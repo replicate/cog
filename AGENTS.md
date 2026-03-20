@@ -35,6 +35,8 @@ Development tasks are managed with [mise](https://mise.jdx.dev/). Run `mise task
 | `mise run install` | Build and symlink cog to /usr/local/bin |
 | `mise run docs:llm` | **IMPORTANT:** Regenerate `docs/llms.txt` after editing docs |
 | `mise run docs:cli` | Generate CLI reference docs from Go source code |
+| `mise run version` | Show current version from VERSION.txt |
+| `mise run version:bump <ver>` | Bump version everywhere and commit |
 
 ### Task Naming Convention
 
@@ -76,6 +78,11 @@ Tasks follow a consistent naming pattern:
 **Install:**
 - `mise run install` - Symlink cog CLI to `/usr/local/bin` (requires `build:cog` first)
 - `PREFIX=/custom/path mise run install` - Symlink to custom location
+
+**Version:**
+- `mise run version` - Show current version from VERSION.txt
+- `mise run version:bump <ver>` - Bump version everywhere and commit
+- `mise run version:check` - Verify VERSION.txt matches Cargo.toml
 
 **Other:**
 - `mise run typecheck` - Type check all languages
@@ -270,11 +277,12 @@ Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
 - The corresponding version pin in `.github/workflows/ci.yaml` (for CI)
 
 ## Important Files
+- `VERSION.txt` - Canonical version (single source of truth)
 - `cog.yaml` - User-facing model configuration
 - `pkg/config/config.go` - Go code for parsing and validating `cog.yaml`
 - `pkg/config/data/config_schema_v1.0.json` - JSON schema for `cog.yaml`
 - `python/cog/base_predictor.py` - Predictor interface
-- `crates/Cargo.toml` - Rust workspace configuration
+- `crates/Cargo.toml` - Rust workspace configuration (version must match VERSION.txt)
 - `crates/README.md` - Coglet architecture overview
 - `mise.toml` - Task definitions for development workflow
 
