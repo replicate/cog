@@ -1,11 +1,14 @@
 # Deploy models with Cog
 
-Cog containers are Docker containers that serve an HTTP server 
-for running predictions on your model. 
+Cog containers are Docker containers that serve an HTTP server
+for running predictions on your model.
 You can deploy them anywhere that Docker containers run.
 
-This guide assumes you have a model packaged with Cog. 
-If you don't, [follow our getting started guide](getting-started-own-model.md), 
+The server inside Cog containers is **coglet**, a Rust-based prediction server
+that handles HTTP requests, worker process management, and prediction execution.
+
+This guide assumes you have a model packaged with Cog.
+If you don't, [follow our getting started guide](getting-started-own-model.md),
 or use [an example model](https://github.com/replicate/cog-examples).
 
 ## Getting started
@@ -16,7 +19,15 @@ First, build your model:
 cog build -t my-model
 ```
 
-Then, start the Docker container:
+You can serve predictions locally with `cog serve`:
+
+```console
+cog serve
+# or, from a built image:
+cog serve my-model
+```
+
+Alternatively, start the Docker container directly:
 
 ```shell
 # If your model uses a CPU:
@@ -24,16 +35,13 @@ docker run -d -p 5001:5000 my-model
 
 # If your model uses a GPU:
 docker run -d -p 5001:5000 --gpus all my-model
-
-# If you're on an M1 Mac:
-docker run -d -p 5001:5000 --platform=linux/amd64 my-model
 ```
 
-The server is now running locally on port 5001.
+The server listens on port 5000 inside the container (mapped to 5001 above).
 
-To view the OpenAPI schema, 
-open [localhost:5001/openapi.json](http://localhost:5001/openapi.json) 
-in your browser 
+To view the OpenAPI schema,
+open [localhost:5001/openapi.json](http://localhost:5001/openapi.json)
+in your browser
 or use cURL to make a request:
 
 ```console
@@ -46,8 +54,8 @@ To stop the server, run:
 docker kill my-model
 ```
 
-To run a prediction on the model, 
-call the `/predictions` endpoint, 
+To run a prediction on the model,
+call the `/predictions` endpoint,
 passing input in the format expected by your model:
 
 ```console
@@ -56,29 +64,35 @@ curl http://localhost:5001/predictions -X POST \
     --data '{"input": {"image": "https://.../input.jpg"}}'
 ```
 
-For more details about the HTTP API, 
+For more details about the HTTP API,
 see the [HTTP API reference documentation](http.md).
 
-## Options
+## Health checks
 
-Cog Docker images have `python -m cog.server.http` set as the default command, which gets overridden if you pass a command to `docker run`. When you use command-line options, you need to pass in the full command before the options.
+The server exposes a `GET /health-check` endpoint that returns the current status of the model container. Use this for readiness probes in orchestration systems like Kubernetes.
 
-### `--threads`
+```console
+curl http://localhost:5001/health-check
+```
 
-This controls how many threads are used by Cog, which determines how many requests Cog serves in parallel. If your model uses a CPU, this is the number of CPUs on your machine. If your model uses a GPU, this is 1, because typically a GPU can only be used by one process.
+The response includes a `status` field with values like `STARTING`, `READY`, `BUSY`, `SETUP_FAILED`, or `DEFUNCT`. See the [HTTP API reference](http.md#get-health-check) for full details.
 
-You might need to adjust this if you want to control how much memory your model uses, or other similar constraints. To do this, you can use the `--threads` option.
+## Concurrency
 
-For example:
+By default, the server processes one prediction at a time. To enable concurrent predictions, set the `concurrency.max` option in `cog.yaml`:
 
-    docker run -d -p 5000:5000 my-model python -m cog.server.http --threads=10
+```yaml
+concurrency:
+  max: 4
+```
 
-### `--host`
+See the [`cog.yaml` reference](yaml.md#concurrency) for more details.
 
-By default, Cog serves to `0.0.0.0`.
-You can override this using the `--host` option.
+## Environment variables
 
-For example, 
-to serve Cog on an IPv6 address, run:
+You can configure runtime behavior with environment variables:
 
-    docker run -d -p 5000:5000 my-model python -m cog.server.http --host="::"
+- `COG_SETUP_TIMEOUT`: Maximum time in seconds for the `setup()` method (default: no timeout).
+- `COG_WEIGHTS`: URL or path to model weights, passed to `setup(weights=)`.
+
+See the [environment variables reference](environment.md) for the full list.

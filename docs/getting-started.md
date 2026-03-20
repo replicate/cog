@@ -75,7 +75,7 @@ and you'll get an interactive Python shell:
 Running 'python' in Docker with the current directory mounted as a volume...
 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-Python 3.12.0 (main, Oct  2 2023, 15:45:55)
+Python 3.13.x (main, ...)
 [GCC 12.2.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
