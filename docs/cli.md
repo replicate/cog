@@ -24,7 +24,6 @@ https://github.com/replicate/cog
       --no-color   Disable colored output
       --version    Show version of Cog
 ```
-
 ## `cog build`
 
 Build a Docker image from the cog.yaml in the current directory.
@@ -67,7 +66,6 @@ cog build [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
-
 ## `cog init`
 
 Create a cog.yaml and predict.py in the current directory.
@@ -91,7 +89,6 @@ cog init [flags]
 ```
   -h, --help   help for init
 ```
-
 ## `cog login`
 
 Log in to a container registry.
@@ -112,7 +109,6 @@ cog login [flags]
   -h, --help          help for login
       --token-stdin   Pass login token on stdin instead of opening a browser. You can find your Replicate login token at https://replicate.com/auth/token
 ```
-
 ## `cog predict`
 
 Run a prediction.
@@ -165,7 +161,6 @@ cog predict [image] [flags]
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
       --use-replicate-token          Pass REPLICATE_API_TOKEN from local environment into the model context
 ```
-
 ## `cog push`
 
 Build a Docker image from cog.yaml and push it to a container registry.
@@ -203,7 +198,6 @@ cog push [IMAGE] [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
-
 ## `cog run`
 
 Run a command inside a Docker environment defined by cog.yaml.
@@ -244,7 +238,6 @@ cog run <command> [arg...] [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
-
 ## `cog serve`
 
 Run a prediction HTTP server.
