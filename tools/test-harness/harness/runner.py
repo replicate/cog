@@ -399,8 +399,8 @@ class Runner:
                         capture_output=True,
                         text=True,
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to clean up Docker images in cleanup(): %s", exc)
 
         if self.work_dir.exists():
             shutil.rmtree(self.work_dir, ignore_errors=True)
