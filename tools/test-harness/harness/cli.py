@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from .cog_resolver import resolve_cog_binary, resolve_sdk_version
 from .report import console_report, write_json_report
 from .runner import ModelResult, Runner
 
@@ -87,10 +88,23 @@ def _cmd_list(args: argparse.Namespace) -> None:
 def _cmd_build(args: argparse.Namespace) -> None:
     manifest = _load_manifest(args.manifest)
     models = _filter_models(manifest, args)
-    sdk_version = args.sdk_version or manifest.get("defaults", {}).get("sdk_version")
+    defaults = manifest.get("defaults", {})
+
+    sdk_version, _ = resolve_sdk_version(
+        cli_sdk_version=args.sdk_version,
+        manifest_defaults=defaults,
+    )
+    cog_binary, cog_version_label = resolve_cog_binary(
+        cog_version=args.cog_version,
+        cog_binary=args.cog_binary,
+        manifest_defaults=defaults,
+    )
+    log = logging.getLogger(__name__)
+    log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
+    log.info("Using SDK version: %s", sdk_version)
 
     runner = Runner(
-        cog_binary=args.cog_binary,
+        cog_binary=cog_binary,
         sdk_version=sdk_version,
         keep_images=True,
     )
@@ -116,7 +130,9 @@ def _cmd_build(args: argparse.Namespace) -> None:
 
         results.append(result)
 
-    console_report(results, sdk_version=sdk_version or "")
+    console_report(
+        results, sdk_version=sdk_version or "", cog_version=cog_version_label
+    )
 
     failed = any(not r.passed for r in results)
     sys.exit(1 if failed else 0)
@@ -125,10 +141,23 @@ def _cmd_build(args: argparse.Namespace) -> None:
 def _cmd_run(args: argparse.Namespace) -> None:
     manifest = _load_manifest(args.manifest)
     models = _filter_models(manifest, args)
-    sdk_version = args.sdk_version or manifest.get("defaults", {}).get("sdk_version")
+    defaults = manifest.get("defaults", {})
+
+    sdk_version, _ = resolve_sdk_version(
+        cli_sdk_version=args.sdk_version,
+        manifest_defaults=defaults,
+    )
+    cog_binary, cog_version_label = resolve_cog_binary(
+        cog_version=args.cog_version,
+        cog_binary=args.cog_binary,
+        manifest_defaults=defaults,
+    )
+    log = logging.getLogger(__name__)
+    log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
+    log.info("Using SDK version: %s", sdk_version)
 
     runner = Runner(
-        cog_binary=args.cog_binary,
+        cog_binary=cog_binary,
         sdk_version=sdk_version,
         keep_images=args.keep_images,
     )
@@ -146,14 +175,32 @@ def _cmd_run(args: argparse.Namespace) -> None:
     if args.output == "json":
         if args.output_file:
             with open(args.output_file, "w") as f:
-                write_json_report(results, sdk_version=sdk_version or "", stream=f)
+                write_json_report(
+                    results,
+                    sdk_version=sdk_version or "",
+                    cog_version=cog_version_label,
+                    stream=f,
+                )
         else:
-            write_json_report(results, sdk_version=sdk_version or "")
+            write_json_report(
+                results,
+                sdk_version=sdk_version or "",
+                cog_version=cog_version_label,
+            )
     else:
-        console_report(results, sdk_version=sdk_version or "")
+        console_report(
+            results,
+            sdk_version=sdk_version or "",
+            cog_version=cog_version_label,
+        )
         if args.output_file:
             with open(args.output_file, "w") as f:
-                write_json_report(results, sdk_version=sdk_version or "", stream=f)
+                write_json_report(
+                    results,
+                    sdk_version=sdk_version or "",
+                    cog_version=cog_version_label,
+                    stream=f,
+                )
 
     failed = any(not r.passed for r in results)
     sys.exit(1 if failed else 0)
@@ -190,13 +237,25 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--sdk-version",
         type=str,
         default=None,
-        help="Override sdk_version for all models",
+        help=(
+            "SDK version to inject into cog.yaml (e.g. 0.16.12). "
+            "Default: latest stable release from PyPI."
+        ),
+    )
+    parser.add_argument(
+        "--cog-version",
+        type=str,
+        default=None,
+        help=(
+            "Cog CLI version to download and use (e.g. v0.16.12). "
+            "Default: latest stable release. Ignored if --cog-binary is set."
+        ),
     )
     parser.add_argument(
         "--cog-binary",
         type=str,
         default="cog",
-        help="Path to cog binary (default: cog in PATH)",
+        help="Path to a local cog binary (overrides --cog-version)",
     )
     parser.add_argument(
         "--keep-images",

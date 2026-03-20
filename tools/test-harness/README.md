@@ -36,23 +36,41 @@ python -m harness build --no-gpu
 
 - Python 3.10+
 - Docker
-- `cog` CLI binary ([install instructions](https://github.com/replicate/cog#install))
 - For GPU models: NVIDIA GPU + nvidia-docker runtime
 
-### Using the RC CLI
+### Version Resolution
+
+By default the harness automatically resolves the **latest stable** versions
+of both the cog CLI (from GitHub releases) and the Python SDK (from PyPI),
+skipping any alpha/beta/rc tags. You can override either via the CLI or in
+`manifest.yaml`:
 
 ```bash
-# macOS ARM
-sudo curl -o /usr/local/bin/cog -L \
-  https://github.com/replicate/cog/releases/download/v0.17.0-rc.2/cog_Darwin_arm64
-sudo chmod +x /usr/local/bin/cog
-```
+# Use the latest stable CLI + SDK (default)
+python -m harness run --no-gpu
 
-Or point to a custom binary:
+# Pin a specific CLI version
+python -m harness run --cog-version v0.16.12 --no-gpu
 
-```bash
+# Pin a specific SDK version
+python -m harness run --sdk-version 0.16.12 --no-gpu
+
+# Use a pre-release CLI
+python -m harness run --cog-version v0.17.0-rc.2 --no-gpu
+
+# Use a locally-built binary (overrides --cog-version)
 python -m harness run --cog-binary ./dist/go/darwin-arm64/cog --no-gpu
 ```
+
+You can also pin versions in `manifest.yaml` under `defaults`:
+
+```yaml
+defaults:
+  sdk_version: "latest"    # or pin e.g. "0.16.12"
+  cog_version: "latest"    # or pin e.g. "v0.16.12"
+```
+
+**Resolution priority** (for both CLI and SDK): CLI flag > manifest default > latest stable.
 
 ## Manifest Format
 
@@ -120,7 +138,7 @@ Add an entry to `manifest.yaml`:
     repo: myorg/my-model-repo
     path: "."
     gpu: true
-    sdk_version: "0.17.0rc2"
+    # sdk_version: "0.16.12"  # optional per-model override
     env:
       HF_TOKEN: "${HF_TOKEN}"
     timeout: 600
@@ -150,8 +168,9 @@ Common options:
   --model NAME          Run only this model (repeatable)
   --no-gpu              Skip GPU models
   --gpu-only            Only run GPU models
-  --sdk-version VER     Override sdk_version for all models
-  --cog-binary PATH     Path to cog binary (default: cog)
+  --sdk-version VER     SDK version (default: latest stable from PyPI)
+  --cog-version TAG     CLI version to download (default: latest stable)
+  --cog-binary PATH     Path to local cog binary (overrides --cog-version)
   --keep-images         Don't clean up Docker images after run
 
 Run-specific options:
@@ -167,6 +186,7 @@ tools/test-harness/
 ├── fixtures/               # Test input files (images, etc.)
 ├── harness/
 │   ├── cli.py              # CLI entry point
+│   ├── cog_resolver.py     # Resolves + downloads cog CLI and SDK versions
 │   ├── runner.py           # Clone -> patch -> build -> predict -> validate
 │   ├── patcher.py          # Patches cog.yaml with sdk_version + overrides
 │   ├── validators.py       # Output validation strategies

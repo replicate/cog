@@ -14,12 +14,19 @@ def console_report(
     results: list[ModelResult],
     *,
     sdk_version: str = "",
+    cog_version: str = "",
     stream: TextIO = sys.stdout,
 ) -> None:
     """Print a coloured summary table to the terminal."""
+    parts = []
+    if cog_version:
+        parts.append(f"CLI {cog_version}")
+    if sdk_version:
+        parts.append(f"SDK {sdk_version}")
+    version_str = " / ".join(parts)
     header = (
-        f"Cog {sdk_version} Compatibility Report"
-        if sdk_version
+        f"Cog Compatibility Report ({version_str})"
+        if version_str
         else "Cog Compatibility Report"
     )
     stream.write(f"\n{'=' * len(header)}\n")
@@ -72,6 +79,7 @@ def json_report(
     results: list[ModelResult],
     *,
     sdk_version: str = "",
+    cog_version: str = "",
 ) -> dict[str, Any]:
     """Return a JSON-serializable report dict."""
     models = []
@@ -116,6 +124,7 @@ def json_report(
 
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "cog_version": cog_version,
         "sdk_version": sdk_version,
         "summary": {
             "total": total,
@@ -131,10 +140,11 @@ def write_json_report(
     results: list[ModelResult],
     *,
     sdk_version: str = "",
+    cog_version: str = "",
     stream: TextIO = sys.stdout,
 ) -> None:
     """Write JSON report to a stream."""
-    report = json_report(results, sdk_version=sdk_version)
+    report = json_report(results, sdk_version=sdk_version, cog_version=cog_version)
     json.dump(report, stream, indent=2)
     stream.write("\n")
 

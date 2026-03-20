@@ -15,8 +15,8 @@
 #   not_empty   - output is non-empty (loose smoke test)
 
 defaults:
-  sdk_version: "0.17.0rc2"
-  cog_version: "v0.17.0-rc.2"   # CLI release tag for installing the RC binary
+  sdk_version: "latest"          # "latest" = newest stable from PyPI; or pin e.g. "0.16.12"
+  cog_version: "latest"          # "latest" = newest stable release; or pin e.g. "v0.16.12"
 
 models:
   # ── cog-examples (CPU) ──────────────────────────────────────────────
@@ -164,7 +164,7 @@ models:
   #   repo: myorg/my-model-repo
   #   path: "."
   #   gpu: true
-  #   sdk_version: "0.17.0rc2"
+  #   # sdk_version: "0.16.12"  # optional per-model override
   #   env:
   #     HF_TOKEN: "${HF_TOKEN}"
   #   timeout: 600
