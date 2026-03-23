@@ -2,19 +2,44 @@ site_name: Cog
 repo_url: https://github.com/replicate/cog
 docs_dir: docs/
 nav:
-  - README: README.md
-  - Getting Started: getting-started.md
-  - Using your own model: getting-started-own-model.md
-  - Deploy your model: deploy.md
-  - YAML spec: yaml.md
-  - Prediction API: python.md
-  - Training API: training.md
-  - HTTP API: http.md
-  - CLI: cli.md
-  - Environment variables: environment.md
-  - Private registry: private-package-registry.md
-  - Notebooks: notebooks.md
-  - Windows: wsl2/wsl2.md
+  - Home: README.md
+
+  - Tutorials:
+    - Quick start: tutorials/quick-start.md
+    - Package your first model: tutorials/first-model.md
+    - Build and deploy locally: tutorials/deploy-local.md
+
+  - How-to guides:
+    - Set up your own model: how-to/setup-own-model.md
+    - Use GPUs: how-to/gpu.md
+    - Manage model weights: how-to/model-weights.md
+    - Stream output: how-to/streaming.md
+    - Handle file inputs and outputs: how-to/file-io.md
+    - Run concurrent predictions: how-to/concurrency.md
+    - Use private package registries: how-to/private-registry.md
+    - Deploy to production: how-to/deploy.md
+    - Set up CI/CD: how-to/ci-cd.md
+    - Optimise image size: how-to/image-size.md
+    - Debug build failures: how-to/debug-builds.md
+    - Use Jupyter notebooks: how-to/notebooks.md
+    - Set up on Windows (WSL 2): how-to/wsl2.md
+    - Fine-tune with the training API: how-to/training.md
+
+  - Reference:
+    - cog.yaml: reference/yaml.md
+    - Python API: reference/python.md
+    - HTTP API: reference/http.md
+    - CLI: reference/cli.md
+    - Training API: reference/training.md
+    - Environment variables: reference/environment.md
+
+  - Explanation:
+    - How Cog works: explanation/how-cog-works.md
+    - Why containers for ML?: explanation/why-containers.md
+    - The prediction lifecycle: explanation/prediction-lifecycle.md
+    - CUDA and GPU compatibility: explanation/cuda-compat.md
+    - Docker image layer strategy: explanation/image-layers.md
+
   - Contributing: CONTRIBUTING.md
   - License: https://github.com/replicate/cog/blob/main/LICENSE
   - llms.txt: llms.txt
@@ -29,6 +54,7 @@ theme:
   # Display a link to edit pages right on GitHub
   features:
     - content.action.edit
+    - navigation.sections
 
   icon:
     logo: material/cog
