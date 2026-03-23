@@ -1,0 +1,34 @@
+# Test that sys.exit() in predict() fails the prediction but does NOT kill
+# the worker. A subsequent prediction should still succeed.
+#
+# sys.exit() raises SystemExit, which is caught by the PyO3 boundary.
+# The prediction fails, but the worker subprocess stays alive.
+
+cog serve
+
+# First prediction calls sys.exit(1) — should fail
+curl POST /predictions '{"input":{"do_exit":true}}'
+stdout '"status":"failed"'
+stdout '"error":".*SystemExit'
+
+# Second prediction — worker should still be alive and accept it
+curl POST /predictions '{"input":{"do_exit":false}}'
+stdout '"status":"succeeded"'
+stdout '"output":"still alive"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import sys
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, do_exit: bool = False) -> str:
+        if do_exit:
+            sys.exit(1)
+        return "still alive"

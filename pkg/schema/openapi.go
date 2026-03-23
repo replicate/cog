@@ -21,7 +21,7 @@ func GenerateOpenAPISchema(info *PredictorInfo) ([]byte, error) {
 // buildOpenAPISpec constructs the full OpenAPI 3.0.2 map.
 func buildOpenAPISpec(info *PredictorInfo) map[string]any {
 	inputSchema, enumSchemas := buildInputSchema(info)
-	outputSchema := info.Output.JSONType()
+	outputSchema := info.Output.JSONSchema()
 
 	isTrain := info.Mode == ModeTrain
 

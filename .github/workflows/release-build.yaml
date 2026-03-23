@@ -230,7 +230,7 @@ jobs:
 
       # Goreleaser builds CLI binaries and creates draft release
       - name: Build CLI and create draft release
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
           args: release --clean

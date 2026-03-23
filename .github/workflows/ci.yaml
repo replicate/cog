@@ -72,9 +72,12 @@ jobs:
       - name: Detect changed paths
         id: filter
         run: |
-          # For PRs, compare against base; for pushes, compare against previous commit
+          # For PRs, compare against base; for pushes, compare against previous commit;
+          # for merge_group, compare against the merge group base.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event_name }}" = "merge_group" ]; then
+            BASE="${{ github.event.merge_group.base_sha }}"
           else
             BASE="${{ github.event.before }}"
             # Handle initial push (no before)
@@ -256,7 +259,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: false
       - name: Build SDK
@@ -328,7 +331,7 @@ jobs:
         id: version
         run: echo "version=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')" >> "$GITHUB_OUTPUT"
       - name: Build cog binary
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
           args: build --clean --snapshot --single-target --id cog --output cog
@@ -357,7 +360,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: false
       - name: Check Go formatting
@@ -392,7 +395,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: false
       - name: Check Python formatting
@@ -409,7 +412,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: false
       - name: Check llms.txt is up to date
@@ -499,7 +502,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
           cache: false
       - name: Lint Python
@@ -541,6 +544,28 @@ jobs:
           trap cleanup INT TERM
           gotestsum -- -short -timeout 1200s -parallel 5 ./... &
           wait $!
+
+  fuzz-go:
+    name: Fuzz Go
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Fuzz schema type resolution
+        run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime=30s
+      - name: Fuzz JSON schema generation
+        run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzJSONSchema -fuzztime=30s
+      - name: Fuzz Python parser
+        run: go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParsePredictor -fuzztime=30s
+      - name: Fuzz type annotation parsing
+        run: go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParseTypeAnnotation -fuzztime=30s
 
   test-rust:
     name: Test Rust
@@ -589,7 +614,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test Python
@@ -739,7 +764,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
         with:
           registry: index.docker.io
@@ -905,7 +930,7 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
           args: check

@@ -1,7 +1,14 @@
 # Test that base image SHA is recorded in labels with --use-cog-base-image
 # Source: test_build.py::test_build_base_image_sha
+#
+# Uses a local test registry to avoid depending on the live r8.im registry.
 
-# Build with --use-cog-base-image flag
+# Start local registry and seed a cog-base image from Docker Hub's python:3.12-slim
+registry-start
+registry-seed docker.io/library/python:3.12-slim cog-base:python3.12
+
+# Build with --use-cog-base-image flag against the local registry
+env COG_REGISTRY_HOST=$TEST_REGISTRY
 cog build -t $TEST_IMAGE --use-cog-base-image
 
 # Verify the base image layer label matches one of the actual layers

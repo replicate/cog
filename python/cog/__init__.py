@@ -72,6 +72,20 @@ def __getattr__(name: str) -> object:
         # the deprecation message prints at most once.
         globals()["ExperimentalFeatureWarning"] = _ExperimentalFeatureWarning
         return _ExperimentalFeatureWarning
+    if name == "emit_metric":
+        print(
+            "cog: emit_metric() is deprecated and will be removed in a future release. "
+            "Use current_scope().record_metric(name, value) instead.",
+            file=_sys.stderr,
+        )
+
+        def emit_metric(name: str, value: float) -> None:  # noqa: A002 — name is the metric name here, not the module attr
+            current_scope().record_metric(name, value)  # type: ignore[attr-defined]
+
+        # Cache so __getattr__ is not called again — the deprecation message
+        # prints at most once (on first import), not on every call.
+        globals()["emit_metric"] = emit_metric
+        return emit_metric
     raise AttributeError(f"module 'cog' has no attribute {name!r}")
 
 
@@ -119,4 +133,5 @@ __all__ = [
     "current_scope",
     # Deprecated compat shims
     "ExperimentalFeatureWarning",
+    "emit_metric",
 ]

@@ -284,3 +284,22 @@ Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
 - Tests use real Docker operations (no mocking Docker API)
 - Always run `mise run build:sdk` after making Python changes before testing Go code
 - Python 3.10-3.13 compatibility is required
+
+### Go Test Conventions
+All Go tests must use [testify](https://github.com/stretchr/testify) for assertions. Do **not** use raw `if` checks with `t.Fatal`/`t.Errorf` — use `require` and `assert` instead.
+
+- **`require`** — for fatal assertions that should stop the test (setup failures, preconditions):
+  ```go
+  require.NoError(t, err, "failed to create client")
+  require.Equal(t, expected, actual)
+  require.True(t, condition, "server should be ready")
+  ```
+- **`assert`** — for non-fatal checks where the test should continue (e.g. validating multiple fields in a loop):
+  ```go
+  assert.Equal(t, http.StatusOK, resp.StatusCode)
+  assert.Contains(t, output, "expected substring")
+  assert.NoError(t, err, "prediction %d failed", i)
+  ```
+- Use `require` for errors in setup/teardown and `assert` for the actual test expectations
+- Prefer specific assertions (`Equal`, `Contains`, `NoError`, `Len`, `Less`) over generic `True`/`False` — they produce better failure messages
+- Prefer table-driven tests for testing multiple similar cases

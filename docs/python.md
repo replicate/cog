@@ -102,7 +102,7 @@ The `predict()` method takes an arbitrary list of named arguments, where each ar
 
 > Added in cog 0.14.0.
 
-You may specify your `predict()` method as `async def predict(...)`.  In
+You may specify your `predict()` method as `async def predict(...)`. In
 addition, if you have an async `predict()` function you may also have an async
 `setup()` function:
 
@@ -332,13 +332,13 @@ Metrics appear in the prediction response `metrics` field:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "...",
-    "metrics": {
-        "temperature": 0.7,
-        "token_count": 42,
-        "predict_time": 1.23
-    }
+  "status": "succeeded",
+  "output": "...",
+  "metrics": {
+    "temperature": 0.7,
+    "token_count": 42,
+    "predict_time": 1.23
+  }
 }
 ```
 
@@ -382,13 +382,13 @@ This produces nested JSON:
 
 ```json
 {
-    "metrics": {
-        "timing": {
-            "preprocess": 0.12,
-            "inference": 0.85
-        },
-        "predict_time": 1.23
-    }
+  "metrics": {
+    "timing": {
+      "preprocess": 0.12,
+      "inference": 0.85
+    },
+    "predict_time": 1.23
+  }
 }
 ```
 
@@ -413,9 +413,9 @@ Outside an active prediction, `self.record_metric()` and `self.scope` are silent
 
 When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `predict()` function. The exception raised depends on whether the predictor is sync or async:
 
-| Predictor type | Exception raised |
-|---|---|
-| Sync (`def predict`) | `CancelationException` |
+| Predictor type              | Exception raised         |
+| --------------------------- | ------------------------ |
+| Sync (`def predict`)        | `CancelationException`   |
 | Async (`async def predict`) | `asyncio.CancelledError` |
 
 ### `CancelationException`
@@ -522,7 +522,7 @@ from cog import BasePredictor, Secret
 class Predictor(BasePredictor):
     def predict(self, api_token: Secret) -> None:
         # Prints '**********'
-        print(api_token)        
+        print(api_token)
 
         # Use get_secret_value method to see the secret's content.
         print(api_token.get_secret_value())
@@ -534,7 +534,7 @@ A predictor's `Secret` inputs are represented in OpenAPI with the following sche
 {
   "type": "string",
   "format": "password",
-  "x-cog-secret": true,
+  "x-cog-secret": true
 }
 ```
 
@@ -543,7 +543,7 @@ When you create a prediction on Replicate,
 any value passed to a `Secret` input is redacted after being sent to the model.
 
 > [!WARNING]  
-> Passing secret values to untrusted models can result in 
+> Passing secret values to untrusted models can result in
 > unintended disclosure, exfiltration, or misuse of sensitive data.
 
 ## `Optional`
@@ -576,6 +576,7 @@ Note that the error prone usage of `prompt: str=Input(default=None)` might throw
 The List type is also supported in inputs. It can hold any supported type.
 
 Example for **List[Path]**:
+
 ```py
 class Predictor(BasePredictor):
    def predict(self, paths: list[Path]) -> str:
@@ -585,7 +586,9 @@ class Predictor(BasePredictor):
              output_parts.append(f.read())
        return "".join(output_parts)
 ```
+
 The corresponding cog command:
+
 ```bash
 $ echo test1 > 1.txt
 $ echo test2 > 2.txt
@@ -595,4 +598,5 @@ test1
 
 test2
 ```
+
 - Note the repeated inputs with the same name "paths" which constitute the list

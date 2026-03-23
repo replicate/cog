@@ -7,8 +7,15 @@
 #
 # This test verifies that when building with --use-cog-base-image,
 # the installed Python cog package has a valid version number.
+#
+# Uses a local test registry to avoid depending on the live r8.im registry.
 
-# Build using --use-cog-base-image
+# Start local registry and seed a cog-base image from Docker Hub's python:3.12-slim
+registry-start
+registry-seed docker.io/library/python:3.12-slim cog-base:python3.12
+
+# Build using --use-cog-base-image against local registry
+env COG_REGISTRY_HOST=$TEST_REGISTRY
 cog build -t $TEST_IMAGE --use-cog-base-image=true
 
 # Compare the embedded version label with the Python package version inside the image

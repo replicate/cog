@@ -14,8 +14,6 @@ You can deploy your packaged model to your own infrastructure, or to [Replicate]
 
 - 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
 
-- 🥞 **Automatic queue worker.** Long-running deep learning models or batch processing is best architected with a queue. Cog models do this out of the box. Redis is currently supported, with more in the pipeline.
-
 - 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
 
 ## How it works
@@ -28,7 +26,7 @@ build:
   system_packages:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
@@ -130,7 +128,7 @@ If you're using macOS, you can install Cog using Homebrew:
 brew install replicate/tap/cog
 ```
 
-You can also download and install the latest release using our 
+You can also download and install the latest release using our
 [install script](https://cog.run/install):
 
 ```sh
@@ -145,7 +143,7 @@ wget -qO- https://cog.run/install.sh
 sh ./install.sh
 ```
 
-You can manually install the latest release of Cog directly from GitHub 
+You can manually install the latest release of Cog directly from GitHub
 by running the following commands in a terminal:
 
 ```console
@@ -481,12 +479,15 @@ cog serve [flags]
 
 # Deploy models with Cog
 
-Cog containers are Docker containers that serve an HTTP server 
-for running predictions on your model. 
+Cog containers are Docker containers that serve an HTTP server
+for running predictions on your model.
 You can deploy them anywhere that Docker containers run.
 
-This guide assumes you have a model packaged with Cog. 
-If you don't, [follow our getting started guide](getting-started-own-model.md), 
+The server inside Cog containers is **coglet**, a Rust-based prediction server
+that handles HTTP requests, worker process management, and prediction execution.
+
+This guide assumes you have a model packaged with Cog.
+If you don't, [follow our getting started guide](getting-started-own-model.md),
 or use [an example model](https://github.com/replicate/cog-examples).
 
 ## Getting started
@@ -497,7 +498,15 @@ First, build your model:
 cog build -t my-model
 ```
 
-Then, start the Docker container:
+You can serve predictions locally with `cog serve`:
+
+```console
+cog serve
+# or, from a built image:
+cog serve my-model
+```
+
+Alternatively, start the Docker container directly:
 
 ```shell
 # If your model uses a CPU:
@@ -505,16 +514,13 @@ docker run -d -p 5001:5000 my-model
 
 # If your model uses a GPU:
 docker run -d -p 5001:5000 --gpus all my-model
-
-# If you're on an M1 Mac:
-docker run -d -p 5001:5000 --platform=linux/amd64 my-model
 ```
 
-The server is now running locally on port 5001.
+The server listens on port 5000 inside the container (mapped to 5001 above).
 
-To view the OpenAPI schema, 
-open [localhost:5001/openapi.json](http://localhost:5001/openapi.json) 
-in your browser 
+To view the OpenAPI schema,
+open [localhost:5001/openapi.json](http://localhost:5001/openapi.json)
+in your browser
 or use cURL to make a request:
 
 ```console
@@ -527,8 +533,8 @@ To stop the server, run:
 docker kill my-model
 ```
 
-To run a prediction on the model, 
-call the `/predictions` endpoint, 
+To run a prediction on the model,
+call the `/predictions` endpoint,
 passing input in the format expected by your model:
 
 ```console
@@ -537,32 +543,37 @@ curl http://localhost:5001/predictions -X POST \
     --data '{"input": {"image": "https://.../input.jpg"}}'
 ```
 
-For more details about the HTTP API, 
+For more details about the HTTP API,
 see the [HTTP API reference documentation](http.md).
 
-## Options
+## Health checks
 
-Cog Docker images have `python -m cog.server.http` set as the default command, which gets overridden if you pass a command to `docker run`. When you use command-line options, you need to pass in the full command before the options.
+The server exposes a `GET /health-check` endpoint that returns the current status of the model container. Use this for readiness probes in orchestration systems like Kubernetes.
 
-### `--threads`
+```console
+curl http://localhost:5001/health-check
+```
 
-This controls how many threads are used by Cog, which determines how many requests Cog serves in parallel. If your model uses a CPU, this is the number of CPUs on your machine. If your model uses a GPU, this is 1, because typically a GPU can only be used by one process.
+The response includes a `status` field with values like `STARTING`, `READY`, `BUSY`, `SETUP_FAILED`, or `DEFUNCT`. See the [HTTP API reference](http.md#get-health-check) for full details.
 
-You might need to adjust this if you want to control how much memory your model uses, or other similar constraints. To do this, you can use the `--threads` option.
+## Concurrency
 
-For example:
+By default, the server processes one prediction at a time. To enable concurrent predictions, set the `concurrency.max` option in `cog.yaml`:
 
-    docker run -d -p 5000:5000 my-model python -m cog.server.http --threads=10
+```yaml
+concurrency:
+  max: 4
+```
 
-### `--host`
+See the [`cog.yaml` reference](yaml.md#concurrency) for more details.
 
-By default, Cog serves to `0.0.0.0`.
-You can override this using the `--host` option.
+## Environment variables
 
-For example, 
-to serve Cog on an IPv6 address, run:
+You can configure runtime behavior with environment variables:
 
-    docker run -d -p 5000:5000 my-model python -m cog.server.http --host="::"
+- `COG_SETUP_TIMEOUT`: Maximum time in seconds for the `setup()` method (default: no timeout).
+
+See the [environment variables reference](environment.md) for the full list.
 
 
 ---
@@ -579,13 +590,13 @@ Controls which cog Python SDK wheel is installed in the Docker image during `cog
 
 **Supported values:**
 
-| Value | Description |
-|-------|-------------|
-| `pypi` | Install latest version from PyPI |
-| `pypi:0.12.0` | Install specific version from PyPI |
-| `dist` | Use wheel from `dist/` directory (requires git repo) |
-| `https://...` | Install from URL |
-| `/path/to/wheel.whl` | Install from local file path |
+| Value                | Description                                          |
+| -------------------- | ---------------------------------------------------- |
+| `pypi`               | Install latest version from PyPI                     |
+| `pypi:0.12.0`        | Install specific version from PyPI                   |
+| `dist`               | Use wheel from `dist/` directory (requires git repo) |
+| `https://...`        | Install from URL                                     |
+| `/path/to/wheel.whl` | Install from local file path                         |
 
 **Default behavior:**
 
@@ -606,6 +617,7 @@ $ COG_SDK_WHEEL=https://example.com/cog-0.12.0-py3-none-any.whl cog build
 ```
 
 The `dist` option searches for wheels in:
+
 1. `./dist/` (current directory)
 2. `$REPO_ROOT/dist/` (if REPO_ROOT is set)
 3. `<git-repo-root>/dist/` (via `git rev-parse`, useful when running from subdirectories)
@@ -632,14 +644,54 @@ $ COGLET_WHEEL=pypi:0.1.0 cog build
 
 ### `COG_NO_UPDATE_CHECK`
 
-By default, Cog automatically checks for updates 
+By default, Cog automatically checks for updates
 and notifies you if there is a new version available.
 
-To disable this behavior, 
+To disable this behavior,
 set the `COG_NO_UPDATE_CHECK` environment variable to any value.
 
 ```console
 $ COG_NO_UPDATE_CHECK=1 cog build  # runs without automatic update check
+```
+
+### `COG_SETUP_TIMEOUT`
+
+Controls the maximum time (in seconds) allowed for the model's `setup()` method to complete. If setup exceeds this timeout, the server will report a setup failure.
+
+By default, there is no timeout — setup runs indefinitely.
+
+Set to `0` to disable the timeout (same as default). Invalid values are ignored with a warning.
+
+```console
+$ COG_SETUP_TIMEOUT=300 docker run -p 5000:5000 my-model  # 5-minute setup timeout
+```
+
+### `COG_CA_CERT`
+
+Injects a custom CA certificate into the Docker image during `cog build`. This is useful when building behind a corporate proxy or VPN that uses custom certificate authorities (e.g. Cloudflare WARP).
+
+**Supported values:**
+
+| Value                            | Description                                                 |
+| -------------------------------- | ----------------------------------------------------------- |
+| `/path/to/cert.crt`              | Path to a single PEM certificate file                       |
+| `/path/to/certs/`                | Directory of `.crt` and `.pem` files (all are concatenated) |
+| `-----BEGIN CERTIFICATE-----...` | Inline PEM certificate                                      |
+| `LS0tLS1CRUdJTi...`              | Base64-encoded PEM certificate                              |
+
+The certificate is installed into the system CA store and the `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` environment variables are set automatically in the built image.
+
+**Examples:**
+
+```console
+# From a file
+$ COG_CA_CERT=/usr/local/share/ca-certificates/corporate-ca.crt cog build
+
+# From a directory of certs
+$ COG_CA_CERT=/etc/custom-certs/ cog build
+
+# Inline (e.g. from a CI secret)
+$ COG_CA_CERT="$(cat /path/to/cert.pem)" cog build
 ```
 
 
@@ -657,6 +709,14 @@ This guide will show you how to put your own machine learning model in a Docker 
 ## Initialization
 
 First, install Cog if you haven't already:
+
+**macOS (recommended):**
+
+```sh
+brew install replicate/tap/cog
+```
+
+**Linux or macOS (manual):**
 
 ```sh
 sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
@@ -683,7 +743,7 @@ For example:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 ```
 
@@ -693,7 +753,7 @@ With a `requirements.txt` containing your dependencies:
 torch==2.6.0
 ```
 
-This will generate a Docker image with Python 3.12 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
+This will generate a Docker image with Python 3.13 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
 
 To run a command inside this environment, prefix it with `cog run`:
 
@@ -703,7 +763,7 @@ $ cog run python
 Running 'python' in Docker with the current directory mounted as a volume...
 ────────────────────────────────────────────────────────────────────────────────────────
 
-Python 3.12.0 (main, Oct  2 2023, 15:45:55)
+Python 3.13.x (main, ...)
 [GCC 12.2.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
@@ -745,7 +805,7 @@ You also need to define the inputs to your model as arguments to the `predict()`
 - `int`: an integer
 - `float`: a floating point number
 - `bool`: a boolean
-- `cog.File`: a file-like object representing a file
+- `cog.File`: a file-like object representing a file (deprecated — use `cog.Path` instead)
 - `cog.Path`: a path to a file on disk
 
 You can provide more information about the input with the `Input()` function, as shown above. It takes these basic arguments:
@@ -754,7 +814,11 @@ You can provide more information about the input with the `Input()` function, as
 - `default`: A default value to set the input to. If this argument is not passed, the input is required. If it is explicitly set to `None`, the input is optional.
 - `ge`: For `int` or `float` types, the value should be greater than or equal to this number.
 - `le`: For `int` or `float` types, the value should be less than or equal to this number.
+- `min_length`: For `str` types, the minimum length of the string.
+- `max_length`: For `str` types, the maximum length of the string.
+- `regex`: For `str` types, the string must match this regular expression.
 - `choices`: For `str` or `int` types, a list of possible values for this input.
+- `deprecated`: Mark this input as deprecated with a message explaining what to use instead.
 
 There are some more advanced options you can pass, too. For more details, [take a look at the prediction interface documentation](python.md).
 
@@ -762,7 +826,7 @@ Next, add the line `predict: "predict.py:Predictor"` to your `cog.yaml`, so it l
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
@@ -870,7 +934,7 @@ The first thing you need to do is create a file called `cog.yaml`:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
 ```
 
 Then, you can run any command inside this environment. For example, enter
@@ -887,7 +951,7 @@ and you'll get an interactive Python shell:
 Running 'python' in Docker with the current directory mounted as a volume...
 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-Python 3.12.0 (main, Oct  2 2023, 15:45:55)
+Python 3.13.x (main, ...)
 [GCC 12.2.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
@@ -947,7 +1011,7 @@ Then update `cog.yaml` to look like this:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
@@ -1050,36 +1114,36 @@ Those are the basics! Next, you might want to take a look at:
 # HTTP API
 
 > [!TIP]
-> For information about how to run the HTTP server, 
+> For information about how to run the HTTP server,
 > see [our documentation on deploying models](deploy.md).
 
-When you run a Docker image built by Cog, 
+When you run a Docker image built by Cog,
 it serves an HTTP API for making predictions.
 
 The server supports both synchronous and asynchronous prediction creation:
 
-- **Synchronous**: 
+- **Synchronous**:
   The server waits until the prediction is completed
   and responds with the result.
-- **Asynchronous**: 
-  The server immediately returns a response 
-  and processes the prediction in the background. 
+- **Asynchronous**:
+  The server immediately returns a response
+  and processes the prediction in the background.
 
 The client can create a prediction asynchronously
 by setting the `Prefer: respond-async` header in their request.
-When provided, the server responds immediately after starting the prediction 
+When provided, the server responds immediately after starting the prediction
 with `202 Accepted` status and a prediction object in status `processing`.
 
 > [!NOTE]
 > The only supported way to receive updates on the status of predictions
-> started asynchronously is using [webhooks](#webhooks). 
+> started asynchronously is using [webhooks](#webhooks).
 > Polling for prediction status is not currently supported.
 
 You can also use certain server endpoints to create predictions idempotently,
-such that if a client calls this endpoint more than once with the same ID 
-(for example, due to a network interruption) 
-while the prediction is still running, 
-no new prediction is created. 
+such that if a client calls this endpoint more than once with the same ID
+(for example, due to a network interruption)
+while the prediction is still running,
+no new prediction is created.
 Instead, the client receives a `202 Accepted` response
 with the initial state of the prediction.
 
@@ -1097,9 +1161,9 @@ Here's a summary of the prediction creation endpoints:
 Choose the endpoint that best fits your needs:
 
 - Use synchronous endpoints when you want to wait for the prediction result.
-- Use asynchronous endpoints when you want to start a prediction 
+- Use asynchronous endpoints when you want to start a prediction
   and receive updates via webhooks.
-- Use idempotent endpoints when you need to safely retry requests 
+- Use idempotent endpoints when you need to safely retry requests
   without creating duplicate predictions.
 
 ## Webhooks
@@ -1122,27 +1186,27 @@ The server makes requests to the provided URL
 with the current state of the prediction object in the request body
 at the following times.
 
-- `start`: 
+- `start`:
   Once, when the prediction starts
   (`status` is `starting`).
-- `output`: 
-  Each time a predict function generates an output 
+- `output`:
+  Each time a predict function generates an output
   (either once using `return` or multiple times using `yield`)
-- `logs`: 
+- `logs`:
   Each time the predict function writes to `stdout`
-- `completed`: 
-  Once, when the prediction reaches a terminal state 
+- `completed`:
+  Once, when the prediction reaches a terminal state
   (`status` is `succeeded`, `canceled`, or `failed`)
 
-Webhook requests for `start` and `completed` event types 
+Webhook requests for `start` and `completed` event types
 are sent immediately.
-Webhook requests for `output` and `logs` event types 
+Webhook requests for `output` and `logs` event types
 are sent at most once every 500ms.
 This interval is not configurable.
 
-By default, the server sends requests for all event types. 
-Clients can specify which events trigger webhook requests 
-with the `webhook_events_filter` parameter in the prediction request body. 
+By default, the server sends requests for all event types.
+Clients can specify which events trigger webhook requests
+with the `webhook_events_filter` parameter in the prediction request body.
 For example,
 the following request specifies that webhooks are sent by the server
 only at the start and end of the prediction:
@@ -1163,9 +1227,11 @@ Prefer: respond-async
 
 Endpoints for creating and canceling a prediction idempotently
 accept a `prediction_id` parameter in their path.
-The server can run only one prediction at a time.
-The client must ensure that the running prediction is complete
-before creating a new one with a different ID.
+By default, the server runs one prediction at a time,
+but this can be increased with the [`concurrency.max`](yaml.md#concurrency) setting.
+When all prediction slots are in use, the server returns `409 Conflict`.
+The client should ensure prediction slots are available
+before creating a new prediction with a different ID.
 
 Clients are responsible for providing unique prediction IDs.
 We recommend generating a UUIDv4 or [UUIDv7](https://uuid7.com),
@@ -1186,7 +1252,7 @@ A model's `predict` function can produce file output by yielding or returning
 a `cog.Path` or `cog.File` value.
 
 By default,
-files are returned as a base64-encoded 
+files are returned as a base64-encoded
 [data URL](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs).
 
 ```http
@@ -1253,12 +1319,35 @@ Content-Type: application/json
 If the upload fails, the server responds with an error.
 
 > [!IMPORTANT]  
-> File uploads for predictions created asynchronously 
+> File uploads for predictions created asynchronously
 > require `--upload-url` to be specified when starting the HTTP server.
 
 <a id="api"></a>
 
 ## Endpoints
+
+### `GET /`
+
+Returns a discovery document listing available API endpoints, the OpenAPI schema URL, and version information.
+
+```http
+GET / HTTP/1.1
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+    "cog_version": "0.17.0",
+    "docs_url": "/openapi.json",
+    "openapi_url": "/openapi.json",
+    "predictions_url": "/predictions",
+    "health_check_url": "/health-check"
+}
+```
+
+If training is configured, the response also includes a `trainings_url` field.
 
 ### `GET /health-check`
 
@@ -1307,15 +1396,15 @@ Content-Type: application/json
     "version": {
         "coglet": "0.17.0",
         "cog": "0.14.0",
-        "python": "3.12.0"
+        "python": "3.13.0"
     }
 }
 ```
 
 ### `GET /openapi.json`
 
-The [OpenAPI](https://swagger.io/specification/) specification of the API, 
-which is derived from the input and output types specified in your model's 
+The [OpenAPI](https://swagger.io/specification/) specification of the API,
+which is derived from the input and output types specified in your model's
 [Predictor](python.md) and [Training](training.md) objects.
 
 ### `POST /predictions`
@@ -1324,8 +1413,8 @@ Makes a single prediction.
 
 The request body is a JSON object with the following fields:
 
-- `input`: 
-  A JSON object with the same keys as the 
+- `input`:
+  A JSON object with the same keys as the
   [arguments to the `predict()` function](python.md).
   Any `File` or `Path` inputs are passed as URLs.
 
@@ -1365,7 +1454,7 @@ Content-Type: application/json
 ```
 
 If the client sets the `Prefer: respond-async` header in their request,
-the server responds immediately after starting the prediction 
+the server responds immediately after starting the prediction
 with `202 Accepted` status and a prediction object in status `processing`.
 
 ```http
@@ -1412,7 +1501,7 @@ Content-Type: application/json
 ```
 
 If the client sets the `Prefer: respond-async` header in their request,
-the server responds immediately after starting the prediction 
+the server responds immediately after starting the prediction
 with `202 Accepted` status and a prediction object in status `processing`.
 
 ```http
@@ -1441,7 +1530,7 @@ A client can cancel an asynchronous prediction by making a
 `POST /predictions/<prediction_id>/cancel` request
 using the prediction `id` provided when the prediction was created.
 
-For example, 
+For example,
 if the client creates a prediction by sending the request:
 
 ```http
@@ -1478,14 +1567,15 @@ After cleanup, the exception must be re-raised using a bare `raise` statement.
 Failure to re-raise the exception may result in the termination of the container.
 
 ```python
-from cog import CancelationException, Path
+from cog import BasePredictor, CancelationException, Input, Path
 
-def predict(image: Path) -> Path:
-    try:
-        return process(image)
-    except CancelationException:
-        cleanup()
-        raise  # always re-raise
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(description="Image to process")) -> Path:
+        try:
+            return self.process(image)
+        except CancelationException:
+            self.cleanup()
+            raise  # always re-raise
 ```
 
 
@@ -1500,16 +1590,17 @@ Cog plays nicely with Jupyter notebooks.
 First, add `jupyterlab` to your `requirements.txt` file and reference it in [`cog.yaml`](yaml.md):
 
 `requirements.txt`:
+
 ```
-jupyterlab==3.3.4
+jupyterlab
 ```
 
 `cog.yaml`:
+
 ```yaml
 build:
   python_requirements: requirements.txt
 ```
-
 
 ## Run a notebook
 
@@ -1695,7 +1786,7 @@ The `predict()` method takes an arbitrary list of named arguments, where each ar
 
 > Added in cog 0.14.0.
 
-You may specify your `predict()` method as `async def predict(...)`.  In
+You may specify your `predict()` method as `async def predict(...)`. In
 addition, if you have an async `predict()` function you may also have an async
 `setup()` function:
 
@@ -1925,13 +2016,13 @@ Metrics appear in the prediction response `metrics` field:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "...",
-    "metrics": {
-        "temperature": 0.7,
-        "token_count": 42,
-        "predict_time": 1.23
-    }
+  "status": "succeeded",
+  "output": "...",
+  "metrics": {
+    "temperature": 0.7,
+    "token_count": 42,
+    "predict_time": 1.23
+  }
 }
 ```
 
@@ -1975,13 +2066,13 @@ This produces nested JSON:
 
 ```json
 {
-    "metrics": {
-        "timing": {
-            "preprocess": 0.12,
-            "inference": 0.85
-        },
-        "predict_time": 1.23
-    }
+  "metrics": {
+    "timing": {
+      "preprocess": 0.12,
+      "inference": 0.85
+    },
+    "predict_time": 1.23
+  }
 }
 ```
 
@@ -2006,9 +2097,9 @@ Outside an active prediction, `self.record_metric()` and `self.scope` are silent
 
 When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `predict()` function. The exception raised depends on whether the predictor is sync or async:
 
-| Predictor type | Exception raised |
-|---|---|
-| Sync (`def predict`) | `CancelationException` |
+| Predictor type              | Exception raised         |
+| --------------------------- | ------------------------ |
+| Sync (`def predict`)        | `CancelationException`   |
 | Async (`async def predict`) | `asyncio.CancelledError` |
 
 ### `CancelationException`
@@ -2115,7 +2206,7 @@ from cog import BasePredictor, Secret
 class Predictor(BasePredictor):
     def predict(self, api_token: Secret) -> None:
         # Prints '**********'
-        print(api_token)        
+        print(api_token)
 
         # Use get_secret_value method to see the secret's content.
         print(api_token.get_secret_value())
@@ -2127,7 +2218,7 @@ A predictor's `Secret` inputs are represented in OpenAPI with the following sche
 {
   "type": "string",
   "format": "password",
-  "x-cog-secret": true,
+  "x-cog-secret": true
 }
 ```
 
@@ -2136,7 +2227,7 @@ When you create a prediction on Replicate,
 any value passed to a `Secret` input is redacted after being sent to the model.
 
 > [!WARNING]  
-> Passing secret values to untrusted models can result in 
+> Passing secret values to untrusted models can result in
 > unintended disclosure, exfiltration, or misuse of sensitive data.
 
 ## `Optional`
@@ -2169,6 +2260,7 @@ Note that the error prone usage of `prompt: str=Input(default=None)` might throw
 The List type is also supported in inputs. It can hold any supported type.
 
 Example for **List[Path]**:
+
 ```py
 class Predictor(BasePredictor):
    def predict(self, paths: list[Path]) -> str:
@@ -2178,7 +2270,9 @@ class Predictor(BasePredictor):
              output_parts.append(f.read())
        return "".join(output_parts)
 ```
+
 The corresponding cog command:
+
 ```bash
 $ echo test1 > 1.txt
 $ echo test2 > 2.txt
@@ -2188,22 +2282,16 @@ test1
 
 test2
 ```
+
 - Note the repeated inputs with the same name "paths" which constitute the list
-
-
----
-
-# Redis queue API
-
-> **Note:** The redis queue API is no longer supported and has been removed from Cog.
 
 
 ---
 
 # Training interface reference
 
-> [!NOTE]  
-> The training API is still experimental, and is subject to change.
+> [!WARNING]  
+> The `cog train` command is deprecated and will be removed in the next version of Cog. The training API described below may still be used with the HTTP API's `/trainings` endpoint, but the CLI command is no longer recommended for new projects.
 
 Cog's training API allows you to define a fine-tuning interface for an existing Cog model, so users of the model can bring their own training data to create derivative fine-tuned models. Real-world examples of this API in use include [fine-tuning SDXL with images](https://replicate.com/blog/fine-tune-sdxl) or [fine-tuning Llama 2 with structured text](https://replicate.com/blog/fine-tune-llama-2).
 
@@ -2215,7 +2303,7 @@ If you've used Cog before, you've probably seen the [Predictor](./python.md) cla
 
 ```yaml
 build:
-  python_version: "3.10"
+  python_version: "3.13"
 train: "train.py:train"
 ```
 
@@ -2245,7 +2333,7 @@ You can also use classes if you want to run many model trainings and save on set
 
 ```yaml
 build:
-  python_version: "3.10"
+  python_version: "3.13"
 train: "train.py:Trainer"
 ```
 
@@ -2294,7 +2382,7 @@ Each parameter of the `train()` function must be annotated with a type like `str
 Using the `Input` function provides better documentation and validation constraints to the users of your model, but it is not strictly required. You can also specify default values for your parameters using plain Python, or omit default assignment entirely:
 
 ```py
-def predict(self,
+def train(self,
   training_data: str = "foo bar", # this is valid
   iterations: int                 # also valid
 ) -> str:
@@ -2466,6 +2554,7 @@ wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/
 sudo mv cuda-wsl-ubuntu.pin /etc/apt/preferences.d/cuda-repository-pin-600
 wget https://developer.download.nvidia.com/compute/cuda/11.7.0/local_installers/cuda-repo-wsl-ubuntu-11-7-local_11.7.0-1_amd64.deb
 sudo dpkg -i cuda-repo-wsl-ubuntu-11-7-local_11.7.0-1_amd64.deb
+sudo cp /var/cuda-repo-wsl-ubuntu-11-7-local/cuda-B81839D3-keyring.gpg /usr/share/keyrings/
 sudo apt-get update
 sudo apt-get -y install cuda-toolkit-11-7
 ```
@@ -2559,7 +2648,7 @@ It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predic
 
 ```yaml
 build:
-  python_version: "3.11"
+  python_version: "3.13"
   python_requirements: requirements.txt
   system_packages:
     - "ffmpeg"
@@ -2615,6 +2704,7 @@ This follows the standard [requirements.txt](https://pip.pypa.io/en/stable/refer
 To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
 
 `cog.yaml`:
+
 ```yaml
 build:
   system_packages:
@@ -2623,6 +2713,7 @@ build:
 ```
 
 `requirements.txt`:
+
 ```
 git+https://github.com/huggingface/transformers
 ```
@@ -2630,6 +2721,7 @@ git+https://github.com/huggingface/transformers
 You can also pin Python package installations to a specific git commit:
 
 `cog.yaml`:
+
 ```yaml
 build:
   system_packages:
@@ -2638,6 +2730,7 @@ build:
 ```
 
 `requirements.txt`:
+
 ```
 git+https://github.com/huggingface/transformers@2d1602a
 ```
@@ -2661,11 +2754,11 @@ Your `cog.yaml` file can set either `python_packages` or `python_requirements`, 
 
 ### `python_version`
 
-The minor (`3.11`) or patch (`3.11.1`) version of Python to use. For example:
+The minor (`3.13`) or patch (`3.13.1`) version of Python to use. For example:
 
 ```yaml
 build:
-  python_version: "3.11.1"
+  python_version: "3.13.1"
 ```
 
 Cog supports Python 3.10, 3.11, 3.12, and 3.13. If you don't define a version, Cog will use the latest version of Python 3.13 or a version of Python that is compatible with the versions of PyTorch or TensorFlow you specify.
@@ -2707,7 +2800,7 @@ Pin the version of the cog Python SDK installed in the container. Accepts a [PEP
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   sdk_version: "0.18.0"
 ```
 
@@ -2743,7 +2836,7 @@ This stanza describes the concurrency capabilities of the model. It has one opti
 
 ### `max`
 
-The maximum number of concurrent predictions the model can process.  If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
+The maximum number of concurrent predictions the model can process. If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
 
 For example:
 
@@ -2766,7 +2859,7 @@ r8.im is Replicate's registry, but this can be any Docker registry.
 
 If you don't set this, then a name will be generated from the directory name.
 
-If you set this, then you can run `cog push` without specifying the model name. 
+If you set this, then you can run `cog push` without specifying the model name.
 
 If you specify an image name argument when pushing (like `cog push your-username/custom-model-name`), the argument will be used and the value of `image` in cog.yaml will be ignored.
 
