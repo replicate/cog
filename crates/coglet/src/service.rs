@@ -458,6 +458,7 @@ impl PredictionService {
         &self,
         unregistered_slot: UnregisteredPredictionSlot,
         input: serde_json::Value,
+        context: std::collections::HashMap<String, String>,
     ) -> Result<PredictionResult, PredictionError> {
         let state = self.orchestrator.read().await.clone();
         let state = state
@@ -502,6 +503,7 @@ impl PredictionService {
                 .expect("output dir path is valid UTF-8")
                 .to_string(),
             &input_dir,
+            context,
         )
         .map_err(|e| PredictionError::Failed(format!("Failed to build slot request: {}", e)))?;
 
@@ -640,6 +642,7 @@ fn build_slot_request(
     input: serde_json::Value,
     output_dir: String,
     input_dir: &std::path::Path,
+    context: std::collections::HashMap<String, String>,
 ) -> std::io::Result<SlotRequest> {
     let serialized = serde_json::to_vec(&input)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -656,6 +659,7 @@ fn build_slot_request(
             input: None,
             input_file: Some(input_file),
             output_dir,
+            context,
         })
     } else {
         Ok(SlotRequest::Predict {
@@ -663,6 +667,7 @@ fn build_slot_request(
             input: Some(input),
             input_file: None,
             output_dir,
+            context,
         })
     }
 }
@@ -937,7 +942,11 @@ mod tests {
             .unwrap();
 
         let result = svc
-            .predict(slot, serde_json::json!({"prompt": "hello"}))
+            .predict(
+                slot,
+                serde_json::json!({"prompt": "hello"}),
+                Default::default(),
+            )
             .await;
 
         // MockOrchestrator completes immediately with success
@@ -989,7 +998,11 @@ mod tests {
             .unwrap();
 
         let result = svc
-            .predict(slot, serde_json::json!({"prompt": "hello"}))
+            .predict(
+                slot,
+                serde_json::json!({"prompt": "hello"}),
+                Default::default(),
+            )
             .await;
         assert!(result.is_ok(), "predict failed: {:?}", result.err());
 
@@ -1024,7 +1037,11 @@ mod tests {
             .unwrap();
 
         let result = svc
-            .predict(slot, serde_json::json!({"prompt": "hello"}))
+            .predict(
+                slot,
+                serde_json::json!({"prompt": "hello"}),
+                Default::default(),
+            )
             .await;
         assert!(result.is_ok(), "predict failed: {:?}", result.err());
 
@@ -1059,7 +1076,11 @@ mod tests {
             .unwrap();
 
         let result = svc
-            .predict(slot, serde_json::json!({"prompt": "hello"}))
+            .predict(
+                slot,
+                serde_json::json!({"prompt": "hello"}),
+                Default::default(),
+            )
             .await;
         assert!(matches!(result, Err(PredictionError::Failed(_))));
         assert!(pool.is_poisoned(slot_id));
@@ -1163,8 +1184,14 @@ mod tests {
     fn build_slot_request_small_input_inline() {
         let dir = tempfile::tempdir().unwrap();
         let input = serde_json::json!({"text": "hello"});
-        let req =
-            build_slot_request("p1".into(), input.clone(), "/tmp/out".into(), dir.path()).unwrap();
+        let req = build_slot_request(
+            "p1".into(),
+            input.clone(),
+            "/tmp/out".into(),
+            dir.path(),
+            Default::default(),
+        )
+        .unwrap();
 
         match req {
             SlotRequest::Predict {
@@ -1172,6 +1199,7 @@ mod tests {
                 input: Some(v),
                 input_file: None,
                 output_dir,
+                ..
             } => {
                 assert_eq!(id, "p1");
                 assert_eq!(v, input);
@@ -1187,8 +1215,14 @@ mod tests {
         // Create an input larger than 6 MiB
         let big = "x".repeat(7 * 1024 * 1024);
         let input = serde_json::json!({"data": big});
-        let req =
-            build_slot_request("p2".into(), input.clone(), "/tmp/out".into(), dir.path()).unwrap();
+        let req = build_slot_request(
+            "p2".into(),
+            input.clone(),
+            "/tmp/out".into(),
+            dir.path(),
+            Default::default(),
+        )
+        .unwrap();
 
         match req {
             SlotRequest::Predict {
@@ -1196,6 +1230,7 @@ mod tests {
                 input: None,
                 input_file: Some(ref path),
                 output_dir,
+                ..
             } => {
                 assert_eq!(id, "p2");
                 assert_eq!(output_dir, "/tmp/out");
@@ -1215,11 +1250,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let big = "y".repeat(7 * 1024 * 1024);
         let input = serde_json::json!({"payload": big});
-        let req =
-            build_slot_request("p3".into(), input.clone(), "/tmp/out".into(), dir.path()).unwrap();
+        let req = build_slot_request(
+            "p3".into(),
+            input.clone(),
+            "/tmp/out".into(),
+            dir.path(),
+            Default::default(),
+        )
+        .unwrap();
 
         // Rehydrate and verify we get back the same value
-        let (id, rehydrated, output_dir) = req.rehydrate_input().unwrap();
+        let (id, rehydrated, output_dir, _context) = req.rehydrate_input().unwrap();
         assert_eq!(id, "p3");
         assert_eq!(rehydrated, input);
         assert_eq!(output_dir, "/tmp/out");

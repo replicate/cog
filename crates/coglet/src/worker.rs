@@ -316,6 +316,7 @@ pub trait PredictHandler: Send + Sync + 'static {
         id: String,
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
+        context: std::collections::HashMap<String, String>,
     ) -> PredictResult;
 
     /// Request cancellation of prediction on a slot.
@@ -731,7 +732,7 @@ pub async fn run_worker<H: PredictHandler>(
                 let prediction_id = request.prediction_id().to_string();
 
                 match request.rehydrate_input() {
-                    Ok((id, input, output_dir)) => {
+                    Ok((id, input, output_dir, context)) => {
                         tracing::trace!(%slot_id, %id, "Prediction request received");
                         slot_busy.insert(slot_id, true);
 
@@ -753,6 +754,7 @@ pub async fn run_worker<H: PredictHandler>(
                                 PathBuf::from(output_dir),
                                 handler,
                                 writer,
+                                context,
                             ).await;
                             let _ = completion_tx.send(completion).await;
                         });
@@ -812,6 +814,7 @@ async fn run_prediction<H: PredictHandler>(
     output_dir: PathBuf,
     handler: Arc<H>,
     writer: SlotWriter,
+    context: std::collections::HashMap<String, String>,
 ) -> SlotCompletion {
     tracing::trace!(%slot_id, %prediction_id, "run_prediction starting");
 
@@ -846,6 +849,7 @@ async fn run_prediction<H: PredictHandler>(
             prediction_id.clone(),
             input,
             slot_sender,
+            context,
         ))
     });
     tracing::trace!(%slot_id, %prediction_id, "handler.predict returned");

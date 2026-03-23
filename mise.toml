@@ -338,14 +338,14 @@ fi
 alias = ["format", "fmt:check", "format:check"]
 description = "Check formatting for all languages (non-destructive)"
 run = [
-  { tasks = ["fmt:go", "fmt:rust", "fmt:python"] },
+  { tasks = ["fmt:go", "fmt:rust", "fmt:python", "fmt:docs"] },
 ]
 
 [tasks."fmt:fix"]
 alias = "format:fix"
 description = "Fix formatting for all languages"
 run = [
-  { tasks = ["fmt:go:fix", "fmt:rust:fix", "fmt:python:fix"] },
+  { tasks = ["fmt:go:fix", "fmt:rust:fix", "fmt:python:fix", "fmt:docs:fix"] },
 ]
 
 # Go formatting
@@ -382,6 +382,16 @@ run = "ruff format --check ."
 [tasks."fmt:python:fix"]
 description = "Fix Python formatting"
 run = "ruff format ."
+
+# Docs formatting
+[tasks."fmt:docs"]
+alias = "fmt:docs:check"
+description = "Check docs formatting"
+run = "npx prettier --check 'docs/**/*.md' README.md"
+
+[tasks."fmt:docs:fix"]
+description = "Fix docs formatting"
+run = "npx prettier -w 'docs/**/*.md' README.md"
 
 # =============================================================================
 # Lint tasks
