@@ -3,6 +3,8 @@
 # The accept parameter is only valid on Path or File inputs. Using it on
 # str, int, float, etc. should produce a clear error at build time.
 
+env COG_STATIC_SCHEMA=1
+
 ! cog build -t $TEST_IMAGE
 stderr 'accept is only valid on Path or File inputs'
 

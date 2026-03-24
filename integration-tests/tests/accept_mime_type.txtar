@@ -8,6 +8,8 @@
 # - Fields without accept do not have x-cog-accept
 # - Prediction still works end-to-end
 
+env COG_STATIC_SCHEMA=1
+
 cog build -t $TEST_IMAGE
 
 # Extract the schema from the image label
