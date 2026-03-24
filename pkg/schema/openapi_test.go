@@ -683,6 +683,80 @@ func TestMultipleInputTypes(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Tests: Accept (MIME type) annotation
+// ---------------------------------------------------------------------------
+
+func TestAcceptAnnotation(t *testing.T) {
+	accept := "image/*"
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("image", InputField{
+		Name:      "image",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypePath, Repetition: Required},
+		Accept:    &accept,
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+
+	imageField := props["image"].(map[string]any)
+	assert.Equal(t, "string", imageField["type"])
+	assert.Equal(t, "uri", imageField["format"])
+	assert.Equal(t, "image/*", imageField["x-cog-accept"])
+}
+
+func TestAcceptAnnotationMultipleMimeTypes(t *testing.T) {
+	accept := "audio/wav,audio/mp3,audio/flac"
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("audio", InputField{
+		Name:      "audio",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypePath, Repetition: Required},
+		Accept:    &accept,
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+
+	audioField := props["audio"].(map[string]any)
+	assert.Equal(t, "audio/wav,audio/mp3,audio/flac", audioField["x-cog-accept"])
+}
+
+func TestAcceptAnnotationNotPresentWhenNil(t *testing.T) {
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("image", InputField{
+		Name:      "image",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypePath, Repetition: Required},
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+
+	imageField := props["image"].(map[string]any)
+	_, hasAccept := imageField["x-cog-accept"]
+	assert.False(t, hasAccept, "x-cog-accept should not be present when Accept is nil")
+}
+
+// ---------------------------------------------------------------------------
 // Tests: Edge cases
 // ---------------------------------------------------------------------------
 

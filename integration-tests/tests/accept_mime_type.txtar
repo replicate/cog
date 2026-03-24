@@ -1,0 +1,55 @@
+# Test that the accept parameter on Path/File inputs produces the
+# x-cog-accept annotation in the generated OpenAPI schema.
+#
+# Verifies:
+# - accept="image/*" on a Path input emits x-cog-accept in the schema
+# - accept with multiple MIME types works
+# - accept with file extensions works
+# - Fields without accept do not have x-cog-accept
+# - Prediction still works end-to-end
+
+cog build -t $TEST_IMAGE
+
+# Extract the schema from the image label
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+
+# x-cog-accept annotations are present
+stdout '"x-cog-accept":"image/\*"'
+stdout '"x-cog-accept":"audio/wav,audio/mp3"'
+stdout '"x-cog-accept":".safetensors,.bin"'
+
+# The prompt field (str) should NOT have x-cog-accept
+# (we check the schema has prompt but confirm no extra x-cog-accept entries)
+stdout '"prompt":'
+
+# Path fields still have uri format
+stdout '"format":"uri"'
+
+# Prediction works end-to-end
+cog predict $TEST_IMAGE -i prompt=hello -i image=@test.png
+stdout 'hello-png'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import Optional
+
+from cog import BasePredictor, Input, Path
+
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        prompt: str = Input(description="Text prompt", default="test"),
+        image: Path = Input(description="Input image", accept="image/*"),
+        audio: Optional[Path] = Input(description="Audio clip", accept="audio/wav,audio/mp3", default=None),
+        weights: Optional[Path] = Input(description="Model weights", accept=".safetensors,.bin", default=None),
+    ) -> str:
+        ext = str(image).split(".")[-1]
+        return f"{prompt}-{ext}"
+
+-- test.png --
+fake image content

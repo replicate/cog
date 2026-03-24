@@ -365,6 +365,11 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 			prop.Set("deprecated", true)
 		}
 
+		// MIME type constraint for Path/File inputs
+		if field.Accept != nil {
+			prop.Set("x-cog-accept", *field.Accept)
+		}
+
 		properties.Set(name, prop)
 	})
 
