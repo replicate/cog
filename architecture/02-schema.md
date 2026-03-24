@@ -7,16 +7,11 @@ The schema is an **OpenAPI 3.0.2 specification** that describes a model's interf
 Every Cog model uses the same [Prediction API](./03-prediction-api.md) envelope format, but the `input` and `output` fields are model-specific. The schema captures what each model expects and produces.
 
 ```mermaid
-block-beta
-    columns 1
-    block:envelope["PredictionRequest (fixed envelope)"]
-        columns 1
-        input["&quot;input&quot;: { ... } — model-specific"]
+flowchart TB
+    subgraph envelope ["PredictionRequest (fixed envelope)"]
+        input["&quot;input&quot;#colon; { ... } — model-specific"]
     end
-    schema["⬆ Schema defines this part"]
-
-    style input fill:#f9f,stroke:#333
-    style schema fill:none,stroke:none
+    envelope -.- note["Schema defines this part"]
 ```
 
 Without the schema, consumers would have no way to know:

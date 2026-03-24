@@ -243,17 +243,14 @@ These labels can be fetched from a remote registry or local image store (like co
 A built Cog image has layers in this order (bottom to top):
 
 ```mermaid
-block-beta
-    columns 1
-    copy["COPY . /src — User code + weights"]
-    run["RUN commands (from cog.yaml) — Custom build steps"]
-    pip["pip install (python_packages) — Python dependencies"]
-    wheel["Cog wheel install — Cog runtime"]
-    apt["apt-get install (system_packages) — System dependencies"]
-    tini["tini init — Process manager"]
+flowchart TB
+    copy["COPY . /src — User code + weights"] --- run
+    run["RUN commands (from cog.yaml) — Custom build steps"] --- pip
+    pip["pip install (python_packages) — Python dependencies"] --- wheel
+    wheel["Cog wheel install — Cog runtime"] --- apt
+    apt["apt-get install (system_packages) — System dependencies"] --- tini
+    tini["tini init — Process manager"] --- base
     base["Base image (OS, Python, CUDA, cuDNN, PyTorch)\n~5-15 GB for GPU images"]
-
-    style base fill:#e8e8e8,stroke:#333
 ```
 
 The base image is by far the largest layer. Using a matching `cog-base` image means this layer is shared across builds and doesn't need to be re-downloaded or rebuilt.

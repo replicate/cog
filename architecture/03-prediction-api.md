@@ -20,18 +20,13 @@ By default, `POST /predictions` blocks until completion. For long-running predic
 Every Cog model exposes the same endpoints with the same request/response structure. The model-specific parts (input fields, output type) are defined by the [Schema](./02-schema.md) and validated at runtime.
 
 ```mermaid
-block-beta
-    columns 1
-    block:envelope["Fixed Envelope (same for all models)"]
-        columns 1
+flowchart TB
+    subgraph envelope ["Fixed Envelope (same for all models)"]
+        direction TB
         fixed["id, status, created_at, logs, metrics, ..."]
-        input["input: { ... } — model-specific (from schema)"]
-        output["output: ... — model-specific (from schema)"]
+        input["input#colon; { ... } — model-specific (from schema)"]
+        output["output#colon; ... — model-specific (from schema)"]
     end
-
-    style fixed fill:#e8e8e8,stroke:#333
-    style input fill:#f9f,stroke:#333
-    style output fill:#f9f,stroke:#333
 ```
 
 This pattern means:
