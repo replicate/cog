@@ -352,14 +352,6 @@ The API can deliver these as:
 2. **Server-Sent Events** -- Stream via `Accept: text/event-stream`
 3. **Final array** -- Sync response collects all yields into `output: ["a", "b", "c"]`
 
-## Training API
-
-The training API (`/trainings`) uses the same envelope pattern:
-
-- `TrainingRequest` extends `PredictionRequest`
-- `TrainingResponse` extends `PredictionResponse`
-- Calls `train()` method instead of `predict()`
-
 ## Where to Look
 
 - `crates/coglet/src/transport/http/` -- HTTP route handlers, request parsing, response construction

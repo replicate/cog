@@ -43,7 +43,6 @@ concurrency:
 | `build.system_packages` | apt packages to install |
 | `build.run` | Arbitrary shell commands during build |
 | `predict` | Path to predictor class (`module:ClassName`) |
-| `train` | Path to training class (optional) |
 | `concurrency.max` | Max concurrent predictions (requires async) |
 
 The [Build System](./05-build-system.md) uses this configuration to produce an image containing all necessary dependencies, libraries, and the correct Python/CUDA versions.
@@ -82,11 +81,6 @@ class Predictor(BasePredictor):
 - Return type defines the output schema
 - Can be sync (`def`) or async (`async def`)
 - See [Container Runtime: Life of a Prediction](./04-container-runtime.md#life-of-a-prediction) for the full request-to-response path through the runtime
-
-### train() (optional)
-
-- Same contract as `predict()` but for fine-tuning workflows
-- Configured separately in `cog.yaml` with `train:` key
 
 ## Input Types
 
@@ -291,20 +285,6 @@ def setup(self):
 ### Downloaded at Runtime
 
 Weights can be fetched during `setup()` rather than bundled. Common approaches:
-
-**Using the `weights` parameter** (Cog's built-in mechanism):
-
-```python
-class Predictor(BasePredictor):
-    def setup(self, weights: Path):
-        self.model = load(weights)
-```
-
-The `weights` value comes from `COG_WEIGHTS` env var or falls back to `./weights`:
-
-```bash
-COG_WEIGHTS=https://example.com/model.tar cog predict ...
-```
 
 **Using pget** (parallel download tool, included in Cog images):
 

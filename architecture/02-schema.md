@@ -53,7 +53,7 @@ COG_STATIC_SCHEMA=1 cog build -t my-model
 
 The static path requires SDK >= 0.17.0. If the static parser encounters a type it can't resolve, it **falls back to the runtime path** automatically with a warning -- so builds don't break due to static parser limitations.
 
-For local commands (`cog train`, `cog serve`, `cog predict`), the static path is always used regardless of the `COG_STATIC_SCHEMA` flag, because these commands run before the post-build runtime generation step -- the CLI needs the schema to parse `-i` input flags.
+For local commands (`cog serve`, `cog predict`), the static path is always used regardless of the `COG_STATIC_SCHEMA` flag, because these commands run before the post-build runtime generation step -- the CLI needs the schema to parse `-i` input flags.
 
 ```mermaid
 flowchart LR
@@ -86,7 +86,7 @@ flowchart LR
 3. **Collect module scope** -- resolve module-level variable assignments (for default values, choices lists)
 4. **Collect BaseModel subclasses** -- find all classes that inherit from `BaseModel` (cog's dataclass-based version; pydantic BaseModel also supported for compatibility)
 5. **Resolve cross-file models** — for imported names not found locally, find the `.py` file on disk, parse it, and extract its BaseModel definitions
-6. **Extract inputs** — walk the `predict()` / `train()` method parameters, resolve types, defaults, and `Input()` metadata
+6. **Extract inputs** — walk the `predict()` method parameters, resolve types, defaults, and `Input()` metadata
 7. **Resolve output type** — recursively resolve the return type annotation into a `SchemaType`
 8. **Generate OpenAPI** — convert the extracted `PredictorInfo` into a full OpenAPI 3.0.2 JSON document
 

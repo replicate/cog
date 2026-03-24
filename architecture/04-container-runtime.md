@@ -98,7 +98,7 @@ The `Prediction` struct is itself a state machine -- its mutation methods (`set_
 - **Responsibilities**:
   - Load user's predictor module
   - Run `setup()` once at startup
-  - Execute `predict()` / `train()` methods
+  - Execute `predict()` method
   - Capture stdout/stderr via ContextVar-based log routing
   - Send events back to parent via slot sockets
 
@@ -156,7 +156,7 @@ Lifecycle messages for the worker as a whole.
 
 | Message | Purpose |
 |---------|---------|
-| `Init { predictor_ref, num_slots, is_train, is_async, ... }` | Bootstrap worker -- load predictor, create slots |
+| `Init { predictor_ref, num_slots, is_async, ... }` | Bootstrap worker -- load predictor, create slots |
 | `Cancel { slot }` | Cancel a running prediction on a slot |
 | `Healthcheck { id }` | Request a user-defined healthcheck |
 | `Shutdown` | Graceful shutdown |
