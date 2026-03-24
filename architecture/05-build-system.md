@@ -232,7 +232,7 @@ These labels can be fetched from a remote registry or local image store (like co
 
 A built Cog image has layers in this order (bottom to top):
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │  COPY . /src                                    │  ← User code + weights
 ├─────────────────────────────────────────────────┤

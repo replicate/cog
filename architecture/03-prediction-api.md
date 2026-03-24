@@ -19,7 +19,7 @@ By default, `POST /predictions` blocks until completion. For long-running predic
 
 Every Cog model exposes the same endpoints with the same request/response structure. The model-specific parts (input fields, output type) are defined by the [Schema](./02-schema.md) and validated at runtime.
 
-```
+```text
 ┌────────────────────────────────────────────────────────┐
 │  Fixed Envelope (same for all models)                  │
 │  ┌──────────────────────────────────────────────────┐  │
@@ -271,14 +271,14 @@ Client receives:   {"output": "https://storage.example.com/output-xyz.png"}
 
 Cancellation uses IPC messages with different strategies for sync vs async predictors:
 
-```
+```text
 Parent: ControlRequest::Cancel { slot }
     │
     └─▶ Worker: handler.cancel(slot)
 ```
 
 **Sync predictors:**
-```
+```text
 handler.cancel(slot)
     ├─▶ Set CANCEL_REQUESTED flag for slot
     ├─▶ Send SIGUSR1 to self
@@ -286,7 +286,7 @@ handler.cancel(slot)
 ```
 
 **Async predictors:**
-```
+```text
 handler.cancel(slot)
     ├─▶ Get future from slot state
     └─▶ future.cancel() → Python raises asyncio.CancelledError

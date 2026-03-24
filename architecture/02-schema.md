@@ -6,7 +6,7 @@ The schema is an **OpenAPI 3.0.2 specification** that describes a model's interf
 
 Every Cog model uses the same [Prediction API](./03-prediction-api.md) envelope format, but the `input` and `output` fields are model-specific. The schema captures what each model expects and produces.
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │  PredictionRequest (fixed envelope)             │
 │  ┌─────────────────────────────────────────┐    │
@@ -129,7 +129,8 @@ The resolver handles every permutation of local imports:
 **How it distinguishes local from external**: the resolver converts the module path to a filesystem path and checks if the file exists. If `output_types.py` exists in the project directory, it's local. If not (e.g., `from transformers import ...`), it's external. Known external packages (stdlib, torch, numpy, etc.) are skipped without a filesystem check.
 
 **Error messages**: when a type can't be resolved, the error includes the import source:
-```
+
+```text
 cannot resolve output type 'WeirdType' (imported from 'some_package') —
 external types cannot be statically analyzed. Define it as a BaseModel
 subclass in your predict file, or provide a .pyi stub
@@ -139,7 +140,7 @@ subclass in your predict file, or provide a .pyi stub
 
 Output types are represented as a recursive algebraic data type (`SchemaType`) that composes arbitrarily:
 
-```
+```text
 SchemaType
 ├── SchemaPrimitive   — str, int, float, bool, Path
 ├── SchemaAny         — untyped (bare dict, Any)

@@ -10,7 +10,7 @@ The runtime is implemented in Rust using Axum for HTTP and PyO3 for Python integ
 
 ## High-Level Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              HTTP Transport (axum)                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
@@ -122,8 +122,8 @@ stateDiagram-v2
     setup --> idle: setup() succeeds
     setup --> dead: setup() raises
 
-    idle --> predict: SlotRequest::Predict
-    predict --> idle: predict() returns/raises
+    idle --> predicting: SlotRequest#colon;#colon;Predict
+    predicting --> idle: predict() returns/raises
 
     idle --> dead: Shutdown / crash
 
@@ -330,7 +330,7 @@ Following a single prediction from HTTP request to response:
 
 How coglet gets invoked when running a Cog container:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        cog predict / cog run                                │
 │                               (CLI)                                         │
