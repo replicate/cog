@@ -19,19 +19,14 @@ By default, `POST /predictions` blocks until completion. For long-running predic
 
 Every Cog model exposes the same endpoints with the same request/response structure. The model-specific parts (input fields, output type) are defined by the [Schema](./02-schema.md) and validated at runtime.
 
-```
-┌────────────────────────────────────────────────────────┐
-│  Fixed Envelope (same for all models)                  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  id, status, created_at, logs, metrics, ...      │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  input: { ... }    ← model-specific (from schema)│  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  output: ...       ← model-specific (from schema)│  │
-│  └──────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph envelope ["Fixed Envelope (same for all models)"]
+        direction TB
+        fixed["id, status, created_at, logs, metrics, ..."]
+        input["input#colon; { ... } — model-specific (from schema)"]
+        output["output#colon; ... — model-specific (from schema)"]
+    end
 ```
 
 This pattern means:
@@ -271,25 +266,26 @@ Client receives:   {"output": "https://storage.example.com/output-xyz.png"}
 
 Cancellation uses IPC messages with different strategies for sync vs async predictors:
 
-```
-Parent: ControlRequest::Cancel { slot }
-    │
-    └─▶ Worker: handler.cancel(slot)
-```
+```mermaid
+flowchart TD
+    parent["Parent#colon; ControlRequest#colon;#colon;Cancel { slot }"]
+    parent --> worker["Worker#colon; handler.cancel(slot)"]
 
-**Sync predictors:**
-```
-handler.cancel(slot)
-    ├─▶ Set CANCEL_REQUESTED flag for slot
-    ├─▶ Send SIGUSR1 to self
-    └─▶ Signal handler: raise KeyboardInterrupt (if in cancelable region)
-```
+    subgraph sync ["Sync predictors"]
+        direction TB
+        s1["Set CANCEL_REQUESTED flag for slot"]
+        s2["Send SIGUSR1 to self"]
+        s3["Signal handler#colon; raise KeyboardInterrupt\n(if in cancelable region)"]
+    end
 
-**Async predictors:**
-```
-handler.cancel(slot)
-    ├─▶ Get future from slot state
-    └─▶ future.cancel() → Python raises asyncio.CancelledError
+    subgraph async_p ["Async predictors"]
+        direction TB
+        a1["Get future from slot state"]
+        a2["future.cancel() → Python raises\nasyncio.CancelledError"]
+    end
+
+    worker --> sync
+    worker --> async_p
 ```
 
 ## Webhooks
@@ -351,14 +347,6 @@ The API can deliver these as:
 1. **Webhooks** -- Each yield triggers an `output` webhook
 2. **Server-Sent Events** -- Stream via `Accept: text/event-stream`
 3. **Final array** -- Sync response collects all yields into `output: ["a", "b", "c"]`
-
-## Training API
-
-The training API (`/trainings`) uses the same envelope pattern:
-
-- `TrainingRequest` extends `PredictionRequest`
-- `TrainingResponse` extends `PredictionResponse`
-- Calls `train()` method instead of `predict()`
 
 ## Where to Look
 

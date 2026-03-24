@@ -6,15 +6,12 @@ The schema is an **OpenAPI 3.0.2 specification** that describes a model's interf
 
 Every Cog model uses the same [Prediction API](./03-prediction-api.md) envelope format, but the `input` and `output` fields are model-specific. The schema captures what each model expects and produces.
 
-```
-┌─────────────────────────────────────────────────┐
-│  PredictionRequest (fixed envelope)             │
-│  ┌─────────────────────────────────────────┐    │
-│  │  "input": { ... }  <- model-specific      │    │
-│  └─────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────┘
-                      ↑
-            Schema defines this part
+```mermaid
+flowchart TB
+    subgraph envelope ["PredictionRequest (fixed envelope)"]
+        input["&quot;input&quot;#colon; { ... } — model-specific"]
+    end
+    envelope -.- note["Schema defines this part"]
 ```
 
 Without the schema, consumers would have no way to know:
@@ -53,7 +50,7 @@ COG_STATIC_SCHEMA=1 cog build -t my-model
 
 The static path requires SDK >= 0.17.0. If the static parser encounters a type it can't resolve, it **falls back to the runtime path** automatically with a warning -- so builds don't break due to static parser limitations.
 
-For local commands (`cog train`, `cog serve`, `cog predict`), the static path is always used regardless of the `COG_STATIC_SCHEMA` flag, because these commands run before the post-build runtime generation step -- the CLI needs the schema to parse `-i` input flags.
+For local commands (`cog serve`, `cog predict`), the static path is always used regardless of the `COG_STATIC_SCHEMA` flag, because these commands run before the post-build runtime generation step -- the CLI needs the schema to parse `-i` input flags.
 
 ```mermaid
 flowchart LR
@@ -86,7 +83,7 @@ flowchart LR
 3. **Collect module scope** -- resolve module-level variable assignments (for default values, choices lists)
 4. **Collect BaseModel subclasses** -- find all classes that inherit from `BaseModel` (cog's dataclass-based version; pydantic BaseModel also supported for compatibility)
 5. **Resolve cross-file models** — for imported names not found locally, find the `.py` file on disk, parse it, and extract its BaseModel definitions
-6. **Extract inputs** — walk the `predict()` / `train()` method parameters, resolve types, defaults, and `Input()` metadata
+6. **Extract inputs** — walk the `predict()` method parameters, resolve types, defaults, and `Input()` metadata
 7. **Resolve output type** — recursively resolve the return type annotation into a `SchemaType`
 8. **Generate OpenAPI** — convert the extracted `PredictorInfo` into a full OpenAPI 3.0.2 JSON document
 
@@ -129,7 +126,8 @@ The resolver handles every permutation of local imports:
 **How it distinguishes local from external**: the resolver converts the module path to a filesystem path and checks if the file exists. If `output_types.py` exists in the project directory, it's local. If not (e.g., `from transformers import ...`), it's external. Known external packages (stdlib, torch, numpy, etc.) are skipped without a filesystem check.
 
 **Error messages**: when a type can't be resolved, the error includes the import source:
-```
+
+```text
 cannot resolve output type 'WeirdType' (imported from 'some_package') —
 external types cannot be statically analyzed. Define it as a BaseModel
 subclass in your predict file, or provide a .pyi stub
@@ -139,15 +137,15 @@ subclass in your predict file, or provide a .pyi stub
 
 Output types are represented as a recursive algebraic data type (`SchemaType`) that composes arbitrarily:
 
-```
-SchemaType
-├── SchemaPrimitive   — str, int, float, bool, Path
-├── SchemaAny         — untyped (bare dict, Any)
-├── SchemaArray       — list[T], with Items → SchemaType
-├── SchemaDict        -- dict[str, V], with ValueType -> SchemaType
-├── SchemaObject      — BaseModel subclass, with Fields → OrderedMap[name, SchemaField]
-├── SchemaIterator    — Iterator[T], with Elem → SchemaType
-└── SchemaConcatIterator — ConcatenateIterator[str]
+```mermaid
+flowchart TD
+    root["SchemaType"] --> prim["SchemaPrimitive — str, int, float, bool, Path"]
+    root --> any["SchemaAny — untyped (bare dict, Any)"]
+    root --> arr["SchemaArray — list#lsqb;T#rsqb;, with Items → SchemaType"]
+    root --> dict["SchemaDict — dict#lsqb;str, V#rsqb;, with ValueType → SchemaType"]
+    root --> obj["SchemaObject — BaseModel subclass, with Fields → OrderedMap"]
+    root --> iter["SchemaIterator — Iterator#lsqb;T#rsqb;, with Elem → SchemaType"]
+    root --> concat["SchemaConcatIterator — ConcatenateIterator#lsqb;str#rsqb;"]
 ```
 
 This recursive structure means nested types like `dict[str, list[dict[str, int]]]` are fully representable and produce correct JSON Schema:

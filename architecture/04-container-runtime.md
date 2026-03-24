@@ -10,57 +10,41 @@ The runtime is implemented in Rust using Axum for HTTP and PyO3 for Python integ
 
 ## High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              HTTP Transport (axum)                               │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
-│  │ POST        │  │ PUT         │  │ POST        │  │ GET                     │ │
-│  │ /predictions│  │ /predictions│  │ /cancel     │  │ /health-check           │ │
-│  │             │  │ /{id}       │  │             │  │ /openapi.json           │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └───────────┬─────────────┘ │
-└─────────┼────────────────┼────────────────┼─────────────────────┼───────────────┘
-          │                │                │                     │
-          ▼                ▼                ▼                     ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                            PredictionService                                     │
-│  ┌────────────────────────────────────────────────────────────────────────────┐ │
-│  │                    Active Predictions (DashMap)                            │ │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │ │
-│  │  │ PredictionEntry │  │ PredictionEntry │  │ PredictionEntry │  ...       │ │
-│  │  │ ─────────────── │  │ ─────────────── │  │ ─────────────── │            │ │
-│  │  │ prediction (Arc)│  │ prediction (Arc)│  │ prediction (Arc)│            │ │
-│  │  │ cancel_token    │  │ cancel_token    │  │ cancel_token    │            │ │
-│  │  │ input           │  │ input           │  │ input           │            │ │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘            │ │
-│  └────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                  │
-│  ┌────────────────────────────────────────────────────────────────────────────┐ │
-│  │                           PermitPool                                       │ │
-│  │  ┌────────┐  ┌────────┐  ┌────────┐                                       │ │
-│  │  │ Permit │  │ Permit │  │ Permit │  (concurrency control)                │ │
-│  │  │ slot_0 │  │ slot_1 │  │ slot_2 │                                       │ │
-│  │  └────────┘  └────────┘  └────────┘                                       │ │
-│  └────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                  │
-│  ┌────────────────────────────────────────────────────────────────────────────┐ │
-│  │                        OrchestratorHandle                                  │ │
-│  │  (slot_ids, control_tx for worker comms)                                   │ │
-│  └────────────────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────┬──────────────────────────────────────────────┘
-                                   │
-                    Unix Socket (slot) + stdin/stdout (control)
-                                   │
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         Worker Subprocess (Python)                               │
-│  ┌────────────────────────────────────────────────────────────────────────────┐ │
-│  │                              Predictor                                     │ │
-│  │  ┌─────────────────────────────────────────────────────────────────────┐  │ │
-│  │  │  setup()    →  runs once at startup                                 │  │ │
-│  │  │  predict()  →  handles SlotRequest::Predict                         │  │ │
-│  │  └─────────────────────────────────────────────────────────────────────┘  │ │
-│  └────────────────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph http["HTTP Transport (axum)"]
+        direction LR
+        post["POST\n/predictions"]
+        put["PUT\n/predictions/{id}"]
+        cancel["POST\n/cancel"]
+        get["GET\n/health-check\n/openapi.json"]
+    end
+
+    subgraph service["PredictionService"]
+        subgraph dashmap["Active Predictions (DashMap)"]
+            direction LR
+            e1["PredictionEntry\nprediction (Arc)\ncancel_token\ninput"]
+            e2["PredictionEntry\nprediction (Arc)\ncancel_token\ninput"]
+            e3["PredictionEntry\n..."]
+        end
+        subgraph permits["PermitPool"]
+            direction LR
+            p0["Permit\nslot_0"]
+            p1["Permit\nslot_1"]
+            p2["Permit\nslot_2"]
+        end
+        orch["OrchestratorHandle\n(slot_ids, control_tx for worker comms)"]
+    end
+
+    subgraph worker["Worker Subprocess (Python)"]
+        subgraph predictor["Predictor"]
+            setup["setup() → runs once at startup"]
+            predict["predict() → handles SlotRequest#colon;#colon;Predict"]
+        end
+    end
+
+    http --> service
+    service -- "Unix Socket (slot) +\nstdin/stdout (control)" --> worker
 ```
 
 ## Ownership Model
@@ -98,7 +82,7 @@ The `Prediction` struct is itself a state machine -- its mutation methods (`set_
 - **Responsibilities**:
   - Load user's predictor module
   - Run `setup()` once at startup
-  - Execute `predict()` / `train()` methods
+  - Execute `predict()` method
   - Capture stdout/stderr via ContextVar-based log routing
   - Send events back to parent via slot sockets
 
@@ -122,8 +106,8 @@ stateDiagram-v2
     setup --> idle: setup() succeeds
     setup --> dead: setup() raises
 
-    idle --> predict: SlotRequest::Predict
-    predict --> idle: predict() returns/raises
+    idle --> predicting: SlotRequest#colon;#colon;Predict
+    predicting --> idle: predict() returns/raises
 
     idle --> dead: Shutdown / crash
 
@@ -156,7 +140,7 @@ Lifecycle messages for the worker as a whole.
 
 | Message | Purpose |
 |---------|---------|
-| `Init { predictor_ref, num_slots, is_train, is_async, ... }` | Bootstrap worker -- load predictor, create slots |
+| `Init { predictor_ref, num_slots, is_async, ... }` | Bootstrap worker -- load predictor, create slots |
 | `Cancel { slot }` | Cancel a running prediction on a slot |
 | `Healthcheck { id }` | Request a user-defined healthcheck |
 | `Shutdown` | Graceful shutdown |
@@ -330,44 +314,23 @@ Following a single prediction from HTTP request to response:
 
 How coglet gets invoked when running a Cog container:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        cog predict / cog run                                │
-│                               (CLI)                                         │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     python -m cog.server.http                               │
-│                                                                             │
-│   import coglet                                                             │
-│   coglet.server.serve(predictor_ref, port=5000)                             │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          coglet (Rust)                                      │
-│                                                                             │
-│   ┌───────────────────────────────────────────────────────────────────┐     │
-│   │  HTTP Server (axum)  :5000                                        │     │
-│   │    /predictions, /health-check, etc.                              │     │
-│   └───────────────────────────────────────────────────────────────────┘     │
-│                              │                                              │
-│                              ▼                                              │
-│   ┌───────────────────────────────────────────────────────────────────┐     │
-│   │  PredictionService (state, webhooks, permits)                      │     │
-│   └───────────────────────────────────────────────────────────────────┘     │
-│                              │                                              │
-│                    Unix socket + pipes                                      │
-│                              │                                              │
-│                              ▼                                              │
-│   ┌───────────────────────────────────────────────────────────────────┐     │
-│   │  Worker subprocess (Python)                                       │     │
-│   │    - loads predictor_ref                                          │     │
-│   │    - runs setup()                                                 │     │
-│   │    - handles predict() requests                                   │     │
-│   └───────────────────────────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    cli["cog predict / cog run\n(CLI)"]
+
+    launcher["python -m cog.server.http\nimport coglet\ncoglet.server.serve(predictor_ref, port=5000)"]
+
+    subgraph coglet_box ["coglet (Rust)"]
+        direction TB
+        axum["HTTP Server (axum) #colon;5000\n/predictions, /health-check, etc."]
+        svc["PredictionService\n(state, webhooks, permits)"]
+        worker_sub["Worker subprocess (Python)\n- loads predictor_ref\n- runs setup()\n- handles predict() requests"]
+
+        axum --> svc
+        svc -- "Unix socket + pipes" --> worker_sub
+    end
+
+    cli --> launcher --> coglet_box
 ```
 
 ## Key Design Decisions
