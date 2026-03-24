@@ -483,6 +483,9 @@ func resolveSDKVersion(cfg *config.Config) string {
 		return ""
 	}
 	if cfg.Build != nil && cfg.Build.SDKVersion != "" {
+		if cfg.Build.SDKVersion == wheels.PreReleaseSentinel {
+			return "" // unpinned; latest pre-release resolved at build time
+		}
 		return cfg.Build.SDKVersion
 	}
 	if v := wheels.DetectLocalSDKVersion(); v != "" {
