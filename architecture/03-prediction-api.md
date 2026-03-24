@@ -19,19 +19,19 @@ By default, `POST /predictions` blocks until completion. For long-running predic
 
 Every Cog model exposes the same endpoints with the same request/response structure. The model-specific parts (input fields, output type) are defined by the [Schema](./02-schema.md) and validated at runtime.
 
-```text
-┌────────────────────────────────────────────────────────┐
-│  Fixed Envelope (same for all models)                  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  id, status, created_at, logs, metrics, ...      │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  input: { ... }    ← model-specific (from schema)│  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  output: ...       ← model-specific (from schema)│  │
-│  └──────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────┘
+```mermaid
+block-beta
+    columns 1
+    block:envelope["Fixed Envelope (same for all models)"]
+        columns 1
+        fixed["id, status, created_at, logs, metrics, ..."]
+        input["input: { ... } — model-specific (from schema)"]
+        output["output: ... — model-specific (from schema)"]
+    end
+
+    style fixed fill:#e8e8e8,stroke:#333
+    style input fill:#f9f,stroke:#333
+    style output fill:#f9f,stroke:#333
 ```
 
 This pattern means:
@@ -271,25 +271,26 @@ Client receives:   {"output": "https://storage.example.com/output-xyz.png"}
 
 Cancellation uses IPC messages with different strategies for sync vs async predictors:
 
-```text
-Parent: ControlRequest::Cancel { slot }
-    │
-    └─▶ Worker: handler.cancel(slot)
-```
+```mermaid
+flowchart TD
+    parent["Parent#colon; ControlRequest#colon;#colon;Cancel { slot }"]
+    parent --> worker["Worker#colon; handler.cancel(slot)"]
 
-**Sync predictors:**
-```text
-handler.cancel(slot)
-    ├─▶ Set CANCEL_REQUESTED flag for slot
-    ├─▶ Send SIGUSR1 to self
-    └─▶ Signal handler: raise KeyboardInterrupt (if in cancelable region)
-```
+    subgraph sync ["Sync predictors"]
+        direction TB
+        s1["Set CANCEL_REQUESTED flag for slot"]
+        s2["Send SIGUSR1 to self"]
+        s3["Signal handler#colon; raise KeyboardInterrupt\n(if in cancelable region)"]
+    end
 
-**Async predictors:**
-```text
-handler.cancel(slot)
-    ├─▶ Get future from slot state
-    └─▶ future.cancel() → Python raises asyncio.CancelledError
+    subgraph async_p ["Async predictors"]
+        direction TB
+        a1["Get future from slot state"]
+        a2["future.cancel() → Python raises\nasyncio.CancelledError"]
+    end
+
+    worker --> sync
+    worker --> async_p
 ```
 
 ## Webhooks

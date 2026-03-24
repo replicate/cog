@@ -6,15 +6,17 @@ The schema is an **OpenAPI 3.0.2 specification** that describes a model's interf
 
 Every Cog model uses the same [Prediction API](./03-prediction-api.md) envelope format, but the `input` and `output` fields are model-specific. The schema captures what each model expects and produces.
 
-```text
-┌─────────────────────────────────────────────────┐
-│  PredictionRequest (fixed envelope)             │
-│  ┌─────────────────────────────────────────┐    │
-│  │  "input": { ... }  <- model-specific      │    │
-│  └─────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────┘
-                      ↑
-            Schema defines this part
+```mermaid
+block-beta
+    columns 1
+    block:envelope["PredictionRequest (fixed envelope)"]
+        columns 1
+        input["&quot;input&quot;: { ... } — model-specific"]
+    end
+    schema["⬆ Schema defines this part"]
+
+    style input fill:#f9f,stroke:#333
+    style schema fill:none,stroke:none
 ```
 
 Without the schema, consumers would have no way to know:
@@ -140,15 +142,15 @@ subclass in your predict file, or provide a .pyi stub
 
 Output types are represented as a recursive algebraic data type (`SchemaType`) that composes arbitrarily:
 
-```text
-SchemaType
-├── SchemaPrimitive   — str, int, float, bool, Path
-├── SchemaAny         — untyped (bare dict, Any)
-├── SchemaArray       — list[T], with Items → SchemaType
-├── SchemaDict        -- dict[str, V], with ValueType -> SchemaType
-├── SchemaObject      — BaseModel subclass, with Fields → OrderedMap[name, SchemaField]
-├── SchemaIterator    — Iterator[T], with Elem → SchemaType
-└── SchemaConcatIterator — ConcatenateIterator[str]
+```mermaid
+flowchart TD
+    root["SchemaType"] --> prim["SchemaPrimitive — str, int, float, bool, Path"]
+    root --> any["SchemaAny — untyped (bare dict, Any)"]
+    root --> arr["SchemaArray — list#lsqb;T#rsqb;, with Items → SchemaType"]
+    root --> dict["SchemaDict — dict#lsqb;str, V#rsqb;, with ValueType → SchemaType"]
+    root --> obj["SchemaObject — BaseModel subclass, with Fields → OrderedMap"]
+    root --> iter["SchemaIterator — Iterator#lsqb;T#rsqb;, with Elem → SchemaType"]
+    root --> concat["SchemaConcatIterator — ConcatenateIterator#lsqb;str#rsqb;"]
 ```
 
 This recursive structure means nested types like `dict[str, list[dict[str, int]]]` are fully representable and produce correct JSON Schema:

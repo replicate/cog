@@ -60,12 +60,22 @@ Reads `cog.yaml` and validates/completes the configuration:
 - Auto-detects CUDA version from PyTorch/TensorFlow requirements
 - Resolves package versions against compatibility matrix
 
-```
-cog.yaml (user provides)     →    Config (completed)
-─────────────────────────         ─────────────────
-gpu: true                         gpu: true
-python_packages:                  cuda: "12.1"      ← auto-detected
-  - torch==2.1.0                  cudnn: "8"        ← auto-detected
+```mermaid
+flowchart LR
+    subgraph input ["cog.yaml (user provides)"]
+        direction TB
+        i1["gpu#colon; true"]
+        i2["python_packages#colon;\n  - torch==2.1.0"]
+    end
+
+    subgraph output ["Config (completed)"]
+        direction TB
+        o1["gpu#colon; true"]
+        o2["cuda#colon; &quot;12.1&quot; ← auto-detected"]
+        o3["cudnn#colon; &quot;8&quot; ← auto-detected"]
+    end
+
+    input --> output
 ```
 
 ---
@@ -232,25 +242,18 @@ These labels can be fetched from a remote registry or local image store (like co
 
 A built Cog image has layers in this order (bottom to top):
 
-```text
-┌─────────────────────────────────────────────────┐
-│  COPY . /src                                    │  ← User code + weights
-├─────────────────────────────────────────────────┤
-│  RUN commands (from cog.yaml)                   │  ← Custom build steps
-├─────────────────────────────────────────────────┤
-│  pip install (python_packages)                  │  ← Python dependencies
-├─────────────────────────────────────────────────┤
-│  Cog wheel install                              │  ← Cog runtime
-├─────────────────────────────────────────────────┤
-│  apt-get install (system_packages)              │  ← System dependencies
-├─────────────────────────────────────────────────┤
-│  tini init                                      │  ← Process manager
-├─────────────────────────────────────────────────┤
-│                                                 │
-│  Base image                                     │  ← Largest layer
-│  (OS, Python, CUDA, cuDNN, PyTorch)             │     ~5-15 GB for GPU images
-│                                                 │
-└─────────────────────────────────────────────────┘
+```mermaid
+block-beta
+    columns 1
+    copy["COPY . /src — User code + weights"]
+    run["RUN commands (from cog.yaml) — Custom build steps"]
+    pip["pip install (python_packages) — Python dependencies"]
+    wheel["Cog wheel install — Cog runtime"]
+    apt["apt-get install (system_packages) — System dependencies"]
+    tini["tini init — Process manager"]
+    base["Base image (OS, Python, CUDA, cuDNN, PyTorch)\n~5-15 GB for GPU images"]
+
+    style base fill:#e8e8e8,stroke:#333
 ```
 
 The base image is by far the largest layer. Using a matching `cog-base` image means this layer is shared across builds and doesn't need to be re-downloaded or rebuilt.
