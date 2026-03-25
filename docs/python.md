@@ -595,7 +595,7 @@ def predict(self, prompt: Optional[str] = Input(description="prompt")) -> str:
 
 #### `list`
 
-Use `list[T]` or `List[T]` to accept or return a list of values. The element type `T` must be one of the [primitive types](#primitive-types).
+Use `list[T]` or `List[T]` to accept or return a list of values. `T` can be a supported Cog type, but nested container types are not supported.
 
 **As an input type:**
 
@@ -695,7 +695,7 @@ class SegmentationResult(BaseModel):
 
 #### Using Pydantic `BaseModel`
 
-If you already use Pydantic in your model, you can use a Pydantic `BaseModel` subclass directly as the output type:
+If you already use Pydantic v2 in your model, you can use a Pydantic `BaseModel` subclass directly as the output type:
 
 ```python
 from pydantic import BaseModel as PydanticBaseModel
@@ -728,7 +728,7 @@ Fields in a `BaseModel` output support these types:
 
 The following type patterns are **not** supported:
 
-- **Nested generics**: `list[list[str]]`, `list[Optional[str]]`, `Optional[list[str]]` — list and Optional element types must be primitive types.
+- **Nested generics**: `list[list[str]]`, `list[Optional[str]]`, `Optional[list[str]]` are not supported.
 - **Union types beyond Optional**: `str | int`, `Union[str, int, None]` — only `Optional[T]` (i.e. `T | None`) is supported.
 - **`Optional` as a top-level return type**: `-> Optional[str]` is not allowed. Use a `BaseModel` with optional fields instead.
 - **Nested `BaseModel` fields**: A `BaseModel` field typed as another `BaseModel` is not supported in Cog's type system for schema generation.
