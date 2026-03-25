@@ -159,8 +159,8 @@ jobs:
               echo "integration=false" >> $GITHUB_OUTPUT
             fi
 
-            # Detect docs changes (includes CLI source which generates docs/cli.md)
-            if echo "$CHANGED" | grep -qE '^(docs/|README\.md|cmd/|pkg/cli/)'; then
+            # Detect docs changes (includes any Markdown file and CLI source which generates docs/cli.md)
+            if echo "$CHANGED" | grep -qE '^(docs/|README\.md|cmd/|pkg/cli/|.*\.md$)'; then
               echo "docs=true" >> $GITHUB_OUTPUT
             else
               echo "docs=false" >> $GITHUB_OUTPUT
@@ -503,6 +503,23 @@ jobs:
       - name: Lint Python
         run: mise run lint:python
 
+  lint-docs:
+    name: Lint Markdown
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: jdx/mise-action@v4
+        with:
+          cache: false
+      - name: Lint Markdown
+        run: mise run lint:docs
+
 # =============================================================================
 # Test Jobs
 # =============================================================================
@@ -837,6 +854,7 @@ jobs:
       - lint-rust
       - lint-rust-deny
       - lint-python
+      - lint-docs
       - test-go
       - test-rust
       - test-python
@@ -861,6 +879,7 @@ jobs:
           echo "  lint-rust: ${{ needs.lint-rust.result }}"
           echo "  lint-rust-deny: ${{ needs.lint-rust-deny.result }}"
           echo "  lint-python: ${{ needs.lint-python.result }}"
+          echo "  lint-docs: ${{ needs.lint-docs.result }}"
           echo "  test-go: ${{ needs.test-go.result }}"
           echo "  test-rust: ${{ needs.test-rust.result }}"
           echo "  test-python: ${{ needs.test-python.result }}"
@@ -882,6 +901,7 @@ jobs:
             "${{ needs.lint-rust.result }}" \
             "${{ needs.lint-rust-deny.result }}" \
             "${{ needs.lint-python.result }}" \
+            "${{ needs.lint-docs.result }}" \
             "${{ needs.test-go.result }}" \
             "${{ needs.test-rust.result }}" \
             "${{ needs.test-python.result }}" \
