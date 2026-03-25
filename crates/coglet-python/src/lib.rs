@@ -401,7 +401,6 @@ fn serve_subprocess(
     sentry_integration::configure_sentry_scope(
         &pred_ref,
         max_concurrency,
-        is_train,
         env!("CARGO_PKG_VERSION"),
         version.python.as_deref(),
         version.python_sdk.as_deref(),

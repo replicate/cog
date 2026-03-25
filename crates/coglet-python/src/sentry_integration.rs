@@ -47,7 +47,6 @@ pub fn init_sentry() -> SentryGuard {
 pub fn configure_sentry_scope(
     predictor_ref: &str,
     max_concurrency: usize,
-    is_train: bool,
     coglet_version: &str,
     python_version: Option<&str>,
     sdk_version: Option<&str>,
@@ -56,7 +55,6 @@ pub fn configure_sentry_scope(
         scope.set_tag("coglet.version", coglet_version);
         scope.set_tag("coglet.predictor_ref", predictor_ref);
         scope.set_tag("coglet.max_concurrency", max_concurrency);
-        scope.set_tag("coglet.is_train", is_train);
 
         if let Some(pv) = python_version {
             scope.set_tag("python.version", pv);
