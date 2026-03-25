@@ -22,7 +22,7 @@ futures = "0.3"
 axum = "0.8"
 
 # HTTP client
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -34,6 +34,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+sentry = { version = "0.47", default-features = false, features = ["backtrace", "contexts", "panic", "tracing", "reqwest", "rustls"] }
 
 # Error handling
 thiserror = "2"

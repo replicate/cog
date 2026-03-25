@@ -7,6 +7,7 @@ mod log_writer;
 mod metric_scope;
 mod output;
 mod predictor;
+mod sentry_integration;
 mod worker_bridge;
 
 use std::sync::Arc;
@@ -92,6 +93,11 @@ fn set_active() {
 
 /// Initialize tracing with COG_LOG_LEVEL and LOG_FORMAT support.
 /// Returns optional receiver for draining setup logs.
+///
+/// The Sentry tracing layer is automatically included when Sentry is enabled
+/// (i.e. `init_sentry()` was called and `SENTRY_DSN` was set). This layer
+/// captures `ERROR`-level tracing events as Sentry issues and `WARN`-level
+/// events as breadcrumbs.
 fn init_tracing(
     _to_stderr: bool,
     setup_log_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
@@ -116,18 +122,24 @@ fn init_tracing(
 
     let use_json = std::env::var("LOG_FORMAT").as_deref() != Ok("console");
 
+    // Optional Sentry layer — returns None (no-op) when SENTRY_DSN is not set.
+    // Option<Layer> implements Layer, so this composes cleanly.
+    let sentry_layer = sentry_integration::sentry_tracing_layer();
+
     if let Some(tx) = setup_log_tx {
         let accumulator = coglet_core::SetupLogAccumulator::new(tx);
 
         if use_json {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(accumulator)
                 .with(fmt::layer().json().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
         } else {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(accumulator)
                 .with(fmt::layer().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
@@ -137,11 +149,13 @@ fn init_tracing(
         if use_json {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(fmt::layer().json().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
         } else {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(fmt::layer().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
         }
@@ -295,6 +309,11 @@ fn serve_impl(
     _output_temp_dir_base: String,
     upload_url: Option<String>,
 ) -> PyResult<()> {
+    // Initialize Sentry BEFORE tracing so the sentry tracing layer can attach.
+    // If SENTRY_DSN is not set, this is a no-op. The guard must be held until
+    // process exit to ensure pending events are flushed.
+    let _sentry_guard = sentry_integration::init_sentry();
+
     let (setup_log_tx, setup_log_rx) = tokio::sync::mpsc::unbounded_channel();
     init_tracing(false, Some(setup_log_tx));
 
@@ -376,6 +395,16 @@ fn serve_subprocess(
     info!(
         max_concurrency,
         "Configuring subprocess worker via orchestrator"
+    );
+
+    // Enrich Sentry scope with model/server metadata
+    sentry_integration::configure_sentry_scope(
+        &pred_ref,
+        max_concurrency,
+        is_train,
+        env!("CARGO_PKG_VERSION"),
+        version.python.as_deref(),
+        version.python_sdk.as_deref(),
     );
 
     let setup_timeout = read_setup_timeout();
