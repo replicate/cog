@@ -309,6 +309,9 @@ fn serve_impl(
     _output_temp_dir_base: String,
     upload_url: Option<String>,
 ) -> PyResult<()> {
+    // Install ring as the TLS crypto provider for rustls/reqwest.
+    coglet_core::install_crypto_provider();
+
     // Initialize Sentry BEFORE tracing so the sentry tracing layer can attach.
     // If SENTRY_DSN is not set, this is a no-op. The guard must be held until
     // process exit to ensure pending events are flushed.
@@ -353,6 +356,10 @@ fn serve_impl(
     info!("python {}", version.python.as_deref().unwrap_or("unknown"));
 
     let Some(pred_ref) = predictor_ref else {
+        // Health-only mode: no predictor, no worker subprocess, no orchestrator.
+        // Sentry scope enrichment is skipped since there's no model metadata to
+        // attach. Infrastructure errors (e.g. HTTP bind failure) are still captured
+        // with default Sentry context (release, environment).
         info!("No predictor specified, serving health endpoints only");
         let service = Arc::new(
             PredictionService::new_no_pool()

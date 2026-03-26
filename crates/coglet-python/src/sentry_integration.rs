@@ -31,9 +31,6 @@ pub fn init_sentry() -> SentryGuard {
 
     if guard.is_enabled() {
         info!("Sentry error reporting enabled");
-    }
-
-    if guard.is_enabled() {
         Some(guard)
     } else {
         None
