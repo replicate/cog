@@ -2,13 +2,8 @@
 # torch version is below the minimum supported for cog-base images.
 # Torch 1.13.0 < MinimumTorchVersion (1.13.1), so no cog-base match exists.
 #
-# Uses a local registry (empty, no images seeded) to ensure the base image
-# lookup fails deterministically, and cog debug to verify the generated
-# Dockerfile without doing a real Docker build.
-
-# Start an empty local registry so the cog-base lookup fails deterministically
-registry-start
-env COG_REGISTRY_HOST=$TEST_REGISTRY
+# GHCR has no cog-base image for torch 1.13.0 (it's below minimum),
+# so the lookup fails and cog falls back to nvidia/cuda.
 
 # Generate Dockerfile — should fall back to nvidia/cuda, not cog-base
 cog debug
