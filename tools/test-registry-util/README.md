@@ -1,6 +1,6 @@
 # `test-registry-util`
 
-A tool for creating and inspecting a local registry for testing. 
+A tool for creating and inspecting a local registry for testing.
 
 ## Purpose
 
@@ -8,7 +8,7 @@ We have a lot of intricate image manipulation code that needs to be tested. Mock
 
 ## Usage
 
-Image data is stored in `pkg/registry_testhelpers/testdata` and matches the structore expected by `distribution/distribution`. 
+Image data is stored in `pkg/registry_testhelpers/testdata` and matches the structore expected by `distribution/distribution`.
 
 During tests an ephemeral registry is spun up on a random local port, populated with the image data, and turn down when the test finishes.
 
