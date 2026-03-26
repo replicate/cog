@@ -51,6 +51,7 @@ cargo-binstall = "1.16.6"
 "aqua:golangci/golangci-lint" = "2.10.1"
 ruff = "0.14.13"
 ty = "0.0.10"
+"npm:markdownlint-cli2" = "0.22.0"
 
 [env]
 _.path = "./bin"
@@ -386,12 +387,12 @@ run = "ruff format ."
 # Docs formatting
 [tasks."fmt:docs"]
 alias = "fmt:docs:check"
-description = "Check docs formatting"
-run = "npx prettier --check 'docs/**/*.md' README.md"
+description = "Check Markdown formatting"
+run = "markdownlint-cli2"
 
 [tasks."fmt:docs:fix"]
-description = "Fix docs formatting"
-run = "npx prettier -w 'docs/**/*.md' README.md"
+description = "Fix Markdown formatting"
+run = "markdownlint-cli2 --fix"
 
 # =============================================================================
 # Lint tasks
@@ -401,14 +402,24 @@ run = "npx prettier -w 'docs/**/*.md' README.md"
 alias = "lint:check"
 description = "Run linters for all languages (non-destructive)"
 run = [
-  { tasks = ["lint:go", "lint:rust", "lint:python"] },
+  { tasks = ["lint:go", "lint:rust", "lint:python", "lint:docs"] },
 ]
 
 [tasks."lint:fix"]
 description = "Fix lint issues for all languages"
 run = [
-  { tasks = ["lint:go:fix", "lint:rust:fix", "lint:python:fix"] },
+  { tasks = ["lint:go:fix", "lint:rust:fix", "lint:python:fix", "lint:docs:fix"] },
 ]
+
+# Markdown linting
+[tasks."lint:docs"]
+alias = "lint:docs:check"
+description = "Lint Markdown files"
+run = "markdownlint-cli2"
+
+[tasks."lint:docs:fix"]
+description = "Fix lint issues in Markdown files"
+run = "markdownlint-cli2 --fix"
 
 # Go linting
 [tasks."lint:go"]
