@@ -809,6 +809,9 @@ jobs:
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
+          # Resolve cog-base images from GHCR instead of r8.im.
+          # Images are mirrored by integration-tests/mirror-cog-base-images.sh.
+          COG_REGISTRY_HOST: 'ghcr.io/replicate/cog'
         shell: bash
         run: |
           set -euo pipefail
