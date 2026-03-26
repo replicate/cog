@@ -4,7 +4,7 @@
 //! Input validation is performed at the HTTP edge using the OpenAPI schema;
 //! the worker only needs to download URLPath inputs and pass them through.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -62,6 +62,21 @@ impl Drop for PreparedInput {
 // Safety: PyObject is Send in PyO3 0.23+, we only access through Python::attach
 unsafe impl Send for PreparedInput {}
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CoercionTarget {
+    File,
+    Path,
+}
+
+#[derive(Debug)]
+enum CoercionPlan {
+    /// Type hints resolved; only explicitly typed fields are coerced.
+    Explicit(HashMap<String, CoercionTarget>),
+    /// Type hints failed to resolve; preserve legacy fallback behavior by
+    /// coercing URL-like strings via Path.validate().
+    FallbackAllPath,
+}
+
 /// Prepare input for prediction.
 ///
 /// Coerces URL strings to the appropriate cog types based on the function's
@@ -78,50 +93,117 @@ pub fn prepare_input(
     input: &Bound<'_, PyDict>,
     func: &Bound<'_, PyAny>,
 ) -> PyResult<PreparedInput> {
-    let file_fields = detect_file_fields(py, func)?;
-    coerce_url_strings(py, input, &file_fields)?;
+    let coercion_plan = detect_coercion_plan(py, func)?;
+    coerce_url_strings(py, input, &coercion_plan)?;
     let cleanup_paths = download_url_paths_into_dict(py, input)?;
     Ok(PreparedInput::new(input.clone().unbind(), cleanup_paths))
 }
 
-/// Inspect a Python function's type annotations to find parameters typed as
-/// `cog.File` (or `list[File]`, `Optional[File]`, `File | None`,
-/// `Optional[list[File]]`, etc.). Returns a set of field names that should use
-/// `File.validate()` instead of `Path.validate()`.
-fn detect_file_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<HashSet<String>> {
-    let mut file_fields = HashSet::new();
+/// Inspect a Python function's type annotations and map coercion targets for
+/// fields explicitly annotated as `cog.File` or `cog.Path` (including list and
+/// Optional/Union wrappers).
+fn detect_coercion_plan(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<CoercionPlan> {
+    let mut targets = HashMap::new();
 
-    let cog_file_class = py.import("cog.types")?.getattr("File")?;
+    let cog_types = py.import("cog.types")?;
+    let cog_file_class = cog_types.getattr("File")?;
+    let cog_path_class = cog_types.getattr("Path")?;
 
     // typing.get_type_hints resolves string annotations and handles forward refs
     let typing = py.import("typing")?;
     let get_type_hints = typing.getattr("get_type_hints")?;
     let get_origin = typing.getattr("get_origin")?;
     let get_args = typing.getattr("get_args")?;
+    let types_module = py.import("types")?;
     let builtins_list = py.eval(c"list", None, None)?;
-    let union_type = typing.getattr("Union")?;
+    let typing_union_type = typing.getattr("Union")?;
+    let pep604_union_type = types_module.getattr("UnionType")?;
+    let nonetype = py.eval(c"type(None)", None, None)?;
 
     let hints = match get_type_hints.call1((func,)) {
         Ok(h) => h,
-        Err(_) => return Ok(file_fields), // If we can't get hints, don't coerce as File
+        Err(err) => {
+            tracing::debug!(
+                error = %err,
+                "Failed to resolve type hints; falling back to legacy Path coercion"
+            );
+            return Ok(CoercionPlan::FallbackAllPath);
+        }
     };
 
-    // Helper closure: returns true if `ty` is `File` or `list[File]`.
-    let is_file_like = |ty: &Bound<'_, PyAny>| -> PyResult<bool> {
+    let target_for_annotation = |ty: &Bound<'_, PyAny>| -> PyResult<Option<CoercionTarget>> {
         if ty.is(&cog_file_class) {
-            return Ok(true);
+            return Ok(Some(CoercionTarget::File));
         }
-        let inner_origin = get_origin.call1((ty,))?;
-        if !inner_origin.is_none() && inner_origin.is(&builtins_list) {
-            let inner_args = get_args.call1((ty,))?;
-            if let Ok(t) = inner_args.cast::<pyo3::types::PyTuple>()
+        if ty.is(&cog_path_class) {
+            return Ok(Some(CoercionTarget::Path));
+        }
+
+        let origin = get_origin.call1((ty,))?;
+        if !origin.is_none() && origin.is(&builtins_list) {
+            let args = get_args.call1((ty,))?;
+            if let Ok(t) = args.cast::<pyo3::types::PyTuple>()
                 && !t.is_empty()
-                && t.get_item(0)?.is(&cog_file_class)
             {
-                return Ok(true);
+                let inner = t.get_item(0)?;
+                if inner.is(&cog_file_class) {
+                    return Ok(Some(CoercionTarget::File));
+                }
+                if inner.is(&cog_path_class) {
+                    return Ok(Some(CoercionTarget::Path));
+                }
+            }
+            return Ok(None);
+        }
+
+        let is_union =
+            !origin.is_none() && (origin.is(&typing_union_type) || origin.is(&pep604_union_type));
+        if is_union {
+            let args = get_args.call1((ty,))?;
+            if let Ok(args_tuple) = args.cast::<pyo3::types::PyTuple>() {
+                let mut union_target: Option<CoercionTarget> = None;
+                for arg in args_tuple.iter() {
+                    if arg.is(&nonetype) {
+                        continue;
+                    }
+                    let arg_target = if arg.is(&cog_file_class) {
+                        Some(CoercionTarget::File)
+                    } else if arg.is(&cog_path_class) {
+                        Some(CoercionTarget::Path)
+                    } else {
+                        let arg_origin = get_origin.call1((&arg,))?;
+                        if !arg_origin.is_none() && arg_origin.is(&builtins_list) {
+                            let inner_args = get_args.call1((&arg,))?;
+                            if let Ok(inner) = inner_args.cast::<pyo3::types::PyTuple>() {
+                                if !inner.is_empty() && inner.get_item(0)?.is(&cog_file_class) {
+                                    Some(CoercionTarget::File)
+                                } else if !inner.is_empty()
+                                    && inner.get_item(0)?.is(&cog_path_class)
+                                {
+                                    Some(CoercionTarget::Path)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    };
+
+                    match (union_target, arg_target) {
+                        (None, Some(t)) => union_target = Some(t),
+                        (Some(existing), Some(candidate)) if existing == candidate => {}
+                        (Some(_), Some(_)) => return Ok(None),
+                        _ => {}
+                    }
+                }
+                return Ok(union_target);
             }
         }
-        Ok(false)
+
+        Ok(None)
     };
 
     let hints_dict = hints.cast::<PyDict>()?;
@@ -134,44 +216,16 @@ fn detect_file_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<HashS
             continue;
         }
 
-        // Direct File annotation: `param: File`
-        // Also covers `list[File]` via is_file_like.
-        if is_file_like(&annotation)? {
-            file_fields.insert(name_str);
-            continue;
-        }
-
-        // Union annotation: Optional[File], File | None, Optional[list[File]], etc.
-        // typing.get_origin(Optional[X]) -> typing.Union
-        // typing.get_args(Optional[X])   -> (X, NoneType)
-        let origin = get_origin.call1((&annotation,))?;
-        if !origin.is_none() && origin.is(&union_type) {
-            let args = get_args.call1((&annotation,))?;
-            if let Ok(args_tuple) = args.cast::<pyo3::types::PyTuple>() {
-                for arg in args_tuple.iter() {
-                    // Skip NoneType
-                    if arg.is_none() || arg.is(py.None().into_bound(py)) {
-                        continue;
-                    }
-                    // Check if this variant is NoneType by comparing to type(None)
-                    let nonetype = py.eval(c"type(None)", None, None)?;
-                    if arg.is(&nonetype) {
-                        continue;
-                    }
-                    if is_file_like(&arg)? {
-                        file_fields.insert(name_str.clone());
-                        break;
-                    }
-                }
-            }
+        if let Some(target) = target_for_annotation(&annotation)? {
+            targets.insert(name_str, target);
         }
     }
 
-    if !file_fields.is_empty() {
-        tracing::debug!("Detected File-typed fields: {:?}", file_fields);
+    if !targets.is_empty() {
+        tracing::debug!("Detected coercion targets: {:?}", targets);
     }
 
-    Ok(file_fields)
+    Ok(CoercionPlan::Explicit(targets))
 }
 
 /// Coerce URL string values in the input dict to the appropriate cog types.
@@ -186,19 +240,28 @@ fn detect_file_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<HashS
 fn coerce_url_strings(
     py: Python<'_>,
     payload: &Bound<'_, PyDict>,
-    file_fields: &HashSet<String>,
+    coercion_plan: &CoercionPlan,
 ) -> PyResult<()> {
     let cog_types = py.import("cog.types")?;
     let path_validate = cog_types.getattr("Path")?.getattr("validate")?;
     let file_validate = cog_types.getattr("File")?.getattr("validate")?;
 
     for (key, value) in payload.iter() {
-        let key_str: String = key.extract().unwrap_or_default();
-        let use_file = file_fields.contains(&key_str);
-        let validate = if use_file {
-            &file_validate
-        } else {
-            &path_validate
+        let validate = match coercion_plan {
+            CoercionPlan::FallbackAllPath => &path_validate,
+            CoercionPlan::Explicit(coercion_targets) => {
+                let key_str: String = match key.extract() {
+                    Ok(k) => k,
+                    Err(_) => continue,
+                };
+                let Some(target) = coercion_targets.get(&key_str) else {
+                    continue;
+                };
+                match target {
+                    CoercionTarget::File => &file_validate,
+                    CoercionTarget::Path => &path_validate,
+                }
+            }
         };
 
         // Single string value -- check if it's a URL
@@ -373,8 +436,8 @@ fn download_url_paths_into_dict(
 mod tests {
     use super::*;
     /// Helper: define a Python function with the given parameter annotations and
-    /// return the set of field names that `detect_file_fields` identifies as File-typed.
-    fn file_fields_for(py_func_src: &str) -> HashSet<String> {
+    /// return the explicit target map from `detect_coercion_plan`.
+    fn explicit_coercion_targets_for(py_func_src: &str) -> HashMap<String, CoercionTarget> {
         pyo3::Python::initialize();
         Python::attach(|py| {
             // Ensure cog.types.File is importable
@@ -390,33 +453,51 @@ mod tests {
             .expect("failed to define test function");
 
             let func = locals.get_item("func").unwrap().unwrap();
-            detect_file_fields(py, &func).expect("detect_file_fields failed")
+            match detect_coercion_plan(py, &func).expect("detect_coercion_plan failed") {
+                CoercionPlan::Explicit(targets) => targets,
+                CoercionPlan::FallbackAllPath => {
+                    panic!("unexpected fallback plan for explicit type test")
+                }
+            }
         })
     }
 
     #[test]
     #[ignore] // Requires cog Python package in PYTHONPATH
     fn detect_direct_file() {
-        let fields = file_fields_for("from cog import File\ndef func(a: File, b: str): ...");
-        assert!(fields.contains("a"), "direct File annotation not detected");
-        assert!(!fields.contains("b"), "str incorrectly flagged as File");
+        let targets =
+            explicit_coercion_targets_for("from cog import File\ndef func(a: File, b: str): ...");
+        assert_eq!(
+            targets.get("a"),
+            Some(&CoercionTarget::File),
+            "direct File annotation not detected"
+        );
+        assert!(
+            !targets.contains_key("b"),
+            "str should not be marked for coercion"
+        );
     }
 
     #[test]
     #[ignore] // Requires cog Python package in PYTHONPATH
     fn detect_list_file() {
-        let fields = file_fields_for("from cog import File\ndef func(a: list[File]): ...");
-        assert!(fields.contains("a"), "list[File] annotation not detected");
+        let targets =
+            explicit_coercion_targets_for("from cog import File\ndef func(a: list[File]): ...");
+        assert_eq!(
+            targets.get("a"),
+            Some(&CoercionTarget::File),
+            "list[File] annotation not detected"
+        );
     }
 
     #[test]
     #[ignore] // Requires cog Python package in PYTHONPATH
     fn detect_optional_file() {
-        let fields = file_fields_for(
+        let targets = explicit_coercion_targets_for(
             "from typing import Optional\nfrom cog import File\ndef func(a: Optional[File]): ...",
         );
         assert!(
-            fields.contains("a"),
+            targets.get("a") == Some(&CoercionTarget::File),
             "Optional[File] annotation not detected"
         );
     }
@@ -424,11 +505,11 @@ mod tests {
     #[test]
     #[ignore] // Requires cog Python package in PYTHONPATH
     fn detect_file_union_none() {
-        let fields = file_fields_for(
+        let targets = explicit_coercion_targets_for(
             "from typing import Union\nfrom cog import File\ndef func(a: Union[File, None]): ...",
         );
         assert!(
-            fields.contains("a"),
+            targets.get("a") == Some(&CoercionTarget::File),
             "File | None / Union[File, None] annotation not detected"
         );
     }
@@ -436,25 +517,49 @@ mod tests {
     #[test]
     #[ignore] // Requires cog Python package in PYTHONPATH
     fn detect_optional_list_file() {
-        let fields = file_fields_for(
+        let targets = explicit_coercion_targets_for(
             "from typing import Optional\nfrom cog import File\ndef func(a: Optional[list[File]]): ...",
         );
         assert!(
-            fields.contains("a"),
+            targets.get("a") == Some(&CoercionTarget::File),
             "Optional[list[File]] annotation not detected"
         );
     }
 
     #[test]
     #[ignore] // Requires cog Python package in PYTHONPATH
-    fn non_file_types_not_detected() {
-        let fields = file_fields_for(
+    fn detect_path_type() {
+        let targets = explicit_coercion_targets_for("from cog import Path\ndef func(a: Path): ...");
+        assert_eq!(
+            targets.get("a"),
+            Some(&CoercionTarget::Path),
+            "Path annotation not detected"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_optional_list_path() {
+        let targets = explicit_coercion_targets_for(
+            "from typing import Optional\nfrom cog import Path\ndef func(a: Optional[list[Path]]): ...",
+        );
+        assert_eq!(
+            targets.get("a"),
+            Some(&CoercionTarget::Path),
+            "Optional[list[Path]] annotation not detected"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn non_target_types_not_detected() {
+        let targets = explicit_coercion_targets_for(
             "from pathlib import Path\nfrom typing import Optional\ndef func(a: str, b: int, c: Optional[str], d: Path): ...",
         );
         assert!(
-            fields.is_empty(),
-            "non-File types incorrectly detected: {:?}",
-            fields
+            targets.is_empty(),
+            "non-cog File/Path types incorrectly detected: {:?}",
+            targets
         );
     }
 }
