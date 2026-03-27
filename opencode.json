@@ -4,7 +4,29 @@
     "cloudflare-ai-gateway": {
       "models": {
         "workers-ai/@cf/moonshotai/kimi-k2.5": {
-          "name": "Kimi K2.5 (Workers AI via Gateway)"
+          "name": "Kimi K2.5 (Workers AI via AI Gateway)",
+          "attachment": true,
+          "reasoning": true,
+          "tool_call": true,
+          "temperature": true,
+          "interleaved": {
+            "field": "reasoning_content"
+          },
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          },
+          "limit": {
+            "context": 256000,
+            "output": 64000
+          },
+          "options": {
+            "temperature": 0.1,
+            "top_p": 0.95,
+            "max_tokens": 64000,
+            "store": false,
+            "parallel_tool_calls": true
+          }
         }
       }
     }
