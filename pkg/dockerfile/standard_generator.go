@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -48,6 +49,7 @@ const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const UVVersion = "0.9.26"
 const uvCacheMount = "--mount=type=cache,target=/root/.cache/uv"
 const uvPip = "uv pip"
+const uvVenvPath = "/opt/cog-venv"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
 
@@ -91,7 +93,31 @@ type StandardGenerator struct {
 	resolvedCogletConfig *wheels.WheelConfig
 }
 
-func NewStandardGenerator(config *config.Config, dir string, configFilename string, command command.Command, client registry.Client, requiresCog bool) (*StandardGenerator, error) {
+// parsePlatform splits a platform string like "linux/arm64" into (goos, goarch).
+// Returns ("linux", runtime.GOARCH) when the input is empty or malformed.
+func parsePlatform(platform string) (string, string) {
+	if platform == "" {
+		return "linux", runtime.GOARCH
+	}
+	parts := strings.SplitN(platform, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "linux", runtime.GOARCH
+	}
+	return parts[0], parts[1]
+}
+
+// archLibDir returns the multiarch library directory name for the given Go arch.
+// For example: "amd64" → "x86_64-linux-gnu", "arm64" → "aarch64-linux-gnu".
+func archLibDir(goarch string) string {
+	switch goarch {
+	case "arm64":
+		return "aarch64-linux-gnu"
+	default:
+		return "x86_64-linux-gnu"
+	}
+}
+
+func NewStandardGenerator(config *config.Config, dir string, configFilename string, command command.Command, client registry.Client, requiresCog bool, platform string) (*StandardGenerator, error) {
 	tmpDir, err := dockercontext.BuildTempDir(dir)
 	if err != nil {
 		return nil, err
@@ -107,14 +133,14 @@ func NewStandardGenerator(config *config.Config, dir string, configFilename stri
 		configFilename = "cog.yaml"
 	}
 
+	goos, goarch := parsePlatform(platform)
+
 	return &StandardGenerator{
-		Config:         config,
-		Dir:            dir,
-		ConfigFilename: configFilename,
-		// Docker build target is always linux/amd64 (see pkg/docker/buildkit.go).
-		// These must match the container platform, not the host.
-		GOOS:             "linux",
-		GOARCH:           "amd64",
+		Config:           config,
+		Dir:              dir,
+		ConfigFilename:   configFilename,
+		GOOS:             goos,
+		GOARCH:           goarch,
 		tmpDir:           tmpDir,
 		relativeTmpDir:   relativeTmpDir,
 		fileWalker:       filepath.Walk,
@@ -200,6 +226,7 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 			envs,
 			aptInstalls,
 			g.installUV(),
+			g.installVirtualEnv(),
 		}
 		if installCog != "" {
 			steps = append(steps, installCog)
@@ -229,6 +256,7 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 		aptInstalls,
 		uvInstall,
 		installPython,
+		g.installVirtualEnv(),
 		pipInstalls,
 		installCog,
 	}
@@ -382,14 +410,23 @@ func (g *StandardGenerator) Cleanup() error {
 
 func (g *StandardGenerator) BaseImage(ctx context.Context) (string, error) {
 	if g.IsUsingCogBaseImage() {
-		baseImage, err := g.determineBaseImageName(ctx)
-		if err == nil || g.useCogBaseImage != nil {
-			return baseImage, err
-		}
-		console.Warnf("Could not find a suitable base image, continuing without base image support (%v).", err)
-		if g.useCogBaseImage == nil {
-			g.useCogBaseImage = new(bool)
-			*g.useCogBaseImage = false
+		// Cog base images are only available for amd64; fall back on arm64.
+		if g.GOARCH != "amd64" {
+			console.Warnf("Cog base images are not available for %s; falling back to CUDA base image.", g.GOARCH)
+			if g.useCogBaseImage == nil {
+				g.useCogBaseImage = new(bool)
+				*g.useCogBaseImage = false
+			}
+		} else {
+			baseImage, err := g.determineBaseImageName(ctx)
+			if err == nil || g.useCogBaseImage != nil {
+				return baseImage, err
+			}
+			console.Warnf("Could not find a suitable base image, continuing without base image support (%v).", err)
+			if g.useCogBaseImage == nil {
+				g.useCogBaseImage = new(bool)
+				*g.useCogBaseImage = false
+			}
 		}
 	}
 
@@ -412,10 +449,11 @@ func (g *StandardGenerator) BuildContexts() (map[string]string, error) {
 }
 
 func (g *StandardGenerator) preamble() string {
-	return `ENV DEBIAN_FRONTEND=noninteractive
+	libDir := archLibDir(g.GOARCH)
+	return fmt.Sprintf(`ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
-ENV NVIDIA_DRIVER_CAPABILITIES=all`
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/%s:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
+ENV NVIDIA_DRIVER_CAPABILITIES=all`, libDir)
 }
 
 func (g *StandardGenerator) installTini() string {
@@ -466,6 +504,13 @@ func (g *StandardGenerator) installPython() (string, error) {
 func (g *StandardGenerator) installUV() string {
 	return `COPY --from=ghcr.io/astral-sh/uv:` + UVVersion + ` /uv /uvx /usr/local/bin/
 ENV UV_SYSTEM_PYTHON=true`
+}
+
+func (g *StandardGenerator) installVirtualEnv() string {
+	return fmt.Sprintf(`RUN %s UV_SYSTEM_PYTHON=false uv venv %s
+ENV VIRTUAL_ENV=%s
+ENV UV_SYSTEM_PYTHON=false
+ENV PATH="%s/bin:/usr/local/bin:$PATH"`, uvCacheMount, uvVenvPath, uvVenvPath, uvVenvPath)
 }
 
 func (g *StandardGenerator) installPythonCUDA() (string, error) {
@@ -913,7 +958,7 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 		return "", err
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r " + containerPath
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip uv pip install --cache-dir /root/.cache/pip -r " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}

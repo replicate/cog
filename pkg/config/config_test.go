@@ -441,6 +441,27 @@ torch==2.3.1`
 	require.Equal(t, expected, requirements)
 }
 
+func TestPythonPackagesForArchArm64KeepsTorchCUDAIndex(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.13",
+			PythonPackages: []string{
+				"torch==2.8.0",
+			},
+			CUDA: "12.9",
+		},
+	}
+	err := config.Complete("")
+	require.NoError(t, err)
+
+	requirements, err := config.PythonRequirementsForArch("linux", "arm64", []string{})
+	require.NoError(t, err)
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu129
+torch==2.8.0`
+	require.Equal(t, expected, requirements)
+}
+
 func TestCUDABaseImageTag(t *testing.T) {
 	config := &Config{
 		Build: &Build{

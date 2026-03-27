@@ -49,6 +49,9 @@ type ImageBuildOptions struct {
 
 	// only supported on buildkit client, not cli client
 	BuildArgs map[string]*string
+
+	// Platform is the target platform (e.g. "linux/amd64", "linux/arm64").
+	Platform string
 }
 
 type RunOptions struct {
@@ -64,6 +67,8 @@ type RunOptions struct {
 	Stdin      io.Reader
 	Stdout     io.Writer
 	Stderr     io.Writer
+	// Platform is the target platform (e.g. "linux/amd64", "linux/arm64").
+	Platform string
 }
 
 type Port struct {

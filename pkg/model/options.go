@@ -1,6 +1,10 @@
 package model
 
-import "github.com/replicate/cog/pkg/config"
+import (
+	"runtime"
+
+	"github.com/replicate/cog/pkg/config"
+)
 
 // BuildOptions contains all settings for building a Cog image.
 // This consolidates the many parameters previously passed to image.Build().
@@ -66,6 +70,10 @@ type BuildOptions struct {
 	// Used by `cog run`, `cog predict`, `cog serve`, and `cog train` where
 	// the image is for local use only and not being distributed.
 	SkipLabels bool
+
+	// Platform is the target platform for the build in the form "os/arch"
+	// (e.g. "linux/amd64", "linux/arm64"). Defaults to "linux/" + runtime.GOARCH.
+	Platform string
 }
 
 // WithDefaults returns a copy of BuildOptions with defaults applied from Source.
@@ -79,6 +87,11 @@ func (o BuildOptions) WithDefaults(src *Source) BuildOptions {
 	// Default progress output
 	if o.ProgressOutput == "" {
 		o.ProgressOutput = "auto"
+	}
+
+	// Default platform to linux + host architecture
+	if o.Platform == "" {
+		o.Platform = "linux/" + runtime.GOARCH
 	}
 
 	return o
