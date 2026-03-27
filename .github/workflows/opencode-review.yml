@@ -32,7 +32,7 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_GATEWAY_BASE_URL: https://gateway.ai.cloudflare.com/v1/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/${{ secrets.CLOUDFLARE_GATEWAY_ID }}/compat
+          CF_GATEWAY_BASE_URL: https://gateway.ai.cloudflare.com/v1/${{ vars.CLOUDFLARE_ACCOUNT_ID }}/${{ vars.CLOUDFLARE_GATEWAY_ID }}/compat
         with:
           model: cf-gateway/kimi-k2.5
           agent: reviewer
