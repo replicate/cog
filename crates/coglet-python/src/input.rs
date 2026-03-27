@@ -116,6 +116,9 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
     let get_args = typing.getattr("get_args")?;
     let builtins_list = py.eval(c"list", None, None)?;
     let union_type = typing.getattr("Union")?;
+    let types_mod = py.import("types")?;
+    let union_pipe_type = types_mod.getattr("UnionType")?;
+    let nonetype = py.eval(c"type(None)", None, None)?;
 
     let hints = match get_type_hints.call1((func,)) {
         Ok(h) => h,
@@ -183,7 +186,7 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
         // typing.get_origin(Optional[X]) -> typing.Union
         // typing.get_args(Optional[X])   -> (X, NoneType)
         let origin = get_origin.call1((&annotation,))?;
-        if !origin.is_none() && origin.is(&union_type) {
+        if !origin.is_none() && (origin.is(&union_type) || origin.is(&union_pipe_type)) {
             let args = get_args.call1((&annotation,))?;
             if let Ok(args_tuple) = args.cast::<pyo3::types::PyTuple>() {
                 for arg in args_tuple.iter() {
@@ -191,7 +194,6 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
                     if arg.is_none() || arg.is(py.None().into_bound(py)) {
                         continue;
                     }
-                    let nonetype = py.eval(c"type(None)", None, None)?;
                     if arg.is(&nonetype) {
                         continue;
                     }
@@ -503,7 +505,7 @@ mod tests {
         );
         assert!(
             c.file_fields.contains("a"),
-            "File | None / Union[File, None] annotation not detected"
+            "Union[File, None] annotation not detected"
         );
     }
 
@@ -534,6 +536,54 @@ mod tests {
         assert!(
             !c.file_fields.contains("b"),
             "str incorrectly flagged as File"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_pep604_file_or_none() {
+        let c = classify_for("from cog import File\ndef func(a: File | None): ...");
+        assert!(
+            c.file_fields.contains("a"),
+            "File | None annotation not detected"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_pep604_list_file_or_none() {
+        let c = classify_for("from cog import File\ndef func(a: list[File] | None): ...");
+        assert!(
+            c.file_fields.contains("a"),
+            "list[File] | None annotation not detected"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_pep604_path_or_none() {
+        let c = classify_for("from cog import Path\ndef func(a: Path | None): ...");
+        assert!(
+            c.path_fields.contains("a"),
+            "Path | None annotation not detected as Path"
+        );
+        assert!(
+            !c.file_fields.contains("a"),
+            "Path | None incorrectly detected as File"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_pep604_list_path_or_none() {
+        let c = classify_for("from cog import Path\ndef func(a: list[Path] | None): ...");
+        assert!(
+            c.path_fields.contains("a"),
+            "list[Path] | None annotation not detected as Path"
+        );
+        assert!(
+            !c.file_fields.contains("a"),
+            "list[Path] | None incorrectly detected as File"
         );
     }
 
