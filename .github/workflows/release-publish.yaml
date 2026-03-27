@@ -160,7 +160,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: 1232932405
+          app-id: 2932405
           private-key: ${{ secrets.COG_HOMEBREW_TAP_PRIVATE_KEY }}
           owner: replicate
           repositories: homebrew-tap
