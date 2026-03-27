@@ -25,11 +25,6 @@ curl POST /predictions '{"input":{"url":"https://api.example.com/v1/resource"}}'
 stdout '"status":"succeeded"'
 stdout 'type=str value=https://api.example.com/v1/resource'
 
-# Also verify that a list[str] input with URLs is not coerced.
-curl POST /predictions '{"input":{"url":"https://example.com/a"}}'
-stdout '"status":"succeeded"'
-stdout 'type=str value=https://example.com/a'
-
 -- cog.yaml --
 build:
   python_version: "3.12"
