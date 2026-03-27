@@ -923,6 +923,97 @@ class Predictor(BasePredictor):
 }
 
 // ---------------------------------------------------------------------------
+// Accept MIME type
+// ---------------------------------------------------------------------------
+
+func TestAcceptMimeType(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(description="An image", accept="image/*")) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.NotNil(t, image.Accept)
+	require.Equal(t, "image/*", *image.Accept)
+}
+
+func TestAcceptMultipleMimeTypes(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, audio: Path = Input(accept="audio/wav,audio/mp3")) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	audio, ok := info.Inputs.Get("audio")
+	require.True(t, ok)
+	require.NotNil(t, audio.Accept)
+	require.Equal(t, "audio/wav,audio/mp3", *audio.Accept)
+}
+
+func TestAcceptFileExtensions(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, weights: Path = Input(accept=".safetensors,.bin")) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	weights, ok := info.Inputs.Get("weights")
+	require.True(t, ok)
+	require.NotNil(t, weights.Accept)
+	require.Equal(t, ".safetensors,.bin", *weights.Accept)
+}
+
+func TestAcceptOnFileType(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, File
+
+class Predictor(BasePredictor):
+    def predict(self, f: File = Input(accept="image/png")) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	f, ok := info.Inputs.Get("f")
+	require.True(t, ok)
+	require.NotNil(t, f.Accept)
+	require.Equal(t, "image/png", *f.Accept)
+}
+
+func TestAcceptOnNonFileTypeErrors(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, name: str = Input(accept="image/*")) -> str:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrAcceptOnNonFileType, se.Kind)
+	require.Contains(t, se.Error(), "name")
+}
+
+func TestAcceptNotSetWhenOmitted(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(description="An image")) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	image, ok := info.Inputs.Get("image")
+	require.True(t, ok)
+	require.Nil(t, image.Accept)
+}
+
+// ---------------------------------------------------------------------------
 // File type (deprecated alias for Path)
 // ---------------------------------------------------------------------------
 

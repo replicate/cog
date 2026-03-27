@@ -187,6 +187,7 @@ type InputField struct {
 	Regex       *string
 	Choices     []DefaultValue
 	Deprecated  *bool
+	Accept      *string // MIME types / file extensions for Path/File inputs (e.g. "image/*")
 }
 
 // IsRequired returns true if this field is required in the schema.
