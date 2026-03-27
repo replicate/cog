@@ -29,7 +29,6 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_GATEWAY_ID: ${{ secrets.CLOUDFLARE_GATEWAY_ID }}
+          CF_GATEWAY_BASE_URL: https://gateway.ai.cloudflare.com/v1/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/${{ secrets.CLOUDFLARE_GATEWAY_ID }}/compat
         with:
-          model: cloudflare-ai-gateway/workers-ai/@cf/moonshotai/kimi-k2.5
+          model: cf-gateway/kimi-k2.5

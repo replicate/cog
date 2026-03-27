@@ -1,7 +1,7 @@
 ---
 description: Read-only code reviewer for pull requests
 mode: primary
-model: cloudflare-ai-gateway/workers-ai/@cf/moonshotai/kimi-k2.5
+model: cf-gateway/kimi-k2.5
 temperature: 0.1
 permission:
   edit: deny
