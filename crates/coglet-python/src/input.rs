@@ -84,7 +84,15 @@ pub fn prepare_input(
     Ok(PreparedInput::new(input.clone().unbind(), cleanup_paths))
 }
 
+/// Whether a field should be coerced as a `cog.File` or `cog.Path`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FieldKind {
+    File,
+    Path,
+}
+
 /// Result of inspecting a Python function's type annotations for File and Path fields.
+#[derive(Debug)]
 struct FieldClassification {
     /// Fields typed as `cog.File` (or `list[File]`, `Optional[File]`, etc.)
     /// These use `File.validate()` for URL coercion.
@@ -130,14 +138,13 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
         }
     };
 
-    // Helper: returns Some("file") if ty is File or list[File],
-    // Some("path") if ty is cog.Path or list[cog.Path], None otherwise.
-    let classify_type = |ty: &Bound<'_, PyAny>| -> PyResult<Option<&'static str>> {
+    // Helper: returns the FieldKind if ty is File/Path or list[File]/list[Path].
+    let classify_type = |ty: &Bound<'_, PyAny>| -> PyResult<Option<FieldKind>> {
         if ty.is(&cog_file_class) {
-            return Ok(Some("file"));
+            return Ok(Some(FieldKind::File));
         }
         if ty.is(&cog_path_class) {
-            return Ok(Some("path"));
+            return Ok(Some(FieldKind::Path));
         }
         let inner_origin = get_origin.call1((ty,))?;
         if !inner_origin.is_none() && inner_origin.is(&builtins_list) {
@@ -147,10 +154,10 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
             {
                 let inner = t.get_item(0)?;
                 if inner.is(&cog_file_class) {
-                    return Ok(Some("file"));
+                    return Ok(Some(FieldKind::File));
                 }
                 if inner.is(&cog_path_class) {
-                    return Ok(Some("path"));
+                    return Ok(Some(FieldKind::Path));
                 }
             }
         }
@@ -171,13 +178,12 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
         // Also covers `list[File]` / `list[Path]` via classify_type.
         if let Some(kind) = classify_type(&annotation)? {
             match kind {
-                "file" => {
+                FieldKind::File => {
                     file_fields.insert(name_str);
                 }
-                "path" => {
+                FieldKind::Path => {
                     path_fields.insert(name_str);
                 }
-                _ => {}
             }
             continue;
         }
@@ -199,13 +205,12 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
                     }
                     if let Some(kind) = classify_type(&arg)? {
                         match kind {
-                            "file" => {
+                            FieldKind::File => {
                                 file_fields.insert(name_str.clone());
                             }
-                            "path" => {
+                            FieldKind::Path => {
                                 path_fields.insert(name_str.clone());
                             }
-                            _ => {}
                         }
                         break;
                     }
