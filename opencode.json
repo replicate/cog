@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "enabled_providers": ["anthropic", "openai", "workers-ai", "google", "cf-gateway"],
+  "provider": {
+    "cf-gateway": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Cloudflare AI Gateway",
+      "options": {
+        "baseURL": "{env:CF_GATEWAY_BASE_URL}",
+        "apiKey": "{env:CLOUDFLARE_API_TOKEN}"
+      },
+      "models": {
+        "kimi-k2.5": {
+          "id": "workers-ai/@cf/moonshotai/kimi-k2.5",
+          "name": "Kimi K2.5 (Workers AI via Gateway)",
+          "limit": {
+            "context": 256000,
+            "output": 64000
+          }
+        }
+      }
+    }
+  }
+}
