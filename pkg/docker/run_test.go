@@ -26,7 +26,7 @@ func TestGetHostPortForContainer(t *testing.T) {
 					Ports: nat.PortMap{
 						nat.Port("5678/tcp"): []nat.PortBinding{
 							{
-								HostIP:   "0.0.0.0",
+								HostIP:   "127.0.0.1",
 								HostPort: "12345",
 							},
 						},
@@ -35,44 +35,12 @@ func TestGetHostPortForContainer(t *testing.T) {
 			},
 		}, nil)
 
-		hostPort, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678)
+		hostPort, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678, "127.0.0.1")
 		require.NoError(t, err)
 		require.Equal(t, 12345, hostPort)
 	})
 
-	t.Run("WithMultipleExposedPorts", func(t *testing.T) {
-		testClient := dockertest.NewMockCommand2(t)
-		testClient.EXPECT().ContainerInspect(t.Context(), "container123").Return(&container.InspectResponse{
-			ContainerJSONBase: &container.ContainerJSONBase{
-				State: &container.State{
-					Status:  "running",
-					Running: true,
-				},
-			},
-			NetworkSettings: &container.NetworkSettings{
-				NetworkSettingsBase: container.NetworkSettingsBase{
-					Ports: nat.PortMap{
-						nat.Port("5678/tcp"): []nat.PortBinding{
-							{
-								HostIP:   "0.0.0.0",
-								HostPort: "12345",
-							},
-							{
-								HostIP:   "0.0.0.0",
-								HostPort: "54321",
-							},
-						},
-					},
-				},
-			},
-		}, nil)
-
-		hostPort, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678)
-		require.NoError(t, err)
-		require.Equal(t, 12345, hostPort)
-	})
-
-	t.Run("WithExposedPortOnDifferentAddress", func(t *testing.T) {
+	t.Run("WithExposedPortDefaultHostIP", func(t *testing.T) {
 		testClient := dockertest.NewMockCommand2(t)
 		testClient.EXPECT().ContainerInspect(t.Context(), "container123").Return(&container.InspectResponse{
 			ContainerJSONBase: &container.ContainerJSONBase{
@@ -95,8 +63,97 @@ func TestGetHostPortForContainer(t *testing.T) {
 			},
 		}, nil)
 
-		_, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678)
-		require.ErrorContains(t, err, "does not have a port bound to 0.0.0.0")
+		// Empty hostIP should default to 127.0.0.1
+		hostPort, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678, "")
+		require.NoError(t, err)
+		require.Equal(t, 12345, hostPort)
+	})
+
+	t.Run("WithExposedPortAllInterfaces", func(t *testing.T) {
+		testClient := dockertest.NewMockCommand2(t)
+		testClient.EXPECT().ContainerInspect(t.Context(), "container123").Return(&container.InspectResponse{
+			ContainerJSONBase: &container.ContainerJSONBase{
+				State: &container.State{
+					Status:  "running",
+					Running: true,
+				},
+			},
+			NetworkSettings: &container.NetworkSettings{
+				NetworkSettingsBase: container.NetworkSettingsBase{
+					Ports: nat.PortMap{
+						nat.Port("5678/tcp"): []nat.PortBinding{
+							{
+								HostIP:   "0.0.0.0",
+								HostPort: "12345",
+							},
+						},
+					},
+				},
+			},
+		}, nil)
+
+		hostPort, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678, "0.0.0.0")
+		require.NoError(t, err)
+		require.Equal(t, 12345, hostPort)
+	})
+
+	t.Run("WithMultipleExposedPorts", func(t *testing.T) {
+		testClient := dockertest.NewMockCommand2(t)
+		testClient.EXPECT().ContainerInspect(t.Context(), "container123").Return(&container.InspectResponse{
+			ContainerJSONBase: &container.ContainerJSONBase{
+				State: &container.State{
+					Status:  "running",
+					Running: true,
+				},
+			},
+			NetworkSettings: &container.NetworkSettings{
+				NetworkSettingsBase: container.NetworkSettingsBase{
+					Ports: nat.PortMap{
+						nat.Port("5678/tcp"): []nat.PortBinding{
+							{
+								HostIP:   "127.0.0.1",
+								HostPort: "12345",
+							},
+							{
+								HostIP:   "127.0.0.1",
+								HostPort: "54321",
+							},
+						},
+					},
+				},
+			},
+		}, nil)
+
+		hostPort, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678, "127.0.0.1")
+		require.NoError(t, err)
+		require.Equal(t, 12345, hostPort)
+	})
+
+	t.Run("WithExposedPortOnDifferentAddress", func(t *testing.T) {
+		testClient := dockertest.NewMockCommand2(t)
+		testClient.EXPECT().ContainerInspect(t.Context(), "container123").Return(&container.InspectResponse{
+			ContainerJSONBase: &container.ContainerJSONBase{
+				State: &container.State{
+					Status:  "running",
+					Running: true,
+				},
+			},
+			NetworkSettings: &container.NetworkSettings{
+				NetworkSettingsBase: container.NetworkSettingsBase{
+					Ports: nat.PortMap{
+						nat.Port("5678/tcp"): []nat.PortBinding{
+							{
+								HostIP:   "0.0.0.0",
+								HostPort: "12345",
+							},
+						},
+					},
+				},
+			},
+		}, nil)
+
+		_, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678, "127.0.0.1")
+		require.ErrorContains(t, err, "does not have a port bound to 127.0.0.1")
 	})
 
 	t.Run("WithDifferentPortExposed", func(t *testing.T) {
@@ -113,7 +170,7 @@ func TestGetHostPortForContainer(t *testing.T) {
 					Ports: nat.PortMap{
 						nat.Port("1234/tcp"): []nat.PortBinding{
 							{
-								HostIP:   "0.0.0.0",
+								HostIP:   "127.0.0.1",
 								HostPort: "12345",
 							},
 						},
@@ -122,8 +179,8 @@ func TestGetHostPortForContainer(t *testing.T) {
 			},
 		}, nil)
 
-		_, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678)
-		require.ErrorContains(t, err, "does not have a port bound to 0.0.0.0")
+		_, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678, "127.0.0.1")
+		require.ErrorContains(t, err, "does not have a port bound to 127.0.0.1")
 	})
 
 	t.Run("WithNoExposedPort", func(t *testing.T) {
@@ -137,7 +194,7 @@ func TestGetHostPortForContainer(t *testing.T) {
 			},
 		}, nil)
 
-		_, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678)
+		_, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678, "127.0.0.1")
 		require.ErrorContains(t, err, "does not have expected network configuration")
 	})
 
@@ -152,7 +209,7 @@ func TestGetHostPortForContainer(t *testing.T) {
 			},
 		}, nil)
 
-		_, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678)
+		_, err := GetHostPortForContainer(t.Context(), testClient, "container123", 5678, "127.0.0.1")
 		require.ErrorContains(t, err, "is not running")
 	})
 }
