@@ -1,0 +1,52 @@
+# Test PEP 604 list[Path] | None input annotation.
+#
+# When a predictor declares `paths: list[Path] | None`, coglet should
+# recognise the Path type inside the list through the PEP 604 union
+# and coerce inputs into cog.Path objects.
+
+cog build -t $TEST_IMAGE
+
+# --- Test via cog predict (CLI) ---
+
+# Providing multiple path inputs should work.
+cog predict $TEST_IMAGE -i paths=@file1.txt -i paths=@file2.txt
+stdout 'types=PosixPath,PosixPath'
+stdout 'content=one,two'
+
+# Omitting the optional input should yield None.
+cog predict $TEST_IMAGE
+stdout 'type=NoneType'
+
+# --- Test via cog serve (HTTP API) ---
+
+cog serve
+
+# POST with no paths input — should get None.
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+stdout 'type=NoneType'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Path, Input
+
+
+class Predictor(BasePredictor):
+    def predict(self, paths: list[Path] | None = Input(default=None)) -> str:
+        if paths is None:
+            return "type=NoneType"
+        types = ",".join(type(p).__name__ for p in paths)
+        contents = []
+        for p in paths:
+            with open(p) as f:
+                contents.append(f.read())
+        return f"types={types} content={','.join(contents)}"
+
+-- file1.txt --
+one
+-- file2.txt --
+two

@@ -1,0 +1,47 @@
+# Test PEP 604 File | None input annotation.
+#
+# When a predictor declares `file: File | None`, coglet should recognise
+# the File type through the PEP 604 union and coerce URL/file inputs
+# into cog.File objects, just like it does for Optional[File].
+
+cog build -t $TEST_IMAGE
+
+# --- Test via cog predict (CLI) ---
+
+# Providing a file input should work.
+cog predict $TEST_IMAGE -i file=@input.txt
+stdout 'type=File content=hello from file'
+
+# Omitting the optional input should yield None.
+cog predict $TEST_IMAGE
+stdout 'type=NoneType content=none'
+
+# --- Test via cog serve (HTTP API) ---
+
+cog serve
+
+# POST with no file input — should get None.
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+stdout 'type=NoneType content=none'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, File, Input
+
+
+class Predictor(BasePredictor):
+    def predict(self, file: File | None = Input(default=None)) -> str:
+        if file is None:
+            return "type=NoneType content=none"
+        content = file.read()
+        if isinstance(content, bytes):
+            content = content.decode("utf-8")
+        return f"type=File content={content}"
+
+-- input.txt --
+hello from file
