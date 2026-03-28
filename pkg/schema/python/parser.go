@@ -685,6 +685,14 @@ func parseTypeFromString(s string) (schema.TypeAnnotation, bool) {
 		return schema.TypeAnnotation{Kind: schema.TypeAnnotGeneric, Name: outer, Args: args}, true
 	}
 
+	// Forward reference: quoted string like "MyType" or 'MyType'
+	if len(s) >= 2 &&
+		((strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"")) ||
+			(strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'"))) {
+		inner := s[1 : len(s)-1]
+		return parseTypeFromString(inner)
+	}
+
 	// Simple identifier
 	for _, c := range s {
 		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
