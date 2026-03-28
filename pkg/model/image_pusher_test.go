@@ -147,7 +147,22 @@ func TestImagePusher_Push(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		assert.NotEmpty(t, progressUpdates)
+
+		// Verify phase transitions were reported
+		var phases []PushPhase
+		var byteUpdates []PushProgress
 		for _, p := range progressUpdates {
+			if p.Phase != "" {
+				phases = append(phases, p.Phase)
+			} else {
+				byteUpdates = append(byteUpdates, p)
+			}
+		}
+		assert.Equal(t, []PushPhase{PushPhaseExporting, PushPhasePushing}, phases)
+
+		// Verify byte progress was reported for layers
+		assert.NotEmpty(t, byteUpdates)
+		for _, p := range byteUpdates {
 			assert.NotEmpty(t, p.LayerDigest)
 			assert.True(t, p.Complete > 0)
 			assert.True(t, p.Total > 0)
