@@ -174,7 +174,6 @@ func TestFetchToken(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/token/user":
 			// Mock token exchange response
-			//nolint:gosec
 			tokenResponse := `{
 				"keys": {
 					"cog": {
