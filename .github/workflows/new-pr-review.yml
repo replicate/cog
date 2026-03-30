@@ -1,11 +1,8 @@
 name: New PR Review
 
-# Disabled while testing bonk setup. Uncomment to enable auto-review on new PRs.
-# on:
-#   pull_request:
-#     types: [opened]
 on:
-  workflow_dispatch: {}
+  pull_request:
+    types: [opened, synchronize]
 
 jobs:
   review:
