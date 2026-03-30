@@ -14,6 +14,8 @@ type WeightFile struct {
 	Digest string `json:"digest"`
 	// Size is the compressed size in bytes.
 	Size int64 `json:"size"`
+	// SourceMtimeUnixNano is the source file modification time used for cache invalidation.
+	SourceMtimeUnixNano int64 `json:"sourceMtimeUnixNano,omitempty"`
 	// SizeUncompressed is the original size in bytes.
 	SizeUncompressed int64 `json:"sizeUncompressed"`
 	// MediaType is the OCI layer media type (e.g., application/vnd.cog.weight.layer.v1+gzip).

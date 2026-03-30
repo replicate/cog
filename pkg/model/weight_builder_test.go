@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -72,7 +73,10 @@ func TestWeightBuilder_WritesLockfile(t *testing.T) {
 	// After Build(), a weights.lock should be written/updated at lockPath.
 	tmpDir := t.TempDir()
 	weightContent := []byte("lockfile test weight")
-	err := os.WriteFile(filepath.Join(tmpDir, "model.bin"), weightContent, 0o644)
+	weightPath := filepath.Join(tmpDir, "model.bin")
+	err := os.WriteFile(weightPath, weightContent, 0o644)
+	require.NoError(t, err)
+	fi, err := os.Stat(weightPath)
 	require.NoError(t, err)
 
 	hash := sha256.Sum256(weightContent)
@@ -106,6 +110,7 @@ func TestWeightBuilder_WritesLockfile(t *testing.T) {
 	require.Equal(t, "/weights/model.bin", wf.Dest)
 	require.Equal(t, expectedDigest, wf.Digest)
 	require.Equal(t, int64(len(weightContent)), wf.Size)
+	require.Equal(t, fi.ModTime().UnixNano(), wf.SourceMtimeUnixNano)
 }
 
 func TestWeightBuilder_UpdatesExistingLockfile(t *testing.T) {
@@ -194,6 +199,7 @@ func TestWeightBuilder_CacheHit(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, lock.Files, 1)
 	require.Equal(t, "my-model", lock.Files[0].Name)
+	require.NotZero(t, lock.Files[0].SourceMtimeUnixNano)
 }
 
 func TestWeightBuilder_CacheMiss_SizeChanged(t *testing.T) {
@@ -232,6 +238,139 @@ func TestWeightBuilder_CacheMiss_SizeChanged(t *testing.T) {
 	expectedDigest2 := "sha256:" + hex.EncodeToString(hash2[:])
 	require.Equal(t, expectedDigest2, wa2.Descriptor().Digest.String())
 	require.Equal(t, int64(len(content2)), wa2.Descriptor().Size)
+}
+
+func TestWeightBuilder_CacheMiss_SameSizeMtimeChanged(t *testing.T) {
+	// When file content changes without a size change, the builder should re-hash
+	// if the source mtime changed.
+	tmpDir := t.TempDir()
+	content1 := []byte("same-size-content-v1")
+	content2 := []byte("same-size-content-v2")
+	require.Equal(t, len(content1), len(content2))
+
+	weightPath := filepath.Join(tmpDir, "model.bin")
+	err := os.WriteFile(weightPath, content1, 0o644)
+	require.NoError(t, err)
+
+	src := NewSourceFromConfig(&config.Config{
+		Weights: []config.WeightSource{
+			{Name: "my-model", Source: "model.bin", Target: "/weights/model.bin"},
+		},
+	}, tmpDir)
+
+	lockPath := filepath.Join(tmpDir, "weights.lock")
+	wb := NewWeightBuilder(src, "0.15.0", lockPath)
+	spec := NewWeightSpec("my-model", "model.bin", "/weights/model.bin")
+
+	// First build
+	_, err = wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+
+	lock1, err := LoadWeightsLock(lockPath)
+	require.NoError(t, err)
+	require.Len(t, lock1.Files, 1)
+	firstMtime := lock1.Files[0].SourceMtimeUnixNano
+	require.NotZero(t, firstMtime)
+
+	// Rewrite with same-size content and force a different mtime.
+	err = os.WriteFile(weightPath, content2, 0o644)
+	require.NoError(t, err)
+
+	fi, err := os.Stat(weightPath)
+	require.NoError(t, err)
+	forcedMtime := fi.ModTime().Add(2 * time.Second)
+	err = os.Chtimes(weightPath, forcedMtime, forcedMtime)
+	require.NoError(t, err)
+
+	artifact2, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+
+	wa2 := artifact2.(*WeightArtifact)
+	hash2 := sha256.Sum256(content2)
+	expectedDigest2 := "sha256:" + hex.EncodeToString(hash2[:])
+	require.Equal(t, expectedDigest2, wa2.Descriptor().Digest.String())
+
+	lock2, err := LoadWeightsLock(lockPath)
+	require.NoError(t, err)
+	require.Len(t, lock2.Files, 1)
+	require.NotEqual(t, firstMtime, lock2.Files[0].SourceMtimeUnixNano)
+}
+
+func TestWeightBuilder_CacheMiss_WhenLockfileEntryHasNoSourceMtime(t *testing.T) {
+	// Old lockfiles without sourceMtimeUnixNano should miss cache and be rewritten.
+	tmpDir := t.TempDir()
+	content := []byte("legacy lockfile content")
+	weightPath := filepath.Join(tmpDir, "model.bin")
+	err := os.WriteFile(weightPath, content, 0o644)
+	require.NoError(t, err)
+
+	src := NewSourceFromConfig(&config.Config{
+		Weights: []config.WeightSource{
+			{Name: "my-model", Source: "model.bin", Target: "/weights/model.bin"},
+		},
+	}, tmpDir)
+
+	lockPath := filepath.Join(tmpDir, "weights.lock")
+	legacyLock := &WeightsLock{
+		Version: "1.0",
+		Created: time.Now().UTC(),
+		Files: []WeightFile{
+			{
+				Name:             "my-model",
+				Dest:             "/weights/model.bin",
+				DigestOriginal:   "sha256:stale",
+				Digest:           "sha256:stale",
+				Size:             int64(len(content)),
+				SizeUncompressed: int64(len(content)),
+				MediaType:        MediaTypeWeightLayer,
+				// SourceMtimeUnixNano intentionally omitted (zero).
+			},
+		},
+	}
+	require.NoError(t, legacyLock.Save(lockPath))
+
+	wb := NewWeightBuilder(src, "0.15.0", lockPath)
+	spec := NewWeightSpec("my-model", "model.bin", "/weights/model.bin")
+	artifact, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+
+	expectedHash := sha256.Sum256(content)
+	expectedDigest := "sha256:" + hex.EncodeToString(expectedHash[:])
+	wa := artifact.(*WeightArtifact)
+	require.Equal(t, expectedDigest, wa.Descriptor().Digest.String())
+
+	lock, err := LoadWeightsLock(lockPath)
+	require.NoError(t, err)
+	require.Len(t, lock.Files, 1)
+	require.Equal(t, expectedDigest, lock.Files[0].Digest)
+	require.NotZero(t, lock.Files[0].SourceMtimeUnixNano)
+}
+
+func TestWeightBuilder_FindCachedEntry_MissesLegacyZeroMtime(t *testing.T) {
+	tmpDir := t.TempDir()
+	lockPath := filepath.Join(tmpDir, "weights.lock")
+
+	lock := &WeightsLock{
+		Version: "1.0",
+		Created: time.Now().UTC(),
+		Files: []WeightFile{
+			{
+				Name:                "my-model",
+				Dest:                "/weights/model.bin",
+				DigestOriginal:      "sha256:legacy",
+				Digest:              "sha256:legacy",
+				Size:                123,
+				SourceMtimeUnixNano: 0, // Legacy entry: must never be treated as a cache hit.
+				SizeUncompressed:    123,
+				MediaType:           MediaTypeWeightLayer,
+			},
+		},
+	}
+	require.NoError(t, lock.Save(lockPath))
+
+	wb := NewWeightBuilder(NewSourceFromConfig(&config.Config{}, tmpDir), "0.15.0", lockPath)
+	cached := wb.findCachedEntry("my-model", 123, 0)
+	require.Nil(t, cached)
 }
 
 func TestWeightBuilder_ErrorWrongSpecType(t *testing.T) {
