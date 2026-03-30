@@ -1,6 +1,9 @@
 name: Bonk
 
 on:
+  # TODO: remove pull_request trigger after testing -- comment events only fire from main
+  pull_request:
+    types: [opened, synchronize]
   issue_comment:
     types: [created]
   pull_request_review_comment:
@@ -14,7 +17,12 @@ concurrency:
 
 jobs:
   bonk:
-    if: github.event.sender.type != 'Bot' && (contains(github.event.comment.body, '/bonk') || contains(github.event.comment.body, '@ask-bonk'))
+    if: |
+      github.event.sender.type != 'Bot' && (
+        github.event_name == 'pull_request' ||
+        contains(github.event.comment.body, '/bonk') ||
+        contains(github.event.comment.body, '@ask-bonk')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
