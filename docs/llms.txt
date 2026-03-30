@@ -1340,14 +1340,18 @@ Content-Type: application/json
 
 {
     "cog_version": "0.17.0",
-    "docs_url": "/openapi.json",
+    "docs_url": "/docs",
     "openapi_url": "/openapi.json",
+    "shutdown_url": "/shutdown",
+    "healthcheck_url": "/health-check",
     "predictions_url": "/predictions",
-    "health_check_url": "/health-check"
+    "predictions_idempotent_url": "/predictions/{prediction_id}",
+    "predictions_cancel_url": "/predictions/{prediction_id}/cancel"
 }
 ```
 
-If training is configured, the response also includes a `trainings_url` field.
+If training is configured, the response also includes
+`trainings_url`, `trainings_idempotent_url`, and `trainings_cancel_url` fields.
 
 ### `GET /health-check`
 
