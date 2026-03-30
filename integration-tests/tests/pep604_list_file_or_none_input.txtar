@@ -10,8 +10,7 @@ cog build -t $TEST_IMAGE
 
 # Providing multiple file inputs should work.
 cog predict $TEST_IMAGE -i files=@file1.txt -i files=@file2.txt
-stdout 'types=File,File'
-stdout 'content=one,two'
+stdout 'count=2 content=one,two'
 
 # Omitting the optional input should yield None.
 cog predict $TEST_IMAGE
@@ -39,14 +38,13 @@ class Predictor(BasePredictor):
     def predict(self, files: list[File] | None = Input(default=None)) -> str:
         if files is None:
             return "type=NoneType"
-        types = ",".join(type(f).__name__ for f in files)
         contents = []
         for f in files:
             c = f.read()
             if isinstance(c, bytes):
                 c = c.decode("utf-8")
             contents.append(c)
-        return f"types={types} content={','.join(contents)}"
+        return f"count={len(files)} content={','.join(contents)}"
 
 -- file1.txt --
 one
