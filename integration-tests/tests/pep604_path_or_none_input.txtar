@@ -20,6 +20,11 @@ stdout 'type=NoneType content=none'
 
 cog serve
 
+# POST with a data URL should coerce to Path.
+curl POST /predictions '{"input":{"path":"data:text/plain;base64,aGVsbG8gZnJvbSBkYXRhIHVybA=="}}'
+stdout '"status":"succeeded"'
+stdout 'type=Path content=hello from data url'
+
 # POST with no path input — should get None.
 curl POST /predictions '{"input":{}}'
 stdout '"status":"succeeded"'

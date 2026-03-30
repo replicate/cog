@@ -20,6 +20,11 @@ stdout 'type=NoneType content=none'
 
 cog serve
 
+# POST with a data URL should coerce to File.
+curl POST /predictions '{"input":{"file":"data:text/plain;base64,aGVsbG8gZnJvbSBkYXRhIHVybA=="}}'
+stdout '"status":"succeeded"'
+stdout 'type=File content=hello from data url'
+
 # POST with no file input — should get None.
 curl POST /predictions '{"input":{}}'
 stdout '"status":"succeeded"'
