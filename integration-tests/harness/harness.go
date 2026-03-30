@@ -36,6 +36,7 @@ var propagatedEnvVars = []string{
 	"RUST_LOG",          // Rust logging control
 	"COG_CA_CERT",       // custom CA certificates (e.g. Cloudflare WARP)
 	"BUILDKIT_PROGRESS", // Docker build output format
+	"COG_REGISTRY_HOST", // registry host for cog base image resolution
 }
 
 // Harness provides utilities for running cog integration tests.
@@ -322,6 +323,12 @@ func (h *Harness) Setup(env *testscript.Env) error {
 			env.Setenv(key, val)
 		}
 	}
+
+	// In CI, COG_REGISTRY_HOST is set to ghcr.io/replicate/cog so tests
+	// resolve cog-base images from GHCR (mirrored from r8.im) instead of
+	// hitting r8.im directly. The env var is propagated via propagatedEnvVars.
+	// Tests that need a specific registry (e.g. oci_bundle_push.txtar)
+	// override this by setting COG_REGISTRY_HOST in the txtar file.
 
 	// Auto-detect wheels from dist/ if not explicitly set via env vars.
 	// CI sets these env vars; locally we need to find them ourselves.
