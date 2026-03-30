@@ -1,0 +1,50 @@
+name: New PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    if: github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+
+      - name: Load review prompt
+        id: prompt
+        run: |
+          {
+            echo 'value<<EOF'
+            echo "You are reviewing PR #${{ github.event.pull_request.number }} on ${{ github.repository }}."
+            echo ""
+            cat .github/bonk_reviewer.md
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Bonk
+        uses: ask-bonk/ask-bonk/github@main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_GATEWAY_BASE_URL: https://gateway.ai.cloudflare.com/v1/${{ vars.CLOUDFLARE_ACCOUNT_ID }}/${{ vars.CLOUDFLARE_GATEWAY_ID }}/compat
+        with:
+          model: 'cf-gateway/kimi-k2.5'
+          forks: 'false'
+          permissions: write
+          opencode_version: '1.2.27'
+          # The auto-reviewer must never push to PR branches. NO_PUSH
+          # enforces that at the token level.
+          token_permissions: 'NO_PUSH'
+          prompt: ${{ steps.prompt.outputs.value }}
