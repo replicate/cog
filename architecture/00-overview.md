@@ -13,6 +13,7 @@ flowchart LR
     subgraph cog["Cog"]
         cli["CLI"]
         sdk["Python SDK"]
+        coglet["Coglet (Rust)"]
     end
     
     subgraph output["What you get"]
@@ -20,10 +21,12 @@ flowchart LR
         api["HTTP API"]
     end
     
+    model -->|"imports"| sdk
     model --> cli
     cli -->|"builds"| image
-    image -->|"runs"| sdk
-    sdk -->|"serves"| api
+    sdk -.->|"packaged into"| image
+    image -->|"runs"| coglet
+    coglet -->|"serves"| api
 ```
 
 ## Components
@@ -33,6 +36,14 @@ flowchart LR
 What the model author provides: `cog.yaml` for environment config, a Predictor class with `setup()` and `predict()` methods, and optionally model weights.
 
 **Deep dive**: [Model Source](./01-model-source.md)
+
+---
+
+### Python SDK
+
+The `cog` Python package that model authors import. Provides `BasePredictor`, the type system (`Input`, `Path`, `Secret`, `ConcatenateIterator`), and the thin server entry point that launches coglet. Installed inside every Cog container as a wheel.
+
+**Deep dive**: [Model Source](./01-model-source.md) (covers the SDK's public API)
 
 ---
 
@@ -48,22 +59,15 @@ An OpenAPI specification generated from the predictor's type hints. Describes wh
 
 The HTTP interface for running predictions. A fixed envelope format (`PredictionRequest`/`PredictionResponse`) wraps model-specific inputs and outputs.
 
-**Deep dives**:
-- [Legacy API](./legacy/03-prediction-api.md) - FastAPI implementation details
-- [FFI API](./ffi/03-prediction-api.md) - Rust/Axum implementation details
+**Deep dive**: [Prediction API](./03-prediction-api.md)
 
 ---
 
 ### Container Runtime
 
-The runtime that runs inside the container: an HTTP server, worker process isolation, and prediction execution. Cog has two runtime implementations:
+The runtime that runs inside the container: a Rust HTTP server (Axum), worker process isolation via subprocess, and prediction execution via PyO3 bindings.
 
-- **Legacy (Python/FastAPI)**: Current default implementation - [Documentation](./legacy/)
-- **FFI (Rust/PyO3)**: Next-generation experimental implementation - [Documentation](./ffi/)
-
-**Deep dives**:
-- [Legacy Runtime](./legacy/04-container-runtime.md) - FastAPI/Uvicorn two-process architecture
-- [FFI Runtime](./ffi/04-container-runtime.md) - Rust/Axum with PyO3 FFI bridge
+**Deep dive**: [Container Runtime](./04-container-runtime.md)
 
 ---
 
@@ -105,8 +109,8 @@ flowchart TB
     end
     
     subgraph runtime["Runtime"]
-        server["HTTP Server"]
-        worker["Worker Process"]
+        server["HTTP Server<br/>(Rust/Axum)"]
+        worker["Worker Subprocess<br/>(Python)"]
         predictor["Predictor"]
     end
     
@@ -128,39 +132,22 @@ flowchart TB
 
 | Term | Meaning |
 |------|---------|
+| **SDK** | The `cog` Python package -- the framework users build models on |
 | **Predictor** | User's model class with `setup()` and `predict()` methods |
 | **Schema** | OpenAPI spec describing the model's input/output interface |
 | **Envelope** | Fixed request/response structure wrapping model-specific data |
 | **Worker** | Isolated subprocess running user code |
 | **Setup** | One-time model initialization at container start |
-
-## Runtime Implementations
-
-Cog supports two runtime implementations:
-
-### Legacy Runtime (Python/FastAPI)
-- **Status**: Current default
-- **Use when**: Running standard Cog containers
-- **Implementation**: `python/cog/server/`
-- **Documentation**: [legacy/](./legacy/)
-
-### FFI Runtime (Rust/PyO3)
-- **Status**: Experimental (in development)
-- **Use when**: Set `USE_COGLET` environment variable
-- **Implementation**: `crates/coglet/`
-- **Documentation**: [ffi/](./ffi/)
-- **Benefits**: Better performance, stability, and resource management
-
-Both runtimes expose the same HTTP API and support the same model code. The FFI runtime is a drop-in replacement with improved internals.
+| **Coglet** | Rust-based prediction server that runs inside containers |
+| **Slot** | A concurrency unit -- one Unix socket connection to the worker subprocess |
 
 ## Reading Order
 
 For understanding Cog's architecture, we recommend reading in this order:
 
-1. [Model Source](./01-model-source.md) - What users write
-2. [Schema](./02-schema.md) - How the interface is described
-3. **Choose a runtime path**:
-   - **Legacy**: [Prediction API](./legacy/03-prediction-api.md) → [Container Runtime](./legacy/04-container-runtime.md)
-   - **FFI**: [Prediction API](./ffi/03-prediction-api.md) → [Container Runtime](./ffi/04-container-runtime.md)
-4. [Build System](./05-build-system.md) - How images are built
-5. [CLI](./06-cli.md) - How users interact with it all
+1. [Model Source](./01-model-source.md) -- What users write
+2. [Schema](./02-schema.md) -- How the interface is described
+3. [Prediction API](./03-prediction-api.md) -- The HTTP contract
+4. [Container Runtime](./04-container-runtime.md) -- What runs inside the container
+5. [Build System](./05-build-system.md) -- How images are built
+6. [CLI](./06-cli.md) -- How users interact with it all

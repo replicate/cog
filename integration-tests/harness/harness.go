@@ -36,6 +36,7 @@ var propagatedEnvVars = []string{
 	"RUST_LOG",          // Rust logging control
 	"COG_CA_CERT",       // custom CA certificates (e.g. Cloudflare WARP)
 	"BUILDKIT_PROGRESS", // Docker build output format
+	"COG_REGISTRY_HOST", // registry host for cog base image resolution
 }
 
 // Harness provides utilities for running cog integration tests.
@@ -70,10 +71,11 @@ type mockUploadServer struct {
 
 // webhookResult is the summary written to stdout by webhook-server-wait.
 type webhookResult struct {
-	Status     string          `json:"status"`
-	OutputSize int             `json:"output_size"`
-	HasError   bool            `json:"has_error"`
-	Metrics    json.RawMessage `json:"metrics,omitempty"`
+	Status       string          `json:"status"`
+	OutputSize   int             `json:"output_size"`
+	HasError     bool            `json:"has_error"`
+	ErrorMessage string          `json:"error_message,omitempty"`
+	Metrics      json.RawMessage `json:"metrics,omitempty"`
 }
 
 // webhookServer accepts prediction webhook callbacks from coglet.
@@ -321,6 +323,12 @@ func (h *Harness) Setup(env *testscript.Env) error {
 			env.Setenv(key, val)
 		}
 	}
+
+	// In CI, COG_REGISTRY_HOST is set to ghcr.io/replicate/cog so tests
+	// resolve cog-base images from GHCR (mirrored from r8.im) instead of
+	// hitting r8.im directly. The env var is propagated via propagatedEnvVars.
+	// Tests that need a specific registry (e.g. oci_bundle_push.txtar)
+	// override this by setting COG_REGISTRY_HOST in the txtar file.
 
 	// Auto-detect wheels from dist/ if not explicitly set via env vars.
 	// CI sets these env vars; locally we need to find them ourselves.
@@ -574,7 +582,8 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 
 		if neg {
 			if !statusOK {
-				// Expected to fail - success!
+				// Expected to fail — write body to stderr so tests can assert
+				_, _ = ts.Stderr().Write([]byte(respBody))
 				return
 			}
 		} else {
@@ -1389,9 +1398,11 @@ func (h *Harness) cmdWebhookServerStart(ts *testscript.TestScript, neg bool, arg
 
 		// Stream-parse the JSON to extract status, measure output size, and
 		// capture metrics without holding the entire output string in memory.
+		// Output is json.RawMessage because it can be a string (single output)
+		// or an array (iterator/streaming output).
 		var payload struct {
 			Status  string          `json:"status"`
-			Output  string          `json:"output"`
+			Output  json.RawMessage `json:"output"`
 			Error   string          `json:"error"`
 			Metrics json.RawMessage `json:"metrics"`
 		}
@@ -1416,11 +1427,20 @@ func (h *Harness) cmdWebhookServerStart(ts *testscript.TestScript, neg bool, arg
 		if ws.result != nil {
 			return
 		}
+		// Compute output size: for strings, use the unquoted length;
+		// for arrays or other types, use the raw JSON byte length.
+		outputSize := len(payload.Output)
+		var outputStr string
+		if json.Unmarshal(payload.Output, &outputStr) == nil {
+			outputSize = len(outputStr)
+		}
+
 		ws.result = &webhookResult{
-			Status:     payload.Status,
-			OutputSize: len(payload.Output),
-			HasError:   payload.Error != "",
-			Metrics:    payload.Metrics,
+			Status:       payload.Status,
+			OutputSize:   outputSize,
+			HasError:     payload.Error != "",
+			ErrorMessage: payload.Error,
+			Metrics:      payload.Metrics,
 		}
 		close(ws.done)
 	})

@@ -72,9 +72,12 @@ jobs:
       - name: Detect changed paths
         id: filter
         run: |
-          # For PRs, compare against base; for pushes, compare against previous commit
+          # For PRs, compare against base; for pushes, compare against previous commit;
+          # for merge_group, compare against the merge group base.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event_name }}" = "merge_group" ]; then
+            BASE="${{ github.event.merge_group.base_sha }}"
           else
             BASE="${{ github.event.before }}"
             # Handle initial push (no before)
@@ -88,37 +91,27 @@ jobs:
           # Get changed files
           CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
           
-          # Check if coglet version changed
+          # Check if version changed (VERSION.txt or Cargo.toml version line)
           VERSION_CHANGED="false"
-          if echo "$CHANGED" | grep -qE '^crates/Cargo\.toml$'; then
-            # Check if only the version line changed
+          if echo "$CHANGED" | grep -qE '^VERSION\.txt$'; then
+            VERSION_CHANGED="true"
+            echo "VERSION.txt changed"
+          elif echo "$CHANGED" | grep -qE '^crates/Cargo\.toml$'; then
             if git diff "$BASE" HEAD -- crates/Cargo.toml | grep -qE '^\+version = '; then
               VERSION_CHANGED="true"
-              echo "Coglet version changed"
+              echo "Cargo.toml version changed"
             fi
           fi
           echo "version_changed=$VERSION_CHANGED" >> $GITHUB_OUTPUT
           
-          # Check if ONLY the version changed (version bump PR)
-          # This is true if crates/Cargo.toml is the only file and only version line changed
+          # Check if ONLY version files changed (version bump PR)
+          # These PRs only touch VERSION.txt, crates/Cargo.toml, and crates/Cargo.lock
           VERSION_ONLY="false"
           if [ "$VERSION_CHANGED" = "true" ]; then
-            FILE_COUNT=$(echo "$CHANGED" | grep -c . || echo "0")
-            if [ "$FILE_COUNT" = "1" ]; then
-              # Only crates/Cargo.toml changed, check if only version line changed
-              # Get actual diff lines (excluding +++ and --- headers)
-              DIFF_CONTENT=$(git diff "$BASE" HEAD -- crates/Cargo.toml | grep -E '^[+-]' | grep -v '^[+-]{3}')
-              # Should be exactly: -version = "old" and +version = "new"
-              MINUS_LINES=$(echo "$DIFF_CONTENT" | grep -c '^-' || echo "0")
-              PLUS_LINES=$(echo "$DIFF_CONTENT" | grep -c '^\+' || echo "0")
-              VERSION_MINUS=$(echo "$DIFF_CONTENT" | grep -c '^-version = ' || echo "0")
-              VERSION_PLUS=$(echo "$DIFF_CONTENT" | grep -c '^\+version = ' || echo "0")
-              
-              if [ "$MINUS_LINES" = "1" ] && [ "$PLUS_LINES" = "1" ] && \
-                 [ "$VERSION_MINUS" = "1" ] && [ "$VERSION_PLUS" = "1" ]; then
-                VERSION_ONLY="true"
-                echo "Version-only change detected - skipping heavy CI"
-              fi
+            NON_VERSION_FILES=$(echo "$CHANGED" | grep -vcE '^(VERSION\.txt|crates/Cargo\.(toml|lock))$' || echo "0")
+            if [ "$NON_VERSION_FILES" = "0" ]; then
+              VERSION_ONLY="true"
+              echo "Version-only change detected - skipping heavy CI"
             fi
           fi
           echo "version_only=$VERSION_ONLY" >> $GITHUB_OUTPUT
@@ -166,8 +159,8 @@ jobs:
               echo "integration=false" >> $GITHUB_OUTPUT
             fi
 
-            # Detect docs changes (includes CLI source which generates docs/cli.md)
-            if echo "$CHANGED" | grep -qE '^(docs/|README\.md|cmd/|pkg/cli/)'; then
+            # Detect docs changes (includes any Markdown file and CLI source which generates docs/cli.md)
+            if echo "$CHANGED" | grep -qE '^(docs/|README\.md|cmd/|pkg/cli/|.*\.md$)'; then
               echo "docs=true" >> $GITHUB_OUTPUT
             else
               echo "docs=false" >> $GITHUB_OUTPUT
@@ -183,7 +176,7 @@ jobs:
 # =============================================================================
 
   version-check:
-    name: Validate coglet version
+    name: Validate version
     needs: changes
     if: needs.changes.outputs.version_changed == 'true'
     runs-on: ubuntu-latest
@@ -195,9 +188,13 @@ jobs:
 
       - name: Validate version
         run: |
-          # Get version from Cargo.toml
-          VERSION=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "Coglet version: $VERSION"
+          # Read canonical version from VERSION.txt
+          if [ ! -f VERSION.txt ]; then
+            echo "::error::VERSION.txt not found"
+            exit 1
+          fi
+          VERSION=$(tr -d '[:space:]' < VERSION.txt)
+          echo "VERSION.txt: $VERSION"
           
           # Validate semver format
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
@@ -207,13 +204,14 @@ jobs:
           fi
           echo "✓ Valid semver format"
           
-          # Check version doesn't already exist as a tag
-          if git tag -l "v$VERSION" | grep -q .; then
-            echo "::error::Tag v$VERSION already exists!"
-            echo "::error::Cannot set version to an already-released version."
+          # Check VERSION.txt matches crates/Cargo.toml
+          CARGO_VERSION=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          if [ "$VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Version mismatch! VERSION.txt has $VERSION but crates/Cargo.toml has $CARGO_VERSION"
+            echo "::error::Run 'mise run version:bump $VERSION' to sync."
             exit 1
           fi
-          echo "✓ Version not yet released"
+          echo "✓ VERSION.txt matches crates/Cargo.toml"
           
           # Get the highest existing stable version tag
           HIGHEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -v '-' | sed 's/^v//' | sort -V | tail -1)
@@ -324,9 +322,9 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
-      - name: Get version from Cargo.toml
+      - name: Get version from VERSION.txt
         id: version
-        run: echo "version=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(tr -d '[:space:]' < VERSION.txt)" >> "$GITHUB_OUTPUT"
       - name: Build cog binary
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -334,7 +332,7 @@ jobs:
           args: build --clean --snapshot --single-target --id cog --output cog
         env:
           GOFLAGS: -buildvcs=false
-          # Use Cargo.toml as version source so snapshot builds match the wheel version
+          # Use VERSION.txt as version source so snapshot builds match the wheel version
           COG_VERSION: ${{ steps.version.outputs.version }}
       - name: Upload cog binary
         uses: actions/upload-artifact@v6
@@ -504,6 +502,23 @@ jobs:
           cache: false
       - name: Lint Python
         run: mise run lint:python
+
+  lint-docs:
+    name: Lint Markdown
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: jdx/mise-action@v4
+        with:
+          cache: false
+      - name: Lint Markdown
+        run: mise run lint:docs
 
 # =============================================================================
 # Test Jobs
@@ -794,6 +809,9 @@ jobs:
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
+          # Resolve cog-base images from GHCR instead of r8.im.
+          # Images are mirrored by integration-tests/mirror-cog-base-images.sh.
+          COG_REGISTRY_HOST: 'ghcr.io/replicate/cog'
         shell: bash
         run: |
           set -euo pipefail
@@ -839,6 +857,7 @@ jobs:
       - lint-rust
       - lint-rust-deny
       - lint-python
+      - lint-docs
       - test-go
       - test-rust
       - test-python
@@ -863,6 +882,7 @@ jobs:
           echo "  lint-rust: ${{ needs.lint-rust.result }}"
           echo "  lint-rust-deny: ${{ needs.lint-rust-deny.result }}"
           echo "  lint-python: ${{ needs.lint-python.result }}"
+          echo "  lint-docs: ${{ needs.lint-docs.result }}"
           echo "  test-go: ${{ needs.test-go.result }}"
           echo "  test-rust: ${{ needs.test-rust.result }}"
           echo "  test-python: ${{ needs.test-python.result }}"
@@ -884,6 +904,7 @@ jobs:
             "${{ needs.lint-rust.result }}" \
             "${{ needs.lint-rust-deny.result }}" \
             "${{ needs.lint-python.result }}" \
+            "${{ needs.lint-docs.result }}" \
             "${{ needs.test-go.result }}" \
             "${{ needs.test-rust.result }}" \
             "${{ needs.test-python.result }}" \

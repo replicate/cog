@@ -1,36 +1,36 @@
 # HTTP API
 
 > [!TIP]
-> For information about how to run the HTTP server, 
+> For information about how to run the HTTP server,
 > see [our documentation on deploying models](deploy.md).
 
-When you run a Docker image built by Cog, 
+When you run a Docker image built by Cog,
 it serves an HTTP API for making predictions.
 
 The server supports both synchronous and asynchronous prediction creation:
 
-- **Synchronous**: 
+- **Synchronous**:
   The server waits until the prediction is completed
   and responds with the result.
-- **Asynchronous**: 
-  The server immediately returns a response 
-  and processes the prediction in the background. 
+- **Asynchronous**:
+  The server immediately returns a response
+  and processes the prediction in the background.
 
 The client can create a prediction asynchronously
 by setting the `Prefer: respond-async` header in their request.
-When provided, the server responds immediately after starting the prediction 
+When provided, the server responds immediately after starting the prediction
 with `202 Accepted` status and a prediction object in status `processing`.
 
 > [!NOTE]
 > The only supported way to receive updates on the status of predictions
-> started asynchronously is using [webhooks](#webhooks). 
+> started asynchronously is using [webhooks](#webhooks).
 > Polling for prediction status is not currently supported.
 
 You can also use certain server endpoints to create predictions idempotently,
-such that if a client calls this endpoint more than once with the same ID 
-(for example, due to a network interruption) 
-while the prediction is still running, 
-no new prediction is created. 
+such that if a client calls this endpoint more than once with the same ID
+(for example, due to a network interruption)
+while the prediction is still running,
+no new prediction is created.
 Instead, the client receives a `202 Accepted` response
 with the initial state of the prediction.
 
@@ -48,9 +48,9 @@ Here's a summary of the prediction creation endpoints:
 Choose the endpoint that best fits your needs:
 
 - Use synchronous endpoints when you want to wait for the prediction result.
-- Use asynchronous endpoints when you want to start a prediction 
+- Use asynchronous endpoints when you want to start a prediction
   and receive updates via webhooks.
-- Use idempotent endpoints when you need to safely retry requests 
+- Use idempotent endpoints when you need to safely retry requests
   without creating duplicate predictions.
 
 ## Webhooks
@@ -73,27 +73,27 @@ The server makes requests to the provided URL
 with the current state of the prediction object in the request body
 at the following times.
 
-- `start`: 
+- `start`:
   Once, when the prediction starts
   (`status` is `starting`).
-- `output`: 
-  Each time a predict function generates an output 
+- `output`:
+  Each time a predict function generates an output
   (either once using `return` or multiple times using `yield`)
-- `logs`: 
+- `logs`:
   Each time the predict function writes to `stdout`
-- `completed`: 
-  Once, when the prediction reaches a terminal state 
+- `completed`:
+  Once, when the prediction reaches a terminal state
   (`status` is `succeeded`, `canceled`, or `failed`)
 
-Webhook requests for `start` and `completed` event types 
+Webhook requests for `start` and `completed` event types
 are sent immediately.
-Webhook requests for `output` and `logs` event types 
+Webhook requests for `output` and `logs` event types
 are sent at most once every 500ms.
 This interval is not configurable.
 
-By default, the server sends requests for all event types. 
-Clients can specify which events trigger webhook requests 
-with the `webhook_events_filter` parameter in the prediction request body. 
+By default, the server sends requests for all event types.
+Clients can specify which events trigger webhook requests
+with the `webhook_events_filter` parameter in the prediction request body.
 For example,
 the following request specifies that webhooks are sent by the server
 only at the start and end of the prediction:
@@ -114,9 +114,11 @@ Prefer: respond-async
 
 Endpoints for creating and canceling a prediction idempotently
 accept a `prediction_id` parameter in their path.
-The server can run only one prediction at a time.
-The client must ensure that the running prediction is complete
-before creating a new one with a different ID.
+By default, the server runs one prediction at a time,
+but this can be increased with the [`concurrency.max`](yaml.md#concurrency) setting.
+When all prediction slots are in use, the server returns `409 Conflict`.
+The client should ensure prediction slots are available
+before creating a new prediction with a different ID.
 
 Clients are responsible for providing unique prediction IDs.
 We recommend generating a UUIDv4 or [UUIDv7](https://uuid7.com),
@@ -137,7 +139,7 @@ A model's `predict` function can produce file output by yielding or returning
 a `cog.Path` or `cog.File` value.
 
 By default,
-files are returned as a base64-encoded 
+files are returned as a base64-encoded
 [data URL](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs).
 
 ```http
@@ -204,12 +206,39 @@ Content-Type: application/json
 If the upload fails, the server responds with an error.
 
 > [!IMPORTANT]  
-> File uploads for predictions created asynchronously 
+> File uploads for predictions created asynchronously
 > require `--upload-url` to be specified when starting the HTTP server.
 
 <a id="api"></a>
 
 ## Endpoints
+
+### `GET /`
+
+Returns a discovery document listing available API endpoints, the OpenAPI schema URL, and version information.
+
+```http
+GET / HTTP/1.1
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+    "cog_version": "0.17.0",
+    "docs_url": "/docs",
+    "openapi_url": "/openapi.json",
+    "shutdown_url": "/shutdown",
+    "healthcheck_url": "/health-check",
+    "predictions_url": "/predictions",
+    "predictions_idempotent_url": "/predictions/{prediction_id}",
+    "predictions_cancel_url": "/predictions/{prediction_id}/cancel"
+}
+```
+
+If training is configured, the response also includes
+`trainings_url`, `trainings_idempotent_url`, and `trainings_cancel_url` fields.
 
 ### `GET /health-check`
 
@@ -265,8 +294,8 @@ Content-Type: application/json
 
 ### `GET /openapi.json`
 
-The [OpenAPI](https://swagger.io/specification/) specification of the API, 
-which is derived from the input and output types specified in your model's 
+The [OpenAPI](https://swagger.io/specification/) specification of the API,
+which is derived from the input and output types specified in your model's
 [Predictor](python.md) and [Training](training.md) objects.
 
 ### `POST /predictions`
@@ -275,8 +304,8 @@ Makes a single prediction.
 
 The request body is a JSON object with the following fields:
 
-- `input`: 
-  A JSON object with the same keys as the 
+- `input`:
+  A JSON object with the same keys as the
   [arguments to the `predict()` function](python.md).
   Any `File` or `Path` inputs are passed as URLs.
 
@@ -316,7 +345,7 @@ Content-Type: application/json
 ```
 
 If the client sets the `Prefer: respond-async` header in their request,
-the server responds immediately after starting the prediction 
+the server responds immediately after starting the prediction
 with `202 Accepted` status and a prediction object in status `processing`.
 
 ```http
@@ -363,7 +392,7 @@ Content-Type: application/json
 ```
 
 If the client sets the `Prefer: respond-async` header in their request,
-the server responds immediately after starting the prediction 
+the server responds immediately after starting the prediction
 with `202 Accepted` status and a prediction object in status `processing`.
 
 ```http
@@ -392,7 +421,7 @@ A client can cancel an asynchronous prediction by making a
 `POST /predictions/<prediction_id>/cancel` request
 using the prediction `id` provided when the prediction was created.
 
-For example, 
+For example,
 if the client creates a prediction by sending the request:
 
 ```http
@@ -429,12 +458,13 @@ After cleanup, the exception must be re-raised using a bare `raise` statement.
 Failure to re-raise the exception may result in the termination of the container.
 
 ```python
-from cog import CancelationException, Path
+from cog import BasePredictor, CancelationException, Input, Path
 
-def predict(image: Path) -> Path:
-    try:
-        return process(image)
-    except CancelationException:
-        cleanup()
-        raise  # always re-raise
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(description="Image to process")) -> Path:
+        try:
+            return self.process(image)
+        except CancelationException:
+            self.cleanup()
+            raise  # always re-raise
 ```

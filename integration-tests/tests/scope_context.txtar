@@ -1,0 +1,37 @@
+# Test that per-prediction context is available via current_scope().context.
+#
+# Verifies:
+# 1. context dict from request body is accessible in the predictor
+# 2. Empty context (default) returns an empty dict
+# 3. Multiple key-value pairs are preserved
+
+cog serve
+
+# Prediction with context — predictor returns sorted key:value pairs
+curl POST /predictions '{"input":{},"context":{"api_token":"secret123","region":"us-east-1"}}'
+stdout '"status":"succeeded"'
+stdout '"output":"api_token:secret123, region:us-east-1"'
+
+# Prediction without context — should get empty dict
+curl POST /predictions '{"input":{"expect_empty":"true"}}'
+stdout '"status":"succeeded"'
+stdout '"output":"context_is_empty=True"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input, current_scope
+
+
+class Predictor(BasePredictor):
+    def predict(self, expect_empty: str = Input(default="false")) -> str:
+        ctx = current_scope().context
+
+        if expect_empty == "true":
+            return f"context_is_empty={len(ctx) == 0}"
+
+        # Return the context as a formatted string so we can assert on individual keys
+        return ", ".join(f"{k}:{v}" for k, v in sorted(ctx.items()))

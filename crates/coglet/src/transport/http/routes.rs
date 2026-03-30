@@ -57,6 +57,9 @@ pub struct PredictionRequest {
         deserialize_with = "deserialize_input"
     )]
     pub input: serde_json::Value,
+    /// Per-prediction context made available to predictors via `current_scope().context`.
+    #[serde(default)]
+    pub context: std::collections::HashMap<String, String>,
     pub webhook: Option<String>,
     #[serde(default = "default_webhook_events_filter")]
     pub webhook_events_filter: Vec<WebhookEventType>,
@@ -96,6 +99,41 @@ fn generate_prediction_id() -> String {
         .expect("system clock is before 1970")
         .as_nanos();
     format!("pred_{:x}", timestamp)
+}
+
+/// Root discovery endpoint — returns a map of available API endpoints.
+///
+/// Restores the `GET /` endpoint from cog <= 0.16.x for service discovery.
+/// `cog_version` reports the Python SDK version when available (matching the
+/// old Python server behaviour), falling back to the coglet runtime version.
+async fn root(State(service): State<Arc<PredictionService>>) -> Json<serde_json::Value> {
+    let version = service.version();
+    let cog_version = version.python_sdk.as_deref().unwrap_or(version.coglet);
+    let mut doc = serde_json::json!({
+        "cog_version": cog_version,
+        "docs_url": "/docs",
+        "openapi_url": "/openapi.json",
+        "shutdown_url": "/shutdown",
+        "healthcheck_url": "/health-check",
+        "predictions_url": "/predictions",
+        "predictions_idempotent_url": "/predictions/{prediction_id}",
+        "predictions_cancel_url": "/predictions/{prediction_id}/cancel",
+    });
+
+    if service.supports_training().await {
+        let obj = doc.as_object_mut().expect("doc is an object");
+        obj.insert("trainings_url".to_string(), serde_json::json!("/trainings"));
+        obj.insert(
+            "trainings_idempotent_url".to_string(),
+            serde_json::json!("/trainings/{training_id}"),
+        );
+        obj.insert(
+            "trainings_cancel_url".to_string(),
+            serde_json::json!("/trainings/{training_id}/cancel"),
+        );
+    }
+
+    Json(doc)
 }
 
 async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
@@ -192,6 +230,7 @@ async fn create_prediction(
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
+        context: Default::default(),
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
@@ -202,6 +241,7 @@ async fn create_prediction(
         service,
         prediction_id,
         request.input,
+        request.context,
         request.webhook,
         request.webhook_events_filter,
         respond_async,
@@ -220,6 +260,7 @@ async fn create_prediction_idempotent(
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
+        context: Default::default(),
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
@@ -250,6 +291,7 @@ async fn create_prediction_idempotent(
         service,
         prediction_id,
         request.input,
+        request.context,
         request.webhook,
         request.webhook_events_filter,
         respond_async,
@@ -288,6 +330,7 @@ async fn create_prediction_with_id(
     service: Arc<PredictionService>,
     prediction_id: String,
     input: serde_json::Value,
+    context: std::collections::HashMap<String, String>,
     webhook: Option<String>,
     webhook_events_filter: Vec<WebhookEventType>,
     respond_async: bool,
@@ -356,8 +399,11 @@ async fn create_prediction_with_id(
     if respond_async {
         let service_clone = Arc::clone(&service);
         let id_for_cleanup = prediction_id.clone();
+        let context_async = context.clone();
         tokio::spawn(async move {
-            let _result = service_clone.predict(unregistered_slot, input).await;
+            let _result = service_clone
+                .predict(unregistered_slot, input, context_async)
+                .await;
             // Prediction state is already updated by predict() internally
             // (set_succeeded/set_failed/set_canceled fire webhooks automatically)
             service_clone.remove_prediction(&id_for_cleanup);
@@ -383,7 +429,7 @@ async fn create_prediction_with_id(
     let result_rx = {
         let (tx, rx) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {
-            let result = service_bg.predict(unregistered_slot, input).await;
+            let result = service_bg.predict(unregistered_slot, input, context).await;
             // Prediction state is already updated by predict() internally
             service_bg.remove_prediction(&id_bg);
             let _ = tx.send(result);
@@ -521,6 +567,7 @@ async fn create_training(
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
+        context: Default::default(),
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
@@ -531,6 +578,7 @@ async fn create_training(
         service,
         prediction_id,
         request.input,
+        request.context,
         request.webhook,
         request.webhook_events_filter,
         respond_async,
@@ -549,6 +597,7 @@ async fn create_training_idempotent(
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
+        context: Default::default(),
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
@@ -579,6 +628,7 @@ async fn create_training_idempotent(
         service,
         training_id,
         request.input,
+        request.context,
         request.webhook,
         request.webhook_events_filter,
         respond_async,
@@ -604,6 +654,7 @@ const MAX_HTTP_BODY_SIZE: usize = 100 * 1024 * 1024;
 
 pub fn routes(service: Arc<PredictionService>) -> Router {
     Router::new()
+        .route("/", get(root))
         .route("/health-check", get(health_check))
         .route("/openapi.json", get(openapi_schema))
         .route("/shutdown", post(shutdown))
@@ -1111,5 +1162,99 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         rx.changed().await.unwrap();
         assert!(*rx.borrow());
+    }
+
+    #[tokio::test]
+    async fn root_returns_discovery_document() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let app = routes(service);
+
+        let response = app
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+
+        let json = response_json(response).await;
+        // Without a python_sdk version set, falls back to coglet version
+        assert_eq!(json["cog_version"], crate::version::COGLET_VERSION);
+        assert_eq!(json["docs_url"], "/docs");
+        assert_eq!(json["openapi_url"], "/openapi.json");
+        assert_eq!(json["shutdown_url"], "/shutdown");
+        assert_eq!(json["healthcheck_url"], "/health-check");
+        assert_eq!(json["predictions_url"], "/predictions");
+        assert_eq!(
+            json["predictions_idempotent_url"],
+            "/predictions/{prediction_id}"
+        );
+        assert_eq!(
+            json["predictions_cancel_url"],
+            "/predictions/{prediction_id}/cancel"
+        );
+        // No training URLs without a TrainingInput schema
+        assert!(json.get("trainings_url").is_none());
+        assert!(json.get("trainings_idempotent_url").is_none());
+        assert!(json.get("trainings_cancel_url").is_none());
+    }
+
+    #[tokio::test]
+    async fn root_includes_training_urls_when_schema_has_training() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        // Set a schema that includes a TrainingInput component
+        service
+            .set_schema(serde_json::json!({
+                "openapi": "3.0.2",
+                "info": {"title": "Cog", "version": "0.1.0"},
+                "components": {
+                    "schemas": {
+                        "TrainingInput": {
+                            "type": "object",
+                            "properties": {
+                                "data": {"type": "string"}
+                            }
+                        }
+                    }
+                }
+            }))
+            .await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let json = response_json(response).await;
+        // Base fields still present
+        assert_eq!(json["predictions_url"], "/predictions");
+        // Training URLs included
+        assert_eq!(json["trainings_url"], "/trainings");
+        assert_eq!(json["trainings_idempotent_url"], "/trainings/{training_id}");
+        assert_eq!(
+            json["trainings_cancel_url"],
+            "/trainings/{training_id}/cancel"
+        );
+    }
+
+    #[tokio::test]
+    async fn root_cog_version_prefers_python_sdk() {
+        let version = VersionInfo::new().with_python_sdk("0.14.0".to_string());
+        let service = Arc::new(PredictionService::new_no_pool().with_version(version));
+        let app = routes(service);
+
+        let response = app
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let json = response_json(response).await;
+        assert_eq!(json["cog_version"], "0.14.0");
     }
 }

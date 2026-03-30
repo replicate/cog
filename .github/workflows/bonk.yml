@@ -1,0 +1,43 @@
+name: Bonk
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bonk:
+    if: github.event.sender.type != 'Bot' && (contains(github.event.comment.body, '/bonk') || contains(github.event.comment.body, '@ask-bonk'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Bonk
+        uses: ask-bonk/ask-bonk/github@main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_GATEWAY_BASE_URL: https://gateway.ai.cloudflare.com/v1/${{ vars.CLOUDFLARE_ACCOUNT_ID }}/${{ vars.CLOUDFLARE_GATEWAY_ID }}/compat
+        with:
+          model: 'cf-gateway/kimi-k2.5'
+          mentions: '/bonk,@ask-bonk'
+          forks: 'false'
+          permissions: write
+          opencode_version: '1.2.27'
+          # token_permissions defaults to WRITE so bonk can push commits
+          # when asked via /bonk.

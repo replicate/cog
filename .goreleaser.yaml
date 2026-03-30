@@ -19,7 +19,7 @@ builds:
       - arm64
     main: ./cmd/cog
     ldflags:
-      # COG_VERSION (from Cargo.toml via mise build:cog) overrides git-derived version for snapshots.
+      # COG_VERSION (from VERSION.txt via mise build:cog or CI) overrides git-derived version for snapshots.
       # For tagged releases, COG_VERSION is unset and envOrDefault falls back to .Version (from tag).
       - "-s -w -X github.com/replicate/cog/pkg/global.Version={{ envOrDefault \"COG_VERSION\" .Version }} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
     overrides:
@@ -65,6 +65,7 @@ checksum:
   name_template: "checksums.txt"
 snapshot:
   version_template: '{{ envOrDefault "COG_VERSION" (printf "%s-dev+g%s" (incpatch .Version) .ShortCommit) }}'
+  # COG_VERSION is set from VERSION.txt by mise or CI; without it, goreleaser derives a dev version from the last tag.
 changelog:
   sort: asc
   filters:
