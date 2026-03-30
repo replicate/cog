@@ -52,6 +52,28 @@ const (
 	SchemaConcatIterator
 )
 
+// String returns the name of the SchemaTypeKind for diagnostic messages.
+func (k SchemaTypeKind) String() string {
+	switch k {
+	case SchemaPrimitive:
+		return "SchemaPrimitive"
+	case SchemaAny:
+		return "SchemaAny"
+	case SchemaArray:
+		return "SchemaArray"
+	case SchemaDict:
+		return "SchemaDict"
+	case SchemaObject:
+		return "SchemaObject"
+	case SchemaIterator:
+		return "SchemaIterator"
+	case SchemaConcatIterator:
+		return "SchemaConcatIterator"
+	default:
+		return fmt.Sprintf("SchemaTypeKind(%d)", int(k))
+	}
+}
+
 // SchemaField is a named field within a SchemaObject.
 type SchemaField struct {
 	Type     SchemaType
@@ -155,7 +177,7 @@ func (s SchemaType) coreSchema() map[string]any {
 		// it indicates a missing case (e.g. a new kind was added without updating
 		// this switch). Panic to surface the bug immediately rather than silently
 		// returning a wrong schema.
-		panic(fmt.Sprintf("unhandled SchemaTypeKind: %d", s.Kind))
+		panic(fmt.Sprintf("unhandled SchemaTypeKind: %s (%d)", s.Kind, int(s.Kind)))
 	}
 }
 

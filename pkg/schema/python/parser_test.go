@@ -2327,6 +2327,33 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeString, info.Output.Items.Primitive)
 }
 
+func TestForwardReferenceQuotedUnion(t *testing.T) {
+	// Quoted union like "str | None" should be unquoted first,
+	// then parsed as a union — not split on | while still quoted.
+	// This tests the fix where forward-ref stripping happens before
+	// union parsing in parseTypeFromString.
+	source := `
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Result(BaseModel):
+    name: "str | None"
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 1, info.Output.Fields.Len())
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.True(t, name.Type.Nullable, "field with quoted union 'str | None' should be nullable")
+	require.Equal(t, schema.SchemaPrimitive, name.Type.Kind)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+}
+
 // ---------------------------------------------------------------------------
 // Nested BaseModel composition
 // ---------------------------------------------------------------------------
@@ -2498,6 +2525,11 @@ class Predictor(BasePredictor):
 	betaIdx := indexOf(jsonStr, `"beta"`)
 	gammaIdx := indexOf(jsonStr, `"gamma"`)
 	deltaIdx := indexOf(jsonStr, `"delta"`)
+
+	require.GreaterOrEqual(t, alphaIdx, 0, `"alpha" property should be present in JSON schema`)
+	require.GreaterOrEqual(t, betaIdx, 0, `"beta" property should be present in JSON schema`)
+	require.GreaterOrEqual(t, gammaIdx, 0, `"gamma" property should be present in JSON schema`)
+	require.GreaterOrEqual(t, deltaIdx, 0, `"delta" property should be present in JSON schema`)
 
 	require.Greater(t, betaIdx, alphaIdx, "beta should appear after alpha")
 	require.Greater(t, gammaIdx, betaIdx, "gamma should appear after beta")
