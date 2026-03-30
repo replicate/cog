@@ -43,7 +43,7 @@ class Predictor(BasePredictor):
             c = f.read()
             if isinstance(c, bytes):
                 c = c.decode("utf-8")
-            contents.append(c)
+            contents.append(c.strip())
         return f"count={len(files)} content={','.join(contents)}"
 
 -- file1.txt --

@@ -41,7 +41,7 @@ class Predictor(BasePredictor):
         contents = []
         for p in paths:
             with open(p) as f:
-                contents.append(f.read())
+                contents.append(f.read().strip())
         return f"count={len(paths)} content={','.join(contents)}"
 
 -- file1.txt --
