@@ -1353,6 +1353,60 @@ class Predictor(BasePredictor):
 }
 
 // ---------------------------------------------------------------------------
+// Optional list inputs (list[X] | None)
+// ---------------------------------------------------------------------------
+
+func TestOptionalListPipeNone(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, files: list[Path] | None = Input(default=None)) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	files, ok := info.Inputs.Get("files")
+	require.True(t, ok)
+	require.Equal(t, schema.TypePath, files.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, files.FieldType.Repetition)
+	require.NotNil(t, files.Default)
+	require.Equal(t, schema.DefaultNone, files.Default.Kind)
+}
+
+func TestOptionalListTypingOptional(t *testing.T) {
+	source := `
+from typing import Optional, List
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, tags: Optional[List[str]] = Input(default=None)) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	tags, ok := info.Inputs.Get("tags")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, tags.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, tags.FieldType.Repetition)
+	require.NotNil(t, tags.Default)
+	require.Equal(t, schema.DefaultNone, tags.Default.Kind)
+}
+
+func TestOptionalListFileInput(t *testing.T) {
+	source := `
+from cog import BasePredictor, File, Input
+
+class Predictor(BasePredictor):
+    def predict(self, files: list[File] | None = Input(default=None)) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	files, ok := info.Inputs.Get("files")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeFile, files.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, files.FieldType.Repetition)
+}
+
+// ---------------------------------------------------------------------------
 // Recursive / nested output types
 // ---------------------------------------------------------------------------
 
