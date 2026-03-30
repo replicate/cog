@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -10,8 +11,13 @@ from pathlib import Path
 import yaml
 
 from .cog_resolver import resolve_cog_binary, resolve_sdk_version
-from .report import console_report, write_json_report
-from .runner import ModelResult, Runner
+from .report import (
+    console_report,
+    schema_compare_console_report,
+    schema_compare_json_report,
+    write_json_report,
+)
+from .runner import ModelResult, Runner, SchemaCompareResult
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -43,6 +49,25 @@ def main(argv: list[str] | None = None) -> None:
     )
     _add_common_args(build_parser)
 
+    # ── schema-compare ────────────────────────────────────────────────
+    schema_parser = subparsers.add_parser(
+        "schema-compare",
+        help="Compare static (Go) vs runtime (Python) schema generation",
+    )
+    _add_common_args(schema_parser)
+    schema_parser.add_argument(
+        "--output",
+        choices=["console", "json"],
+        default="console",
+        help="Output format (default: console)",
+    )
+    schema_parser.add_argument(
+        "--output-file",
+        type=str,
+        default=None,
+        help="Write report to file",
+    )
+
     # ── list ────────────────────────────────────────────────────────
     list_parser = subparsers.add_parser("list", help="List models in manifest")
     list_parser.add_argument(
@@ -64,12 +89,17 @@ def main(argv: list[str] | None = None) -> None:
         datefmt="%H:%M:%S",
     )
 
+    # Resolve relative paths to absolute before any cwd changes
+    _resolve_paths(args)
+
     if args.command == "list":
         _cmd_list(args)
     elif args.command == "build":
         _cmd_build(args)
     elif args.command == "run":
         _cmd_run(args)
+    elif args.command == "schema-compare":
+        _cmd_schema_compare(args)
 
 
 def _cmd_list(args: argparse.Namespace) -> None:
@@ -103,9 +133,14 @@ def _cmd_build(args: argparse.Namespace) -> None:
     log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
     log.info("Using SDK version: %s", sdk_version)
 
+    sdk_wheel = getattr(args, "sdk_wheel", None)
+    if sdk_wheel:
+        log.info("Using SDK wheel: %s (overrides sdk_version)", sdk_wheel)
+
     runner = Runner(
         cog_binary=cog_binary,
         sdk_version=sdk_version,
+        sdk_wheel=sdk_wheel,
         keep_images=True,
     )
 
@@ -153,12 +188,16 @@ def _cmd_run(args: argparse.Namespace) -> None:
         manifest_defaults=defaults,
     )
     log = logging.getLogger(__name__)
+    sdk_wheel = getattr(args, "sdk_wheel", None)
     log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
     log.info("Using SDK version: %s", sdk_version)
+    if sdk_wheel:
+        log.info("Using SDK wheel: %s (overrides sdk_version)", sdk_wheel)
 
     runner = Runner(
         cog_binary=cog_binary,
         sdk_version=sdk_version,
+        sdk_wheel=sdk_wheel,
         keep_images=args.keep_images,
     )
 
@@ -201,6 +240,66 @@ def _cmd_run(args: argparse.Namespace) -> None:
                     cog_version=cog_version_label,
                     stream=f,
                 )
+
+    failed = any(not r.passed for r in results)
+    sys.exit(1 if failed else 0)
+
+
+def _cmd_schema_compare(args: argparse.Namespace) -> None:
+    manifest = _load_manifest(args.manifest)
+    models = _filter_models(manifest, args)
+    defaults = manifest.get("defaults", {})
+
+    sdk_version, _ = resolve_sdk_version(
+        cli_sdk_version=args.sdk_version,
+        manifest_defaults=defaults,
+    )
+    cog_binary, cog_version_label = resolve_cog_binary(
+        cog_version=args.cog_version,
+        cog_binary=args.cog_binary,
+        manifest_defaults=defaults,
+    )
+    sdk_wheel = getattr(args, "sdk_wheel", None)
+    log = logging.getLogger(__name__)
+    log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
+    log.info("Using SDK version: %s", sdk_version)
+    if sdk_wheel:
+        log.info("Using SDK wheel: %s (overrides sdk_version)", sdk_wheel)
+
+    runner = Runner(
+        cog_binary=cog_binary,
+        sdk_version=sdk_version,
+        sdk_wheel=sdk_wheel,
+        keep_images=args.keep_images,
+    )
+
+    results: list[SchemaCompareResult] = []
+    try:
+        for model in models:
+            log.info("Comparing schemas for %s ...", model["name"])
+            result = runner.compare_schema(model)
+            results.append(result)
+    finally:
+        if not args.keep_images:
+            runner.cleanup()
+
+    # Output
+    if args.output == "json":
+        report = schema_compare_json_report(results, cog_version=cog_version_label)
+        if args.output_file:
+            with open(args.output_file, "w") as f:
+                json.dump(report, f, indent=2)
+                f.write("\n")
+        else:
+            json.dump(report, sys.stdout, indent=2)
+            print()
+    else:
+        schema_compare_console_report(results, cog_version=cog_version_label)
+        if args.output_file:
+            report = schema_compare_json_report(results, cog_version=cog_version_label)
+            with open(args.output_file, "w") as f:
+                json.dump(report, f, indent=2)
+                f.write("\n")
 
     failed = any(not r.passed for r in results)
     sys.exit(1 if failed else 0)
@@ -258,10 +357,31 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="Path to a local cog binary (overrides --cog-version)",
     )
     parser.add_argument(
+        "--sdk-wheel",
+        type=str,
+        default=None,
+        help=(
+            "Path to a local SDK wheel, a URL, or 'pypi[:version]'. "
+            "Sets COG_SDK_WHEEL during builds, overriding --sdk-version. "
+            "Use with --cog-binary to test fully from source."
+        ),
+    )
+    parser.add_argument(
         "--keep-images",
         action="store_true",
         help="Don't clean up Docker images after run",
     )
+
+
+def _resolve_paths(args: argparse.Namespace) -> None:
+    """Resolve relative file paths to absolute so they survive cwd changes."""
+    if hasattr(args, "cog_binary") and args.cog_binary and args.cog_binary != "cog":
+        args.cog_binary = str(Path(args.cog_binary).resolve())
+    if hasattr(args, "sdk_wheel") and args.sdk_wheel:
+        # Only resolve if it looks like a file path (not a URL or pypi: shorthand)
+        wheel = args.sdk_wheel
+        if not wheel.startswith(("http://", "https://", "pypi")):
+            args.sdk_wheel = str(Path(wheel).resolve())
 
 
 def _load_manifest(manifest_path: str | None) -> dict:

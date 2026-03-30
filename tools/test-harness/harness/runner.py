@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -17,6 +18,9 @@ from .patcher import patch_cog_yaml
 from .validators import ValidationResult, validate
 
 logger = logging.getLogger(__name__)
+
+# Docker label key where the OpenAPI schema is stored
+OPENAPI_SCHEMA_LABEL = "run.cog.openapi_schema"
 
 # ── Data types ─────────────────────────────────────────────────────────
 
@@ -42,6 +46,20 @@ class ModelResult:
     gpu: bool = False
 
 
+@dataclass
+class SchemaCompareResult:
+    """Result of comparing static vs runtime schema generation for one model."""
+
+    name: str
+    passed: bool
+    static_build_s: float = 0.0
+    runtime_build_s: float = 0.0
+    error: str | None = None
+    diff: str | None = None  # Human-readable diff on mismatch
+    static_schema: dict[str, Any] | None = None
+    runtime_schema: dict[str, Any] | None = None
+
+
 # ── Runner ─────────────────────────────────────────────────────────────
 
 
@@ -53,6 +71,7 @@ class Runner:
         *,
         cog_binary: str = "cog",
         sdk_version: str | None = None,
+        sdk_wheel: str | None = None,
         fixtures_dir: Path | None = None,
         work_dir: Path | None = None,
         keep_images: bool = False,
@@ -60,6 +79,7 @@ class Runner:
     ) -> None:
         self.cog_binary = cog_binary
         self.sdk_version = sdk_version
+        self.sdk_wheel = sdk_wheel
         self.fixtures_dir = fixtures_dir or Path(__file__).parent.parent / "fixtures"
         self.work_dir = work_dir or Path(tempfile.mkdtemp(prefix="cog-harness-"))
         self.keep_images = keep_images
@@ -128,10 +148,131 @@ class Runner:
 
         return result
 
+    def compare_schema(self, model: dict[str, Any]) -> SchemaCompareResult:
+        """Build a model twice (static + runtime) and compare the OpenAPI schemas.
+
+        1. Build with COG_STATIC_SCHEMA=1 → extract schema from Docker label
+        2. Build without COG_STATIC_SCHEMA → extract schema from Docker label
+        3. Parse both as JSON and compare for exact equality
+        """
+        name = model["name"]
+        result = SchemaCompareResult(name=name, passed=True)
+
+        try:
+            model_dir = self._prepare_model(model)
+        except Exception as exc:
+            result.passed = False
+            result.error = f"Preparation failed: {exc}"
+            logger.error("FAIL %s: %s", name, result.error)
+            return result
+
+        image_tag = f"cog-harness-{name}:test"
+
+        # ── Build 1: Static (Go tree-sitter) ──────────────────────────
+        logger.info("  Building %s with static schema gen...", name)
+        start = time.monotonic()
+        try:
+            self._cog_build_with_env(
+                model_dir, model, image_tag, extra_env={"COG_STATIC_SCHEMA": "1"}
+            )
+            result.static_build_s = time.monotonic() - start
+        except subprocess.CalledProcessError as exc:
+            result.passed = False
+            result.static_build_s = time.monotonic() - start
+            stderr = exc.stderr or ""
+            result.error = f"Static build failed:\n{stderr[-2000:]}"
+            logger.error("FAIL %s static build:\n%s", name, stderr[-500:])
+            return result
+
+        static_schema_raw = self._extract_schema_label(image_tag)
+        if static_schema_raw is None:
+            result.passed = False
+            result.error = "Static build produced no schema label"
+            return result
+
+        try:
+            result.static_schema = json.loads(static_schema_raw)
+        except json.JSONDecodeError as exc:
+            result.passed = False
+            result.error = f"Static schema is not valid JSON: {exc}"
+            return result
+
+        # Remove the image before rebuilding
+        self._remove_image(image_tag)
+
+        # ── Build 2: Runtime (Python) ─────────────────────────────────
+        logger.info("  Building %s with runtime schema gen...", name)
+        start = time.monotonic()
+        try:
+            self._cog_build_with_env(model_dir, model, image_tag, extra_env={})
+            result.runtime_build_s = time.monotonic() - start
+        except subprocess.CalledProcessError as exc:
+            result.passed = False
+            result.runtime_build_s = time.monotonic() - start
+            stderr = exc.stderr or ""
+            result.error = f"Runtime build failed:\n{stderr[-2000:]}"
+            logger.error("FAIL %s runtime build:\n%s", name, stderr[-500:])
+            return result
+
+        runtime_schema_raw = self._extract_schema_label(image_tag)
+        if runtime_schema_raw is None:
+            result.passed = False
+            result.error = "Runtime build produced no schema label"
+            return result
+
+        try:
+            result.runtime_schema = json.loads(runtime_schema_raw)
+        except json.JSONDecodeError as exc:
+            result.passed = False
+            result.error = f"Runtime schema is not valid JSON: {exc}"
+            return result
+
+        # Clean up
+        self._remove_image(image_tag)
+
+        # ── Compare ───────────────────────────────────────────────────
+        if result.static_schema != result.runtime_schema:
+            result.passed = False
+            result.diff = _json_diff(result.static_schema, result.runtime_schema)
+            logger.error("FAIL %s: schemas differ\n%s", name, result.diff)
+        else:
+            logger.info(
+                "PASS %s (static %.1fs, runtime %.1fs)",
+                name,
+                result.static_build_s,
+                result.runtime_build_s,
+            )
+
+        return result
+
     # ── Internal helpers ───────────────────────────────────────────────
 
     def _prepare_model(self, model: dict[str, Any]) -> Path:
         """Clone the repo (if needed) and patch cog.yaml. Returns model dir."""
+        # Local fixture models use "local" as repo and "path" as absolute/relative path
+        if model.get("repo") == "local":
+            subpath = model.get("path", ".")
+            # Resolve relative to the fixtures/models directory
+            fixtures_models = self.fixtures_dir / "models"
+            model_dir = fixtures_models / subpath
+            if not model_dir.is_absolute():
+                model_dir = fixtures_models / subpath
+            if not (model_dir / "cog.yaml").exists():
+                raise FileNotFoundError(f"No cog.yaml in {model_dir}")
+
+            # Copy to work dir so we can patch without modifying the source
+            dest = self.work_dir / f"local-{model['name']}"
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(model_dir, dest)
+
+            sdk_version = model.get("sdk_version", self.sdk_version)
+            overrides = model.get("cog_yaml_overrides")
+            patch_cog_yaml(
+                dest / "cog.yaml", sdk_version=sdk_version, overrides=overrides
+            )
+            return dest
+
         repo = model["repo"]
         subpath = model.get("path", ".")
 
@@ -188,6 +329,60 @@ class Runner:
             text=True,
             env=env,
             timeout=timeout,
+        )
+
+    def _cog_build_with_env(
+        self,
+        model_dir: Path,
+        model: dict[str, Any],
+        image_tag: str,
+        extra_env: dict[str, str] | None = None,
+    ) -> None:
+        """Run ``cog build`` with a specific image tag and optional extra env vars."""
+        cmd = [self.cog_binary, "build", "-t", image_tag]
+        env = self._build_env(model)
+        if extra_env:
+            env.update(extra_env)
+        timeout = model.get("timeout", self.default_timeout)
+
+        subprocess.run(
+            cmd,
+            cwd=model_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=timeout,
+        )
+
+    @staticmethod
+    def _extract_schema_label(image_tag: str) -> str | None:
+        """Extract the OpenAPI schema JSON from a Docker image label."""
+        try:
+            proc = subprocess.run(
+                [
+                    "docker",
+                    "inspect",
+                    image_tag,
+                    "--format",
+                    '{{index .Config.Labels "' + OPENAPI_SCHEMA_LABEL + '"}}',
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            schema = proc.stdout.strip()
+            return schema if schema else None
+        except subprocess.CalledProcessError:
+            return None
+
+    @staticmethod
+    def _remove_image(image_tag: str) -> None:
+        """Remove a Docker image, ignoring errors."""
+        subprocess.run(
+            ["docker", "rmi", "-f", image_tag],
+            capture_output=True,
+            text=True,
         )
 
     def _run_predict_test(
@@ -368,6 +563,8 @@ class Runner:
     def _build_env(self, model: dict[str, Any]) -> dict[str, str]:
         """Build environment dict, expanding ${VAR} references from host env."""
         env = os.environ.copy()
+        if self.sdk_wheel:
+            env["COG_SDK_WHEEL"] = self.sdk_wheel
         for key, value in model.get("env", {}).items():
             resolved = os.path.expandvars(value)
             env[key] = resolved
@@ -404,3 +601,52 @@ class Runner:
 
         if self.work_dir.exists():
             shutil.rmtree(self.work_dir, ignore_errors=True)
+
+
+# ── Module-level helpers ──────────────────────────────────────────────
+
+
+def _json_diff(a: Any, b: Any, path: str = "") -> str:
+    """Produce a human-readable diff between two JSON-like structures.
+
+    Returns a string describing all differences found. No normalization
+    is applied — the comparison is strict structural equality.
+    """
+    lines: list[str] = []
+    _diff_recursive(a, b, path or "$", lines)
+    return "\n".join(lines) if lines else "(no differences)"
+
+
+def _diff_recursive(a: Any, b: Any, path: str, lines: list[str]) -> None:
+    if type(a) is not type(b):
+        lines.append(
+            f"  {path}: type mismatch: {type(a).__name__} vs {type(b).__name__}"
+        )
+        lines.append(f"    static:  {json.dumps(a, sort_keys=True)[:200]}")
+        lines.append(f"    runtime: {json.dumps(b, sort_keys=True)[:200]}")
+        return
+
+    if isinstance(a, dict):
+        all_keys = sorted(set(list(a.keys()) + list(b.keys())))
+        for key in all_keys:
+            child_path = f"{path}.{key}"
+            if key not in a:
+                lines.append(f"  {child_path}: missing in static schema")
+                lines.append(f"    runtime: {json.dumps(b[key], sort_keys=True)[:200]}")
+            elif key not in b:
+                lines.append(f"  {child_path}: missing in runtime schema")
+                lines.append(f"    static: {json.dumps(a[key], sort_keys=True)[:200]}")
+            else:
+                _diff_recursive(a[key], b[key], child_path, lines)
+    elif isinstance(a, list):
+        if len(a) != len(b):
+            lines.append(f"  {path}: array length mismatch: {len(a)} vs {len(b)}")
+            lines.append(f"    static:  {json.dumps(a, sort_keys=True)[:200]}")
+            lines.append(f"    runtime: {json.dumps(b, sort_keys=True)[:200]}")
+            return
+        for i, (ai, bi) in enumerate(zip(a, b, strict=True)):
+            _diff_recursive(ai, bi, f"{path}[{i}]", lines)
+    elif a != b:
+        lines.append(f"  {path}: value mismatch")
+        lines.append(f"    static:  {json.dumps(a, sort_keys=True)[:200]}")
+        lines.append(f"    runtime: {json.dumps(b, sort_keys=True)[:200]}")
