@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/integration-tests/harness"
 )
@@ -45,9 +47,7 @@ func TestLoginGenericRegistryPTY(t *testing.T) {
 
 	// Get cog binary
 	cogBinary, err := harness.ResolveCogBinary()
-	if err != nil {
-		t.Fatalf("failed to resolve cog binary: %v", err)
-	}
+	require.NoError(t, err, "failed to resolve cog binary")
 
 	// Test login to a fake generic registry
 	// Note: This will fail at the Docker credential save step, but we can verify
@@ -58,9 +58,7 @@ func TestLoginGenericRegistryPTY(t *testing.T) {
 
 		// Start with a PTY
 		ptmx, err := pty.Start(cmd)
-		if err != nil {
-			t.Fatalf("failed to start PTY: %v", err)
-		}
+		require.NoError(t, err, "failed to start PTY")
 		defer func() {
 			ptmx.Close()
 			cmd.Process.Kill()
@@ -124,32 +122,22 @@ func TestLoginGenericRegistryPTY(t *testing.T) {
 		output, found := waitForPattern("username", 5*time.Second)
 		t.Logf("Output after start: %q", output)
 
-		if !strings.Contains(output, "fake-registry.example.com") {
-			t.Errorf("expected output to mention registry host, got: %q", output)
-		}
-		if !found {
-			t.Errorf("expected username prompt, got: %q", output)
-		}
+		assert.Contains(t, output, "fake-registry.example.com", "expected output to mention registry host")
+		assert.True(t, found, "expected username prompt, got: %q", output)
 
 		// Send username
 		_, err = ptmx.Write([]byte("testuser\n"))
-		if err != nil {
-			t.Fatalf("failed to write username: %v", err)
-		}
+		require.NoError(t, err, "failed to write username")
 
 		// Wait for password prompt
 		output, found = waitForPattern("password", 3*time.Second)
 		t.Logf("Output after username: %q", output)
 
-		if !found {
-			t.Errorf("expected password prompt, got: %q", output)
-		}
+		assert.True(t, found, "expected password prompt, got: %q", output)
 
 		// Send password (will fail at Docker credential save, but we've verified the flow)
 		_, err = ptmx.Write([]byte("testpass\n"))
-		if err != nil {
-			t.Fatalf("failed to write password: %v", err)
-		}
+		require.NoError(t, err, "failed to write password")
 
 		// Read final output briefly (expect failure since we can't actually save credentials)
 		time.Sleep(2 * time.Second)
@@ -162,9 +150,7 @@ func TestLoginGenericRegistryPTY(t *testing.T) {
 		cmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
 
 		ptmx, err := pty.Start(cmd)
-		if err != nil {
-			t.Fatalf("failed to start PTY: %v", err)
-		}
+		require.NoError(t, err, "failed to start PTY")
 		defer func() {
 			ptmx.Close()
 			cmd.Process.Kill()
@@ -215,15 +201,11 @@ func TestLoginGenericRegistryPTY(t *testing.T) {
 		}
 
 		output := getOutput()
-		if !strings.Contains(strings.ToLower(output), "username") {
-			t.Fatalf("did not get username prompt: %q", output)
-		}
+		require.Contains(t, strings.ToLower(output), "username", "did not get username prompt: %q", output)
 
 		// Send empty username
 		_, err = ptmx.Write([]byte("\n"))
-		if err != nil {
-			t.Fatalf("failed to write empty username: %v", err)
-		}
+		require.NoError(t, err, "failed to write empty username")
 
 		// Wait for error about empty username
 		deadline = time.Now().Add(5 * time.Second)
@@ -239,9 +221,9 @@ func TestLoginGenericRegistryPTY(t *testing.T) {
 		t.Logf("Output: %q", output)
 
 		// Verify we got an error about empty username
-		if !strings.Contains(strings.ToLower(output), "empty") && !strings.Contains(strings.ToLower(output), "cannot") {
-			t.Errorf("expected error about empty username, got: %q", output)
-		}
+		lowerOutput := strings.ToLower(output)
+		assert.True(t, strings.Contains(lowerOutput, "empty") || strings.Contains(lowerOutput, "cannot"),
+			"expected error about empty username, got: %q", output)
 	})
 }
 
@@ -258,9 +240,7 @@ func TestLoginProviderRouting(t *testing.T) {
 	}
 
 	cogBinary, err := harness.ResolveCogBinary()
-	if err != nil {
-		t.Fatalf("failed to resolve cog binary: %v", err)
-	}
+	require.NoError(t, err, "failed to resolve cog binary")
 
 	tests := []struct {
 		name            string
@@ -306,9 +286,7 @@ func TestLoginProviderRouting(t *testing.T) {
 
 			// Start with a PTY to handle interactive prompts
 			ptmx, err := pty.Start(cmd)
-			if err != nil {
-				t.Fatalf("failed to start PTY: %v", err)
-			}
+			require.NoError(t, err, "failed to start PTY")
 			defer func() {
 				ptmx.Close()
 				cmd.Process.Kill()
@@ -344,13 +322,10 @@ func TestLoginProviderRouting(t *testing.T) {
 
 			output := buf.String()
 			if tc.expectReplicate {
-				if strings.Contains(output, "Username:") {
-					t.Errorf("expected Replicate provider, but got Generic provider with Username prompt")
-				}
+				assert.NotContains(t, output, "Username:", "expected Replicate provider, but got Generic provider with Username prompt")
 			} else {
-				if !strings.Contains(output, "Username") && !strings.Contains(strings.ToLower(output), "logging in") {
-					t.Errorf("expected Generic provider prompts, got: %q", output)
-				}
+				assert.True(t, strings.Contains(output, "Username") || strings.Contains(strings.ToLower(output), "logging in"),
+					"expected Generic provider prompts, got: %q", output)
 			}
 		})
 	}
@@ -368,9 +343,7 @@ func TestLoginEnvironmentVariable(t *testing.T) {
 	}
 
 	cogBinary, err := harness.ResolveCogBinary()
-	if err != nil {
-		t.Fatalf("failed to resolve cog binary: %v", err)
-	}
+	require.NoError(t, err, "failed to resolve cog binary")
 
 	t.Run("COG_REGISTRY_HOST sets default registry", func(t *testing.T) {
 		cmd := exec.Command(cogBinary, "login")
@@ -381,9 +354,7 @@ func TestLoginEnvironmentVariable(t *testing.T) {
 
 		// Start with a PTY
 		ptmx, err := pty.Start(cmd)
-		if err != nil {
-			t.Fatalf("failed to start PTY: %v", err)
-		}
+		require.NoError(t, err, "failed to start PTY")
 		defer func() {
 			ptmx.Close()
 			cmd.Process.Kill()
@@ -410,9 +381,7 @@ func TestLoginEnvironmentVariable(t *testing.T) {
 		t.Logf("Output: %s", output)
 
 		// Verify the custom registry is mentioned in output
-		if !strings.Contains(output, "custom-registry.example.com") {
-			t.Errorf("expected custom registry in output, got: %s", output)
-		}
+		assert.Contains(t, output, "custom-registry.example.com", "expected custom registry in output")
 
 		// Since custom-registry.example.com is not r8.im, it should use generic provider
 		if !strings.Contains(output, "Username") {
@@ -429,9 +398,7 @@ func TestLoginEnvironmentVariable(t *testing.T) {
 
 		// Start with a PTY
 		ptmx, err := pty.Start(cmd)
-		if err != nil {
-			t.Fatalf("failed to start PTY: %v", err)
-		}
+		require.NoError(t, err, "failed to start PTY")
 		defer func() {
 			ptmx.Close()
 			cmd.Process.Kill()
@@ -458,29 +425,21 @@ func TestLoginEnvironmentVariable(t *testing.T) {
 		t.Logf("Output: %s", output)
 
 		// Verify the override registry is used, not the env var one
-		if !strings.Contains(output, "override-registry.example.com") {
-			t.Errorf("expected override registry in output, got: %s", output)
-		}
-		if strings.Contains(output, "ignored-registry.example.com") {
-			t.Errorf("env var registry should have been overridden, but it appeared in output")
-		}
+		assert.Contains(t, output, "override-registry.example.com", "expected override registry in output")
+		assert.NotContains(t, output, "ignored-registry.example.com", "env var registry should have been overridden, but it appeared in output")
 	})
 }
 
 // TestLoginHelp tests that the login command shows appropriate help text.
 func TestLoginHelp(t *testing.T) {
 	cogBinary, err := harness.ResolveCogBinary()
-	if err != nil {
-		t.Fatalf("failed to resolve cog binary: %v", err)
-	}
+	require.NoError(t, err, "failed to resolve cog binary")
 
 	cmd := exec.Command(cogBinary, "login", "--help")
 	cmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
 
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("help command failed: %v", err)
-	}
+	require.NoError(t, err, "help command failed")
 
 	helpText := string(output)
 	t.Logf("Help text:\n%s", helpText)
@@ -494,26 +453,20 @@ func TestLoginHelp(t *testing.T) {
 	}
 
 	for _, expected := range expectedStrings {
-		if !strings.Contains(strings.ToLower(helpText), strings.ToLower(expected)) {
-			t.Errorf("expected help to contain %q", expected)
-		}
+		assert.True(t, strings.Contains(strings.ToLower(helpText), strings.ToLower(expected)),
+			"expected help to contain %q", expected)
 	}
 
 	// Verify help mentions both Replicate and generic registry support
-	if !strings.Contains(helpText, "Replicate") {
-		t.Errorf("expected help to mention Replicate")
-	}
-	if !strings.Contains(helpText, "other registries") || !strings.Contains(helpText, "username and password") {
-		t.Errorf("expected help to mention generic registry login with username/password")
-	}
+	assert.Contains(t, helpText, "Replicate", "expected help to mention Replicate")
+	assert.True(t, strings.Contains(helpText, "other registries") && strings.Contains(helpText, "username and password"),
+		"expected help to mention generic registry login with username/password")
 }
 
 // TestLoginSuggestFor tests that similar commands are suggested.
 func TestLoginSuggestFor(t *testing.T) {
 	cogBinary, err := harness.ResolveCogBinary()
-	if err != nil {
-		t.Fatalf("failed to resolve cog binary: %v", err)
-	}
+	require.NoError(t, err, "failed to resolve cog binary")
 
 	// Test that "cog auth" suggests "cog login"
 	cmd := exec.Command(cogBinary, "auth")

@@ -6,7 +6,7 @@ It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predic
 
 ```yaml
 build:
-  python_version: "3.11"
+  python_version: "3.13"
   python_requirements: requirements.txt
   system_packages:
     - "ffmpeg"
@@ -62,6 +62,7 @@ This follows the standard [requirements.txt](https://pip.pypa.io/en/stable/refer
 To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
 
 `cog.yaml`:
+
 ```yaml
 build:
   system_packages:
@@ -70,6 +71,7 @@ build:
 ```
 
 `requirements.txt`:
+
 ```
 git+https://github.com/huggingface/transformers
 ```
@@ -77,6 +79,7 @@ git+https://github.com/huggingface/transformers
 You can also pin Python package installations to a specific git commit:
 
 `cog.yaml`:
+
 ```yaml
 build:
   system_packages:
@@ -85,6 +88,7 @@ build:
 ```
 
 `requirements.txt`:
+
 ```
 git+https://github.com/huggingface/transformers@2d1602a
 ```
@@ -108,11 +112,11 @@ Your `cog.yaml` file can set either `python_packages` or `python_requirements`, 
 
 ### `python_version`
 
-The minor (`3.11`) or patch (`3.11.1`) version of Python to use. For example:
+The minor (`3.13`) or patch (`3.13.1`) version of Python to use. For example:
 
 ```yaml
 build:
-  python_version: "3.11.1"
+  python_version: "3.13.1"
 ```
 
 Cog supports Python 3.10, 3.11, 3.12, and 3.13. If you don't define a version, Cog will use the latest version of Python 3.13 or a version of Python that is compatible with the versions of PyTorch or TensorFlow you specify.
@@ -154,7 +158,7 @@ Pin the version of the cog Python SDK installed in the container. Accepts a [PEP
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   sdk_version: "0.18.0"
 ```
 
@@ -190,7 +194,7 @@ This stanza describes the concurrency capabilities of the model. It has one opti
 
 ### `max`
 
-The maximum number of concurrent predictions the model can process.  If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
+The maximum number of concurrent predictions the model can process. If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
 
 For example:
 
@@ -213,7 +217,7 @@ r8.im is Replicate's registry, but this can be any Docker registry.
 
 If you don't set this, then a name will be generated from the directory name.
 
-If you set this, then you can run `cog push` without specifying the model name. 
+If you set this, then you can run `cog push` without specifying the model name.
 
 If you specify an image name argument when pushing (like `cog push your-username/custom-model-name`), the argument will be used and the value of `image` in cog.yaml will be ignored.
 

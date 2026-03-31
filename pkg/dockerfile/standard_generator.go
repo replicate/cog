@@ -517,9 +517,16 @@ func (g *StandardGenerator) resolveCogWheelConfigs() error {
 			return err
 		}
 	} else if g.Config.Build != nil && g.Config.Build.SDKVersion != "" {
-		g.resolvedCogConfig = &wheels.WheelConfig{
-			Source:  wheels.WheelSourcePyPI,
-			Version: g.Config.Build.SDKVersion,
+		if g.Config.Build.SDKVersion == wheels.PreReleaseSentinel {
+			g.resolvedCogConfig = &wheels.WheelConfig{
+				Source:     wheels.WheelSourcePyPI,
+				PreRelease: true,
+			}
+		} else {
+			g.resolvedCogConfig = &wheels.WheelConfig{
+				Source:  wheels.WheelSourcePyPI,
+				Version: g.Config.Build.SDKVersion,
+			}
 		}
 	} else {
 		g.resolvedCogConfig, err = wheels.GetCogWheelConfig()
@@ -552,7 +559,8 @@ const cogletMinSDKVersion = "0.17.0"
 
 // isLegacySDKVersion returns true if the resolved cog SDK version is explicitly
 // pinned below the minimum version that supports coglet. Returns false for
-// unpinned, non-PyPI, or unparseable versions (assume modern).
+// unpinned versions (including the "prerelease" sentinel), non-PyPI sources,
+// or unparseable versions (assume modern).
 func (g *StandardGenerator) isLegacySDKVersion() bool {
 	cfg := g.resolvedCogConfig
 	if cfg == nil || cfg.Source != wheels.WheelSourcePyPI || cfg.Version == "" {
@@ -581,7 +589,12 @@ func (g *StandardGenerator) installCog() (string, error) {
 	wheelConfig := g.resolvedCogConfig
 
 	// Determine if we need --pre flag (pre-release SDK implies pre-release coglet too)
-	sdkIsPreRelease := wheelConfig.Source == wheels.WheelSourcePyPI && wheels.IsPreRelease(wheelConfig.Version)
+	sdkIsPreRelease := wheelConfig.Source == wheels.WheelSourcePyPI &&
+		(wheelConfig.PreRelease || wheels.IsPreRelease(wheelConfig.Version))
+
+	if wheelConfig.PreRelease {
+		console.Warn("sdk_version \"prerelease\" installs the latest pre-release SDK. Pin to a specific version for reproducible production builds.")
+	}
 
 	// Only install coglet explicitly when there's a specific source:
 	//   - COGLET_WHEEL env var (explicit override)
@@ -820,6 +833,9 @@ func (g *StandardGenerator) filterManagedPackages(reqContents string) string {
 		case wheels.WheelSourcePyPI:
 			if cfg.Version != "" {
 				return fmt.Sprintf("%s==%s from PyPI", pkg, cfg.Version)
+			}
+			if cfg.PreRelease {
+				return "latest pre-release " + pkg + " from PyPI"
 			}
 			return "latest " + pkg + " from PyPI"
 		case wheels.WheelSourceURL:

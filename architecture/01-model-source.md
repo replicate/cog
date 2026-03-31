@@ -43,7 +43,6 @@ concurrency:
 | `build.system_packages` | apt packages to install |
 | `build.run` | Arbitrary shell commands during build |
 | `predict` | Path to predictor class (`module:ClassName`) |
-| `train` | Path to training class (optional) |
 | `concurrency.max` | Max concurrent predictions (requires async) |
 
 The [Build System](./05-build-system.md) uses this configuration to produce an image containing all necessary dependencies, libraries, and the correct Python/CUDA versions.
@@ -73,6 +72,7 @@ class Predictor(BasePredictor):
 - Used to load model weights, initialize GPU contexts, warm up caches
 - Runs before the HTTP server accepts requests
 - Optional: if omitted, Cog proceeds directly to serving
+- See [Container Runtime: Predictor Lifecycle](./04-container-runtime.md#predictor-lifecycle) for details on instance lifetime, concurrency, crash recovery, and shutdown
 
 ### predict()
 
@@ -80,11 +80,7 @@ class Predictor(BasePredictor):
 - Signature defines the model's input schema (via type hints)
 - Return type defines the output schema
 - Can be sync (`def`) or async (`async def`)
-
-### train() (optional)
-
-- Same contract as `predict()` but for fine-tuning workflows
-- Configured separately in `cog.yaml` with `train:` key
+- See [Container Runtime: Life of a Prediction](./04-container-runtime.md#life-of-a-prediction) for the full request-to-response path through the runtime
 
 ## Input Types
 
@@ -290,20 +286,6 @@ def setup(self):
 
 Weights can be fetched during `setup()` rather than bundled. Common approaches:
 
-**Using the `weights` parameter** (Cog's built-in mechanism):
-
-```python
-class Predictor(BasePredictor):
-    def setup(self, weights: Path):
-        self.model = load(weights)
-```
-
-The `weights` value comes from `COG_WEIGHTS` env var or falls back to `./weights`:
-
-```bash
-COG_WEIGHTS=https://example.com/model.tar cog predict ...
-```
-
 **Using pget** (parallel download tool, included in Cog images):
 
 ```python
@@ -349,7 +331,7 @@ See [Container Runtime](./04-container-runtime.md) for concurrency details.
 | File | Purpose |
 |------|---------|
 | `python/cog/__init__.py` | Public API exports |
-| `python/cog/base_predictor.py` | BasePredictor class |
-| `python/cog/types.py` | Input, Path, Secret, ConcatenateIterator |
-| `python/cog/predictor.py` | Type introspection, weights handling |
+| `python/cog/predictor.py` | BasePredictor class, type introspection, weights handling |
+| `python/cog/types.py` | Path, Secret, ConcatenateIterator |
+| `python/cog/input.py` | `Input()` function and field metadata |
 | `pkg/config/config.go` | cog.yaml parsing |

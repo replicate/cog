@@ -1,0 +1,43 @@
+# Test that a runtime exception in predict() returns a well-formed error response.
+#
+# When predict() raises an exception, coglet returns HTTP 200 with
+# status "failed", the error message, and predict_time in metrics.
+# This test verifies the response shape — not just that it fails.
+
+cog serve
+
+# ValueError in predict()
+curl POST /predictions '{"input":{"mode":"value_error"}}'
+stdout '"status":"failed"'
+stdout '"error":".*this is a value error"'
+stdout '"predict_time":'
+
+# RuntimeError in predict()
+curl POST /predictions '{"input":{"mode":"runtime_error"}}'
+stdout '"status":"failed"'
+stdout '"error":".*runtime problem"'
+stdout '"predict_time":'
+
+# Generic Exception in predict()
+curl POST /predictions '{"input":{"mode":"generic"}}'
+stdout '"status":"failed"'
+stdout '"error":".*something went wrong"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, mode: str) -> str:
+        if mode == "value_error":
+            raise ValueError("this is a value error")
+        elif mode == "runtime_error":
+            raise RuntimeError("runtime problem")
+        elif mode == "generic":
+            raise Exception("something went wrong")
+        return "ok"

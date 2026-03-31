@@ -79,6 +79,10 @@ func (s WheelSource) String() string {
 	}
 }
 
+// PreReleaseSentinel is the special sdk_version value that means
+// "install the latest pre-release from PyPI" without pinning a version.
+const PreReleaseSentinel = "prerelease"
+
 // WheelConfig represents the configuration for which wheel to install
 type WheelConfig struct {
 	// Source indicates where the wheel comes from
@@ -89,6 +93,9 @@ type WheelConfig struct {
 	Path string
 	// Version is set when Source is WheelSourcePyPI (optional, empty = latest)
 	Version string
+	// PreRelease indicates that pip should use --pre to resolve the latest
+	// pre-release, without pinning a specific version.
+	PreRelease bool
 }
 
 // CogSDKWheelEnvVar is the environment variable name for cog SDK wheel selection
