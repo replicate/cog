@@ -1,0 +1,25 @@
+# Test bool as a direct predict input and output type
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Bool input and output works via JSON (true -> false)
+cog predict $TEST_IMAGE --json '{"flag": true}'
+stdout '"output": false'
+
+# Bool input and output works via JSON (false -> true)
+cog predict $TEST_IMAGE --json '{"flag": false}'
+stdout '"output": true'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, flag: bool) -> bool:
+        return not flag

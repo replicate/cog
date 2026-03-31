@@ -1,0 +1,36 @@
+[short] skip 'slow test - skip in short mode'
+
+# Test that COG_SETUP_TIMEOUT env var is respected. When set to a value
+# shorter than the actual setup duration, setup should fail with SETUP_FAILED.
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server — setup takes ~15s but timeout is 10s, so it should fail
+! cog serve
+
+# Verify the server reports SETUP_FAILED
+curl GET /health-check
+stdout 'SETUP_FAILED'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+environment:
+  - COG_SETUP_TIMEOUT=10
+
+-- predict.py --
+import time
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def setup(self) -> None:
+        print("Starting slow setup...")
+        time.sleep(15)
+        print("Slow setup complete.")
+
+    def predict(self, s: str) -> str:
+        return "hello " + s

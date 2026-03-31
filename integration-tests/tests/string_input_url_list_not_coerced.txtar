@@ -1,0 +1,30 @@
+# Regression test for https://github.com/replicate/cog/issues/2868
+#
+# When a predictor declares a `list[str]`-typed input and the caller passes
+# URL strings, coglet should NOT coerce them into cog.Path or cog.File
+# objects. The predictor should receive a plain list of strings.
+
+cog build -t $TEST_IMAGE
+
+cog serve
+
+# POST a list of URL strings — they should remain plain strings.
+curl POST /predictions '{"input":{"urls":["https://api.example.com/v1","https://api.example.com/v2"]}}'
+stdout '"status":"succeeded"'
+stdout 'types=str,str'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import List
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, urls: List[str]) -> str:
+        types = ",".join(type(u).__name__ for u in urls)
+        return f"types={types}"

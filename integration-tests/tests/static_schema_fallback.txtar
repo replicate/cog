@@ -1,0 +1,44 @@
+# Test that when static schema generation is opted in but encounters an
+# unresolvable output type, the build falls back to legacy runtime schema
+# generation instead of failing.
+#
+# The predictor returns a BaseModel subclass imported from a local package
+# (mypackage/__init__.py). The static parser's moduleToFilePath() converts
+# "mypackage" to "mypackage.py" instead of "mypackage/__init__.py", so the
+# file isn't found and the name stays unresolved (ErrUnresolvableType).
+# The legacy Python inspector imports modules normally via Python's import
+# system, which handles __init__.py packages correctly, so schema generation
+# succeeds at runtime.
+
+# Opt in to static schema generation
+env COG_STATIC_SCHEMA=1
+
+# Build should succeed — static fails, legacy takes over
+cog build -t $TEST_IMAGE
+stderr 'Static schema generation failed'
+stderr 'Falling back to legacy runtime schema generation'
+
+# Predict should still work end-to-end via the legacy schema
+cog predict $TEST_IMAGE -i prompt=hello
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- mypackage/__init__.py --
+from cog import BaseModel
+
+
+class Output(BaseModel):
+    text: str
+
+-- predict.py --
+from cog import BasePredictor
+from mypackage import Output
+
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> Output:
+        return Output(text=prompt + " world")

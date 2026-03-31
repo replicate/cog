@@ -530,3 +530,15 @@ func TestPyPIPackageURLPreRelease(t *testing.T) {
 	cfg := &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0-alpha1"}
 	require.Equal(t, "cog==0.17.0a1", cfg.PyPIPackageURL("cog"))
 }
+
+func TestPreReleaseSentinelPyPIPackageURL(t *testing.T) {
+	// PreRelease flag with no version returns bare package name (no ==pin)
+	cfg := &WheelConfig{Source: WheelSourcePyPI, PreRelease: true}
+	require.Equal(t, "cog", cfg.PyPIPackageURL("cog"))
+}
+
+func TestValidateSDKVersionPreReleaseSentinel(t *testing.T) {
+	// PreRelease sentinel (empty version) passes validation
+	cfg := &WheelConfig{Source: WheelSourcePyPI, PreRelease: true}
+	require.NoError(t, ValidateSDKVersion(cfg, "cog"))
+}
