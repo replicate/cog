@@ -804,3 +804,15 @@ predict: predict.py:Predictor
 	// Parsing itself is fine; enforcement happens at Dockerfile generation time.
 	require.Equal(t, "0.15.0", conf.Build.SDKVersion)
 }
+
+func TestSDKVersionConfigPrereleaseSentinel(t *testing.T) {
+	// "prerelease" is accepted as a special sdk_version value
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  sdk_version: "prerelease"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.Equal(t, "prerelease", conf.Build.SDKVersion)
+}
