@@ -234,7 +234,7 @@ cog run <command> [arg...] [flags]
       --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
   -h, --help                         help for run
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
-  -p, --publish stringArray          Publish a container's port to the host, e.g. -p 8000
+  -p, --publish stringArray          Publish a container's port to the host, e.g. -p 8000 or -p 0.0.0.0:8000
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
@@ -258,6 +258,9 @@ cog serve [flags]
   # Start on a custom port
   cog serve -p 5000
 
+  # Listen on all interfaces (e.g. to expose to the network)
+  cog serve --host 0.0.0.0
+
   # Test the server
   curl http://localhost:8393/predictions \
     -X POST \
@@ -271,6 +274,7 @@ cog serve [flags]
   -f, --file string                  The name of the config file. (default "cog.yaml")
       --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
   -h, --help                         help for serve
+      --host string                  Host to bind on (use 0.0.0.0 for all interfaces) (default "127.0.0.1")
   -p, --port int                     Port on which to listen (default 8393)
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
       --upload-url string            Upload URL for file outputs (e.g. https://example.com/upload/)

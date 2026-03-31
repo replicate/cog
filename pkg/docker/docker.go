@@ -434,10 +434,14 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	if len(options.Ports) > 0 {
 		hostCfg.PortBindings = make(nat.PortMap)
 		for _, port := range options.Ports {
+			hostIP := port.HostIP
+			if hostIP == "" {
+				hostIP = "127.0.0.1"
+			}
 			containerPort := nat.Port(fmt.Sprintf("%d/tcp", port.ContainerPort))
 			hostCfg.PortBindings[containerPort] = []nat.PortBinding{
 				{
-					HostIP:   "", // use empty string to bind to all interfaces
+					HostIP:   hostIP,
 					HostPort: strconv.Itoa(port.HostPort),
 				},
 			}
