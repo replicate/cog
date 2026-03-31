@@ -20,6 +20,12 @@ stdout 'type=NoneType'
 
 cog serve
 
+# POST with data URLs should coerce to list[File].
+curl POST /predictions '{"input":{"files":["data:text/plain;base64,b25l","data:text/plain;base64,dHdv"]}}'
+stdout '"status":"succeeded"'
+stdout 'count=2'
+stdout 'content=one,two'
+
 # POST with no files input — should get None.
 curl POST /predictions '{"input":{}}'
 stdout '"status":"succeeded"'
