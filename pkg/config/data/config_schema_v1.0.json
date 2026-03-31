@@ -30,7 +30,7 @@
             "string",
             "number"
           ],
-          "description": "The minor (`3.8`) or patch (`3.8.1`) version of Python to use."
+          "description": "The minor (`3.13`) or patch (`3.13.1`) version of Python to use."
         },
         "python_packages": {
           "$id": "#/properties/build/properties/python_packages",
@@ -94,7 +94,7 @@
         "sdk_version": {
           "$id": "#/properties/build/properties/sdk_version",
           "type": "string",
-          "description": "Pin the cog Python SDK version installed in the container (e.g. \"0.18.0\" or \"0.18.0a1\"). Defaults to latest. Overridden by the COG_SDK_WHEEL environment variable."
+          "description": "Pin the cog Python SDK version installed in the container (e.g. \"0.18.0\" or \"0.18.0a1\"). Use \"prerelease\" to always install the latest pre-release. Defaults to latest stable. Overridden by the COG_SDK_WHEEL environment variable."
         },
         "environment": {
           "$id": "#/properties/build/properties/environment",
@@ -200,19 +200,6 @@
           "type": "integer",
           "description": "The default target for number of concurrent predictions. This setting can be used by an autoscaler to determine when to scale a deployment of a model up or down."
         }
-      }
-    },
-    "tests": {
-      "$id": "#/properties/tests",
-      "type": [
-        "array",
-        "null"
-      ],
-      "description": "A list of test cog commands to run.",
-      "additionalItems": false,
-      "items": {
-        "type": "object",
-        "additionalItems": true
       }
     },
     "environment": {

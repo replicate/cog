@@ -7,16 +7,17 @@ Cog plays nicely with Jupyter notebooks.
 First, add `jupyterlab` to your `requirements.txt` file and reference it in [`cog.yaml`](yaml.md):
 
 `requirements.txt`:
+
 ```
-jupyterlab==3.3.4
+jupyterlab
 ```
 
 `cog.yaml`:
+
 ```yaml
 build:
   python_requirements: requirements.txt
 ```
-
 
 ## Run a notebook
 

@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/rogpeppe/go-internal/testscript"
 
 	"github.com/replicate/cog/pkg/registry"
@@ -35,6 +36,7 @@ var propagatedEnvVars = []string{
 	"RUST_LOG",          // Rust logging control
 	"COG_CA_CERT",       // custom CA certificates (e.g. Cloudflare WARP)
 	"BUILDKIT_PROGRESS", // Docker build output format
+	"COG_REGISTRY_HOST", // registry host for cog base image resolution
 }
 
 // Harness provides utilities for running cog integration tests.
@@ -69,10 +71,11 @@ type mockUploadServer struct {
 
 // webhookResult is the summary written to stdout by webhook-server-wait.
 type webhookResult struct {
-	Status     string          `json:"status"`
-	OutputSize int             `json:"output_size"`
-	HasError   bool            `json:"has_error"`
-	Metrics    json.RawMessage `json:"metrics,omitempty"`
+	Status       string          `json:"status"`
+	OutputSize   int             `json:"output_size"`
+	HasError     bool            `json:"has_error"`
+	ErrorMessage string          `json:"error_message,omitempty"`
+	Metrics      json.RawMessage `json:"metrics,omitempty"`
 }
 
 // webhookServer accepts prediction webhook callbacks from coglet.
@@ -247,6 +250,7 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 		// Registry and OCI bundle testing commands
 		NewCommand("registry-start", h.cmdRegistryStart),
 		NewCommand("registry-inspect", h.cmdRegistryInspect),
+		NewCommand("registry-seed", h.cmdRegistrySeed),
 		NewCommand("docker-push", h.cmdDockerPush),
 		NewCommand("mock-weights", h.cmdMockWeights),
 
@@ -320,6 +324,26 @@ func (h *Harness) Setup(env *testscript.Env) error {
 		}
 	}
 
+	// In CI, COG_REGISTRY_HOST is set to ghcr.io/replicate/cog so tests
+	// resolve cog-base images from GHCR (mirrored from r8.im) instead of
+	// hitting r8.im directly. The env var is propagated via propagatedEnvVars.
+	// Tests that need a specific registry (e.g. oci_bundle_push.txtar)
+	// override this by setting COG_REGISTRY_HOST in the txtar file.
+
+	// Auto-detect wheels from dist/ if not explicitly set via env vars.
+	// CI sets these env vars; locally we need to find them ourselves.
+	distDir := filepath.Join(h.repoRoot, "dist")
+	if os.Getenv("COGLET_WHEEL") == "" {
+		if matches, _ := filepath.Glob(filepath.Join(distDir, "coglet-*.whl")); len(matches) > 0 {
+			env.Setenv("COGLET_WHEEL", distDir)
+		}
+	}
+	if os.Getenv("COG_SDK_WHEEL") == "" {
+		if matches, _ := filepath.Glob(filepath.Join(distDir, "cog-*.whl")); len(matches) > 0 {
+			env.Setenv("COG_SDK_WHEEL", distDir)
+		}
+	}
+
 	// Generate unique image name for this test run
 	imageName := generateUniqueImageName()
 	env.Setenv("TEST_IMAGE", imageName)
@@ -376,10 +400,6 @@ func removeDockerImage(imageName string) {
 // Usage: cog serve [flags]
 // Exports $SERVER_URL environment variable with the server address.
 func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string) {
-	if neg {
-		ts.Fatalf("serve command does not support negation")
-	}
-
 	workDir := ts.Getenv("WORK")
 
 	// Check if server is already running
@@ -443,9 +463,18 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	ts.Setenv("SERVER_URL", serverURL)
 
 	if !waitForServer(serverURL, 60*time.Second) {
+		if neg {
+			// Test expected the server to fail setup — keep it running
+			// so the test can inspect the health-check status.
+			return
+		}
 		// Try to get server output for debugging
 		_ = cmd.Process.Kill()
 		ts.Fatalf("server did not become healthy within timeout")
+	}
+
+	if neg {
+		ts.Fatalf("server became healthy, but expected setup failure")
 	}
 }
 
@@ -460,7 +489,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 //	curl -H Prefer:respond-async POST /predictions '{"input":{}}'
 func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) < 2 {
-		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body]")
+		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body | @file]")
 	}
 
 	// Parse -H flags for extra headers
@@ -479,7 +508,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	}
 
 	if len(args) < 2 {
-		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body]")
+		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body | @file]")
 	}
 
 	serverURL := ts.Getenv("SERVER_URL")
@@ -492,6 +521,14 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	var body string
 	if len(args) > 2 {
 		body = os.Expand(args[2], ts.Getenv)
+		if strings.HasPrefix(body, "@") {
+			filename := body[1:]
+			data, err := os.ReadFile(ts.MkAbs(filename))
+			if err != nil {
+				ts.Fatalf("curl: failed to read body file %q: %v", filename, err)
+			}
+			body = string(data)
+		}
 	}
 
 	// Retry settings
@@ -545,7 +582,8 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 
 		if neg {
 			if !statusOK {
-				// Expected to fail - success!
+				// Expected to fail — write body to stderr so tests can assert
+				_, _ = ts.Stderr().Write([]byte(respBody))
 				return
 			}
 		} else {
@@ -884,6 +922,61 @@ func (h *Harness) stopRegistryByWorkDir(workDir string) {
 	if info.cleanup != nil {
 		info.cleanup()
 	}
+}
+
+// cmdRegistrySeed copies an image into the test registry under a new repository:tag.
+// The source can be a local reference (relative to $TEST_REGISTRY) or an absolute
+// reference to an external registry (e.g., docker.io/library/python:3.12-slim).
+// The destination is always relative to $TEST_REGISTRY.
+//
+// Usage: registry-seed <source> <dest-repo:tag>
+// Examples:
+//
+//	registry-seed alpine:latest cog-base:cuda11.8-python3.10-torch2.0.1
+//	registry-seed docker.io/library/python:3.12-slim cog-base:python3.12
+func (h *Harness) cmdRegistrySeed(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("registry-seed: does not support negation")
+	}
+	if len(args) < 2 {
+		ts.Fatalf("registry-seed: usage: registry-seed <source> <dest-repo:tag>")
+	}
+
+	src := os.Expand(args[0], ts.Getenv)
+	dst := os.Expand(args[1], ts.Getenv)
+
+	testRegistry := ts.Getenv("TEST_REGISTRY")
+	if testRegistry == "" {
+		ts.Fatalf("registry-seed: TEST_REGISTRY not set (call registry-start first)")
+	}
+
+	// If the source looks like an absolute reference (contains a registry host
+	// with a dot, e.g. "docker.io/library/python:3.12-slim"), use it as-is.
+	// Otherwise treat it as relative to the test registry.
+	srcRef := src
+	if !isAbsoluteImageRef(src) {
+		srcRef = testRegistry + "/" + src
+	}
+	dstRef := testRegistry + "/" + dst
+
+	if err := crane.Copy(srcRef, dstRef, crane.Insecure); err != nil {
+		ts.Fatalf("registry-seed: failed to copy %s to %s: %v", srcRef, dstRef, err)
+	}
+
+	ts.Logf("registry-seed: copied %s to %s", srcRef, dstRef)
+}
+
+// isAbsoluteImageRef returns true if ref looks like it contains an explicit
+// registry host (e.g. "docker.io/library/python:3.12-slim" or
+// "ghcr.io/foo/bar:latest"). It checks whether the part before the first
+// slash contains a dot or a colon (port), which distinguishes a registry
+// host from a simple repository name like "alpine:latest".
+func isAbsoluteImageRef(ref string) bool {
+	host, _, ok := strings.Cut(ref, "/")
+	if !ok {
+		return false
+	}
+	return strings.Contains(host, ".") || strings.Contains(host, ":")
 }
 
 // cmdRegistryInspect inspects a registry manifest and outputs JSON.
@@ -1305,9 +1398,11 @@ func (h *Harness) cmdWebhookServerStart(ts *testscript.TestScript, neg bool, arg
 
 		// Stream-parse the JSON to extract status, measure output size, and
 		// capture metrics without holding the entire output string in memory.
+		// Output is json.RawMessage because it can be a string (single output)
+		// or an array (iterator/streaming output).
 		var payload struct {
 			Status  string          `json:"status"`
-			Output  string          `json:"output"`
+			Output  json.RawMessage `json:"output"`
 			Error   string          `json:"error"`
 			Metrics json.RawMessage `json:"metrics"`
 		}
@@ -1332,11 +1427,20 @@ func (h *Harness) cmdWebhookServerStart(ts *testscript.TestScript, neg bool, arg
 		if ws.result != nil {
 			return
 		}
+		// Compute output size: for strings, use the unquoted length;
+		// for arrays or other types, use the raw JSON byte length.
+		outputSize := len(payload.Output)
+		var outputStr string
+		if json.Unmarshal(payload.Output, &outputStr) == nil {
+			outputSize = len(outputStr)
+		}
+
 		ws.result = &webhookResult{
-			Status:     payload.Status,
-			OutputSize: len(payload.Output),
-			HasError:   payload.Error != "",
-			Metrics:    payload.Metrics,
+			Status:       payload.Status,
+			OutputSize:   outputSize,
+			HasError:     payload.Error != "",
+			ErrorMessage: payload.Error,
+			Metrics:      payload.Metrics,
 		}
 		close(ws.done)
 	})

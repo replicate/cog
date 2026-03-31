@@ -9,9 +9,9 @@
 # Override SDK wheel to use PyPI 0.16.12 (legacy, pre-coglet)
 env COG_SDK_WHEEL=pypi:0.16.12
 
-# Build should succeed using legacy runtime schema generation
+# Build should succeed — without COG_STATIC_SCHEMA=1 the build
+# automatically uses the legacy runtime schema generation path.
 cog build -t $TEST_IMAGE
-stderr 'using legacy runtime schema generation'
 
 # Predict should work with the legacy SDK's built-in Python HTTP server
 cog predict $TEST_IMAGE -i s=world

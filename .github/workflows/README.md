@@ -93,7 +93,7 @@ Runs CodeQL security scanning for Go, Python, and Rust.
 
 - `rust.yaml` - Consolidated into `ci.yaml`. The separate workflow was redundant.
 - `pypi-package.yaml` - Replaced by `release-build.yaml` + `release-publish.yaml`.
-- `version-bump.yaml` - Removed. Just edit `crates/Cargo.toml` directly.
+- `version-bump.yaml` - Removed. Use `mise run version:bump <version>` instead.
 
 ## Caching Strategy
 
@@ -221,7 +221,7 @@ Triggered by version tags (`v*.*.*`). Builds all artifacts and creates a GitHub 
 
 | Job | Purpose |
 |-----|---------|
-| `verify-tag` | Cargo.toml version match + branch rules (main for stable/pre-release, any for dev) |
+| `verify-tag` | VERSION.txt + Cargo.toml version match + branch rules (main for stable/pre-release, any for dev) |
 | `build-sdk` | Build cog SDK wheel and sdist |
 | `build-coglet-wheels` | Build coglet wheels (3 platforms via zig cross-compile) |
 | `create-release` | Goreleaser builds CLI + creates release, then appends wheels. Dev releases are immediately published as pre-release; stable/pre-release remain as draft. |
@@ -243,7 +243,7 @@ Triggered when a release is published. Publishes to PyPI and crates.io.
 
 ### Package Versioning
 
-All packages use **lockstep versioning** from `crates/Cargo.toml`.
+All packages use **lockstep versioning** from `VERSION.txt` (propagated to `crates/Cargo.toml` by `mise run version:bump`).
 
 | Package | Registry | Version format | Example |
 |---------|----------|----------------|---------|
@@ -297,8 +297,10 @@ Same pattern for `COGLET_WHEEL` (but coglet is optional by default).
 ### Performing a Stable / Pre-release
 
 ```bash
-# 1. Update crates/Cargo.toml version (e.g. "0.17.0" or "0.17.0-alpha3")
-# 2. Merge to main
+# 1. Bump version (updates VERSION.txt, Cargo.toml, Cargo.lock, and commits)
+mise run version:bump 0.17.0    # or 0.17.0-alpha3, 0.17.0-rc1, etc.
+
+# 2. Push and merge to main
 
 # 3. Tag and push
 git tag v0.17.0
@@ -313,8 +315,10 @@ git push origin v0.17.0
 
 ```bash
 # From any branch:
-# 1. Update crates/Cargo.toml version (e.g. "0.17.0-dev1")
-# 2. Commit and push
+# 1. Bump version
+mise run version:bump 0.17.0-dev1
+
+# 2. Push
 
 # 3. Tag and push
 git tag v0.17.0-dev1

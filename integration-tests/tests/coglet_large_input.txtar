@@ -1,0 +1,44 @@
+# Test that inputs larger than the 6 MiB IPC inline threshold spill to disk
+# and are rehydrated correctly by the worker.
+# Without input spilling this would exceed the 8 MiB LengthDelimitedCodec
+# frame limit and break the bridge.
+#
+# Strategy: generate a JSON file with a 7 MiB padding string on the host,
+# then POST it via the harness curl @file syntax. The predictor echoes
+# back len(padding) to prove the full input survived the spill-rehydrate
+# round-trip.
+#
+# Uses async prediction + webhook so the output goes directly to our
+# Go webhook receiver — never through testscript's log buffer.
+
+webhook-server-start
+cog serve --upload-url http://unused/
+
+# Generate a ~7 MiB JSON request body.
+# dd produces 7340032 bytes of 'A', wrapped in a JSON prediction request.
+exec sh -c 'printf "{\"id\":\"large-input-test\",\"input\":{\"padding\":\"" > large_input.json && dd if=/dev/zero bs=1024 count=7168 2>/dev/null | tr "\0" "A" >> large_input.json && printf "\"},\"webhook\":\"$WEBHOOK_URL\",\"webhook_events_filter\":[\"completed\"]}" >> large_input.json'
+
+# POST the large payload via @file
+curl -H Prefer:respond-async POST /predictions @large_input.json
+
+# Wait for the webhook callback (up to 120s)
+webhook-server-wait
+
+# Prediction succeeded — input was spilled and rehydrated correctly
+stdout '"status":"succeeded"'
+
+# Output is the string "7340032" (len of 7 MiB padding), which is 7 bytes
+stdout '"output_size":7'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, padding: str = "") -> str:
+        return str(len(padding))
