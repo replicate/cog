@@ -18,9 +18,7 @@ type SchemaType struct {
 	// Array: for Kind=SchemaArray — the element type.
 	Items *SchemaType
 
-	// Dict: for Kind=SchemaDict — key and value types.
-	// KeyType is always string in JSON Schema, but we track it for completeness.
-	KeyType   *SchemaType
+	// Dict: for Kind=SchemaDict — the value type. Keys are always strings in JSON Schema.
 	ValueType *SchemaType
 
 	// Object: for Kind=SchemaObject — named fields with types and defaults.
@@ -53,6 +51,28 @@ const (
 	// SchemaConcatIterator is a cog ConcatenateIterator[str] — streaming text.
 	SchemaConcatIterator
 )
+
+// String returns the name of the SchemaTypeKind for diagnostic messages.
+func (k SchemaTypeKind) String() string {
+	switch k {
+	case SchemaPrimitive:
+		return "SchemaPrimitive"
+	case SchemaAny:
+		return "SchemaAny"
+	case SchemaArray:
+		return "SchemaArray"
+	case SchemaDict:
+		return "SchemaDict"
+	case SchemaObject:
+		return "SchemaObject"
+	case SchemaIterator:
+		return "SchemaIterator"
+	case SchemaConcatIterator:
+		return "SchemaConcatIterator"
+	default:
+		return fmt.Sprintf("SchemaTypeKind(%d)", int(k))
+	}
+}
 
 // SchemaField is a named field within a SchemaObject.
 type SchemaField struct {
@@ -111,18 +131,15 @@ func (s SchemaType) coreSchema() map[string]any {
 		if s.Fields == nil {
 			return map[string]any{"type": "object"}
 		}
-		properties := make(map[string]any)
+		properties := newOrderedMapAny()
 		var required []string
 		s.Fields.Entries(func(name string, field SchemaField) {
 			prop := field.Type.jsonSchema(false)
 			prop["title"] = TitleCase(name)
-			if field.Type.Nullable {
-				prop["nullable"] = true
-			}
 			if field.Required && field.Default == nil {
 				required = append(required, name)
 			}
-			properties[name] = prop
+			properties.Set(name, prop)
 		})
 		result := map[string]any{
 			"type":       "object",
@@ -155,9 +172,13 @@ func (s SchemaType) coreSchema() map[string]any {
 			"x-cog-array-type":    "iterator",
 			"x-cog-array-display": "concatenate",
 		}
+	default:
+		// All SchemaTypeKind values must be handled above. If this is reached,
+		// it indicates a missing case (e.g. a new kind was added without updating
+		// this switch). Panic to surface the bug immediately rather than silently
+		// returning a wrong schema.
+		panic(fmt.Sprintf("unhandled SchemaTypeKind: %s (%d)", s.Kind, int(s.Kind)))
 	}
-
-	return map[string]any{"type": "object"}
 }
 
 // ---------------------------------------------------------------------------
@@ -181,8 +202,7 @@ func SchemaArrayOf(elem SchemaType) SchemaType {
 
 // SchemaDictOf creates a dict type with string keys and the given value type.
 func SchemaDictOf(value SchemaType) SchemaType {
-	k := SchemaPrim(TypeString)
-	return SchemaType{Kind: SchemaDict, KeyType: &k, ValueType: &value}
+	return SchemaType{Kind: SchemaDict, ValueType: &value}
 }
 
 // SchemaIteratorOf creates an iterator type with the given element type.
@@ -213,21 +233,34 @@ func SchemaObjectOf(fields *OrderedMap[string, SchemaField]) SchemaType {
 //
 // It also resolves BaseModel subclasses and cog iterators.
 func ResolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap) (SchemaType, error) {
+	return resolveSchemaType(ann, ctx, models, nil)
+}
+
+func resolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
 	switch ann.Kind {
 	case TypeAnnotSimple:
-		return resolveSimpleSchemaType(ann, ctx, models)
+		return resolveSimpleSchemaType(ann, ctx, models, seen)
 	case TypeAnnotGeneric:
-		return resolveGenericSchemaType(ann, ctx, models)
+		return resolveGenericSchemaType(ann, ctx, models, seen)
 	case TypeAnnotUnion:
 		return resolveUnionSchemaType(ann)
 	}
 	return SchemaType{}, errUnsupportedType("unknown type annotation")
 }
 
-func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap) (SchemaType, error) {
+func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
 	// Check for BaseModel subclass
 	if fields, ok := models.Get(ann.Name); ok {
-		return resolveModelToSchemaType(fields, ctx, models)
+		// Cycle detection: if we're already resolving this model, emit opaque object.
+		if seen[ann.Name] {
+			return SchemaAnyType(), nil
+		}
+		if seen == nil {
+			seen = make(map[string]bool)
+		}
+		seen[ann.Name] = true
+		defer delete(seen, ann.Name)
+		return resolveModelToSchemaType(fields, ctx, models, seen)
 	}
 
 	// Unparameterized dict → opaque JSON object
@@ -251,13 +284,13 @@ func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mode
 	return SchemaPrim(prim), nil
 }
 
-func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap) (SchemaType, error) {
+func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
 	outer := ann.Name
 
 	// dict[K, V] — recursively resolve value type
 	if outer == "dict" || outer == "Dict" {
 		if len(ann.Args) == 2 {
-			valType, err := ResolveSchemaType(ann.Args[1], ctx, models)
+			valType, err := resolveSchemaType(ann.Args[1], ctx, models, seen)
 			if err != nil {
 				return SchemaType{}, fmt.Errorf("resolving dict value type: %w", err)
 			}
@@ -289,7 +322,7 @@ func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mod
 		if len(ann.Args) != 1 {
 			return SchemaType{}, errUnsupportedType("list expects exactly 1 type argument")
 		}
-		elemType, err := ResolveSchemaType(ann.Args[0], ctx, models)
+		elemType, err := resolveSchemaType(ann.Args[0], ctx, models, seen)
 		if err != nil {
 			return SchemaType{}, err
 		}
@@ -301,7 +334,7 @@ func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mod
 		if len(ann.Args) != 1 {
 			return SchemaType{}, errUnsupportedType("Iterator expects exactly 1 type argument")
 		}
-		elemType, err := ResolveSchemaType(ann.Args[0], ctx, models)
+		elemType, err := resolveSchemaType(ann.Args[0], ctx, models, seen)
 		if err != nil {
 			return SchemaType{}, err
 		}
@@ -337,10 +370,10 @@ func resolveUnionSchemaType(ann TypeAnnotation) (SchemaType, error) {
 // Fields are resolved via resolveFieldSchemaType which supports the full recursive
 // SchemaType system (dict[str, list[int]], nested BaseModels, etc.) plus Optional
 // wrapping (which is valid for fields but not for top-level output types).
-func resolveModelToSchemaType(modelFields []ModelField, ctx *ImportContext, models ModelClassMap) (SchemaType, error) {
+func resolveModelToSchemaType(modelFields []ModelField, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
 	fields := NewOrderedMap[string, SchemaField]()
 	for _, f := range modelFields {
-		st, required, err := resolveFieldSchemaType(f.Type, ctx, models)
+		st, required, err := resolveFieldSchemaType(f.Type, ctx, models, seen)
 		if err != nil {
 			return SchemaType{}, fmt.Errorf("field %q: %w", f.Name, err)
 		}
@@ -359,9 +392,9 @@ func resolveModelToSchemaType(modelFields []ModelField, ctx *ImportContext, mode
 // resolveFieldSchemaType resolves a type annotation for a model field.
 // Unlike ResolveSchemaType (which rejects Optional as a top-level output),
 // this allows Optional[X] and Union[X, None] for fields, setting Nullable.
-func resolveFieldSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap) (SchemaType, bool, error) {
+func resolveFieldSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, bool, error) {
 	if inner, ok := UnwrapOptional(ann); ok {
-		st, err := ResolveSchemaType(inner, ctx, models)
+		st, err := resolveSchemaType(inner, ctx, models, seen)
 		if err != nil {
 			return SchemaType{}, false, err
 		}
@@ -369,7 +402,7 @@ func resolveFieldSchemaType(ann TypeAnnotation, ctx *ImportContext, models Model
 		return st, false, nil
 	}
 
-	st, err := ResolveSchemaType(ann, ctx, models)
+	st, err := resolveSchemaType(ann, ctx, models, seen)
 	if err != nil {
 		return SchemaType{}, false, err
 	}

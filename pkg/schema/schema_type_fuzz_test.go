@@ -81,7 +81,11 @@ func FuzzJSONSchema(f *testing.F) {
 // Annotation encoder/decoder — deterministic mapping from bytes to trees.
 // ---------------------------------------------------------------------------
 
-const maxFuzzDepth = 8
+// maxFuzzDepth bounds tree depth to prevent exponentially large trees.
+// With up to maxFuzzFields fields per object, worst-case tree size is
+// maxFuzzFields^maxFuzzDepth nodes. Keep the product small enough that
+// JSONSchema() serialization finishes quickly even on slow CI runners.
+const maxFuzzDepth = 5
 
 // encodeAnnotation serializes a TypeAnnotation to bytes.
 func encodeAnnotation(ann TypeAnnotation) []byte {
@@ -171,7 +175,7 @@ func decodeSchemaType(data []byte, offset int, depth int) (SchemaType, int) {
 	case SchemaObject:
 		numFields := 0
 		if offset < len(data) {
-			numFields = int(data[offset]) % 5
+			numFields = int(data[offset]) % 3 // cap at 2 fields to bound tree size
 			offset++
 		}
 		fields := NewOrderedMap[string, SchemaField]()
