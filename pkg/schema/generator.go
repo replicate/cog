@@ -10,7 +10,10 @@ import (
 // Parser is a function that parses source code and extracts predictor info.
 // This is defined as a type to avoid an import cycle between schema and
 // schema/python. The concrete implementation is python.ParsePredictor.
-type Parser func(source []byte, predictRef string, mode Mode) (*PredictorInfo, error)
+//
+// sourceDir is the project root directory, used for resolving cross-file
+// imports (e.g. "from .types import Output"). Pass "" if unknown.
+type Parser func(source []byte, predictRef string, mode Mode, sourceDir string) (*PredictorInfo, error)
 
 // Generate produces an OpenAPI 3.0.2 JSON schema from a predict/train reference.
 //
@@ -47,16 +50,17 @@ func Generate(predictRef string, sourceDir string, mode Mode, parse Parser) ([]b
 		return nil, fmt.Errorf("failed to read predictor source %s: %w", fullPath, err)
 	}
 
-	return GenerateFromSource(source, className, mode, parse)
+	return GenerateFromSource(source, className, mode, parse, sourceDir)
 }
 
 // GenerateFromSource produces an OpenAPI 3.0.2 JSON schema from Python source bytes.
 //
 // predictRef is the class or function name (e.g. "Predictor" or "predict").
 // parse is the parser implementation (use python.ParsePredictor).
+// sourceDir is the project root for resolving cross-file imports. Pass "" if unknown.
 // This is the lower-level API — it does not read files or check COG_OPENAPI_SCHEMA.
-func GenerateFromSource(source []byte, predictRef string, mode Mode, parse Parser) ([]byte, error) {
-	info, err := parse(source, predictRef, mode)
+func GenerateFromSource(source []byte, predictRef string, mode Mode, parse Parser, sourceDir string) ([]byte, error) {
+	info, err := parse(source, predictRef, mode, sourceDir)
 	if err != nil {
 		return nil, err
 	}

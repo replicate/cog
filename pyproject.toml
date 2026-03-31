@@ -137,3 +137,9 @@ src = ["python"]
   "ANN",  # Type annotations not required in tests
   "B904", # raise from
 ]
+"tools/test-harness/*" = [
+  "S310", # URL open — URLs are hardcoded to https://
+  "S603", # subprocess call — harness invokes cog/docker/git by design
+  "S607", # partial executable path — cog/docker/git resolved via PATH
+  "ANN",  # Type annotations not required in tooling
+]

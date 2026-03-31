@@ -19,9 +19,10 @@ https://github.com/replicate/cog
 **Options**
 
 ```
-      --debug     Show debugging output
-  -h, --help      help for cog
-      --version   Show version of Cog
+      --debug      Show debugging output
+  -h, --help       help for cog
+      --no-color   Disable colored output
+      --version    Show version of Cog
 ```
 ## `cog build`
 

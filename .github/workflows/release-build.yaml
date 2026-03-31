@@ -51,23 +51,39 @@ jobs:
           VERSION="${TAG#v}"
           TAG_COMMIT="${{ github.sha }}"
 
-          # Get version from Cargo.toml
+          # Read canonical version from VERSION.txt
+          if [ ! -f VERSION.txt ]; then
+            echo "::error::VERSION.txt not found"
+            exit 1
+          fi
+          FILE_VERSION=$(tr -d '[:space:]' < VERSION.txt)
+
+          # Also check Cargo.toml for consistency
           CARGO_VERSION=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
 
           echo "Tag: $TAG"
           echo "Tag version: $VERSION"
+          echo "VERSION.txt: $FILE_VERSION"
           echo "Cargo.toml version: $CARGO_VERSION"
           echo "Commit: $TAG_COMMIT"
           echo ""
 
-          # Check Cargo.toml matches tag
-          if [[ "$CARGO_VERSION" != "$VERSION" ]]; then
-            echo "::error::Version mismatch! crates/Cargo.toml has version $CARGO_VERSION but tag is $TAG"
+          # Check VERSION.txt matches tag
+          if [[ "$FILE_VERSION" != "$VERSION" ]]; then
+            echo "::error::Version mismatch! VERSION.txt has $FILE_VERSION but tag is $TAG"
             echo "::error::"
-            echo "::error::To fix: Update crates/Cargo.toml to match, merge to main, then delete this tag and re-tag."
+            echo "::error::To fix: Run 'mise run version:bump $VERSION', merge to main, then re-tag."
             exit 1
           fi
-          echo "✓ Cargo.toml version matches tag"
+          echo "✓ VERSION.txt matches tag"
+
+          # Check Cargo.toml matches VERSION.txt (belt and suspenders)
+          if [[ "$CARGO_VERSION" != "$FILE_VERSION" ]]; then
+            echo "::error::crates/Cargo.toml ($CARGO_VERSION) does not match VERSION.txt ($FILE_VERSION)"
+            echo "::error::Run 'mise run version:bump $FILE_VERSION' to sync."
+            exit 1
+          fi
+          echo "✓ Cargo.toml matches VERSION.txt"
 
           # Determine release type
           IS_DEV="false"
@@ -230,7 +246,7 @@ jobs:
 
       # Goreleaser builds CLI binaries and creates draft release
       - name: Build CLI and create draft release
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
           args: release --clean

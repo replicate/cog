@@ -1192,3 +1192,29 @@ predict: predict.py:Predictor
 	require.Contains(t, dockerfile, "uv pip install --no-cache cog==0.17.0")
 	require.NotContains(t, dockerfile, "cog==0.18.0")
 }
+
+func TestInstallCogWithPrereleaseSentinel(t *testing.T) {
+	// sdk_version: "prerelease" installs latest pre-release with --pre, no version pin
+	tmpDir := t.TempDir()
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  sdk_version: "prerelease"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, "", command, client, true)
+	require.NoError(t, err)
+	gen.cogletWheelConfig = &wheels.WheelConfig{Source: wheels.WheelSourcePyPI}
+	gen.SetUseCogBaseImage(false)
+
+	dockerfile, err := gen.GenerateInitialSteps(t.Context())
+	require.NoError(t, err)
+	// Should use --pre with no version pin
+	require.Contains(t, dockerfile, "uv pip install --pre --no-cache cog")
+	// Must NOT contain a version pin
+	require.NotContains(t, dockerfile, "cog==")
+}

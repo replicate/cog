@@ -1,0 +1,55 @@
+# Mirror cog-base images from r8.im to GHCR for integration tests.
+#
+# Integration tests use COG_REGISTRY_HOST=ghcr.io/replicate/cog to resolve
+# cog-base images from GHCR instead of r8.im. This workflow copies the images
+# listed in integration-tests/cog-base-tags.txt from r8.im to GHCR.
+#
+# Run this workflow manually when:
+#   - New cog-base images are published to r8.im
+#   - New tags are added to cog-base-tags.txt (e.g. new Python/CUDA/torch versions)
+
+name: Mirror cog-base images
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install crane
+        run: go install github.com/google/go-containerregistry/cmd/crane@v0.21.1
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Mirror images
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r line; do
+            tag=$(echo "$line" | xargs)
+            [[ -z "$tag" || "$tag" == \#* ]] && continue
+            src="r8.im/cog-base:$tag"
+            dst="ghcr.io/replicate/cog/cog-base:$tag"
+            echo "Copying $src -> $dst"
+            if ! crane copy "$src" "$dst"; then
+              echo "::warning::Failed to copy $src"
+              failed=$((failed + 1))
+            fi
+          done < integration-tests/cog-base-tags.txt
+
+          if [ "$failed" -gt 0 ]; then
+            echo "::error::$failed image(s) failed to copy"
+            exit 1
+          fi
+          echo "All images mirrored successfully."
