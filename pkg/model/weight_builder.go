@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,7 +50,7 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 	// Stat the file to check existence and size
 	fi, err := os.Stat(absPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("weight source not found: %s", ws.Source)
 		}
 		return nil, fmt.Errorf("stat weight file %s: %w", ws.Source, err)

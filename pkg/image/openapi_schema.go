@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
@@ -40,7 +41,7 @@ func GenerateOpenAPISchema(ctx context.Context, dockerClient command.Command, im
 
 	err := docker.RunWithIO(ctx, dockerClient, runOpts, nil, &stdout, &stderr)
 
-	if enableGPU && err == docker.ErrMissingDeviceDriver {
+	if enableGPU && errors.Is(err, docker.ErrMissingDeviceDriver) {
 		console.Debug(stdout.String())
 		console.Debug(stderr.String())
 		console.Debug("Missing device driver, re-trying without GPU")

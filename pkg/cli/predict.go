@@ -533,7 +533,7 @@ func ensureOutputWriteable(outputPath string, fallbackPath string) (string, erro
 	stat, err := os.Stat(outputPath)
 
 	// If the file doesn't exist, use the parent directory with given filename.
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		if err = unix.Access(path.Dir(outputPath), unix.W_OK); err != nil {
 			return "", fmt.Errorf("Output directory is not writable: %s", path.Dir(outputPath))
 		}
