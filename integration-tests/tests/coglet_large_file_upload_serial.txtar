@@ -1,0 +1,44 @@
+[short] skip 'large file test - slow'
+
+# Test that a large binary file (50 MiB) is successfully uploaded via --upload-url.
+#
+# Verifies the upload pipeline handles large binary payloads — not just large
+# strings through the IPC spill path (which coglet_large_output.txtar covers).
+
+cog build -t $TEST_IMAGE
+
+upload-server-start
+cog serve --upload-url $UPLOAD_SERVER_URL
+
+# Prediction generates a 50 MiB binary file
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+# Output should be a URL, not inline data
+stdout '"output":"http://host.docker.internal'
+! stdout 'data:'
+
+# Verify upload server received exactly 1 file
+upload-server-count 1
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import os
+import tempfile
+
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Path:
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "large_output.bin")
+        # Write 50 MiB of binary data
+        with open(p, "wb") as f:
+            chunk = b"\xde\xad\xbe\xef" * 256  # 1 KiB chunk
+            for _ in range(50 * 1024):  # 50 MiB
+                f.write(chunk)
+        return Path(p)

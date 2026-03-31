@@ -1,0 +1,34 @@
+# Test that a generator which yields items then raises an exception
+# correctly reports failure. This is a common real-world failure mode
+# (model produces partial output then hits an error).
+
+webhook-server-start
+cog serve --upload-url http://unused/
+
+# Async prediction — generator yields 3 items then raises
+curl -H Prefer:respond-async POST /predictions '{"id":"iter-error-test","webhook":"$WEBHOOK_URL","webhook_events_filter":["completed"]}'
+
+webhook-server-wait
+
+# Prediction should fail
+stdout '"status":"failed"'
+stdout '"has_error":true'
+stdout '"error_message":".*generator exploded"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import Iterator
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Iterator[str]:
+        yield "chunk-1"
+        yield "chunk-2"
+        yield "chunk-3"
+        raise RuntimeError("generator exploded")

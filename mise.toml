@@ -51,11 +51,11 @@ cargo-binstall = "1.16.6"
 "aqua:golangci/golangci-lint" = "2.10.1"
 ruff = "0.14.13"
 ty = "0.0.10"
+"npm:markdownlint-cli2" = "0.22.0"
 
 [env]
 _.path = "./bin"
 _.file = [".env"]
-_.python.venv = ".venv"
 # Set REPO_ROOT only if not already set (e.g., by CI)
 REPO_ROOT = "{{env.REPO_ROOT | default(value=config_root)}}"
 # CGo required for go-tree-sitter (static Python schema parser)
@@ -96,28 +96,51 @@ alias = "build:all"
 description = "Build all components"
 run = [
   { tasks = ["build:cog", "build:coglet:wheel:linux-x64", "build:sdk"] },
+  { task = "_build_summary" },
 ]
 
+[tasks._build_summary]
+hide = true
+description = "Print build artifacts summary"
+run = """
+#!/usr/bin/env bash
+echo ""
+echo "=== Build Artifacts ==="
+if BINARY=$(ls dist/go/*/cog 2>/dev/null | head -1); then
+  VERSION=$("$BINARY" --version 2>/dev/null || echo "unknown")
+  echo "  cli:        $BINARY ($VERSION)"
+fi
+for whl in dist/coglet-*.whl; do
+  [ -f "$whl" ] && echo "  coglet:     $whl"
+done
+for whl in dist/cog-*.whl; do
+  [ -f "$whl" ] && echo "  python-sdk: $whl"
+done
+echo ""
+"""
+
 [tasks.install]
-description = "Symlink cog CLI to /usr/local/bin (or PREFIX). Run build:cog first."
+depends = ["build:cog"]
+description = "Build and symlink cog CLI"
+usage = 'arg "[dest]" help="Directory to symlink into (e.g. ~/.local/bin)" default="~/.local/bin"'
 run = """
 #!/usr/bin/env bash
 set -e
-PREFIX="${PREFIX:-/usr/local}"
+DEST="${usage_dest/#\\~/$HOME}"
 BINARY=$(ls dist/go/*/cog 2>/dev/null | head -1)
 if [ -z "$BINARY" ]; then
     echo "Error: no cog binary found in dist/go/. Run 'mise run build:cog' first." >&2
     exit 1
 fi
 BINARY="$(cd "$(dirname "$BINARY")" && pwd)/$(basename "$BINARY")"
-mkdir -p "$PREFIX/bin"
-ln -sf "$BINARY" "$PREFIX/bin/cog"
-echo "Installed $PREFIX/bin/cog -> $BINARY"
+mkdir -p "$DEST"
+ln -sf "$BINARY" "$DEST/cog"
+echo "Installed $DEST/cog -> $BINARY"
 """
 
 [tasks."build:cog"]
 description = "Build cog CLI (development)"
-sources = ["cmd/**/*.go", "pkg/**/*.go", "go.mod", "go.sum", "crates/Cargo.toml"]
+sources = ["cmd/**/*.go", "pkg/**/*.go", "go.mod", "go.sum", "VERSION.txt"]
 outputs = ["dist/go/*/cog"]
 run = """
 #!/usr/bin/env bash
@@ -202,15 +225,15 @@ run = [
 
 [tasks."build:sdk"]
 description = "Build cog SDK wheel"
-sources = ["python/**/*.py", "pyproject.toml", "crates/Cargo.toml"]
+sources = ["python/**/*.py", "pyproject.toml", "VERSION.txt"]
 outputs = ["dist/cog-*.whl", "dist/cog-*.tar.gz"]
 run = [
   { tasks = ["_setup_dist", "_setup_venv"] },
   """
 #!/usr/bin/env bash
 set -euo pipefail
-# Version from Cargo.toml, converted to PEP 440
-RAW=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\\(.*\\)"/\\1/')
+# Version from VERSION.txt, converted to PEP 440
+RAW=$(tr -d '[:space:]' < VERSION.txt)
 export SETUPTOOLS_SCM_PRETEND_VERSION=$(echo "$RAW" | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/')
 echo "Building SDK wheel: $SETUPTOOLS_SCM_PRETEND_VERSION"
 uv build --out-dir=dist .
@@ -270,9 +293,26 @@ description = "Run coglet Python binding tests on all supported Python versions"
 depends = ["build:coglet:wheel"]
 run = "nox -s coglet"
 
+[tasks."test:fuzz"]
+description = "Run Go fuzz tests (FUZZTIME=30s per target by default)"
+run = """
+#!/usr/bin/env bash
+set -e
+FUZZTIME="${FUZZTIME:-30s}"
+echo "Fuzzing schema type resolution ($FUZZTIME)..."
+go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime="$FUZZTIME"
+echo "Fuzzing JSON schema generation ($FUZZTIME)..."
+go test ./pkg/schema/ -run='^$' -fuzz=FuzzJSONSchema -fuzztime="$FUZZTIME"
+echo "Fuzzing Python parser ($FUZZTIME)..."
+go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParsePredictor -fuzztime="$FUZZTIME"
+echo "Fuzzing type annotation parsing ($FUZZTIME)..."
+go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParseTypeAnnotation -fuzztime="$FUZZTIME"
+echo "All fuzz targets passed."
+"""
+
 [tasks."test:integration"]
 description = "Run integration tests (skips slow tests by default, set SHORT=0 for full suite)"
-depends = ["build:cog", "build:sdk", "build:coglet:wheel:linux-x64"]
+depends = ["clean:integration", "build:cog", "build:sdk", "build:coglet:wheel:linux-x64"]
 run = """
 #!/usr/bin/env bash
 set -e
@@ -298,14 +338,14 @@ fi
 alias = ["format", "fmt:check", "format:check"]
 description = "Check formatting for all languages (non-destructive)"
 run = [
-  { tasks = ["fmt:go", "fmt:rust", "fmt:python"] },
+  { tasks = ["fmt:go", "fmt:rust", "fmt:python", "fmt:docs"] },
 ]
 
 [tasks."fmt:fix"]
 alias = "format:fix"
 description = "Fix formatting for all languages"
 run = [
-  { tasks = ["fmt:go:fix", "fmt:rust:fix", "fmt:python:fix"] },
+  { tasks = ["fmt:go:fix", "fmt:rust:fix", "fmt:python:fix", "fmt:docs:fix"] },
 ]
 
 # Go formatting
@@ -343,6 +383,16 @@ run = "ruff format --check ."
 description = "Fix Python formatting"
 run = "ruff format ."
 
+# Docs formatting
+[tasks."fmt:docs"]
+alias = "fmt:docs:check"
+description = "Check Markdown formatting"
+run = "markdownlint-cli2"
+
+[tasks."fmt:docs:fix"]
+description = "Fix Markdown formatting"
+run = "markdownlint-cli2 --fix"
+
 # =============================================================================
 # Lint tasks
 # =============================================================================
@@ -351,14 +401,24 @@ run = "ruff format ."
 alias = "lint:check"
 description = "Run linters for all languages (non-destructive)"
 run = [
-  { tasks = ["lint:go", "lint:rust", "lint:python"] },
+  { tasks = ["lint:go", "lint:rust", "lint:python", "lint:docs"] },
 ]
 
 [tasks."lint:fix"]
 description = "Fix lint issues for all languages"
 run = [
-  { tasks = ["lint:go:fix", "lint:rust:fix", "lint:python:fix"] },
+  { tasks = ["lint:go:fix", "lint:rust:fix", "lint:python:fix", "lint:docs:fix"] },
 ]
+
+# Markdown linting
+[tasks."lint:docs"]
+alias = "lint:docs:check"
+description = "Lint Markdown files"
+run = "markdownlint-cli2"
+
+[tasks."lint:docs:fix"]
+description = "Fix lint issues in Markdown files"
+run = "markdownlint-cli2 --fix"
 
 # Go linting
 [tasks."lint:go"]
@@ -510,13 +570,13 @@ run = "ty check crates/coglet-python/coglet/__init__.pyi"
 [tasks.clean]
 description = "Clean all build artifacts"
 run = [
-  { tasks = ["clean:go", "clean:rust", "clean:python"] },
+  { tasks = ["clean:go", "clean:rust", "clean:python", "clean:integration"] },
   { task = "_clean_dist" },
 ]
 
 [tasks."clean:go"]
 description = "Clean Go build artifacts"
-run = "rm -f cog base-image"
+run = "rm -rf cog base-image dist/go"
 
 [tasks."clean:rust"]
 description = "Clean Rust build artifacts"
@@ -525,6 +585,10 @@ run = "cd crates && cargo clean"
 [tasks."clean:python"]
 description = "Clean Python build artifacts"
 run = "rm -rf .tox build python/cog.egg-info .venv crates/coglet-python/.venv crates/coglet-python/coglet/*.so"
+
+[tasks."clean:integration"]
+description = "Clean cached integration test binary and embedded wheels"
+run = "rm -f integration-tests/.bin/cog pkg/wheels/cog-*.whl pkg/wheels/coglet-*.whl"
 
 # =============================================================================
 # Docs tasks
@@ -626,8 +690,8 @@ run = [
   """
 #!/usr/bin/env bash
 set -euo pipefail
-# Version from Cargo.toml, converted to PEP 440
-RAW=$(grep '^version' crates/Cargo.toml | head -1 | sed 's/.*"\\(.*\\)"/\\1/')
+# Version from VERSION.txt, converted to PEP 440
+RAW=$(tr -d '[:space:]' < VERSION.txt)
 export SETUPTOOLS_SCM_PRETEND_VERSION=$(echo "$RAW" | sed -E 's/-alpha/a/; s/-beta/b/; s/-rc/rc/; s/-dev/.dev/')
 echo "Building SDK wheel: $SETUPTOOLS_SCM_PRETEND_VERSION"
 uv build --out-dir=dist .
@@ -667,3 +731,20 @@ set -e
 echo "TODO: Implement SDK PyPI publish"
 echo "Wheels in dist/: $(ls dist/cog-*.whl 2>/dev/null || echo 'none')"
 """
+
+# =============================================================================
+# Version tasks
+# =============================================================================
+
+[tasks."version"]
+description = "Show current version from VERSION.txt"
+run = "go run ./tools/version show"
+
+[tasks."version:bump"]
+description = "Bump version: updates VERSION.txt, Cargo.toml, Cargo.lock, and commits"
+usage = 'arg "<version>" help="New semver version (e.g. 0.17.1, 0.18.0-rc.1)"'
+run = "go run ./tools/version bump ${usage_version}"
+
+[tasks."version:check"]
+description = "Verify VERSION.txt matches crates/Cargo.toml"
+run = "go run ./tools/version check"

@@ -33,9 +33,10 @@ If 'image' is passed, it will run the training on that Docker image.
 It must be an image that has been built by Cog.
 
 Otherwise, it will build the model in the current directory and train it.`,
-		RunE:   cmdTrain,
-		Args:   cobra.MaximumNArgs(1),
-		Hidden: true,
+		RunE:       cmdTrain,
+		Args:       cobra.MaximumNArgs(1),
+		Hidden:     true,
+		Deprecated: "the train command will be removed in a future version of Cog",
 	}
 
 	addBuildProgressOutputFlag(cmd)

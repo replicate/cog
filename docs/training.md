@@ -1,7 +1,7 @@
 # Training interface reference
 
-> [!NOTE]  
-> The training API is still experimental, and is subject to change.
+> [!WARNING]  
+> The `cog train` command is deprecated and will be removed in the next version of Cog. The training API described below may still be used with the HTTP API's `/trainings` endpoint, but the CLI command is no longer recommended for new projects.
 
 Cog's training API allows you to define a fine-tuning interface for an existing Cog model, so users of the model can bring their own training data to create derivative fine-tuned models. Real-world examples of this API in use include [fine-tuning SDXL with images](https://replicate.com/blog/fine-tune-sdxl) or [fine-tuning Llama 2 with structured text](https://replicate.com/blog/fine-tune-llama-2).
 
@@ -13,7 +13,7 @@ If you've used Cog before, you've probably seen the [Predictor](./python.md) cla
 
 ```yaml
 build:
-  python_version: "3.10"
+  python_version: "3.13"
 train: "train.py:train"
 ```
 
@@ -43,7 +43,7 @@ You can also use classes if you want to run many model trainings and save on set
 
 ```yaml
 build:
-  python_version: "3.10"
+  python_version: "3.13"
 train: "train.py:Trainer"
 ```
 
@@ -92,7 +92,7 @@ Each parameter of the `train()` function must be annotated with a type like `str
 Using the `Input` function provides better documentation and validation constraints to the users of your model, but it is not strictly required. You can also specify default values for your parameters using plain Python, or omit default assignment entirely:
 
 ```py
-def predict(self,
+def train(self,
   training_data: str = "foo bar", # this is valid
   iterations: int                 # also valid
 ) -> str:

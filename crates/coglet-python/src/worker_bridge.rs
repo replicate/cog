@@ -310,6 +310,7 @@ impl PredictHandler for PythonPredictHandler {
         id: String,
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
+        context: HashMap<String, String>,
     ) -> PredictResult {
         tracing::trace!(%slot, %id, "PythonPredictHandler::predict starting");
 
@@ -360,7 +361,7 @@ impl PredictHandler for PythonPredictHandler {
         // Enter metric scope - sets Scope ContextVar for metric recording
         let slot_sender_for_metrics = slot_sender.clone();
         let scope_guard = Python::attach(|py| {
-            crate::metric_scope::ScopeGuard::enter(py, slot_sender_for_metrics)
+            crate::metric_scope::ScopeGuard::enter(py, slot_sender_for_metrics, context)
         });
         let scope_guard = match scope_guard {
             Ok(g) => Some(g),
