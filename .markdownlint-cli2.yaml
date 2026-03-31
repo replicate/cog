@@ -1,0 +1,14 @@
+globs:
+  - "*.md"
+  - "**/*.md"
+
+ignores:
+  - ".cargo-home/**"
+  - "site/**"
+  - "docs/llms.txt"
+  - "CLAUDE.md"
+
+config:
+  default: false
+  MD009: true
+  MD047: true

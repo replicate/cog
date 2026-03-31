@@ -1,0 +1,28 @@
+# Test Iterator[str] as predict output type
+#
+# Iterator[str] yields individual string items as an array.
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Iterator output returns items
+cog predict $TEST_IMAGE -i count=3
+stdout 'item-0'
+stdout 'item-1'
+stdout 'item-2'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import Iterator
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, count: int) -> Iterator[str]:
+        for i in range(count):
+            yield f"item-{i}"

@@ -296,7 +296,7 @@ pub struct OrchestratorConfig {
     pub num_slots: usize,
     pub is_train: bool,
     pub is_async: bool,
-    pub setup_timeout: Duration,
+    pub setup_timeout: Option<Duration>,
     pub spawner: Arc<dyn WorkerSpawner>,
     /// Upload URL prefix for file outputs (from --upload-url CLI arg).
     pub upload_url: Option<String>,
@@ -309,7 +309,7 @@ impl OrchestratorConfig {
             num_slots: 1,
             is_train: false,
             is_async: false,
-            setup_timeout: Duration::from_secs(300),
+            setup_timeout: None,
             spawner: Arc::new(SimpleSpawner),
             upload_url: None,
         }
@@ -335,7 +335,7 @@ impl OrchestratorConfig {
         self
     }
 
-    pub fn with_setup_timeout(mut self, timeout: Duration) -> Self {
+    pub fn with_setup_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.setup_timeout = timeout;
         self
     }
@@ -389,6 +389,7 @@ impl Orchestrator for OrchestratorHandle {
     }
 
     async fn healthcheck(&self) -> Result<HealthcheckResult, OrchestratorError> {
+        tracing::trace!("Healthcheck requested via orchestrator handle");
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
         // Send our channel to the event loop. If a healthcheck is already
@@ -403,11 +404,20 @@ impl Orchestrator for OrchestratorHandle {
         // If we time out, the healthcheck keeps running — our sender just gets a
         // silent failure when the event loop eventually broadcasts.
         match tokio::time::timeout(Duration::from_secs(10), response_rx).await {
-            Ok(Ok(result)) => Ok(result),
-            Ok(Err(_)) => Err(OrchestratorError::Protocol(
-                "healthcheck response channel dropped".to_string(),
-            )),
-            Err(_) => Ok(HealthcheckResult::unhealthy("healthcheck timed out")),
+            Ok(Ok(result)) => {
+                tracing::trace!(healthy = result.is_healthy(), "Healthcheck completed");
+                Ok(result)
+            }
+            Ok(Err(_)) => {
+                tracing::debug!("Healthcheck response channel dropped");
+                Err(OrchestratorError::Protocol(
+                    "healthcheck response channel dropped".to_string(),
+                ))
+            }
+            Err(_) => {
+                tracing::debug!("Healthcheck timed out after 10s");
+                Ok(HealthcheckResult::unhealthy("healthcheck timed out"))
+            }
         }
     }
 
@@ -505,7 +515,7 @@ pub async fn spawn_worker(
         .map_err(|e| OrchestratorError::Spawn(format!("failed to accept connections: {}", e)))?;
 
     tracing::debug!("Waiting for Ready from worker");
-    let ready_result = tokio::time::timeout(config.setup_timeout, async {
+    let setup_fut = async {
         loop {
             match ctrl_reader.next().await {
                 Some(Ok(ControlResponse::Ready { slots, schema })) => {
@@ -516,15 +526,23 @@ pub async fn spawn_worker(
                         tracing::info!(target: "coglet::setup", source = ?source, "{}", line);
                     }
                 }
-                Some(Ok(ControlResponse::WorkerLog { target, level, message })) => {
+                Some(Ok(ControlResponse::WorkerLog {
+                    target,
+                    level,
+                    message,
+                })) => {
                     emit_worker_log(&target, &level, &message);
                 }
-                Some(Ok(ControlResponse::DroppedLogs { count, interval_millis })) => {
+                Some(Ok(ControlResponse::DroppedLogs {
+                    count,
+                    interval_millis,
+                })) => {
                     tracing::trace!(count, interval_millis, "Received DroppedLogs during setup");
                     let interval_secs = interval_millis as f64 / 1000.0;
                     tracing::warn!(
                         "Log production exceeds consumption rate during setup. {} logs dropped in last {:.1}s",
-                        count, interval_secs
+                        count,
+                        interval_secs
                     );
                 }
                 Some(Ok(ControlResponse::Failed { slot, error })) => {
@@ -553,16 +571,40 @@ pub async fn spawn_worker(
                 }
             }
         }
-    })
-    .await;
+    };
 
-    let (slot_ids, schema) = match ready_result {
-        Ok(Ok((slots, schema))) => (slots, schema),
-        Ok(Err(e)) => return Err(e),
-        Err(_) => return Err(OrchestratorError::SetupTimeout),
+    let (slot_ids, schema) = match config.setup_timeout {
+        Some(timeout) => {
+            tracing::debug!(
+                timeout_secs = timeout.as_secs(),
+                "Waiting for setup with timeout"
+            );
+            match tokio::time::timeout(timeout, setup_fut).await {
+                Ok(Ok((slots, schema))) => {
+                    tracing::debug!(num_slots = slots.len(), "Setup completed within timeout");
+                    (slots, schema)
+                }
+                Ok(Err(e)) => {
+                    tracing::debug!(error = %e, "Setup failed");
+                    return Err(e);
+                }
+                Err(_) => {
+                    tracing::debug!(timeout_secs = timeout.as_secs(), "Setup timed out");
+                    return Err(OrchestratorError::SetupTimeout);
+                }
+            }
+        }
+        None => {
+            tracing::debug!("Waiting for setup with no timeout");
+            setup_fut.await?
+        }
     };
 
     let setup_logs = crate::setup_log_accumulator::drain_accumulated_logs(setup_log_rx);
+    tracing::debug!(
+        setup_logs_len = setup_logs.len(),
+        "Drained accumulated setup logs"
+    );
 
     tracing::debug!(num_slots = slot_ids.len(), "Worker ready");
 
@@ -776,6 +818,12 @@ async fn run_event_loop(
                         );
                     }
                     Some(Ok(ControlResponse::HealthcheckResult { id: _, status, error })) => {
+                        tracing::trace!(
+                            ?status,
+                            ?error,
+                            pending_count = pending_healthchecks.len(),
+                            "Received healthcheck result from worker"
+                        );
                         if pending_healthchecks.is_empty() {
                             tracing::warn!("Received healthcheck result but no pending requests");
                         } else {
@@ -785,6 +833,10 @@ async fn run_event_loop(
                                     HealthcheckResult::unhealthy(error.unwrap_or_else(|| "unhealthy".to_string()))
                                 }
                             };
+                            tracing::trace!(
+                                pending_count = pending_healthchecks.len(),
+                                "Distributing healthcheck result to pending callers"
+                            );
                             for tx in pending_healthchecks.drain(..) {
                                 let _ = tx.send(result.clone());
                             }
@@ -824,6 +876,7 @@ async fn run_event_loop(
                 if !in_flight {
                     healthcheck_counter += 1;
                     let hc_id = format!("hc_{}", healthcheck_counter);
+                    tracing::trace!(%hc_id, "Sending healthcheck request to worker");
 
                     let mut writer = ctrl_writer.lock().await;
                     if let Err(e) = writer.send(ControlRequest::Healthcheck { id: hc_id }).await {
@@ -833,6 +886,11 @@ async fn run_event_loop(
                             let _ = tx.send(result.clone());
                         }
                     }
+                } else {
+                    tracing::trace!(
+                        pending_count = pending_healthchecks.len(),
+                        "Healthcheck already in-flight, coalescing request"
+                    );
                 }
             }
 

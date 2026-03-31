@@ -32,11 +32,19 @@ This document defines the API of the `cog` Python module, which is used to defin
 - [Cancellation](#cancellation)
   - [`CancelationException`](#cancelationexception)
 - [Input and output types](#input-and-output-types)
-- [`File()`](#file)
-- [`Path()`](#path)
-- [`Secret`](#secret)
-- [`Optional`](#optional)
-- [`List`](#list)
+  - [Primitive types](#primitive-types)
+  - [`cog.Path`](#cogpath)
+  - [`cog.File` (deprecated)](#cogfile-deprecated)
+  - [`cog.Secret`](#cogsecret)
+  - [Wrapper types](#wrapper-types)
+    - [`Optional`](#optional)
+    - [`list`](#list)
+    - [`dict`](#dict)
+  - [Structured output with `BaseModel`](#structured-output-with-basemodel)
+    - [Using `cog.BaseModel`](#using-cogbasemodel)
+    - [Using Pydantic `BaseModel`](#using-pydantic-basemodel)
+    - [`BaseModel` field types](#basemodel-field-types)
+  - [Type limitations](#type-limitations)
 
 ## `BasePredictor`
 
@@ -96,13 +104,13 @@ This _required_ method is where you call the model that was loaded during `setup
 
 The `predict()` method takes an arbitrary list of named arguments, where each argument name must correspond to an [`Input()`](#inputkwargs) annotation.
 
-`predict()` can return strings, numbers, [`cog.Path`](#path) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`Output()`](#outputbasemodel) for more complex return types.
+`predict()` can return strings, numbers, [`cog.Path`](#cogpath) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`BaseModel`](#structured-output-with-basemodel) for structured return types. See [Input and output types](#input-and-output-types) for the full list of supported types.
 
 ## `async` predictors and concurrency
 
 > Added in cog 0.14.0.
 
-You may specify your `predict()` method as `async def predict(...)`.  In
+You may specify your `predict()` method as `async def predict(...)`. In
 addition, if you have an async `predict()` function you may also have an async
 `setup()` function:
 
@@ -203,7 +211,7 @@ class Predictor(BasePredictor):
         return Output(text="hello", file=io.StringIO("hello"))
 ```
 
-Each of the output object's properties must be one of the supported output types. For the full list, see [Input and output types](#input-and-output-types). Also, make sure to name the output class as `Output` and nothing else.
+Each of the output object's properties must be one of the supported output types. For the full list, see [Input and output types](#input-and-output-types).
 
 ### Returning a list
 
@@ -264,10 +272,11 @@ class Predictor(BasePredictor):
             yield Path(output_path)
 ```
 
-If you have an [async `predict()` method](#async-predictors-and-concurrency), you must use `cog.AsyncIterator` instead:
+If you have an [async `predict()` method](#async-predictors-and-concurrency), use `AsyncIterator` from the `typing` module:
 
 ```py
-from cog import AsyncIterator, BasePredictor, Path
+from typing import AsyncIterator
+from cog import BasePredictor, Path
 
 class Predictor(BasePredictor):
     async def predict(self) -> AsyncIterator[Path]:
@@ -332,13 +341,13 @@ Metrics appear in the prediction response `metrics` field:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "...",
-    "metrics": {
-        "temperature": 0.7,
-        "token_count": 42,
-        "predict_time": 1.23
-    }
+  "status": "succeeded",
+  "output": "...",
+  "metrics": {
+    "temperature": 0.7,
+    "token_count": 42,
+    "predict_time": 1.23
+  }
 }
 ```
 
@@ -382,13 +391,13 @@ This produces nested JSON:
 
 ```json
 {
-    "metrics": {
-        "timing": {
-            "preprocess": 0.12,
-            "inference": 0.85
-        },
-        "predict_time": 1.23
-    }
+  "metrics": {
+    "timing": {
+      "preprocess": 0.12,
+      "inference": 0.85
+    },
+    "predict_time": 1.23
+  }
 }
 ```
 
@@ -413,9 +422,9 @@ Outside an active prediction, `self.record_metric()` and `self.scope` are silent
 
 When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `predict()` function. The exception raised depends on whether the predictor is sync or async:
 
-| Predictor type | Exception raised |
-|---|---|
-| Sync (`def predict`) | `CancelationException` |
+| Predictor type              | Exception raised         |
+| --------------------------- | ------------------------ |
+| Sync (`def predict`)        | `CancelationException`   |
 | Async (`async def predict`) | `asyncio.CancelledError` |
 
 ### `CancelationException`
@@ -452,41 +461,27 @@ For **async** predictors, cancellation follows standard Python async conventions
 
 ## Input and output types
 
-Each parameter of the `predict()` method must be annotated with a type. The method's return type must also be annotated. The supported types are:
+Each parameter of the `predict()` method must be annotated with a type. The method's return type must also be annotated.
 
-- `str`: a string
-- `int`: an integer
-- `float`: a floating point number
-- `bool`: a boolean
-- [`cog.File`](#file): a file-like object representing a file
-- [`cog.Path`](#path): a path to a file on disk
-- [`cog.Secret`](#secret): a string containing sensitive information
+### Primitive types
 
-## `File()`
+These types can be used directly as input parameter types and output return types:
 
-> [!WARNING]  
-> `cog.File` is deprecated and will be removed in a future version of Cog. Use [`cog.Path`](#path) instead.
+| Type | Description | JSON Schema |
+|------|-------------|-------------|
+| `str` | A string | `string` |
+| `int` | An integer | `integer` |
+| `float` | A floating-point number | `number` |
+| `bool` | A boolean | `boolean` |
+| [`cog.Path`](#cogpath) | A path to a file on disk | `string` (format: `uri`) |
+| [`cog.File`](#cogfile-deprecated) | A file-like object (deprecated) | `string` (format: `uri`) |
+| [`cog.Secret`](#cogsecret) | A string containing sensitive information | `string` (format: `password`) |
 
-The `cog.File` object is used to get files in and out of models. It represents a _file handle_.
+### `cog.Path`
 
-For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
+`cog.Path` is used to get files in and out of models. It represents a _path to a file on disk_.
 
-```python
-from cog import BasePredictor, File, Input, Path
-from PIL import Image
-
-class Predictor(BasePredictor):
-    def predict(self, source_image: File = Input(description="Image to enlarge")) -> File:
-        pillow_img = Image.open(source_image)
-        upscaled_image = do_some_processing(pillow_img)
-        return File(upscaled_image)
-```
-
-## `Path()`
-
-The `cog.Path` object is used to get files in and out of models. It represents a _path to a file on disk_.
-
-`cog.Path` is a subclass of Python's [`pathlib.Path`](https://docs.python.org/3/library/pathlib.html#basic-use) and can be used as a drop-in replacement.
+`cog.Path` is a subclass of Python's [`pathlib.Path`](https://docs.python.org/3/library/pathlib.html#basic-use) and can be used as a drop-in replacement. Any `os.PathLike` subclass is also accepted as an input type and treated as `cog.Path`.
 
 For models that return a `cog.Path` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
 
@@ -500,29 +495,44 @@ class Predictor(BasePredictor):
     def predict(self, image: Path = Input(description="Image to enlarge")) -> Path:
         upscaled_image = do_some_processing(image)
 
-        # To output `cog.Path` objects the file needs to exist, so create a temporary file first.
+        # To output cog.Path objects the file needs to exist, so create a temporary file first.
         # This file will automatically be deleted by Cog after it has been returned.
         output_path = Path(tempfile.mkdtemp()) / "upscaled.png"
         upscaled_image.save(output_path)
         return Path(output_path)
 ```
 
-## `Secret`
+### `cog.File` (deprecated)
 
-The `cog.Secret` type is used to signify that an input holds sensitive information,
-like a password or API token.
+> [!WARNING]  
+> `cog.File` is deprecated and will be removed in a future version of Cog. Use [`cog.Path`](#cogpath) instead.
 
-`cog.Secret` is a type that redacts its contents in string representations to prevent accidental disclosure.
-You can access its contents with the `get_secret_value()` method.
+`cog.File` represents a _file handle_. For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
+
+```python
+from cog import BasePredictor, File, Input
+from PIL import Image
+
+class Predictor(BasePredictor):
+    def predict(self, source_image: File = Input(description="Image to enlarge")) -> File:
+        pillow_img = Image.open(source_image)
+        upscaled_image = do_some_processing(pillow_img)
+        return File(upscaled_image)
+```
+
+### `cog.Secret`
+
+`cog.Secret` signifies that an input holds sensitive information like a password or API token.
+
+`cog.Secret` redacts its contents in string representations to prevent accidental disclosure. Access the underlying value with `get_secret_value()`.
 
 ```python
 from cog import BasePredictor, Secret
 
-
 class Predictor(BasePredictor):
     def predict(self, api_token: Secret) -> None:
         # Prints '**********'
-        print(api_token)        
+        print(api_token)
 
         # Use get_secret_value method to see the secret's content.
         print(api_token.get_secret_value())
@@ -534,65 +544,192 @@ A predictor's `Secret` inputs are represented in OpenAPI with the following sche
 {
   "type": "string",
   "format": "password",
-  "x-cog-secret": true,
+  "x-cog-secret": true
 }
 ```
 
-Models uploaded to Replicate treat secret inputs differently throughout its system.
-When you create a prediction on Replicate,
-any value passed to a `Secret` input is redacted after being sent to the model.
+Models uploaded to Replicate treat secret inputs differently throughout its system. When you create a prediction on Replicate, any value passed to a `Secret` input is redacted after being sent to the model.
 
 > [!WARNING]  
-> Passing secret values to untrusted models can result in 
+> Passing secret values to untrusted models can result in
 > unintended disclosure, exfiltration, or misuse of sensitive data.
 
-## `Optional`
+### Wrapper types
 
-Optional inputs should be explicitly defined as `Optional[T]` so that type checker can warn us about error-prone `None` values.
+Cog supports wrapper types that modify how a primitive type is treated.
 
-For example, the following code might fail if `prompt` is not specified in the inputs:
+#### `Optional`
 
-```python
-class Predictor(BasePredictor):
-    def predict(self, prompt: str=Input(description="prompt", default=None)) -> str:
-        return "hello" + prompt  # TypeError: can only concatenate str (not "NoneType") to str
-```
-
-We can improve it by making `prompt` an `Optional[str]`. Note that `default=None` is now redundant as `Optional` implies it.
+Use `Optional[T]` or `T | None` (Python 3.10+) to mark an input as optional. Optional inputs default to `None` if not provided.
 
 ```python
+from typing import Optional
+from cog import BasePredictor, Input
+
 class Predictor(BasePredictor):
-    def predict(self, prompt: Optional[str]=Input(description="prompt")) -> str:
-        if prompt is None:  # type check can warn us if we forget this
+    def predict(self,
+        prompt: Optional[str] = Input(description="Input prompt"),
+        seed: int | None = Input(description="Random seed", default=None),
+    ) -> str:
+        if prompt is None:
             return "hello"
-        else:
-            return "hello" + prompt
+        return "hello " + prompt
 ```
 
-Note that the error prone usage of `prompt: str=Input(default=None)` might throw an error in a future release of Cog.
+Prefer `Optional[T]` or `T | None` over `str = Input(default=None)` for inputs that can be `None`. This lets type checkers warn about error-prone `None` values:
 
-## `List`
+```python
+# Bad: type annotation says str but value can be None
+def predict(self, prompt: str = Input(default=None)) -> str:
+    return "hello" + prompt  # TypeError at runtime if prompt is None
 
-The List type is also supported in inputs. It can hold any supported type.
+# Good: type annotation matches actual behavior
+def predict(self, prompt: Optional[str] = Input(description="prompt")) -> str:
+    if prompt is None:
+        return "hello"
+    return "hello " + prompt
+```
 
-Example for **List[Path]**:
+> [!NOTE]
+> `Optional[T]` is supported in `BaseModel` output fields but **not** as a top-level return type. Use a `BaseModel` with optional fields instead.
+
+#### `list`
+
+Use `list[T]` or `List[T]` to accept or return a list of values. `T` can be a supported Cog type, but nested container types are not supported.
+
+**As an input type:**
+
 ```py
+from cog import BasePredictor, Path
+
 class Predictor(BasePredictor):
-   def predict(self, paths: list[Path]) -> str:
-       output_parts = []  # Use a list to collect file contents
-       for path in paths:
-           with open(path) as f:
-             output_parts.append(f.read())
-       return "".join(output_parts)
+    def predict(self, paths: list[Path]) -> str:
+        output_parts = []
+        for path in paths:
+            with open(path) as f:
+                output_parts.append(f.read())
+        return "".join(output_parts)
 ```
-The corresponding cog command:
+
+With `cog predict`, repeat the input name to pass multiple values:
+
 ```bash
 $ echo test1 > 1.txt
 $ echo test2 > 2.txt
 $ cog predict -i paths=@1.txt -i paths=@2.txt
-Running prediction...
-test1
-
-test2
 ```
-- Note the repeated inputs with the same name "paths" which constitute the list
+
+**As an output type:**
+
+```py
+from cog import BasePredictor, Path
+
+class Predictor(BasePredictor):
+    def predict(self) -> list[Path]:
+        predictions = ["foo", "bar", "baz"]
+        output = []
+        for i, prediction in enumerate(predictions):
+            out_path = Path(f"/tmp/out-{i}.txt")
+            with out_path.open("w") as f:
+                f.write(prediction)
+            output.append(out_path)
+        return output
+```
+
+Files are named in the format `output.<index>.<extension>`, e.g. `output.0.txt`, `output.1.txt`, `output.2.txt`.
+
+#### `dict`
+
+Use `dict` to accept or return an opaque JSON object. The value is passed through as-is without type validation.
+
+```python
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self,
+        params: dict = Input(description="Arbitrary JSON parameters"),
+    ) -> dict:
+        return {"greeting": "hello", "params": params}
+```
+
+> [!NOTE]
+> `dict` inputs and outputs are represented as `{"type": "object"}` in the OpenAPI schema with no additional structure. For structured data with validated fields, use a [`BaseModel`](#structured-output-with-basemodel) instead.
+
+### Structured output with `BaseModel`
+
+To return a complex object with multiple typed fields, define a class that inherits from `cog.BaseModel` or Pydantic's `BaseModel` and use it as your return type.
+
+#### Using `cog.BaseModel`
+
+`cog.BaseModel` subclasses are automatically converted to Python dataclasses. Define fields using standard type annotations:
+
+```python
+from typing import Optional
+from cog import BasePredictor, BaseModel, Path
+
+class Output(BaseModel):
+    text: str
+    confidence: float
+    image: Optional[Path]
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> Output:
+        result = self.model.generate(prompt)
+        return Output(
+            text=result.text,
+            confidence=result.score,
+            image=None,
+        )
+```
+
+The output class can have any name — it does not need to be called `Output`:
+
+```python
+from cog import BaseModel
+
+class SegmentationResult(BaseModel):
+    success: bool
+    error: Optional[str]
+    segmented_image: Optional[Path]
+```
+
+#### Using Pydantic `BaseModel`
+
+If you already use Pydantic v2 in your model, you can use a Pydantic `BaseModel` subclass directly as the output type:
+
+```python
+from pydantic import BaseModel as PydanticBaseModel
+from cog import BasePredictor
+
+class Result(PydanticBaseModel):
+    name: str
+    score: float
+    tags: list[str]
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> Result:
+        return Result(name="example", score=0.95, tags=["fast", "accurate"])
+```
+
+#### `BaseModel` field types
+
+Fields in a `BaseModel` output support these types:
+
+| Type | Example |
+|------|---------|
+| `str`, `int`, `float`, `bool` | `score: float` |
+| `cog.Path` | `image: Path` |
+| `cog.File` | `data: File` (deprecated) |
+| `cog.Secret` | `token: Secret` |
+| `Optional[T]` | `error: Optional[str]` |
+| `list[T]` | `tags: list[str]` |
+
+### Type limitations
+
+The following type patterns are **not** supported:
+
+- **Nested generics**: `list[list[str]]`, `list[Optional[str]]`, `Optional[list[str]]` are not supported.
+- **Union types beyond Optional**: `str | int`, `Union[str, int, None]` — only `Optional[T]` (i.e. `T | None`) is supported.
+- **`Optional` as a top-level return type**: `-> Optional[str]` is not allowed. Use a `BaseModel` with optional fields instead.
+- **Nested `BaseModel` fields**: A `BaseModel` field typed as another `BaseModel` is not supported in Cog's type system for schema generation.
+- **Tuple, Set, or other collection types**: Only `list` and `dict` are supported as collection types.

@@ -1,3 +1,4 @@
+skip 'cog train requires static schema gen which is gated behind COG_STATIC_SCHEMA=1'
 
 # Test basic training functionality
 

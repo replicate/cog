@@ -57,6 +57,7 @@ nix = { version = "0.30", features = ["signal", "fs"] }
 
 [dev-dependencies]
 insta.workspace = true
+tempfile = "3"
 wiremock = "0.6"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

@@ -1,0 +1,22 @@
+# Cog base image tags mirrored from r8.im to ghcr.io/replicate/cog/cog-base.
+# CI sets COG_REGISTRY_HOST=ghcr.io/replicate/cog so integration tests resolve
+# base images from GHCR instead of r8.im.
+#
+# To mirror images, run the "Mirror cog-base images" workflow from the Actions tab.
+# Update this file when adding integration tests with new Python versions,
+# CUDA versions, or torch versions.
+# Format: one tag per line (image name is always "cog-base").
+
+# CPU base images (used by ~120 CPU-only tests)
+python3.10
+python3.11
+python3.12
+python3.13
+
+# GPU base images (used by ~20 GPU tests)
+cuda11.8-python3.10
+cuda11.8-python3.12
+cuda11.8-python3.10-torch2.0.1
+cuda12.4-python3.12-torch2.5.1
+cuda12.6-python3.11-torch2.7.0
+cuda12.8-python3.12-torch2.7.1

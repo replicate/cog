@@ -161,8 +161,11 @@ crates/
 │       ├── service.rs      # PredictionService
 │       ├── webhook.rs      # WebhookSender (retry, trace context)
 │       ├── version.rs      # Version info
-│       ├── webhook.rs      # Webhook sender
 │       ├── orchestrator.rs # Worker lifecycle, event loop (parent)
+│       ├── fd_redirect.rs  # File descriptor redirection
+│       ├── input_validation.rs # Input validation against schema
+│       ├── setup_log_accumulator.rs # Accumulates logs during setup()
+│       ├── worker_tracing_layer.rs  # Tracing layer for worker process
 │       ├── worker.rs       # Worker event loop (child)
 │       ├── bridge/
 │       │   ├── mod.rs
@@ -191,7 +194,9 @@ crates/
         ├── output.rs       # Output serialization
         ├── log_writer.rs   # SlotLogWriter, ContextVar routing
         ├── audit.rs        # Audit hook, TeeWriter
-        └── cancel.rs       # Cancellation support
+        ├── cancel.rs       # Cancellation support
+        ├── metric_scope.rs # Scope and MetricRecorder for record_metric()
+        └── bin/stub_gen.rs # Type stub generator
 ```
 
 ## Bridge Protocol
