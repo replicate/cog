@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -128,7 +129,7 @@ func run(cmd *cobra.Command, args []string) error {
 	err = docker.Run(ctx, dockerClient, runOptions)
 	// Only retry if we're using a GPU but the user didn't explicitly select a GPU with --gpus
 	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
-	if runOptions.GPUs == "all" && err == docker.ErrMissingDeviceDriver {
+	if runOptions.GPUs == "all" && errors.Is(err, docker.ErrMissingDeviceDriver) {
 		console.Info("Missing device driver, re-trying without GPU")
 
 		runOptions.GPUs = ""

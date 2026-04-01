@@ -649,7 +649,7 @@ func writeDockerignore(contents string) error {
 
 func backupDockerignore() error {
 	if _, err := os.Stat(".dockerignore"); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// .dockerignore file does not exist, nothing to backup
 			return nil
 		}
@@ -666,7 +666,7 @@ func restoreDockerignore() error {
 	}
 
 	if _, err := os.Stat(dockerignoreBackupPath); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// .dockerignore backup file does not exist, nothing to restore
 			return nil
 		}

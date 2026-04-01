@@ -23,7 +23,7 @@ var (
 func Exists(path string) (bool, error) {
 	if _, err := os.Stat(path); err == nil {
 		return true, nil
-	} else if os.IsNotExist(err) {
+	} else if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	} else {
 		return false, fmt.Errorf("Failed to determine if %s exists: %w", path, err)
