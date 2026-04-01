@@ -35,9 +35,10 @@ type Request struct {
 }
 
 type Response struct {
-	Status status `json:"status"`
-	Output *any   `json:"output"`
-	Error  string `json:"error"`
+	Status  status         `json:"status"`
+	Output  *any           `json:"output"`
+	Error   string         `json:"error"`
+	Metrics map[string]any `json:"metrics,omitempty"`
 }
 
 type ValidationErrorResponse struct {
