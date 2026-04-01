@@ -86,38 +86,56 @@ jobs:
           echo "  Darwin x86_64: $SHA_X86"
           echo "  Darwin arm64:  $SHA_ARM"
 
-          BASE_URL="https://github.com/replicate/cog/releases/download/${TAG}"
+          # Generate cask file that passes `brew style` checks.
+          # Key rules enforced by rubocop/homebrew:
+          #   - on_arm before on_intel (alphabetical)
+          #   - sha256 before url (with blank line between)
+          #   - url uses #{version} interpolation (so Homebrew knows it's versioned)
+          #   - url has verified: parameter (homepage domain differs from url domain)
+          #   - homepage must have trailing slash
+          #   - binary arch selection uses on_intel/on_arm blocks
+          #   - args: aligned with method name in system_command
+          cat > cog.rb <<'CASK'
+cask "cog" do
+  version "${VERSION}"
 
-          # Generate cask file (no indentation to avoid stripping issues)
-          cat > cog.rb <<CASK
-          cask "cog" do
-            version "${VERSION}"
+  on_arm do
+    sha256 "${SHA_ARM}"
 
-            on_intel do
-              url "${BASE_URL}/cog_Darwin_x86_64"
-              sha256 "${SHA_X86}"
-            end
+    url "https://github.com/replicate/cog/releases/download/v#{version}/cog_Darwin_arm64",
+        verified: "github.com/replicate/cog/"
+  end
+  on_intel do
+    sha256 "${SHA_X86}"
 
-            on_arm do
-              url "${BASE_URL}/cog_Darwin_arm64"
-              sha256 "${SHA_ARM}"
-            end
+    url "https://github.com/replicate/cog/releases/download/v#{version}/cog_Darwin_x86_64",
+        verified: "github.com/replicate/cog/"
+  end
 
-            name "Cog"
-            desc "Containers for machine learning"
-            homepage "https://cog.run"
+  name "Cog"
+  desc "Containers for machine learning"
+  homepage "https://cog.run/"
 
-            binary "cog_Darwin_#{Hardware::CPU.intel? ? "x86_64" : "arm64"}", target: "cog"
+  binary "cog_Darwin_#{on_intel do
+    "x86_64"
+  end
+                       on_arm do
+                         "arm64"
+                       end}", target: "cog"
 
-            postflight do
-              system_command "/usr/bin/xattr",
-                             args: ["-dr", "com.apple.quarantine", "#{staged_path}/cog"]
-            end
-          end
-          CASK
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-dr", "com.apple.quarantine", "#{staged_path}/cog"]
+  end
+end
+CASK
 
-          # Strip heredoc indentation
-          sed -i 's/^          //' cog.rb
+          # Substitute shell variables into the generated cask.
+          # Only version and sha256 need substitution — URLs use Ruby #{version}
+          # interpolation which Homebrew evaluates at install time.
+          sed -i "s|\${VERSION}|${VERSION}|g" cog.rb
+          sed -i "s|\${SHA_ARM}|${SHA_ARM}|g" cog.rb
+          sed -i "s|\${SHA_X86}|${SHA_X86}|g" cog.rb
 
           echo "Generated cask:"
           cat cog.rb
