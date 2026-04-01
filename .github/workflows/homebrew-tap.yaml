@@ -54,6 +54,12 @@ jobs:
           owner: replicate
           repositories: homebrew-tap
 
+      - name: Checkout cog repository
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/cog.rb.tmpl
+          sparse-checkout-cone-mode: false
+
       - name: Download checksums from release
         run: gh release download "$TAG" -p checksums.txt -R "${{ github.repository }}"
         env:
@@ -86,56 +92,11 @@ jobs:
           echo "  Darwin x86_64: $SHA_X86"
           echo "  Darwin arm64:  $SHA_ARM"
 
-          # Generate cask file that passes `brew style` checks.
-          # Key rules enforced by rubocop/homebrew:
-          #   - on_arm before on_intel (alphabetical)
-          #   - sha256 before url (with blank line between)
-          #   - url uses #{version} interpolation (so Homebrew knows it's versioned)
-          #   - url has verified: parameter (homepage domain differs from url domain)
-          #   - homepage must have trailing slash
-          #   - binary arch selection uses on_intel/on_arm blocks
-          #   - args: aligned with method name in system_command
-          cat > cog.rb <<'CASK'
-cask "cog" do
-  version "${VERSION}"
-
-  on_arm do
-    sha256 "${SHA_ARM}"
-
-    url "https://github.com/replicate/cog/releases/download/v#{version}/cog_Darwin_arm64",
-        verified: "github.com/replicate/cog/"
-  end
-  on_intel do
-    sha256 "${SHA_X86}"
-
-    url "https://github.com/replicate/cog/releases/download/v#{version}/cog_Darwin_x86_64",
-        verified: "github.com/replicate/cog/"
-  end
-
-  name "Cog"
-  desc "Containers for machine learning"
-  homepage "https://cog.run/"
-
-  binary "cog_Darwin_#{on_intel do
-    "x86_64"
-  end
-                       on_arm do
-                         "arm64"
-                       end}", target: "cog"
-
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{staged_path}/cog"]
-  end
-end
-CASK
-
-          # Substitute shell variables into the generated cask.
-          # Only version and sha256 need substitution — URLs use Ruby #{version}
-          # interpolation which Homebrew evaluates at install time.
-          sed -i "s|\${VERSION}|${VERSION}|g" cog.rb
-          sed -i "s|\${SHA_ARM}|${SHA_ARM}|g" cog.rb
-          sed -i "s|\${SHA_X86}|${SHA_X86}|g" cog.rb
+          # Generate cask from template.
+          # The template uses ${VERSION}, ${SHA_ARM}, ${SHA_X86} placeholders.
+          # Ruby #{...} interpolation is preserved (envsubst only expands $VAR / ${VAR}).
+          export VERSION SHA_ARM SHA_X86
+          envsubst '${VERSION} ${SHA_ARM} ${SHA_X86}' < .github/cog.rb.tmpl > cog.rb
 
           echo "Generated cask:"
           cat cog.rb
