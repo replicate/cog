@@ -259,7 +259,7 @@ dependencies = [
 
 [[package]]
 name = "coglet"
-version = "0.17.1"
+version = "0.17.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -291,7 +291,7 @@ dependencies = [
 
 [[package]]
 name = "coglet-python"
-version = "0.17.1"
+version = "0.17.2"
 dependencies = [
  "async-trait",
  "base64",
