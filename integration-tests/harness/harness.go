@@ -1079,14 +1079,15 @@ type mockWeightsLock struct {
 // mockWeightFile mirrors WeightFile from pkg/model/weights.go
 // SYNC: If pkg/model/WeightFile changes, update this copy.
 type mockWeightFile struct {
-	Name             string `json:"name"`
-	Dest             string `json:"dest"`
-	DigestOriginal   string `json:"digestOriginal"`
-	Digest           string `json:"digest"`
-	Size             int64  `json:"size"`
-	SizeUncompressed int64  `json:"sizeUncompressed"`
-	MediaType        string `json:"mediaType"`
-	ContentType      string `json:"contentType,omitempty"`
+	Name                string `json:"name"`
+	Dest                string `json:"dest"`
+	DigestOriginal      string `json:"digestOriginal"`
+	Digest              string `json:"digest"`
+	Size                int64  `json:"size"`
+	SourceMtimeUnixNano int64  `json:"sourceMtimeUnixNano,omitempty"`
+	SizeUncompressed    int64  `json:"sizeUncompressed"`
+	MediaType           string `json:"mediaType"`
+	ContentType         string `json:"contentType,omitempty"`
 }
 
 // cmdMockWeights generates mock weight files and a weights.lock file.
@@ -1166,18 +1167,23 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 		if err := os.WriteFile(filePath, data, 0o644); err != nil {
 			ts.Fatalf("mock-weights: failed to write %s: %v", filename, err)
 		}
+		fi, err := os.Stat(filePath)
+		if err != nil {
+			ts.Fatalf("mock-weights: failed to stat %s: %v", filename, err)
+		}
 
 		// Compute digest (uncompressed, since we're not actually compressing for tests)
 		hash := sha256.Sum256(data)
 		digest := "sha256:" + hex.EncodeToString(hash[:])
 
 		files = append(files, mockWeightFile{
-			Name:             weightName,
-			Dest:             "/cache/" + filename,
-			DigestOriginal:   digest,
-			Digest:           digest, // Same as original since we're not compressing
-			Size:             size,
-			SizeUncompressed: size,
+			Name:                weightName,
+			Dest:                "/cache/" + filename,
+			DigestOriginal:      digest,
+			Digest:              digest, // Same as original since we're not compressing
+			Size:                size,
+			SourceMtimeUnixNano: fi.ModTime().UnixNano(),
+			SizeUncompressed:    size,
 			// MediaType matches production WeightBuilder output (uncompressed).
 			MediaType:   "application/vnd.cog.weight.layer.v1",
 			ContentType: "application/octet-stream",

@@ -55,14 +55,12 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		}
 		return nil, fmt.Errorf("stat weight file %s: %w", ws.Source, err)
 	}
+	sourceMtimeUnixNano := fi.ModTime().UnixNano()
 
-	// Check lockfile cache: if we have a matching entry (name + size), skip hashing.
-	// NOTE: This cache only checks name + file size. Same-size modifications (rare for
-	// weight files) won't be detected. Delete the lockfile to force re-hashing.
-	// TODO: Consider adding mtime to the cache key for stronger invalidation.
+	// Check lockfile cache: if we have a matching entry (name + size + source mtime), skip hashing.
 	var digestStr string
 	var size int64
-	if cached := b.findCachedEntry(ws.Name(), fi.Size()); cached != nil {
+	if cached := b.findCachedEntry(ws.Name(), fi.Size(), sourceMtimeUnixNano); cached != nil {
 		digestStr = cached.Digest
 		size = cached.Size
 	} else {
@@ -96,16 +94,16 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 	}
 
 	// Update lockfile
-	if err := b.updateLockfile(ws, digestStr, size); err != nil {
+	if err := b.updateLockfile(ws, digestStr, size, sourceMtimeUnixNano); err != nil {
 		return nil, fmt.Errorf("update lockfile: %w", err)
 	}
 
 	return NewWeightArtifact(ws.Name(), desc, absPath, ws.Target, cfg), nil
 }
 
-// findCachedEntry checks the lockfile for an entry matching name and fileSize.
-// Returns the cached WeightFile if found and size matches, nil otherwise.
-func (b *WeightBuilder) findCachedEntry(name string, fileSize int64) *WeightFile {
+// findCachedEntry checks the lockfile for an entry matching name, file size, and source mtime.
+// Returns the cached WeightFile if found, nil otherwise.
+func (b *WeightBuilder) findCachedEntry(name string, fileSize, sourceMtimeUnixNano int64) *WeightFile {
 	if _, err := os.Stat(b.lockPath); err != nil {
 		return nil
 	}
@@ -114,7 +112,12 @@ func (b *WeightBuilder) findCachedEntry(name string, fileSize int64) *WeightFile
 		return nil
 	}
 	for i, f := range lock.Files {
-		if f.Name == name && f.Size == fileSize {
+		// Zero mtime means the lockfile entry came from legacy code and is not trusted
+		// for cache hits.
+		if f.SourceMtimeUnixNano == 0 {
+			continue
+		}
+		if f.Name == name && f.Size == fileSize && f.SourceMtimeUnixNano == sourceMtimeUnixNano {
 			return &lock.Files[i]
 		}
 	}
@@ -123,7 +126,7 @@ func (b *WeightBuilder) findCachedEntry(name string, fileSize int64) *WeightFile
 
 // updateLockfile loads the existing lockfile (if any), adds or updates
 // the entry for the given weight, and saves it back.
-func (b *WeightBuilder) updateLockfile(ws *WeightSpec, digest string, size int64) error {
+func (b *WeightBuilder) updateLockfile(ws *WeightSpec, digest string, size, sourceMtimeUnixNano int64) error {
 	// Load existing lockfile, or start fresh.
 	// LoadWeightsLock wraps the underlying error, so we check the raw file first.
 	lock := &WeightsLock{
@@ -139,13 +142,14 @@ func (b *WeightBuilder) updateLockfile(ws *WeightSpec, digest string, size int64
 	}
 
 	entry := WeightFile{
-		Name:             ws.Name(),
-		Dest:             ws.Target,
-		Digest:           digest,
-		DigestOriginal:   digest,
-		Size:             size,
-		SizeUncompressed: size,
-		MediaType:        MediaTypeWeightLayer,
+		Name:                ws.Name(),
+		Dest:                ws.Target,
+		Digest:              digest,
+		DigestOriginal:      digest,
+		Size:                size,
+		SourceMtimeUnixNano: sourceMtimeUnixNano,
+		SizeUncompressed:    size,
+		MediaType:           MediaTypeWeightLayer,
 	}
 
 	// Update existing entry or append
