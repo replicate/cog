@@ -98,8 +98,12 @@ func run(cmd *cobra.Command, args []string) error {
 		gpus = "all"
 	}
 
+	// Use human-readable log format for local development
+	env := make([]string, len(envFlags))
+	copy(env, envFlags)
+	env = append(env, "LOG_FORMAT=console")
+
 	// Automatically propagate RUST_LOG for Rust coglet debugging
-	env := envFlags
 	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
 		env = append(env, "RUST_LOG="+rustLog)
 	}
