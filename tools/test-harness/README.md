@@ -5,36 +5,49 @@ Designed to test any cog model from any repo.
 
 ## Quick Start
 
+All commands use `uv run` which automatically installs dependencies from
+`pyproject.toml` — no manual venv setup needed.
+
 ```bash
 cd tools/test-harness
 
-# Create a venv and install dependencies
-python3 -m venv .venv
-source .venv/bin/activate
-pip install pyyaml
-
 # List all models in the manifest
-python -m harness list
+uv run cog-test list
 
 # Run all non-GPU models
-python -m harness run --no-gpu
+uv run cog-test run --no-gpu
 
 # Run a specific model
-python -m harness run --model hello-world
+uv run cog-test run --model hello-world
 
 # Run GPU models only (requires NVIDIA GPU + nvidia-docker)
-python -m harness run --gpu-only
+uv run cog-test run --gpu-only
 
 # Output JSON report
-python -m harness run --no-gpu --output json --output-file results/report.json
+uv run cog-test run --no-gpu --output json --output-file results/report.json
 
 # Build images only (no predictions)
-python -m harness build --no-gpu
+uv run cog-test build --no-gpu
+
+# Compare static (Go) vs runtime (Python) schema generation
+uv run cog-test schema-compare --no-gpu
+
+# Compare schemas for a specific fixture model
+uv run cog-test schema-compare --model fixture-scalar-types
+
+# Use a locally-built cog binary
+uv run cog-test schema-compare --no-gpu --cog-binary /path/to/cog
+
+# Test fully from source (CLI + SDK built from main)
+mise run build:cog && mise run build:sdk
+uv run cog-test schema-compare --no-gpu \
+  --cog-binary dist/go/*/cog \
+  --sdk-wheel dist/python/cog-*.whl
 ```
 
 ## Prerequisites
 
-- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) (or Python 3.10+ with `pip install pyyaml`)
 - Docker
 - For GPU models: NVIDIA GPU + nvidia-docker runtime
 
@@ -47,19 +60,19 @@ skipping any alpha/beta/rc tags. You can override either via the CLI or in
 
 ```bash
 # Use the latest stable CLI + SDK (default)
-python -m harness run --no-gpu
+uv run cog-test run --no-gpu
 
 # Pin a specific CLI version
-python -m harness run --cog-version v0.16.12 --no-gpu
+uv run cog-test run --cog-version v0.16.12 --no-gpu
 
 # Pin a specific SDK version
-python -m harness run --sdk-version 0.16.12 --no-gpu
+uv run cog-test run --sdk-version 0.16.12 --no-gpu
 
 # Use a pre-release CLI
-python -m harness run --cog-version v0.17.0-rc.2 --no-gpu
+uv run cog-test run --cog-version v0.17.0-rc.2 --no-gpu
 
 # Use a locally-built binary (overrides --cog-version)
-python -m harness run --cog-binary ./dist/go/darwin-arm64/cog --no-gpu
+uv run cog-test run --cog-binary ./dist/go/darwin-arm64/cog --no-gpu
 ```
 
 You can also pin versions in `manifest.yaml` under `defaults`:
@@ -156,12 +169,13 @@ No code changes required.
 ## CLI Reference
 
 ```
-usage: cog-test {run,build,list} [options]
+usage: cog-test {run,build,list,schema-compare} [options]
 
 Commands:
-  run     Build and test models (full pipeline)
-  build   Build Docker images only (no predictions)
-  list    List models defined in the manifest
+  run              Build and test models (full pipeline)
+  build            Build Docker images only (no predictions)
+  list             List models defined in the manifest
+  schema-compare   Compare static (Go) vs runtime (Python) schema generation
 
 Common options:
   --manifest PATH       Path to manifest.yaml
@@ -171,23 +185,61 @@ Common options:
   --sdk-version VER     SDK version (default: latest stable from PyPI)
   --cog-version TAG     CLI version to download (default: latest stable)
   --cog-binary PATH     Path to local cog binary (overrides --cog-version)
+  --sdk-wheel PATH      Local wheel, URL, or 'pypi[:ver]' (sets COG_SDK_WHEEL, overrides --sdk-version)
   --keep-images         Don't clean up Docker images after run
 
-Run-specific options:
+Run/schema-compare options:
   --output {console,json}   Output format (default: console)
   --output-file PATH        Write report to file
 ```
+
+### Schema Comparison
+
+The `schema-compare` command builds each model **twice** — once with
+`COG_STATIC_SCHEMA=1` (Go tree-sitter parser) and once without (Python
+runtime schema generation) — then compares the resulting OpenAPI schemas
+for exact JSON equality. Any difference is reported as a failure with a
+structured diff showing the exact paths that diverge.
+
+This is useful for catching regressions when changing either the Go static
+schema generator (`pkg/schema/`) or the Python SDK schema generation
+(`python/cog/_adt.py`, `python/cog/_inspector.py`, `python/cog/_schemas.py`).
+
+### Local Fixture Models
+
+Models with `repo: local` are loaded from `fixtures/models/<path>/` instead
+of being cloned from GitHub. These are small predictors designed to cover
+the full input type matrix for schema comparison testing:
+
+| Fixture | What it covers |
+|---------|----------------|
+| `scalar-types` | str, int, float, bool, Secret |
+| `optional-types` | PEP 604 `X \| None` and `Optional[X]` for all types |
+| `list-types` | `list[X]` and `List[X]` for str, int, Path, File |
+| `optional-list-types` | `list[X] \| None` and `Optional[List[X]]` |
+| `constraints-and-choices` | ge/le constraints, string/int choices |
+| `file-path-types` | Path, File, optional Path/File |
+| `complex-output` | BaseModel structured output |
 
 ## Architecture
 
 ```
 tools/test-harness/
 ├── manifest.yaml           # Declarative test definitions
-├── fixtures/               # Test input files (images, etc.)
+├── fixtures/
+│   ├── *.png               # Test input files (images, etc.)
+│   └── models/             # Local fixture models for schema comparison
+│       ├── scalar-types/
+│       ├── optional-types/
+│       ├── list-types/
+│       ├── optional-list-types/
+│       ├── constraints-and-choices/
+│       ├── file-path-types/
+│       └── complex-output/
 ├── harness/
 │   ├── cli.py              # CLI entry point
 │   ├── cog_resolver.py     # Resolves + downloads cog CLI and SDK versions
-│   ├── runner.py           # Clone -> patch -> build -> predict -> validate
+│   ├── runner.py           # Clone -> patch -> build -> predict -> validate + schema compare
 │   ├── patcher.py          # Patches cog.yaml with sdk_version + overrides
 │   ├── validators.py       # Output validation strategies
 │   └── report.py           # Console + JSON report generation
