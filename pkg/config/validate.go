@@ -66,6 +66,9 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 		result.AddError(err)
 	}
 
+	// Migrate deprecated top-level environment into build before validation
+	resolveEnvironment(cfg, result)
+
 	// Semantic validation
 	validatePredict(cfg, result)
 	validateTrain(cfg, result)
@@ -407,16 +410,46 @@ func findPackageVersion(reqs []string, name string) string {
 	return ""
 }
 
-// validateEnvironment validates environment variables.
-func validateEnvironment(cfg *configFile, result *ValidationResult) {
+// resolveEnvironment migrates the deprecated top-level environment into build.environment.
+// If both are set, it returns an error. If only top-level is set, it moves the value
+// into build and emits a deprecation warning.
+func resolveEnvironment(cfg *configFile, result *ValidationResult) {
 	if len(cfg.Environment) == 0 {
 		return
 	}
 
-	_, err := parseAndValidateEnvironment(cfg.Environment)
-	if err != nil {
+	if cfg.Build != nil && len(cfg.Build.Environment) > 0 {
 		result.AddError(&ValidationError{
 			Field:   "environment",
+			Message: "environment cannot be set at both the top level and in the build section; use build.environment only",
+		})
+		return
+	}
+
+	// Migrate top-level into build
+	if cfg.Build == nil {
+		cfg.Build = &buildFile{}
+	}
+	cfg.Build.Environment = cfg.Environment
+	cfg.Environment = nil
+
+	result.AddWarning(DeprecationWarning{
+		Field:       "environment",
+		Replacement: "build.environment",
+		Message:     "move the environment list into the build section",
+	})
+}
+
+// validateEnvironment validates environment variables.
+func validateEnvironment(cfg *configFile, result *ValidationResult) {
+	if cfg.Build == nil || len(cfg.Build.Environment) == 0 {
+		return
+	}
+
+	_, err := parseAndValidateEnvironment(cfg.Build.Environment)
+	if err != nil {
+		result.AddError(&ValidationError{
+			Field:   "build.environment",
 			Message: err.Error(),
 		})
 	}
