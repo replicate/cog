@@ -30,3 +30,10 @@ func DockerImageName(projectDir string) string {
 
 	return projectName
 }
+
+// BaseDockerImageName returns the Docker image name for base images
+// used by dev-mode commands (cog serve, predict, run, train).
+// These are tagged with "-base" to avoid overwriting images built by "cog build".
+func BaseDockerImageName(projectDir string) string {
+	return DockerImageName(projectDir) + "-base"
+}

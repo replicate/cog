@@ -66,7 +66,7 @@ func serveBuildOptions(cmd *cobra.Command) model.BuildOptions {
 		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
 		ProgressOutput:   buildProgressOutput,
 		ExcludeSource:    true,
-		SkipLabels:       true,
+		BaseImageOnly:    true,
 	}
 }
 
