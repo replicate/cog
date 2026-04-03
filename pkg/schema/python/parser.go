@@ -741,6 +741,7 @@ type inputCallInfo struct {
 	Regex       *string
 	Choices     []schema.DefaultValue
 	Deprecated  *bool
+	Accept      *string
 }
 
 type inputMethodInfo struct {
@@ -1158,38 +1159,20 @@ func parseTypedDefaultParameter(
 			if err != nil {
 				return schema.InputField{}, err
 			}
-			return schema.InputField{
-				Name:        name,
-				Order:       order,
-				FieldType:   fieldType,
-				Default:     info.Default,
-				Description: info.Description,
-				GE:          info.GE,
-				LE:          info.LE,
-				MinLength:   info.MinLength,
-				MaxLength:   info.MaxLength,
-				Regex:       info.Regex,
-				Choices:     info.Choices,
-				Deprecated:  info.Deprecated,
-			}, nil
+			field, err := inputCallInfoToField(name, order, fieldType, info)
+			if err != nil {
+				return schema.InputField{}, err
+			}
+			return field, nil
 		}
 
 		// 2. Reference to Input() via class attribute or static method
 		if info, ok := resolveInputReference(valNode, source, registry); ok {
-			return schema.InputField{
-				Name:        name,
-				Order:       order,
-				FieldType:   fieldType,
-				Default:     info.Default,
-				Description: info.Description,
-				GE:          info.GE,
-				LE:          info.LE,
-				MinLength:   info.MinLength,
-				MaxLength:   info.MaxLength,
-				Regex:       info.Regex,
-				Choices:     info.Choices,
-				Deprecated:  info.Deprecated,
-			}, nil
+			field, err := inputCallInfoToField(name, order, fieldType, info)
+			if err != nil {
+				return schema.InputField{}, err
+			}
+			return field, nil
 		}
 
 		// 3. Plain default — must be statically resolvable
@@ -1349,6 +1332,30 @@ func isInputCall(node *sitter.Node, source []byte, imports *schema.ImportContext
 	return false
 }
 
+// inputCallInfoToField converts parsed Input() kwargs into an InputField,
+// validating that accept is only used on Path/File types.
+func inputCallInfoToField(name string, order int, fieldType schema.FieldType, info inputCallInfo) (schema.InputField, error) {
+	if info.Accept != nil && fieldType.Primitive != schema.TypePath && fieldType.Primitive != schema.TypeFile {
+		return schema.InputField{}, schema.NewError(schema.ErrAcceptOnNonFileType,
+			fmt.Sprintf("accept is only valid on Path or File inputs (parameter '%s')", name))
+	}
+	return schema.InputField{
+		Name:        name,
+		Order:       order,
+		FieldType:   fieldType,
+		Default:     info.Default,
+		Description: info.Description,
+		GE:          info.GE,
+		LE:          info.LE,
+		MinLength:   info.MinLength,
+		MaxLength:   info.MaxLength,
+		Regex:       info.Regex,
+		Choices:     info.Choices,
+		Deprecated:  info.Deprecated,
+		Accept:      info.Accept,
+	}, nil
+}
+
 func parseInputCall(node *sitter.Node, source []byte, paramName string, scope moduleScope) (inputCallInfo, error) {
 	var info inputCallInfo
 
@@ -1415,6 +1422,10 @@ func parseInputCall(node *sitter.Node, source []byte, paramName string, scope mo
 		case "deprecated":
 			if b, ok := parseBoolLiteral(valNode, source); ok {
 				info.Deprecated = &b
+			}
+		case "accept":
+			if s, ok := parseStringLiteral(valNode, source); ok {
+				info.Accept = &s
 			}
 		}
 	}
