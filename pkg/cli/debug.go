@@ -75,7 +75,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	}
 
 	client := registry.NewRegistryClient()
-	generator, err := dockerfile.NewGenerator(cfg, projectDir, configFilename, dockerClient, client, true)
+	generator, err := dockerfile.NewGenerator(cfg, projectDir, configFilename, dockerClient, client, true, buildPlatform)
 	if err != nil {
 		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}

@@ -52,6 +52,7 @@ exploring the environment your model will run in.`,
 	addDockerfileFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
+	addPlatformFlag(cmd)
 	addGpusFlag(cmd)
 	addConfigFlag(cmd)
 
