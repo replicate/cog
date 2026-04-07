@@ -229,7 +229,7 @@ func buildOpenAPISpec(info *PredictorInfo) map[string]any {
 			"parameters": []any{
 				map[string]any{
 					"required": true,
-					"schema":   map[string]any{"title": TitleCaseSingle(cancelParam), "type": "string"},
+					"schema":   map[string]any{"title": TitleCase(cancelParam), "type": "string"},
 					"name":     cancelParam,
 					"in":       "path",
 				},
