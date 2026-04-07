@@ -31,8 +31,10 @@ class MetricRecorder:
         Record a metric value.
 
         Args:
-            key: Metric name. Dot-separated keys (e.g. "timing.preprocess") create
-                nested objects in the response.
+            key: Metric name. Each dot-separated segment must start with a letter
+                and contain only letters, digits, and underscores (no leading/trailing/consecutive
+                underscores). Maximum 128 characters and 4 segments. Reserved names:
+                "predict_time" and anything starting with "cog.".
             value: Must be bool, int, float, str, list, or dict. Once a key is set
                 with a type, it cannot be changed without calling delete() first.
             mode: Accumulation mode — "replace" (default), "incr" (increment numeric),
@@ -82,6 +84,10 @@ class Scope:
         Convenience: record a metric value.
 
         Equivalent to `scope.metrics.record(key, value, mode)`.
+
+        Metric names must follow naming rules: each segment must start with a
+        letter, contain only letters/digits/underscores, max 128 chars, max 4
+        segments, and cannot be "predict_time" or start with "cog.".
         """
     def __repr__(self) -> builtins.str: ...
 
