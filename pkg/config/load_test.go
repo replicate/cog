@@ -13,7 +13,7 @@ build:
   python_version: "3.10"
   python_requirements: requirements.txt
   system_packages:
-    - libgl1-mesa-glx
+    - libgl1
     - libglib2.0-0
 predict: "predict.py:SomePredictor"
 `
