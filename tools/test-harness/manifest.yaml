@@ -159,6 +159,82 @@ models:
         expect:
           type: file_exists
 
+  # ── Local fixture models (schema comparison) ─────────────────────────
+  # These use repo: local and path: relative to fixtures/models/.
+  # They cover the full input type matrix for schema-compare testing.
+
+  - name: fixture-scalar-types
+    repo: local
+    path: scalar-types
+    gpu: false
+    tests:
+      - description: "basic scalar inputs"
+        inputs:
+          text: "hello"
+          api_key: "secret123"
+        expect:
+          type: contains
+          value: "hello"
+
+  - name: fixture-optional-types
+    repo: local
+    path: optional-types
+    gpu: false
+    tests:
+      - description: "optional inputs default to None"
+        inputs:
+          text: "hello"
+        expect:
+          type: exact
+          value: "hello"
+
+  - name: fixture-list-types
+    repo: local
+    path: list-types
+    gpu: false
+
+  - name: fixture-optional-list-types
+    repo: local
+    path: optional-list-types
+    gpu: false
+    tests:
+      - description: "optional lists default to None"
+        inputs:
+          text: "hello"
+        expect:
+          type: exact
+          value: "hello"
+
+  - name: fixture-constraints-and-choices
+    repo: local
+    path: constraints-and-choices
+    gpu: false
+    tests:
+      - description: "defaults with constraints and choices"
+        inputs: {}
+        expect:
+          type: exact
+          value: "hello-0.7-50-balanced-1"
+
+  - name: fixture-file-path-types
+    repo: local
+    path: file-path-types
+    gpu: false
+
+  - name: fixture-complex-output
+    repo: local
+    path: complex-output
+    gpu: false
+    tests:
+      - description: "structured BaseModel output"
+        inputs:
+          prompt: "test"
+        expect:
+          type: json_match
+          match:
+            text: "generated: test"
+            score: 0.95
+
   # ── External models (add your own below) ────────────────────────────
   # - name: my-custom-model
   #   repo: myorg/my-model-repo

@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, TextIO
 
-from .runner import ModelResult
+from .runner import ModelResult, SchemaCompareResult
 
 
 def console_report(
@@ -166,3 +166,86 @@ def _timing_str(build_s: float, tests: list[Any]) -> str:
         total_predict = sum(t.duration_s for t in tests)
         parts.append(f"{total_predict:.1f}s predict")
     return f"({', '.join(parts)})"
+
+
+# ── Schema comparison report ──────────────────────────────────────────
+
+
+def schema_compare_console_report(
+    results: list[SchemaCompareResult],
+    *,
+    cog_version: str = "",
+    stream: TextIO = sys.stdout,
+) -> None:
+    """Print a schema comparison summary table."""
+    header = "Schema Comparison Report"
+    if cog_version:
+        header += f" (CLI {cog_version})"
+    stream.write(f"\n{'=' * len(header)}\n")
+    stream.write(f"{header}\n")
+    stream.write(f"{'=' * len(header)}\n\n")
+
+    passed = 0
+    failed = 0
+
+    for r in results:
+        if r.error:
+            _write(stream, "FAIL", r.name, r.error.splitlines()[0])
+            failed += 1
+            continue
+
+        if r.passed:
+            timing = (
+                f"(static {r.static_build_s:.1f}s, runtime {r.runtime_build_s:.1f}s)"
+            )
+            _write(stream, "PASS", r.name, f"schemas match {timing}")
+            passed += 1
+        else:
+            _write(stream, "FAIL", r.name, "schemas differ")
+            failed += 1
+            if r.diff:
+                for line in r.diff.splitlines():
+                    stream.write(f"    {line}\n")
+
+    stream.write(f"\n{'-' * 40}\n")
+    total = passed + failed
+    stream.write(f"{passed}/{total} passed")
+    if failed:
+        stream.write(f", {failed} FAILED")
+    stream.write("\n\n")
+
+
+def schema_compare_json_report(
+    results: list[SchemaCompareResult],
+    *,
+    cog_version: str = "",
+) -> dict[str, Any]:
+    """Return a JSON-serializable schema comparison report."""
+    models = []
+    for r in results:
+        entry: dict[str, Any] = {
+            "name": r.name,
+            "passed": r.passed,
+            "static_build_s": round(r.static_build_s, 2),
+            "runtime_build_s": round(r.runtime_build_s, 2),
+        }
+        if r.error:
+            entry["error"] = r.error
+        if r.diff:
+            entry["diff"] = r.diff
+        models.append(entry)
+
+    total = len(results)
+    passed_count = sum(1 for r in results if r.passed)
+    failed_count = sum(1 for r in results if not r.passed)
+
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "cog_version": cog_version,
+        "summary": {
+            "total": total,
+            "passed": passed_count,
+            "failed": failed_count,
+        },
+        "models": models,
+    }
