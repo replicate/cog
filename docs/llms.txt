@@ -2039,9 +2039,27 @@ Metrics appear in the prediction response `metrics` field:
 }
 ```
 
-The `predict_time` metric is always added automatically by the runtime. If you set `predict_time` yourself, the runtime value takes precedence.
+The `predict_time` metric is always added automatically by the runtime.
 
 Supported value types are `bool`, `int`, `float`, `str`, `list`, and `dict`. Setting a metric to `None` deletes it.
+
+### Naming rules
+
+Metric names must follow these rules:
+
+- Each segment must start with a letter (`a-z`, `A-Z`) and end with a letter or digit
+- Segments can contain letters, digits, and underscores (`_`)
+- Segments cannot start or end with underscores
+- Segments cannot contain consecutive underscores (`__`)
+- Use dots (`.`) to create nested objects (e.g., `timing.inference` produces `{"timing": {"inference": ...}}`)
+- Maximum 128 characters total
+- Maximum 4 dot-separated segments
+- Cannot be `predict_time` (reserved by runtime)
+- Cannot start with `cog.` (reserved for system metrics)
+
+Valid examples: `temperature`, `token_count`, `TTFT`, `T2I_latency`, `timing.preprocess`
+
+Invalid examples: `_token`, `token_`, `foo__bar`, `.foo`, `foo..bar`, `foo bar`, `cog.system`
 
 ### Accumulation modes
 
