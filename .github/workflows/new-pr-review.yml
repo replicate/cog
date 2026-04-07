@@ -6,7 +6,7 @@ on:
 
 jobs:
   review:
-    if: github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
+    if: github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
