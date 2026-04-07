@@ -114,7 +114,10 @@ def _validate_input_constraints(
             actual_default = field_info.default
 
         if actual_default is not None:
-            if ft.repetition is adt.Repetition.REPEATED:
+            if ft.repetition in (
+                adt.Repetition.REPEATED,
+                adt.Repetition.OPTIONAL_REPEATED,
+            ):
                 defaults = ft.normalize(actual_default)
             else:
                 defaults = [ft.normalize(actual_default)]
@@ -317,7 +320,7 @@ def _create_output_type(tpe: type) -> adt.OutputType:
 
     else:
         ft = adt.FieldType.from_type(tpe)
-        if ft.repetition is adt.Repetition.OPTIONAL:
+        if ft.repetition in (adt.Repetition.OPTIONAL, adt.Repetition.OPTIONAL_REPEATED):
             raise ValueError("output must not be Optional")
         if ft.repetition == adt.Repetition.REQUIRED:
             kind = adt.OutputKind.SINGLE
@@ -502,13 +505,19 @@ def check_input(
                 elif input_field.default.default is not MISSING:
                     kwargs[name] = input_field.default.default
                 else:
-                    if input_field.type.repetition is not adt.Repetition.OPTIONAL:
+                    if input_field.type.repetition not in (
+                        adt.Repetition.OPTIONAL,
+                        adt.Repetition.OPTIONAL_REPEATED,
+                    ):
                         raise ValueError(f"{name}: Field required")
                     kwargs[name] = None
             elif input_field.default is not None:
                 kwargs[name] = input_field.default
             else:
-                if input_field.type.repetition is not adt.Repetition.OPTIONAL:
+                if input_field.type.repetition not in (
+                    adt.Repetition.OPTIONAL,
+                    adt.Repetition.OPTIONAL_REPEATED,
+                ):
                     raise ValueError(f"{name}: Field required")
                 kwargs[name] = None
 
@@ -521,6 +530,8 @@ def check_input(
             values_to_check = [] if v is None else [v]
         elif input_field.type.repetition is adt.Repetition.REPEATED:
             values_to_check = v
+        elif input_field.type.repetition is adt.Repetition.OPTIONAL_REPEATED:
+            values_to_check = [] if v is None else v
 
         if input_field.ge is not None:
             if not all(x >= input_field.ge for x in values_to_check):

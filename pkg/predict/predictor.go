@@ -35,9 +35,10 @@ type Request struct {
 }
 
 type Response struct {
-	Status status `json:"status"`
-	Output *any   `json:"output"`
-	Error  string `json:"error"`
+	Status  status         `json:"status"`
+	Output  *any           `json:"output"`
+	Error   string         `json:"error"`
+	Metrics map[string]any `json:"metrics,omitempty"`
 }
 
 type ValidationErrorResponse struct {
@@ -217,10 +218,16 @@ func (p *Predictor) Predict(inputs Inputs, context RequestContext) (*Response, e
 }
 
 func (p *Predictor) GetSchema() (*openapi3.T, error) {
-	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/openapi.json", p.port))
+	url := fmt.Sprintf("http://localhost:%d/openapi.json", p.port)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create request for OpenAPI schema: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL from localhost
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Failed to get OpenAPI schema: %d", resp.StatusCode)
 	}

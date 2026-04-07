@@ -1,0 +1,51 @@
+# Test PEP 604 Path | None input annotation.
+#
+# When a predictor declares `path: Path | None`, coglet should recognise
+# the Path type through the PEP 604 union and coerce URL/file inputs
+# into cog.Path objects, just like it does for Optional[Path].
+
+cog build -t $TEST_IMAGE
+
+# --- Test via cog predict (CLI) ---
+
+# Providing a file input should work.
+cog predict $TEST_IMAGE -i path=@input.txt
+stdout 'type=Path content=hello from file'
+
+# Omitting the optional input should yield None.
+cog predict $TEST_IMAGE
+stdout 'type=NoneType content=none'
+
+# --- Test via cog serve (HTTP API) ---
+
+cog serve
+
+# POST with a data URL should coerce to Path.
+curl POST /predictions '{"input":{"path":"data:text/plain;base64,aGVsbG8gZnJvbSBkYXRhIHVybA=="}}'
+stdout '"status":"succeeded"'
+stdout 'type=Path content=hello from data url'
+
+# POST with no path input — should get None.
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+stdout 'type=NoneType content=none'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Path, Input
+
+
+class Predictor(BasePredictor):
+    def predict(self, path: Path | None = Input(default=None)) -> str:
+        if path is None:
+            return "type=NoneType content=none"
+        with open(path) as f:
+            content = f.read()
+        return f"type=Path content={content}"
+
+-- input.txt --
+hello from file

@@ -195,6 +195,7 @@ class Repetition(Enum):
     REQUIRED = 1
     OPTIONAL = 2
     REPEATED = 3
+    OPTIONAL_REPEATED = 4  # list[X] | None
 
 
 @dataclass(frozen=True)
@@ -251,11 +252,27 @@ class FieldType:
                 raise ValueError(f"unsupported union type {tpe}")
             elem_t = t_args[0] if t_args[1] is type(None) else t_args[1]
             nested_t = typing.get_origin(elem_t)
-            if nested_t is not None:
+            if nested_t in (list, List):
+                # list[X] | None  →  optional repeated
+                list_args = typing.get_args(elem_t)
+                if list_args:
+                    if len(list_args) != 1:
+                        raise ValueError("List must have one type argument")
+                    elem_t = list_args[0]
+                    inner_origin = typing.get_origin(elem_t)
+                    if inner_origin is not None:
+                        raise ValueError(
+                            f"List cannot have nested type {_type_name(inner_origin)}"
+                        )
+                else:
+                    elem_t = Any
+                repetition = Repetition.OPTIONAL_REPEATED
+            elif nested_t is not None:
                 raise ValueError(
                     f"Optional cannot have nested type {_type_name(nested_t)}"
                 )
-            repetition = Repetition.OPTIONAL
+            else:
+                repetition = Repetition.OPTIONAL
 
         else:
             elem_t = tpe
@@ -278,11 +295,15 @@ class FieldType:
             return None if value is None else self.primitive.normalize(value)
         elif self.repetition is Repetition.REPEATED:
             return [self.primitive.normalize(v) for v in value]
+        elif self.repetition is Repetition.OPTIONAL_REPEATED:
+            return (
+                None if value is None else [self.primitive.normalize(v) for v in value]
+            )
         return value
 
     def json_type(self) -> Dict[str, Any]:
         """Get the JSON Schema type for this field."""
-        if self.repetition is Repetition.REPEATED:
+        if self.repetition in (Repetition.REPEATED, Repetition.OPTIONAL_REPEATED):
             return {"type": "array", "items": self.primitive.json_type()}
         return self.primitive.json_type()
 
@@ -292,7 +313,9 @@ class FieldType:
         if self.primitive is PrimitiveType.CUSTOM:
             assert self.coder is not None
             f = self.coder.encode
-        if self.repetition is Repetition.REPEATED:
+        if self.repetition in (Repetition.REPEATED, Repetition.OPTIONAL_REPEATED):
+            if value is None:
+                return None
             return [f(x) for x in value]
         return f(value)
 
@@ -302,7 +325,9 @@ class FieldType:
             return value
         assert self.coder is not None
         f = self.coder.decode
-        if self.repetition is Repetition.REPEATED:
+        if self.repetition in (Repetition.REPEATED, Repetition.OPTIONAL_REPEATED):
+            if value is None:
+                return None
             return [f(x) for x in value]
         return f(value)
 
@@ -314,6 +339,8 @@ class FieldType:
             return f"Optional[{self.primitive.python_type_name()}]"
         elif self.repetition is Repetition.REPEATED:
             return f"List[{self.primitive.python_type_name()}]"
+        elif self.repetition is Repetition.OPTIONAL_REPEATED:
+            return f"Optional[List[{self.primitive.python_type_name()}]]"
         return self.primitive.python_type_name()
 
 
@@ -449,7 +476,10 @@ class OutputType:
                     raise ValueError(f"missing output field: {name}")
                 v = getattr(value, name)
                 if v is None:
-                    if ft.repetition is not Repetition.OPTIONAL:
+                    if ft.repetition not in (
+                        Repetition.OPTIONAL,
+                        Repetition.OPTIONAL_REPEATED,
+                    ):
                         raise ValueError(f"missing value for output field: {name}")
                 setattr(value, name, f(v))
             return value

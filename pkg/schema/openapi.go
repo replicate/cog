@@ -332,7 +332,7 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 		}
 
 		// Nullable
-		if field.FieldType.Repetition == Optional {
+		if field.FieldType.Repetition == Optional || field.FieldType.Repetition == OptionalRepeated {
 			prop.Set("nullable", true)
 		}
 
