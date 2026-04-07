@@ -325,9 +325,7 @@ fn validate_metric_name_structure(key: &str) -> PyResult<()> {
                     "metric name must not start with a dot",
                 ));
             } else if i == segments.len() - 1 {
-                return Err(PyValueError::new_err(
-                    "metric name must not end with a dot",
-                ));
+                return Err(PyValueError::new_err("metric name must not end with a dot"));
             } else {
                 return Err(PyValueError::new_err(
                     "metric name must not contain empty segments (consecutive dots)",
