@@ -61,7 +61,7 @@ class Scope:
         The metric recorder for this prediction.
         """
     @property
-    def context(self) -> dict:
+    def context(self) -> dict[builtins.str, builtins.str]:
         r"""
         Per-prediction context passed in the request body.
         
