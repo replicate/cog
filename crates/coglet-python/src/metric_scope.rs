@@ -367,6 +367,14 @@ fn get_scope_contextvar(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
     })
 }
 
+/// Get the scope ContextVar for passing to async coroutine wrappers.
+///
+/// This is needed so that `predict_async_worker` can propagate the metric scope
+/// to the event loop thread (same pattern as log routing with `_coglet_prediction_id`).
+pub fn get_scope_contextvar_for_async(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
+    get_scope_contextvar(py)
+}
+
 /// Set the current scope in the ContextVar (for async predictions).
 pub fn set_current_scope(py: Python<'_>, scope: &Py<Scope>) -> PyResult<Py<PyAny>> {
     let cv = get_scope_contextvar(py)?;
@@ -393,21 +401,19 @@ pub fn clear_sync_scope() {
 /// Python-callable: get the current Scope.
 ///
 /// Returns the active scope if inside a prediction, or a no-op scope otherwise.
+///
+/// Lookup order: ContextVar first, then sync scope fallback.
+/// ContextVar is per-coroutine (async) / per-thread (sync), so it always
+/// returns the correct scope even under concurrency > 1. The sync scope
+/// (process-wide mutex) is a fallback for edge cases where the ContextVar
+/// hasn't been initialized yet.
 #[gen_stub_pyfunction(module = "coglet._sdk")]
 #[pyfunction]
 #[pyo3(name = "current_scope")]
 pub fn py_current_scope(py: Python<'_>) -> PyResult<Py<Scope>> {
-    // Try sync scope first
-    {
-        let slot = get_sync_scope_slot()
-            .lock()
-            .expect("sync_scope mutex poisoned");
-        if let Some(ref scope) = *slot {
-            return Ok(scope.clone_ref(py));
-        }
-    }
-
-    // Try ContextVar (async predictions)
+    // Try ContextVar first — correct under concurrency for both sync and async.
+    // For sync predictions, ScopeGuard::enter() sets this on the worker thread.
+    // For async predictions, _ctx_wrapper sets this on the event loop thread.
     if let Some(cv) = SCOPE_CONTEXTVAR.get() {
         match cv.call_method0(py, "get") {
             Ok(val) => {
@@ -415,9 +421,21 @@ pub fn py_current_scope(py: Python<'_>) -> PyResult<Py<Scope>> {
                 return Ok(scope);
             }
             Err(e) if e.is_instance_of::<pyo3::exceptions::PyLookupError>(py) => {
-                // Not set — fall through to no-op
+                // Not set — fall through to sync scope
             }
             Err(e) => return Err(e),
+        }
+    }
+
+    // Fallback: sync scope (process-wide mutex).
+    // This handles the edge case where the ContextVar hasn't been initialized
+    // yet but a scope has been entered.
+    {
+        let slot = get_sync_scope_slot()
+            .lock()
+            .expect("sync_scope mutex poisoned");
+        if let Some(ref scope) = *slot {
+            return Ok(scope.clone_ref(py));
         }
     }
 
@@ -441,6 +459,11 @@ pub struct ScopeGuard {
 }
 
 impl ScopeGuard {
+    /// Get a reference to the scope (for passing to async coroutine wrappers).
+    pub fn scope(&self) -> &Py<Scope> {
+        &self.scope
+    }
+
     /// Enter scope for a prediction.
     pub fn enter(
         py: Python<'_>,

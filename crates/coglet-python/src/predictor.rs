@@ -59,8 +59,9 @@ fn get_ctx_wrapper(py: Python<'_>) -> Result<Py<PyAny>, PredictionError> {
     }
 
     let code = c"\
-async def _ctx_wrapper(coro, prediction_id, contextvar):
-    contextvar.set(prediction_id)
+async def _ctx_wrapper(coro, prediction_id, log_contextvar, scope, scope_contextvar):
+    log_contextvar.set(prediction_id)
+    scope_contextvar.set(scope)
     return await coro
 ";
     let globals = PyDict::new(py);
@@ -98,6 +99,68 @@ fn is_cancelation_exception(py: Python<'_>, err: &PyErr) -> bool {
 /// Cog validation errors are already formatted as "field: message".
 fn format_validation_error(py: Python<'_>, err: &PyErr) -> String {
     err.value(py).to_string()
+}
+
+/// Wrap a coroutine with log + metric context and submit it to a shared event loop.
+///
+/// Sets up ContextVars for both log routing and metric scope recording in the
+/// event loop thread (which is different from the worker thread that created the scope).
+/// Returns a `concurrent.futures.Future` that resolves when the coroutine completes.
+fn submit_async_coroutine(
+    py: Python<'_>,
+    coro: &Bound<'_, PyAny>,
+    event_loop: &Py<PyAny>,
+    prediction_id: &str,
+    scope: Option<&Py<crate::metric_scope::Scope>>,
+) -> Result<Py<PyAny>, PredictionError> {
+    let asyncio = py
+        .import("asyncio")
+        .map_err(|e| PredictionError::Failed(format!("Failed to import asyncio: {}", e)))?;
+    let ctx_wrapper = get_ctx_wrapper(py)?;
+
+    // Get the ContextVar instances for log and metric routing
+    let log_contextvar = crate::log_writer::get_prediction_contextvar(py)
+        .map_err(|e| PredictionError::Failed(format!("Failed to get log ContextVar: {e}")))?;
+    let scope_contextvar = crate::metric_scope::get_scope_contextvar_for_async(py)
+        .map_err(|e| PredictionError::Failed(format!("Failed to get scope ContextVar: {e}")))?;
+
+    // Resolve the scope object (or create a noop scope if none provided)
+    let scope_obj: Py<crate::metric_scope::Scope> = match scope {
+        Some(s) => s.clone_ref(py),
+        None => Py::new(
+            py,
+            crate::metric_scope::Scope::noop(py).map_err(|e| {
+                PredictionError::Failed(format!("Failed to create noop scope: {}", e))
+            })?,
+        )
+        .map_err(|e| PredictionError::Failed(format!("Failed to wrap noop scope: {}", e)))?,
+    };
+
+    // Wrap the coroutine with context setup
+    let wrapped_coro = ctx_wrapper
+        .call1(
+            py,
+            (
+                coro,
+                prediction_id,
+                log_contextvar.bind(py),
+                scope_obj.bind(py),
+                scope_contextvar.bind(py),
+            ),
+        )
+        .map_err(|e| {
+            PredictionError::Failed(format!("Failed to wrap coroutine with context: {}", e))
+        })?;
+
+    // Submit wrapped coroutine to shared event loop via run_coroutine_threadsafe
+    let future = asyncio
+        .call_method1(
+            "run_coroutine_threadsafe",
+            (wrapped_coro.bind(py), event_loop.bind(py)),
+        )
+        .map_err(|e| PredictionError::Failed(format!("Failed to submit coroutine: {}", e)))?;
+
+    Ok(future.unbind())
 }
 
 /// Send a single output item over IPC, routing file outputs to disk.
@@ -855,19 +918,18 @@ impl PythonPredictor {
     /// Caller should block on future.result() to get the result, then drop PreparedInput.
     ///
     /// The prediction_id is used to set up log routing in the event loop thread.
+    /// The scope is used to propagate metric recording to the event loop thread.
     pub fn predict_async_worker(
         &self,
         input: serde_json::Value,
         event_loop: &Py<PyAny>,
         prediction_id: &str,
+        scope: Option<&Py<crate::metric_scope::Scope>>,
     ) -> Result<(Py<PyAny>, bool, PreparedInput), PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;
-            let asyncio = py
-                .import("asyncio")
-                .map_err(|e| PredictionError::Failed(format!("Failed to import asyncio: {}", e)))?;
 
             let input_str = serde_json::to_string(&input)
                 .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
@@ -913,32 +975,10 @@ impl PythonPredictor {
                 coro
             };
 
-            // Wrap coroutine to set up log routing in the event loop thread
-            let ctx_wrapper = get_ctx_wrapper(py)?;
+            // Wrap coroutine with log + metric context and submit to event loop
+            let future = submit_async_coroutine(py, &coro, event_loop, prediction_id, scope)?;
 
-            // Get the same ContextVar instance used by SlotLogWriter for log routing
-            let contextvar = crate::log_writer::get_prediction_contextvar(py).map_err(|e| {
-                PredictionError::Failed(format!("Failed to get prediction ContextVar: {}", e))
-            })?;
-
-            // Wrap the coroutine with context setup
-            let wrapped_coro = ctx_wrapper
-                .call1(py, (&coro, prediction_id, contextvar.bind(py)))
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to wrap coroutine with context: {}", e))
-                })?;
-
-            // Submit wrapped coroutine to shared event loop via run_coroutine_threadsafe
-            let future = asyncio
-                .call_method1(
-                    "run_coroutine_threadsafe",
-                    (wrapped_coro.bind(py), event_loop.bind(py)),
-                )
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to submit coroutine: {}", e))
-                })?;
-
-            Ok((future.unbind(), is_async_gen, prepared))
+            Ok((future, is_async_gen, prepared))
         })
     }
 
@@ -997,14 +1037,12 @@ impl PythonPredictor {
         input: serde_json::Value,
         event_loop: &Py<PyAny>,
         prediction_id: &str,
+        scope: Option<&Py<crate::metric_scope::Scope>>,
     ) -> Result<(Py<PyAny>, bool, PreparedInput), PredictionError> {
         Python::attach(|py| {
             let json_module = py.import("json").map_err(|e| {
                 PredictionError::Failed(format!("Failed to import json module: {}", e))
             })?;
-            let asyncio = py
-                .import("asyncio")
-                .map_err(|e| PredictionError::Failed(format!("Failed to import asyncio: {}", e)))?;
 
             let input_str = serde_json::to_string(&input)
                 .map_err(|e| PredictionError::InvalidInput(e.to_string()))?;
@@ -1032,33 +1070,11 @@ impl PythonPredictor {
             }
             .map_err(|e| PredictionError::Failed(format!("Failed to call train: {}", e)))?;
 
-            // Wrap coroutine to set up log routing
-            let ctx_wrapper = get_ctx_wrapper(py)?;
-
-            // Get the same ContextVar instance used by SlotLogWriter
-            let contextvar = crate::log_writer::get_prediction_contextvar(py).map_err(|e| {
-                PredictionError::Failed(format!("Failed to get prediction ContextVar: {}", e))
-            })?;
-
-            // Wrap the coroutine with context setup
-            let wrapped_coro = ctx_wrapper
-                .call1(py, (&coro, prediction_id, contextvar.bind(py)))
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to wrap coroutine with context: {}", e))
-                })?;
-
-            // Submit wrapped coroutine to shared event loop
-            let future = asyncio
-                .call_method1(
-                    "run_coroutine_threadsafe",
-                    (wrapped_coro.bind(py), event_loop.bind(py)),
-                )
-                .map_err(|e| {
-                    PredictionError::Failed(format!("Failed to submit coroutine: {}", e))
-                })?;
+            // Wrap coroutine with log + metric context and submit to event loop
+            let future = submit_async_coroutine(py, &coro, event_loop, prediction_id, scope)?;
 
             // Train doesn't typically use async generators, but we return false for consistency
-            Ok((future.unbind(), false, prepared))
+            Ok((future, false, prepared))
         })
     }
 
