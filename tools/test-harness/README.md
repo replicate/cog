@@ -38,7 +38,14 @@ uv run cog-test schema-compare --model fixture-scalar-types
 # Use a locally-built cog binary
 uv run cog-test schema-compare --no-gpu --cog-binary /path/to/cog
 
-# Test fully from source (CLI + SDK built from main)
+# Test from a git branch (builds CLI + SDK automatically)
+uv run cog-test schema-compare --no-gpu --cog-ref main
+uv run cog-test schema-compare --no-gpu --cog-ref feat/new-schema
+
+# Test from a specific commit
+uv run cog-test schema-compare --no-gpu --cog-ref abc1234
+
+# Test fully from source (manual build)
 mise run build:cog && mise run build:sdk
 uv run cog-test schema-compare --no-gpu \
   --cog-binary dist/go/*/cog \
@@ -49,6 +56,7 @@ uv run cog-test schema-compare --no-gpu \
 
 - [uv](https://docs.astral.sh/uv/) (or Python 3.10+ with `pip install pyyaml`)
 - Docker
+- For `--cog-ref`: Go and uv on PATH (run `mise install` to set up)
 - For GPU models: NVIDIA GPU + nvidia-docker runtime
 
 ### Version Resolution
@@ -83,7 +91,9 @@ defaults:
   cog_version: "latest"    # or pin e.g. "v0.16.12"
 ```
 
-**Resolution priority** (for both CLI and SDK): CLI flag > manifest default > latest stable.
+**Resolution priority:**
+- CLI binary: `--cog-binary` > `--cog-ref` > `--cog-version` > manifest default > latest stable
+- SDK: `--sdk-wheel` > `--cog-ref` (auto-built) > `--sdk-version` > manifest default > latest stable
 
 ## Manifest Format
 
@@ -184,8 +194,9 @@ Common options:
   --gpu-only            Only run GPU models
   --sdk-version VER     SDK version (default: latest stable from PyPI)
   --cog-version TAG     CLI version to download (default: latest stable)
-  --cog-binary PATH     Path to local cog binary (overrides --cog-version)
-  --sdk-wheel PATH      Local wheel, URL, or 'pypi[:ver]' (sets COG_SDK_WHEEL, overrides --sdk-version)
+  --cog-binary PATH     Path to local cog binary (overrides --cog-version and --cog-ref)
+  --cog-ref REF         Git ref to build from source (branch, tag, or SHA; requires go + uv)
+  --sdk-wheel PATH      Local wheel, URL, or 'pypi[:ver]' (sets COG_SDK_WHEEL, overrides --sdk-version and --cog-ref wheel)
   --keep-images         Don't clean up Docker images after run
 
 Run/schema-compare options:
@@ -195,8 +206,8 @@ Run/schema-compare options:
 
 ### Schema Comparison
 
-The `schema-compare` command builds each model **twice** — once with
-`COG_STATIC_SCHEMA=1` (Go tree-sitter parser) and once without (Python
+The `schema-compare` command builds each model **twice in parallel** — once
+with `COG_STATIC_SCHEMA=1` (Go tree-sitter parser) and once without (Python
 runtime schema generation) — then compares the resulting OpenAPI schemas
 for exact JSON equality. Any difference is reported as a failure with a
 structured diff showing the exact paths that diverge.

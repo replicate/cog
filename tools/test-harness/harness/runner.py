@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -151,6 +152,7 @@ class Runner:
     def compare_schema(self, model: dict[str, Any]) -> SchemaCompareResult:
         """Build a model twice (static + runtime) and compare the OpenAPI schemas.
 
+        The two builds run in parallel using distinct image tags:
         1. Build with COG_STATIC_SCHEMA=1 → extract schema from Docker label
         2. Build without COG_STATIC_SCHEMA → extract schema from Docker label
         3. Parse both as JSON and compare for exact equality
@@ -166,69 +168,106 @@ class Runner:
             logger.error("FAIL %s: %s", name, result.error)
             return result
 
-        image_tag = f"cog-harness-{name}:test"
+        static_tag = f"cog-harness-{name}:static"
+        runtime_tag = f"cog-harness-{name}:runtime"
 
-        # ── Build 1: Static (Go tree-sitter) ──────────────────────────
-        logger.info("  Building %s with static schema gen...", name)
-        start = time.monotonic()
-        try:
-            self._cog_build_with_env(
-                model_dir, model, image_tag, extra_env={"COG_STATIC_SCHEMA": "1"}
-            )
-            result.static_build_s = time.monotonic() - start
-        except subprocess.CalledProcessError as exc:
+        def _build_static() -> tuple[float, str | None, str | None]:
+            """Build with static schema gen. Returns (duration, schema_raw, error)."""
+            logger.info("  Building %s with static schema gen...", name)
+            start = time.monotonic()
+            try:
+                self._cog_build_with_env(
+                    model_dir,
+                    model,
+                    static_tag,
+                    extra_env={"COG_STATIC_SCHEMA": "1"},
+                )
+                duration = time.monotonic() - start
+            except subprocess.CalledProcessError as exc:
+                duration = time.monotonic() - start
+                stderr = exc.stderr or ""
+                return duration, None, f"Static build failed:\n{stderr[-2000:]}"
+            schema_raw = self._extract_schema_label(static_tag)
+            return duration, schema_raw, None
+
+        def _build_runtime() -> tuple[float, str | None, str | None]:
+            """Build with runtime schema gen. Returns (duration, schema_raw, error)."""
+            logger.info("  Building %s with runtime schema gen...", name)
+            start = time.monotonic()
+            try:
+                self._cog_build_with_env(model_dir, model, runtime_tag, extra_env={})
+                duration = time.monotonic() - start
+            except subprocess.CalledProcessError as exc:
+                duration = time.monotonic() - start
+                stderr = exc.stderr or ""
+                return duration, None, f"Runtime build failed:\n{stderr[-2000:]}"
+            schema_raw = self._extract_schema_label(runtime_tag)
+            return duration, schema_raw, None
+
+        # ── Run both builds in parallel ───────────────────────────────
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            static_future = pool.submit(_build_static)
+            runtime_future = pool.submit(_build_runtime)
+
+            static_duration, static_raw, static_err = static_future.result()
+            runtime_duration, runtime_raw, runtime_err = runtime_future.result()
+
+        result.static_build_s = static_duration
+        result.runtime_build_s = runtime_duration
+
+        # Check for build errors
+        if static_err:
             result.passed = False
-            result.static_build_s = time.monotonic() - start
-            stderr = exc.stderr or ""
-            result.error = f"Static build failed:\n{stderr[-2000:]}"
-            logger.error("FAIL %s static build:\n%s", name, stderr[-500:])
+            result.error = static_err
+            logger.error("FAIL %s static build:\n%s", name, static_err[-500:])
+            self._remove_image(static_tag)
+            self._remove_image(runtime_tag)
             return result
 
-        static_schema_raw = self._extract_schema_label(image_tag)
-        if static_schema_raw is None:
+        if runtime_err:
+            result.passed = False
+            result.error = runtime_err
+            logger.error("FAIL %s runtime build:\n%s", name, runtime_err[-500:])
+            self._remove_image(static_tag)
+            self._remove_image(runtime_tag)
+            return result
+
+        # Extract and parse schemas
+        if static_raw is None:
             result.passed = False
             result.error = "Static build produced no schema label"
+            self._remove_image(static_tag)
+            self._remove_image(runtime_tag)
+            return result
+
+        if runtime_raw is None:
+            result.passed = False
+            result.error = "Runtime build produced no schema label"
+            self._remove_image(static_tag)
+            self._remove_image(runtime_tag)
             return result
 
         try:
-            result.static_schema = json.loads(static_schema_raw)
+            result.static_schema = json.loads(static_raw)
         except json.JSONDecodeError as exc:
             result.passed = False
             result.error = f"Static schema is not valid JSON: {exc}"
-            return result
-
-        # Remove the image before rebuilding
-        self._remove_image(image_tag)
-
-        # ── Build 2: Runtime (Python) ─────────────────────────────────
-        logger.info("  Building %s with runtime schema gen...", name)
-        start = time.monotonic()
-        try:
-            self._cog_build_with_env(model_dir, model, image_tag, extra_env={})
-            result.runtime_build_s = time.monotonic() - start
-        except subprocess.CalledProcessError as exc:
-            result.passed = False
-            result.runtime_build_s = time.monotonic() - start
-            stderr = exc.stderr or ""
-            result.error = f"Runtime build failed:\n{stderr[-2000:]}"
-            logger.error("FAIL %s runtime build:\n%s", name, stderr[-500:])
-            return result
-
-        runtime_schema_raw = self._extract_schema_label(image_tag)
-        if runtime_schema_raw is None:
-            result.passed = False
-            result.error = "Runtime build produced no schema label"
+            self._remove_image(static_tag)
+            self._remove_image(runtime_tag)
             return result
 
         try:
-            result.runtime_schema = json.loads(runtime_schema_raw)
+            result.runtime_schema = json.loads(runtime_raw)
         except json.JSONDecodeError as exc:
             result.passed = False
             result.error = f"Runtime schema is not valid JSON: {exc}"
+            self._remove_image(static_tag)
+            self._remove_image(runtime_tag)
             return result
 
-        # Clean up
-        self._remove_image(image_tag)
+        # Clean up images
+        self._remove_image(static_tag)
+        self._remove_image(runtime_tag)
 
         # ── Compare ───────────────────────────────────────────────────
         if result.static_schema != result.runtime_schema:

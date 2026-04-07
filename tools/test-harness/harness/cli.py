@@ -120,22 +120,9 @@ def _cmd_build(args: argparse.Namespace) -> None:
     models = _filter_models(manifest, args)
     defaults = manifest.get("defaults", {})
 
-    sdk_version, _ = resolve_sdk_version(
-        cli_sdk_version=args.sdk_version,
-        manifest_defaults=defaults,
+    cog_binary, cog_version_label, sdk_version, sdk_wheel = _resolve_versions(
+        args, defaults
     )
-    cog_binary, cog_version_label = resolve_cog_binary(
-        cog_version=args.cog_version,
-        cog_binary=args.cog_binary,
-        manifest_defaults=defaults,
-    )
-    log = logging.getLogger(__name__)
-    log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
-    log.info("Using SDK version: %s", sdk_version)
-
-    sdk_wheel = getattr(args, "sdk_wheel", None)
-    if sdk_wheel:
-        log.info("Using SDK wheel: %s (overrides sdk_version)", sdk_wheel)
 
     runner = Runner(
         cog_binary=cog_binary,
@@ -178,21 +165,9 @@ def _cmd_run(args: argparse.Namespace) -> None:
     models = _filter_models(manifest, args)
     defaults = manifest.get("defaults", {})
 
-    sdk_version, _ = resolve_sdk_version(
-        cli_sdk_version=args.sdk_version,
-        manifest_defaults=defaults,
+    cog_binary, cog_version_label, sdk_version, sdk_wheel = _resolve_versions(
+        args, defaults
     )
-    cog_binary, cog_version_label = resolve_cog_binary(
-        cog_version=args.cog_version,
-        cog_binary=args.cog_binary,
-        manifest_defaults=defaults,
-    )
-    log = logging.getLogger(__name__)
-    sdk_wheel = getattr(args, "sdk_wheel", None)
-    log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
-    log.info("Using SDK version: %s", sdk_version)
-    if sdk_wheel:
-        log.info("Using SDK wheel: %s (overrides sdk_version)", sdk_wheel)
 
     runner = Runner(
         cog_binary=cog_binary,
@@ -250,21 +225,9 @@ def _cmd_schema_compare(args: argparse.Namespace) -> None:
     models = _filter_models(manifest, args)
     defaults = manifest.get("defaults", {})
 
-    sdk_version, _ = resolve_sdk_version(
-        cli_sdk_version=args.sdk_version,
-        manifest_defaults=defaults,
+    cog_binary, cog_version_label, sdk_version, sdk_wheel = _resolve_versions(
+        args, defaults
     )
-    cog_binary, cog_version_label = resolve_cog_binary(
-        cog_version=args.cog_version,
-        cog_binary=args.cog_binary,
-        manifest_defaults=defaults,
-    )
-    sdk_wheel = getattr(args, "sdk_wheel", None)
-    log = logging.getLogger(__name__)
-    log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
-    log.info("Using SDK version: %s", sdk_version)
-    if sdk_wheel:
-        log.info("Using SDK wheel: %s (overrides sdk_version)", sdk_wheel)
 
     runner = Runner(
         cog_binary=cog_binary,
@@ -273,6 +236,7 @@ def _cmd_schema_compare(args: argparse.Namespace) -> None:
         keep_images=args.keep_images,
     )
 
+    log = logging.getLogger(__name__)
     results: list[SchemaCompareResult] = []
     try:
         for model in models:
@@ -306,6 +270,59 @@ def _cmd_schema_compare(args: argparse.Namespace) -> None:
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
+
+
+def _resolve_versions(
+    args: argparse.Namespace,
+    defaults: dict,
+) -> tuple[str, str, str, str | None]:
+    """Resolve cog binary, version label, SDK version, and SDK wheel.
+
+    Returns ``(cog_binary, cog_version_label, sdk_version, sdk_wheel)``.
+
+    Handles the interaction between ``--cog-ref`` (which builds both CLI
+    and SDK from source) and the separate SDK resolution flags, and logs
+    a clear summary of what's being used.
+    """
+    log = logging.getLogger(__name__)
+    cog_ref = getattr(args, "cog_ref", None)
+    explicit_sdk_wheel = getattr(args, "sdk_wheel", None)
+
+    # Resolve cog binary (may also produce an SDK wheel from the ref)
+    cog_binary, cog_version_label, ref_sdk_wheel = resolve_cog_binary(
+        cog_version=args.cog_version,
+        cog_binary=args.cog_binary,
+        cog_ref=cog_ref,
+        manifest_defaults=defaults,
+    )
+
+    # Determine SDK wheel: explicit --sdk-wheel wins over ref-built
+    sdk_wheel = explicit_sdk_wheel or ref_sdk_wheel
+
+    # Resolve SDK version — skip the PyPI lookup when --cog-ref provides
+    # a wheel and no explicit --sdk-version / --sdk-wheel was given.
+    if sdk_wheel and not args.sdk_version:
+        # The wheel IS the SDK; the version string is just for display
+        sdk_version = cog_version_label
+    else:
+        sdk_version, _ = resolve_sdk_version(
+            cli_sdk_version=args.sdk_version,
+            manifest_defaults=defaults,
+        )
+
+    # Log a clear summary
+    log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
+    if sdk_wheel:
+        if explicit_sdk_wheel:
+            log.info("Using SDK wheel: %s (from --sdk-wheel)", sdk_wheel)
+        else:
+            log.info(
+                "Using SDK wheel: %s (built from %s)", sdk_wheel, cog_version_label
+            )
+    else:
+        log.info("Using SDK version: %s (from PyPI)", sdk_version)
+
+    return cog_binary, cog_version_label, sdk_version, sdk_wheel
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -354,7 +371,18 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--cog-binary",
         type=str,
         default="cog",
-        help="Path to a local cog binary (overrides --cog-version)",
+        help="Path to a local cog binary (overrides --cog-version and --cog-ref)",
+    )
+    parser.add_argument(
+        "--cog-ref",
+        type=str,
+        default=None,
+        help=(
+            "Git ref (branch, tag, or commit SHA) to build cog from source. "
+            "Clones the cog repo, builds the CLI binary and SDK wheel from "
+            "that ref. Requires go and uv on PATH. "
+            "Overridden by --cog-binary. Overrides --cog-version."
+        ),
     )
     parser.add_argument(
         "--sdk-wheel",
@@ -362,7 +390,8 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "Path to a local SDK wheel, a URL, or 'pypi[:version]'. "
-            "Sets COG_SDK_WHEEL during builds, overriding --sdk-version. "
+            "Sets COG_SDK_WHEEL during builds, overriding --sdk-version "
+            "and --cog-ref's auto-built wheel. "
             "Use with --cog-binary to test fully from source."
         ),
     )
