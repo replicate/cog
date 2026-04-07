@@ -335,6 +335,37 @@ func TestInputRepeatedType(t *testing.T) {
 	assert.Equal(t, "string", items["type"])
 }
 
+func TestInputOptionalRepeatedType(t *testing.T) {
+	none := DefaultValue{Kind: DefaultNone}
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("files", InputField{
+		Name:      "files",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypePath, Repetition: OptionalRepeated},
+		Default:   &none,
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+	filesField := props["files"].(map[string]any)
+	// Should be array type
+	assert.Equal(t, "array", filesField["type"])
+	items := filesField["items"].(map[string]any)
+	assert.Equal(t, "string", items["type"])
+	assert.Equal(t, "uri", items["format"])
+	// Should be nullable
+	assert.Equal(t, true, filesField["nullable"])
+	// Should NOT be required
+	inputSchema := getPath(spec, "components", "schemas", "Input").(map[string]any)
+	assert.Nil(t, inputSchema["required"])
+}
+
 // ---------------------------------------------------------------------------
 // Tests: Choices / Enums
 // ---------------------------------------------------------------------------
