@@ -423,9 +423,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v6
+      # setup-python provides a shared-library Python (libpython3.x.so) needed
+      # by stub_gen at runtime (PyO3 auto-initialize). setup-uv's
+      # python-build-standalone is statically linked and doesn't ship the .so.
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable
       - uses: taiki-e/install-action@cargo-binstall
