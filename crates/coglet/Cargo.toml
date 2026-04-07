@@ -48,6 +48,9 @@ jsonschema = "0.29"
 # Concurrent collections
 dashmap = "6"
 
+# TLS
+rustls.workspace = true
+
 # Observability
 tracing.workspace = true
 tracing-subscriber.workspace = true
