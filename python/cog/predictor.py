@@ -92,8 +92,11 @@ class BasePredictor:
         scope. Outside an active prediction this is a silent no-op.
 
         Args:
-            key: Metric name. Use dot-separated keys (e.g. ``"timing.inference"``)
-                to create nested objects in the metrics output.
+            key: Metric name. Each segment must start with a letter and contain
+                only letters, digits, and underscores (no leading/trailing/consecutive
+                underscores). Dots create nested objects (e.g. ``"timing.inference"``).
+                Maximum 128 characters, 4 segments. Reserved: ``"predict_time"`` and
+                anything starting with ``"cog."``.
             value: Metric value. Supported types: bool, int, float, str, list, dict.
                 Setting a value to ``None`` deletes the metric.
             mode: Accumulation mode. One of:
