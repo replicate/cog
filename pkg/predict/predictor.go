@@ -61,16 +61,17 @@ type Predictor struct {
 
 func NewPredictor(ctx context.Context, runOptions command.RunOptions, isTrain bool, dockerCommand command.Command) (*Predictor, error) {
 	// Use human-readable log format for local development
-	// Use human-readable log format for local development
 	env := make([]string, len(runOptions.Env))
 	copy(env, runOptions.Env)
-	runOptions.Env = append(env, "LOG_FORMAT=console")
+	env = append(env, "LOG_FORMAT=console")
 
 	if global.Debug {
-		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=debug")
+		env = append(env, "COG_LOG_LEVEL=debug")
 	} else {
-		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=warning")
+		env = append(env, "COG_LOG_LEVEL=warning")
 	}
+
+	runOptions.Env = env
 
 	return &Predictor{
 		runOptions:   runOptions,
