@@ -415,6 +415,37 @@ jobs:
       - name: Check CLI docs are up to date
         run: mise run docs:cli:check
 
+  check-stubs:
+    name: Check stubs
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      # setup-python provides a shared-library Python (libpython3.x.so) needed
+      # by stub_gen at runtime (PyO3 auto-initialize). setup-uv's
+      # python-build-standalone is statically linked and doesn't ship the .so.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: jdx/mise-action@v4
+        with:
+          cache: false
+      - name: Check stubs are up to date
+        run: |
+          # stub_gen links libpython dynamically; tell the linker where to find it
+          export LD_LIBRARY_PATH="$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
+          mise run --force stub:check
+
 # =============================================================================
 # Lint Checks - Parallel
 # =============================================================================
@@ -853,6 +884,7 @@ jobs:
       - fmt-rust
       - fmt-python
       - check-llm-docs
+      - check-stubs
       - lint-go
       - lint-rust
       - lint-rust-deny
@@ -878,6 +910,7 @@ jobs:
           echo "  fmt-rust: ${{ needs.fmt-rust.result }}"
           echo "  fmt-python: ${{ needs.fmt-python.result }}"
           echo "  check-llm-docs: ${{ needs.check-llm-docs.result }}"
+          echo "  check-stubs: ${{ needs.check-stubs.result }}"
           echo "  lint-go: ${{ needs.lint-go.result }}"
           echo "  lint-rust: ${{ needs.lint-rust.result }}"
           echo "  lint-rust-deny: ${{ needs.lint-rust-deny.result }}"
@@ -900,6 +933,7 @@ jobs:
             "${{ needs.fmt-rust.result }}" \
             "${{ needs.fmt-python.result }}" \
             "${{ needs.check-llm-docs.result }}" \
+            "${{ needs.check-stubs.result }}" \
             "${{ needs.lint-go.result }}" \
             "${{ needs.lint-rust.result }}" \
             "${{ needs.lint-rust-deny.result }}" \
