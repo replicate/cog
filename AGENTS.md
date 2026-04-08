@@ -199,7 +199,7 @@ COG_BINARY=dist/go/*/cog mise run test:integration
 
 ### CLI Architecture (Go)
 The CLI follows a command pattern with subcommands. The main components are:
-- `pkg/cli/` - Command definitions (build, run, predict, serve, etc.)
+- `pkg/cli/` - Command definitions (build, exec, predict, serve, etc.)
 - `pkg/docker/` - Docker client and container management
 - `pkg/dockerfile/` - Dockerfile generation and templating
 - `pkg/config/` - cog.yaml parsing and validation
