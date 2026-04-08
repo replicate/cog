@@ -62,18 +62,26 @@ type BuildOptions struct {
 	// a predictor or trainer defined in cog.yaml.
 	SkipSchemaValidation bool
 
-	// SkipLabels skips adding Cog metadata labels to the built image.
-	// Used by `cog run`, `cog predict`, `cog serve`, and `cog train` where
-	// the image is for local use only and not being distributed.
-	SkipLabels bool
+	// BaseImageOnly builds only the base image without Cog metadata labels.
+	// Used by dev-mode commands (`cog run`, `cog predict`, `cog serve`,
+	// `cog train`) where the image is ephemeral and for local use only.
+	// When true, the default image name gets a "-base" suffix to avoid
+	// overwriting images built by `cog build`.
+	BaseImageOnly bool
 }
 
 // WithDefaults returns a copy of BuildOptions with defaults applied from Source.
 // This fills in sensible defaults for any unset fields.
 func (o BuildOptions) WithDefaults(src *Source) BuildOptions {
-	// Default image name from project directory
+	// Default image name from project directory.
+	// Dev-mode builds (BaseImageOnly: serve, predict, run, train) use a
+	// "-base" suffix so they don't overwrite images built by "cog build".
 	if o.ImageName == "" {
-		o.ImageName = config.DockerImageName(src.ProjectDir)
+		if o.BaseImageOnly {
+			o.ImageName = config.BaseDockerImageName(src.ProjectDir)
+		} else {
+			o.ImageName = config.DockerImageName(src.ProjectDir)
+		}
 	}
 
 	// Default progress output

@@ -61,7 +61,7 @@ func Build(
 	precompile bool,
 	excludeSource bool,
 	skipSchemaValidation bool,
-	skipLabels bool,
+	baseImageOnly bool,
 	annotations map[string]string,
 	dockerCommand command.Command,
 	client registry.Client) (string, error) {
@@ -257,6 +257,15 @@ func Build(
 			}
 		}
 	}
+
+	// When baseImageOnly is true (cog run/predict/serve/train), skip the expensive
+	// label-adding phase. This image is for local use only and won't be distributed,
+	// so we don't need metadata labels, pip freeze, schema bundling, or git info.
+	if baseImageOnly {
+		return tmpImageId, nil
+	}
+
+	console.Info("")
 
 	// --- Post-build legacy schema generation ---
 	// For SDK < 0.17.0 (or when static gen was not used), generate the schema
