@@ -11,7 +11,7 @@ The Cog CLI is a Go binary that provides commands for the full model lifecycle: 
 | `cog init` | Bootstrap a new model project |
 | `cog build` | Create a container image |
 | `cog predict` | Run a prediction in a container |
-| `cog run` | Run arbitrary commands in a container |
+| `cog exec` | Run arbitrary commands in a container |
 | `cog serve` | Start HTTP server in a container |
 | `cog push` | Deploy to Replicate |
 | `cog login` | Authenticate with Replicate |
@@ -59,13 +59,13 @@ Input types are inferred from the schema:
 
 ---
 
-### cog run
+### cog exec
 
 **Job**: Run arbitrary commands in a container.
 
 ```bash
-cog run python -c "import torch; print(torch.cuda.is_available())"
-cog run bash
+cog exec python -c "import torch; print(torch.cuda.is_available())"
+cog exec bash
 ```
 
 Builds the image (if needed), starts a container, and runs the specified command inside it. Useful for:
@@ -73,7 +73,7 @@ Builds the image (if needed), starts a container, and runs the specified command
 - Running one-off scripts
 - Interactive exploration
 
-**Code**: `pkg/cli/run.go`
+**Code**: `pkg/cli/exec.go`
 
 ---
 
@@ -210,7 +210,7 @@ pkg/cli/
 ├── root.go         # Root command, subcommand registration
 ├── build.go        # cog build
 ├── predict.go      # cog predict
-├── run.go          # cog run
+├── exec.go         # cog exec
 ├── serve.go        # cog serve
 ├── push.go         # cog push
 ├── login.go        # cog login

@@ -56,10 +56,10 @@ torch==2.6.0
 
 This will generate a Docker image with Python 3.13 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
 
-To run a command inside this environment, prefix it with `cog run`:
+To run a command inside this environment, prefix it with `cog exec`:
 
 ```
-$ cog run python
+$ cog exec python
 ✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
 Running 'python' in Docker with the current directory mounted as a volume...
 ────────────────────────────────────────────────────────────────────────────────────────
