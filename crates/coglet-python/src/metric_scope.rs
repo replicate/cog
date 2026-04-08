@@ -237,6 +237,7 @@ impl Scope {
     /// Per-prediction context passed in the request body.
     ///
     /// Returns a `dict[str, str]` (empty dict if no context was provided).
+    #[gen_stub(override_return_type(type_repr = "dict[builtins.str, builtins.str]", imports = ("builtins")))]
     #[getter]
     fn context(&self, py: Python<'_>) -> Py<PyDict> {
         self.context.clone_ref(py)

@@ -64,7 +64,7 @@ build:
 Then, you can run any command inside this environment. For example, enter
 
 ```bash
-cog run python
+cog exec python
 
 ```
 

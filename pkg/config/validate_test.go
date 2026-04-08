@@ -27,7 +27,7 @@ func TestValidateConfigFileSuccess(t *testing.T) {
 		Build: &buildFile{
 			GPU: ptr(true),
 			SystemPackages: []string{
-				"libgl1-mesa-glx",
+				"libgl1",
 				"libglib2.0-0",
 			},
 			PythonVersion: ptr("3.10"),
@@ -46,7 +46,7 @@ func TestValidateConfigFilePythonVersionNumerical(t *testing.T) {
 		Build: &buildFile{
 			GPU: ptr(true),
 			SystemPackages: []string{
-				"libgl1-mesa-glx",
+				"libgl1",
 				"libglib2.0-0",
 			},
 			PythonVersion: ptr("3.10"),

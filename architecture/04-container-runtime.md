@@ -316,7 +316,7 @@ How coglet gets invoked when running a Cog container:
 
 ```mermaid
 flowchart TB
-    cli["cog predict / cog run\n(CLI)"]
+    cli["cog predict / cog exec\n(CLI)"]
 
     launcher["python -m cog.server.http\nimport coglet\ncoglet.server.serve(predictor_ref, port=5000)"]
 
