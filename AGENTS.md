@@ -4,7 +4,7 @@ This file provides guidance to coding agents when working with code in this repo
 
 ## Project Overview
 
-Cog is a tool that packages machine learning models in production-ready containers. 
+Cog is a tool that packages machine learning models in production-ready containers.
 
 It consists of:
 - **Cog CLI** (`cmd/cog/`) - Command-line interface for building, running, and deploying models, written in Go
@@ -35,6 +35,8 @@ Development tasks are managed with [mise](https://mise.jdx.dev/). Run `mise task
 | `mise run install` | Build and symlink cog to /usr/local/bin |
 | `mise run docs:llm` | **IMPORTANT:** Regenerate `docs/llms.txt` after editing docs |
 | `mise run docs:cli` | Generate CLI reference docs from Go source code |
+| `mise run version` | Show current version from VERSION.txt |
+| `mise run version:bump <ver>` | Bump version everywhere and commit |
 
 ### Task Naming Convention
 
@@ -76,6 +78,11 @@ Tasks follow a consistent naming pattern:
 **Install:**
 - `mise run install` - Symlink cog CLI to `/usr/local/bin` (requires `build:cog` first)
 - `PREFIX=/custom/path mise run install` - Symlink to custom location
+
+**Version:**
+- `mise run version` - Show current version from VERSION.txt
+- `mise run version:bump <ver>` - Bump version everywhere and commit
+- `mise run version:check` - Verify VERSION.txt matches Cargo.toml
 
 **Other:**
 - `mise run typecheck` - Type check all languages
@@ -125,7 +132,7 @@ import (
 - **Async**: tokio runtime; async/await patterns
 
 ## Working on the CLI and support tooling
-The CLI code is in the `cmd/cog/` and `pkg/` directories. Support tooling is in the `tools/` directory. 
+The CLI code is in the `cmd/cog/` and `pkg/` directories. Support tooling is in the `tools/` directory.
 
 The main commands for working on the CLI are:
 - `go run ./cmd/cog` - Runs the Cog CLI directly from source (requires wheel to be built first)
@@ -186,11 +193,13 @@ COG_BINARY=dist/go/*/cog mise run test:integration
 7. Run `mise run docs:llm` to regenerate `docs/llms.txt` after changing `README.md` or any `docs/*.md` file
 8. Read the `./docs` directory and make sure the documentation is up to date
 
+**IMPORTANT:** Always run `mise run lint` (or the language-specific variant, e.g. `mise run lint:go`) before committing to catch linter errors early. CI will reject PRs that fail lint checks.
+
 ## Architecture
 
 ### CLI Architecture (Go)
 The CLI follows a command pattern with subcommands. The main components are:
-- `pkg/cli/` - Command definitions (build, run, predict, serve, etc.)
+- `pkg/cli/` - Command definitions (build, exec, predict, serve, etc.)
 - `pkg/docker/` - Docker client and container management
 - `pkg/dockerfile/` - Dockerfile generation and templating
 - `pkg/config/` - cog.yaml parsing and validation
@@ -268,11 +277,12 @@ Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
 - The corresponding version pin in `.github/workflows/ci.yaml` (for CI)
 
 ## Important Files
+- `VERSION.txt` - Canonical version (single source of truth)
 - `cog.yaml` - User-facing model configuration
 - `pkg/config/config.go` - Go code for parsing and validating `cog.yaml`
 - `pkg/config/data/config_schema_v1.0.json` - JSON schema for `cog.yaml`
 - `python/cog/base_predictor.py` - Predictor interface
-- `crates/Cargo.toml` - Rust workspace configuration
+- `crates/Cargo.toml` - Rust workspace configuration (version must match VERSION.txt)
 - `crates/README.md` - Coglet architecture overview
 - `mise.toml` - Task definitions for development workflow
 
@@ -282,3 +292,22 @@ Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
 - Tests use real Docker operations (no mocking Docker API)
 - Always run `mise run build:sdk` after making Python changes before testing Go code
 - Python 3.10-3.13 compatibility is required
+
+### Go Test Conventions
+All Go tests must use [testify](https://github.com/stretchr/testify) for assertions. Do **not** use raw `if` checks with `t.Fatal`/`t.Errorf` — use `require` and `assert` instead.
+
+- **`require`** — for fatal assertions that should stop the test (setup failures, preconditions):
+  ```go
+  require.NoError(t, err, "failed to create client")
+  require.Equal(t, expected, actual)
+  require.True(t, condition, "server should be ready")
+  ```
+- **`assert`** — for non-fatal checks where the test should continue (e.g. validating multiple fields in a loop):
+  ```go
+  assert.Equal(t, http.StatusOK, resp.StatusCode)
+  assert.Contains(t, output, "expected substring")
+  assert.NoError(t, err, "prediction %d failed", i)
+  ```
+- Use `require` for errors in setup/teardown and `assert` for the actual test expectations
+- Prefer specific assertions (`Equal`, `Contains`, `NoError`, `Len`, `Less`) over generic `True`/`False` — they produce better failure messages
+- Prefer table-driven tests for testing multiple similar cases

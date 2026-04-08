@@ -132,8 +132,8 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
 
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
-    ControlRequest, ControlResponse, FileOutputKind, LogSource, MetricMode, SlotId, SlotOutcome,
-    SlotRequest, SlotResponse,
+    ControlRequest, ControlResponse, FileOutputKind, LogSource, MAX_INLINE_IPC_SIZE, MetricMode,
+    SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
 use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
@@ -239,8 +239,6 @@ impl SlotSender {
     }
 }
 
-const MAX_INLINE_OUTPUT_SIZE: usize = 1024 * 1024 * 6; // 6MiB
-
 /// Build an output message, spilling to disk if larger than the IPC frame limit.
 fn build_output_message(
     output_dir: &std::path::Path,
@@ -249,7 +247,7 @@ fn build_output_message(
     let serialized =
         serde_json::to_vec(&output).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    if serialized.len() > MAX_INLINE_OUTPUT_SIZE {
+    if serialized.len() > MAX_INLINE_IPC_SIZE {
         let path = output_dir.join(format!("spill_{}.json", uuid::Uuid::new_v4()));
         std::fs::write(&path, &serialized)?;
         let filename = path
@@ -318,6 +316,7 @@ pub trait PredictHandler: Send + Sync + 'static {
         id: String,
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
+        context: std::collections::HashMap<String, String>,
     ) -> PredictResult;
 
     /// Request cancellation of prediction on a slot.
@@ -546,13 +545,19 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Run setup
     tracing::info!("Worker starting setup");
+    let setup_start = std::time::Instant::now();
     let setup_result = handler.setup().await;
-    tracing::trace!("Setup handler returned");
+    let setup_elapsed = setup_start.elapsed();
+    tracing::debug!(
+        elapsed_ms = setup_elapsed.as_millis() as u64,
+        success = setup_result.is_ok(),
+        "Setup handler returned"
+    );
 
     // Unregister Python's setup sender, but keep log_forwarder running
     // The fd_redirect capture threads will continue sending subprocess logs
     if let Some(cleanup) = setup_cleanup {
-        tracing::trace!("Running cleanup (unregistering Python setup sender)");
+        tracing::debug!("Running cleanup (unregistering Python setup sender)");
         cleanup();
     }
     // Note: We DON'T drop setup_log_tx or wait for log_forwarder
@@ -560,7 +565,11 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Handle setup failure
     if let Err(e) = setup_result {
-        tracing::error!(error = %e, "Setup failed");
+        tracing::error!(
+            error = %e,
+            elapsed_ms = setup_elapsed.as_millis() as u64,
+            "Setup failed"
+        );
         let slot = slot_ids.first().copied().unwrap_or_else(SlotId::new);
         let mut w = ctrl_writer.lock().await;
         let _ = w
@@ -664,8 +673,14 @@ pub async fn run_worker<H: PredictHandler>(
                         break;
                     }
                     Some(Ok(ControlRequest::Healthcheck { id })) => {
-                        tracing::debug!(%id, "Healthcheck requested");
+                        tracing::trace!(%id, "Healthcheck requested, invoking handler");
                         let result = handler.healthcheck().await;
+                        tracing::trace!(
+                            %id,
+                            status = ?result.status,
+                            error = ?result.error,
+                            "Healthcheck handler returned"
+                        );
                         let mut w = ctrl_writer.lock().await;
                         let _ = w.send(ControlResponse::HealthcheckResult {
                             id,
@@ -712,8 +727,12 @@ pub async fn run_worker<H: PredictHandler>(
                     continue;
                 }
 
-                match request {
-                    SlotRequest::Predict { id, input, output_dir } => {
+                // Extract the prediction ID before consuming the request, so we
+                // can report a failure even if rehydration itself fails.
+                let prediction_id = request.prediction_id().to_string();
+
+                match request.rehydrate_input() {
+                    Ok((id, input, output_dir, context)) => {
                         tracing::trace!(%slot_id, %id, "Prediction request received");
                         slot_busy.insert(slot_id, true);
 
@@ -735,9 +754,25 @@ pub async fn run_worker<H: PredictHandler>(
                                 PathBuf::from(output_dir),
                                 handler,
                                 writer,
+                                context,
                             ).await;
                             let _ = completion_tx.send(completion).await;
                         });
+                    }
+                    Err(e) => {
+                        tracing::error!(%slot_id, %prediction_id, error = %e, "Failed to rehydrate input");
+                        // Send a failure response so the prediction doesn't hang forever.
+                        if let Some(writer) = slot_writers.get(&slot_id) {
+                            let mut w = writer.lock().await;
+                            let fail_msg = SlotResponse::Failed {
+                                id: prediction_id,
+                                error: format!("Failed to rehydrate input: {}", e),
+                            };
+                            if let Err(send_err) = w.send(fail_msg).await {
+                                tracing::error!(%slot_id, error = %send_err, "Failed to send rehydrate error response");
+                            }
+                        }
+                        let _ = completion_tx.send(SlotCompletion::idle(slot_id)).await;
                     }
                 }
             }
@@ -779,6 +814,7 @@ async fn run_prediction<H: PredictHandler>(
     output_dir: PathBuf,
     handler: Arc<H>,
     writer: SlotWriter,
+    context: std::collections::HashMap<String, String>,
 ) -> SlotCompletion {
     tracing::trace!(%slot_id, %prediction_id, "run_prediction starting");
 
@@ -813,6 +849,7 @@ async fn run_prediction<H: PredictHandler>(
             prediction_id.clone(),
             input,
             slot_sender,
+            context,
         ))
     });
     tracing::trace!(%slot_id, %prediction_id, "handler.predict returned");

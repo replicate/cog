@@ -11,6 +11,14 @@ This guide will show you how to put your own machine learning model in a Docker 
 
 First, install Cog if you haven't already:
 
+**macOS (recommended):**
+
+```sh
+brew install replicate/tap/cog
+```
+
+**Linux or macOS (manual):**
+
 ```sh
 sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
 sudo chmod +x /usr/local/bin/cog
@@ -36,7 +44,7 @@ For example:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 ```
 
@@ -46,17 +54,17 @@ With a `requirements.txt` containing your dependencies:
 torch==2.6.0
 ```
 
-This will generate a Docker image with Python 3.12 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
+This will generate a Docker image with Python 3.13 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
 
-To run a command inside this environment, prefix it with `cog run`:
+To run a command inside this environment, prefix it with `cog exec`:
 
 ```
-$ cog run python
+$ cog exec python
 ✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
 Running 'python' in Docker with the current directory mounted as a volume...
 ────────────────────────────────────────────────────────────────────────────────────────
 
-Python 3.12.0 (main, Oct  2 2023, 15:45:55)
+Python 3.13.x (main, ...)
 [GCC 12.2.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
@@ -98,7 +106,7 @@ You also need to define the inputs to your model as arguments to the `predict()`
 - `int`: an integer
 - `float`: a floating point number
 - `bool`: a boolean
-- `cog.File`: a file-like object representing a file
+- `cog.File`: a file-like object representing a file (deprecated — use `cog.Path` instead)
 - `cog.Path`: a path to a file on disk
 
 You can provide more information about the input with the `Input()` function, as shown above. It takes these basic arguments:
@@ -107,7 +115,11 @@ You can provide more information about the input with the `Input()` function, as
 - `default`: A default value to set the input to. If this argument is not passed, the input is required. If it is explicitly set to `None`, the input is optional.
 - `ge`: For `int` or `float` types, the value should be greater than or equal to this number.
 - `le`: For `int` or `float` types, the value should be less than or equal to this number.
+- `min_length`: For `str` types, the minimum length of the string.
+- `max_length`: For `str` types, the maximum length of the string.
+- `regex`: For `str` types, the string must match this regular expression.
 - `choices`: For `str` or `int` types, a list of possible values for this input.
+- `deprecated`: Mark this input as deprecated with a message explaining what to use instead.
 
 There are some more advanced options you can pass, too. For more details, [take a look at the prediction interface documentation](python.md).
 
@@ -115,7 +127,7 @@ Next, add the line `predict: "predict.py:Predictor"` to your `cog.yaml`, so it l
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```

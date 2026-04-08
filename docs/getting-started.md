@@ -58,13 +58,13 @@ The first thing you need to do is create a file called `cog.yaml`:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
 ```
 
 Then, you can run any command inside this environment. For example, enter
 
 ```bash
-cog run python
+cog exec python
 
 ```
 
@@ -75,7 +75,7 @@ and you'll get an interactive Python shell:
 Running 'python' in Docker with the current directory mounted as a volume...
 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-Python 3.12.0 (main, Oct  2 2023, 15:45:55)
+Python 3.13.x (main, ...)
 [GCC 12.2.0] on linux
 Type "help", "copyright", "credits" or "license" for more information.
 >>>
@@ -135,7 +135,7 @@ Then update `cog.yaml` to look like this:
 
 ```yaml
 build:
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```

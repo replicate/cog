@@ -21,7 +21,7 @@ func GenerateOpenAPISchema(info *PredictorInfo) ([]byte, error) {
 // buildOpenAPISpec constructs the full OpenAPI 3.0.2 map.
 func buildOpenAPISpec(info *PredictorInfo) map[string]any {
 	inputSchema, enumSchemas := buildInputSchema(info)
-	outputSchema := info.Output.JSONType()
+	outputSchema := info.Output.JSONSchema()
 
 	isTrain := info.Mode == ModeTrain
 
@@ -229,7 +229,7 @@ func buildOpenAPISpec(info *PredictorInfo) map[string]any {
 			"parameters": []any{
 				map[string]any{
 					"required": true,
-					"schema":   map[string]any{"title": TitleCaseSingle(cancelParam), "type": "string"},
+					"schema":   map[string]any{"title": TitleCase(cancelParam), "type": "string"},
 					"name":     cancelParam,
 					"in":       "path",
 				},
@@ -332,7 +332,7 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 		}
 
 		// Nullable
-		if field.FieldType.Repetition == Optional {
+		if field.FieldType.Repetition == Optional || field.FieldType.Repetition == OptionalRepeated {
 			prop.Set("nullable", true)
 		}
 

@@ -14,8 +14,6 @@ You can deploy your packaged model to your own infrastructure, or to [Replicate]
 
 - 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
 
-- 🥞 **Automatic queue worker.** Long-running deep learning models or batch processing is best architected with a queue. Cog models do this out of the box. Redis is currently supported, with more in the pipeline.
-
 - 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
 
 ## How it works
@@ -26,9 +24,9 @@ Define the Docker environment your model runs in with `cog.yaml`:
 build:
   gpu: true
   system_packages:
-    - "libgl1-mesa-glx"
+    - "libgl1"
     - "libglib2.0-0"
-  python_version: "3.12"
+  python_version: "3.13"
   python_requirements: requirements.txt
 predict: "predict.py:Predictor"
 ```
@@ -94,14 +92,14 @@ $ curl http://localhost:8080/predictions -X POST \
 In development, you can also run arbitrary commands inside the Docker environment:
 
 ```console
-$ cog run python train.py
+$ cog exec python train.py
 ...
 ```
 
 Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
 ```console
-$ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
+$ cog exec -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
 ```
 -->
 
@@ -130,7 +128,7 @@ If you're using macOS, you can install Cog using Homebrew:
 brew install replicate/tap/cog
 ```
 
-You can also download and install the latest release using our 
+You can also download and install the latest release using our
 [install script](https://cog.run/install):
 
 ```sh
@@ -145,7 +143,7 @@ wget -qO- https://cog.run/install.sh
 sh ./install.sh
 ```
 
-You can manually install the latest release of Cog directly from GitHub 
+You can manually install the latest release of Cog directly from GitHub
 by running the following commands in a terminal:
 
 ```console

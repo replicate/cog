@@ -25,8 +25,10 @@ class MetricRecorder:
         Record a metric value.
         
         Args:
-            key: Metric name. Dot-separated keys (e.g. "timing.preprocess") create
-                nested objects in the response.
+            key: Metric name. Each dot-separated segment must start with a letter
+                and contain only letters, digits, and underscores (no leading/trailing/consecutive
+                underscores). Maximum 128 characters and 4 segments. Reserved names:
+                "predict_time" and anything starting with "cog.".
             value: Must be bool, int, float, str, list, or dict. Once a key is set
                 with a type, it cannot be changed without calling delete() first.
             mode: Accumulation mode — "replace" (default), "incr" (increment numeric),
@@ -51,19 +53,31 @@ class Scope:
     r"""
     Prediction scope, obtained via `current_scope()`.
     
-    Provides access to `scope.metrics` for recording metrics, and
-    `scope.record_metric()` as a convenience shorthand.
+    Provides access to `scope.metrics` for recording metrics,
+    `scope.record_metric()` as a convenience shorthand, and
+    `scope.context` for per-prediction context passed in the request.
     """
     @property
     def metrics(self) -> MetricRecorder:
         r"""
         The metric recorder for this prediction.
         """
+    @property
+    def context(self) -> dict[builtins.str, builtins.str]:
+        r"""
+        Per-prediction context passed in the request body.
+        
+        Returns a `dict[str, str]` (empty dict if no context was provided).
+        """
     def record_metric(self, key: builtins.str, value: typing.Any, mode: typing.Optional[builtins.str] = None) -> None:
         r"""
         Convenience: record a metric value.
         
         Equivalent to `scope.metrics.record(key, value, mode)`.
+
+        Metric names must follow naming rules: each segment must start with a
+        letter, contain only letters/digits/underscores, max 128 chars, max 4
+        segments, and cannot be "predict_time" or start with "cog.".
         """
     def __repr__(self) -> builtins.str: ...
 
@@ -214,5 +228,11 @@ def current_scope() -> Scope:
     Python-callable: get the current Scope.
     
     Returns the active scope if inside a prediction, or a no-op scope otherwise.
+    
+    Lookup order: ContextVar first, then sync scope fallback.
+    ContextVar is per-coroutine (async) / per-thread (sync), so it always
+    returns the correct scope even under concurrency > 1. The sync scope
+    (process-wide mutex) is a fallback for edge cases where the ContextVar
+    hasn't been initialized yet.
     """
 

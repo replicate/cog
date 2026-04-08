@@ -310,6 +310,7 @@ impl PredictHandler for PythonPredictHandler {
         id: String,
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
+        context: HashMap<String, String>,
     ) -> PredictResult {
         tracing::trace!(%slot, %id, "PythonPredictHandler::predict starting");
 
@@ -360,7 +361,7 @@ impl PredictHandler for PythonPredictHandler {
         // Enter metric scope - sets Scope ContextVar for metric recording
         let slot_sender_for_metrics = slot_sender.clone();
         let scope_guard = Python::attach(|py| {
-            crate::metric_scope::ScopeGuard::enter(py, slot_sender_for_metrics)
+            crate::metric_scope::ScopeGuard::enter(py, slot_sender_for_metrics, context)
         });
         let scope_guard = match scope_guard {
             Ok(g) => Some(g),
@@ -399,8 +400,9 @@ impl PredictHandler for PythonPredictHandler {
                     };
 
                     // Submit coroutine and get future + prepared input for cleanup
+                    let scope_ref = scope_guard.as_ref().map(|g| g.scope());
                     let (future, is_async_gen, prepared) = match pred
-                        .train_async_worker(input, &loop_obj, &id)
+                        .train_async_worker(input, &loop_obj, &id, scope_ref)
                     {
                         Ok(f) => f,
                         Err(e) => {
@@ -477,8 +479,9 @@ impl PredictHandler for PythonPredictHandler {
                     };
 
                     // Submit coroutine and get future + prepared input for cleanup
+                    let scope_ref = scope_guard.as_ref().map(|g| g.scope());
                     let (future, is_async_gen, prepared) = match pred
-                        .predict_async_worker(input, &loop_obj, &id)
+                        .predict_async_worker(input, &loop_obj, &id, scope_ref)
                     {
                         Ok(f) => f,
                         Err(e) => {

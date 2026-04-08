@@ -1,0 +1,9 @@
+# Test that "cog run" still works as a deprecated alias for "cog exec"
+
+cog run echo hello world
+stdout 'hello world'
+stderr '"cog run <command>" is deprecated, use "cog exec <command>"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"

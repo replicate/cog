@@ -7,6 +7,7 @@ mod log_writer;
 mod metric_scope;
 mod output;
 mod predictor;
+mod sentry_integration;
 mod worker_bridge;
 
 use std::sync::Arc;
@@ -43,6 +44,8 @@ pub struct BuildInfo {
     #[pyo3(get)]
     git_sha: String,
     #[pyo3(get)]
+    dirty: bool,
+    #[pyo3(get)]
     build_time: String,
     #[pyo3(get)]
     rustc_version: String,
@@ -53,8 +56,12 @@ pub struct BuildInfo {
 impl BuildInfo {
     fn __repr__(&self) -> String {
         format!(
-            "BuildInfo(version='{}', git_sha='{}', build_time='{}', rustc_version='{}')",
-            self.version, self.git_sha, self.build_time, self.rustc_version
+            "BuildInfo(version='{}', git_sha='{}', dirty={}, build_time='{}', rustc_version='{}')",
+            self.version,
+            self.git_sha,
+            if self.dirty { "True" } else { "False" },
+            self.build_time,
+            self.rustc_version
         )
     }
 }
@@ -64,8 +71,18 @@ impl BuildInfo {
         Self {
             version: env!("COGLET_PEP440_VERSION").to_string(),
             git_sha: env!("COGLET_GIT_SHA").to_string(),
+            dirty: env!("COGLET_GIT_DIRTY") == "true",
             build_time: env!("COGLET_BUILD_TIME").to_string(),
             rustc_version: env!("COGLET_RUSTC_VERSION").to_string(),
+        }
+    }
+
+    /// Git SHA with optional `-dirty` suffix.
+    fn sha_display(&self) -> String {
+        if self.dirty {
+            format!("{}-dirty", self.git_sha)
+        } else {
+            self.git_sha.clone()
         }
     }
 }
@@ -76,6 +93,11 @@ fn set_active() {
 
 /// Initialize tracing with COG_LOG_LEVEL and LOG_FORMAT support.
 /// Returns optional receiver for draining setup logs.
+///
+/// The Sentry tracing layer is automatically included when Sentry is enabled
+/// (i.e. `init_sentry()` was called and `SENTRY_DSN` was set). This layer
+/// captures `ERROR`-level tracing events as Sentry issues and `WARN`-level
+/// events as breadcrumbs.
 fn init_tracing(
     _to_stderr: bool,
     setup_log_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
@@ -100,18 +122,24 @@ fn init_tracing(
 
     let use_json = std::env::var("LOG_FORMAT").as_deref() != Ok("console");
 
+    // Optional Sentry layer — returns None (no-op) when SENTRY_DSN is not set.
+    // Option<Layer> implements Layer, so this composes cleanly.
+    let sentry_layer = sentry_integration::sentry_tracing_layer();
+
     if let Some(tx) = setup_log_tx {
         let accumulator = coglet_core::SetupLogAccumulator::new(tx);
 
         if use_json {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(accumulator)
                 .with(fmt::layer().json().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
         } else {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(accumulator)
                 .with(fmt::layer().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
@@ -121,11 +149,13 @@ fn init_tracing(
         if use_json {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(fmt::layer().json().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
         } else {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(fmt::layer().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
         }
@@ -133,8 +163,10 @@ fn init_tracing(
     }
 }
 
-fn detect_version(py: Python<'_>) -> VersionInfo {
-    let mut version = VersionInfo::new();
+fn detect_version(py: Python<'_>, build: &BuildInfo) -> VersionInfo {
+    let mut version = VersionInfo::new()
+        .with_git_sha(build.sha_display())
+        .with_build_time(build.build_time.clone());
 
     if let Ok(sys) = py.import("sys")
         && let Ok(py_version) = sys.getattr("version")
@@ -148,7 +180,7 @@ fn detect_version(py: Python<'_>) -> VersionInfo {
         && let Ok(cog_version) = cog.getattr("__version__")
         && let Ok(v) = cog_version.extract::<String>()
     {
-        version = version.with_cog(v);
+        version = version.with_python_sdk(v);
     }
 
     version
@@ -158,6 +190,27 @@ fn read_max_concurrency() -> usize {
     match std::env::var("COG_MAX_CONCURRENCY") {
         Ok(val) => val.parse::<usize>().unwrap_or(1),
         Err(_) => 1,
+    }
+}
+
+fn read_setup_timeout() -> Option<std::time::Duration> {
+    match std::env::var("COG_SETUP_TIMEOUT") {
+        Ok(val) => match val.parse::<u64>() {
+            Ok(0) => {
+                warn!("COG_SETUP_TIMEOUT=0 would cause immediate timeout, ignoring");
+                None
+            }
+            Ok(secs) => Some(std::time::Duration::from_secs(secs)),
+            Err(e) => {
+                warn!(
+                    value = %val,
+                    error = %e,
+                    "Invalid COG_SETUP_TIMEOUT value, ignoring (no timeout will be applied)"
+                );
+                None
+            }
+        },
+        Err(_) => None,
     }
 }
 
@@ -256,10 +309,29 @@ fn serve_impl(
     _output_temp_dir_base: String,
     upload_url: Option<String>,
 ) -> PyResult<()> {
+    // Install ring as the TLS crypto provider for rustls/reqwest.
+    coglet_core::install_crypto_provider();
+
+    // Initialize Sentry BEFORE tracing so the sentry tracing layer can attach.
+    // If SENTRY_DSN is not set, this is a no-op. The guard must be held until
+    // process exit to ensure pending events are flushed.
+    let _sentry_guard = sentry_integration::init_sentry();
+
     let (setup_log_tx, setup_log_rx) = tokio::sync::mpsc::unbounded_channel();
     init_tracing(false, Some(setup_log_tx));
 
-    info!("coglet {}", env!("CARGO_PKG_VERSION"));
+    let build = BuildInfo::new();
+    info!(
+        "coglet {} ({}, built {}{})",
+        env!("CARGO_PKG_VERSION"),
+        build.sha_display(),
+        build.build_time,
+        if cfg!(debug_assertions) {
+            ", debug"
+        } else {
+            ""
+        },
+    );
 
     let config = ServerConfig {
         host,
@@ -276,9 +348,18 @@ fn serve_impl(
         info!("await_explicit_shutdown: installed SIGTERM ignore handler");
     }
 
-    let version = detect_version(py);
+    let version = detect_version(py, &build);
+    info!(
+        "python sdk {}",
+        version.python_sdk.as_deref().unwrap_or("unknown")
+    );
+    info!("python {}", version.python.as_deref().unwrap_or("unknown"));
 
     let Some(pred_ref) = predictor_ref else {
+        // Health-only mode: no predictor, no worker subprocess, no orchestrator.
+        // Sentry scope enrichment is skipped since there's no model metadata to
+        // attach. Infrastructure errors (e.g. HTTP bind failure) are still captured
+        // with default Sentry context (release, environment).
         info!("No predictor specified, serving health endpoints only");
         let service = Arc::new(
             PredictionService::new_no_pool()
@@ -323,10 +404,25 @@ fn serve_subprocess(
         "Configuring subprocess worker via orchestrator"
     );
 
+    // Enrich Sentry scope with model/server metadata
+    sentry_integration::configure_sentry_scope(
+        &pred_ref,
+        max_concurrency,
+        env!("CARGO_PKG_VERSION"),
+        version.python.as_deref(),
+        version.python_sdk.as_deref(),
+    );
+
+    let setup_timeout = read_setup_timeout();
+    debug!(
+        setup_timeout_secs = setup_timeout.map(|d| d.as_secs()),
+        is_train, "Orchestrator configuration"
+    );
     let orch_config = coglet_core::orchestrator::OrchestratorConfig::new(pred_ref)
         .with_num_slots(max_concurrency)
         .with_train(is_train)
-        .with_upload_url(upload_url);
+        .with_upload_url(upload_url)
+        .with_setup_timeout(setup_timeout);
 
     let service = Arc::new(
         PredictionService::new_no_pool()
@@ -346,20 +442,30 @@ fn serve_subprocess(
             let setup_service = Arc::clone(&service_clone);
             tokio::spawn(async move {
                 info!("Spawning worker subprocess");
+                let spawn_start = std::time::Instant::now();
                 match coglet_core::orchestrator::spawn_worker(orch_config, &mut setup_log_rx).await
                 {
                     Ok(ready) => {
-                        debug!("Worker ready, configuring service");
+                        let spawn_elapsed = spawn_start.elapsed();
+                        debug!(
+                            elapsed_ms = spawn_elapsed.as_millis() as u64,
+                            "Worker ready, configuring service"
+                        );
 
                         let num_slots = ready.handle.slot_ids().len();
+                        debug!(num_slots, "Setting up orchestrator on service");
 
                         setup_service
                             .set_orchestrator(ready.pool, Arc::new(ready.handle))
                             .await;
+                        debug!("Transitioning health to Ready");
                         setup_service.set_health(Health::Ready).await;
 
                         if let Some(s) = ready.schema {
+                            debug!("Setting OpenAPI schema on service");
                             setup_service.set_schema(s).await;
+                        } else {
+                            debug!("No OpenAPI schema provided by worker");
                         }
 
                         let mode = if is_train { "train" } else { "predict" };
@@ -367,6 +473,11 @@ fn serve_subprocess(
 
                         // Drain final logs (includes "Server ready" above)
                         let final_logs = coglet_core::drain_accumulated_logs(&mut setup_log_rx);
+                        debug!(
+                            initial_logs_len = ready.setup_logs.len(),
+                            final_logs_len = final_logs.len(),
+                            "Drained setup logs"
+                        );
                         drop(setup_log_rx);
 
                         // Combine initial + final logs
@@ -378,7 +489,13 @@ fn serve_subprocess(
                         info!("Setup complete, now accepting requests");
                     }
                     Err(e) => {
-                        error!(error = %e, "Worker initialization failed");
+                        let spawn_elapsed = spawn_start.elapsed();
+                        error!(
+                            error = %e,
+                            elapsed_ms = spawn_elapsed.as_millis() as u64,
+                            "Worker initialization failed"
+                        );
+                        debug!("Transitioning health to SetupFailed");
                         setup_service.set_health(Health::SetupFailed).await;
                         setup_service
                             .set_setup_result(setup_result.failed(e.to_string()))

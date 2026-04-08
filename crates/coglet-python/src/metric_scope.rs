@@ -11,8 +11,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use pyo3_stub_gen::derive::*;
 
 use coglet_core::bridge::protocol::MetricMode;
@@ -118,8 +119,10 @@ impl MetricRecorder {
     /// Record a metric value.
     ///
     /// Args:
-    ///     key: Metric name. Dot-separated keys (e.g. "timing.preprocess") create
-    ///         nested objects in the response.
+    ///     key: Metric name. Each dot-separated segment must start with a letter
+    ///         and contain only letters, digits, and underscores (no leading/trailing/consecutive
+    ///         underscores). Maximum 128 characters and 4 segments. Reserved names:
+    ///         "predict_time" and anything starting with "cog.".
     ///     value: Must be bool, int, float, str, list, or dict. Once a key is set
     ///         with a type, it cannot be changed without calling delete() first.
     ///     mode: Accumulation mode — "replace" (default), "incr" (increment numeric),
@@ -186,26 +189,40 @@ impl MetricRecorder {
 
 /// Prediction scope, obtained via `current_scope()`.
 ///
-/// Provides access to `scope.metrics` for recording metrics, and
-/// `scope.record_metric()` as a convenience shorthand.
+/// Provides access to `scope.metrics` for recording metrics,
+/// `scope.record_metric()` as a convenience shorthand, and
+/// `scope.context` for per-prediction context passed in the request.
 #[gen_stub_pyclass]
 #[pyclass(name = "Scope", module = "coglet._sdk")]
 pub struct Scope {
     metrics_recorder: Py<MetricRecorder>,
+    /// Per-prediction context from the request body (`dict[str, str]`).
+    context: Py<PyDict>,
 }
 
 impl Scope {
-    pub fn new(py: Python<'_>, sender: Arc<SlotSender>) -> PyResult<Self> {
+    pub fn new(
+        py: Python<'_>,
+        sender: Arc<SlotSender>,
+        context: HashMap<String, String>,
+    ) -> PyResult<Self> {
         let recorder = Py::new(py, MetricRecorder::new(sender))?;
+        let dict = PyDict::new(py);
+        for (k, v) in &context {
+            dict.set_item(k, v)?;
+        }
         Ok(Self {
             metrics_recorder: recorder,
+            context: dict.unbind(),
         })
     }
 
     pub fn noop(py: Python<'_>) -> PyResult<Self> {
         let recorder = Py::new(py, MetricRecorder::noop())?;
+        let dict = PyDict::new(py);
         Ok(Self {
             metrics_recorder: recorder,
+            context: dict.unbind(),
         })
     }
 }
@@ -219,9 +236,22 @@ impl Scope {
         self.metrics_recorder.clone_ref(py)
     }
 
+    /// Per-prediction context passed in the request body.
+    ///
+    /// Returns a `dict[str, str]` (empty dict if no context was provided).
+    #[gen_stub(override_return_type(type_repr = "dict[builtins.str, builtins.str]", imports = ("builtins")))]
+    #[getter]
+    fn context(&self, py: Python<'_>) -> Py<PyDict> {
+        self.context.clone_ref(py)
+    }
+
     /// Convenience: record a metric value.
     ///
     /// Equivalent to `scope.metrics.record(key, value, mode)`.
+    ///
+    /// Metric names must follow naming rules: each segment must start with a
+    /// letter, contain only letters/digits/underscores, max 128 chars, max 4
+    /// segments, and cannot be "predict_time" or start with "cog.".
     #[pyo3(signature = (key, value, mode=None))]
     fn record_metric(
         &self,
@@ -245,6 +275,153 @@ impl Scope {
 // Shared implementation
 // ============================================================================
 
+/// Maximum length for a metric name.
+const MAX_METRIC_NAME_LENGTH: usize = 128;
+
+/// Maximum number of dot-separated segments in a metric name.
+const MAX_METRIC_NAME_SEGMENTS: usize = 4;
+
+/// Validates the structural rules of a metric name.
+///
+/// Checks:
+/// - Not empty
+/// - Length <= 128
+/// - Max 4 dot-separated segments
+/// - No empty segments (leading/trailing/consecutive dots)
+/// - Each segment: starts with letter, ends with letter/digit
+/// - Each segment: only letters, digits, underscores
+/// - No consecutive underscores
+fn validate_metric_name_structure(key: &str) -> PyResult<()> {
+    // Empty string check
+    if key.is_empty() {
+        return Err(PyValueError::new_err("metric name must not be empty"));
+    }
+
+    // Check total length
+    if key.len() > MAX_METRIC_NAME_LENGTH {
+        return Err(PyValueError::new_err(format!(
+            "metric name must be {} characters or fewer (got {} characters)",
+            MAX_METRIC_NAME_LENGTH,
+            key.len()
+        )));
+    }
+
+    // Split on dots and validate segments
+    let segments: Vec<&str> = key.split('.').collect();
+
+    // Check segment count
+    if segments.len() > MAX_METRIC_NAME_SEGMENTS {
+        return Err(PyValueError::new_err(format!(
+            "metric name must have at most {} dot-separated segments (got {})",
+            MAX_METRIC_NAME_SEGMENTS,
+            segments.len()
+        )));
+    }
+
+    // Check for empty segments (leading/trailing dots or consecutive dots)
+    for (i, segment) in segments.iter().enumerate() {
+        if segment.is_empty() {
+            if i == 0 {
+                return Err(PyValueError::new_err(
+                    "metric name must not start with a dot",
+                ));
+            } else if i == segments.len() - 1 {
+                return Err(PyValueError::new_err("metric name must not end with a dot"));
+            } else {
+                return Err(PyValueError::new_err(
+                    "metric name must not contain empty segments (consecutive dots)",
+                ));
+            }
+        }
+
+        // Validate segment format: starts with letter
+        let mut chars = segment.chars();
+        let first_char = chars.next().unwrap();
+        if !first_char.is_ascii_alphabetic() {
+            return Err(PyValueError::new_err(format!(
+                "metric name segment '{}' must start with a letter",
+                segment
+            )));
+        }
+
+        // Check each character and track position for error messages
+        let mut prev_was_underscore = false;
+
+        for (j, ch) in segment.chars().enumerate() {
+            if j == 0 {
+                // Already checked first char above
+                continue;
+            }
+
+            if ch == '_' {
+                if prev_was_underscore {
+                    return Err(PyValueError::new_err(format!(
+                        "metric name segment '{}' must not contain consecutive underscores",
+                        segment
+                    )));
+                }
+                prev_was_underscore = true;
+            } else if ch.is_ascii_alphanumeric() {
+                prev_was_underscore = false;
+            } else {
+                return Err(PyValueError::new_err(format!(
+                    "metric name segment '{}' contains invalid character '{}'",
+                    segment, ch
+                )));
+            }
+        }
+
+        // Check that segment doesn't end with underscore
+        if prev_was_underscore {
+            return Err(PyValueError::new_err(format!(
+                "metric name segment '{}' must end with a letter or digit",
+                segment
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate a metric name according to naming rules.
+///
+/// Rules:
+/// - Each dot-separated segment must match `[a-zA-Z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*`
+///   (starts with letter, contains only letters/digits/underscores, no leading/trailing/consecutive underscores)
+/// - No empty segments (no leading/trailing dots, no consecutive dots)
+/// - Maximum 128 characters total
+/// - Maximum 4 dot-separated segments
+/// - Cannot be "predict_time" (reserved by runtime)
+/// - Cannot start with "cog." (reserved for system metrics)
+fn validate_metric_name(key: &str) -> PyResult<()> {
+    // Check for reserved name
+    if key == "predict_time" {
+        return Err(PyValueError::new_err(
+            "'predict_time' is reserved by the runtime",
+        ));
+    }
+
+    // Check for reserved prefix
+    if key.starts_with("cog.") {
+        return Err(PyValueError::new_err(
+            "the 'cog.' prefix is reserved for system metrics",
+        ));
+    }
+
+    // Validate structural rules
+    validate_metric_name_structure(key)
+}
+
+/// Validate metric name for delete operations.
+///
+/// Same as `validate_metric_name` but skips reserved name checks
+/// (predict_time and cog.* prefix) since deleting a non-existent
+/// key is harmless and shouldn't error.
+fn validate_metric_name_for_delete(key: &str) -> PyResult<()> {
+    // Only validate structural rules, skip reserved name checks
+    validate_metric_name_structure(key)
+}
+
 fn parse_mode(mode: Option<&str>) -> PyResult<MetricMode> {
     match mode {
         None | Some("replace") => Ok(MetricMode::Replace),
@@ -264,6 +441,9 @@ fn record_impl(
     value: &Bound<'_, PyAny>,
     mode: MetricMode,
 ) -> PyResult<()> {
+    // Validate metric name
+    validate_metric_name(key)?;
+
     let value_type = MetricValueType::from_py(value)?;
 
     // Type invariant check
@@ -299,6 +479,9 @@ fn record_impl(
 }
 
 fn delete_impl(inner: &mut RecorderInner, key: &str) -> PyResult<()> {
+    // Validate metric name structure (skip reserved name checks for delete)
+    validate_metric_name_for_delete(key)?;
+
     inner.types.remove(key);
     inner
         .sender
@@ -344,6 +527,14 @@ fn get_scope_contextvar(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
     })
 }
 
+/// Get the scope ContextVar for passing to async coroutine wrappers.
+///
+/// This is needed so that `predict_async_worker` can propagate the metric scope
+/// to the event loop thread (same pattern as log routing with `_coglet_prediction_id`).
+pub fn get_scope_contextvar_for_async(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
+    get_scope_contextvar(py)
+}
+
 /// Set the current scope in the ContextVar (for async predictions).
 pub fn set_current_scope(py: Python<'_>, scope: &Py<Scope>) -> PyResult<Py<PyAny>> {
     let cv = get_scope_contextvar(py)?;
@@ -370,21 +561,19 @@ pub fn clear_sync_scope() {
 /// Python-callable: get the current Scope.
 ///
 /// Returns the active scope if inside a prediction, or a no-op scope otherwise.
+///
+/// Lookup order: ContextVar first, then sync scope fallback.
+/// ContextVar is per-coroutine (async) / per-thread (sync), so it always
+/// returns the correct scope even under concurrency > 1. The sync scope
+/// (process-wide mutex) is a fallback for edge cases where the ContextVar
+/// hasn't been initialized yet.
 #[gen_stub_pyfunction(module = "coglet._sdk")]
 #[pyfunction]
 #[pyo3(name = "current_scope")]
 pub fn py_current_scope(py: Python<'_>) -> PyResult<Py<Scope>> {
-    // Try sync scope first
-    {
-        let slot = get_sync_scope_slot()
-            .lock()
-            .expect("sync_scope mutex poisoned");
-        if let Some(ref scope) = *slot {
-            return Ok(scope.clone_ref(py));
-        }
-    }
-
-    // Try ContextVar (async predictions)
+    // Try ContextVar first — correct under concurrency for both sync and async.
+    // For sync predictions, ScopeGuard::enter() sets this on the worker thread.
+    // For async predictions, _ctx_wrapper sets this on the event loop thread.
     if let Some(cv) = SCOPE_CONTEXTVAR.get() {
         match cv.call_method0(py, "get") {
             Ok(val) => {
@@ -392,9 +581,21 @@ pub fn py_current_scope(py: Python<'_>) -> PyResult<Py<Scope>> {
                 return Ok(scope);
             }
             Err(e) if e.is_instance_of::<pyo3::exceptions::PyLookupError>(py) => {
-                // Not set — fall through to no-op
+                // Not set — fall through to sync scope
             }
             Err(e) => return Err(e),
+        }
+    }
+
+    // Fallback: sync scope (process-wide mutex).
+    // This handles the edge case where the ContextVar hasn't been initialized
+    // yet but a scope has been entered.
+    {
+        let slot = get_sync_scope_slot()
+            .lock()
+            .expect("sync_scope mutex poisoned");
+        if let Some(ref scope) = *slot {
+            return Ok(scope.clone_ref(py));
         }
     }
 
@@ -418,9 +619,18 @@ pub struct ScopeGuard {
 }
 
 impl ScopeGuard {
+    /// Get a reference to the scope (for passing to async coroutine wrappers).
+    pub fn scope(&self) -> &Py<Scope> {
+        &self.scope
+    }
+
     /// Enter scope for a prediction.
-    pub fn enter(py: Python<'_>, sender: Arc<SlotSender>) -> PyResult<Self> {
-        let scope = Py::new(py, Scope::new(py, sender)?)?;
+    pub fn enter(
+        py: Python<'_>,
+        sender: Arc<SlotSender>,
+        context: HashMap<String, String>,
+    ) -> PyResult<Self> {
+        let scope = Py::new(py, Scope::new(py, sender, context)?)?;
 
         let token = set_current_scope(py, &scope)?;
         set_sync_scope(py, Some(&scope));
@@ -490,5 +700,154 @@ fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
             "Cannot convert {} to JSON metric value",
             type_name
         )))
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_valid(name: &str) {
+        assert!(
+            validate_metric_name(name).is_ok(),
+            "expected '{}' to be valid",
+            name
+        );
+    }
+
+    fn assert_invalid(name: &str) {
+        assert!(
+            validate_metric_name(name).is_err(),
+            "expected '{}' to be invalid",
+            name
+        );
+    }
+
+    #[test]
+    fn validate_metric_name_valid_simple() {
+        assert_valid("temperature");
+        assert_valid("token_count");
+        assert_valid("TTFT");
+        assert_valid("T2I_latency");
+        assert_valid("x");
+    }
+
+    #[test]
+    fn validate_metric_name_empty() {
+        assert_invalid("");
+    }
+
+    #[test]
+    fn validate_metric_name_valid_dot_path() {
+        assert_valid("timing.preprocess");
+        assert_valid("a.b.c.d");
+        assert_valid("foo.bar_baz");
+    }
+
+    #[test]
+    fn validate_metric_name_leading_dot() {
+        assert_invalid(".foo");
+    }
+
+    #[test]
+    fn validate_metric_name_trailing_dot() {
+        assert_invalid("foo.");
+    }
+
+    #[test]
+    fn validate_metric_name_consecutive_dots() {
+        assert_invalid("foo..bar");
+    }
+
+    #[test]
+    fn validate_metric_name_starts_with_underscore() {
+        assert_invalid("_foo");
+    }
+
+    #[test]
+    fn validate_metric_name_ends_with_underscore() {
+        assert_invalid("foo_");
+    }
+
+    #[test]
+    fn validate_metric_name_consecutive_underscores() {
+        assert_invalid("foo__bar");
+    }
+
+    #[test]
+    fn validate_metric_name_starts_with_digit() {
+        assert_invalid("123bar");
+    }
+
+    #[test]
+    fn validate_metric_name_invalid_chars() {
+        assert_invalid("foo bar");
+        assert_invalid("foo!");
+        assert_invalid("foo-bar");
+        assert_invalid("foo$");
+    }
+
+    #[test]
+    fn validate_metric_name_reserved_predict_time() {
+        assert_invalid("predict_time");
+    }
+
+    #[test]
+    fn validate_metric_name_reserved_cog_prefix() {
+        assert_invalid("cog.anything");
+        assert_invalid("cog.metrics");
+        // But "cognitive" is fine
+        assert_valid("cognitive");
+    }
+
+    #[test]
+    fn validate_metric_name_max_length() {
+        // 128 chars is OK
+        let ok_128 = "a".repeat(128);
+        assert_valid(&ok_128);
+
+        // 129 chars is not OK
+        let err_129 = "a".repeat(129);
+        assert_invalid(&err_129);
+    }
+
+    #[test]
+    fn validate_metric_name_max_segments() {
+        // 4 segments is OK
+        assert_valid("a.b.c.d");
+
+        // 5 segments is not OK
+        assert_invalid("a.b.c.d.e");
+    }
+
+    #[test]
+    fn validate_metric_name_trailing_underscore_in_segment() {
+        // "foo_.bar" - first segment ends with underscore
+        assert_invalid("foo_.bar");
+    }
+
+    // ====================================================================
+    // Tests for validate_metric_name_for_delete
+    // ====================================================================
+
+    #[test]
+    fn validate_metric_name_for_delete_allows_reserved_names() {
+        // Reserved names should be allowed for delete
+        assert!(validate_metric_name_for_delete("predict_time").is_ok());
+        assert!(validate_metric_name_for_delete("cog.anything").is_ok());
+    }
+
+    #[test]
+    fn validate_metric_name_for_delete_still_validates_structure() {
+        // Empty string still rejected
+        assert!(validate_metric_name_for_delete("").is_err());
+        // Invalid characters still rejected
+        assert!(validate_metric_name_for_delete("foo bar").is_err());
+        // Leading underscore still rejected
+        assert!(validate_metric_name_for_delete("_foo").is_err());
     }
 }

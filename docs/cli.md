@@ -12,16 +12,17 @@ https://github.com/replicate/cog
 **Examples**
 
 ```
-   To run a command inside a Docker environment defined with Cog:
-      $ cog run echo hello world
+   To execute a command inside a Docker environment defined with Cog:
+      $ cog exec echo hello world
 ```
 
 **Options**
 
 ```
-      --debug     Show debugging output
-  -h, --help      help for cog
-      --version   Show version of Cog
+      --debug      Show debugging output
+  -h, --help       help for cog
+      --no-color   Disable colored output
+      --version    Show version of Cog
 ```
 ## `cog build`
 
@@ -62,6 +63,46 @@ cog build [flags]
       --secret stringArray           Secrets to pass to the build environment in the form 'id=foo,src=/path/to/file'
       --separate-weights             Separate model weights from code in image layers
   -t, --tag string                   A name for the built image in the form 'repository:tag'
+      --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
+      --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
+```
+## `cog exec`
+
+Execute a command inside a Docker environment defined by cog.yaml.
+
+Cog builds a temporary image from your cog.yaml configuration and runs the
+given command inside it. This is useful for debugging, running scripts, or
+exploring the environment your model will run in.
+
+```
+cog exec <command> [arg...] [flags]
+```
+
+**Examples**
+
+```
+  # Open a Python interpreter inside the model environment
+  cog exec python
+
+  # Run a script
+  cog exec python train.py
+
+  # Run with environment variables
+  cog exec -e HUGGING_FACE_HUB_TOKEN=abc123 python download.py
+
+  # Expose a port (e.g. for Jupyter)
+  cog exec -p 8888 jupyter notebook
+```
+
+**Options**
+
+```
+  -e, --env stringArray              Environment variables, in the form name=value
+  -f, --file string                  The name of the config file. (default "cog.yaml")
+      --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
+  -h, --help                         help for exec
+      --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
+  -p, --publish stringArray          Publish a container's port to the host, e.g. -p 8000
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
@@ -194,46 +235,6 @@ cog push [IMAGE] [flags]
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
       --secret stringArray           Secrets to pass to the build environment in the form 'id=foo,src=/path/to/file'
       --separate-weights             Separate model weights from code in image layers
-      --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
-      --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
-```
-## `cog run`
-
-Run a command inside a Docker environment defined by cog.yaml.
-
-Cog builds a temporary image from your cog.yaml configuration and runs the
-given command inside it. This is useful for debugging, running scripts, or
-exploring the environment your model will run in.
-
-```
-cog run <command> [arg...] [flags]
-```
-
-**Examples**
-
-```
-  # Open a Python interpreter inside the model environment
-  cog run python
-
-  # Run a script
-  cog run python train.py
-
-  # Run with environment variables
-  cog run -e HUGGING_FACE_HUB_TOKEN=abc123 python download.py
-
-  # Expose a port (e.g. for Jupyter)
-  cog run -p 8888 jupyter notebook
-```
-
-**Options**
-
-```
-  -e, --env stringArray              Environment variables, in the form name=value
-  -f, --file string                  The name of the config file. (default "cog.yaml")
-      --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
-  -h, --help                         help for run
-      --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
-  -p, --publish stringArray          Publish a container's port to the host, e.g. -p 8000
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```

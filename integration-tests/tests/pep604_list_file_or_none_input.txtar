@@ -1,0 +1,58 @@
+# Test PEP 604 list[File] | None input annotation.
+#
+# When a predictor declares `files: list[File] | None`, coglet should
+# recognise the File type inside the list through the PEP 604 union
+# and coerce inputs into cog.File objects.
+
+cog build -t $TEST_IMAGE
+
+# --- Test via cog predict (CLI) ---
+
+# Providing multiple file inputs should work.
+cog predict $TEST_IMAGE -i files=@file1.txt -i files=@file2.txt
+stdout 'count=2 content=one,two'
+
+# Omitting the optional input should yield None.
+cog predict $TEST_IMAGE
+stdout 'type=NoneType'
+
+# --- Test via cog serve (HTTP API) ---
+
+cog serve
+
+# POST with data URLs should coerce to list[File].
+curl POST /predictions '{"input":{"files":["data:text/plain;base64,b25l","data:text/plain;base64,dHdv"]}}'
+stdout '"status":"succeeded"'
+stdout 'count=2'
+stdout 'content=one,two'
+
+# POST with no files input — should get None.
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+stdout 'type=NoneType'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, File, Input
+
+
+class Predictor(BasePredictor):
+    def predict(self, files: list[File] | None = Input(default=None)) -> str:
+        if files is None:
+            return "type=NoneType"
+        contents = []
+        for f in files:
+            c = f.read()
+            if isinstance(c, bytes):
+                c = c.decode("utf-8")
+            contents.append(c.strip())
+        return f"count={len(files)} content={','.join(contents)}"
+
+-- file1.txt --
+one
+-- file2.txt --
+two

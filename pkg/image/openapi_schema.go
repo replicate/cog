@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
@@ -14,7 +15,10 @@ import (
 // image with `python -m cog.command.openapi_schema`. This is the legacy path used
 // for SDK versions < 0.17.0 where the schema must be generated at runtime via
 // pydantic introspection rather than static analysis.
-func GenerateOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string, enableGPU bool) (map[string]any, error) {
+//
+// sourceDir, when non-empty, is volume-mounted as /src. This is needed for
+// ExcludeSource builds (cog serve/predict/train) where COPY . /src was skipped.
+func GenerateOpenAPISchema(ctx context.Context, dockerClient command.Command, imageName string, enableGPU bool, sourceDir string) (map[string]any, error) {
 	console.Debugf("=== image.GenerateOpenAPISchema %s", imageName)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -24,19 +28,24 @@ func GenerateOpenAPISchema(ctx context.Context, dockerClient command.Command, im
 		gpus = "all"
 	}
 
-	err := docker.RunWithIO(ctx, dockerClient, command.RunOptions{
+	runOpts := command.RunOptions{
 		Image: imageName,
 		Args: []string{
 			"python", "-m", "cog.command.openapi_schema",
 		},
 		GPUs: gpus,
-	}, nil, &stdout, &stderr)
+	}
+	if sourceDir != "" {
+		runOpts.Volumes = []command.Volume{{Source: sourceDir, Destination: "/src"}}
+	}
 
-	if enableGPU && err == docker.ErrMissingDeviceDriver {
+	err := docker.RunWithIO(ctx, dockerClient, runOpts, nil, &stdout, &stderr)
+
+	if enableGPU && errors.Is(err, docker.ErrMissingDeviceDriver) {
 		console.Debug(stdout.String())
 		console.Debug(stderr.String())
 		console.Debug("Missing device driver, re-trying without GPU")
-		return GenerateOpenAPISchema(ctx, dockerClient, imageName, false)
+		return GenerateOpenAPISchema(ctx, dockerClient, imageName, false, sourceDir)
 	}
 
 	if err != nil {

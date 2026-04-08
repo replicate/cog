@@ -7,23 +7,24 @@ Cog plays nicely with Jupyter notebooks.
 First, add `jupyterlab` to your `requirements.txt` file and reference it in [`cog.yaml`](yaml.md):
 
 `requirements.txt`:
+
 ```
-jupyterlab==3.3.4
+jupyterlab
 ```
 
 `cog.yaml`:
+
 ```yaml
 build:
   python_requirements: requirements.txt
 ```
-
 
 ## Run a notebook
 
 Cog can run notebooks in the environment you've defined in `cog.yaml` with the following command:
 
 ```sh
-cog run -p 8888 jupyter lab --allow-root --ip=0.0.0.0
+cog exec -p 8888 jupyter lab --allow-root --ip=0.0.0.0
 ```
 
 ## Use notebook code in your predictor

@@ -99,7 +99,7 @@ asyncio event loop (Python)
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Why single loop?** 
+**Why single loop?**
 - Python asyncio has one event loop per thread
 - We use `run_coroutine_threadsafe` to submit from Rust/Tokio
 - Multiple slots can have concurrent predictions (up to `max_concurrency`)

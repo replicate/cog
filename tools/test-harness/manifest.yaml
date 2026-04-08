@@ -1,0 +1,253 @@
+# Cog Model Test Manifest
+# =======================
+# Each entry defines a model to test, its inputs, and expected outputs.
+#
+# Input values prefixed with "@" are resolved as fixture file paths relative
+# to the fixtures/ directory (e.g. "@test_image.png" -> fixtures/test_image.png).
+#
+# Validation types:
+#   exact       - output string must equal `value` exactly
+#   contains    - output string must contain `value` as a substring
+#   regex       - output string must match `pattern`
+#   file_exists - output is a file path; optionally check `mime` type
+#   json_match  - parse output as JSON, assert `match` is a subset
+#   json_keys   - parse output as JSON dict, assert it has entries
+#   not_empty   - output is non-empty (loose smoke test)
+
+defaults:
+  sdk_version: "latest"          # "latest" = newest stable from PyPI; or pin e.g. "0.16.12"
+  cog_version: "latest"          # "latest" = newest stable release; or pin e.g. "v0.16.12"
+
+models:
+  # ── cog-examples (CPU) ──────────────────────────────────────────────
+
+  - name: hello-world
+    repo: replicate/cog-examples
+    path: hello-world
+    gpu: false
+    tests:
+      - description: "basic predict"
+        inputs:
+          text: "world"
+        expect:
+          type: exact
+          value: "hello world"
+
+  - name: canary
+    repo: replicate/cog-examples
+    path: canary
+    gpu: false
+    tests:
+      - description: "streaming concatenate iterator"
+        inputs:
+          text: "friend"
+        expect:
+          type: contains
+          value: "friend"
+
+  - name: blur
+    repo: replicate/cog-examples
+    path: blur
+    gpu: false
+    tests:
+      - description: "blur an image"
+        inputs:
+          image: "@test_image.png"
+          blur: 5
+        expect:
+          type: file_exists
+          mime: "image/png"
+
+  - name: hello-image
+    repo: replicate/cog-examples
+    path: hello-image
+    gpu: false
+    tests:
+      - description: "return a static image"
+        inputs: {}
+        expect:
+          type: file_exists
+
+  - name: hello-concurrency
+    repo: replicate/cog-examples
+    path: hello-concurrency
+    gpu: false
+    tests:
+      - description: "async streaming output"
+        inputs:
+          total: 3
+          interval: 0
+        expect:
+          type: contains
+          value: "Apple"
+
+  - name: hello-context
+    repo: replicate/cog-examples
+    path: hello-context
+    gpu: false
+    # NOTE: This model uses current_scope().context which may not be
+    # available in coglet yet. A failure here is a real compatibility signal.
+    tests:
+      - description: "returns input and context"
+        inputs:
+          text: "testing"
+        expect:
+          type: json_match
+          match:
+            inputs:
+              text: "testing"
+
+  - name: hello-train
+    repo: replicate/cog-examples
+    path: hello-train
+    gpu: false
+    # NOTE: `cog train` in the RC may have input validation issues
+    # (validates against predict schema instead of train schema).
+    # The train_test below may fail — that's a real compatibility signal.
+    train_tests:
+      - description: "train produces weights file"
+        inputs:
+          prefix: "custom"
+        expect:
+          type: not_empty
+    tests:
+      - description: "predict with default weights"
+        inputs:
+          text: "world"
+        expect:
+          type: contains
+          value: "world"
+
+  # ── cog-examples (GPU required) ─────────────────────────────────────
+
+  - name: resnet
+    repo: replicate/cog-examples
+    path: resnet
+    gpu: true
+    tests:
+      - description: "classify hotdog image"
+        inputs:
+          image: "@hotdog.png"
+        expect:
+          type: json_keys
+
+  - name: z-image-turbo
+    repo: replicate/cog-examples
+    path: z-image-turbo
+    gpu: true
+    timeout: 600
+    tests:
+      - description: "generate image from prompt"
+        inputs:
+          prompt: "a cat sitting on a windowsill"
+        expect:
+          type: file_exists
+          mime: "image/png"
+
+  # ── cog-examples (requires external API, optional) ──────────────────
+
+  - name: hello-replicate
+    repo: replicate/cog-examples
+    path: hello-replicate
+    gpu: false
+    requires_env:
+      - REPLICATE_API_TOKEN
+    tests:
+      - description: "round-trip through replicate API"
+        inputs:
+          image: "@test_image.png"
+        expect:
+          type: file_exists
+
+  # ── Local fixture models (schema comparison) ─────────────────────────
+  # These use repo: local and path: relative to fixtures/models/.
+  # They cover the full input type matrix for schema-compare testing.
+
+  - name: fixture-scalar-types
+    repo: local
+    path: scalar-types
+    gpu: false
+    tests:
+      - description: "basic scalar inputs"
+        inputs:
+          text: "hello"
+          api_key: "secret123"
+        expect:
+          type: contains
+          value: "hello"
+
+  - name: fixture-optional-types
+    repo: local
+    path: optional-types
+    gpu: false
+    tests:
+      - description: "optional inputs default to None"
+        inputs:
+          text: "hello"
+        expect:
+          type: exact
+          value: "hello"
+
+  - name: fixture-list-types
+    repo: local
+    path: list-types
+    gpu: false
+
+  - name: fixture-optional-list-types
+    repo: local
+    path: optional-list-types
+    gpu: false
+    tests:
+      - description: "optional lists default to None"
+        inputs:
+          text: "hello"
+        expect:
+          type: exact
+          value: "hello"
+
+  - name: fixture-constraints-and-choices
+    repo: local
+    path: constraints-and-choices
+    gpu: false
+    tests:
+      - description: "defaults with constraints and choices"
+        inputs: {}
+        expect:
+          type: exact
+          value: "hello-0.7-50-balanced-1"
+
+  - name: fixture-file-path-types
+    repo: local
+    path: file-path-types
+    gpu: false
+
+  - name: fixture-complex-output
+    repo: local
+    path: complex-output
+    gpu: false
+    tests:
+      - description: "structured BaseModel output"
+        inputs:
+          prompt: "test"
+        expect:
+          type: json_match
+          match:
+            text: "generated: test"
+            score: 0.95
+
+  # ── External models (add your own below) ────────────────────────────
+  # - name: my-custom-model
+  #   repo: myorg/my-model-repo
+  #   path: "."
+  #   gpu: true
+  #   # sdk_version: "0.16.12"  # optional per-model override
+  #   env:
+  #     HF_TOKEN: "${HF_TOKEN}"
+  #   timeout: 600
+  #   tests:
+  #     - description: "smoke test"
+  #       inputs:
+  #         prompt: "hello"
+  #       expect:
+  #         type: contains
+  #         value: "result"
