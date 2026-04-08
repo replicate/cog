@@ -159,8 +159,8 @@ jobs:
               echo "integration=false" >> $GITHUB_OUTPUT
             fi
 
-            # Detect docs changes (includes CLI source which generates docs/cli.md)
-            if echo "$CHANGED" | grep -qE '^(docs/|README\.md|cmd/|pkg/cli/)'; then
+            # Detect docs changes (includes any Markdown file and CLI source which generates docs/cli.md)
+            if echo "$CHANGED" | grep -qE '^(docs/|README\.md|cmd/|pkg/cli/|.*\.md$)'; then
               echo "docs=true" >> $GITHUB_OUTPUT
             else
               echo "docs=false" >> $GITHUB_OUTPUT
@@ -415,6 +415,37 @@ jobs:
       - name: Check CLI docs are up to date
         run: mise run docs:cli:check
 
+  check-stubs:
+    name: Check stubs
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      # setup-python provides a shared-library Python (libpython3.x.so) needed
+      # by stub_gen at runtime (PyO3 auto-initialize). setup-uv's
+      # python-build-standalone is statically linked and doesn't ship the .so.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: jdx/mise-action@v4
+        with:
+          cache: false
+      - name: Check stubs are up to date
+        run: |
+          # stub_gen links libpython dynamically; tell the linker where to find it
+          export LD_LIBRARY_PATH="$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
+          mise run --force stub:check
+
 # =============================================================================
 # Lint Checks - Parallel
 # =============================================================================
@@ -502,6 +533,23 @@ jobs:
           cache: false
       - name: Lint Python
         run: mise run lint:python
+
+  lint-docs:
+    name: Lint Markdown
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup default stable
+      - uses: taiki-e/install-action@cargo-binstall
+      - uses: jdx/mise-action@v4
+        with:
+          cache: false
+      - name: Lint Markdown
+        run: mise run lint:docs
 
 # =============================================================================
 # Test Jobs
@@ -792,6 +840,9 @@ jobs:
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
+          # Resolve cog-base images from GHCR instead of r8.im.
+          # Images are mirrored by integration-tests/mirror-cog-base-images.sh.
+          COG_REGISTRY_HOST: 'ghcr.io/replicate/cog'
         shell: bash
         run: |
           set -euo pipefail
@@ -833,10 +884,12 @@ jobs:
       - fmt-rust
       - fmt-python
       - check-llm-docs
+      - check-stubs
       - lint-go
       - lint-rust
       - lint-rust-deny
       - lint-python
+      - lint-docs
       - test-go
       - test-rust
       - test-python
@@ -857,10 +910,12 @@ jobs:
           echo "  fmt-rust: ${{ needs.fmt-rust.result }}"
           echo "  fmt-python: ${{ needs.fmt-python.result }}"
           echo "  check-llm-docs: ${{ needs.check-llm-docs.result }}"
+          echo "  check-stubs: ${{ needs.check-stubs.result }}"
           echo "  lint-go: ${{ needs.lint-go.result }}"
           echo "  lint-rust: ${{ needs.lint-rust.result }}"
           echo "  lint-rust-deny: ${{ needs.lint-rust-deny.result }}"
           echo "  lint-python: ${{ needs.lint-python.result }}"
+          echo "  lint-docs: ${{ needs.lint-docs.result }}"
           echo "  test-go: ${{ needs.test-go.result }}"
           echo "  test-rust: ${{ needs.test-rust.result }}"
           echo "  test-python: ${{ needs.test-python.result }}"
@@ -878,10 +933,12 @@ jobs:
             "${{ needs.fmt-rust.result }}" \
             "${{ needs.fmt-python.result }}" \
             "${{ needs.check-llm-docs.result }}" \
+            "${{ needs.check-stubs.result }}" \
             "${{ needs.lint-go.result }}" \
             "${{ needs.lint-rust.result }}" \
             "${{ needs.lint-rust-deny.result }}" \
             "${{ needs.lint-python.result }}" \
+            "${{ needs.lint-docs.result }}" \
             "${{ needs.test-go.result }}" \
             "${{ needs.test-rust.result }}" \
             "${{ needs.test-python.result }}" \

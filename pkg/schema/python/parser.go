@@ -646,6 +646,16 @@ func parseTypeFromString(s string) (schema.TypeAnnotation, bool) {
 		return schema.TypeAnnotation{}, false
 	}
 
+	// Forward reference: quoted string like "MyType" or 'MyType'.
+	// Must be checked before union/generic handling so that a quoted
+	// union like "TreeNode | None" is first unquoted, then re-parsed.
+	if len(s) >= 2 &&
+		((strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"")) ||
+			(strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'"))) {
+		inner := s[1 : len(s)-1]
+		return parseTypeFromString(inner)
+	}
+
 	// Union: X | Y
 	if strings.Contains(s, "|") {
 		parts := strings.Split(s, "|")

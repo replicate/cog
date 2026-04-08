@@ -61,7 +61,10 @@ def to_json_input(predictor: adt.PredictorInfo) -> Dict[str, Any]:
                 prop["default"] = input_field.type.json_encode(normalized)
 
         # Optional types are nullable
-        if input_field.type.repetition is adt.Repetition.OPTIONAL:
+        if input_field.type.repetition in (
+            adt.Repetition.OPTIONAL,
+            adt.Repetition.OPTIONAL_REPEATED,
+        ):
             prop["nullable"] = True
 
         # Add constraints

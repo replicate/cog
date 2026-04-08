@@ -88,7 +88,8 @@ type Repetition int
 const (
 	Required Repetition = iota
 	Optional
-	Repeated // list[X]
+	Repeated         // list[X]
+	OptionalRepeated // list[X] | None
 )
 
 // FieldType combines a primitive type with its cardinality.
@@ -99,7 +100,7 @@ type FieldType struct {
 
 // JSONType returns the JSON Schema fragment for this field type.
 func (ft FieldType) JSONType() map[string]any {
-	if ft.Repetition == Repeated {
+	if ft.Repetition == Repeated || ft.Repetition == OptionalRepeated {
 		return map[string]any{
 			"type":  "array",
 			"items": ft.Primitive.JSONType(),
@@ -286,7 +287,11 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error)
 			if err != nil {
 				return FieldType{}, err
 			}
-			return FieldType{Primitive: inner.Primitive, Repetition: Optional}, nil
+			rep := Optional
+			if inner.Repetition == Repeated {
+				rep = OptionalRepeated
+			}
+			return FieldType{Primitive: inner.Primitive, Repetition: rep}, nil
 		}
 		if outer == "Union" {
 			// typing.Union[X, Y] → treat as union type
@@ -313,7 +318,11 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error)
 			if err != nil {
 				return FieldType{}, err
 			}
-			return FieldType{Primitive: ft.Primitive, Repetition: Optional}, nil
+			rep := Optional
+			if ft.Repetition == Repeated {
+				rep = OptionalRepeated
+			}
+			return FieldType{Primitive: ft.Primitive, Repetition: rep}, nil
 		}
 		return FieldType{}, errUnsupportedType("union types other than X | None are not supported")
 	}

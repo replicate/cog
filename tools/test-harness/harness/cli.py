@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -10,8 +11,13 @@ from pathlib import Path
 import yaml
 
 from .cog_resolver import resolve_cog_binary, resolve_sdk_version
-from .report import console_report, write_json_report
-from .runner import ModelResult, Runner
+from .report import (
+    console_report,
+    schema_compare_console_report,
+    schema_compare_json_report,
+    write_json_report,
+)
+from .runner import ModelResult, Runner, SchemaCompareResult
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -43,6 +49,25 @@ def main(argv: list[str] | None = None) -> None:
     )
     _add_common_args(build_parser)
 
+    # ── schema-compare ────────────────────────────────────────────────
+    schema_parser = subparsers.add_parser(
+        "schema-compare",
+        help="Compare static (Go) vs runtime (Python) schema generation",
+    )
+    _add_common_args(schema_parser)
+    schema_parser.add_argument(
+        "--output",
+        choices=["console", "json"],
+        default="console",
+        help="Output format (default: console)",
+    )
+    schema_parser.add_argument(
+        "--output-file",
+        type=str,
+        default=None,
+        help="Write report to file",
+    )
+
     # ── list ────────────────────────────────────────────────────────
     list_parser = subparsers.add_parser("list", help="List models in manifest")
     list_parser.add_argument(
@@ -64,12 +89,17 @@ def main(argv: list[str] | None = None) -> None:
         datefmt="%H:%M:%S",
     )
 
+    # Resolve relative paths to absolute before any cwd changes
+    _resolve_paths(args)
+
     if args.command == "list":
         _cmd_list(args)
     elif args.command == "build":
         _cmd_build(args)
     elif args.command == "run":
         _cmd_run(args)
+    elif args.command == "schema-compare":
+        _cmd_schema_compare(args)
 
 
 def _cmd_list(args: argparse.Namespace) -> None:
@@ -90,22 +120,14 @@ def _cmd_build(args: argparse.Namespace) -> None:
     models = _filter_models(manifest, args)
     defaults = manifest.get("defaults", {})
 
-    sdk_version, _ = resolve_sdk_version(
-        cli_sdk_version=args.sdk_version,
-        manifest_defaults=defaults,
+    cog_binary, cog_version_label, sdk_version, sdk_wheel = _resolve_versions(
+        args, defaults
     )
-    cog_binary, cog_version_label = resolve_cog_binary(
-        cog_version=args.cog_version,
-        cog_binary=args.cog_binary,
-        manifest_defaults=defaults,
-    )
-    log = logging.getLogger(__name__)
-    log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
-    log.info("Using SDK version: %s", sdk_version)
 
     runner = Runner(
         cog_binary=cog_binary,
         sdk_version=sdk_version,
+        sdk_wheel=sdk_wheel,
         keep_images=True,
     )
 
@@ -143,22 +165,14 @@ def _cmd_run(args: argparse.Namespace) -> None:
     models = _filter_models(manifest, args)
     defaults = manifest.get("defaults", {})
 
-    sdk_version, _ = resolve_sdk_version(
-        cli_sdk_version=args.sdk_version,
-        manifest_defaults=defaults,
+    cog_binary, cog_version_label, sdk_version, sdk_wheel = _resolve_versions(
+        args, defaults
     )
-    cog_binary, cog_version_label = resolve_cog_binary(
-        cog_version=args.cog_version,
-        cog_binary=args.cog_binary,
-        manifest_defaults=defaults,
-    )
-    log = logging.getLogger(__name__)
-    log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
-    log.info("Using SDK version: %s", sdk_version)
 
     runner = Runner(
         cog_binary=cog_binary,
         sdk_version=sdk_version,
+        sdk_wheel=sdk_wheel,
         keep_images=args.keep_images,
     )
 
@@ -206,7 +220,109 @@ def _cmd_run(args: argparse.Namespace) -> None:
     sys.exit(1 if failed else 0)
 
 
+def _cmd_schema_compare(args: argparse.Namespace) -> None:
+    manifest = _load_manifest(args.manifest)
+    models = _filter_models(manifest, args)
+    defaults = manifest.get("defaults", {})
+
+    cog_binary, cog_version_label, sdk_version, sdk_wheel = _resolve_versions(
+        args, defaults
+    )
+
+    runner = Runner(
+        cog_binary=cog_binary,
+        sdk_version=sdk_version,
+        sdk_wheel=sdk_wheel,
+        keep_images=args.keep_images,
+    )
+
+    log = logging.getLogger(__name__)
+    results: list[SchemaCompareResult] = []
+    try:
+        for model in models:
+            log.info("Comparing schemas for %s ...", model["name"])
+            result = runner.compare_schema(model)
+            results.append(result)
+    finally:
+        if not args.keep_images:
+            runner.cleanup()
+
+    # Output
+    if args.output == "json":
+        report = schema_compare_json_report(results, cog_version=cog_version_label)
+        if args.output_file:
+            with open(args.output_file, "w") as f:
+                json.dump(report, f, indent=2)
+                f.write("\n")
+        else:
+            json.dump(report, sys.stdout, indent=2)
+            print()
+    else:
+        schema_compare_console_report(results, cog_version=cog_version_label)
+        if args.output_file:
+            report = schema_compare_json_report(results, cog_version=cog_version_label)
+            with open(args.output_file, "w") as f:
+                json.dump(report, f, indent=2)
+                f.write("\n")
+
+    failed = any(not r.passed for r in results)
+    sys.exit(1 if failed else 0)
+
+
 # ── Helpers ────────────────────────────────────────────────────────────
+
+
+def _resolve_versions(
+    args: argparse.Namespace,
+    defaults: dict,
+) -> tuple[str, str, str, str | None]:
+    """Resolve cog binary, version label, SDK version, and SDK wheel.
+
+    Returns ``(cog_binary, cog_version_label, sdk_version, sdk_wheel)``.
+
+    Handles the interaction between ``--cog-ref`` (which builds both CLI
+    and SDK from source) and the separate SDK resolution flags, and logs
+    a clear summary of what's being used.
+    """
+    log = logging.getLogger(__name__)
+    cog_ref = getattr(args, "cog_ref", None)
+    explicit_sdk_wheel = getattr(args, "sdk_wheel", None)
+
+    # Resolve cog binary (may also produce an SDK wheel from the ref)
+    cog_binary, cog_version_label, ref_sdk_wheel = resolve_cog_binary(
+        cog_version=args.cog_version,
+        cog_binary=args.cog_binary,
+        cog_ref=cog_ref,
+        manifest_defaults=defaults,
+    )
+
+    # Determine SDK wheel: explicit --sdk-wheel wins over ref-built
+    sdk_wheel = explicit_sdk_wheel or ref_sdk_wheel
+
+    # Resolve SDK version — skip the PyPI lookup when --cog-ref provides
+    # a wheel and no explicit --sdk-version / --sdk-wheel was given.
+    if sdk_wheel and not args.sdk_version:
+        # The wheel IS the SDK; the version string is just for display
+        sdk_version = cog_version_label
+    else:
+        sdk_version, _ = resolve_sdk_version(
+            cli_sdk_version=args.sdk_version,
+            manifest_defaults=defaults,
+        )
+
+    # Log a clear summary
+    log.info("Using cog CLI: %s (%s)", cog_binary, cog_version_label)
+    if sdk_wheel:
+        if explicit_sdk_wheel:
+            log.info("Using SDK wheel: %s (from --sdk-wheel)", sdk_wheel)
+        else:
+            log.info(
+                "Using SDK wheel: %s (built from %s)", sdk_wheel, cog_version_label
+            )
+    else:
+        log.info("Using SDK version: %s (from PyPI)", sdk_version)
+
+    return cog_binary, cog_version_label, sdk_version, sdk_wheel
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -255,13 +371,46 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--cog-binary",
         type=str,
         default="cog",
-        help="Path to a local cog binary (overrides --cog-version)",
+        help="Path to a local cog binary (overrides --cog-version and --cog-ref)",
+    )
+    parser.add_argument(
+        "--cog-ref",
+        type=str,
+        default=None,
+        help=(
+            "Git ref (branch, tag, or commit SHA) to build cog from source. "
+            "Clones the cog repo, builds the CLI binary and SDK wheel from "
+            "that ref. Requires go and uv on PATH. "
+            "Overridden by --cog-binary. Overrides --cog-version."
+        ),
+    )
+    parser.add_argument(
+        "--sdk-wheel",
+        type=str,
+        default=None,
+        help=(
+            "Path to a local SDK wheel, a URL, or 'pypi[:version]'. "
+            "Sets COG_SDK_WHEEL during builds, overriding --sdk-version "
+            "and --cog-ref's auto-built wheel. "
+            "Use with --cog-binary to test fully from source."
+        ),
     )
     parser.add_argument(
         "--keep-images",
         action="store_true",
         help="Don't clean up Docker images after run",
     )
+
+
+def _resolve_paths(args: argparse.Namespace) -> None:
+    """Resolve relative file paths to absolute so they survive cwd changes."""
+    if hasattr(args, "cog_binary") and args.cog_binary and args.cog_binary != "cog":
+        args.cog_binary = str(Path(args.cog_binary).resolve())
+    if hasattr(args, "sdk_wheel") and args.sdk_wheel:
+        # Only resolve if it looks like a file path (not a URL or pypi: shorthand)
+        wheel = args.sdk_wheel
+        if not wheel.startswith(("http://", "https://", "pypi")):
+            args.sdk_wheel = str(Path(wheel).resolve())
 
 
 def _load_manifest(manifest_path: str | None) -> dict:

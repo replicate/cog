@@ -4,7 +4,7 @@ This file provides guidance to coding agents when working with code in this repo
 
 ## Project Overview
 
-Cog is a tool that packages machine learning models in production-ready containers. 
+Cog is a tool that packages machine learning models in production-ready containers.
 
 It consists of:
 - **Cog CLI** (`cmd/cog/`) - Command-line interface for building, running, and deploying models, written in Go
@@ -132,7 +132,7 @@ import (
 - **Async**: tokio runtime; async/await patterns
 
 ## Working on the CLI and support tooling
-The CLI code is in the `cmd/cog/` and `pkg/` directories. Support tooling is in the `tools/` directory. 
+The CLI code is in the `cmd/cog/` and `pkg/` directories. Support tooling is in the `tools/` directory.
 
 The main commands for working on the CLI are:
 - `go run ./cmd/cog` - Runs the Cog CLI directly from source (requires wheel to be built first)
@@ -199,7 +199,7 @@ COG_BINARY=dist/go/*/cog mise run test:integration
 
 ### CLI Architecture (Go)
 The CLI follows a command pattern with subcommands. The main components are:
-- `pkg/cli/` - Command definitions (build, run, predict, serve, etc.)
+- `pkg/cli/` - Command definitions (build, exec, predict, serve, etc.)
 - `pkg/docker/` - Docker client and container management
 - `pkg/dockerfile/` - Dockerfile generation and templating
 - `pkg/config/` - cog.yaml parsing and validation

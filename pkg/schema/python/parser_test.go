@@ -1,6 +1,7 @@
 package python
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,17 @@ import (
 
 	"github.com/replicate/cog/pkg/schema"
 )
+
+// jsonRoundTrip marshals v to JSON and unmarshals back to map[string]any.
+// This normalizes custom JSON types (like orderedMapAny) to plain maps.
+func jsonRoundTrip(t *testing.T, v map[string]any) map[string]any {
+	t.Helper()
+	data, err := json.Marshal(v)
+	require.NoError(t, err)
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(data, &result))
+	return result
+}
 
 // helper that parses in predict mode and fails on error.
 func parse(t *testing.T, source, predictRef string) *schema.PredictorInfo {
@@ -1353,6 +1365,60 @@ class Predictor(BasePredictor):
 }
 
 // ---------------------------------------------------------------------------
+// Optional list inputs (list[X] | None)
+// ---------------------------------------------------------------------------
+
+func TestOptionalListPipeNone(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, files: list[Path] | None = Input(default=None)) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	files, ok := info.Inputs.Get("files")
+	require.True(t, ok)
+	require.Equal(t, schema.TypePath, files.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, files.FieldType.Repetition)
+	require.NotNil(t, files.Default)
+	require.Equal(t, schema.DefaultNone, files.Default.Kind)
+}
+
+func TestOptionalListTypingOptional(t *testing.T) {
+	source := `
+from typing import Optional, List
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, tags: Optional[List[str]] = Input(default=None)) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	tags, ok := info.Inputs.Get("tags")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, tags.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, tags.FieldType.Repetition)
+	require.NotNil(t, tags.Default)
+	require.Equal(t, schema.DefaultNone, tags.Default.Kind)
+}
+
+func TestOptionalListFileInput(t *testing.T) {
+	source := `
+from cog import BasePredictor, File, Input
+
+class Predictor(BasePredictor):
+    def predict(self, files: list[File] | None = Input(default=None)) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	files, ok := info.Inputs.Get("files")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeFile, files.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, files.FieldType.Repetition)
+}
+
+// ---------------------------------------------------------------------------
 // Recursive / nested output types
 // ---------------------------------------------------------------------------
 
@@ -1792,8 +1858,9 @@ class Predictor(BasePredictor):
 	require.False(t, count.Required)
 	require.False(t, count.Type.Nullable)
 
-	// Verify JSON Schema output doesn't include "nullable" for these fields
-	js := info.Output.JSONSchema()
+	// Verify JSON Schema output doesn't include "nullable" for these fields.
+	// Round-trip through JSON to get a plain map (properties is an orderedMapAny).
+	js := jsonRoundTrip(t, info.Output.JSONSchema())
 	props, ok := js["properties"].(map[string]any)
 	require.True(t, ok)
 	debugProp, ok := props["debug"].(map[string]any)
@@ -1823,8 +1890,9 @@ class Predictor(BasePredictor):
 	require.True(t, errField.Type.Nullable, "Optional field should be nullable")
 	require.False(t, errField.Required, "Optional field with default should not be required")
 
-	// Verify JSON Schema output includes "nullable" for Optional field
-	js := info.Output.JSONSchema()
+	// Verify JSON Schema output includes "nullable" for Optional field.
+	// Round-trip through JSON to get a plain map (properties is an orderedMapAny).
+	js := jsonRoundTrip(t, info.Output.JSONSchema())
 	props, ok := js["properties"].(map[string]any)
 	require.True(t, ok)
 	errProp, ok := props["error"].(map[string]any)
@@ -2265,4 +2333,268 @@ class Predictor(BasePredictor):
 	require.Contains(t, string(data), `"text"`)
 	require.Contains(t, string(data), `"score"`)
 	require.Contains(t, string(data), `"object"`)
+}
+
+// ---------------------------------------------------------------------------
+// Forward references (quoted annotations)
+// ---------------------------------------------------------------------------
+
+func TestForwardReferenceOutput(t *testing.T) {
+	// Forward reference using a quoted string annotation -> "Result"
+	source := `
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> "Result":
+        pass
+
+class Result(BaseModel):
+    text: str
+    score: float
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 2, info.Output.Fields.Len())
+
+	text, ok := info.Output.Fields.Get("text")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, text.Type.Primitive)
+
+	score, ok := info.Output.Fields.Get("score")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeFloat, score.Type.Primitive)
+}
+
+func TestForwardReferenceGeneric(t *testing.T) {
+	// Forward reference with a generic type: -> "list[str]"
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> "list[str]":
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.TypeString, info.Output.Items.Primitive)
+}
+
+func TestForwardReferenceQuotedUnion(t *testing.T) {
+	// Quoted union like "str | None" should be unquoted first,
+	// then parsed as a union — not split on | while still quoted.
+	// This tests the fix where forward-ref stripping happens before
+	// union parsing in parseTypeFromString.
+	source := `
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Result(BaseModel):
+    name: "str | None"
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 1, info.Output.Fields.Len())
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.True(t, name.Type.Nullable, "field with quoted union 'str | None' should be nullable")
+	require.Equal(t, schema.SchemaPrimitive, name.Type.Kind)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+}
+
+// ---------------------------------------------------------------------------
+// Nested BaseModel composition
+// ---------------------------------------------------------------------------
+
+func TestNestedBaseModelField(t *testing.T) {
+	// Outer BaseModel has a field whose type is another BaseModel.
+	source := `
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Inner(BaseModel):
+    value: int
+    label: str
+
+class Outer(BaseModel):
+    inner: Inner
+    name: str
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Outer:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 2, info.Output.Fields.Len())
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+
+	inner, ok := info.Output.Fields.Get("inner")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaObject, inner.Type.Kind)
+	require.Equal(t, 2, inner.Type.Fields.Len())
+
+	val, ok := inner.Type.Fields.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeInteger, val.Type.Primitive)
+
+	lbl, ok := inner.Type.Fields.Get("label")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, lbl.Type.Primitive)
+}
+
+// ---------------------------------------------------------------------------
+// list[BaseModel] and Iterator[BaseModel] outputs
+// ---------------------------------------------------------------------------
+
+func TestListOfBaseModelOutput(t *testing.T) {
+	source := `
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Item(BaseModel):
+    name: str
+    score: float
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> list[Item]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaObject, info.Output.Items.Kind)
+	require.Equal(t, 2, info.Output.Items.Fields.Len())
+
+	name, ok := info.Output.Items.Fields.Get("name")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+
+	score, ok := info.Output.Items.Fields.Get("score")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeFloat, score.Type.Primitive)
+}
+
+func TestIteratorOfBaseModelOutput(t *testing.T) {
+	source := `
+from pydantic import BaseModel
+from cog import BasePredictor, ConcatenateIterator
+from typing import Iterator
+
+class Chunk(BaseModel):
+    text: str
+    index: int
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Iterator[Chunk]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaIterator, info.Output.Kind)
+	require.NotNil(t, info.Output.Elem)
+	require.Equal(t, schema.SchemaObject, info.Output.Elem.Kind)
+	require.Equal(t, 2, info.Output.Elem.Fields.Len())
+
+	text, ok := info.Output.Elem.Fields.Get("text")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, text.Type.Primitive)
+
+	idx, ok := info.Output.Elem.Fields.Get("index")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeInteger, idx.Type.Primitive)
+}
+
+// ---------------------------------------------------------------------------
+// Self-referential / recursive BaseModel (cycle detection)
+// ---------------------------------------------------------------------------
+
+func TestRecursiveBaseModelDoesNotStackOverflow(t *testing.T) {
+	// A self-referential model should not cause infinite recursion.
+	// The cycle detection should break the loop by emitting an opaque object.
+	source := `
+from pydantic import BaseModel
+from typing import Optional
+from cog import BasePredictor
+
+class TreeNode(BaseModel):
+    value: str
+    child: Optional["TreeNode"] = None
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> TreeNode:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 2, info.Output.Fields.Len())
+
+	val, ok := info.Output.Fields.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, val.Type.Primitive)
+
+	// The child field should resolve (not stack overflow).
+	// It will be nullable, and the inner type is the cycle-broken opaque object.
+	child, ok := info.Output.Fields.Get("child")
+	require.True(t, ok)
+	require.True(t, child.Type.Nullable)
+}
+
+// ---------------------------------------------------------------------------
+// Output property order determinism
+// ---------------------------------------------------------------------------
+
+func TestOutputObjectPropertyOrderDeterministic(t *testing.T) {
+	// Verify that JSON Schema output preserves field insertion order.
+	source := `
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Result(BaseModel):
+    alpha: str
+    beta: int
+    gamma: float
+    delta: bool
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	js := info.Output.JSONSchema()
+	data, err := json.Marshal(js)
+	require.NoError(t, err)
+
+	jsonStr := string(data)
+	// Properties should appear in insertion order (alpha, beta, gamma, delta).
+	alphaIdx := indexOf(jsonStr, `"alpha"`)
+	betaIdx := indexOf(jsonStr, `"beta"`)
+	gammaIdx := indexOf(jsonStr, `"gamma"`)
+	deltaIdx := indexOf(jsonStr, `"delta"`)
+
+	require.GreaterOrEqual(t, alphaIdx, 0, `"alpha" property should be present in JSON schema`)
+	require.GreaterOrEqual(t, betaIdx, 0, `"beta" property should be present in JSON schema`)
+	require.GreaterOrEqual(t, gammaIdx, 0, `"gamma" property should be present in JSON schema`)
+	require.GreaterOrEqual(t, deltaIdx, 0, `"delta" property should be present in JSON schema`)
+
+	require.Greater(t, betaIdx, alphaIdx, "beta should appear after alpha")
+	require.Greater(t, gammaIdx, betaIdx, "gamma should appear after beta")
+	require.Greater(t, deltaIdx, gammaIdx, "delta should appear after gamma")
+}
+
+func indexOf(s, substr string) int {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
 }

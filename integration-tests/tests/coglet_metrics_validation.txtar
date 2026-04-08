@@ -1,0 +1,94 @@
+# Test that invalid metric names are rejected with clear errors.
+#
+# Verifies that metric name validation rules are enforced:
+# - Reserved names (predict_time)
+# - Reserved prefixes (cog.*)
+# - Invalid characters
+# - Leading/trailing underscores
+# - Consecutive underscores
+# - Leading/trailing dots
+# - Consecutive dots
+# - Empty segments
+# - Too many segments (>4)
+# - Name too long (>128 chars)
+
+cog serve
+
+# Test invalid metric names cause prediction failures
+curl POST /predictions '{"input":{"test":"underscore_prefix"}}'
+stdout '"status":"failed"'
+stdout 'must start with a letter'
+
+curl POST /predictions '{"input":{"test":"consecutive_underscore"}}'
+stdout '"status":"failed"'
+stdout 'must not contain consecutive underscores'
+
+curl POST /predictions '{"input":{"test":"trailing_underscore"}}'
+stdout '"status":"failed"'
+stdout 'must end with a letter or digit'
+
+curl POST /predictions '{"input":{"test":"leading_dot"}}'
+stdout '"status":"failed"'
+stdout 'must not start with a dot'
+
+curl POST /predictions '{"input":{"test":"consecutive_dot"}}'
+stdout '"status":"failed"'
+stdout 'empty segments'
+
+curl POST /predictions '{"input":{"test":"predict_time"}}'
+stdout '"status":"failed"'
+stdout 'predict_time'
+
+curl POST /predictions '{"input":{"test":"cog_prefix"}}'
+stdout '"status":"failed"'
+stdout 'cog\.'
+
+curl POST /predictions '{"input":{"test":"too_many_segments"}}'
+stdout '"status":"failed"'
+stdout 'at most 4 dot-separated segments'
+
+curl POST /predictions '{"input":{"test":"name_too_long"}}'
+stdout '"status":"failed"'
+stdout '128 characters'
+
+# Sanity check: valid metric names should succeed
+curl POST /predictions '{"input":{"test":"valid"}}'
+stdout '"status":"succeeded"'
+stdout '"valid_name":1'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, current_scope
+
+
+class Predictor(BasePredictor):
+    def predict(self, test: str = "") -> str:
+        scope = current_scope()
+
+        if test == "underscore_prefix":
+            scope.record_metric("_invalid", 1)
+        elif test == "consecutive_underscore":
+            scope.record_metric("foo__bar", 1)
+        elif test == "trailing_underscore":
+            scope.record_metric("invalid_", 1)
+        elif test == "leading_dot":
+            scope.record_metric(".invalid", 1)
+        elif test == "consecutive_dot":
+            scope.record_metric("foo..bar", 1)
+        elif test == "predict_time":
+            scope.record_metric("predict_time", 1)
+        elif test == "cog_prefix":
+            scope.record_metric("cog.system", 1)
+        elif test == "too_many_segments":
+            scope.record_metric("a.b.c.d.e", 1)
+        elif test == "name_too_long":
+            scope.record_metric("a" * 129, 1)
+        else:
+            # Valid case for sanity check
+            scope.record_metric("valid_name", 1)
+
+        return "ok"

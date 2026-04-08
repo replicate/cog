@@ -178,6 +178,12 @@ impl Prediction {
     ///
     /// Dot-path keys (e.g., "timing.preprocess") are resolved into nested objects.
     pub fn set_metric(&mut self, name: String, value: serde_json::Value, mode: MetricMode) {
+        // Reject empty keys or keys with empty dot-path segments (e.g. "a.", ".b", "a..b").
+        if name.is_empty() || name.split('.').any(|s| s.is_empty()) {
+            tracing::warn!(key = %name, "Ignoring metric with empty key or empty dot-path segment");
+            return;
+        }
+
         // Dot-path resolution: "a.b.c" → nested objects
         let parts: Vec<&str> = name.split('.').collect();
         if parts.len() > 1 {
@@ -195,15 +201,13 @@ impl Prediction {
             }
             MetricMode::Increment => {
                 let entry = self.metrics.entry(name).or_insert(serde_json::json!(0));
-                if let (Some(existing), Some(delta)) = (entry.as_f64(), value.as_f64()) {
-                    // Preserve integer type if both are integers
-                    if entry.is_i64() && value.is_i64() {
-                        *entry = serde_json::json!(existing as i64 + delta as i64);
-                    } else if entry.is_u64() && value.is_u64() {
-                        *entry = serde_json::json!(existing as u64 + delta as u64);
-                    } else {
-                        *entry = serde_json::json!(existing + delta);
-                    }
+                // Use native integer extraction to avoid f64 precision loss for large values.
+                if let (Some(a), Some(b)) = (entry.as_i64(), value.as_i64()) {
+                    *entry = serde_json::json!(a.wrapping_add(b));
+                } else if let (Some(a), Some(b)) = (entry.as_u64(), value.as_u64()) {
+                    *entry = serde_json::json!(a.wrapping_add(b));
+                } else if let (Some(a), Some(b)) = (entry.as_f64(), value.as_f64()) {
+                    *entry = serde_json::json!(a + b);
                 }
                 // Non-numeric increment is silently ignored
             }
@@ -266,14 +270,12 @@ impl Prediction {
             }
             MetricMode::Increment => {
                 let entry = obj.entry(leaf_key).or_insert(serde_json::json!(0));
-                if let (Some(existing), Some(delta)) = (entry.as_f64(), value.as_f64()) {
-                    if entry.is_i64() && value.is_i64() {
-                        *entry = serde_json::json!(existing as i64 + delta as i64);
-                    } else if entry.is_u64() && value.is_u64() {
-                        *entry = serde_json::json!(existing as u64 + delta as u64);
-                    } else {
-                        *entry = serde_json::json!(existing + delta);
-                    }
+                if let (Some(a), Some(b)) = (entry.as_i64(), value.as_i64()) {
+                    *entry = serde_json::json!(a.wrapping_add(b));
+                } else if let (Some(a), Some(b)) = (entry.as_u64(), value.as_u64()) {
+                    *entry = serde_json::json!(a.wrapping_add(b));
+                } else if let (Some(a), Some(b)) = (entry.as_f64(), value.as_f64()) {
+                    *entry = serde_json::json!(a + b);
                 }
             }
             MetricMode::Append => {
@@ -381,18 +383,17 @@ impl Prediction {
             payload["error"] = serde_json::Value::String(error.clone());
         }
 
-        // Include metrics: always include user metrics, add predict_time on terminal
-        if !self.metrics.is_empty() || self.status.is_terminal() {
-            let mut metrics_obj = serde_json::Map::new();
-            for (k, v) in &self.metrics {
-                metrics_obj.insert(k.clone(), v.clone());
-            }
-            if self.status.is_terminal() {
-                let predict_time = self.elapsed().as_secs_f64();
-                metrics_obj.insert("predict_time".to_string(), serde_json::json!(predict_time));
-            }
-            payload["metrics"] = serde_json::Value::Object(metrics_obj);
+        // Always include metrics for consistent payloads. User metrics are
+        // included unconditionally; predict_time is added on terminal status.
+        let mut metrics_obj = serde_json::Map::new();
+        for (k, v) in &self.metrics {
+            metrics_obj.insert(k.clone(), v.clone());
         }
+        if self.status.is_terminal() {
+            let predict_time = self.elapsed().as_secs_f64();
+            metrics_obj.insert("predict_time".to_string(), serde_json::json!(predict_time));
+        }
+        payload["metrics"] = serde_json::Value::Object(metrics_obj);
 
         payload
     }
@@ -736,5 +737,62 @@ mod tests {
         pred.set_succeeded(PredictionOutput::Single(serde_json::json!("done")));
         pred.set_canceled();
         assert_eq!(pred.status(), PredictionStatus::Succeeded);
+    }
+
+    // ====================================================================
+    // Bug fix: empty dot-path segments rejected
+    // ====================================================================
+
+    #[test]
+    fn metric_empty_key_ignored() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("".into(), serde_json::json!(1), MetricMode::Replace);
+        assert!(pred.metrics().is_empty());
+    }
+
+    #[test]
+    fn metric_trailing_dot_ignored() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("a.".into(), serde_json::json!(1), MetricMode::Replace);
+        assert!(pred.metrics().is_empty());
+    }
+
+    #[test]
+    fn metric_leading_dot_ignored() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric(".b".into(), serde_json::json!(1), MetricMode::Replace);
+        assert!(pred.metrics().is_empty());
+    }
+
+    #[test]
+    fn metric_double_dot_ignored() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("a..b".into(), serde_json::json!(1), MetricMode::Replace);
+        assert!(pred.metrics().is_empty());
+    }
+
+    // ====================================================================
+    // Bug fix: snapshot always includes metrics key
+    // ====================================================================
+
+    #[test]
+    fn snapshot_includes_empty_metrics_for_non_terminal() {
+        let pred = Prediction::new("test".to_string(), None);
+        let snapshot = pred.build_state_snapshot();
+        // metrics key should always be present, even if empty
+        assert!(snapshot["metrics"].is_object());
+        assert!(snapshot["metrics"].as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn snapshot_includes_predict_time_on_failed() {
+        let mut pred = Prediction::new("test".to_string(), None);
+        pred.set_metric("temp".into(), serde_json::json!(0.7), MetricMode::Replace);
+        pred.set_failed("oops".to_string());
+
+        let snapshot = pred.build_state_snapshot();
+        let metrics = snapshot["metrics"].as_object().unwrap();
+        assert_eq!(metrics["temp"], serde_json::json!(0.7));
+        assert!(metrics.contains_key("predict_time"));
     }
 }

@@ -287,7 +287,7 @@ func Build(
 		}
 	}
 
-	// When skipLabels is true (cog run/predict/serve/train), skip the expensive
+	// When skipLabels is true (cog exec/predict/serve/train), skip the expensive
 	// label-adding phase. This image is for local use only and won't be distributed,
 	// so we don't need metadata labels, pip freeze, or git info.
 	// We still need the schema bundled, so do a minimal second build to add it.
@@ -387,7 +387,7 @@ func Build(
 	maps.Copy(labels, annotations)
 
 	// The final image ID comes from the label-adding step.
-	// When schema validation is skipped (cog run), there is no schema file to bundle.
+	// When schema validation is skipped (cog exec), there is no schema file to bundle.
 	schemaFileToBundle := bundledSchemaFile
 	if skipSchemaValidation {
 		schemaFileToBundle = ""
@@ -649,7 +649,7 @@ func writeDockerignore(contents string) error {
 
 func backupDockerignore() error {
 	if _, err := os.Stat(".dockerignore"); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// .dockerignore file does not exist, nothing to backup
 			return nil
 		}
@@ -666,7 +666,7 @@ func restoreDockerignore() error {
 	}
 
 	if _, err := os.Stat(dockerignoreBackupPath); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// .dockerignore backup file does not exist, nothing to restore
 			return nil
 		}
