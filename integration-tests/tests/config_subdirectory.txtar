@@ -8,7 +8,7 @@ mkdir some/sub/dir
 
 # Run cog from a subdirectory - it should find cog.yaml in parent
 cd some/sub/dir
-cog run echo hello world
+cog exec echo hello world
 stdout 'hello world'
 
 -- cog.yaml --

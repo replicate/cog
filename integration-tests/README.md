@@ -190,11 +190,11 @@ Run a command with a pseudo-terminal (PTY), sending input from a file and captur
 
 ```txtar
 # Run bash interactively with commands from input file
-pty-run input.txt cog run $TEST_IMAGE /bin/bash
+pty-run input.txt cog exec $TEST_IMAGE /bin/bash
 stdout 'expected output'
 
 # Run a simple command (no input needed)
-pty-run /dev/null cog run $TEST_IMAGE echo "hello"
+pty-run /dev/null cog exec $TEST_IMAGE echo "hello"
 stdout 'hello'
 ```
 

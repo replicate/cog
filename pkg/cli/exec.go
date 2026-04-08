@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -16,35 +17,36 @@ import (
 )
 
 var (
-	runPorts []string
-	gpusFlag string
+	execPorts []string
+	gpusFlag  string
 )
 
 func addGpusFlag(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&gpusFlag, "gpus", "", "GPU devices to add to the container, in the same format as `docker run --gpus`.")
 }
 
-func newRunCommand() *cobra.Command {
+func newExecCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "run <command> [arg...]",
-		Short: "Run a command inside a Docker environment",
-		Long: `Run a command inside a Docker environment defined by cog.yaml.
+		Use:     "exec <command> [arg...]",
+		Aliases: []string{"run"},
+		Short:   "Execute a command inside a Docker environment",
+		Long: `Execute a command inside a Docker environment defined by cog.yaml.
 
 Cog builds a temporary image from your cog.yaml configuration and runs the
 given command inside it. This is useful for debugging, running scripts, or
 exploring the environment your model will run in.`,
 		Example: `  # Open a Python interpreter inside the model environment
-  cog run python
+  cog exec python
 
   # Run a script
-  cog run python train.py
+  cog exec python train.py
 
   # Run with environment variables
-  cog run -e HUGGING_FACE_HUB_TOKEN=abc123 python download.py
+  cog exec -e HUGGING_FACE_HUB_TOKEN=abc123 python download.py
 
   # Expose a port (e.g. for Jupyter)
-  cog run -p 8888 jupyter notebook`,
-		RunE:    run,
+  cog exec -p 8888 jupyter notebook`,
+		RunE:    execCmd,
 		PreRunE: checkMutuallyExclusiveFlags,
 		Args:    cobra.MinimumNArgs(1),
 	}
@@ -59,7 +61,7 @@ exploring the environment your model will run in.`,
 	// Flags after first argument are considered args and passed to command
 
 	// This is called `publish` for consistency with `docker run`
-	cmd.Flags().StringArrayVarP(&runPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000")
+	cmd.Flags().StringArrayVarP(&execPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
 
 	flags.SetInterspersed(false)
@@ -67,7 +69,11 @@ exploring the environment your model will run in.`,
 	return cmd
 }
 
-func run(cmd *cobra.Command, args []string) error {
+func execCmd(cmd *cobra.Command, args []string) error {
+	if cmd.CalledAs() == "run" {
+		fmt.Fprintln(os.Stderr, `WARNING: "cog run <command>" is deprecated, use "cog exec <command>"`)
+	}
+
 	ctx := cmd.Context()
 
 	dockerClient, err := docker.NewClient(ctx)
@@ -113,7 +119,7 @@ func run(cmd *cobra.Command, args []string) error {
 		Workdir: "/src",
 	}
 
-	for _, portString := range runPorts {
+	for _, portString := range execPorts {
 		port, err := strconv.Atoi(portString)
 		if err != nil {
 			return err

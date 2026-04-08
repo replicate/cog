@@ -92,14 +92,14 @@ $ curl http://localhost:8080/predictions -X POST \
 In development, you can also run arbitrary commands inside the Docker environment:
 
 ```console
-$ cog run python train.py
+$ cog exec python train.py
 ...
 ```
 
 Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
 ```console
-$ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
+$ cog exec -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
 ```
 -->
 
