@@ -2,7 +2,6 @@ package cli
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -71,7 +70,7 @@ exploring the environment your model will run in.`,
 
 func execCmd(cmd *cobra.Command, args []string) error {
 	if cmd.CalledAs() == "run" {
-		fmt.Fprintln(os.Stderr, `WARNING: "cog run <command>" is deprecated, use "cog exec <command>"`)
+		console.Warn(`"cog run <command>" is deprecated, use "cog exec <command>"`)
 	}
 
 	ctx := cmd.Context()
