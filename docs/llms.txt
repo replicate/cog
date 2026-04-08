@@ -24,7 +24,7 @@ Define the Docker environment your model runs in with `cog.yaml`:
 build:
   gpu: true
   system_packages:
-    - "libgl1-mesa-glx"
+    - "libgl1"
     - "libglib2.0-0"
   python_version: "3.13"
   python_requirements: requirements.txt

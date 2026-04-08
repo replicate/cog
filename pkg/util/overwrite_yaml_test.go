@@ -125,7 +125,7 @@ func TestStep1XYaml(t *testing.T) {
 	var sourceYaml = `build:
   gpu: true
   system_packages:
-    - "libgl1-mesa-glx"
+    - "libgl1"
     - "libglib2.0-0"
   python_version: "3.11"
   python_requirements: requirements.txt
@@ -141,7 +141,7 @@ build:
 
   # a list of ubuntu apt packages to install
   system_packages:
-    - "libgl1-mesa-glx"
+    - "libgl1"
     - "libglib2.0-0"
 
   # python version in the form '3.11' or '3.11.4'
@@ -166,7 +166,7 @@ build:
     gpu: true
     # a list of ubuntu apt packages to install
     system_packages:
-        - "libgl1-mesa-glx"
+        - "libgl1"
         - "libglib2.0-0"
     # python version in the form '3.11' or '3.11.4'
     python_version: "3.11"
