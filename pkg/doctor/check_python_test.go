@@ -10,6 +10,7 @@ import (
 	"github.com/smacker/go-tree-sitter/python"
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/config"
 	schemaPython "github.com/replicate/cog/pkg/schema/python"
 )
 
@@ -183,6 +184,69 @@ class Predictor(BasePredictor):
 	findings, err = check.Check(ctx)
 	require.NoError(t, err)
 	require.Empty(t, findings)
+}
+
+func TestMissingTypeAnnotationsCheck_Clean(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+		Config:      &config.Config{Predict: "predict.py:Predictor"},
+	}
+
+	check := &MissingTypeAnnotationsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestMissingTypeAnnotationsCheck_MissingReturnType(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str):
+        return text
+`)
+
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+		Config:      &config.Config{Predict: "predict.py:Predictor"},
+	}
+
+	check := &MissingTypeAnnotationsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Equal(t, SeverityWarning, findings[0].Severity)
+	require.Contains(t, findings[0].Message, "predict()")
+	require.Contains(t, findings[0].Message, "return type annotation")
+}
+
+func TestMissingTypeAnnotationsCheck_NoConfig(t *testing.T) {
+	ctx := &CheckContext{
+		ProjectDir: t.TempDir(),
+		Config:     nil,
+	}
+
+	check := &MissingTypeAnnotationsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestMissingTypeAnnotationsCheck_FixReturnsNoAutoFix(t *testing.T) {
+	check := &MissingTypeAnnotationsCheck{}
+	err := check.Fix(nil, nil)
+	require.ErrorIs(t, err, ErrNoAutoFix)
 }
 
 // parsePythonFiles is a test helper that parses Python files into ParsedFile structs.

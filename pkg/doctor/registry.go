@@ -13,6 +13,7 @@ func AllChecks() []Check {
 		// Python checks
 		&PydanticBaseModelCheck{},
 		&DeprecatedImportsCheck{},
+		&MissingTypeAnnotationsCheck{},
 
 		// Environment checks
 		&DockerCheck{},
