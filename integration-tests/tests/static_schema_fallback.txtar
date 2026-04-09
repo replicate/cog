@@ -2,7 +2,7 @@
 # unresolvable output type, the build falls back to legacy runtime schema
 # generation instead of failing.
 #
-# The predictor returns a BaseModel subclass imported from a local package
+# The runner returns a BaseModel subclass imported from a local package
 # (mypackage/__init__.py). The static parser's moduleToFilePath() converts
 # "mypackage" to "mypackage.py" instead of "mypackage/__init__.py", so the
 # file isn't found and the name stays unresolved (ErrUnresolvableType).
@@ -18,14 +18,14 @@ cog build -t $TEST_IMAGE
 stderr 'Static schema generation failed'
 stderr 'Falling back to legacy runtime schema generation'
 
-# Predict should still work end-to-end via the legacy schema
-cog predict $TEST_IMAGE -i prompt=hello
+# Run should still work end-to-end via the legacy schema
+cog run $TEST_IMAGE -i prompt=hello
 stdout 'hello world'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
 -- mypackage/__init__.py --
 from cog import BaseModel
@@ -34,11 +34,11 @@ from cog import BaseModel
 class Output(BaseModel):
     text: str
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 from mypackage import Output
 
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> Output:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Output:
         return Output(text=prompt + " world")

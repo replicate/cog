@@ -23,17 +23,17 @@ upload-server-count 1
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import os
 import tempfile
 
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> Path:
+class Runner(BaseRunner):
+    def run(self) -> Path:
         d = tempfile.mkdtemp()
         p = os.path.join(d, "large_output.bin")
         # Write 50 MiB of binary data

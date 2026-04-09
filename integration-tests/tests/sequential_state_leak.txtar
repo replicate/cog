@@ -26,16 +26,16 @@ stdout '"output":"\[.a., .b., .c.\]"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 # Module-level state — persists across predictions in the same worker
 _state: list = []
 
 
-class Predictor(BasePredictor):
-    def predict(self, item: str) -> str:
+class Runner(BaseRunner):
+    def run(self, item: str) -> str:
         _state.append(item)
         return str(_state)

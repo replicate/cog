@@ -24,21 +24,21 @@ build:
   python_version: "3.12"
   python_packages:
   - requests
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import signal
 import subprocess
 import sys
 
 import requests
 
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     """
-    This predictor checks the case where a process is spawned during setup and then each
+    This runner checks the case where a process is spawned during setup and then each
     prediction depends on being able to communicate with that process. In the event that
     stream redirection is not working correctly, the forked process will not be able to
     write to stdout/stderr and will likely exit. Any state other than "running" is
@@ -46,7 +46,7 @@ class Predictor(BasePredictor):
     serving.
 
     This variant runs a forked python HTTP server via a shell wrapper to which a request
-    is made during each call to `predict`.
+    is made during each call to `run`.
     """
 
     def setup(self) -> None:
@@ -69,7 +69,7 @@ class Predictor(BasePredictor):
         else:
             raise RuntimeError("Background HTTP server failed to start")
 
-    def predict(self, s: str) -> str:
+    def run(self, s: str) -> str:
         status = self.bg.poll()
 
         print(f"---> background job status={status}")

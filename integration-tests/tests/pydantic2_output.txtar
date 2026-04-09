@@ -4,8 +4,8 @@
 # Build the image
 cog build -t $TEST_IMAGE
 
-# Predict returns structured Pydantic output
-cog predict $TEST_IMAGE -i name=alice -i score=0.95
+# Run returns structured Pydantic output
+cog run $TEST_IMAGE -i name=alice -i score=0.95
 stdout '"name": "alice"'
 stdout '"score": 0.95'
 stdout '"tags"'
@@ -16,14 +16,14 @@ build:
   python_version: "3.12"
   python_packages:
     - "pydantic>2"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 from typing import List
 
 from pydantic import BaseModel as PydanticBaseModel
 
-from cog import BasePredictor
+from cog import BaseRunner
 
 
 class Result(PydanticBaseModel):
@@ -32,6 +32,6 @@ class Result(PydanticBaseModel):
     tags: List[str]
 
 
-class Predictor(BasePredictor):
-    def predict(self, name: str, score: float = 0.5) -> Result:
+class Runner(BaseRunner):
+    def run(self, name: str, score: float = 0.5) -> Result:
         return Result(name=name, score=score, tags=["default"])

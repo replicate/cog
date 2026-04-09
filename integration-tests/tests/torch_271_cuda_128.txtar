@@ -10,12 +10,12 @@ build:
   python_version: "3.12"
   python_packages:
     - "torch==2.7.1+cu128"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, s: str) -> str:
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
         return "hello " + s

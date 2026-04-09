@@ -17,19 +17,19 @@ stdout '"output":"hello hello"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import time
 
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self) -> None:
         print("Starting slow setup...")
         time.sleep(15)
         print("Slow setup complete.")
 
-    def predict(self, s: str) -> str:
+    def run(self, s: str) -> str:
         return "hello " + s

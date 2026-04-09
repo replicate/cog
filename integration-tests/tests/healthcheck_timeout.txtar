@@ -24,17 +24,17 @@ stdout 'timed out after 5.0 seconds'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import time
-from cog import BasePredictor
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self) -> None:
         self._slow_mode = False
 
-    def predict(self, text: str) -> str:
+    def run(self, text: str) -> str:
         if text == "trigger_slow":
             self._slow_mode = True
         return f"hello {text}"

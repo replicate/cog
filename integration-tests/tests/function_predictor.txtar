@@ -1,18 +1,18 @@
-# Test function-based predictor (no class, just a function)
+# Test function-based runner (no class, just a function)
 
 # Build the image
 cog build -t $TEST_IMAGE
 
-# Predict using function-based predictor
-cog predict $TEST_IMAGE -i prompt=world
+# Run using function-based runner
+cog run $TEST_IMAGE -i prompt=world
 stdout 'HELLO WORLD'
 
 -- cog.yaml --
 build:
   python_version: "3.13"
-predict: "predict.py:run"
+run: "run.py:run"
 
--- predict.py --
+-- run.py --
 from cog import Input
 
 

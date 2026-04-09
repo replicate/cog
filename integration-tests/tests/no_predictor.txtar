@@ -1,9 +1,9 @@
-# Test error when no predictor is defined
-# Build should fail when cog.yaml has no predict field
+# Test error when no runner is defined
+# Build should fail when cog.yaml has no run field
 
-# Build should fail with error about missing predictor
+# Build should fail with error about missing runner
 ! cog build -t $TEST_IMAGE
-stderr 'predict'
+stderr 'run'
 
 -- cog.yaml --
 build:

@@ -7,14 +7,14 @@ stderr 'The .cog tmp path cannot be ignored by docker in .dockerignore'
 build:
   gpu: true
   python_version: "3.10"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
 -- .dockerignore --
 .cog
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, s: str) -> str:
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
         return "hello " + s

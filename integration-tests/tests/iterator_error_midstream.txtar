@@ -18,16 +18,16 @@ stdout '"error_message":".*generator exploded"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 from typing import Iterator
 
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> Iterator[str]:
+class Runner(BaseRunner):
+    def run(self) -> Iterator[str]:
         yield "chunk-1"
         yield "chunk-2"
         yield "chunk-3"

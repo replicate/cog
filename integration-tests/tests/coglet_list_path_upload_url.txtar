@@ -24,19 +24,19 @@ build:
   python_version: "3.12"
   python_packages:
     - "pillow==10.4.0"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import os
 import tempfile
 from typing import List
 
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 from PIL import Image
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> List[Path]:
+class Runner(BaseRunner):
+    def run(self) -> List[Path]:
         outputs = []
         for color in ["red", "blue", "green"]:
             d = tempfile.mkdtemp()

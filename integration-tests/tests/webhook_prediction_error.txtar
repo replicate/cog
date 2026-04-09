@@ -1,6 +1,6 @@
 # Test that a failed prediction delivers the correct webhook payload.
 #
-# When predict() raises an exception during an async prediction, the webhook
+# When run() raises an exception during an async prediction, the webhook
 # should receive status "failed" with the error message populated.
 
 webhook-server-start
@@ -19,12 +19,12 @@ stdout '"error_message":".*prediction went wrong"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> str:
+class Runner(BaseRunner):
+    def run(self) -> str:
         raise RuntimeError("prediction went wrong")

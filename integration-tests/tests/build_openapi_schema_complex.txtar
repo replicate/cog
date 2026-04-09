@@ -38,12 +38,12 @@ stdout '"Output"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 from typing import Optional
 
-from cog import BaseModel, BasePredictor, Input, Path, Secret
+from cog import BaseModel, BaseRunner, Input, Path, Secret
 
 
 class Output(BaseModel):
@@ -51,8 +51,8 @@ class Output(BaseModel):
     score: float
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self,
         prompt: str = Input(description="The prompt", default="hello"),
         temperature: float = Input(description="Sampling temp", ge=0, le=2, default=0.7),

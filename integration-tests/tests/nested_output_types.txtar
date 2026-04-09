@@ -24,12 +24,12 @@ stdout '"extra":null'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 from typing import List, Optional
 
-from cog import BaseModel, BasePredictor
+from cog import BaseModel, BaseRunner
 
 
 class Output(BaseModel):
@@ -42,8 +42,8 @@ class Output(BaseModel):
     extra: Optional[str]
 
 
-class Predictor(BasePredictor):
-    def predict(self, name: str) -> Output:
+class Runner(BaseRunner):
+    def run(self, name: str) -> Output:
         return Output(
             name=name,
             count=42,

@@ -16,19 +16,19 @@ stdout '"predict_time":(0\.[5-9][0-9]*|[1-9][0-9]*(\.[0-9]+)?)'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 concurrency:
   max: 1
 
--- predict.py --
+-- run.py --
 import asyncio
 from typing import AsyncIterator
 
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    async def predict(self) -> AsyncIterator[str]:
+class Runner(BaseRunner):
+    async def run(self) -> AsyncIterator[str]:
         for i in range(5):
             await asyncio.sleep(0.1)
             yield f"chunk-{i}"

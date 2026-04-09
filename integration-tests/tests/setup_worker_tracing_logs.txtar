@@ -29,21 +29,21 @@ build:
   python_version: "3.12"
   python_packages:
   - requests
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import signal
 import subprocess
 import sys
 
 import requests
 
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     """
-    This predictor spawns a double-forked HTTP server during setup to test
+    This runner spawns a double-forked HTTP server during setup to test
     that worker tracing logs are properly captured in setuplog.
     """
 
@@ -67,7 +67,7 @@ class Predictor(BasePredictor):
         else:
             raise RuntimeError("Background HTTP server failed to start")
 
-    def predict(self, s: str) -> str:
+    def run(self, s: str) -> str:
         status = self.bg.poll()
 
         if status is None:

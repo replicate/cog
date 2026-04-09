@@ -1,8 +1,8 @@
 # Regression test for https://github.com/replicate/cog/issues/2868
 #
-# When a predictor declares a `str`-typed input and the caller passes a URL
+# When a runner declares a `str`-typed input and the caller passes a URL
 # string (e.g. "https://example.com/api"), coglet should NOT coerce it into
-# a cog.Path or cog.File object. The predictor should receive the raw string.
+# a cog.Path or cog.File object. The runner should receive the raw string.
 #
 # The bug: coerce_url_strings() in coglet runs on ALL input fields, not just
 # those annotated as File or Path. Any string starting with "http://",
@@ -10,10 +10,10 @@
 
 cog build -t $TEST_IMAGE
 
-# --- Test via cog predict (CLI) ---
+# --- Test via cog run (CLI) ---
 
 # A plain URL passed to a str-typed input should be returned verbatim.
-cog predict $TEST_IMAGE -i url=https://api.example.com/v1/resource
+cog run $TEST_IMAGE -i url=https://api.example.com/v1/resource
 stdout 'type=str value=https://api.example.com/v1/resource'
 
 # --- Test via cog serve (HTTP API) ---
@@ -28,12 +28,12 @@ stdout 'type=str value=https://api.example.com/v1/resource'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, url: str) -> str:
+class Runner(BaseRunner):
+    def run(self, url: str) -> str:
         return f"type={type(url).__name__} value={url}"
