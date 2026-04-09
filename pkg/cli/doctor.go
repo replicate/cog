@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -134,7 +135,8 @@ func printDoctorResults(result *doctor.Result, fix bool) {
 	console.Info("")
 
 	// Summary line
-	if fix && fixedCount > 0 {
+	switch {
+	case fix && fixedCount > 0:
 		msg := fmt.Sprintf("Fixed %d issue", fixedCount)
 		if fixedCount != 1 {
 			msg += "s"
@@ -153,8 +155,8 @@ func printDoctorResults(result *doctor.Result, fix bool) {
 			}
 		}
 		console.Infof("%s.", msg)
-	} else if errorCount > 0 || warningCount > 0 {
-		parts := []string{}
+	case errorCount > 0 || warningCount > 0:
+		var parts []string
 		if errorCount > 0 {
 			s := fmt.Sprintf("%d error", errorCount)
 			if errorCount != 1 {
@@ -169,20 +171,13 @@ func printDoctorResults(result *doctor.Result, fix bool) {
 			}
 			parts = append(parts, s)
 		}
-		summary := "Found "
-		for i, p := range parts {
-			if i > 0 {
-				summary += ", "
-			}
-			summary += p
-		}
-		summary += "."
+		summary := "Found " + strings.Join(parts, ", ") + "."
 
 		if !fix && errorCount > 0 {
 			summary += ` Run "cog doctor --fix" to auto-fix.`
 		}
 		console.Infof("%s", summary)
-	} else {
+	default:
 		console.Successf("no issues found")
 	}
 }
