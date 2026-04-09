@@ -200,6 +200,62 @@ func buildTestCheckContext(t *testing.T, dir string) *CheckContext {
 	return ctx
 }
 
+func TestConfigSchemaCheck_Valid(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := &CheckContext{ProjectDir: dir}
+	check := &ConfigSchemaCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestConfigSchemaCheck_InvalidSchema(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "2.7"
+predict: "predict.py:Predictor"
+`)
+
+	ctx := &CheckContext{ProjectDir: dir}
+	check := &ConfigSchemaCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Equal(t, SeverityError, findings[0].Severity)
+	require.Contains(t, findings[0].Message, "validation failed")
+}
+
+func TestConfigSchemaCheck_ParseError(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build: [invalid yaml`)
+
+	ctx := &CheckContext{ProjectDir: dir}
+	check := &ConfigSchemaCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings) // Parse errors are handled by ConfigParseCheck
+}
+
+func TestConfigSchemaCheck_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+
+	ctx := &CheckContext{ProjectDir: dir}
+	check := &ConfigSchemaCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings) // Missing file handled by ConfigParseCheck
+}
+
 // writeFile is a test helper to create fixture files.
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
