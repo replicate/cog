@@ -108,6 +108,83 @@ class Predictor(BasePredictor):
 	require.Empty(t, findings)
 }
 
+func TestDeprecatedImportsCheck_Clean(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+
+	check := &DeprecatedImportsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestDeprecatedImportsCheck_Detects(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+from cog.types import ExperimentalFeatureWarning
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+
+	check := &DeprecatedImportsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Equal(t, SeverityError, findings[0].Severity)
+	require.Contains(t, findings[0].Message, "ExperimentalFeatureWarning")
+}
+
+func TestDeprecatedImportsCheck_Fix(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+from cog.types import ExperimentalFeatureWarning
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+
+	check := &DeprecatedImportsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+
+	err = check.Fix(ctx, findings)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	require.NotContains(t, string(content), "ExperimentalFeatureWarning")
+
+	// Re-parse and verify clean
+	ctx.PythonFiles = parsePythonFiles(t, dir, "predict.py")
+	findings, err = check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
 // parsePythonFiles is a test helper that parses Python files into ParsedFile structs.
 func parsePythonFiles(t *testing.T, dir string, filenames ...string) map[string]*ParsedFile {
 	t.Helper()
