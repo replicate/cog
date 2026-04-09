@@ -387,7 +387,7 @@ impl PythonPredictor {
                 }
             };
 
-            let (is_async, is_async_gen) = Self::detect_async(py, &instance, &predict_method_name)?;
+            let (is_async, is_async_gen) = Self::detect_async(py, &instance, predict_method_name)?;
             let predict_kind = if is_async_gen {
                 tracing::info!("Detected async generator {}()", predict_method_name);
                 PredictKind::AsyncGen
@@ -438,7 +438,7 @@ impl PythonPredictor {
             Self::unwrap_field_info_defaults(
                 py,
                 &predictor.instance,
-                &predictor.predict_method_name,
+                predictor.predict_method_name,
             )?;
             if matches!(predictor.kind, PredictorKind::Class { train, .. } if train != TrainKind::None)
             {
