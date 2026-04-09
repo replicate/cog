@@ -26,7 +26,7 @@ from coglet import CancelationException as CancelationException
 from ._version import __version__
 from .input import FieldInfo, Input
 from .model import BaseModel
-from .predictor import BasePredictor
+from .predictor import BasePredictor, BaseRunner
 from .types import (
     AsyncConcatenateIterator,
     ConcatenateIterator,
@@ -115,6 +115,7 @@ __all__ = [
     "__version__",
     # Core classes
     "BasePredictor",
+    "BaseRunner",
     "BaseModel",
     # Input
     "Input",

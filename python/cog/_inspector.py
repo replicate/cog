@@ -432,13 +432,23 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
     p = getattr(module, predictor_name)
 
     if inspect.isclass(p):
-        if not hasattr(p, "predict"):
-            raise ValueError(f"predict method not found: {fullname}")
+        # Detect which method the user's class defines (not inherited stubs)
+        has_run = "run" in p.__dict__
+        has_predict = "predict" in p.__dict__
+
+        if has_run and has_predict:
+            raise ValueError(f"define either run() or predict(), not both: {fullname}")
+
+        if has_run:
+            predict_fn_name = "run"
+        elif has_predict:
+            predict_fn_name = "predict"
+        else:
+            raise ValueError(f"run() or predict() method not found: {fullname}")
 
         if hasattr(p, "setup"):
             _validate_setup(_unwrap(p.setup))
 
-        predict_fn_name = "predict"
         predict_fn = _unwrap(getattr(p, predict_fn_name))
         is_class_fn = True
 

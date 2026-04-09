@@ -115,9 +115,79 @@ class BasePredictor:
         self.scope.record_metric(key, value, mode=mode)
 
 
+class BaseRunner:
+    """
+    Base class for Cog runners.
+
+    Subclass this to define your model's prediction interface. Override
+    the `setup` method to load your model, and the `run` method to
+    run predictions.
+
+    Example:
+        from cog import BaseRunner, Input, Path
+
+        class Runner(BaseRunner):
+            def setup(self):
+                self.model = load_model()
+
+            def run(self, prompt: str = Input(description="Input text")) -> str:
+                self.record_metric("temperature", 0.7)
+                return self.model.generate(prompt)
+    """
+
+    def setup(
+        self,
+        weights: Optional[Union[Path, str]] = None,
+    ) -> None:
+        """
+        Prepare the model for predictions.
+
+        This method is called once when the runner is initialized. Use it
+        to load model weights and do any other one-time setup.
+
+        Args:
+            weights: Optional path to model weights. Can be a local path or URL.
+        """
+        pass
+
+    def run(self, **kwargs: Any) -> Any:
+        """
+        Run a single prediction.
+
+        Override this method to implement your model's prediction logic.
+        Input parameters should be annotated with types and optionally
+        use Input() for additional metadata.
+
+        Args:
+            **kwargs: Prediction inputs as defined by the method signature.
+
+        Returns:
+            The prediction output.
+
+        Raises:
+            NotImplementedError: If run is not implemented by subclass.
+        """
+        raise NotImplementedError("run has not been implemented by subclass.")
+
+    @property
+    def scope(self) -> Any:
+        """The current prediction scope."""
+        import coglet
+
+        return coglet._sdk.current_scope()  # type: ignore[attr-defined]
+
+    def record_metric(self, key: str, value: Any, mode: str = "replace") -> None:
+        """Record a prediction metric. See BasePredictor.record_metric for details."""
+        self.scope.record_metric(key, value, mode=mode)
+
+
 def load_predictor_from_ref(ref: str) -> BasePredictor:
-    """Load a predictor from a module:class reference (e.g. 'predict.py:Predictor')."""
-    module_path, class_name = ref.split(":", 1) if ":" in ref else (ref, "Predictor")
+    """Load a predictor from a module:class reference (e.g. 'run.py:Runner')."""
+    if ":" in ref:
+        module_path, class_name = ref.split(":", 1)
+    else:
+        module_path = ref
+        class_name = None  # Will try Runner, then Predictor
     module_name = os.path.basename(module_path).replace(".py", "")
 
     # Use spec_from_file_location to load from file path
@@ -128,6 +198,17 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     # Add module to sys.modules so pickle can find it
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
+
+    if class_name is None:
+        # Try Runner first, fall back to Predictor
+        if hasattr(module, "Runner"):
+            class_name = "Runner"
+        elif hasattr(module, "Predictor"):
+            class_name = "Predictor"
+        else:
+            raise ImportError(
+                f"Cannot find 'Runner' or 'Predictor' class in {module_path}"
+            )
 
     predictor = getattr(module, class_name)
     # It could be a class or a function (for training)
