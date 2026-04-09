@@ -1,0 +1,19 @@
+# Test that cog doctor detects when predict ref points to a nonexistent class.
+# cog.yaml references DoesNotExist but only Predictor exists in predict.py.
+
+! cog doctor
+stderr 'DoesNotExist'
+stderr 'not found'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:DoesNotExist"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return "hello " + text
