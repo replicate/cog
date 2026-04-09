@@ -38,7 +38,7 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	root := tree.RootNode()
 
 	// 1. Collect imports
-	imports := collectImports(root, source)
+	imports := CollectImports(root, source)
 
 	// 2. Collect module-level variable assignments
 	moduleScope := collectModuleScope(root, source)
@@ -101,8 +101,8 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 // Helpers
 // ---------------------------------------------------------------------------
 
-// namedChildren returns all named children of a node.
-func namedChildren(n *sitter.Node) []*sitter.Node {
+// NamedChildren returns all named children of a node.
+func NamedChildren(n *sitter.Node) []*sitter.Node {
 	count := int(n.NamedChildCount())
 	result := make([]*sitter.Node, 0, count)
 	for i := range count {
@@ -111,8 +111,8 @@ func namedChildren(n *sitter.Node) []*sitter.Node {
 	return result
 }
 
-// allChildren returns all children (named and anonymous) of a node.
-func allChildren(n *sitter.Node) []*sitter.Node {
+// AllChildren returns all children (named and anonymous) of a node.
+func AllChildren(n *sitter.Node) []*sitter.Node {
 	count := int(n.ChildCount())
 	result := make([]*sitter.Node, 0, count)
 	for i := range count {
@@ -121,8 +121,8 @@ func allChildren(n *sitter.Node) []*sitter.Node {
 	return result
 }
 
-// content returns the source text for a node.
-func content(n *sitter.Node, source []byte) string {
+// Content returns the source text for a node.
+func Content(n *sitter.Node, source []byte) string {
 	return n.Content(source)
 }
 
@@ -130,10 +130,10 @@ func content(n *sitter.Node, source []byte) string {
 // Import collection
 // ---------------------------------------------------------------------------
 
-func collectImports(root *sitter.Node, source []byte) *schema.ImportContext {
+func CollectImports(root *sitter.Node, source []byte) *schema.ImportContext {
 	ctx := schema.NewImportContext()
 
-	for _, child := range namedChildren(root) {
+	for _, child := range NamedChildren(root) {
 		if child.Type() == "import_from_statement" {
 			parseImportFrom(child, source, ctx)
 		}
@@ -157,15 +157,15 @@ func parseImportFrom(node *sitter.Node, source []byte, ctx *schema.ImportContext
 	if moduleNode == nil {
 		return
 	}
-	module := content(moduleNode, source)
+	module := Content(moduleNode, source)
 
-	for _, child := range allChildren(node) {
+	for _, child := range AllChildren(node) {
 		switch child.Type() {
 		case "dotted_name":
 			// Single import: `from X import name`
 			// Skip if this is the module_name itself
 			if child.StartByte() != moduleNode.StartByte() {
-				name := content(child, source)
+				name := Content(child, source)
 				ctx.Names.Set(name, schema.ImportEntry{Module: module, Original: name})
 			}
 		case "aliased_import":
@@ -174,29 +174,29 @@ func parseImportFrom(node *sitter.Node, source []byte, ctx *schema.ImportContext
 			aliasNode := child.ChildByFieldName("alias")
 			orig := ""
 			if origNode != nil {
-				orig = content(origNode, source)
+				orig = Content(origNode, source)
 			}
 			alias := orig
 			if aliasNode != nil {
-				alias = content(aliasNode, source)
+				alias = Content(aliasNode, source)
 			}
 			ctx.Names.Set(alias, schema.ImportEntry{Module: module, Original: orig})
 		case "import_list":
-			for _, importChild := range allChildren(child) {
+			for _, importChild := range AllChildren(child) {
 				switch importChild.Type() {
 				case "dotted_name":
-					name := content(importChild, source)
+					name := Content(importChild, source)
 					ctx.Names.Set(name, schema.ImportEntry{Module: module, Original: name})
 				case "aliased_import":
 					origNode := importChild.ChildByFieldName("name")
 					aliasNode := importChild.ChildByFieldName("alias")
 					orig := ""
 					if origNode != nil {
-						orig = content(origNode, source)
+						orig = Content(origNode, source)
 					}
 					alias := orig
 					if aliasNode != nil {
-						alias = content(aliasNode, source)
+						alias = Content(aliasNode, source)
 					}
 					ctx.Names.Set(alias, schema.ImportEntry{Module: module, Original: orig})
 				}
@@ -213,7 +213,7 @@ type moduleScope map[string]schema.DefaultValue
 
 func collectModuleScope(root *sitter.Node, source []byte) moduleScope {
 	scope := make(moduleScope)
-	for _, child := range namedChildren(root) {
+	for _, child := range NamedChildren(root) {
 		var assign *sitter.Node
 		if child.Type() == "expression_statement" {
 			if child.NamedChildCount() == 1 {
@@ -233,7 +233,7 @@ func collectModuleScope(root *sitter.Node, source []byte) moduleScope {
 		if left == nil || left.Type() != "identifier" {
 			continue
 		}
-		name := content(left, source)
+		name := Content(left, source)
 
 		right := assign.ChildByFieldName("right")
 		if right == nil {
@@ -253,7 +253,7 @@ func resolveDefaultExpr(node *sitter.Node, source []byte, scope moduleScope) (sc
 		return val, true
 	}
 	if node.Type() == "identifier" {
-		name := content(node, source)
+		name := Content(node, source)
 		if val, ok := scope[name]; ok {
 			return val, true
 		}
@@ -268,7 +268,7 @@ func resolveChoicesExpr(node *sitter.Node, source []byte, scope moduleScope) ([]
 		return parseListLiteral(node, source)
 
 	case "identifier":
-		name := content(node, source)
+		name := Content(node, source)
 		val, ok := scope[name]
 		if !ok {
 			return nil, false
@@ -284,8 +284,8 @@ func resolveChoicesExpr(node *sitter.Node, source []byte, scope moduleScope) ([]
 	case "binary_operator":
 		// Only handle + (list concatenation)
 		hasPlus := false
-		for _, c := range allChildren(node) {
-			if !c.IsNamed() && content(c, source) == "+" {
+		for _, c := range AllChildren(node) {
+			if !c.IsNamed() && Content(c, source) == "+" {
 				hasPlus = true
 				break
 			}
@@ -314,7 +314,7 @@ func resolveChoicesExpr(node *sitter.Node, source []byte, scope moduleScope) ([]
 // resolveChoicesCall resolves list(X.keys()) or list(X.values()).
 func resolveChoicesCall(node *sitter.Node, source []byte, scope moduleScope) ([]schema.DefaultValue, bool) {
 	funcNode := node.ChildByFieldName("function")
-	if funcNode == nil || content(funcNode, source) != "list" {
+	if funcNode == nil || Content(funcNode, source) != "list" {
 		return nil, false
 	}
 
@@ -325,7 +325,7 @@ func resolveChoicesCall(node *sitter.Node, source []byte, scope moduleScope) ([]
 
 	// Find the single positional argument
 	var arg *sitter.Node
-	for _, c := range namedChildren(args) {
+	for _, c := range NamedChildren(args) {
 		arg = c
 		break
 	}
@@ -344,8 +344,8 @@ func resolveChoicesCall(node *sitter.Node, source []byte, scope moduleScope) ([]
 		return nil, false
 	}
 
-	varName := content(obj, source)
-	methodName := content(attr, source)
+	varName := Content(obj, source)
+	methodName := Content(attr, source)
 
 	dictVal, ok := scope[varName]
 	if !ok || dictVal.Kind != schema.DefaultDict {
@@ -368,8 +368,8 @@ func resolveChoicesCall(node *sitter.Node, source []byte, scope moduleScope) ([]
 func collectModelClasses(root *sitter.Node, source []byte, imports *schema.ImportContext) schema.ModelClassMap {
 	models := schema.NewOrderedMap[string, []schema.ModelField]()
 
-	for _, child := range namedChildren(root) {
-		classNode := unwrapClass(child)
+	for _, child := range NamedChildren(root) {
+		classNode := UnwrapClass(child)
 		if classNode == nil {
 			continue
 		}
@@ -378,9 +378,9 @@ func collectModelClasses(root *sitter.Node, source []byte, imports *schema.Impor
 		if nameNode == nil {
 			continue
 		}
-		className := content(nameNode, source)
+		className := Content(nameNode, source)
 
-		if !inheritsFromBaseModel(classNode, source, imports) {
+		if !InheritsFromBaseModel(classNode, source, imports) {
 			continue
 		}
 
@@ -449,7 +449,7 @@ func resolveExternalModels(sourceDir string, imports *schema.ImportContext, mode
 				return
 			}
 
-			fileImports := collectImports(tree.RootNode(), source)
+			fileImports := CollectImports(tree.RootNode(), source)
 			fileModels := collectModelClasses(tree.RootNode(), source, fileImports)
 
 			// Merge discovered models into the caller's map.
@@ -518,12 +518,12 @@ func isKnownExternalModule(module string) bool {
 	return false
 }
 
-func unwrapClass(node *sitter.Node) *sitter.Node {
+func UnwrapClass(node *sitter.Node) *sitter.Node {
 	if node.Type() == "class_definition" {
 		return node
 	}
 	if node.Type() == "decorated_definition" {
-		for _, c := range namedChildren(node) {
+		for _, c := range NamedChildren(node) {
 			if c.Type() == "class_definition" {
 				return c
 			}
@@ -532,12 +532,12 @@ func unwrapClass(node *sitter.Node) *sitter.Node {
 	return nil
 }
 
-func unwrapFunction(node *sitter.Node) *sitter.Node {
+func UnwrapFunction(node *sitter.Node) *sitter.Node {
 	if node.Type() == "function_definition" {
 		return node
 	}
 	if node.Type() == "decorated_definition" {
-		for _, c := range namedChildren(node) {
+		for _, c := range NamedChildren(node) {
 			if c.Type() == "function_definition" {
 				return c
 			}
@@ -546,21 +546,21 @@ func unwrapFunction(node *sitter.Node) *sitter.Node {
 	return nil
 }
 
-func inheritsFromBaseModel(classNode *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+func InheritsFromBaseModel(classNode *sitter.Node, source []byte, imports *schema.ImportContext) bool {
 	supers := classNode.ChildByFieldName("superclasses")
 	if supers == nil {
 		return false
 	}
-	for _, child := range allChildren(supers) {
+	for _, child := range AllChildren(supers) {
 		switch child.Type() {
 		case "identifier":
-			name := content(child, source)
+			name := Content(child, source)
 			if imports.IsBaseModel(name) || name == "BaseModel" {
 				return true
 			}
 		case "attribute":
 			// Handle dotted access: pydantic.BaseModel, cog.BaseModel
-			text := content(child, source)
+			text := Content(child, source)
 			if strings.HasSuffix(text, ".BaseModel") {
 				return true
 			}
@@ -576,7 +576,7 @@ func extractClassAnnotations(classNode *sitter.Node, source []byte) []schema.Mod
 	}
 
 	var fields []schema.ModelField
-	for _, child := range namedChildren(body) {
+	for _, child := range NamedChildren(body) {
 		node := child
 		if child.Type() == "expression_statement" && child.NamedChildCount() == 1 {
 			node = child.NamedChild(0)
@@ -603,7 +603,7 @@ func parseAnnotatedAssignment(node *sitter.Node, source []byte) (schema.ModelFie
 		return schema.ModelField{}, false
 	}
 
-	name := content(left, source)
+	name := Content(left, source)
 	typeAnn, err := parseTypeAnnotation(typeNode, source)
 	if err != nil {
 		return schema.ModelField{}, false
@@ -620,7 +620,7 @@ func parseAnnotatedAssignment(node *sitter.Node, source []byte) (schema.ModelFie
 }
 
 func parseBareAnnotation(node *sitter.Node, source []byte) (schema.ModelField, bool) {
-	text := strings.TrimSpace(content(node, source))
+	text := strings.TrimSpace(Content(node, source))
 	parts := strings.SplitN(text, ":", 2)
 	if len(parts) != 2 {
 		return schema.ModelField{}, false
@@ -763,8 +763,8 @@ func newInputRegistry() *inputRegistry {
 func collectInputRegistry(root *sitter.Node, source []byte, imports *schema.ImportContext, scope moduleScope) *inputRegistry {
 	registry := newInputRegistry()
 
-	for _, child := range namedChildren(root) {
-		classNode := unwrapClass(child)
+	for _, child := range NamedChildren(root) {
+		classNode := UnwrapClass(child)
 		if classNode == nil {
 			continue
 		}
@@ -772,14 +772,14 @@ func collectInputRegistry(root *sitter.Node, source []byte, imports *schema.Impo
 		if nameNode == nil {
 			continue
 		}
-		className := content(nameNode, source)
+		className := Content(nameNode, source)
 
 		body := classNode.ChildByFieldName("body")
 		if body == nil {
 			continue
 		}
 
-		for _, stmt := range namedChildren(body) {
+		for _, stmt := range NamedChildren(body) {
 			inner := stmt
 			if stmt.Type() == "expression_statement" && stmt.NamedChildCount() == 1 {
 				inner = stmt.NamedChild(0)
@@ -789,7 +789,7 @@ func collectInputRegistry(root *sitter.Node, source []byte, imports *schema.Impo
 				collectInputAttribute(className, inner, source, imports, scope, registry)
 			}
 
-			if funcNode := unwrapFunction(inner); funcNode != nil {
+			if funcNode := UnwrapFunction(inner); funcNode != nil {
 				collectInputMethod(className, funcNode, source, imports, scope, registry)
 			}
 		}
@@ -803,7 +803,7 @@ func collectInputAttribute(className string, assignment *sitter.Node, source []b
 	if left == nil || left.Type() != "identifier" {
 		return
 	}
-	attrName := content(left, source)
+	attrName := Content(left, source)
 
 	right := assignment.ChildByFieldName("right")
 	if right == nil || !isInputCall(right, source, imports) {
@@ -823,7 +823,7 @@ func collectInputMethod(className string, funcNode *sitter.Node, source []byte, 
 	if nameNode == nil {
 		return
 	}
-	methodName := content(nameNode, source)
+	methodName := Content(nameNode, source)
 
 	params := funcNode.ChildByFieldName("parameters")
 	if params == nil {
@@ -831,10 +831,10 @@ func collectInputMethod(className string, funcNode *sitter.Node, source []byte, 
 	}
 
 	var paramNames []string
-	for _, param := range allChildren(params) {
+	for _, param := range AllChildren(params) {
 		switch param.Type() {
 		case "identifier":
-			name := content(param, source)
+			name := Content(param, source)
 			if name != "self" && name != "cls" {
 				paramNames = append(paramNames, name)
 			}
@@ -843,7 +843,7 @@ func collectInputMethod(className string, funcNode *sitter.Node, source []byte, 
 			for j := 0; j < int(param.NamedChildCount()); j++ {
 				c := param.NamedChild(j)
 				if c.Type() == "identifier" {
-					name := content(c, source)
+					name := Content(c, source)
 					if name != "self" && name != "cls" {
 						paramNames = append(paramNames, name)
 					}
@@ -852,7 +852,7 @@ func collectInputMethod(className string, funcNode *sitter.Node, source []byte, 
 			}
 		case "typed_default_parameter", "default_parameter":
 			if n := param.ChildByFieldName("name"); n != nil {
-				name := content(n, source)
+				name := Content(n, source)
 				if name != "self" && name != "cls" {
 					paramNames = append(paramNames, name)
 				}
@@ -879,7 +879,7 @@ func collectInputMethod(className string, funcNode *sitter.Node, source []byte, 
 }
 
 func findReturnInputCall(body *sitter.Node, source []byte, imports *schema.ImportContext) *sitter.Node {
-	for _, child := range namedChildren(body) {
+	for _, child := range NamedChildren(body) {
 		if child.Type() == "return_statement" {
 			if child.NamedChildCount() > 0 {
 				expr := child.NamedChild(0)
@@ -895,7 +895,7 @@ func findReturnInputCall(body *sitter.Node, source []byte, imports *schema.Impor
 func resolveInputReference(node *sitter.Node, source []byte, registry *inputRegistry) (inputCallInfo, bool) {
 	switch node.Type() {
 	case "attribute":
-		text := content(node, source)
+		text := Content(node, source)
 		info, ok := registry.Attributes[text]
 		return info, ok
 
@@ -904,7 +904,7 @@ func resolveInputReference(node *sitter.Node, source []byte, registry *inputRegi
 		if funcNode == nil || funcNode.Type() != "attribute" {
 			return inputCallInfo{}, false
 		}
-		key := content(funcNode, source)
+		key := Content(funcNode, source)
 		methodInfo, ok := registry.Methods[key]
 		if !ok {
 			return inputCallInfo{}, false
@@ -920,12 +920,12 @@ func resolveInputReference(node *sitter.Node, source []byte, registry *inputRegi
 		// Build param_name -> call-site value map
 		argValues := make(map[string]*sitter.Node)
 		positionalIdx := 0
-		for _, arg := range namedChildren(args) {
+		for _, arg := range NamedChildren(args) {
 			if arg.Type() == "keyword_argument" {
 				nameNode := arg.ChildByFieldName("name")
 				valNode := arg.ChildByFieldName("value")
 				if nameNode != nil && valNode != nil {
-					argValues[content(nameNode, source)] = valNode
+					argValues[Content(nameNode, source)] = valNode
 				}
 			} else if positionalIdx < len(methodInfo.ParamNames) {
 				argValues[methodInfo.ParamNames[positionalIdx]] = arg
@@ -966,26 +966,26 @@ func resolveInputReference(node *sitter.Node, source []byte, registry *inputRegi
 
 func findTargetFunction(root *sitter.Node, source []byte, predictRef, methodName string) (*sitter.Node, error) {
 	// First: look for a class with this name
-	for _, child := range namedChildren(root) {
-		classNode := unwrapClass(child)
+	for _, child := range NamedChildren(root) {
+		classNode := UnwrapClass(child)
 		if classNode == nil {
 			continue
 		}
 		nameNode := classNode.ChildByFieldName("name")
-		if nameNode != nil && content(nameNode, source) == predictRef {
+		if nameNode != nil && Content(nameNode, source) == predictRef {
 			return findMethodInClass(classNode, source, predictRef, methodName)
 		}
 	}
 
 	// Second: look for standalone function
-	for _, child := range namedChildren(root) {
-		funcNode := unwrapFunction(child)
+	for _, child := range NamedChildren(root) {
+		funcNode := UnwrapFunction(child)
 		if funcNode == nil {
 			continue
 		}
 		nameNode := funcNode.ChildByFieldName("name")
 		if nameNode != nil {
-			name := content(nameNode, source)
+			name := Content(nameNode, source)
 			if name == predictRef || name == methodName {
 				return funcNode, nil
 			}
@@ -1001,13 +1001,13 @@ func findMethodInClass(classNode *sitter.Node, source []byte, className, methodN
 		return nil, schema.WrapError(schema.ErrParse, fmt.Sprintf("class %s has no body", className), nil)
 	}
 
-	for _, child := range namedChildren(body) {
-		funcNode := unwrapFunction(child)
+	for _, child := range NamedChildren(body) {
+		funcNode := UnwrapFunction(child)
 		if funcNode == nil {
 			continue
 		}
 		nameNode := funcNode.ChildByFieldName("name")
-		if nameNode != nil && content(nameNode, source) == methodName {
+		if nameNode != nil && Content(nameNode, source) == methodName {
 			return funcNode, nil
 		}
 	}
@@ -1020,9 +1020,9 @@ func findMethodInClass(classNode *sitter.Node, source []byte, className, methodN
 // ---------------------------------------------------------------------------
 
 func firstParamIsSelf(params *sitter.Node, source []byte) bool {
-	for _, child := range allChildren(params) {
+	for _, child := range AllChildren(params) {
 		if child.Type() == "identifier" {
-			return content(child, source) == "self"
+			return Content(child, source) == "self"
 		}
 	}
 	return false
@@ -1041,11 +1041,11 @@ func extractInputs(
 	order := 0
 	seenSelf := false
 
-	for _, child := range allChildren(paramsNode) {
+	for _, child := range AllChildren(paramsNode) {
 		switch child.Type() {
 		case "identifier":
 			if !seenSelf && skipSelf {
-				name := content(child, source)
+				name := Content(child, source)
 				if name == "self" {
 					seenSelf = true
 					continue
@@ -1072,7 +1072,7 @@ func extractInputs(
 			nameNode := child.ChildByFieldName("name")
 			paramName := "<unknown>"
 			if nameNode != nil {
-				paramName = content(nameNode, source)
+				paramName = Content(nameNode, source)
 			}
 			return nil, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", paramName, methodName), nil)
 		}
@@ -1091,7 +1091,7 @@ func parseTypedParameter(node *sitter.Node, source []byte, order int, methodName
 		switch c.Type() {
 		case "identifier":
 			if name == "" {
-				name = content(c, source)
+				name = Content(c, source)
 			}
 		case "type":
 			typeNode = c
@@ -1133,7 +1133,7 @@ func parseTypedDefaultParameter(
 	if nameNode == nil {
 		return schema.InputField{}, schema.WrapError(schema.ErrParse, "typed_default_parameter has no name", nil)
 	}
-	name := content(nameNode, source)
+	name := Content(nameNode, source)
 
 	typeNode := node.ChildByFieldName("type")
 	if typeNode == nil {
@@ -1203,7 +1203,7 @@ func parseTypedDefaultParameter(
 		}
 
 		// Can't resolve — hard error
-		valText := content(valNode, source)
+		valText := Content(valNode, source)
 		return schema.InputField{}, schema.WrapError(schema.ErrDefaultNotResolvable,
 			fmt.Sprintf("parameter '%s': default `%s` cannot be statically resolved", name, valText), nil)
 	}
@@ -1229,17 +1229,17 @@ func parseTypeAnnotation(node *sitter.Node, source []byte) (schema.TypeAnnotatio
 
 	switch n.Type() {
 	case "identifier":
-		return schema.TypeAnnotation{Kind: schema.TypeAnnotSimple, Name: content(n, source)}, nil
+		return schema.TypeAnnotation{Kind: schema.TypeAnnotSimple, Name: Content(n, source)}, nil
 
 	case "subscript":
 		value := n.ChildByFieldName("value")
 		if value == nil {
 			return schema.TypeAnnotation{}, schema.WrapError(schema.ErrParse, "subscript has no value", nil)
 		}
-		outer := content(value, source)
+		outer := Content(value, source)
 
 		var args []schema.TypeAnnotation
-		for _, child := range namedChildren(n) {
+		for _, child := range NamedChildren(n) {
 			// Skip the outer identifier (the value field)
 			if child.StartByte() == value.StartByte() {
 				continue
@@ -1265,8 +1265,8 @@ func parseTypeAnnotation(node *sitter.Node, source []byte) (schema.TypeAnnotatio
 
 		// Check that operator is |
 		isUnion := false
-		for _, c := range allChildren(n) {
-			if !c.IsNamed() && content(c, source) == "|" {
+		for _, c := range AllChildren(n) {
+			if !c.IsNamed() && Content(c, source) == "|" {
 				isUnion = true
 				break
 			}
@@ -1303,10 +1303,10 @@ func parseTypeAnnotation(node *sitter.Node, source []byte) (schema.TypeAnnotatio
 		return schema.TypeAnnotation{Kind: schema.TypeAnnotSimple, Name: "None"}, nil
 
 	case "attribute":
-		return schema.TypeAnnotation{Kind: schema.TypeAnnotSimple, Name: content(n, source)}, nil
+		return schema.TypeAnnotation{Kind: schema.TypeAnnotSimple, Name: Content(n, source)}, nil
 
 	case "string", "concatenated_string":
-		text := content(n, source)
+		text := Content(n, source)
 		inner := strings.TrimLeft(text, "\"'")
 		inner = strings.TrimRight(inner, "\"'")
 		if ann, ok := parseTypeFromString(inner); ok {
@@ -1315,7 +1315,7 @@ func parseTypeAnnotation(node *sitter.Node, source []byte) (schema.TypeAnnotatio
 		return schema.TypeAnnotation{}, errUnsupported(fmt.Sprintf("string annotation: %s", text))
 
 	default:
-		text := content(n, source)
+		text := Content(n, source)
 		if ann, ok := parseTypeFromString(text); ok {
 			return ann, nil
 		}
@@ -1339,7 +1339,7 @@ func isInputCall(node *sitter.Node, source []byte, imports *schema.ImportContext
 	if funcNode == nil {
 		return false
 	}
-	name := content(funcNode, source)
+	name := Content(funcNode, source)
 	if name == "Input" {
 		return true
 	}
@@ -1357,7 +1357,7 @@ func parseInputCall(node *sitter.Node, source []byte, paramName string, scope mo
 		return info, nil
 	}
 
-	for _, child := range namedChildren(args) {
+	for _, child := range NamedChildren(args) {
 		if child.Type() != "keyword_argument" {
 			continue
 		}
@@ -1367,7 +1367,7 @@ func parseInputCall(node *sitter.Node, source []byte, paramName string, scope mo
 			continue
 		}
 
-		key := content(keyNode, source)
+		key := Content(keyNode, source)
 		switch key {
 		case "default":
 			val, ok := resolveDefaultExpr(valNode, source, scope)
@@ -1435,14 +1435,14 @@ func parseDefaultValue(node *sitter.Node, source []byte) (schema.DefaultValue, b
 	case "false":
 		return schema.DefaultValue{Kind: schema.DefaultBool, Bool: false}, true
 	case "integer":
-		text := content(node, source)
+		text := Content(node, source)
 		n, err := strconv.ParseInt(text, 0, 64)
 		if err != nil {
 			return schema.DefaultValue{}, false
 		}
 		return schema.DefaultValue{Kind: schema.DefaultInt, Int: n}, true
 	case "float":
-		text := content(node, source)
+		text := Content(node, source)
 		f, err := strconv.ParseFloat(text, 64)
 		if err != nil {
 			return schema.DefaultValue{}, false
@@ -1473,7 +1473,7 @@ func parseDefaultValue(node *sitter.Node, source []byte) (schema.DefaultValue, b
 		}
 		return schema.DefaultValue{Kind: schema.DefaultSet, List: items}, true
 	case "unary_operator":
-		text := strings.TrimSpace(content(node, source))
+		text := strings.TrimSpace(Content(node, source))
 		if n, err := strconv.ParseInt(text, 0, 64); err == nil {
 			return schema.DefaultValue{Kind: schema.DefaultInt, Int: n}, true
 		}
@@ -1483,7 +1483,7 @@ func parseDefaultValue(node *sitter.Node, source []byte) (schema.DefaultValue, b
 		return schema.DefaultValue{}, false
 	case "tuple":
 		var items []schema.DefaultValue
-		for _, child := range namedChildren(node) {
+		for _, child := range NamedChildren(node) {
 			if val, ok := parseDefaultValue(child, source); ok {
 				items = append(items, val)
 			}
@@ -1494,7 +1494,7 @@ func parseDefaultValue(node *sitter.Node, source []byte) (schema.DefaultValue, b
 }
 
 func parseStringLiteral(node *sitter.Node, source []byte) (string, bool) {
-	text := content(node, source)
+	text := Content(node, source)
 	if strings.HasPrefix(text, `"""`) || strings.HasPrefix(text, `'''`) {
 		if len(text) >= 6 {
 			return text[3 : len(text)-3], true
@@ -1517,7 +1517,7 @@ func parseStringLiteral(node *sitter.Node, source []byte) (string, bool) {
 }
 
 func parseNumberLiteral(node *sitter.Node, source []byte) (float64, bool) {
-	text := strings.TrimSpace(content(node, source))
+	text := strings.TrimSpace(Content(node, source))
 	f, err := strconv.ParseFloat(text, 64)
 	if err != nil {
 		return 0, false
@@ -1532,7 +1532,7 @@ func parseBoolLiteral(node *sitter.Node, source []byte) (bool, bool) {
 	case "false":
 		return false, true
 	}
-	text := content(node, source)
+	text := Content(node, source)
 	switch text {
 	case "True":
 		return true, true
@@ -1547,7 +1547,7 @@ func parseListLiteral(node *sitter.Node, source []byte) ([]schema.DefaultValue, 
 		return nil, false
 	}
 	var items []schema.DefaultValue
-	for _, child := range namedChildren(node) {
+	for _, child := range NamedChildren(node) {
 		val, ok := parseDefaultValue(child, source)
 		if !ok {
 			return nil, false
@@ -1562,7 +1562,7 @@ func parseDictLiteral(node *sitter.Node, source []byte) ([]schema.DefaultValue, 
 		return nil, nil, false
 	}
 	var keys, vals []schema.DefaultValue
-	for _, child := range namedChildren(node) {
+	for _, child := range NamedChildren(node) {
 		if child.Type() == "pair" {
 			keyNode := child.ChildByFieldName("key")
 			valNode := child.ChildByFieldName("value")
@@ -1585,7 +1585,7 @@ func parseSetLiteral(node *sitter.Node, source []byte) ([]schema.DefaultValue, b
 		return nil, false
 	}
 	var items []schema.DefaultValue
-	for _, child := range namedChildren(node) {
+	for _, child := range NamedChildren(node) {
 		val, ok := parseDefaultValue(child, source)
 		if !ok {
 			return nil, false
