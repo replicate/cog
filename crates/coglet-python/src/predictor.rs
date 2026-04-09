@@ -300,7 +300,7 @@ pub struct PythonPredictor {
     /// The predictor's kind (class or standalone function) and method execution types
     kind: PredictorKind,
     /// The name of the predict method ("run" or "predict")
-    predict_method_name: String,
+    predict_method_name: &'static str,
 }
 
 // PyObject is Send in PyO3 0.23+
@@ -339,15 +339,38 @@ impl PythonPredictor {
             };
             (
                 PredictorKind::StandaloneFunction(predict_kind),
-                String::new(),
+                "",
             )
         } else {
             // Class instance - detect run() vs predict() method
-            // Check class __dict__ to distinguish user-defined from inherited base stubs
-            let cls = instance.bind(py).getattr("__class__")?;
-            let class_dict = cls.getattr("__dict__")?;
-            let has_run = class_dict.contains("run")?;
-            let has_predict = class_dict.contains("predict")?;
+            // Walk MRO to support multi-level inheritance, skipping base stub classes
+            let instance_bound = instance.bind(py);
+            let cls = instance_bound.getattr("__class__")?;
+            let mro = cls.getattr("__mro__")?;
+            let base_predictor = py.import("cog.predictor")?.getattr("BasePredictor")?;
+            let base_runner = py.import("cog.predictor")?.getattr("BaseRunner")?;
+            let object_type = py.eval("object", None, None)?;
+
+            let mut has_run = false;
+            let mut has_predict = false;
+
+            for item in mro.iter()? {
+                let klass = item?;
+                // Skip base stubs and object
+                if klass.eq(&base_predictor)? || klass.eq(&base_runner)? || klass.eq(&object_type)? {
+                    continue;
+                }
+                let class_dict = klass.getattr("__dict__")?;
+                if !has_run && class_dict.contains("run")? {
+                    has_run = true;
+                }
+                if !has_predict && class_dict.contains("predict")? {
+                    has_predict = true;
+                }
+                if has_run && has_predict {
+                    break;
+                }
+            }
 
             let predict_method_name = match (has_run, has_predict) {
                 (true, true) => {
@@ -355,8 +378,8 @@ impl PythonPredictor {
                         "define either run() or predict(), not both",
                     ));
                 }
-                (true, false) => "run".to_string(),
-                (false, true) => "predict".to_string(),
+                (true, false) => "run",
+                (false, true) => "predict",
                 (false, false) => {
                     return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                         "run() or predict() method not found",
@@ -598,7 +621,7 @@ impl PythonPredictor {
     pub fn predict_func<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let instance = self.instance.bind(py);
         match &self.kind {
-            PredictorKind::Class { .. } => instance.getattr(self.predict_method_name.as_str()),
+            PredictorKind::Class { .. } => instance.getattr(self.predict_method_name),
             PredictorKind::StandaloneFunction(_) => Ok(instance.clone()),
         }
     }
@@ -618,7 +641,7 @@ impl PythonPredictor {
     pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PyObject> {
         let (method_name, is_async) = match &self.kind {
             PredictorKind::Class { predict, .. } => (
-                self.predict_method_name.as_str(),
+                self.predict_method_name,
                 matches!(predict, PredictKind::Async | PredictKind::AsyncGen),
             ),
             PredictorKind::StandaloneFunction(predict_kind) => (
@@ -995,7 +1018,7 @@ impl PythonPredictor {
             // Call predict - returns coroutine
             let instance = self.instance.bind(py);
             let coro = instance
-                .call_method(self.predict_method_name.as_str(), (), Some(&input_dict))
+                .call_method(self.predict_method_name, (), Some(&input_dict))
                 .map_err(|e| {
                     PredictionError::Failed(format!(
                         "Failed to call {}: {}",

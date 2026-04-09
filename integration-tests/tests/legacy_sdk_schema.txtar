@@ -20,11 +20,11 @@ stdout 'hello world'
 -- cog.yaml --
 build:
   python_version: "3.12"
-run: "run.py:Runner"
+predict: "predict.py:Predictor"
 
--- run.py --
-from cog import BaseRunner
+-- predict.py --
+from cog import BasePredictor
 
-class Runner(BaseRunner):
-    def run(self, s: str) -> str:
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
         return "hello " + s
