@@ -1,8 +1,10 @@
 package doctor
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
+	"time"
 )
 
 // DockerCheck verifies that Docker is installed and the daemon is reachable.
@@ -13,7 +15,10 @@ func (c *DockerCheck) Group() Group        { return GroupEnvironment }
 func (c *DockerCheck) Description() string { return "Docker" }
 
 func (c *DockerCheck) Check(_ *CheckContext) ([]Finding, error) {
-	if err := exec.Command("docker", "info").Run(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := exec.CommandContext(ctx, "docker", "info").Run(); err != nil {
 		return []Finding{{
 			Severity:    SeverityError,
 			Message:     fmt.Sprintf("Docker is not available: %v", err),

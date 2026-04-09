@@ -1,9 +1,11 @@
 package doctor
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // PythonVersionCheck verifies that Python is available and that the local
@@ -23,7 +25,10 @@ func (c *PythonVersionCheck) Check(ctx *CheckContext) ([]Finding, error) {
 		}}, nil
 	}
 
-	out, err := exec.Command(ctx.PythonPath, "--version").Output()
+	execCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(execCtx, ctx.PythonPath, "--version").Output()
 	if err != nil {
 		return []Finding{{
 			Severity:    SeverityWarning,

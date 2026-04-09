@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -16,8 +17,9 @@ import (
 
 // RunOptions configures a doctor run.
 type RunOptions struct {
-	Fix        bool
-	ProjectDir string
+	Fix            bool
+	ProjectDir     string
+	ConfigFilename string // Config filename (defaults to "cog.yaml" if empty)
 }
 
 // CheckResult holds the outcome of running a single check.
@@ -33,9 +35,13 @@ type Result struct {
 	Results []CheckResult
 }
 
-// HasErrors returns true if any check produced error-severity findings.
+// HasErrors returns true if any check produced error-severity findings
+// or if any check itself errored.
 func (r *Result) HasErrors() bool {
 	for _, cr := range r.Results {
+		if cr.Err != nil {
+			return true
+		}
 		for _, f := range cr.Findings {
 			if f.Severity == SeverityError && !cr.Fixed {
 				return true
@@ -47,7 +53,12 @@ func (r *Result) HasErrors() bool {
 
 // Run executes all checks and optionally applies fixes.
 func Run(_ context.Context, opts RunOptions, checks []Check) (*Result, error) {
-	checkCtx, err := buildCheckContext(opts.ProjectDir)
+	configFilename := opts.ConfigFilename
+	if configFilename == "" {
+		configFilename = "cog.yaml"
+	}
+
+	checkCtx, err := buildCheckContext(opts.ProjectDir, configFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -82,25 +93,24 @@ func Run(_ context.Context, opts RunOptions, checks []Check) (*Result, error) {
 }
 
 // buildCheckContext constructs the shared context for all checks.
-func buildCheckContext(projectDir string) (*CheckContext, error) {
+func buildCheckContext(projectDir string, configFilename string) (*CheckContext, error) {
 	ctx := &CheckContext{
-		ProjectDir:  projectDir,
-		PythonFiles: make(map[string]*ParsedFile),
+		ProjectDir:     projectDir,
+		ConfigFilename: configFilename,
+		PythonFiles:    make(map[string]*ParsedFile),
 	}
 
 	// Load cog.yaml
-	configPath := filepath.Join(projectDir, "cog.yaml")
+	configPath := filepath.Join(projectDir, configFilename)
 	configBytes, err := os.ReadFile(configPath)
 	if err == nil {
 		ctx.ConfigFile = configBytes
-		// Try to load and validate config
-		f, err := os.Open(configPath)
-		if err == nil {
-			defer f.Close()
-			loadResult, err := config.Load(f, projectDir)
-			if err == nil {
-				ctx.Config = loadResult.Config
-			}
+		// Load and validate config once — checks use ctx.LoadResult / ctx.LoadErr
+		loadResult, loadErr := config.Load(bytes.NewReader(configBytes), projectDir)
+		ctx.LoadErr = loadErr
+		if loadResult != nil {
+			ctx.LoadResult = loadResult
+			ctx.Config = loadResult.Config
 		}
 	}
 

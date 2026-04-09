@@ -74,34 +74,55 @@ func (c *DeprecatedImportsCheck) Check(ctx *CheckContext) ([]Finding, error) {
 
 func (c *DeprecatedImportsCheck) Fix(ctx *CheckContext, findings []Finding) error {
 	// Group findings by file
-	fileFindings := make(map[string][]Finding)
+	affectedFiles := make(map[string]bool)
 	for _, f := range findings {
-		fileFindings[f.File] = append(fileFindings[f.File], f)
+		affectedFiles[f.File] = true
 	}
 
-	for relPath, fileFindingsList := range fileFindings {
+	for relPath := range affectedFiles {
 		fullPath := filepath.Join(ctx.ProjectDir, relPath)
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", relPath, err)
+		}
+
 		source, err := os.ReadFile(fullPath)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", relPath, err)
 		}
 
-		// Collect deprecated names to remove
+		// Re-scan the file using tree-sitter to find deprecated imports directly,
+		// rather than relying on fragile string matching against finding messages.
+		pf, ok := ctx.PythonFiles[relPath]
+		if !ok {
+			continue
+		}
 		namesToRemove := make(map[string]map[string]bool) // module -> set of names
-		for _, f := range fileFindingsList {
-			for _, dep := range deprecatedImportsList {
-				if strings.Contains(f.Message, dep.Name) {
-					if namesToRemove[dep.Module] == nil {
-						namesToRemove[dep.Module] = make(map[string]bool)
+		root := pf.Tree.RootNode()
+		for _, child := range schemaPython.NamedChildren(root) {
+			if child.Type() != "import_from_statement" {
+				continue
+			}
+			moduleNode := child.ChildByFieldName("module_name")
+			if moduleNode == nil {
+				continue
+			}
+			module := schemaPython.Content(moduleNode, pf.Source)
+			for _, name := range extractImportedNames(child, pf.Source) {
+				for _, dep := range deprecatedImportsList {
+					if module == dep.Module && name == dep.Name {
+						if namesToRemove[dep.Module] == nil {
+							namesToRemove[dep.Module] = make(map[string]bool)
+						}
+						namesToRemove[dep.Module][dep.Name] = true
 					}
-					namesToRemove[dep.Module][dep.Name] = true
 				}
 			}
 		}
 
 		fixed := removeDeprecatedImportLines(string(source), namesToRemove)
 
-		if err := os.WriteFile(fullPath, []byte(fixed), 0o644); err != nil {
+		if err := os.WriteFile(fullPath, []byte(fixed), info.Mode()); err != nil {
 			return fmt.Errorf("writing %s: %w", relPath, err)
 		}
 	}
@@ -143,12 +164,47 @@ func extractImportedNames(importNode *sitter.Node, source []byte) []string {
 
 // removeDeprecatedImportLines removes specific names from import lines.
 // If all names are removed, the entire import line is dropped.
+// Handles both single-line and multi-line parenthesized imports.
 func removeDeprecatedImportLines(source string, namesToRemove map[string]map[string]bool) string {
 	lines := strings.Split(source, "\n")
 	var result []string
 
+	// Track multi-line import state
+	inMultilineImport := false
+	var multilineModule string
+	var multilineNames []string
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
+
+		// Handle multi-line imports
+		if inMultilineImport {
+			// Collect names from continuation lines
+			cleaned := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(trimmed), ")"))
+			if cleaned != "" {
+				for n := range strings.SplitSeq(cleaned, ",") {
+					n = strings.TrimSpace(n)
+					if n != "" {
+						multilineNames = append(multilineNames, n)
+					}
+				}
+			}
+			if strings.Contains(trimmed, ")") {
+				inMultilineImport = false
+				// Now filter the collected names
+				names := namesToRemove[multilineModule]
+				var remaining []string
+				for _, name := range multilineNames {
+					if !names[name] {
+						remaining = append(remaining, name)
+					}
+				}
+				if len(remaining) > 0 {
+					result = append(result, "from "+multilineModule+" import "+strings.Join(remaining, ", "))
+				}
+			}
+			continue
+		}
 
 		removed := false
 		for module, names := range namesToRemove {
@@ -158,6 +214,44 @@ func removeDeprecatedImportLines(source string, namesToRemove map[string]map[str
 			}
 
 			importPart := trimmed[len(prefix):]
+
+			// Check for multi-line parenthesized import
+			if strings.HasPrefix(strings.TrimSpace(importPart), "(") {
+				inner := strings.TrimSpace(importPart)[1:] // strip leading "("
+				if strings.Contains(inner, ")") {
+					// Single-line parenthesized: from X import (A, B)
+					inner = strings.TrimSuffix(strings.TrimSpace(inner), ")")
+					importNames := strings.Split(inner, ",")
+					var remaining []string
+					for _, name := range importNames {
+						name = strings.TrimSpace(name)
+						if name != "" && !names[name] {
+							remaining = append(remaining, name)
+						}
+					}
+					if len(remaining) > 0 {
+						result = append(result, prefix+strings.Join(remaining, ", "))
+					}
+					removed = true
+				} else {
+					// Start of multi-line import
+					inMultilineImport = true
+					multilineModule = module
+					multilineNames = nil
+					// Collect any names on the first line after "("
+					if inner != "" {
+						for n := range strings.SplitSeq(inner, ",") {
+							n = strings.TrimSpace(n)
+							if n != "" {
+								multilineNames = append(multilineNames, n)
+							}
+						}
+					}
+					removed = true
+				}
+				break
+			}
+
 			importNames := strings.Split(importPart, ",")
 
 			var remaining []string

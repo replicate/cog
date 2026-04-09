@@ -73,9 +73,12 @@ type ParsedFile struct {
 // CheckContext provides checks with access to project state.
 // Built once by the runner and passed to every check.
 type CheckContext struct {
-	ProjectDir  string
-	Config      *config.Config         // Parsed cog.yaml (nil if parsing failed)
-	ConfigFile  []byte                 // Raw cog.yaml bytes (available even if parsing failed)
-	PythonFiles map[string]*ParsedFile // Pre-parsed Python files keyed by relative path
-	PythonPath  string                 // Path to python binary (empty if not found)
+	ProjectDir     string
+	ConfigFilename string                 // Config filename (e.g. "cog.yaml")
+	Config         *config.Config         // Parsed cog.yaml (nil if parsing failed)
+	ConfigFile     []byte                 // Raw cog.yaml bytes (available even if parsing failed)
+	LoadResult     *config.LoadResult     // Non-nil if config loaded successfully
+	LoadErr        error                  // Non-nil if config loading failed
+	PythonFiles    map[string]*ParsedFile // Pre-parsed Python files keyed by relative path
+	PythonPath     string                 // Path to python binary (empty if not found)
 }

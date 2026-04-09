@@ -109,6 +109,156 @@ class Predictor(BasePredictor):
 	require.Empty(t, findings)
 }
 
+func TestPydanticBaseModelCheck_NoFalsePositive(t *testing.T) {
+	// arbitrary_types_allowed=False should NOT trigger the check
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path
+from pydantic import BaseModel, ConfigDict
+
+class Output(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=False, validate_default=True)
+    audio: Path
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> Output:
+        return Output(audio="a.wav")
+`)
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+	check := &PydanticBaseModelCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestPydanticBaseModelCheck_Fix_NoCogImport(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from pydantic import BaseModel, ConfigDict
+
+class Output(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    name: str
+`)
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+	check := &PydanticBaseModelCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+
+	err = check.Fix(ctx, findings)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	require.Contains(t, string(content), "from cog import BaseModel")
+	require.NotContains(t, string(content), "from pydantic import BaseModel")
+}
+
+func TestPydanticBaseModelCheck_Fix_ImportPydanticStyle(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path
+import pydantic
+
+class Output(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+    audio: Path
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> Output:
+        return Output(audio="a.wav")
+`)
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+	check := &PydanticBaseModelCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+
+	err = check.Fix(ctx, findings)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	require.Contains(t, string(content), "from cog import BasePredictor, Path, BaseModel")
+	require.NotContains(t, string(content), "import pydantic")
+	require.NotContains(t, string(content), "pydantic.BaseModel")
+	require.NotContains(t, string(content), "pydantic.ConfigDict")
+}
+
+func TestPydanticBaseModelCheck_Fix_PreservesOtherConfigDict(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path
+from pydantic import BaseModel, ConfigDict
+
+class Output(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True)
+    audio: Path
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> Output:
+        return Output(audio="a.wav")
+`)
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+	check := &PydanticBaseModelCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+
+	err = check.Fix(ctx, findings)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	require.Contains(t, string(content), "validate_default=True")
+	require.NotContains(t, string(content), "arbitrary_types_allowed")
+	require.Contains(t, string(content), "model_config")
+}
+
+func TestPydanticBaseModelCheck_Fix_MultilineImport(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+)
+
+class Output(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    audio: Path
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> Output:
+        return Output(audio="a.wav")
+`)
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+	check := &PydanticBaseModelCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+
+	err = check.Fix(ctx, findings)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	require.Contains(t, string(content), "from cog import BasePredictor, Path, BaseModel")
+	require.NotContains(t, string(content), "from pydantic import")
+	require.NotContains(t, string(content), "arbitrary_types_allowed")
+}
+
 func TestDeprecatedImportsCheck_Clean(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "predict.py", `from cog import BasePredictor

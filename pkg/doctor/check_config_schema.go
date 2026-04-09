@@ -2,8 +2,6 @@ package doctor
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/replicate/cog/pkg/config"
 )
@@ -18,31 +16,28 @@ func (c *ConfigSchemaCheck) Group() Group        { return GroupConfig }
 func (c *ConfigSchemaCheck) Description() string { return "Config schema" }
 
 func (c *ConfigSchemaCheck) Check(ctx *CheckContext) ([]Finding, error) {
-	configPath := filepath.Join(ctx.ProjectDir, "cog.yaml")
-
-	f, err := os.Open(configPath)
-	if err != nil {
-		return nil, nil // ConfigParseCheck handles missing files
+	// No config file on disk — ConfigParseCheck handles this
+	if ctx.ConfigFile == nil {
+		return nil, nil
 	}
-	defer f.Close()
 
-	_, loadErr := config.Load(f, ctx.ProjectDir)
-	if loadErr == nil {
-		return nil, nil // Valid config
+	// No load error means valid config
+	if ctx.LoadErr == nil {
+		return nil, nil
 	}
 
 	// If this is a parse error, skip — ConfigParseCheck handles it
 	var parseErr *config.ParseError
-	if isParseError(loadErr, &parseErr) {
+	if isParseError(ctx.LoadErr, &parseErr) {
 		return nil, nil
 	}
 
 	// Any other error is a schema/validation error
 	return []Finding{{
 		Severity:    SeverityError,
-		Message:     fmt.Sprintf("cog.yaml validation failed: %v", loadErr),
-		Remediation: "Fix the configuration errors in cog.yaml",
-		File:        "cog.yaml",
+		Message:     fmt.Sprintf("%s validation failed: %v", ctx.ConfigFilename, ctx.LoadErr),
+		Remediation: fmt.Sprintf("Fix the configuration errors in %s", ctx.ConfigFilename),
+		File:        ctx.ConfigFilename,
 	}}, nil
 }
 

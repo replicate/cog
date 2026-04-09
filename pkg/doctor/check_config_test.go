@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,9 +18,7 @@ func TestConfigParseCheck_Valid(t *testing.T) {
 predict: "predict.py:Predictor"
 `)
 
-	ctx := &CheckContext{ProjectDir: dir}
-	ctx.ConfigFile, _ = os.ReadFile(filepath.Join(dir, "cog.yaml"))
-
+	ctx := buildTestCheckContext(t, dir)
 	check := &ConfigParseCheck{}
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
@@ -30,9 +29,7 @@ func TestConfigParseCheck_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "cog.yaml", `build: [invalid yaml`)
 
-	ctx := &CheckContext{ProjectDir: dir}
-	ctx.ConfigFile, _ = os.ReadFile(filepath.Join(dir, "cog.yaml"))
-
+	ctx := buildTestCheckContext(t, dir)
 	check := &ConfigParseCheck{}
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
@@ -44,8 +41,7 @@ func TestConfigParseCheck_InvalidYAML(t *testing.T) {
 func TestConfigParseCheck_MissingFile(t *testing.T) {
 	dir := t.TempDir()
 
-	ctx := &CheckContext{ProjectDir: dir}
-
+	ctx := buildTestCheckContext(t, dir)
 	check := &ConfigParseCheck{}
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
@@ -62,7 +58,7 @@ predict: "predict.py:Predictor"
 `)
 	writeFile(t, dir, "requirements.txt", "torch==2.0.0\n")
 
-	ctx := &CheckContext{ProjectDir: dir}
+	ctx := buildTestCheckContext(t, dir)
 	check := &ConfigDeprecatedFieldsCheck{}
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
@@ -78,7 +74,7 @@ func TestConfigDeprecatedFieldsCheck_PythonPackages(t *testing.T) {
 predict: "predict.py:Predictor"
 `)
 
-	ctx := &CheckContext{ProjectDir: dir}
+	ctx := buildTestCheckContext(t, dir)
 	check := &ConfigDeprecatedFieldsCheck{}
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
@@ -96,7 +92,7 @@ func TestConfigDeprecatedFieldsCheck_PreInstall(t *testing.T) {
 predict: "predict.py:Predictor"
 `)
 
-	ctx := &CheckContext{ProjectDir: dir}
+	ctx := buildTestCheckContext(t, dir)
 	check := &ConfigDeprecatedFieldsCheck{}
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
@@ -179,21 +175,20 @@ func TestConfigPredictRefCheck_NoPredictField(t *testing.T) {
 func buildTestCheckContext(t *testing.T, dir string) *CheckContext {
 	t.Helper()
 	ctx := &CheckContext{
-		ProjectDir:  dir,
-		PythonFiles: make(map[string]*ParsedFile),
+		ProjectDir:     dir,
+		ConfigFilename: "cog.yaml",
+		PythonFiles:    make(map[string]*ParsedFile),
 	}
 
 	configPath := filepath.Join(dir, "cog.yaml")
 	configBytes, err := os.ReadFile(configPath)
 	if err == nil {
 		ctx.ConfigFile = configBytes
-		f, err := os.Open(configPath)
-		if err == nil {
-			defer f.Close()
-			loadResult, err := config.Load(f, dir)
-			if err == nil {
-				ctx.Config = loadResult.Config
-			}
+		loadResult, loadErr := config.Load(bytes.NewReader(configBytes), dir)
+		ctx.LoadErr = loadErr
+		if loadResult != nil {
+			ctx.LoadResult = loadResult
+			ctx.Config = loadResult.Config
 		}
 	}
 
@@ -212,7 +207,7 @@ class Predictor(BasePredictor):
         return text
 `)
 
-	ctx := &CheckContext{ProjectDir: dir}
+	ctx := buildTestCheckContext(t, dir)
 	check := &ConfigSchemaCheck{}
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
@@ -226,7 +221,7 @@ func TestConfigSchemaCheck_InvalidSchema(t *testing.T) {
 predict: "predict.py:Predictor"
 `)
 
-	ctx := &CheckContext{ProjectDir: dir}
+	ctx := buildTestCheckContext(t, dir)
 	check := &ConfigSchemaCheck{}
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
@@ -239,7 +234,7 @@ func TestConfigSchemaCheck_ParseError(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "cog.yaml", `build: [invalid yaml`)
 
-	ctx := &CheckContext{ProjectDir: dir}
+	ctx := buildTestCheckContext(t, dir)
 	check := &ConfigSchemaCheck{}
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
@@ -249,7 +244,7 @@ func TestConfigSchemaCheck_ParseError(t *testing.T) {
 func TestConfigSchemaCheck_MissingFile(t *testing.T) {
 	dir := t.TempDir()
 
-	ctx := &CheckContext{ProjectDir: dir}
+	ctx := buildTestCheckContext(t, dir)
 	check := &ConfigSchemaCheck{}
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)

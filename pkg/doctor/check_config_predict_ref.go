@@ -55,30 +55,40 @@ func (c *ConfigPredictRefCheck) Check(ctx *CheckContext) ([]Finding, error) {
 		}}, nil
 	}
 
-	// Check class exists in file using tree-sitter
-	source, err := os.ReadFile(fullPath)
-	if err != nil {
-		return []Finding{{
-			Severity: SeverityError,
-			Message:  fmt.Sprintf("cannot read %s: %v", pyFile, err),
-			File:     pyFile,
-		}}, nil
+	// Use cached parse tree if available, otherwise parse from disk
+	var rootNode *sitter.Node
+	var source []byte
+
+	if pf, ok := ctx.PythonFiles[pyFile]; ok {
+		rootNode = pf.Tree.RootNode()
+		source = pf.Source
+	} else {
+		var err error
+		source, err = os.ReadFile(fullPath)
+		if err != nil {
+			return []Finding{{
+				Severity: SeverityError,
+				Message:  fmt.Sprintf("cannot read %s: %v", pyFile, err),
+				File:     pyFile,
+			}}, nil
+		}
+
+		parser := sitter.NewParser()
+		parser.SetLanguage(python.GetLanguage())
+		tree, err := parser.ParseCtx(context.Background(), nil, source)
+		if err != nil {
+			return []Finding{{
+				Severity: SeverityError,
+				Message:  fmt.Sprintf("cannot parse %s: %v", pyFile, err),
+				File:     pyFile,
+			}}, nil
+		}
+		rootNode = tree.RootNode()
 	}
 
-	parser := sitter.NewParser()
-	parser.SetLanguage(python.GetLanguage())
-	tree, err := parser.ParseCtx(context.Background(), nil, source)
-	if err != nil {
-		return []Finding{{
-			Severity: SeverityError,
-			Message:  fmt.Sprintf("cannot parse %s: %v", pyFile, err),
-			File:     pyFile,
-		}}, nil
-	}
-
-	if !hasClassDefinition(tree.RootNode(), source, className) {
+	if !hasClassDefinition(rootNode, source, className) {
 		// List available classes to help the user
-		classes := listClassNames(tree.RootNode(), source)
+		classes := listClassNames(rootNode, source)
 		msg := fmt.Sprintf("class %q not found in %s", className, pyFile)
 		if len(classes) > 0 {
 			msg += fmt.Sprintf("; found: %s", strings.Join(classes, ", "))

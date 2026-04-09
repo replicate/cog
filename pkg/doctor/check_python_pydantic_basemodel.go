@@ -72,6 +72,11 @@ func (c *PydanticBaseModelCheck) Fix(ctx *CheckContext, findings []Finding) erro
 
 	for relPath := range fileFindings {
 		fullPath := filepath.Join(ctx.ProjectDir, relPath)
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", relPath, err)
+		}
+
 		source, err := os.ReadFile(fullPath)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", relPath, err)
@@ -79,7 +84,7 @@ func (c *PydanticBaseModelCheck) Fix(ctx *CheckContext, findings []Finding) erro
 
 		fixed := fixPydanticBaseModel(string(source))
 
-		if err := os.WriteFile(fullPath, []byte(fixed), 0o644); err != nil {
+		if err := os.WriteFile(fullPath, []byte(fixed), info.Mode()); err != nil {
 			return fmt.Errorf("writing %s: %w", relPath, err)
 		}
 	}
@@ -117,6 +122,8 @@ func inheritsPydanticBaseModel(classNode *sitter.Node, source []byte, imports *s
 
 // hasArbitraryTypesAllowed checks if a class body contains
 // model_config = ConfigDict(arbitrary_types_allowed=True).
+// Uses tree-sitter to properly parse keyword arguments, avoiding false positives
+// on arbitrary_types_allowed=False.
 func hasArbitraryTypesAllowed(classNode *sitter.Node, source []byte) bool {
 	body := classNode.ChildByFieldName("body")
 	if body == nil {
@@ -139,13 +146,26 @@ func hasArbitraryTypesAllowed(classNode *sitter.Node, source []byte) bool {
 		}
 
 		right := node.ChildByFieldName("right")
-		if right == nil {
+		if right == nil || right.Type() != "call" {
 			continue
 		}
 
-		text := schemaPython.Content(right, source)
-		if strings.Contains(text, "arbitrary_types_allowed") && strings.Contains(text, "True") {
-			return true
+		// Walk keyword arguments of the call
+		args := right.ChildByFieldName("arguments")
+		if args == nil {
+			continue
+		}
+		for _, arg := range schemaPython.NamedChildren(args) {
+			if arg.Type() != "keyword_argument" {
+				continue
+			}
+			key := arg.ChildByFieldName("name")
+			val := arg.ChildByFieldName("value")
+			if key != nil && val != nil &&
+				schemaPython.Content(key, source) == "arbitrary_types_allowed" &&
+				schemaPython.Content(val, source) == "True" {
+				return true
+			}
 		}
 	}
 
@@ -156,13 +176,34 @@ func hasArbitraryTypesAllowed(classNode *sitter.Node, source []byte) bool {
 func fixPydanticBaseModel(source string) string {
 	lines := strings.Split(source, "\n")
 	var result []string
+	inPydanticImport := false
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// Remove "from pydantic import BaseModel" (and ConfigDict)
+		// Handle multi-line "from pydantic import (" style
+		if strings.HasPrefix(trimmed, "from pydantic import (") {
+			inPydanticImport = true
+			// Check if this single-line also closes: from pydantic import (BaseModel, ConfigDict)
+			if strings.Contains(trimmed, ")") {
+				inPydanticImport = false
+				remaining := removePydanticImportsMultiline(trimmed)
+				if remaining != "" {
+					result = append(result, remaining)
+				}
+			}
+			continue
+		}
+		if inPydanticImport {
+			if strings.Contains(trimmed, ")") {
+				inPydanticImport = false
+			}
+			// Skip all lines in the parenthesized pydantic import
+			continue
+		}
+
+		// Remove single-line "from pydantic import BaseModel" (and ConfigDict)
 		if strings.HasPrefix(trimmed, "from pydantic import") {
-			// Remove BaseModel and ConfigDict from the import
 			remaining := removePydanticImports(trimmed)
 			if remaining == "" {
 				continue // Drop the entire line
@@ -171,9 +212,32 @@ func fixPydanticBaseModel(source string) string {
 			continue
 		}
 
-		// Remove model_config = ConfigDict(...) lines
+		// Handle "import pydantic" style
+		if trimmed == "import pydantic" {
+			continue // Drop the line
+		}
+
+		// Handle model_config = ConfigDict(...) lines -- only remove arbitrary_types_allowed=True
 		if strings.Contains(trimmed, "model_config") && strings.Contains(trimmed, "ConfigDict") {
-			continue
+			fixed := removeKeywordArg(line, "arbitrary_types_allowed=True")
+			if fixed != line {
+				// Successfully removed the argument; check if ConfigDict is now empty
+				if isEmptyConfigDict(fixed) {
+					continue // Drop the line entirely
+				}
+				result = append(result, fixed)
+				continue
+			}
+		}
+
+		// Replace pydantic.BaseModel in class definitions
+		if strings.Contains(line, "pydantic.BaseModel") {
+			line = strings.ReplaceAll(line, "pydantic.BaseModel", "BaseModel")
+		}
+
+		// Replace pydantic.ConfigDict references
+		if strings.Contains(line, "pydantic.ConfigDict") {
+			line = strings.ReplaceAll(line, "pydantic.ConfigDict", "ConfigDict")
 		}
 
 		result = append(result, line)
@@ -184,6 +248,52 @@ func fixPydanticBaseModel(source string) string {
 	fixed = addToCogImport(fixed, "BaseModel")
 
 	return fixed
+}
+
+// removeKeywordArg removes a specific keyword argument from a line containing a function call.
+// Handles "arg, ", ", arg", and standalone "arg".
+func removeKeywordArg(line string, arg string) string {
+	result := strings.Replace(line, arg+", ", "", 1)
+	if result == line {
+		result = strings.Replace(line, ", "+arg, "", 1)
+	}
+	if result == line {
+		result = strings.Replace(line, arg, "", 1)
+	}
+	return result
+}
+
+// isEmptyConfigDict checks if a line contains an empty ConfigDict() call.
+func isEmptyConfigDict(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return strings.Contains(trimmed, "ConfigDict()") || strings.Contains(trimmed, "ConfigDict( )")
+}
+
+// removePydanticImportsMultiline handles "from pydantic import (X, Y, Z)" on a single line.
+func removePydanticImportsMultiline(line string) string {
+	// Extract contents between "from pydantic import (" and ")"
+	start := strings.Index(line, "(")
+	end := strings.LastIndex(line, ")")
+	if start == -1 || end == -1 || start >= end {
+		return ""
+	}
+	importPart := line[start+1 : end]
+	names := strings.Split(importPart, ",")
+
+	var remaining []string
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "BaseModel" || name == "ConfigDict" || name == "" {
+			continue
+		}
+		remaining = append(remaining, name)
+	}
+
+	if len(remaining) == 0 {
+		return ""
+	}
+
+	return "from pydantic import " + strings.Join(remaining, ", ")
 }
 
 // removePydanticImports removes BaseModel and ConfigDict from a pydantic import line.
@@ -217,6 +327,7 @@ func removePydanticImports(line string) string {
 }
 
 // addToCogImport adds a name to an existing "from cog import ..." line.
+// If no "from cog import" line exists, inserts one at the top of the file.
 func addToCogImport(source string, name string) string {
 	lines := strings.Split(source, "\n")
 	for i, line := range lines {
@@ -226,9 +337,11 @@ func addToCogImport(source string, name string) string {
 				return source // Already imported
 			}
 			// Add the name at the end
-			lines[i] = trimmed + ", " + name
+			lines[i] = line + ", " + name
 			return strings.Join(lines, "\n")
 		}
 	}
-	return source
+	// No existing cog import found -- add one at the top
+	newImport := "from cog import " + name
+	return newImport + "\n" + source
 }

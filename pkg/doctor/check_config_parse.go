@@ -3,8 +3,6 @@ package doctor
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/replicate/cog/pkg/config"
 )
@@ -17,36 +15,25 @@ func (c *ConfigParseCheck) Group() Group        { return GroupConfig }
 func (c *ConfigParseCheck) Description() string { return "Config parsing" }
 
 func (c *ConfigParseCheck) Check(ctx *CheckContext) ([]Finding, error) {
-	configPath := filepath.Join(ctx.ProjectDir, "cog.yaml")
-
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+	// Config file not found on disk
+	if ctx.ConfigFile == nil {
 		return []Finding{{
 			Severity:    SeverityError,
-			Message:     "cog.yaml not found",
+			Message:     fmt.Sprintf("%s not found", ctx.ConfigFilename),
 			Remediation: `Run "cog init" to create a cog.yaml`,
-			File:        "cog.yaml",
+			File:        ctx.ConfigFilename,
 		}}, nil
 	}
 
-	f, err := os.Open(configPath)
-	if err != nil {
-		return []Finding{{
-			Severity: SeverityError,
-			Message:  fmt.Sprintf("cannot read cog.yaml: %v", err),
-			File:     "cog.yaml",
-		}}, nil
-	}
-	defer f.Close()
-
-	_, loadErr := config.Load(f, ctx.ProjectDir)
-	if loadErr != nil {
+	// Check for parse errors from the single Load call in buildCheckContext
+	if ctx.LoadErr != nil {
 		var parseErr *config.ParseError
-		if isParseError(loadErr, &parseErr) {
+		if isParseError(ctx.LoadErr, &parseErr) {
 			return []Finding{{
 				Severity:    SeverityError,
-				Message:     fmt.Sprintf("cog.yaml has invalid YAML: %v", loadErr),
-				Remediation: "Fix the YAML syntax in cog.yaml",
-				File:        "cog.yaml",
+				Message:     fmt.Sprintf("%s has invalid YAML: %v", ctx.ConfigFilename, ctx.LoadErr),
+				Remediation: fmt.Sprintf("Fix the YAML syntax in %s", ctx.ConfigFilename),
+				File:        ctx.ConfigFilename,
 			}}, nil
 		}
 		// Other errors (validation, schema) are handled by other checks

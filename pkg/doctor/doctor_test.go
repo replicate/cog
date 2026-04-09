@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -144,4 +145,13 @@ func TestRunMarksNotFixedOnErrNoAutoFix(t *testing.T) {
 	result, err := Run(context.Background(), RunOptions{Fix: true, ProjectDir: t.TempDir()}, []Check{check})
 	require.NoError(t, err)
 	require.False(t, result.Results[0].Fixed)
+}
+
+func TestHasErrorsWithCheckError(t *testing.T) {
+	result := &Result{
+		Results: []CheckResult{
+			{Err: errors.New("check failed")},
+		},
+	}
+	require.True(t, result.HasErrors())
 }

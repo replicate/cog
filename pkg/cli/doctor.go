@@ -48,8 +48,9 @@ func runDoctor(ctx context.Context, fix bool) error {
 	console.Info("")
 
 	result, err := doctor.Run(ctx, doctor.RunOptions{
-		Fix:        fix,
-		ProjectDir: projectDir,
+		Fix:            fix,
+		ProjectDir:     projectDir,
+		ConfigFilename: configFilename,
 	}, doctor.AllChecks())
 	if err != nil {
 		return err
@@ -105,12 +106,20 @@ func printDoctorResults(result *doctor.Result, fix bool) {
 			switch worstSeverity {
 			case doctor.SeverityError:
 				console.Errorf("%s", cr.Check.Description())
-				errorCount++
 			case doctor.SeverityWarning:
 				console.Warnf("%s", cr.Check.Description())
-				warningCount++
 			default:
 				console.Infof("%s", cr.Check.Description())
+			}
+
+			// Count per-finding for consistent totals
+			for _, f := range cr.Findings {
+				switch f.Severity {
+				case doctor.SeverityError:
+					errorCount++
+				case doctor.SeverityWarning:
+					warningCount++
+				}
 			}
 		}
 
