@@ -45,6 +45,7 @@ https://github.com/replicate/cog`,
 	rootCmd.AddCommand(
 		newBuildCommand(),
 		newDebugCommand(),
+		newDoctorCommand(),
 		newInitCommand(),
 		newInspectCommand(),
 		newLoginCommand(),
