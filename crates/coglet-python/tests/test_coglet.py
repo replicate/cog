@@ -205,6 +205,84 @@ predict: "predict.py:Predictor"
     return predictor
 
 
+@pytest.fixture
+def async_setup_predictor(tmp_path: Path) -> Path:
+    """Create a predictor with async def setup()."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def setup(self):
+        await asyncio.sleep(0.01)
+        self.prefix = "async-setup: "
+
+    async def predict(self, name: str = "World") -> str:
+        return self.prefix + name
+""")
+
+    # Create cog.yaml
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
+def async_setup_sync_predict_predictor(tmp_path: Path) -> Path:
+    """Create a predictor with async def setup() but sync def predict()."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def setup(self):
+        await asyncio.sleep(0.01)
+        self.prefix = "async-setup-sync-predict: "
+
+    def predict(self, name: str = "World") -> str:
+        return self.prefix + name
+""")
+
+    # Create cog.yaml
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
+def async_setup_weights_predictor(tmp_path: Path) -> Path:
+    """Create a predictor with async def setup(self, weights)."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def setup(self, weights=None):
+        await asyncio.sleep(0.01)
+        self.weights_value = str(weights) if weights else "no-weights"
+
+    def predict(self, name: str = "World") -> str:
+        return f"{self.weights_value}: {name}"
+""")
+
+    # Create cog.yaml
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
 class CogletServer:
     """Context manager for running coglet server."""
 
@@ -411,6 +489,36 @@ class TestAsyncGeneratorPredictor:
                 "async chunk 1",
                 "async chunk 2",
             ]
+
+
+class TestAsyncSetup:
+    """Tests for async def setup() — verifies the coroutine is actually awaited."""
+
+    def test_async_setup_with_async_predict(self, async_setup_predictor: Path):
+        """async setup() sets self.prefix, async predict() uses it."""
+        with CogletServer(async_setup_predictor) as server:
+            result = server.predict({"name": "Claude"})
+            assert result["status"] == "succeeded"
+            assert result["output"] == "async-setup: Claude"
+
+    def test_async_setup_with_sync_predict(
+        self, async_setup_sync_predict_predictor: Path
+    ):
+        """async setup() sets self.prefix, sync predict() uses it."""
+        with CogletServer(async_setup_sync_predict_predictor) as server:
+            result = server.predict({"name": "Claude"})
+            assert result["status"] == "succeeded"
+            assert result["output"] == "async-setup-sync-predict: Claude"
+
+    def test_async_setup_with_weights(
+        self, async_setup_weights_predictor: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """async setup(weights) receives the COG_WEIGHTS value."""
+        monkeypatch.setenv("COG_WEIGHTS", "https://example.com/model.tar")
+        with CogletServer(async_setup_weights_predictor) as server:
+            result = server.predict({"name": "Claude"})
+            assert result["status"] == "succeeded"
+            assert result["output"] == "https://example.com/model.tar: Claude"
 
 
 @pytest.fixture
