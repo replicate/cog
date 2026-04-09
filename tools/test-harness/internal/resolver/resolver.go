@@ -218,7 +218,7 @@ func resolveLatestPyPIVersion() (string, error) {
 	return version, nil
 }
 
-func downloadCogBinary(tag string) (string, error) {
+func downloadCogBinary(tag string) (dest string, err error) {
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 
@@ -239,7 +239,7 @@ func downloadCogBinary(tag string) (string, error) {
 		return "", fmt.Errorf("creating temp dir: %w", err)
 	}
 
-	dest := filepath.Join(tmpDir, "cog")
+	dest = filepath.Join(tmpDir, "cog")
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -267,7 +267,11 @@ func downloadCogBinary(tag string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("creating binary file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("closing binary file: %w", closeErr)
+		}
+	}()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
 		return "", fmt.Errorf("writing binary: %w", err)

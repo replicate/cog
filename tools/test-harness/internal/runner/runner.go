@@ -267,7 +267,11 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 		return nil
 	})
 
-	g.Wait()
+	if err := g.Wait(); err != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("context cancelled: %v", err)
+		return result
+	}
 
 	// Clean up images
 	defer func() {
