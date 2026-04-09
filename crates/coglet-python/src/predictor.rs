@@ -349,13 +349,13 @@ impl PythonPredictor {
             let mro = cls.getattr("__mro__")?;
             let base_predictor = py.import("cog.predictor")?.getattr("BasePredictor")?;
             let base_runner = py.import("cog.predictor")?.getattr("BaseRunner")?;
-            let object_type = py.eval("object", None, None)?;
+            let object_type = py.eval(c"object", None, None)?;
 
             let mut has_run = false;
             let mut has_predict = false;
 
-            for item in mro.iter()? {
-                let klass = item?;
+            for item in mro.try_iter()? {
+                let klass: Bound<'_, PyAny> = item?;
                 // Skip base stubs and object
                 if klass.eq(&base_predictor)? || klass.eq(&base_runner)? || klass.eq(&object_type)? {
                     continue;

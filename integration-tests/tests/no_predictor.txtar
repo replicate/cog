@@ -3,7 +3,7 @@
 
 # Build should fail with error about missing runner
 ! cog build -t $TEST_IMAGE
-stderr 'run'
+stderr '''run'' is required'
 
 -- cog.yaml --
 build:

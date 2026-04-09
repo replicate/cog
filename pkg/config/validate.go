@@ -119,6 +119,11 @@ func validateRunPredictConflict(cfg *configFile, result *ValidationResult) {
 
 // validatePredict validates the predict/run field.
 func validatePredict(cfg *configFile, result *ValidationResult) {
+	// Skip if both run: and predict: are set -- validateRunPredictConflict handles that
+	if cfg.Run != nil && cfg.Predict != nil {
+		return
+	}
+
 	// Check whichever field is set (run: or predict:)
 	var predict string
 	var fieldName string
