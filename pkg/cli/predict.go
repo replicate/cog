@@ -74,6 +74,7 @@ the prediction on that.`,
 		RunE:       cmdPredict,
 		Args:       cobra.MaximumNArgs(1),
 		SuggestFor: []string{"infer"},
+		Hidden:     true,
 	}
 
 	addUseCudaBaseImageFlag(cmd)
@@ -177,6 +178,10 @@ func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
+	if cmd.CalledAs() == "predict" {
+		console.Warn(`"cog predict" is deprecated, use "cog run"`)
+	}
+
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
