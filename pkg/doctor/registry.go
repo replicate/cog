@@ -7,6 +7,7 @@ func AllChecks() []Check {
 		// Config checks
 		&ConfigParseCheck{},
 		&ConfigDeprecatedFieldsCheck{},
+		&ConfigPredictRefCheck{},
 
 		// Python checks (added in subsequent tasks)
 
