@@ -121,7 +121,7 @@ There are a few concepts used throughout Cog that might be helpful to understand
 - **Model**: A user's machine learning model, consisting of code and weights.
 - **Output**: Output from a **prediction**, as arbitrarily complex JSON object.
 - **Prediction**: A single run of the model, that takes **input** and produces **output**.
-- **Predictor**: Defines how Cog runs **predictions** on a **model**.
+- **Runner**: Defines how Cog runs **predictions** on a **model**.
 
 ## Running tests
 
@@ -176,21 +176,21 @@ When adding new functionality, add integration tests in `integration-tests/tests
 Example test structure:
 
 ```txtar
-# Test string predictor
+# Test string runner
 cog build -t $TEST_IMAGE
-cog predict $TEST_IMAGE -i s=world
+cog run $TEST_IMAGE -i s=world
 stdout 'hello world'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, s: str) -> str:
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
         return "hello " + s
 ```
 
@@ -216,7 +216,7 @@ retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
 stdout '"output":"hello test"'
 ```
 
-**Example: Testing predictor with subprocess in setup**
+**Example: Testing runner with subprocess in setup**
 
 ```txtar
 cog build -t $TEST_IMAGE
@@ -226,12 +226,12 @@ cog serve
 retry-curl POST /predictions '{"input":{"s":"test"}}' 30 1s
 stdout '"output":"hello test"'
 
--- predict.py --
-class Predictor(BasePredictor):
+-- run.py --
+class Runner(BaseRunner):
     def setup(self):
         self.process = subprocess.Popen(["./background.sh"])
     
-    def predict(self, s: str) -> str:
+    def run(self, s: str) -> str:
         return "hello " + s
 ```
 

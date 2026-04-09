@@ -8,7 +8,7 @@ Cog is a tool that packages machine learning models in production-ready containe
 
 It consists of:
 - **Cog CLI** (`cmd/cog/`) - Command-line interface for building, running, and deploying models, written in Go
-- **Python SDK** (`python/cog/`) - Python library for defining model predictors and training in Python
+- **Python SDK** (`python/cog/`) - Python library for defining model runners and training in Python
 - **Coglet** (`crates/`) - Rust-based prediction server that runs inside containers, with Python bindings via PyO3
 
 Documentation for the CLI and SDK is available by reading ./docs/llms.txt.
@@ -159,7 +159,7 @@ For detailed architecture documentation, see `crates/README.md` and `crates/cogl
 
 The main commands for working on Coglet are:
 - `mise run build:coglet` - Build and install coglet wheel for development (macOS, for local Rust/Python tests)
-- `mise run build:coglet:wheel:linux-x64` - Build Linux x86_64 wheel (required to test Rust changes in Docker containers via `cog predict`/`cog train`)
+- `mise run build:coglet:wheel:linux-x64` - Build Linux x86_64 wheel (required to test Rust changes in Docker containers via `cog run`/`cog train`)
 - `mise run test:rust` - Run Rust unit tests
 - `mise run lint:rust` - Run clippy linter
 - `mise run fmt:rust:fix` - Format code
@@ -207,7 +207,7 @@ The CLI follows a command pattern with subcommands. The main components are:
 
 ### Python SDK Architecture
 - `python/cog/` - Core SDK
-  - `base_predictor.py` - Base class for model predictors
+  - `predictor.py` - Base classes for model runners (`BaseRunner`) and predictors (`BasePredictor`)
   - `types.py` - Input/output type definitions
   - `server/` - HTTP/queue server implementation
   - `command/` - Runner implementations for predict/train
@@ -281,7 +281,7 @@ Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
 - `cog.yaml` - User-facing model configuration
 - `pkg/config/config.go` - Go code for parsing and validating `cog.yaml`
 - `pkg/config/data/config_schema_v1.0.json` - JSON schema for `cog.yaml`
-- `python/cog/base_predictor.py` - Predictor interface
+- `python/cog/predictor.py` - Runner/Predictor interface (BaseRunner, BasePredictor)
 - `crates/Cargo.toml` - Rust workspace configuration (version must match VERSION.txt)
 - `crates/README.md` - Coglet architecture overview
 - `mise.toml` - Task definitions for development workflow

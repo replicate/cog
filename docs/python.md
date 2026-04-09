@@ -3,7 +3,7 @@
 This document defines the API of the `cog` Python module, which is used to define the interface for running predictions on your model.
 
 > [!TIP]
-> Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `predict.py` file that can be used as a starting point for setting up your model.
+> Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `run.py` file that can be used as a starting point for setting up your model.
 
 > [!TIP]
 > Using a language model to help you write the code for your new Cog model?
@@ -13,10 +13,10 @@ This document defines the API of the `cog` Python module, which is used to defin
 ## Contents
 
 - [Contents](#contents)
-- [`BasePredictor`](#basepredictor)
-  - [`Predictor.setup()`](#predictorsetup)
-  - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
-- [`async` predictors and concurrency](#async-predictors-and-concurrency)
+- [`BaseRunner`](#baserunner)
+  - [`Runner.setup()`](#runnersetup)
+  - [`Runner.run(**kwargs)`](#runnerrunkwargs)
+- [`async` runners and concurrency](#async-runners-and-concurrency)
 - [`Input(**kwargs)`](#inputkwargs)
   - [Deprecating inputs](#deprecating-inputs)
 - [Output](#output)
@@ -46,20 +46,20 @@ This document defines the API of the `cog` Python module, which is used to defin
     - [`BaseModel` field types](#basemodel-field-types)
   - [Type limitations](#type-limitations)
 
-## `BasePredictor`
+## `BaseRunner`
 
-You define how Cog runs predictions on your model by defining a class that inherits from `BasePredictor`. It looks something like this:
+You define how Cog runs predictions on your model by defining a class that inherits from `BaseRunner`. It looks something like this:
 
 ```python
-from cog import BasePredictor, Path, Input
+from cog import BaseRunner, Path, Input
 import torch
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.model = torch.load("weights.pth")
 
-    def predict(self,
+    def run(self,
             image: Path = Input(description="Image to enlarge"),
             scale: float = Input(description="Factor to scale image by", default=1.5)
     ) -> Path:
@@ -70,9 +70,12 @@ class Predictor(BasePredictor):
         return output
 ```
 
-Your Predictor class should define two methods: `setup()` and `predict()`.
+> [!NOTE]
+> `BasePredictor` and `predict()` still work for backwards compatibility, but `BaseRunner` and `run()` are preferred for new models.
 
-### `Predictor.setup()`
+Your Runner class should define two methods: `setup()` and `run()`.
+
+### `Runner.setup()`
 
 Prepare the model so multiple predictions run efficiently.
 
@@ -96,43 +99,43 @@ While this will increase your image size and build time, it offers other advanta
 
 > When using this method, you should use the `--separate-weights` flag on `cog build` to store weights in a [separate layer](https://github.com/replicate/cog/blob/12ac02091d93beebebed037f38a0c99cd8749806/docs/getting-started.md?plain=1#L219).
 
-### `Predictor.predict(**kwargs)`
+### `Runner.run(**kwargs)`
 
 Run a single prediction.
 
 This _required_ method is where you call the model that was loaded during `setup()`, but you may also want to add pre- and post-processing code here.
 
-The `predict()` method takes an arbitrary list of named arguments, where each argument name must correspond to an [`Input()`](#inputkwargs) annotation.
+The `run()` method takes an arbitrary list of named arguments, where each argument name must correspond to an [`Input()`](#inputkwargs) annotation.
 
-`predict()` can return strings, numbers, [`cog.Path`](#cogpath) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`BaseModel`](#structured-output-with-basemodel) for structured return types. See [Input and output types](#input-and-output-types) for the full list of supported types.
+`run()` can return strings, numbers, [`cog.Path`](#cogpath) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`BaseModel`](#structured-output-with-basemodel) for structured return types. See [Input and output types](#input-and-output-types) for the full list of supported types.
 
-## `async` predictors and concurrency
+## `async` runners and concurrency
 
 > Added in cog 0.14.0.
 
-You may specify your `predict()` method as `async def predict(...)`. In
-addition, if you have an async `predict()` function you may also have an async
+You may specify your `run()` method as `async def run(...)`. In
+addition, if you have an async `run()` function you may also have an async
 `setup()` function:
 
 ```py
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     async def setup(self) -> None:
         print("async setup is also supported...")
 
-    async def predict(self) -> str:
-        print("async predict");
+    async def run(self) -> str:
+        print("async run");
         return "hello world";
 ```
 
-Models that have an async `predict()` function can run predictions concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
+Models that have an async `run()` function can run predictions concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
 
 ## `Input(**kwargs)`
 
-Use cog's `Input()` function to define each of the parameters in your `predict()` method:
+Use cog's `Input()` function to define each of the parameters in your `run()` method:
 
 ```py
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
             image: Path = Input(description="Image to enlarge"),
             scale: float = Input(description="Factor to scale image by", default=1.5, ge=1.0, le=10.0)
     ) -> Path:
@@ -150,13 +153,13 @@ The `Input()` function takes these keyword arguments:
 - `choices`: For `str` or `int` types, a list of possible values for this input.
 - `deprecated`: (optional) If set to `True`, marks this input as deprecated. Deprecated inputs will still be accepted, but tools and UIs may warn users that the input is deprecated and may be removed in the future. See [Deprecating inputs](#deprecating-inputs).
 
-Each parameter of the `predict()` method must be annotated with a type like `str`, `int`, `float`, `bool`, etc. See [Input and output types](#input-and-output-types) for the full list of supported types.
+Each parameter of the `run()` method must be annotated with a type like `str`, `int`, `float`, `bool`, etc. See [Input and output types](#input-and-output-types) for the full list of supported types.
 
 Using the `Input` function provides better documentation and validation constraints to the users of your model, but it is not strictly required. You can also specify default values for your parameters using plain Python, or omit default assignment entirely:
 
 ```py
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
         prompt: str = "default prompt", # this is valid
         iterations: int                 # also valid
     ) -> str:
@@ -170,10 +173,10 @@ You can mark an input as deprecated by passing `deprecated=True` to the `Input()
 This is useful when you want to phase out an input without breaking existing clients immediately:
 
 ```py
-from cog import BasePredictor, Input
+from cog import BaseRunner, Input
 
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
         text: str = Input(description="Some deprecated text", deprecated=True),
         prompt: str = Input(description="Prompt for the model")
     ) -> str:
@@ -183,31 +186,31 @@ class Predictor(BasePredictor):
 
 ## Output
 
-Cog predictors can return a simple data type like a string, number, float, or boolean. Use Python's `-> <type>` syntax to annotate the return type.
+Cog runners can return a simple data type like a string, number, float, or boolean. Use Python's `-> <type>` syntax to annotate the return type.
 
-Here's an example of a predictor that returns a string:
+Here's an example of a runner that returns a string:
 
 ```py
-from cog import BasePredictor
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self) -> str:
+class Runner(BaseRunner):
+    def run(self) -> str:
         return "hello"
 ```
 
 ### Returning an object
 
-To return a complex object with multiple values, define an `Output` object with multiple fields to return from your `predict()` method:
+To return a complex object with multiple values, define an `Output` object with multiple fields to return from your `run()` method:
 
 ```py
-from cog import BasePredictor, BaseModel, File
+from cog import BaseRunner, BaseModel, File
 
 class Output(BaseModel):
     file: File
     text: str
 
-class Predictor(BasePredictor):
-    def predict(self) -> Output:
+class Runner(BaseRunner):
+    def run(self) -> Output:
         return Output(text="hello", file=io.StringIO("hello"))
 ```
 
@@ -215,13 +218,13 @@ Each of the output object's properties must be one of the supported output types
 
 ### Returning a list
 
-The `predict()` method can return a list of any of the supported output types. Here's an example that outputs multiple files:
+The `run()` method can return a list of any of the supported output types. Here's an example that outputs multiple files:
 
 ```py
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
-class Predictor(BasePredictor):
-    def predict(self) -> list[Path]:
+class Runner(BaseRunner):
+    def run(self) -> list[Path]:
         predictions = ["foo", "bar", "baz"]
         output = []
         for i, prediction in enumerate(predictions):
@@ -239,15 +242,15 @@ Files are named in the format `output.<index>.<extension>`, e.g. `output.0.txt`,
 To conditionally omit properties from the Output object, define them using `typing.Optional`:
 
 ```py
-from cog import BaseModel, BasePredictor, Path
+from cog import BaseModel, BaseRunner, Path
 from typing import Optional
 
 class Output(BaseModel):
     score: Optional[float]
     file: Optional[Path]
 
-class Predictor(BasePredictor):
-    def predict(self) -> Output:
+class Runner(BaseRunner):
+    def run(self) -> Output:
         if condition:
             return Output(score=1.5)
         else:
@@ -256,30 +259,30 @@ class Predictor(BasePredictor):
 
 ### Streaming output
 
-Cog models can stream output as the `predict()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output images as they are being generated.
+Cog models can stream output as the `run()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output images as they are being generated.
 
-To support streaming output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, or `cog.Path`.
+To support streaming output in your Cog model, add `from typing import Iterator` to your run.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `run()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, or `cog.Path`.
 
 ```py
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 from typing import Iterator
 
-class Predictor(BasePredictor):
-    def predict(self) -> Iterator[Path]:
+class Runner(BaseRunner):
+    def run(self) -> Iterator[Path]:
         done = False
         while not done:
             output_path, done = do_stuff()
             yield Path(output_path)
 ```
 
-If you have an [async `predict()` method](#async-predictors-and-concurrency), use `AsyncIterator` from the `typing` module:
+If you have an [async `run()` method](#async-runners-and-concurrency), use `AsyncIterator` from the `typing` module:
 
 ```py
 from typing import AsyncIterator
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
-class Predictor(BasePredictor):
-    async def predict(self) -> AsyncIterator[Path]:
+class Runner(BaseRunner):
+    async def run(self) -> AsyncIterator[Path]:
         done = False
         while not done:
             output_path, done = do_stuff()
@@ -289,22 +292,22 @@ class Predictor(BasePredictor):
 If you're streaming text output, you can use `ConcatenateIterator` to hint that the output should be concatenated together into a single string. This is useful on Replicate to display the output as a string instead of a list of strings.
 
 ```py
-from cog import BasePredictor, Path, ConcatenateIterator
+from cog import BaseRunner, Path, ConcatenateIterator
 
-class Predictor(BasePredictor):
-    def predict(self) -> ConcatenateIterator[str]:
+class Runner(BaseRunner):
+    def run(self) -> ConcatenateIterator[str]:
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:
             yield token + " "
 ```
 
-Or for async `predict()` methods, use `AsyncConcatenateIterator`:
+Or for async `run()` methods, use `AsyncConcatenateIterator`:
 
 ```py
-from cog import BasePredictor, Path, AsyncConcatenateIterator
+from cog import BaseRunner, Path, AsyncConcatenateIterator
 
-class Predictor(BasePredictor):
-    async def predict(self) -> AsyncConcatenateIterator[str]:
+class Runner(BaseRunner):
+    async def run(self) -> AsyncConcatenateIterator[str]:
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:
             yield token + " "
@@ -312,17 +315,17 @@ class Predictor(BasePredictor):
 
 ## Metrics
 
-You can record custom metrics from your `predict()` function to track model-specific data like token counts, timing breakdowns, or confidence scores. Metrics are included in the prediction response alongside the output.
+You can record custom metrics from your `run()` function to track model-specific data like token counts, timing breakdowns, or confidence scores. Metrics are included in the prediction response alongside the output.
 
 ### Recording metrics
 
-Use `self.record_metric()` inside your `predict()` method:
+Use `self.record_metric()` inside your `run()` method:
 
 ```python
-from cog import BasePredictor
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> str:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
         self.record_metric("temperature", 0.7)
         self.record_metric("token_count", 42)
 
@@ -438,12 +441,12 @@ Outside an active prediction, `self.record_metric()` and `self.scope` are silent
 
 ## Cancellation
 
-When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `predict()` function. The exception raised depends on whether the predictor is sync or async:
+When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `run()` function. The exception raised depends on whether the runner is sync or async:
 
-| Predictor type              | Exception raised         |
+| Runner type                 | Exception raised         |
 | --------------------------- | ------------------------ |
-| Sync (`def predict`)        | `CancelationException`   |
-| Async (`async def predict`) | `asyncio.CancelledError` |
+| Sync (`def run`)            | `CancelationException`   |
+| Async (`async def run`)     | `asyncio.CancelledError` |
 
 ### `CancelationException`
 
@@ -451,15 +454,15 @@ When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predi
 from cog import CancelationException
 ```
 
-`CancelationException` is raised in **sync** predictors when a prediction is cancelled. It is a `BaseException` subclass — **not** an `Exception` subclass. This means bare `except Exception` blocks in your predict code will not accidentally catch it, matching the behavior of `KeyboardInterrupt` and `asyncio.CancelledError`.
+`CancelationException` is raised in **sync** runners when a prediction is cancelled. It is a `BaseException` subclass — **not** an `Exception` subclass. This means bare `except Exception` blocks in your run code will not accidentally catch it, matching the behavior of `KeyboardInterrupt` and `asyncio.CancelledError`.
 
-You do **not** need to handle this exception in normal predictor code — the runtime manages cancellation automatically. However, if you need to run cleanup logic when a prediction is cancelled, you can catch it explicitly:
+You do **not** need to handle this exception in normal runner code — the runtime manages cancellation automatically. However, if you need to run cleanup logic when a prediction is cancelled, you can catch it explicitly:
 
 ```python
-from cog import BasePredictor, CancelationException, Path
+from cog import BaseRunner, CancelationException, Path
 
-class Predictor(BasePredictor):
-    def predict(self, image: Path) -> Path:
+class Runner(BaseRunner):
+    def run(self, image: Path) -> Path:
         try:
             return self.process(image)
         except CancelationException:
@@ -475,11 +478,11 @@ class Predictor(BasePredictor):
 - `cog.CancelationException` (recommended)
 - `cog.exceptions.CancelationException`
 
-For **async** predictors, cancellation follows standard Python async conventions and raises `asyncio.CancelledError` instead.
+For **async** runners, cancellation follows standard Python async conventions and raises `asyncio.CancelledError` instead.
 
 ## Input and output types
 
-Each parameter of the `predict()` method must be annotated with a type. The method's return type must also be annotated.
+Each parameter of the `run()` method must be annotated with a type. The method's return type must also be annotated.
 
 ### Primitive types
 
@@ -507,10 +510,10 @@ This example takes an input file, resizes it, and returns the resized image:
 
 ```python
 import tempfile
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 
-class Predictor(BasePredictor):
-    def predict(self, image: Path = Input(description="Image to enlarge")) -> Path:
+class Runner(BaseRunner):
+    def run(self, image: Path = Input(description="Image to enlarge")) -> Path:
         upscaled_image = do_some_processing(image)
 
         # To output cog.Path objects the file needs to exist, so create a temporary file first.
@@ -528,11 +531,11 @@ class Predictor(BasePredictor):
 `cog.File` represents a _file handle_. For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
 
 ```python
-from cog import BasePredictor, File, Input
+from cog import BaseRunner, File, Input
 from PIL import Image
 
-class Predictor(BasePredictor):
-    def predict(self, source_image: File = Input(description="Image to enlarge")) -> File:
+class Runner(BaseRunner):
+    def run(self, source_image: File = Input(description="Image to enlarge")) -> File:
         pillow_img = Image.open(source_image)
         upscaled_image = do_some_processing(pillow_img)
         return File(upscaled_image)
@@ -545,10 +548,10 @@ class Predictor(BasePredictor):
 `cog.Secret` redacts its contents in string representations to prevent accidental disclosure. Access the underlying value with `get_secret_value()`.
 
 ```python
-from cog import BasePredictor, Secret
+from cog import BaseRunner, Secret
 
-class Predictor(BasePredictor):
-    def predict(self, api_token: Secret) -> None:
+class Runner(BaseRunner):
+    def run(self, api_token: Secret) -> None:
         # Prints '**********'
         print(api_token)
 
@@ -556,7 +559,7 @@ class Predictor(BasePredictor):
         print(api_token.get_secret_value())
 ```
 
-A predictor's `Secret` inputs are represented in OpenAPI with the following schema:
+A runner's `Secret` inputs are represented in OpenAPI with the following schema:
 
 ```json
 {
@@ -582,10 +585,10 @@ Use `Optional[T]` or `T | None` (Python 3.10+) to mark an input as optional. Opt
 
 ```python
 from typing import Optional
-from cog import BasePredictor, Input
+from cog import BaseRunner, Input
 
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
         prompt: Optional[str] = Input(description="Input prompt"),
         seed: int | None = Input(description="Random seed", default=None),
     ) -> str:
@@ -598,11 +601,11 @@ Prefer `Optional[T]` or `T | None` over `str = Input(default=None)` for inputs t
 
 ```python
 # Bad: type annotation says str but value can be None
-def predict(self, prompt: str = Input(default=None)) -> str:
+def run(self, prompt: str = Input(default=None)) -> str:
     return "hello" + prompt  # TypeError at runtime if prompt is None
 
 # Good: type annotation matches actual behavior
-def predict(self, prompt: Optional[str] = Input(description="prompt")) -> str:
+def run(self, prompt: Optional[str] = Input(description="prompt")) -> str:
     if prompt is None:
         return "hello"
     return "hello " + prompt
@@ -618,10 +621,10 @@ Use `list[T]` or `List[T]` to accept or return a list of values. `T` can be a su
 **As an input type:**
 
 ```py
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
-class Predictor(BasePredictor):
-    def predict(self, paths: list[Path]) -> str:
+class Runner(BaseRunner):
+    def run(self, paths: list[Path]) -> str:
         output_parts = []
         for path in paths:
             with open(path) as f:
@@ -629,21 +632,21 @@ class Predictor(BasePredictor):
         return "".join(output_parts)
 ```
 
-With `cog predict`, repeat the input name to pass multiple values:
+With `cog run`, repeat the input name to pass multiple values:
 
 ```bash
 $ echo test1 > 1.txt
 $ echo test2 > 2.txt
-$ cog predict -i paths=@1.txt -i paths=@2.txt
+$ cog run -i paths=@1.txt -i paths=@2.txt
 ```
 
 **As an output type:**
 
 ```py
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
-class Predictor(BasePredictor):
-    def predict(self) -> list[Path]:
+class Runner(BaseRunner):
+    def run(self) -> list[Path]:
         predictions = ["foo", "bar", "baz"]
         output = []
         for i, prediction in enumerate(predictions):
@@ -661,10 +664,10 @@ Files are named in the format `output.<index>.<extension>`, e.g. `output.0.txt`,
 Use `dict` to accept or return an opaque JSON object. The value is passed through as-is without type validation.
 
 ```python
-from cog import BasePredictor, Input
+from cog import BaseRunner, Input
 
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
         params: dict = Input(description="Arbitrary JSON parameters"),
     ) -> dict:
         return {"greeting": "hello", "params": params}
@@ -683,15 +686,15 @@ To return a complex object with multiple typed fields, define a class that inher
 
 ```python
 from typing import Optional
-from cog import BasePredictor, BaseModel, Path
+from cog import BaseRunner, BaseModel, Path
 
 class Output(BaseModel):
     text: str
     confidence: float
     image: Optional[Path]
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> Output:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Output:
         result = self.model.generate(prompt)
         return Output(
             text=result.text,
@@ -717,15 +720,15 @@ If you already use Pydantic v2 in your model, you can use a Pydantic `BaseModel`
 
 ```python
 from pydantic import BaseModel as PydanticBaseModel
-from cog import BasePredictor
+from cog import BaseRunner
 
 class Result(PydanticBaseModel):
     name: str
     score: float
     tags: list[str]
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> Result:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Result:
         return Result(name="example", score=0.95, tags=["fast", "accurate"])
 ```
 
