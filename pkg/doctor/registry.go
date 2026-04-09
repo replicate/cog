@@ -4,7 +4,8 @@ package doctor
 // To add a new check: implement the Check interface and add it here.
 func AllChecks() []Check {
 	return []Check{
-		// Config checks (added in subsequent tasks)
+		// Config checks
+		&ConfigParseCheck{},
 
 		// Python checks (added in subsequent tasks)
 
