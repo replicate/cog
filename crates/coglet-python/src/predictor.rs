@@ -337,7 +337,10 @@ impl PythonPredictor {
                 tracing::info!("Detected sync train()");
                 PredictKind::Sync
             };
-            (PredictorKind::StandaloneFunction(predict_kind), String::new())
+            (
+                PredictorKind::StandaloneFunction(predict_kind),
+                String::new(),
+            )
         } else {
             // Class instance - detect run() vs predict() method
             // Check class __dict__ to distinguish user-defined from inherited base stubs
@@ -361,8 +364,7 @@ impl PythonPredictor {
                 }
             };
 
-            let (is_async, is_async_gen) =
-                Self::detect_async(py, &instance, &predict_method_name)?;
+            let (is_async, is_async_gen) = Self::detect_async(py, &instance, &predict_method_name)?;
             let predict_kind = if is_async_gen {
                 tracing::info!("Detected async generator {}()", predict_method_name);
                 PredictKind::AsyncGen
@@ -388,13 +390,20 @@ impl PythonPredictor {
                 TrainKind::None
             };
 
-            (PredictorKind::Class {
-                predict: predict_kind,
-                train: train_kind,
-            }, predict_method_name)
+            (
+                PredictorKind::Class {
+                    predict: predict_kind,
+                    train: train_kind,
+                },
+                predict_method_name,
+            )
         };
 
-        let predictor = Self { instance, kind, predict_method_name };
+        let predictor = Self {
+            instance,
+            kind,
+            predict_method_name,
+        };
 
         // Patch FieldInfo defaults on predict/train methods so Python uses actual
         // default values instead of FieldInfo wrapper objects for missing inputs.
@@ -403,7 +412,11 @@ impl PythonPredictor {
         if is_function {
             Self::unwrap_field_info_defaults(py, &predictor.instance, "")?;
         } else {
-            Self::unwrap_field_info_defaults(py, &predictor.instance, &predictor.predict_method_name)?;
+            Self::unwrap_field_info_defaults(
+                py,
+                &predictor.instance,
+                &predictor.predict_method_name,
+            )?;
             if matches!(predictor.kind, PredictorKind::Class { train, .. } if train != TrainKind::None)
             {
                 Self::unwrap_field_info_defaults(py, &predictor.instance, "train")?;
@@ -691,7 +704,10 @@ impl PythonPredictor {
 
             // PreparedInput cleans up temp files on drop (RAII)
             let func = self.predict_func(py).map_err(|e| {
-                PredictionError::Failed(format!("Failed to get {} function: {}", self.predict_method_name, e))
+                PredictionError::Failed(format!(
+                    "Failed to get {} function: {}",
+                    self.predict_method_name, e
+                ))
             })?;
             let prepared = input::prepare_input(py, raw_input_dict, &func)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
@@ -967,7 +983,10 @@ impl PythonPredictor {
             })?;
 
             let func = self.predict_func(py).map_err(|e| {
-                PredictionError::Failed(format!("Failed to get {} function: {}", self.predict_method_name, e))
+                PredictionError::Failed(format!(
+                    "Failed to get {} function: {}",
+                    self.predict_method_name, e
+                ))
             })?;
             let prepared = input::prepare_input(py, raw_input_dict, &func)
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
