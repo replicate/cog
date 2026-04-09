@@ -52,15 +52,29 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	// 4. Collect Input() references from class attributes and static methods
 	inputRegistry := collectInputRegistry(root, source, imports, moduleScope)
 
-	// 5. Find the target predict/train function
-	methodName := "predict"
+	// 5. Find the target predict/train/run function
+	var methodName string
+	var funcNode *sitter.Node
 	if mode == schema.ModeTrain {
 		methodName = "train"
-	}
-
-	funcNode, err := findTargetFunction(root, source, predictRef, methodName)
-	if err != nil {
-		return nil, err
+		var err error
+		funcNode, err = findTargetFunction(root, source, predictRef, methodName)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Try "run" first, fall back to "predict"
+		var err error
+		funcNode, err = findTargetFunction(root, source, predictRef, "run")
+		if err != nil {
+			funcNode, err = findTargetFunction(root, source, predictRef, "predict")
+			if err != nil {
+				return nil, err
+			}
+			methodName = "predict"
+		} else {
+			methodName = "run"
+		}
 	}
 
 	// 6. Check if method (has self first param)

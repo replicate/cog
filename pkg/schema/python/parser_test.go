@@ -2598,3 +2598,66 @@ func indexOf(s, substr string) int {
 	}
 	return -1
 }
+
+// ---------------------------------------------------------------------------
+// BaseRunner with run() method
+// ---------------------------------------------------------------------------
+
+func TestRunMethodOnBaseRunner(t *testing.T) {
+	source := `
+from cog import BaseRunner, Input
+
+class Runner(BaseRunner):
+    def run(self, prompt: str = Input(description="Input text")) -> str:
+        return "hello " + prompt
+`
+	info := parse(t, source, "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	prompt, ok := info.Inputs.Get("prompt")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, prompt.FieldType.Primitive)
+	require.NotNil(t, prompt.Description)
+	require.Equal(t, "Input text", *prompt.Description)
+
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestRunMethodFallsBackToPredict(t *testing.T) {
+	// Ensure existing predict() classes still work
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	s, ok := info.Inputs.Get("s")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, s.FieldType.Primitive)
+}
+
+func TestRunMethodPreferredOverPredict(t *testing.T) {
+	// If a class has both run() and predict(), run() should be preferred
+	source := `
+from cog import BaseRunner, Input
+
+class Runner(BaseRunner):
+    def predict(self, x: int) -> int:
+        return x
+
+    def run(self, prompt: str = Input(description="Input text")) -> str:
+        return "hello " + prompt
+`
+	info := parse(t, source, "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	// Should find run(), not predict()
+	prompt, ok := info.Inputs.Get("prompt")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, prompt.FieldType.Primitive)
+}
