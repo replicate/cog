@@ -432,9 +432,22 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
     p = getattr(module, predictor_name)
 
     if inspect.isclass(p):
-        # Detect which method the user's class defines (not inherited stubs)
-        has_run = "run" in p.__dict__
-        has_predict = "predict" in p.__dict__
+        # Detect which method the user's class defines.
+        # Walk the MRO to support multi-level inheritance, but skip the
+        # base stub classes (BasePredictor/BaseRunner) whose methods raise
+        # NotImplementedError.
+        from .predictor import BasePredictor, BaseRunner
+
+        _base_stubs = {BasePredictor, BaseRunner, object}
+
+        has_run = any(
+            "run" in klass.__dict__ for klass in p.__mro__ if klass not in _base_stubs
+        )
+        has_predict = any(
+            "predict" in klass.__dict__
+            for klass in p.__mro__
+            if klass not in _base_stubs
+        )
 
         if has_run and has_predict:
             raise ValueError(f"define either run() or predict(), not both: {fullname}")

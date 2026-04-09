@@ -181,7 +181,7 @@ class BaseRunner:
         self.scope.record_metric(key, value, mode=mode)
 
 
-def load_predictor_from_ref(ref: str) -> BasePredictor:
+def load_predictor_from_ref(ref: str) -> Any:
     """Load a predictor from a module:class reference (e.g. 'run.py:Runner')."""
     if ":" in ref:
         module_path, class_name = ref.split(":", 1)
@@ -201,9 +201,20 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
 
     if class_name is None:
         # Try Runner first, fall back to Predictor
-        if hasattr(module, "Runner"):
+        has_runner = hasattr(module, "Runner")
+        has_predictor = hasattr(module, "Predictor")
+        if has_runner and has_predictor:
+            import warnings
+
+            warnings.warn(
+                f"Module {module_path} defines both 'Runner' and 'Predictor'. "
+                "Using 'Runner'. Specify explicitly with 'module.py:ClassName' to override.",
+                stacklevel=2,
+            )
             class_name = "Runner"
-        elif hasattr(module, "Predictor"):
+        elif has_runner:
+            class_name = "Runner"
+        elif has_predictor:
             class_name = "Predictor"
         else:
             raise ImportError(
