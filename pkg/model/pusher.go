@@ -29,9 +29,9 @@ type PushOptions struct {
 	// Default: linux/amd64
 	Platform *Platform
 
-	// ImageProgressFn is an optional callback for reporting per-layer upload progress
-	// during OCI chunked image push. Each call includes the layer digest, bytes
-	// completed, and total bytes.
+	// ImageProgressFn is an optional callback for reporting push progress.
+	// It receives both phase transitions (Phase set, byte fields zero) and
+	// per-layer byte progress (Phase empty, Complete/Total set).
 	ImageProgressFn func(PushProgress)
 
 	// OnFallback is called when OCI push fails and the push is about to fall

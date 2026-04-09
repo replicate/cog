@@ -112,6 +112,10 @@ func (p *ImagePusher) canOCIPush() bool {
 func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePushOptions) error {
 	console.Debugf("Exporting image %s from Docker daemon...", imageRef)
 
+	if opt.progressFn != nil {
+		opt.progressFn(PushProgress{Phase: PushPhaseExporting})
+	}
+
 	ref, err := name.ParseReference(imageRef, name.Insecure)
 	if err != nil {
 		return fmt.Errorf("parse image reference %q: %w", imageRef, err)
@@ -129,8 +133,11 @@ func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePus
 	if err != nil {
 		return fmt.Errorf("create temp tar file: %w", err)
 	}
-	defer func() { _ = os.Remove(tmpTar.Name()) }() //nolint:gosec // G703: path from os.CreateTemp, not user input
-	defer tmpTar.Close()                            //nolint:errcheck
+
+	defer func() {
+		_ = tmpTar.Close()
+		_ = os.Remove(tmpTar.Name()) //nolint:gosec // G703: path from os.CreateTemp, not user input
+	}()
 
 	if _, err := io.Copy(tmpTar, rc); err != nil {
 		return fmt.Errorf("write image tar: %w", err)
@@ -149,6 +156,10 @@ func (p *ImagePusher) ociPush(ctx context.Context, imageRef string, opt imagePus
 	img, err := tarball.ImageFromPath(tmpTar.Name(), &tag)
 	if err != nil {
 		return fmt.Errorf("load image from tar: %w", err)
+	}
+
+	if opt.progressFn != nil {
+		opt.progressFn(PushProgress{Phase: PushPhasePushing})
 	}
 
 	return p.pushImage(ctx, imageRef, img, opt)

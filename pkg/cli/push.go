@@ -125,6 +125,18 @@ func push(cmd *cobra.Command, args []string) error {
 
 	pushErr := resolver.Push(ctx, m, model.PushOptions{
 		ImageProgressFn: func(prog model.PushProgress) {
+			// Phase transitions: use console.Info for pretty CLI formatting
+			if prog.Phase != "" {
+				switch prog.Phase {
+				case model.PushPhaseExporting:
+					console.Infof("Exporting image from Docker daemon...")
+				case model.PushPhasePushing:
+					console.Infof("Pushing layers...")
+				}
+				return
+			}
+
+			// Byte progress: show per-layer progress bars
 			// Truncate digest for display: "sha256:abc123..." → "abc123..."
 			displayDigest := prog.LayerDigest
 			if len(displayDigest) > 7+12 { // "sha256:" + 12 hex chars
