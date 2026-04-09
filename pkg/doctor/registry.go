@@ -9,7 +9,8 @@ func AllChecks() []Check {
 		&ConfigDeprecatedFieldsCheck{},
 		&ConfigPredictRefCheck{},
 
-		// Python checks (added in subsequent tasks)
+		// Python checks
+		&PydanticBaseModelCheck{},
 
 		// Environment checks (added in subsequent tasks)
 	}
