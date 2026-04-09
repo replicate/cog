@@ -13,6 +13,7 @@ func AllChecks() []Check {
 		&PydanticBaseModelCheck{},
 		&DeprecatedImportsCheck{},
 
-		// Environment checks (added in subsequent tasks)
+		// Environment checks
+		&DockerCheck{},
 	}
 }
