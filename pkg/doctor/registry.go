@@ -6,6 +6,7 @@ func AllChecks() []Check {
 	return []Check{
 		// Config checks
 		&ConfigParseCheck{},
+		&ConfigDeprecatedFieldsCheck{},
 
 		// Python checks (added in subsequent tasks)
 
