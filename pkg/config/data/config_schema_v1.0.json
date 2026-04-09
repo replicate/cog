@@ -165,6 +165,11 @@
       "type": "string",
       "description": "The pointer to the `Predictor` object in your code, which defines how predictions are run on your model."
     },
+    "run": {
+      "$id": "#/properties/run",
+      "type": "string",
+      "description": "The pointer to the `Runner` object in your code, which defines how predictions are run on your model."
+    },
     "train": {
       "$id": "#/properties/train",
       "type": "string",

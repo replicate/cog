@@ -816,3 +816,24 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 	require.Equal(t, "prerelease", conf.Build.SDKVersion)
 }
+
+func TestRunKeyResolvesToPredict(t *testing.T) {
+	config, err := FromYAML([]byte(`
+run: "run.py:Runner"
+build:
+  python_version: "3.12"
+`))
+	require.NoError(t, err)
+	require.Equal(t, "run.py:Runner", config.Predict)
+}
+
+func TestRunAndPredictConflict(t *testing.T) {
+	_, err := FromYAML([]byte(`
+run: "run.py:Runner"
+predict: "predict.py:Predictor"
+build:
+  python_version: "3.12"
+`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot set both 'run' and 'predict'")
+}

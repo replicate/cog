@@ -15,6 +15,7 @@ type configFile struct {
 	Build       *buildFile       `json:"build,omitempty" yaml:"build,omitempty"`
 	Image       *string          `json:"image,omitempty" yaml:"image,omitempty"`
 	Predict     *string          `json:"predict,omitempty" yaml:"predict,omitempty"`
+	Run         *string          `json:"run,omitempty" yaml:"run,omitempty"`
 	Train       *string          `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *concurrencyFile `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
 	Environment []string         `json:"environment,omitempty" yaml:"environment,omitempty"`

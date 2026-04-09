@@ -148,7 +148,13 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 	if cfg.Image != nil {
 		config.Image = *cfg.Image
 	}
-	if cfg.Predict != nil {
+	// Resolve run: vs predict: -- run: takes precedence, conflict is caught by validation
+	switch {
+	case cfg.Run != nil && cfg.Predict != nil:
+		return nil, fmt.Errorf("cannot set both 'run' and 'predict' in cog.yaml")
+	case cfg.Run != nil:
+		config.Predict = *cfg.Run
+	case cfg.Predict != nil:
 		config.Predict = *cfg.Predict
 	}
 	if cfg.Train != nil {

@@ -67,6 +67,7 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	}
 
 	// Semantic validation
+	validateRunPredictConflict(cfg, result)
 	validatePredict(cfg, result)
 	validateTrain(cfg, result)
 	validateBuild(cfg, options, result)
@@ -106,18 +107,41 @@ func validateSchema(cfg *configFile) error {
 	return nil
 }
 
-// validatePredict validates the predict field.
+// validateRunPredictConflict checks that run: and predict: are not both set.
+func validateRunPredictConflict(cfg *configFile, result *ValidationResult) {
+	if cfg.Run != nil && cfg.Predict != nil {
+		result.AddError(&ValidationError{
+			Field:   "run",
+			Message: "cannot set both 'run' and 'predict' in cog.yaml; use one or the other",
+		})
+	}
+}
+
+// validatePredict validates the predict/run field.
 func validatePredict(cfg *configFile, result *ValidationResult) {
-	if cfg.Predict == nil || *cfg.Predict == "" {
+	// Check whichever field is set (run: or predict:)
+	var predict string
+	var fieldName string
+	switch {
+	case cfg.Run != nil && *cfg.Run != "":
+		predict = *cfg.Run
+		fieldName = "run"
+	case cfg.Predict != nil && *cfg.Predict != "":
+		predict = *cfg.Predict
+		fieldName = "predict"
+	default:
 		return
 	}
 
-	predict := *cfg.Predict
 	if len(strings.Split(predict, ".py:")) != 2 {
+		example := "predict.py:Predictor"
+		if fieldName == "run" {
+			example = "run.py:Runner"
+		}
 		result.AddError(&ValidationError{
-			Field:   "predict",
+			Field:   fieldName,
 			Value:   predict,
-			Message: "must be in the form 'predict.py:Predictor'",
+			Message: fmt.Sprintf("must be in the form '%s'", example),
 		})
 	}
 }
