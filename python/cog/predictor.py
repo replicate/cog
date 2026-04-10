@@ -152,9 +152,13 @@ def load_predictor_from_ref(ref: str) -> Any:
     spec.loader.exec_module(module)
 
     if class_name is None:
-        # Try Runner first, fall back to Predictor
-        has_runner = hasattr(module, "Runner")
-        has_predictor = hasattr(module, "Predictor")
+        # Try Runner first, fall back to Predictor (only match actual classes)
+        has_runner = hasattr(module, "Runner") and inspect.isclass(
+            getattr(module, "Runner")
+        )
+        has_predictor = hasattr(module, "Predictor") and inspect.isclass(
+            getattr(module, "Predictor")
+        )
         if has_runner and has_predictor:
             import warnings
 

@@ -434,8 +434,8 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
     if inspect.isclass(p):
         # Detect which method the user's class defines.
         # Walk the MRO to support multi-level inheritance, but skip the
-        # base stub classes (BasePredictor/BaseRunner) whose methods raise
-        # NotImplementedError.
+        # base stub classes whose methods raise NotImplementedError.
+        # Note: BasePredictor is BaseRunner (alias), so the set has 2 elements.
         from .predictor import BasePredictor, BaseRunner
 
         _base_stubs = {BasePredictor, BaseRunner, object}

@@ -148,10 +148,11 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 	if cfg.Image != nil {
 		config.Image = *cfg.Image
 	}
-	// Resolve run: vs predict: -- run: takes precedence, conflict is caught by validation
+	// Resolve run: vs predict: -- conflict is caught by validation, but guard here too
+	// for the FromYAML path which skips validation.
 	switch {
 	case cfg.Run != nil && cfg.Predict != nil:
-		return nil, fmt.Errorf("cannot set both 'run' and 'predict' in cog.yaml")
+		return nil, fmt.Errorf("cannot set both 'run' and 'predict' in cog.yaml; use one or the other")
 	case cfg.Run != nil:
 		config.Predict = *cfg.Run
 	case cfg.Predict != nil:

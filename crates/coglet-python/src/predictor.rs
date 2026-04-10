@@ -339,10 +339,14 @@ impl PythonPredictor {
                 tracing::info!("Detected sync train()");
                 PredictKind::Sync
             };
+            // Standalone functions don't use predict_method_name (dispatched
+            // directly via PredictorKind::StandaloneFunction match arms).
             (PredictorKind::StandaloneFunction(predict_kind), "")
         } else {
             // Class instance - detect run() vs predict() method
-            // Walk MRO to support multi-level inheritance, skipping base stub classes
+            // Walk MRO to support multi-level inheritance, skipping base stub classes.
+            // Note: BasePredictor is an alias for BaseRunner in Python, so these
+            // resolve to the same object. We check both for clarity.
             let instance_bound = instance.bind(py);
             let cls = instance_bound.getattr("__class__")?;
             let mro = cls.getattr("__mro__")?;

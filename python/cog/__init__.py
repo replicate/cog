@@ -1,22 +1,25 @@
 """
 Cog SDK: Define machine learning models with standard Python.
 
-This package provides the core types and classes for building Cog predictors.
+This package provides the core types and classes for building Cog runners.
 
 Example:
-    from cog import BasePredictor, Input, Path
+    from cog import BaseRunner, Input, Path
 
-    class Predictor(BasePredictor):
+    class Runner(BaseRunner):
         def setup(self):
             # Load model weights
             self.model = load_model()
 
-        def predict(
+        def run(
             self,
             prompt: str = Input(description="Input prompt"),
             image: Path = Input(description="Input image"),
         ) -> str:
             return self.model.generate(prompt, image)
+
+``BasePredictor`` and ``predict()`` are supported as backwards-compatible
+aliases for ``BaseRunner`` and ``run()``.
 """
 
 import sys as _sys
