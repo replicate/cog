@@ -15,7 +15,7 @@ stdout '"output": ""'
 
 # Verify the schema has the correct type for dict input
 exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
-stdout '"data":{"x-order":0,"title":"Data","type":"object"}'
+stdout '"data":{"title":"Data","type":"object","x-order":0}'
 stdout '"required":\["data"\]'
 
 -- cog.yaml --

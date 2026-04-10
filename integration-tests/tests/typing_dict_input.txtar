@@ -11,8 +11,8 @@ stdout '"output": "data=1 items=2"'
 
 # Verify the schema has correct types for both inputs
 exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
-stdout '"data":{"x-order":0,"title":"Data","type":"object"}'
-stdout '"items":{"x-order":1,"title":"Items","items":{"type":"object"},"type":"array"}'
+stdout '"data":{"title":"Data","type":"object","x-order":0}'
+stdout '"items":{"items":{"type":"object"},"title":"Items","type":"array","x-order":1}'
 
 -- cog.yaml --
 build:

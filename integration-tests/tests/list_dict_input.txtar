@@ -15,7 +15,7 @@ stdout '"output": ""'
 
 # Verify the schema has array-of-objects type for list[dict] input
 exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
-stdout '"messages":{"x-order":0,"title":"Messages","items":{"type":"object"},"type":"array"}'
+stdout '"messages":{"items":{"type":"object"},"title":"Messages","type":"array","x-order":0}'
 stdout '"required":\["messages"\]'
 
 -- cog.yaml --
