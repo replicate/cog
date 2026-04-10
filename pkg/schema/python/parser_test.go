@@ -2598,3 +2598,206 @@ func indexOf(s, substr string) int {
 	}
 	return -1
 }
+
+// ---------------------------------------------------------------------------
+// dict input types
+// ---------------------------------------------------------------------------
+
+func TestBareDictInput(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: dict) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+}
+
+func TestDictStrAnyInput(t *testing.T) {
+	source := `
+from typing import Dict, Any
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: Dict[str, Any]) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+}
+
+func TestListOfDictInput(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[dict]) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, messages.FieldType.Repetition)
+}
+
+func TestListOfTypingDictInput(t *testing.T) {
+	source := `
+from typing import List, Dict, Any
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: List[Dict[str, Any]]) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, messages.FieldType.Repetition)
+}
+
+func TestOptionalDictInput(t *testing.T) {
+	source := `
+from typing import Optional
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: Optional[dict] = None) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Optional, data.FieldType.Repetition)
+}
+
+func TestOptionalListOfDictInput(t *testing.T) {
+	source := `
+from typing import Optional
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: Optional[list[dict]] = None) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, messages.FieldType.Repetition)
+}
+
+func TestDictInputJSONSchema(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[dict]) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+
+	jt := messages.FieldType.JSONType()
+	require.Equal(t, "array", jt["type"])
+	items, ok := jt["items"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "object", items["type"])
+}
+
+func TestPEP604DictOrNoneInput(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: dict | None = None) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Optional, data.FieldType.Repetition)
+}
+
+func TestPEP604ListDictOrNoneInput(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[dict] | None = None) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, messages.FieldType.Repetition)
+}
+
+func TestDictStrIntInputTypeErasure(t *testing.T) {
+	// dict[str, int] should be accepted as TypeAny — type parameters are
+	// intentionally discarded because FieldType is a flat model (no recursive
+	// structure). The output path uses SchemaType which can represent typed
+	// dicts precisely, but inputs are always opaque JSON objects.
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: dict[str, int]) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+}
+
+func TestDictInputWithDefault(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: dict = {}) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+	require.NotNil(t, data.Default)
+	require.Equal(t, schema.DefaultDict, data.Default.Kind)
+	require.False(t, data.IsRequired())
+}
+
+func TestListDictInputWithDefault(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[dict] = []) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, messages.FieldType.Repetition)
+	require.NotNil(t, messages.Default)
+	require.Equal(t, schema.DefaultList, messages.Default.Kind)
+	require.Empty(t, messages.Default.List)
+	require.False(t, messages.IsRequired())
+}

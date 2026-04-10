@@ -1,0 +1,34 @@
+# Test typing.Dict[str, Any] and List[Dict[str, Any]] as predict input types
+# Verifies the typing-module variants work (not just bare dict/list[dict])
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Dict[str, Any] input works
+cog predict $TEST_IMAGE --json '{"data": {"name": "alice"}, "items": [{"id": 1}, {"id": 2}]}'
+stdout '"status": "succeeded"'
+stdout '"output": "data=1 items=2"'
+
+# Verify the schema has correct types for both inputs
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout '"data":{"title":"Data","type":"object","x-order":0}'
+stdout '"items":{"items":{"type":"object"},"title":"Items","type":"array","x-order":1}'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import Any, Dict, List
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        data: Dict[str, Any],
+        items: List[Dict[str, Any]],
+    ) -> str:
+        return f"data={len(data)} items={len(items)}"
