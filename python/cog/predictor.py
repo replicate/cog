@@ -1,8 +1,9 @@
 """
-Cog SDK BasePredictor definition.
+Cog SDK base class definitions.
 
-This module provides the BasePredictor class that users subclass to define
-their model's prediction interface.
+This module provides BaseRunner (the primary base class) and BasePredictor
+(a backwards-compatible alias). Users subclass one of these to define their
+model's prediction interface.
 """
 
 import importlib
@@ -15,24 +16,28 @@ from typing import Any, Optional, Union
 from .types import Path
 
 
-class BasePredictor:
+class BaseRunner:
     """
-    Base class for Cog predictors.
+    Base class for Cog runners.
 
     Subclass this to define your model's prediction interface. Override
-    the `setup` method to load your model, and the `predict` method to
+    the ``setup`` method to load your model, and the ``run`` method to
     run predictions.
 
-    Example:
-        from cog import BasePredictor, Input, Path
+    Example::
 
-        class Predictor(BasePredictor):
+        from cog import BaseRunner, Input, Path
+
+        class Runner(BaseRunner):
             def setup(self):
                 self.model = load_model()
 
-            def predict(self, prompt: str = Input(description="Input text")) -> str:
+            def run(self, prompt: str = Input(description="Input text")) -> str:
                 self.record_metric("temperature", 0.7)
                 return self.model.generate(prompt)
+
+    For backwards compatibility, ``BasePredictor`` is an alias for this class
+    and overriding ``predict()`` instead of ``run()`` is supported.
     """
 
     def setup(
@@ -50,7 +55,7 @@ class BasePredictor:
         """
         pass
 
-    def predict(self, **kwargs: Any) -> Any:
+    def run(self, **kwargs: Any) -> Any:
         """
         Run a single prediction.
 
@@ -65,9 +70,18 @@ class BasePredictor:
             The prediction output.
 
         Raises:
-            NotImplementedError: If predict is not implemented.
+            NotImplementedError: If run is not implemented by subclass.
         """
-        raise NotImplementedError("predict has not been implemented by parent class.")
+        raise NotImplementedError("run has not been implemented by subclass.")
+
+    def predict(self, **kwargs: Any) -> Any:
+        """Backwards-compatible bridge: calls ``run()``.
+
+        Override ``run()`` instead of this method for new code.  Existing
+        subclasses that override ``predict()`` will continue to work because
+        the runtime detects which method was overridden and calls it directly.
+        """
+        return self.run(**kwargs)
 
     @property
     def scope(self) -> Any:
@@ -106,8 +120,8 @@ class BasePredictor:
 
         Example::
 
-            class Predictor(BasePredictor):
-                def predict(self, prompt: str) -> str:
+            class Runner(BaseRunner):
+                def run(self, prompt: str) -> str:
                     self.record_metric("temperature", 0.7)
                     self.record_metric("token_count", 1, mode="incr")
                     return self.model.generate(prompt)
@@ -115,70 +129,8 @@ class BasePredictor:
         self.scope.record_metric(key, value, mode=mode)
 
 
-class BaseRunner:
-    """
-    Base class for Cog runners.
-
-    Subclass this to define your model's prediction interface. Override
-    the `setup` method to load your model, and the `run` method to
-    run predictions.
-
-    Example:
-        from cog import BaseRunner, Input, Path
-
-        class Runner(BaseRunner):
-            def setup(self):
-                self.model = load_model()
-
-            def run(self, prompt: str = Input(description="Input text")) -> str:
-                self.record_metric("temperature", 0.7)
-                return self.model.generate(prompt)
-    """
-
-    def setup(
-        self,
-        weights: Optional[Union[Path, str]] = None,
-    ) -> None:
-        """
-        Prepare the model for predictions.
-
-        This method is called once when the runner is initialized. Use it
-        to load model weights and do any other one-time setup.
-
-        Args:
-            weights: Optional path to model weights. Can be a local path or URL.
-        """
-        pass
-
-    def run(self, **kwargs: Any) -> Any:
-        """
-        Run a single prediction.
-
-        Override this method to implement your model's prediction logic.
-        Input parameters should be annotated with types and optionally
-        use Input() for additional metadata.
-
-        Args:
-            **kwargs: Prediction inputs as defined by the method signature.
-
-        Returns:
-            The prediction output.
-
-        Raises:
-            NotImplementedError: If run is not implemented by subclass.
-        """
-        raise NotImplementedError("run has not been implemented by subclass.")
-
-    @property
-    def scope(self) -> Any:
-        """The current prediction scope."""
-        import coglet
-
-        return coglet._sdk.current_scope()  # type: ignore[attr-defined]
-
-    def record_metric(self, key: str, value: Any, mode: str = "replace") -> None:
-        """Record a prediction metric. See BasePredictor.record_metric for details."""
-        self.scope.record_metric(key, value, mode=mode)
+# Backwards-compatible alias
+BasePredictor = BaseRunner
 
 
 def load_predictor_from_ref(ref: str) -> Any:
