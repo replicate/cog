@@ -1,0 +1,12 @@
+# Test backwards compat: cog run with 2+ args forwards to exec
+# When cog run is called with 2+ arguments, it should forward
+# to exec with a deprecation warning.
+
+cog run echo hello world
+stderr 'deprecated'
+stderr 'cog exec'
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"

@@ -1,4 +1,4 @@
-# Test that custom metrics appear in `cog predict --json` output.
+# Test that custom metrics appear in `cog run --json` output.
 #
 # This verifies the full end-to-end path: Python record_metric() ->
 # coglet HTTP response -> Go CLI JSON deserialization -> JSON output.
@@ -7,7 +7,7 @@
 # field, so custom metrics were silently dropped during JSON decoding.
 
 cog build -t $TEST_IMAGE
-cog predict $TEST_IMAGE --json '{"prompt": "hello"}'
+cog run $TEST_IMAGE --json '{"prompt": "hello"}'
 stdout '"status": "succeeded"'
 stdout '"token_count": 10'
 stdout '"temperature": 0.7'
@@ -16,14 +16,14 @@ stdout '"predict_time"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, current_scope
+-- run.py --
+from cog import BaseRunner, current_scope
 
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str = "hello") -> str:
+class Runner(BaseRunner):
+    def run(self, prompt: str = "hello") -> str:
         scope = current_scope()
         scope.record_metric("token_count", 10)
         scope.record_metric("temperature", 0.7)

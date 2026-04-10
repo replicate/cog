@@ -176,5 +176,38 @@ func TestValidateConfigFileNilBuildSkipsPythonVersionCheck(t *testing.T) {
 	require.False(t, result.HasErrors(), "expected no errors for nil build, got: %v", result.Errors)
 }
 
+func TestValidateConfigFileRunFormat(t *testing.T) {
+	// Valid run format
+	cfg := &configFile{
+		Build: &buildFile{
+			PythonVersion: ptr("3.12"),
+		},
+		Run: ptr("run.py:Runner"),
+	}
+
+	result := ValidateConfigFile(cfg)
+	require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
+
+	// Invalid run format
+	cfg.Run = ptr("invalid_format")
+	result = ValidateConfigFile(cfg)
+	require.True(t, result.HasErrors())
+	require.Contains(t, result.Err().Error(), "run.py:Runner")
+}
+
+func TestValidateConfigFileRunAndPredictConflict(t *testing.T) {
+	cfg := &configFile{
+		Build: &buildFile{
+			PythonVersion: ptr("3.12"),
+		},
+		Run:     ptr("run.py:Runner"),
+		Predict: ptr("predict.py:Predictor"),
+	}
+
+	result := ValidateConfigFile(cfg)
+	require.True(t, result.HasErrors())
+	require.Contains(t, result.Err().Error(), "cannot set both 'run' and 'predict'")
+}
+
 // ptr returns a pointer to the given value.
 func ptr[T any](v T) *T { return &v }

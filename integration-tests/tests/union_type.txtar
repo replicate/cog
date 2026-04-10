@@ -3,24 +3,24 @@
 # Build the image
 cog build -t $TEST_IMAGE
 
-# Predict with input
-cog predict $TEST_IMAGE -i text=world
+# Run with input
+cog run $TEST_IMAGE -i text=world
 stdout 'hello world'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, Input
+-- run.py --
+from cog import BaseRunner, Input
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         self.prefix = "hello"
 
-    def predict(
+    def run(
         self,
         text: str | None = Input(
             description="Text to prefix with 'hello '", default=None

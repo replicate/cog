@@ -1,0 +1,22 @@
+# Test backwards compat: predict: key in cog.yaml with Runner/run()
+# The predict: key is a deprecated alias for run: in cog.yaml.
+# It should still work with the new Runner/run() class style.
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Basic prediction works
+cog run $TEST_IMAGE -i name=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "run.py:Runner"
+
+-- run.py --
+from cog import BaseRunner, Input
+
+class Runner(BaseRunner):
+    def run(self, name: str = Input(description="Name")) -> str:
+        return f"hello {name}"

@@ -39,14 +39,14 @@ stdout '"status":"READY"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import time
-from cog import BasePredictor
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, sleep_time: int) -> str:
+class Runner(BaseRunner):
+    def run(self, sleep_time: int) -> str:
         """Sleep for specified seconds."""
         time.sleep(sleep_time)
         return f"slept for {sleep_time} seconds"

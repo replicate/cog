@@ -9,14 +9,14 @@ build:
   gpu: true
   python_version: "3.12"
   python_requirements: requirements.txt
-predict: predict.py:Predictor
+run: run.py:Runner
 
 -- requirements.txt --
 torch
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, text: str) -> str:
+class Runner(BaseRunner):
+    def run(self, text: str) -> str:
         return text

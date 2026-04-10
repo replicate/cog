@@ -2,7 +2,7 @@
 # OpenAPI schema that is embedded in the Docker image label and served by coglet.
 #
 # This exercises the full pipeline:
-#   1. cog build runs the Go parser on predict.py
+#   1. cog build runs the Go parser on run.py
 #   2. Schema is written to .cog/openapi_schema.json inside the image
 #   3. Schema is embedded as the run.cog.openapi_schema Docker label
 #   4. coglet loads the schema from disk and serves it at /openapi.json
@@ -40,25 +40,25 @@ stdout '"required":\["text","image"\]'
 # Output type
 stdout '"type":"string"'
 
-# Predict should work end-to-end
-cog predict $TEST_IMAGE -i text=hello -i image=@test.jpg
+# Run should work end-to-end
+cog run $TEST_IMAGE -i text=hello -i image=@test.jpg
 stdout 'hello-5-fast-jpg'
 
 # Prediction with overrides
-cog predict $TEST_IMAGE -i text=world -i count=3 -i mode=quality -i image=@test.jpg
+cog run $TEST_IMAGE -i text=world -i count=3 -i mode=quality -i image=@test.jpg
 stdout 'world-3-quality-jpg'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, Input, Path
+-- run.py --
+from cog import BaseRunner, Input, Path
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self,
         text: str,
         image: Path,

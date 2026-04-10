@@ -1,0 +1,22 @@
+# Test backwards compat: BasePredictor class with run() method
+# A user using the old BasePredictor class but defining run()
+# instead of predict() should still work (BasePredictor is an alias).
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Basic prediction works
+cog run $TEST_IMAGE -i name=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+run: "run.py:MyModel"
+
+-- run.py --
+from cog import BasePredictor, Input
+
+class MyModel(BasePredictor):
+    def run(self, name: str = Input(description="Name")) -> str:
+        return f"hello {name}"

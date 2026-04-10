@@ -16,16 +16,16 @@ stdout 'user-defined healthcheck returned False'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self) -> None:
         self._healthcheck_calls = 0
 
-    def predict(self, text: str) -> str:
+    def run(self, text: str) -> str:
         return f"hello {text}"
     
     def healthcheck(self) -> bool:

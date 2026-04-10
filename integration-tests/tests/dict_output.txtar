@@ -1,22 +1,22 @@
-# Test bare dict return type works for predict output
+# Test bare dict return type works for run output
 
 # Build the image
 cog build -t $TEST_IMAGE
 
-# Predict returns a dict
-cog predict $TEST_IMAGE -i name=alice
+# Run returns a dict
+cog run $TEST_IMAGE -i name=alice
 stdout '"greeting": "hello alice"'
 stdout '"length": 5'
 
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, name: str) -> dict:
+class Runner(BaseRunner):
+    def run(self, name: str) -> dict:
         return {"greeting": "hello " + name, "length": len(name)}

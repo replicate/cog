@@ -15,11 +15,11 @@ exec docker rmi cog-test-image-option
 image: cog-test-image-option
 build:
   python_version: "3.12"
-predict: predict.py:Predictor
+run: run.py:Runner
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, text: str) -> str:
+class Runner(BaseRunner):
+    def run(self, text: str) -> str:
         return text

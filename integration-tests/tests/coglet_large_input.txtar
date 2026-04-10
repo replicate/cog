@@ -4,7 +4,7 @@
 # frame limit and break the bridge.
 #
 # Strategy: generate a JSON file with a 7 MiB padding string on the host,
-# then POST it via the harness curl @file syntax. The predictor echoes
+# then POST it via the harness curl @file syntax. The runner echoes
 # back len(padding) to prove the full input survived the spill-rehydrate
 # round-trip.
 #
@@ -33,12 +33,12 @@ stdout '"output_size":7'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, padding: str = "") -> str:
+class Runner(BaseRunner):
+    def run(self, padding: str = "") -> str:
         return str(len(padding))

@@ -8,14 +8,14 @@
 
 cog build -t $TEST_IMAGE
 
-# --- Test via cog predict (CLI) ---
+# --- Test via cog run (CLI) ---
 
 # A URL passed to a str | None input should be returned verbatim.
-cog predict $TEST_IMAGE -i url=https://api.example.com/v1/resource
+cog run $TEST_IMAGE -i url=https://api.example.com/v1/resource
 stdout 'type=str value=https://api.example.com/v1/resource'
 
 # None default should also work.
-cog predict $TEST_IMAGE
+cog run $TEST_IMAGE
 stdout 'type=NoneType value=none'
 
 # --- Test via cog serve (HTTP API) ---
@@ -35,14 +35,14 @@ stdout 'type=NoneType value=none'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, Input
+-- run.py --
+from cog import BaseRunner, Input
 
 
-class Predictor(BasePredictor):
-    def predict(self, url: str | None = Input(default=None)) -> str:
+class Runner(BaseRunner):
+    def run(self, url: str | None = Input(default=None)) -> str:
         if url is None:
             return "type=NoneType value=none"
         return f"type={type(url).__name__} value={url}"

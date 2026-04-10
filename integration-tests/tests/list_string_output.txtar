@@ -1,10 +1,10 @@
-# Test list[str] as predict output type
+# Test list[str] as run output type
 
 # Build the image
 cog build -t $TEST_IMAGE
 
 # List output returns items
-cog predict $TEST_IMAGE -i text='hello world foo'
+cog run $TEST_IMAGE -i text='hello world foo'
 stdout 'hello'
 stdout 'world'
 stdout 'foo'
@@ -12,12 +12,12 @@ stdout 'foo'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, text: str) -> list[str]:
+class Runner(BaseRunner):
+    def run(self, text: str) -> list[str]:
         return text.split()

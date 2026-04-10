@@ -3,8 +3,8 @@
 # Build the image (the run command verifies ffmpeg is installed)
 cog build -t $TEST_IMAGE
 
-# Verify the predictor works
-cog predict $TEST_IMAGE -i s=world
+# Verify the runner works
+cog run $TEST_IMAGE -i s=world
 stdout 'hello world'
 
 -- cog.yaml --
@@ -16,12 +16,12 @@ build:
   cuda: "12.4"
   run:
     - command: ffmpeg --help
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, s: str) -> str:
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
         return "hello " + s

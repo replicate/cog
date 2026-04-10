@@ -1,8 +1,8 @@
 # Regression test for https://github.com/replicate/cog/issues/2868
 #
-# When a predictor declares a `list[str]`-typed input and the caller passes
+# When a runner declares a `list[str]`-typed input and the caller passes
 # URL strings, coglet should NOT coerce them into cog.Path or cog.File
-# objects. The predictor should receive a plain list of strings.
+# objects. The runner should receive a plain list of strings.
 
 cog build -t $TEST_IMAGE
 
@@ -16,15 +16,15 @@ stdout 'types=str,str'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 from typing import List
 
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, urls: List[str]) -> str:
+class Runner(BaseRunner):
+    def run(self, urls: List[str]) -> str:
         types = ",".join(type(u).__name__ for u in urls)
         return f"types={types}"

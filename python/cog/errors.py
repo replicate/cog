@@ -7,4 +7,4 @@ class ConfigDoesNotExist(CogError):
 
 
 class PredictorNotSet(CogError):
-    """Exception raised when 'predict' is not set in cog.yaml when it needs to be."""
+    """Exception raised when 'run' (or 'predict') is not set in cog.yaml when it needs to be."""

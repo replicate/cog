@@ -432,13 +432,36 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
     p = getattr(module, predictor_name)
 
     if inspect.isclass(p):
-        if not hasattr(p, "predict"):
-            raise ValueError(f"predict method not found: {fullname}")
+        # Detect which method the user's class defines.
+        # Walk the MRO to support multi-level inheritance, but skip the
+        # base stub classes whose methods raise NotImplementedError.
+        # Note: BasePredictor is BaseRunner (alias), so the set has 2 elements.
+        from .predictor import BasePredictor, BaseRunner
+
+        _base_stubs = {BasePredictor, BaseRunner, object}
+
+        has_run = any(
+            "run" in klass.__dict__ for klass in p.__mro__ if klass not in _base_stubs
+        )
+        has_predict = any(
+            "predict" in klass.__dict__
+            for klass in p.__mro__
+            if klass not in _base_stubs
+        )
+
+        if has_run and has_predict:
+            raise ValueError(f"define either run() or predict(), not both: {fullname}")
+
+        if has_run:
+            predict_fn_name = "run"
+        elif has_predict:
+            predict_fn_name = "predict"
+        else:
+            raise ValueError(f"run() or predict() method not found: {fullname}")
 
         if hasattr(p, "setup"):
             _validate_setup(_unwrap(p.setup))
 
-        predict_fn_name = "predict"
         predict_fn = _unwrap(getattr(p, predict_fn_name))
         is_class_fn = True
 

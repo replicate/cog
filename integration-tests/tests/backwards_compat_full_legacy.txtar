@@ -1,0 +1,22 @@
+# Test backwards compat: fully legacy setup
+# Both the predict: key in cog.yaml and BasePredictor/predict()
+# class style should still work together.
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Basic prediction works
+cog run $TEST_IMAGE -i name=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input
+
+class Predictor(BasePredictor):
+    def predict(self, name: str = Input(description="Name")) -> str:
+        return f"hello {name}"

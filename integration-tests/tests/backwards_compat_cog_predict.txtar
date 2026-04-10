@@ -1,0 +1,24 @@
+# Test backwards compat: cog predict CLI command
+# "cog predict" is a deprecated alias for "cog run" and should
+# show a deprecation warning while still producing correct output.
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# cog predict should work but emit a deprecation warning
+cog predict $TEST_IMAGE -i name=world
+stderr 'deprecated'
+stderr 'cog run'
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+run: "run.py:Runner"
+
+-- run.py --
+from cog import BaseRunner, Input
+
+class Runner(BaseRunner):
+    def run(self, name: str = Input(description="Name")) -> str:
+        return f"hello {name}"

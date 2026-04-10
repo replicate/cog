@@ -23,7 +23,8 @@ class TestBasePredictor:
             predictor.predict()
             assert False, "Should have raised NotImplementedError"
         except NotImplementedError as e:
-            assert "predict has not been implemented" in str(e)
+            # predict() bridges to run(), which raises NotImplementedError
+            assert "run has not been implemented" in str(e)
 
     def test_setup_is_optional(self) -> None:
         class MyPredictor(BasePredictor):

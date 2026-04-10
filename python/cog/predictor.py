@@ -1,8 +1,9 @@
 """
-Cog SDK BasePredictor definition.
+Cog SDK base class definitions.
 
-This module provides the BasePredictor class that users subclass to define
-their model's prediction interface.
+This module provides BaseRunner (the primary base class) and BasePredictor
+(a backwards-compatible alias). Users subclass one of these to define their
+model's prediction interface.
 """
 
 import importlib
@@ -15,24 +16,28 @@ from typing import Any, Optional, Union
 from .types import Path
 
 
-class BasePredictor:
+class BaseRunner:
     """
-    Base class for Cog predictors.
+    Base class for Cog runners.
 
     Subclass this to define your model's prediction interface. Override
-    the `setup` method to load your model, and the `predict` method to
+    the ``setup`` method to load your model, and the ``run`` method to
     run predictions.
 
-    Example:
-        from cog import BasePredictor, Input, Path
+    Example::
 
-        class Predictor(BasePredictor):
+        from cog import BaseRunner, Input, Path
+
+        class Runner(BaseRunner):
             def setup(self):
                 self.model = load_model()
 
-            def predict(self, prompt: str = Input(description="Input text")) -> str:
+            def run(self, prompt: str = Input(description="Input text")) -> str:
                 self.record_metric("temperature", 0.7)
                 return self.model.generate(prompt)
+
+    For backwards compatibility, ``BasePredictor`` is an alias for this class
+    and overriding ``predict()`` instead of ``run()`` is supported.
     """
 
     def setup(
@@ -50,7 +55,7 @@ class BasePredictor:
         """
         pass
 
-    def predict(self, **kwargs: Any) -> Any:
+    def run(self, **kwargs: Any) -> Any:
         """
         Run a single prediction.
 
@@ -65,9 +70,18 @@ class BasePredictor:
             The prediction output.
 
         Raises:
-            NotImplementedError: If predict is not implemented.
+            NotImplementedError: If run is not implemented by subclass.
         """
-        raise NotImplementedError("predict has not been implemented by parent class.")
+        raise NotImplementedError("run has not been implemented by subclass.")
+
+    def predict(self, **kwargs: Any) -> Any:
+        """Backwards-compatible bridge: calls ``run()``.
+
+        Override ``run()`` instead of this method for new code.  Existing
+        subclasses that override ``predict()`` will continue to work because
+        the runtime detects which method was overridden and calls it directly.
+        """
+        return self.run(**kwargs)
 
     @property
     def scope(self) -> Any:
@@ -106,8 +120,8 @@ class BasePredictor:
 
         Example::
 
-            class Predictor(BasePredictor):
-                def predict(self, prompt: str) -> str:
+            class Runner(BaseRunner):
+                def run(self, prompt: str) -> str:
                     self.record_metric("temperature", 0.7)
                     self.record_metric("token_count", 1, mode="incr")
                     return self.model.generate(prompt)
@@ -115,9 +129,17 @@ class BasePredictor:
         self.scope.record_metric(key, value, mode=mode)
 
 
-def load_predictor_from_ref(ref: str) -> BasePredictor:
-    """Load a predictor from a module:class reference (e.g. 'predict.py:Predictor')."""
-    module_path, class_name = ref.split(":", 1) if ":" in ref else (ref, "Predictor")
+# Backwards-compatible alias
+BasePredictor = BaseRunner
+
+
+def load_predictor_from_ref(ref: str) -> Any:
+    """Load a predictor from a module:class reference (e.g. 'run.py:Runner')."""
+    if ":" in ref:
+        module_path, class_name = ref.split(":", 1)
+    else:
+        module_path = ref
+        class_name = None  # Will try Runner, then Predictor
     module_name = os.path.basename(module_path).replace(".py", "")
 
     # Use spec_from_file_location to load from file path
@@ -128,6 +150,32 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     # Add module to sys.modules so pickle can find it
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
+
+    if class_name is None:
+        # Try Runner first, fall back to Predictor (only match actual classes)
+        has_runner = hasattr(module, "Runner") and inspect.isclass(
+            getattr(module, "Runner")
+        )
+        has_predictor = hasattr(module, "Predictor") and inspect.isclass(
+            getattr(module, "Predictor")
+        )
+        if has_runner and has_predictor:
+            import warnings
+
+            warnings.warn(
+                f"Module {module_path} defines both 'Runner' and 'Predictor'. "
+                "Using 'Runner'. Specify explicitly with 'module.py:ClassName' to override.",
+                stacklevel=2,
+            )
+            class_name = "Runner"
+        elif has_runner:
+            class_name = "Runner"
+        elif has_predictor:
+            class_name = "Predictor"
+        else:
+            raise ImportError(
+                f"Cannot find 'Runner' or 'Predictor' class in {module_path}"
+            )
 
     predictor = getattr(module, class_name)
     # It could be a class or a function (for training)

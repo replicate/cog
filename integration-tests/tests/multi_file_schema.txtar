@@ -1,6 +1,6 @@
 # Test that schema generation works when the output type is defined in a
 # separate Python module. This exercises the cross-file model resolution:
-# the predictor imports Output from output_types.py, and the static Go parser
+# the runner imports Output from output_types.py, and the static Go parser
 # finds and parses output_types.py to resolve the BaseModel fields.
 #
 # Covers:
@@ -27,8 +27,8 @@ stdout '"tags":'
 stdout '"prompt":'
 stdout '"required":\["prompt"\]'
 
-# Predict should work end-to-end
-cog predict $TEST_IMAGE -i prompt=hello
+# Run should work end-to-end
+cog run $TEST_IMAGE -i prompt=hello
 stdout '"text": "hello"'
 stdout '"score": 1'
 stdout '"tags"'
@@ -38,7 +38,7 @@ build:
   python_version: "3.12"
   python_packages:
     - "pydantic>2"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
 -- output_types.py --
 from pydantic import BaseModel
@@ -49,11 +49,11 @@ class Output(BaseModel):
     score: float
     tags: list[str]
 
--- predict.py --
-from cog import BasePredictor
+-- run.py --
+from cog import BaseRunner
 from output_types import Output
 
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> Output:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Output:
         return Output(text=prompt, score=1.0, tags=["default"])

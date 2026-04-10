@@ -44,11 +44,11 @@ func TestConcurrentPredictions(t *testing.T) {
 	require.NoError(t, err, "failed to create temp dir")
 	defer os.RemoveAll(tmpDir)
 
-	// Write the async-sleep predictor fixture
+	// Write the async-sleep runner fixture
 	err = os.WriteFile(filepath.Join(tmpDir, "cog.yaml"), []byte(cogYAML), 0o644)
 	require.NoError(t, err, "failed to write cog.yaml")
-	err = os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte(predictPy), 0o644)
-	require.NoError(t, err, "failed to write predict.py")
+	err = os.WriteFile(filepath.Join(tmpDir, "run.py"), []byte(runPy), 0o644)
+	require.NoError(t, err, "failed to write run.py")
 
 	// Get the cog binary
 	cogBinary, err := harness.ResolveCogBinary()
@@ -258,17 +258,17 @@ func allocatePort() (int, error) {
 
 const cogYAML = `build:
   python_version: "3.11"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 concurrency:
   max: 5
 `
 
-const predictPy = `import asyncio
-from cog import BasePredictor
+const runPy = `import asyncio
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    async def predict(self, s: str, sleep: float) -> str:
+class Runner(BaseRunner):
+    async def run(self, s: str, sleep: float) -> str:
         await asyncio.sleep(sleep)
         return f"wake up {s}"
 `
@@ -286,8 +286,8 @@ func TestConcurrentAboveLimit(t *testing.T) {
 
 	err = os.WriteFile(filepath.Join(tmpDir, "cog.yaml"), []byte(aboveLimitCogYAML), 0o644)
 	require.NoError(t, err, "failed to write cog.yaml")
-	err = os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte(predictPy), 0o644)
-	require.NoError(t, err, "failed to write predict.py")
+	err = os.WriteFile(filepath.Join(tmpDir, "run.py"), []byte(runPy), 0o644)
+	require.NoError(t, err, "failed to write run.py")
 
 	cogBinary, err := harness.ResolveCogBinary()
 	require.NoError(t, err, "failed to resolve cog binary")
@@ -373,17 +373,17 @@ func TestConcurrentAboveLimit(t *testing.T) {
 
 const aboveLimitCogYAML = `build:
   python_version: "3.11"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 concurrency:
   max: 2
 `
 
 // TestConcurrentAsyncMetrics tests that metrics recorded via current_scope().record_metric()
-// in async predict functions are correctly routed to each prediction's response when
+// in async run functions are correctly routed to each prediction's response when
 // running with concurrency > 1.
 //
 // This reproduces https://github.com/replicate/cog/issues/2901:
-// The metric scope ContextVar is set on the worker thread but async predict coroutines
+// The metric scope ContextVar is set on the worker thread but async run coroutines
 // run on a shared event loop thread where the ContextVar is not propagated. Under
 // concurrency > 1, metrics are either silently dropped (noop scope) or attributed to
 // the wrong prediction (SYNC_SCOPE race).
@@ -398,16 +398,16 @@ func TestConcurrentAsyncMetrics(t *testing.T) {
 
 	metricsCogYAML := `build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 concurrency:
   max: 5
 `
-	metricsPredictPy := `import asyncio
-from cog import BasePredictor, current_scope
+	metricsRunPy := `import asyncio
+from cog import BaseRunner, current_scope
 
 
-class Predictor(BasePredictor):
-    async def predict(self, idx: int = 0, sleep: float = 0.5) -> str:
+class Runner(BaseRunner):
+    async def run(self, idx: int = 0, sleep: float = 0.5) -> str:
         scope = current_scope()
         scope.record_metric("prediction_index", idx)
         scope.record_metric("model_name", "test-model")
@@ -418,8 +418,8 @@ class Predictor(BasePredictor):
 
 	err = os.WriteFile(filepath.Join(tmpDir, "cog.yaml"), []byte(metricsCogYAML), 0o644)
 	require.NoError(t, err, "failed to write cog.yaml")
-	err = os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte(metricsPredictPy), 0o644)
-	require.NoError(t, err, "failed to write predict.py")
+	err = os.WriteFile(filepath.Join(tmpDir, "run.py"), []byte(metricsRunPy), 0o644)
+	require.NoError(t, err, "failed to write run.py")
 
 	cogBinary, err := harness.ResolveCogBinary()
 	require.NoError(t, err, "failed to resolve cog binary")
@@ -554,23 +554,23 @@ func TestSIGTERMDuringSetup(t *testing.T) {
 
 	slowSetupCogYAML := `build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 `
-	slowSetupPredictPy := `import time
-from cog import BasePredictor
+	slowSetupRunPy := `import time
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self) -> None:
         time.sleep(30)
 
-    def predict(self, s: str) -> str:
+    def run(self, s: str) -> str:
         return "hello " + s
 `
 
 	err = os.WriteFile(filepath.Join(tmpDir, "cog.yaml"), []byte(slowSetupCogYAML), 0o644)
 	require.NoError(t, err, "failed to write cog.yaml")
-	err = os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte(slowSetupPredictPy), 0o644)
-	require.NoError(t, err, "failed to write predict.py")
+	err = os.WriteFile(filepath.Join(tmpDir, "run.py"), []byte(slowSetupRunPy), 0o644)
+	require.NoError(t, err, "failed to write run.py")
 
 	cogBinary, err := harness.ResolveCogBinary()
 	require.NoError(t, err, "failed to resolve cog binary")

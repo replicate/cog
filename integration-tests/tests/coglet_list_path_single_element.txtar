@@ -33,19 +33,19 @@ build:
   python_version: "3.12"
   python_packages:
     - "pillow==10.4.0"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import os
 import tempfile
 from typing import List
 
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 from PIL import Image
 
 
-class Predictor(BasePredictor):
-    def predict(self, count: int = Input(description="Number of images", default=1)) -> List[Path]:
+class Runner(BaseRunner):
+    def run(self, count: int = Input(description="Number of images", default=1)) -> List[Path]:
         outputs = []
         colors = ["red", "blue", "green", "yellow"]
         for i in range(count):

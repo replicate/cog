@@ -1,4 +1,4 @@
-# Test that sys.exit() in predict() fails the prediction but does NOT kill
+# Test that sys.exit() in run() fails the prediction but does NOT kill
 # the worker. A subsequent prediction should still succeed.
 #
 # sys.exit() raises SystemExit, which is caught by the PyO3 boundary.
@@ -19,16 +19,16 @@ stdout '"output":"still alive"'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import sys
 
-from cog import BasePredictor
+from cog import BaseRunner
 
 
-class Predictor(BasePredictor):
-    def predict(self, do_exit: bool = False) -> str:
+class Runner(BaseRunner):
+    def run(self, do_exit: bool = False) -> str:
         if do_exit:
             sys.exit(1)
         return "still alive"

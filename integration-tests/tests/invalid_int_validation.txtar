@@ -10,14 +10,14 @@ stderr 'minimum'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, Input
+-- run.py --
+from cog import BaseRunner, Input
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self, num: int = Input(description="Number of things", default=1, ge=2, le=10)
     ) -> int:
         return num * 2

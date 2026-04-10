@@ -1,19 +1,19 @@
 # Test PEP 604 list[File] | None input annotation.
 #
-# When a predictor declares `files: list[File] | None`, coglet should
+# When a runner declares `files: list[File] | None`, coglet should
 # recognise the File type inside the list through the PEP 604 union
 # and coerce inputs into cog.File objects.
 
 cog build -t $TEST_IMAGE
 
-# --- Test via cog predict (CLI) ---
+# --- Test via cog run (CLI) ---
 
 # Providing multiple file inputs should work.
-cog predict $TEST_IMAGE -i files=@file1.txt -i files=@file2.txt
+cog run $TEST_IMAGE -i files=@file1.txt -i files=@file2.txt
 stdout 'count=2 content=one,two'
 
 # Omitting the optional input should yield None.
-cog predict $TEST_IMAGE
+cog run $TEST_IMAGE
 stdout 'type=NoneType'
 
 # --- Test via cog serve (HTTP API) ---
@@ -34,14 +34,14 @@ stdout 'type=NoneType'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, File, Input
+-- run.py --
+from cog import BaseRunner, File, Input
 
 
-class Predictor(BasePredictor):
-    def predict(self, files: list[File] | None = Input(default=None)) -> str:
+class Runner(BaseRunner):
+    def run(self, files: list[File] | None = Input(default=None)) -> str:
         if files is None:
             return "type=NoneType"
         contents = []

@@ -1,4 +1,4 @@
-# Test that a predictor using the deprecated emit_metric() still builds,
+# Test that a runner using the deprecated emit_metric() still builds,
 # runs, and records metrics correctly.
 #
 # emit_metric() was dropped without a compat shim in 0.17.0, causing a hard
@@ -18,15 +18,15 @@ stdout '"output_tokens":42'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import cog
-from cog import BasePredictor, emit_metric
+from cog import BaseRunner, emit_metric
 
 
-class Predictor(BasePredictor):
-    def predict(self) -> str:
+class Runner(BaseRunner):
+    def run(self) -> str:
         # Both call styles should work
         emit_metric("output_tokens", 42)
         cog.emit_metric("input_tokens", 10)
