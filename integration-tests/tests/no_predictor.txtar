@@ -3,7 +3,7 @@
 
 # Build should fail with error about missing runner
 ! cog build -t $TEST_IMAGE
-stderr 'predict'
+stderr 'no predict or train reference found in cog.yaml'
 
 -- cog.yaml --
 build:
