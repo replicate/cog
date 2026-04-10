@@ -1,15 +1,10 @@
-# Test that Pydantic v2 BaseModel works as prediction output type.
-# Coglet's make_encodeable() must call model_dump() to serialize.
+# Test that Pydantic v2 BaseModel is detected and errors with migration guidance.
+# Cog 0.17+ uses cog.BaseModel for structured outputs.
 
-# Build the image
-cog build -t $TEST_IMAGE
-
-# Predict returns structured Pydantic output
-cog predict $TEST_IMAGE -i name=alice -i score=0.95
-stdout '"name": "alice"'
-stdout '"score": 0.95'
-stdout '"tags"'
-stdout 'default'
+# Build should fail with clear migration guidance
+! cog build -t $TEST_IMAGE
+stderr 'inherits from pydantic.BaseModel'
+stderr 'cog.BaseModel'
 
 -- cog.yaml --
 build:

@@ -289,11 +289,11 @@ def _create_output_type(tpe: type) -> adt.OutputType:
         and inspect.isclass(tpe)
         and _check_parent(tpe, PydanticBaseModel)
     ):
-        fields = {}
-        for name, field_info in tpe.model_fields.items():
-            ft = adt.FieldType.from_type(field_info.annotation)
-            fields[name] = ft
-        return adt.OutputType(kind=adt.OutputKind.OBJECT, fields=fields)
+        raise ValueError(
+            f"{tpe.__name__} inherits from pydantic.BaseModel.\n"
+            "Cog 0.17+ uses cog.BaseModel for structured outputs.\n"
+            "Change: from cog import BaseModel"
+        )
 
     origin = typing.get_origin(tpe)
     concat_iters = {ConcatenateIterator, AsyncConcatenateIterator}
