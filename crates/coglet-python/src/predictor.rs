@@ -339,10 +339,7 @@ impl PythonPredictor {
                 tracing::info!("Detected sync train()");
                 PredictKind::Sync
             };
-            (
-                PredictorKind::StandaloneFunction(predict_kind),
-                "",
-            )
+            (PredictorKind::StandaloneFunction(predict_kind), "")
         } else {
             // Class instance - detect run() vs predict() method
             // Walk MRO to support multi-level inheritance, skipping base stub classes
@@ -359,7 +356,10 @@ impl PythonPredictor {
             for item in mro.try_iter()? {
                 let klass: Bound<'_, PyAny> = item?;
                 // Skip base stubs and object
-                if klass.eq(&base_predictor)? || klass.eq(&base_runner)? || klass.eq(&object_type)? {
+                if klass.eq(&base_predictor)?
+                    || klass.eq(&base_runner)?
+                    || klass.eq(&object_type)?
+                {
                     continue;
                 }
                 let class_dict = klass.getattr("__dict__")?;

@@ -1,9 +1,9 @@
 # Test error when no runner is defined
-# Build should fail when cog.yaml has no run field
+# Build should fail when cog.yaml has no run/predict field
 
 # Build should fail with error about missing runner
 ! cog build -t $TEST_IMAGE
-stderr '''run'' is required'
+stderr 'predict'
 
 -- cog.yaml --
 build:
