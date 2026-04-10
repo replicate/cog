@@ -3,6 +3,7 @@
 
 import builtins
 import typing
+
 __all__ = [
     "MetricRecorder",
     "Scope",
@@ -13,17 +14,22 @@ __all__ = [
 class MetricRecorder:
     r"""
     Metric recorder with type invariant enforcement.
-    
+
     Accessed via `scope.metrics`. Supports:
     - `scope.metrics.record(key, value, mode="replace")` — full API
     - `scope.metrics.delete(key)` — delete (required before type change)
     - `scope.metrics[key] = value` — dict-style set (replace mode)
     - `del scope.metrics[key]` — dict-style delete
     """
-    def record(self, key: builtins.str, value: typing.Any, mode: typing.Optional[builtins.str] = None) -> None:
+    def record(
+        self,
+        key: builtins.str,
+        value: typing.Any,
+        mode: typing.Optional[builtins.str] = None,
+    ) -> None:
         r"""
         Record a metric value.
-        
+
         Args:
             key: Metric name. Each dot-separated segment must start with a letter
                 and contain only letters, digits, and underscores (no leading/trailing/consecutive
@@ -52,7 +58,7 @@ class MetricRecorder:
 class Scope:
     r"""
     Prediction scope, obtained via `current_scope()`.
-    
+
     Provides access to `scope.metrics` for recording metrics,
     `scope.record_metric()` as a convenience shorthand, and
     `scope.context` for per-prediction context passed in the request.
@@ -66,13 +72,18 @@ class Scope:
     def context(self) -> dict[builtins.str, builtins.str]:
         r"""
         Per-prediction context passed in the request body.
-        
+
         Returns a `dict[str, str]` (empty dict if no context was provided).
         """
-    def record_metric(self, key: builtins.str, value: typing.Any, mode: typing.Optional[builtins.str] = None) -> None:
+    def record_metric(
+        self,
+        key: builtins.str,
+        value: typing.Any,
+        mode: typing.Optional[builtins.str] = None,
+    ) -> None:
         r"""
         Convenience: record a metric value.
-        
+
         Equivalent to `scope.metrics.record(key, value, mode)`.
 
         Metric names must follow naming rules: each segment must start with a
@@ -85,14 +96,14 @@ class Scope:
 class _SlotLogWriter:
     r"""
     A Python file-like object that routes writes via the prediction_id ContextVar.
-    
+
     This is installed as sys.stdout/stderr once at worker startup.
     Each write looks up the current prediction_id from the ContextVar and routes
     to the appropriate SlotSender.
-    
+
     If no prediction_id is set, or the prediction has completed (orphan task),
     writes go to tracing (logged as orphan).
-    
+
     Uses line buffering: accumulates writes until a newline is received, then
     emits complete lines. This coalesces Python's print() which does separate
     writes for content and newline.
@@ -120,14 +131,14 @@ class _SlotLogWriter:
     def write(self, data: builtins.str) -> builtins.int:
         r"""
         Write data, routing to the appropriate destination.
-        
+
         Uses line buffering: accumulates data until a newline is received, then
         emits complete lines. This coalesces Python's print() which does separate
         writes for content and the trailing newline.
-        
+
         Priority for routing:
         1. If inside a prediction (ContextVar set), route to slot sender
-        2. If setup sender registered, route to control channel  
+        2. If setup sender registered, route to control channel
         3. Fall back to stderr (for orphan tasks or unexpected cases)
         """
     def emit_data(self, data: builtins.str) -> None:
@@ -137,7 +148,7 @@ class _SlotLogWriter:
     def flush(self) -> None:
         r"""
         Flush the stream.
-        
+
         Emits any buffered content that hasn't been terminated with a newline.
         """
     def readable(self) -> builtins.bool:
@@ -168,7 +179,12 @@ class _SlotLogWriter:
         r"""
         Context manager enter.
         """
-    def __exit__(self, _exc_type: typing.Optional[typing.Any], _exc_val: typing.Optional[typing.Any], _exc_tb: typing.Optional[typing.Any]) -> builtins.bool:
+    def __exit__(
+        self,
+        _exc_type: typing.Optional[typing.Any],
+        _exc_val: typing.Optional[typing.Any],
+        _exc_tb: typing.Optional[typing.Any],
+    ) -> builtins.bool:
         r"""
         Context manager exit.
         """
@@ -177,7 +193,7 @@ class _SlotLogWriter:
 class _TeeWriter:
     r"""
     Tee writer that sends writes to both our slot routing and user's stream.
-    
+
     - inner: Our _SlotLogWriter for slot-based log routing
     - user_stream: The stream user code tried to install
     """
@@ -205,7 +221,9 @@ class _TeeWriter:
     def encoding(self) -> typing.Optional[builtins.str]: ...
     @property
     def newlines(self) -> typing.Optional[builtins.str]: ...
-    def __new__(cls, inner: typing.Any, user_stream: typing.Any, name: builtins.str) -> _TeeWriter: ...
+    def __new__(
+        cls, inner: typing.Any, user_stream: typing.Any, name: builtins.str
+    ) -> _TeeWriter: ...
     def write(self, data: builtins.str) -> builtins.int:
         r"""
         Write to both streams.
@@ -221,18 +239,22 @@ class _TeeWriter:
     def fileno(self) -> builtins.int: ...
     def close(self) -> None: ...
     def __enter__(self) -> _TeeWriter: ...
-    def __exit__(self, _exc_type: typing.Optional[typing.Any], _exc_val: typing.Optional[typing.Any], _exc_tb: typing.Optional[typing.Any]) -> builtins.bool: ...
+    def __exit__(
+        self,
+        _exc_type: typing.Optional[typing.Any],
+        _exc_val: typing.Optional[typing.Any],
+        _exc_tb: typing.Optional[typing.Any],
+    ) -> builtins.bool: ...
 
 def current_scope() -> Scope:
     r"""
     Python-callable: get the current Scope.
-    
+
     Returns the active scope if inside a prediction, or a no-op scope otherwise.
-    
+
     Lookup order: ContextVar first, then sync scope fallback.
     ContextVar is per-coroutine (async) / per-thread (sync), so it always
     returns the correct scope even under concurrency > 1. The sync scope
     (process-wide mutex) is a fallback for edge cases where the ContextVar
     hasn't been initialized yet.
     """
-

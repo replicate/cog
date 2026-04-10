@@ -4,6 +4,7 @@
 import builtins
 import typing
 from . import _sdk
+
 __all__ = [
     "BuildInfo",
     "CancelationException",
@@ -14,6 +15,7 @@ __all__ = [
 __build__: BuildInfo
 __version__: builtins.str
 server: Server
+
 @typing.final
 class BuildInfo:
     r"""
@@ -34,21 +36,22 @@ class BuildInfo:
 class CancelationException(builtins.BaseException):
     r"""
     Raised when a running prediction or training is cancelled.
-    
+
     Derives from ``BaseException`` (not ``Exception``) so that bare
     ``except Exception`` blocks do not accidentally swallow cancellation.
     This matches the semantics of ``KeyboardInterrupt`` and
     ``asyncio.CancelledError``.
     """
+
     ...
 
 @typing.final
 class Server:
     r"""
     The coglet prediction server.
-    
+
     Access via `coglet.server`. Frozen — attributes cannot be set or deleted.
-    
+
     - `coglet.server.active` — `True` when running inside a worker subprocess
     - `coglet.server.serve(...)` — start the HTTP prediction server (blocking)
     """
@@ -57,16 +60,24 @@ class Server:
         r"""
         `True` when running inside a coglet worker subprocess.
         """
-    def serve(self, predictor_ref: typing.Optional[builtins.str] = None, host: builtins.str = '0.0.0.0', port: builtins.int = 5000, await_explicit_shutdown: builtins.bool = False, is_train: builtins.bool = False, output_temp_dir_base: builtins.str = '/tmp/coglet/output', upload_url: typing.Optional[builtins.str] = None) -> None:
+    def serve(
+        self,
+        predictor_ref: typing.Optional[builtins.str] = None,
+        host: builtins.str = "0.0.0.0",
+        port: builtins.int = 5000,
+        await_explicit_shutdown: builtins.bool = False,
+        is_train: builtins.bool = False,
+        output_temp_dir_base: builtins.str = "/tmp/coglet/output",
+        upload_url: typing.Optional[builtins.str] = None,
+    ) -> None:
         r"""
         Start the HTTP prediction server. Blocks until shutdown.
         """
     def _run_worker(self) -> None:
         r"""
         Worker subprocess entry point. Called by the orchestrator.
-        
+
         Sets the active flag, installs log writers and audit hooks,
         then enters the worker event loop.
         """
     def __repr__(self) -> builtins.str: ...
-

@@ -301,6 +301,8 @@ pub struct PythonPredictor {
     kind: PredictorKind,
     /// The name of the predict method ("run" or "predict")
     predict_method_name: &'static str,
+    /// Whether the setup() method is an async def
+    setup_is_async: bool,
 }
 
 // PyObject is Send in PyO3 0.23+
@@ -422,10 +424,22 @@ impl PythonPredictor {
             )
         };
 
+        // Detect if setup() is async
+        let setup_is_async = if !is_function && instance.bind(py).hasattr("setup")? {
+            let (is_async, _) = Self::detect_async(py, &instance, "setup")?;
+            if is_async {
+                tracing::info!("Detected async setup()");
+            }
+            is_async
+        } else {
+            false
+        };
+
         let predictor = Self {
             instance,
             kind,
             predict_method_name,
+            setup_is_async,
         };
 
         // Patch FieldInfo defaults on predict/train methods so Python uses actual
@@ -590,6 +604,9 @@ impl PythonPredictor {
     /// Uses cog.predictor helpers to detect and extract weights:
     /// - `has_setup_weights()` checks if setup() has a weights parameter
     /// - `extract_setup_weights()` reads from COG_WEIGHTS env or ./weights path
+    ///
+    /// If setup() is an async def, the returned coroutine is executed with
+    /// `asyncio.run()`, matching the pattern in `call_method_raw()`.
     pub fn setup(&self, py: Python<'_>) -> PyResult<()> {
         let instance = self.instance.bind(py);
 
@@ -606,12 +623,18 @@ impl PythonPredictor {
         // Check if setup() has a weights parameter
         let needs_weights: bool = has_setup_weights.call1((&instance,))?.extract()?;
 
-        if needs_weights {
+        let result = if needs_weights {
             // Extract weights from COG_WEIGHTS env or ./weights path
             let weights = extract_setup_weights.call1((&instance,))?;
-            instance.call_method1("setup", (weights,))?;
+            instance.call_method1("setup", (weights,))?
         } else {
-            instance.call_method0("setup")?;
+            instance.call_method0("setup")?
+        };
+
+        // If setup() is async, the call above returns a coroutine — run it.
+        if self.setup_is_async {
+            let asyncio = py.import("asyncio")?;
+            asyncio.call_method1("run", (&result,))?;
         }
 
         Ok(())
