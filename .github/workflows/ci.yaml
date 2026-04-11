@@ -426,7 +426,7 @@ jobs:
       # setup-python provides a shared-library Python (libpython3.x.so) needed
       # by stub_gen at runtime (PyO3 auto-initialize). setup-uv's
       # python-build-standalone is statically linked and doesn't ship the .so.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: astral-sh/setup-uv@v6
