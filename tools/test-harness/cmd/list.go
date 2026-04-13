@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -36,7 +37,7 @@ func runList() error {
 
 		envTag := ""
 		if len(m.RequiresEnv) > 0 {
-			envTag = fmt.Sprintf(" (requires: %s)", joinStrings(m.RequiresEnv, ", "))
+			envTag = fmt.Sprintf(" (requires: %s)", strings.Join(m.RequiresEnv, ", "))
 		}
 
 		fmt.Printf("  %-25s %s/%s%s%s\n", m.Name, m.Repo, m.Path, gpuTag, envTag)
@@ -44,18 +45,4 @@ func runList() error {
 
 	fmt.Printf("\n%d model(s) total\n", len(mf.Models))
 	return nil
-}
-
-func joinStrings(strs []string, sep string) string {
-	if len(strs) == 0 {
-		return ""
-	}
-	if len(strs) == 1 {
-		return strs[0]
-	}
-	result := strs[0]
-	for i := 1; i < len(strs); i++ {
-		result += sep + strs[i]
-	}
-	return result
 }

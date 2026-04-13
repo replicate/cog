@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -52,11 +53,11 @@ func ConsoleReport(results []ModelResult, sdkVersion, cogVersion string) {
 
 	header := "Cog Compatibility Report"
 	if len(parts) > 0 {
-		header = fmt.Sprintf("Cog Compatibility Report (%s)", join(parts, " / "))
+		header = fmt.Sprintf("Cog Compatibility Report (%s)", strings.Join(parts, " / "))
 	}
 
 	fmt.Printf("\n%s\n", header)
-	fmt.Printf("%s\n\n", repeat("=", len(header)))
+	fmt.Printf("%s\n\n", strings.Repeat("=", len(header)))
 
 	passed, failed, skipped := 0, 0, 0
 
@@ -84,7 +85,9 @@ func ConsoleReport(results []ModelResult, sdkVersion, cogVersion string) {
 			continue
 		}
 
-		allTests := append(r.TestResults, r.TrainResults...)
+		allTests := make([]TestResult, 0, len(r.TestResults)+len(r.TrainResults))
+		allTests = append(allTests, r.TestResults...)
+		allTests = append(allTests, r.TrainResults...)
 		if r.Passed {
 			timing := fmt.Sprintf("(%.1fs build", r.BuildDuration)
 			if len(allTests) > 0 {
@@ -127,7 +130,7 @@ func ConsoleReport(results []ModelResult, sdkVersion, cogVersion string) {
 		}
 	}
 
-	fmt.Printf("\n%s\n", repeat("-", 40))
+	fmt.Printf("\n%s\n", strings.Repeat("-", 40))
 	total := passed + failed + skipped
 	fmt.Printf("%d/%d passed", passed, total)
 	if skipped > 0 {
@@ -228,7 +231,7 @@ func SchemaCompareConsoleReport(results []SchemaCompareResult, cogVersion string
 	}
 
 	fmt.Printf("\n%s\n", header)
-	fmt.Printf("%s\n\n", repeat("=", len(header)))
+	fmt.Printf("%s\n\n", strings.Repeat("=", len(header)))
 
 	passed, failed := 0, 0
 
@@ -256,14 +259,14 @@ func SchemaCompareConsoleReport(results []SchemaCompareResult, cogVersion string
 			writeStatus("x", r.Name, "schemas differ", false)
 			failed++
 			if r.Diff != "" {
-				for _, line := range splitLines(r.Diff) {
+				for _, line := range strings.Split(r.Diff, "\n") {
 					fmt.Printf("    %s\n", line)
 				}
 			}
 		}
 	}
 
-	fmt.Printf("\n%s\n", repeat("-", 40))
+	fmt.Printf("\n%s\n", strings.Repeat("-", 40))
 	total := passed + failed
 	fmt.Printf("%d/%d passed", passed, total)
 	if failed > 0 {
@@ -328,49 +331,9 @@ func writeStatus(icon, name, detail string, gpu bool) {
 	fmt.Printf("  %s %-25s %s%s\n", icon, name, detail, gpuTag)
 }
 
-func join(parts []string, sep string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	if len(parts) == 1 {
-		return parts[0]
-	}
-	result := parts[0]
-	for i := 1; i < len(parts); i++ {
-		result += sep + parts[i]
-	}
-	return result
-}
-
-func repeat(s string, n int) string {
-	result := ""
-	for i := 0; i < n; i++ {
-		result += s
-	}
-	return result
-}
-
 func round(val float64, precision int) float64 {
-	p := 1.0
-	for i := 0; i < precision; i++ {
-		p *= 10
-	}
-	return float64(int(val*p+0.5)) / p
-}
-
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
+	p := math.Pow(10, float64(precision))
+	return math.Round(val*p) / p
 }
 
 // SaveResults saves results to a JSON file in the results directory
@@ -387,10 +350,13 @@ func SaveResults(results []ModelResult, sdkVersion, cogVersion string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("creating results file: %w", err)
 	}
-	defer f.Close()
 
-	if err := WriteJSONReport(results, sdkVersion, cogVersion, f); err != nil {
-		return "", fmt.Errorf("writing results: %w", err)
+	writeErr := WriteJSONReport(results, sdkVersion, cogVersion, f)
+	if closeErr := f.Close(); closeErr != nil && writeErr == nil {
+		writeErr = closeErr
+	}
+	if writeErr != nil {
+		return "", fmt.Errorf("writing results: %w", writeErr)
 	}
 
 	return filename, nil

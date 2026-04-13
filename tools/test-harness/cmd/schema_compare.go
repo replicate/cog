@@ -7,9 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/tools/test-harness/internal/manifest"
 	"github.com/replicate/cog/tools/test-harness/internal/report"
-	"github.com/replicate/cog/tools/test-harness/internal/resolver"
 	"github.com/replicate/cog/tools/test-harness/internal/runner"
 )
 
@@ -33,27 +31,15 @@ func newSchemaCompareCommand() *cobra.Command {
 }
 
 func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) error {
-
-	// Load manifest
-	mf, manifestPath, err := manifest.Load(manifestPath)
-	if err != nil {
-		return fmt.Errorf("loading manifest: %w", err)
+	if outputFormat != "console" && outputFormat != "json" {
+		return fmt.Errorf("invalid output format %q: must be 'console' or 'json'", outputFormat)
 	}
-	fmt.Printf("Loaded manifest: %s\n", manifestPath)
 
-	// Resolve versions
-	fmt.Println("Resolving versions...")
-	resolved, err := resolver.Resolve(cogBinary, cogVersion, cogRef, sdkVersion, sdkWheel, map[string]string{
-		"sdk_version": mf.Defaults.SDKVersion,
-		"cog_version": mf.Defaults.CogVersion,
-	})
+	_, models, resolved, err := resolveSetup()
 	if err != nil {
-		return fmt.Errorf("resolving versions: %w", err)
+		return err
 	}
-	fmt.Printf("Using cog CLI: %s (%s)\n", resolved.CogBinary, resolved.CogVersion)
 
-	// Filter models
-	models := mf.FilterModels(modelFilter, noGPU, gpuOnly)
 	if len(models) == 0 {
 		fmt.Println("No models to compare")
 		return nil
@@ -82,9 +68,12 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 			if err != nil {
 				return fmt.Errorf("creating output file: %w", err)
 			}
-			defer f.Close()
-			if err := report.WriteSchemaCompareJSONReport(results, resolved.CogVersion, f); err != nil {
-				return fmt.Errorf("writing schema compare JSON report: %w", err)
+			writeErr := report.WriteSchemaCompareJSONReport(results, resolved.CogVersion, f)
+			if closeErr := f.Close(); closeErr != nil && writeErr == nil {
+				writeErr = closeErr
+			}
+			if writeErr != nil {
+				return fmt.Errorf("writing schema compare JSON report: %w", writeErr)
 			}
 		} else {
 			if err := report.WriteSchemaCompareJSONReport(results, resolved.CogVersion, os.Stdout); err != nil {
@@ -98,9 +87,12 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 			if err != nil {
 				return fmt.Errorf("creating output file: %w", err)
 			}
-			defer f.Close()
-			if err := report.WriteSchemaCompareJSONReport(results, resolved.CogVersion, f); err != nil {
-				return fmt.Errorf("writing schema compare JSON report: %w", err)
+			writeErr := report.WriteSchemaCompareJSONReport(results, resolved.CogVersion, f)
+			if closeErr := f.Close(); closeErr != nil && writeErr == nil {
+				writeErr = closeErr
+			}
+			if writeErr != nil {
+				return fmt.Errorf("writing schema compare JSON report: %w", writeErr)
 			}
 		}
 	}

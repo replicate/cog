@@ -149,6 +149,14 @@ func resolveSDKVersion(sdkVersion string, manifestDefaults map[string]string) (s
 	return resolveLatestPyPIVersion()
 }
 
+func setGitHubAuth(req *http.Request) {
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	} else if token := os.Getenv("GH_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+}
+
 func resolveLatestCogVersion() (string, error) {
 	url := fmt.Sprintf("%s?per_page=50", githubAPI)
 	req, err := http.NewRequest("GET", url, nil)
@@ -157,11 +165,7 @@ func resolveLatestCogVersion() (string, error) {
 	}
 
 	req.Header.Set("Accept", "application/vnd.github+json")
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	} else if token := os.Getenv("GH_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
+	setGitHubAuth(req)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -257,10 +261,23 @@ func downloadCogBinary(tag string) (dest string, err error) {
 	assetName := fmt.Sprintf("cog_%s_%s", osName, arch)
 	url := fmt.Sprintf("https://github.com/replicate/cog/releases/download/%s/%s", tag, assetName)
 
-	tmpDir, err := os.MkdirTemp("", "cog-bin-*")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	baseDir := filepath.Join(home, ".cache", "cog-harness", "bin")
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return "", fmt.Errorf("creating bin cache dir: %w", err)
+	}
+	tmpDir, err := os.MkdirTemp(baseDir, "cog-bin-*")
 	if err != nil {
 		return "", fmt.Errorf("creating temp dir: %w", err)
 	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(tmpDir)
+		}
+	}()
 
 	dest = filepath.Join(tmpDir, "cog")
 
@@ -269,11 +286,7 @@ func downloadCogBinary(tag string) (dest string, err error) {
 		return "", err
 	}
 
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	} else if token := os.Getenv("GH_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
+	setGitHubAuth(req)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
@@ -290,14 +303,14 @@ func downloadCogBinary(tag string) (dest string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("creating binary file: %w", err)
 	}
-	defer func() {
-		if closeErr := f.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("closing binary file: %w", closeErr)
-		}
-	}()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		return "", fmt.Errorf("writing binary: %w", err)
+	if _, copyErr := io.Copy(f, resp.Body); copyErr != nil {
+		f.Close()
+		return "", fmt.Errorf("writing binary: %w", copyErr)
+	}
+
+	if closeErr := f.Close(); closeErr != nil {
+		return "", fmt.Errorf("closing binary file: %w", closeErr)
 	}
 
 	if err := verifyDownloadedBinary(tag, assetName, dest); err != nil {
@@ -320,11 +333,7 @@ func verifyDownloadedBinary(tag, assetName, dest string) error {
 	if err != nil {
 		return fmt.Errorf("building checksum request: %w", err)
 	}
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	} else if token := os.Getenv("GH_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
+	setGitHubAuth(req)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -371,7 +380,14 @@ func parseChecksum(content, assetName string) (string, error) {
 		}
 		name := strings.TrimPrefix(parts[1], "*")
 		if name == assetName {
-			return parts[0], nil
+			hash := parts[0]
+			if len(hash) != 64 {
+				return "", fmt.Errorf("invalid checksum length for %s: got %d chars, expected 64", assetName, len(hash))
+			}
+			if _, err := hex.DecodeString(hash); err != nil {
+				return "", fmt.Errorf("invalid checksum hex for %s: %w", assetName, err)
+			}
+			return hash, nil
 		}
 	}
 	return "", fmt.Errorf("checksum for %s not found in checksums.txt", assetName)

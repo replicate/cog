@@ -1,7 +1,12 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
+
+	"github.com/replicate/cog/tools/test-harness/internal/manifest"
+	"github.com/replicate/cog/tools/test-harness/internal/resolver"
 )
 
 var (
@@ -47,4 +52,26 @@ It reads the same manifest.yaml format as the Python version.`,
 	rootCmd.AddCommand(newSchemaCompareCommand())
 
 	return rootCmd
+}
+
+// resolveSetup loads the manifest, resolves versions, and filters models.
+func resolveSetup() (*manifest.Manifest, []manifest.Model, *resolver.Result, error) {
+	mf, mfPath, err := manifest.Load(manifestPath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("loading manifest: %w", err)
+	}
+	fmt.Printf("Loaded manifest: %s\n", mfPath)
+
+	fmt.Println("Resolving versions...")
+	resolved, err := resolver.Resolve(cogBinary, cogVersion, cogRef, sdkVersion, sdkWheel, map[string]string{
+		"sdk_version": mf.Defaults.SDKVersion,
+		"cog_version": mf.Defaults.CogVersion,
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("resolving versions: %w", err)
+	}
+	fmt.Printf("Using cog CLI: %s (%s)\n", resolved.CogBinary, resolved.CogVersion)
+
+	models := mf.FilterModels(modelFilter, noGPU, gpuOnly)
+	return mf, models, resolved, nil
 }

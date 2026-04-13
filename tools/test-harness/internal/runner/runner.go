@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -48,7 +51,11 @@ func New(cogBinary, sdkVersion, sdkWheel string, fixturesDir string, keepImages 
 	// Using the system temp dir ($TMPDIR, e.g. /var/folders/... on macOS) would
 	// result in empty volume mounts when cog predict/train/serve runs containers
 	// with source directories mounted as /src.
-	baseDir := filepath.Join(os.Getenv("HOME"), ".cache", "cog-harness")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("cannot determine home directory for work dir (set $HOME): %w", err)
+	}
+	baseDir := filepath.Join(home, ".cache", "cog-harness")
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating harness cache dir: %w", err)
 	}
@@ -101,25 +108,28 @@ func resolveFixturesDir() (string, error) {
 
 // Cleanup removes temp directories and Docker images
 func (r *Runner) Cleanup() error {
+	var errs []error
 	if !r.keepImages {
-		// Remove Docker images
 		cmd := exec.Command("docker", "images", "--filter", "reference=cog-harness-*", "--format", "{{.Repository}}:{{.Tag}}")
 		output, err := cmd.Output()
 		if err == nil && len(output) > 0 {
 			images := strings.Fields(string(output))
 			if len(images) > 0 {
 				args := append([]string{"rmi", "--force"}, images...)
-				exec.Command("docker", args...).Run()
+				if err := exec.Command("docker", args...).Run(); err != nil {
+					errs = append(errs, fmt.Errorf("removing docker images: %w", err))
+				}
 			}
 		}
 	}
 
-	// Remove work directory
 	if r.workDir != "" {
-		os.RemoveAll(r.workDir)
+		if err := os.RemoveAll(r.workDir); err != nil {
+			errs = append(errs, fmt.Errorf("removing work dir: %w", err))
+		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // RunModel runs all tests for a single model
@@ -235,6 +245,13 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 
 	staticTag := fmt.Sprintf("cog-harness-%s:static", model.Name)
 	runtimeTag := fmt.Sprintf("cog-harness-%s:runtime", model.Name)
+
+	// Always clean up schema comparison images when done
+	defer func() {
+		exec.Command("docker", "rmi", "-f", staticTag).Run()
+		exec.Command("docker", "rmi", "-f", runtimeTag).Run()
+	}()
+
 	staticDir := filepath.Join(r.workDir, fmt.Sprintf("schema-static-%s", model.Name))
 	runtimeDir := filepath.Join(r.workDir, fmt.Sprintf("schema-runtime-%s", model.Name))
 	if err := copyDir(modelDir, staticDir); err != nil {
@@ -254,6 +271,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 	var staticSchema, runtimeSchema string
 	var staticSchemaErr, runtimeSchemaErr error
 	var staticErr, runtimeErr error
+	var staticDuration, runtimeDuration float64
 	staticStart := time.Now()
 	runtimeStart := time.Now()
 
@@ -263,7 +281,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 			return nil // Don't fail the group, we'll check errors after
 		}
 		staticSchema, staticSchemaErr = r.extractSchemaLabel(staticTag)
-		result.StaticBuild = time.Since(staticStart).Seconds()
+		staticDuration = time.Since(staticStart).Seconds()
 		return nil
 	})
 
@@ -273,7 +291,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 			return nil
 		}
 		runtimeSchema, runtimeSchemaErr = r.extractSchemaLabel(runtimeTag)
-		result.RuntimeBuild = time.Since(runtimeStart).Seconds()
+		runtimeDuration = time.Since(runtimeStart).Seconds()
 		return nil
 	})
 
@@ -283,11 +301,8 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 		return result
 	}
 
-	// Clean up images
-	defer func() {
-		exec.Command("docker", "rmi", "-f", staticTag).Run()
-		exec.Command("docker", "rmi", "-f", runtimeTag).Run()
-	}()
+	result.StaticBuild = staticDuration
+	result.RuntimeBuild = runtimeDuration
 
 	// Check for build errors
 	if staticErr != nil {
@@ -429,10 +444,22 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 	if r.sdkWheel != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("COG_SDK_WHEEL=%s", r.sdkWheel))
 	}
-	for k, v := range model.Env {
+	envKeys := make([]string, 0, len(model.Env))
+	for k := range model.Env {
+		envKeys = append(envKeys, k)
+	}
+	sort.Strings(envKeys)
+	for _, k := range envKeys {
+		v := model.Env[k]
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, os.ExpandEnv(v)))
 	}
-	for k, v := range extraEnv {
+	extraKeys := make([]string, 0, len(extraEnv))
+	for k := range extraEnv {
+		extraKeys = append(extraKeys, k)
+	}
+	sort.Strings(extraKeys)
+	for _, k := range extraKeys {
+		v := extraEnv[k]
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
@@ -472,7 +499,13 @@ func (r *Runner) runCogTest(ctx context.Context, modelDir string, model manifest
 
 	// Build command
 	args := []string{command}
-	for key, value := range tc.Inputs {
+	keys := make([]string, 0, len(tc.Inputs))
+	for k := range tc.Inputs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := tc.Inputs[key]
 		resolved := r.resolveInput(value)
 		args = append(args, "-i", fmt.Sprintf("%s=%s", key, resolved))
 	}
@@ -492,7 +525,13 @@ func (r *Runner) runCogTest(ctx context.Context, modelDir string, model manifest
 	if r.sdkWheel != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("COG_SDK_WHEEL=%s", r.sdkWheel))
 	}
-	for k, v := range model.Env {
+	envKeys := make([]string, 0, len(model.Env))
+	for k := range model.Env {
+		envKeys = append(envKeys, k)
+	}
+	sort.Strings(envKeys)
+	for _, k := range envKeys {
+		v := model.Env[k]
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, os.ExpandEnv(v)))
 	}
 
@@ -585,9 +624,14 @@ func extractOutput(stdout, stderr, modelDir string) string {
 }
 
 func copyDir(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+
+		// Skip symlinks
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
 		}
 
 		rel, err := filepath.Rel(src, path)
@@ -597,11 +641,16 @@ func copyDir(src, dst string) error {
 
 		dstPath := filepath.Join(dst, rel)
 
-		if info.IsDir() {
-			return os.MkdirAll(dstPath, info.Mode())
+		if d.IsDir() {
+			return os.MkdirAll(dstPath, 0755)
 		}
 
 		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		info, err := d.Info()
 		if err != nil {
 			return err
 		}

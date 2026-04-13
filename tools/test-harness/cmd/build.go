@@ -6,9 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/replicate/cog/tools/test-harness/internal/manifest"
 	"github.com/replicate/cog/tools/test-harness/internal/report"
-	"github.com/replicate/cog/tools/test-harness/internal/resolver"
 	"github.com/replicate/cog/tools/test-harness/internal/runner"
 )
 
@@ -24,27 +22,11 @@ func newBuildCommand() *cobra.Command {
 }
 
 func runBuild(ctx context.Context) error {
-
-	// Load manifest
-	mf, manifestPath, err := manifest.Load(manifestPath)
+	_, models, resolved, err := resolveSetup()
 	if err != nil {
-		return fmt.Errorf("loading manifest: %w", err)
+		return err
 	}
-	fmt.Printf("Loaded manifest: %s\n", manifestPath)
 
-	// Resolve versions
-	fmt.Println("Resolving versions...")
-	resolved, err := resolver.Resolve(cogBinary, cogVersion, cogRef, sdkVersion, sdkWheel, map[string]string{
-		"sdk_version": mf.Defaults.SDKVersion,
-		"cog_version": mf.Defaults.CogVersion,
-	})
-	if err != nil {
-		return fmt.Errorf("resolving versions: %w", err)
-	}
-	fmt.Printf("Using cog CLI: %s (%s)\n", resolved.CogBinary, resolved.CogVersion)
-
-	// Filter models
-	models := mf.FilterModels(modelFilter, noGPU, gpuOnly)
 	if len(models) == 0 {
 		fmt.Println("No models to build")
 		return nil
