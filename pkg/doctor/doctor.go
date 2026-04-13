@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"context"
 	"errors"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -73,6 +74,7 @@ type ParsedFile struct {
 // CheckContext provides checks with access to project state.
 // Built once by the runner and passed to every check.
 type CheckContext struct {
+	ctx            context.Context
 	ProjectDir     string
 	ConfigFilename string                 // Config filename (e.g. "cog.yaml")
 	Config         *config.Config         // Parsed cog.yaml (nil if parsing failed)

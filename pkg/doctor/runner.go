@@ -52,13 +52,13 @@ func (r *Result) HasErrors() bool {
 }
 
 // Run executes all checks and optionally applies fixes.
-func Run(_ context.Context, opts RunOptions, checks []Check) (*Result, error) {
+func Run(ctx context.Context, opts RunOptions, checks []Check) (*Result, error) {
 	configFilename := opts.ConfigFilename
 	if configFilename == "" {
 		configFilename = "cog.yaml"
 	}
 
-	checkCtx, err := buildCheckContext(opts.ProjectDir, configFilename)
+	checkCtx, err := buildCheckContext(ctx, opts.ProjectDir, configFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -93,8 +93,9 @@ func Run(_ context.Context, opts RunOptions, checks []Check) (*Result, error) {
 }
 
 // buildCheckContext constructs the shared context for all checks.
-func buildCheckContext(projectDir string, configFilename string) (*CheckContext, error) {
-	ctx := &CheckContext{
+func buildCheckContext(ctx context.Context, projectDir string, configFilename string) (*CheckContext, error) {
+	ctxt := &CheckContext{
+		ctx:            ctx,
 		ProjectDir:     projectDir,
 		ConfigFilename: configFilename,
 		PythonFiles:    make(map[string]*ParsedFile),
@@ -104,35 +105,35 @@ func buildCheckContext(projectDir string, configFilename string) (*CheckContext,
 	configPath := filepath.Join(projectDir, configFilename)
 	configBytes, err := os.ReadFile(configPath)
 	if err == nil {
-		ctx.ConfigFile = configBytes
-		// Load and validate config once — checks use ctx.LoadResult / ctx.LoadErr
+		ctxt.ConfigFile = configBytes
+		// Load and validate config once — checks use ctxt.LoadResult / ctxt.LoadErr
 		loadResult, loadErr := config.Load(bytes.NewReader(configBytes), projectDir)
-		ctx.LoadErr = loadErr
+		ctxt.LoadErr = loadErr
 		if loadResult != nil {
-			ctx.LoadResult = loadResult
-			ctx.Config = loadResult.Config
+			ctxt.LoadResult = loadResult
+			ctxt.Config = loadResult.Config
 		}
 	}
 
 	// Find python binary
 	if pythonPath, err := exec.LookPath("python3"); err == nil {
-		ctx.PythonPath = pythonPath
+		ctxt.PythonPath = pythonPath
 	} else if pythonPath, err := exec.LookPath("python"); err == nil {
-		ctx.PythonPath = pythonPath
+		ctxt.PythonPath = pythonPath
 	}
 
 	// Pre-parse Python files referenced in config
-	if ctx.Config != nil {
-		parsePythonRef(ctx, ctx.Config.Predict)
-		parsePythonRef(ctx, ctx.Config.Train)
+	if ctxt.Config != nil {
+		parsePythonRef(ctxt, ctxt.Config.Predict)
+		parsePythonRef(ctxt, ctxt.Config.Train)
 	}
 
-	return ctx, nil
+	return ctxt, nil
 }
 
 // parsePythonRef parses a predict/train reference like "predict.py:Predictor"
 // and adds the parsed file to ctx.PythonFiles.
-func parsePythonRef(ctx *CheckContext, ref string) {
+func parsePythonRef(ctxt *CheckContext, ref string) {
 	if ref == "" {
 		return
 	}
@@ -141,7 +142,7 @@ func parsePythonRef(ctx *CheckContext, ref string) {
 		return
 	}
 
-	fullPath := filepath.Join(ctx.ProjectDir, parts[0])
+	fullPath := filepath.Join(ctxt.ProjectDir, parts[0])
 	source, err := os.ReadFile(fullPath)
 	if err != nil {
 		return
@@ -149,14 +150,14 @@ func parsePythonRef(ctx *CheckContext, ref string) {
 
 	parser := sitter.NewParser()
 	parser.SetLanguage(python.GetLanguage())
-	tree, err := parser.ParseCtx(ctx, nil, source)
+	tree, err := parser.ParseCtx(ctxt.ctx, nil, source)
 	if err != nil {
 		return
 	}
 
 	imports := schemaPython.CollectImports(tree.RootNode(), source)
 
-	ctx.PythonFiles[parts[0]] = &ParsedFile{
+	ctxt.PythonFiles[parts[0]] = &ParsedFile{
 		Path:    parts[0],
 		Source:  source,
 		Tree:    tree,
