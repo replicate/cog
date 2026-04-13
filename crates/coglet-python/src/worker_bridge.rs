@@ -293,7 +293,13 @@ impl PredictHandler for PythonPredictHandler {
             tracing::info!(sdk_implementation = %sdk_impl, "Detected Cog SDK implementation");
 
             tracing::info!("Running setup");
-            pred.setup(py)
+            let async_loop = self
+                .async_loop
+                .lock()
+                .expect("async_loop mutex poisoned")
+                .as_ref()
+                .map(|l| l.clone_ref(py));
+            pred.setup(py, async_loop.as_ref())
                 .map_err(|e| SetupError::setup(e.to_string()))?;
 
             let mut guard = self.predictor.lock().expect("predictor mutex poisoned");

@@ -299,6 +299,8 @@ pub struct PythonPredictor {
     instance: PyObject,
     /// The predictor's kind (class or standalone function) and method execution types
     kind: PredictorKind,
+    /// Whether the setup() method is an async def
+    setup_is_async: bool,
 }
 
 // PyObject is Send in PyO3 0.23+
@@ -370,7 +372,22 @@ impl PythonPredictor {
             }
         };
 
-        let predictor = Self { instance, kind };
+        // Detect if setup() is async
+        let setup_is_async = if !is_function && instance.bind(py).hasattr("setup")? {
+            let (is_async, _) = Self::detect_async(py, &instance, "setup")?;
+            if is_async {
+                tracing::info!("Detected async setup()");
+            }
+            is_async
+        } else {
+            false
+        };
+
+        let predictor = Self {
+            instance,
+            kind,
+            setup_is_async,
+        };
 
         // Patch FieldInfo defaults on predict/train methods so Python uses actual
         // default values instead of FieldInfo wrapper objects for missing inputs.
@@ -530,7 +547,13 @@ impl PythonPredictor {
     /// Uses cog.predictor helpers to detect and extract weights:
     /// - `has_setup_weights()` checks if setup() has a weights parameter
     /// - `extract_setup_weights()` reads from COG_WEIGHTS env or ./weights path
-    pub fn setup(&self, py: Python<'_>) -> PyResult<()> {
+    ///
+    /// If setup() is an async def and an event loop is provided, the coroutine
+    /// is submitted to that loop via `run_coroutine_threadsafe` so that
+    /// event-loop-bound resources created during setup (httpx.AsyncClient, etc.)
+    /// remain usable in predict(). If no loop is provided, falls back to
+    /// `asyncio.run()` (used by the non-worker code path).
+    pub fn setup(&self, py: Python<'_>, event_loop: Option<&Py<PyAny>>) -> PyResult<()> {
         let instance = self.instance.bind(py);
 
         // Check if setup method exists
@@ -546,12 +569,31 @@ impl PythonPredictor {
         // Check if setup() has a weights parameter
         let needs_weights: bool = has_setup_weights.call1((&instance,))?.extract()?;
 
-        if needs_weights {
+        let result = if needs_weights {
             // Extract weights from COG_WEIGHTS env or ./weights path
             let weights = extract_setup_weights.call1((&instance,))?;
-            instance.call_method1("setup", (weights,))?;
+            instance.call_method1("setup", (weights,))?
         } else {
-            instance.call_method0("setup")?;
+            instance.call_method0("setup")?
+        };
+
+        // If setup() is async, the call above returns a coroutine — run it.
+        if self.setup_is_async {
+            let asyncio = py.import("asyncio")?;
+            match event_loop {
+                Some(loop_obj) => {
+                    // Submit to the shared event loop so setup and predict share
+                    // the same loop. This keeps event-loop-bound resources alive.
+                    let future = asyncio
+                        .call_method1("run_coroutine_threadsafe", (&result, loop_obj.bind(py)))?;
+                    // Block until setup completes (preserves existing semantics).
+                    future.call_method0("result")?;
+                }
+                None => {
+                    // No shared loop (non-worker path) — use ephemeral loop.
+                    asyncio.call_method1("run", (&result,))?;
+                }
+            }
         }
 
         Ok(())
