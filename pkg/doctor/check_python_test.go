@@ -313,6 +313,7 @@ class Predictor(BasePredictor):
 `)
 
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -351,6 +352,7 @@ class Predictor(BasePredictor):
 `)
 
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -393,6 +395,7 @@ class Predictor(BasePredictor):
 `)
 
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
