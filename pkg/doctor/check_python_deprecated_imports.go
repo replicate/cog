@@ -1,12 +1,15 @@
 package doctor
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/python"
 
 	schemaPython "github.com/replicate/cog/pkg/schema/python"
 )
@@ -91,36 +94,12 @@ func (c *DeprecatedImportsCheck) Fix(ctx *CheckContext, findings []Finding) erro
 			return fmt.Errorf("reading %s: %w", relPath, err)
 		}
 
-		// Re-scan the file using tree-sitter to find deprecated imports directly,
-		// rather than relying on fragile string matching against finding messages.
 		pf, ok := ctx.PythonFiles[relPath]
 		if !ok {
 			continue
 		}
-		namesToRemove := make(map[string]map[string]bool) // module -> set of names
-		root := pf.Tree.RootNode()
-		for _, child := range schemaPython.NamedChildren(root) {
-			if child.Type() != "import_from_statement" {
-				continue
-			}
-			moduleNode := child.ChildByFieldName("module_name")
-			if moduleNode == nil {
-				continue
-			}
-			module := schemaPython.Content(moduleNode, pf.Source)
-			for _, name := range extractImportedNames(child, pf.Source) {
-				for _, dep := range deprecatedImportsList {
-					if module == dep.Module && name == dep.Name {
-						if namesToRemove[dep.Module] == nil {
-							namesToRemove[dep.Module] = make(map[string]bool)
-						}
-						namesToRemove[dep.Module][dep.Name] = true
-					}
-				}
-			}
-		}
 
-		fixed := removeDeprecatedImportLines(string(source), namesToRemove)
+		fixed := removeDeprecatedImportsAST(source, pf.Tree)
 
 		if err := os.WriteFile(fullPath, []byte(fixed), info.Mode()); err != nil {
 			return fmt.Errorf("writing %s: %w", relPath, err)
@@ -128,6 +107,212 @@ func (c *DeprecatedImportsCheck) Fix(ctx *CheckContext, findings []Finding) erro
 	}
 
 	return nil
+}
+
+// byteRange represents a range of bytes to remove from source, corresponding
+// to a full line (including its trailing newline).
+type byteRange struct {
+	start uint32
+	end   uint32
+}
+
+// removeDeprecatedImportsAST uses tree-sitter to identify and remove:
+// 1. import_from_statement nodes that import deprecated names
+// 2. expression_statement nodes that reference those deprecated names
+// 3. orphaned "import X" statements where X is no longer used
+func removeDeprecatedImportsAST(source []byte, tree *sitter.Tree) string {
+	root := tree.RootNode()
+
+	// Step 1: Walk the AST to find which deprecated names are present in this file.
+	deprecatedNames := make(map[string]bool)
+	namesToRemove := make(map[string]map[string]bool) // module -> set of names
+
+	for _, child := range schemaPython.NamedChildren(root) {
+		if child.Type() != "import_from_statement" {
+			continue
+		}
+		moduleNode := child.ChildByFieldName("module_name")
+		if moduleNode == nil {
+			continue
+		}
+		module := schemaPython.Content(moduleNode, source)
+
+		for _, name := range extractImportedNames(child, source) {
+			for _, dep := range deprecatedImportsList {
+				if module == dep.Module && name == dep.Name {
+					deprecatedNames[dep.Name] = true
+					if namesToRemove[dep.Module] == nil {
+						namesToRemove[dep.Module] = make(map[string]bool)
+					}
+					namesToRemove[dep.Module][dep.Name] = true
+				}
+			}
+		}
+	}
+
+	if len(deprecatedNames) == 0 {
+		return string(source)
+	}
+
+	// Step 2: Remove deprecated import lines/names (handles partial imports).
+	fixed := removeDeprecatedImportLines(string(source), namesToRemove)
+
+	// Step 3: Re-parse and use tree-sitter to find statements referencing
+	// the deprecated names, then remove them by byte range.
+	parser := sitter.NewParser()
+	parser.SetLanguage(python.GetLanguage())
+	newTree, err := parser.ParseCtx(context.Background(), nil, []byte(fixed))
+	if err != nil {
+		return fixed
+	}
+
+	newSource := []byte(fixed)
+	newRoot := newTree.RootNode()
+	var removals []byteRange
+	for _, child := range schemaPython.NamedChildren(newRoot) {
+		if child.Type() == "import_from_statement" || child.Type() == "import_statement" {
+			continue
+		}
+		if nodeReferencesAny(child, newSource, deprecatedNames) {
+			removals = append(removals, nodeLineRange(child, newSource))
+		}
+	}
+
+	fixed = applyRemovals(newSource, removals)
+
+	// Step 4: Remove orphaned "import X" statements via AST.
+	fixed = removeOrphanedImportsAST(fixed)
+
+	return fixed
+}
+
+// nodeReferencesAny walks a tree-sitter node recursively and returns true if
+// any identifier node matches one of the given names.
+func nodeReferencesAny(node *sitter.Node, source []byte, names map[string]bool) bool {
+	if node.Type() == "identifier" {
+		return names[schemaPython.Content(node, source)]
+	}
+	for _, child := range schemaPython.AllChildren(node) {
+		if nodeReferencesAny(child, source, names) {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeLineRange returns a byte range covering the full line(s) of a node,
+// including the trailing newline.
+func nodeLineRange(node *sitter.Node, source []byte) byteRange {
+	start := node.StartByte()
+	end := node.EndByte()
+
+	// Extend start to beginning of line
+	for start > 0 && source[start-1] != '\n' {
+		start--
+	}
+	// Extend end past trailing newline
+	if int(end) < len(source) && source[end] == '\n' {
+		end++
+	}
+
+	return byteRange{start: start, end: end}
+}
+
+// applyRemovals removes all byte ranges from source, handling overlaps.
+// Ranges are sorted descending by start so earlier indices remain valid.
+func applyRemovals(source []byte, ranges []byteRange) string {
+	if len(ranges) == 0 {
+		return string(source)
+	}
+
+	// Sort descending by start so we can remove from back to front
+	sort.Slice(ranges, func(i, j int) bool {
+		return ranges[i].start > ranges[j].start
+	})
+
+	result := make([]byte, len(source))
+	copy(result, source)
+
+	for _, r := range ranges {
+		if int(r.start) >= len(result) {
+			continue
+		}
+		end := min(int(r.end), len(result))
+		result = append(result[:r.start], result[end:]...)
+	}
+
+	return string(result)
+}
+
+// removeOrphanedImportsAST re-parses source and removes "import X" statements
+// where X is no longer referenced anywhere else in the file.
+func removeOrphanedImportsAST(source string) string {
+	parser := sitter.NewParser()
+	parser.SetLanguage(python.GetLanguage())
+	tree, err := parser.ParseCtx(context.Background(), nil, []byte(source))
+	if err != nil {
+		return source
+	}
+
+	src := []byte(source)
+	root := tree.RootNode()
+	var removals []byteRange
+
+	for _, child := range schemaPython.NamedChildren(root) {
+		if child.Type() != "import_statement" {
+			continue
+		}
+
+		// Get the module name being imported (e.g. "warnings" from "import warnings")
+		var moduleName string
+		for _, c := range schemaPython.NamedChildren(child) {
+			if c.Type() == "dotted_name" {
+				moduleName = schemaPython.Content(c, src)
+				break
+			}
+		}
+		if moduleName == "" {
+			continue
+		}
+
+		// Check if this module is referenced elsewhere (outside import statements)
+		used := false
+		for _, stmt := range schemaPython.NamedChildren(root) {
+			if stmt.Type() == "import_statement" || stmt.Type() == "import_from_statement" {
+				continue
+			}
+			if nodeReferencesModule(stmt, src, moduleName) {
+				used = true
+				break
+			}
+		}
+
+		if !used {
+			removals = append(removals, nodeLineRange(child, src))
+		}
+	}
+
+	return applyRemovals(src, removals)
+}
+
+// nodeReferencesModule checks if a node contains an attribute access on the
+// given module (e.g. "warnings.filterwarnings") or a bare identifier matching it.
+func nodeReferencesModule(node *sitter.Node, source []byte, moduleName string) bool {
+	if node.Type() == "attribute" {
+		obj := node.ChildByFieldName("object")
+		if obj != nil && obj.Type() == "identifier" && schemaPython.Content(obj, source) == moduleName {
+			return true
+		}
+	}
+	if node.Type() == "identifier" && schemaPython.Content(node, source) == moduleName {
+		return true
+	}
+	for _, child := range schemaPython.AllChildren(node) {
+		if nodeReferencesModule(child, source, moduleName) {
+			return true
+		}
+	}
+	return false
 }
 
 // extractImportedNames returns the names imported in a "from X import a, b, c" statement.

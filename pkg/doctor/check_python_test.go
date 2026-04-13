@@ -336,6 +336,82 @@ class Predictor(BasePredictor):
 	require.Empty(t, findings)
 }
 
+func TestDeprecatedImportsCheck_Fix_WithWarningsFilterwarnings(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `import warnings
+from cog import BasePredictor
+from cog.types import ExperimentalFeatureWarning
+
+warnings.filterwarnings("ignore", category=ExperimentalFeatureWarning)
+
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return "hello " + text
+`)
+
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+
+	check := &DeprecatedImportsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+
+	err = check.Fix(ctx, findings)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	require.NotContains(t, string(content), "ExperimentalFeatureWarning")
+	require.NotContains(t, string(content), "cog.types")
+	require.NotContains(t, string(content), "import warnings")
+
+	// Re-parse and verify clean
+	ctx.PythonFiles = parsePythonFiles(t, dir, "predict.py")
+	findings, err = check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestDeprecatedImportsCheck_Fix_WarningsImportPreserved(t *testing.T) {
+	// When warnings module is still used elsewhere, import should be preserved
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `import warnings
+from cog import BasePredictor
+from cog.types import ExperimentalFeatureWarning
+
+warnings.filterwarnings("ignore", category=ExperimentalFeatureWarning)
+warnings.warn("something else")
+
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return "hello " + text
+`)
+
+	ctx := &CheckContext{
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+
+	check := &DeprecatedImportsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+
+	err = check.Fix(ctx, findings)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	require.NotContains(t, string(content), "ExperimentalFeatureWarning")
+	require.Contains(t, string(content), "import warnings")
+	require.Contains(t, string(content), "warnings.warn")
+}
+
 func TestMissingTypeAnnotationsCheck_Clean(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "predict.py", `from cog import BasePredictor
