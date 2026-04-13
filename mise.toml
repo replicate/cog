@@ -490,12 +490,24 @@ run = [
 [tasks."generate:stubs"]
 alias = "stub:generate"
 description = "Generate Python type stubs for coglet"
-sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml", "crates/coglet-python/coglet/__init__.py"]
-outputs = ["crates/coglet-python/coglet/_sdk/__init__.pyi", "crates/coglet-python/coglet/__init__.pyi"]
 dir = "crates/coglet-python"
 run = [
   { task = "_setup_venv" },
-  "uv run --active cargo run --bin stub_gen",
+  """
+#!/usr/bin/env bash
+set -e
+# stub_gen embeds Python via PyO3 auto-initialize. Py_InitializeEx needs
+# PYTHONHOME to locate the stdlib (encodings, etc.) when the binary lives
+# outside the Python installation tree (common with uv-managed Python).
+PYTHON_PREFIX="$(uv run --active python -c 'import sys; print(sys.base_prefix)')"
+export PYTHONHOME="$PYTHON_PREFIX"
+# On Linux, also ensure the dynamic linker can find libpython.
+export LD_LIBRARY_PATH="${PYTHON_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+uv run --active cargo run --bin stub_gen
+# pyo3-stub-gen output doesn't match ruff style (trailing whitespace in
+# docstrings, long lines, quote style). Format so stub:check is clean.
+find coglet -name '*.pyi' -exec uv run --active ruff format {} +
+""",
 ]
 
 [tasks."generate:compat"]

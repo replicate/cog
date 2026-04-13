@@ -271,6 +271,10 @@ func (ctx *ImportContext) IsBasePredictor(name string) bool {
 func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error) {
 	switch ann.Kind {
 	case TypeAnnotSimple:
+		// Bare dict / Dict → opaque JSON object (TypeAny)
+		if ann.Name == "dict" || ann.Name == "Dict" {
+			return FieldType{Primitive: TypeAny, Repetition: Required}, nil
+		}
 		prim, ok := PrimitiveFromName(ann.Name)
 		if !ok {
 			return FieldType{}, errUnsupportedType(ann.Name)
@@ -279,6 +283,14 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error)
 
 	case TypeAnnotGeneric:
 		outer := ann.Name
+		// dict[K, V] / Dict[K, V] → opaque JSON object (TypeAny).
+		// Type parameters are intentionally discarded because FieldType is flat
+		// (PrimitiveType + Repetition only). The output path uses the recursive
+		// SchemaType model which can represent typed dicts (e.g. dict[str, int])
+		// precisely; for inputs, all dicts are treated as opaque JSON objects.
+		if outer == "dict" || outer == "Dict" {
+			return FieldType{Primitive: TypeAny, Repetition: Required}, nil
+		}
 		if outer == "Optional" {
 			if len(ann.Args) != 1 {
 				return FieldType{}, errUnsupportedType(fmt.Sprintf("Optional expects exactly 1 type argument, got %d", len(ann.Args)))
