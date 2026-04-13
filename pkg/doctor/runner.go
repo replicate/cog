@@ -149,7 +149,7 @@ func parsePythonRef(ctx *CheckContext, ref string) {
 
 	parser := sitter.NewParser()
 	parser.SetLanguage(python.GetLanguage())
-	tree, err := parser.ParseCtx(context.Background(), nil, source)
+	tree, err := parser.ParseCtx(ctx, nil, source)
 	if err != nil {
 		return
 	}

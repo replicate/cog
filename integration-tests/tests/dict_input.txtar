@@ -1,0 +1,33 @@
+# Test bare dict as predict input type
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Dict input works via JSON
+cog predict $TEST_IMAGE --json '{"data": {"greeting": "hello", "count": 3}}'
+stdout '"status": "succeeded"'
+stdout '"output": "count=3, greeting=hello"'
+
+# Empty dict also works
+cog predict $TEST_IMAGE --json '{"data": {}}'
+stdout '"status": "succeeded"'
+stdout '"output": ""'
+
+# Verify the schema has the correct type for dict input
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout '"data":{"title":"Data","type":"object","x-order":0}'
+stdout '"required":\["data"\]'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, data: dict) -> str:
+        parts = [f"{k}={v}" for k, v in sorted(data.items())]
+        return ", ".join(parts)

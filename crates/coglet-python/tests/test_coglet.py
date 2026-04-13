@@ -283,6 +283,37 @@ predict: "predict.py:Predictor"
     return predictor
 
 
+@pytest.fixture
+def async_setup_event_loop_predictor(tmp_path: Path) -> Path:
+    """Create a predictor where async setup() stores the event loop and predict() checks it matches."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def setup(self):
+        self.setup_loop = asyncio.get_running_loop()
+        # Create an event-loop-bound resource (Queue is bound to the running loop)
+        self.queue = asyncio.Queue()
+        await self.queue.put("from-setup")
+
+    async def predict(self, name: str = "test") -> str:
+        predict_loop = asyncio.get_running_loop()
+        same_loop = predict_loop is self.setup_loop
+        # Use the queue created in setup — this fails if loops differ
+        item = self.queue.get_nowait()
+        return f"same_loop={same_loop} item={item}"
+""")
+
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
 class CogletServer:
     """Context manager for running coglet server."""
 
@@ -519,6 +550,21 @@ class TestAsyncSetup:
             result = server.predict({"name": "Claude"})
             assert result["status"] == "succeeded"
             assert result["output"] == "https://example.com/model.tar: Claude"
+
+    def test_async_setup_shares_event_loop_with_predict(
+        self, async_setup_event_loop_predictor: Path
+    ):
+        """async setup() and async predict() must run on the same event loop.
+
+        This catches the bug where async setup() ran via asyncio.run() (ephemeral loop)
+        while predict() ran on a separate shared loop, causing event-loop-bound resources
+        created in setup (httpx.AsyncClient, aiohttp.ClientSession, asyncio.Queue, etc.)
+        to fail in predict.
+        """
+        with CogletServer(async_setup_event_loop_predictor) as server:
+            result = server.predict({"name": "test"})
+            assert result["status"] == "succeeded"
+            assert result["output"] == "same_loop=True item=from-setup"
 
 
 @pytest.fixture

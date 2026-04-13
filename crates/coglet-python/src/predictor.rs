@@ -548,9 +548,12 @@ impl PythonPredictor {
     /// - `has_setup_weights()` checks if setup() has a weights parameter
     /// - `extract_setup_weights()` reads from COG_WEIGHTS env or ./weights path
     ///
-    /// If setup() is an async def, the returned coroutine is executed with
-    /// `asyncio.run()`, matching the pattern in `call_method_raw()`.
-    pub fn setup(&self, py: Python<'_>) -> PyResult<()> {
+    /// If setup() is an async def and an event loop is provided, the coroutine
+    /// is submitted to that loop via `run_coroutine_threadsafe` so that
+    /// event-loop-bound resources created during setup (httpx.AsyncClient, etc.)
+    /// remain usable in predict(). If no loop is provided, falls back to
+    /// `asyncio.run()` (used by the non-worker code path).
+    pub fn setup(&self, py: Python<'_>, event_loop: Option<&Py<PyAny>>) -> PyResult<()> {
         let instance = self.instance.bind(py);
 
         // Check if setup method exists
@@ -577,7 +580,20 @@ impl PythonPredictor {
         // If setup() is async, the call above returns a coroutine — run it.
         if self.setup_is_async {
             let asyncio = py.import("asyncio")?;
-            asyncio.call_method1("run", (&result,))?;
+            match event_loop {
+                Some(loop_obj) => {
+                    // Submit to the shared event loop so setup and predict share
+                    // the same loop. This keeps event-loop-bound resources alive.
+                    let future = asyncio
+                        .call_method1("run_coroutine_threadsafe", (&result, loop_obj.bind(py)))?;
+                    // Block until setup completes (preserves existing semantics).
+                    future.call_method0("result")?;
+                }
+                None => {
+                    // No shared loop (non-worker path) — use ephemeral loop.
+                    asyncio.call_method1("run", (&result,))?;
+                }
+            }
         }
 
         Ok(())

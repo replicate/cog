@@ -237,6 +237,13 @@ class FieldType:
                 if len(t_args) != 1:
                     raise ValueError("List must have one type argument")
                 elem_t = t_args[0]
+                # dict elements in lists → treat as ANY (opaque JSON objects)
+                if elem_t is dict or typing.get_origin(elem_t) is dict:
+                    return FieldType(
+                        primitive=PrimitiveType.ANY,
+                        repetition=Repetition.REPEATED,
+                        coder=None,
+                    )
                 nested_t = typing.get_origin(elem_t)
                 if nested_t is not None:
                     raise ValueError(
@@ -259,6 +266,13 @@ class FieldType:
                     if len(list_args) != 1:
                         raise ValueError("List must have one type argument")
                     elem_t = list_args[0]
+                    # dict elements in optional lists → ANY
+                    if elem_t is dict or typing.get_origin(elem_t) is dict:
+                        return FieldType(
+                            primitive=PrimitiveType.ANY,
+                            repetition=Repetition.OPTIONAL_REPEATED,
+                            coder=None,
+                        )
                     inner_origin = typing.get_origin(elem_t)
                     if inner_origin is not None:
                         raise ValueError(
@@ -267,6 +281,15 @@ class FieldType:
                 else:
                     elem_t = Any
                 repetition = Repetition.OPTIONAL_REPEATED
+            elif nested_t is dict or elem_t is dict:
+                # Optional[dict] or Optional[Dict[str, Any]] → optional ANY.
+                # nested_t is dict: elem_t is parameterized (e.g. Dict[str, Any]).
+                # elem_t is dict: elem_t is bare dict (nested_t is None).
+                return FieldType(
+                    primitive=PrimitiveType.ANY,
+                    repetition=Repetition.OPTIONAL,
+                    coder=None,
+                )
             elif nested_t is not None:
                 raise ValueError(
                     f"Optional cannot have nested type {_type_name(nested_t)}"
