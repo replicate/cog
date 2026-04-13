@@ -99,7 +99,7 @@ func (c *DeprecatedImportsCheck) Fix(ctx *CheckContext, findings []Finding) erro
 			continue
 		}
 
-		fixed := removeDeprecatedImportsAST(source, pf.Tree)
+		fixed := removeDeprecatedImportsAST(ctx.ctx, source, pf.Tree)
 
 		if err := os.WriteFile(fullPath, []byte(fixed), info.Mode()); err != nil {
 			return fmt.Errorf("writing %s: %w", relPath, err)
@@ -120,7 +120,7 @@ type byteRange struct {
 // 1. import_from_statement nodes that import deprecated names
 // 2. expression_statement nodes that reference those deprecated names
 // 3. orphaned "import X" statements where X is no longer used
-func removeDeprecatedImportsAST(source []byte, tree *sitter.Tree) string {
+func removeDeprecatedImportsAST(ctx context.Context, source []byte, tree *sitter.Tree) string {
 	root := tree.RootNode()
 
 	// Step 1: Walk the AST to find which deprecated names are present in this file.
@@ -161,7 +161,7 @@ func removeDeprecatedImportsAST(source []byte, tree *sitter.Tree) string {
 	// the deprecated names, then remove them by byte range.
 	parser := sitter.NewParser()
 	parser.SetLanguage(python.GetLanguage())
-	newTree, err := parser.ParseCtx(context.Background(), nil, []byte(fixed))
+	newTree, err := parser.ParseCtx(ctx, nil, []byte(fixed))
 	if err != nil {
 		return fixed
 	}
@@ -181,7 +181,7 @@ func removeDeprecatedImportsAST(source []byte, tree *sitter.Tree) string {
 	fixed = applyRemovals(newSource, removals)
 
 	// Step 4: Remove orphaned "import X" statements via AST.
-	fixed = removeOrphanedImportsAST(fixed)
+	fixed = removeOrphanedImportsAST(ctx, fixed)
 
 	return fixed
 }
@@ -246,10 +246,10 @@ func applyRemovals(source []byte, ranges []byteRange) string {
 
 // removeOrphanedImportsAST re-parses source and removes "import X" statements
 // where X is no longer referenced anywhere else in the file.
-func removeOrphanedImportsAST(source string) string {
+func removeOrphanedImportsAST(ctx context.Context, source string) string {
 	parser := sitter.NewParser()
 	parser.SetLanguage(python.GetLanguage())
-	tree, err := parser.ParseCtx(context.Background(), nil, []byte(source))
+	tree, err := parser.ParseCtx(ctx, nil, []byte(source))
 	if err != nil {
 		return source
 	}
