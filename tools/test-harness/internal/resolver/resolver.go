@@ -321,7 +321,7 @@ func downloadCogBinary(tag string) (dest string, err error) {
 		fmt.Fprintf(os.Stderr, "WARNING: could not verify checksum: %v\n", err)
 		fmt.Fprintf(os.Stderr, "WARNING: continuing without checksum verification\n")
 	} else {
-		fmt.Printf("Checksum verified for %s\n", assetName)
+		fmt.Fprintf(os.Stderr, "Checksum verified for %s\n", assetName)
 	}
 
 	return dest, nil
@@ -470,7 +470,9 @@ func buildCogFromRef(ref string) (string, string, string, error) {
 
 	// Build SDK wheel
 	wheelDir := filepath.Join(tmpDir, "dist")
-	os.MkdirAll(wheelDir, 0755)
+	if err := os.MkdirAll(wheelDir, 0755); err != nil {
+		return "", "", "", fmt.Errorf("creating wheel dir: %w", err)
+	}
 
 	uvCtx, uvCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer uvCancel()

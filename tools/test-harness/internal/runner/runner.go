@@ -151,7 +151,7 @@ func (r *Runner) RunModel(ctx context.Context, model manifest.Model) *report.Mod
 	}
 
 	// Prepare model
-	modelDir, err := r.prepareModel(model)
+	modelDir, err := r.prepareModel(ctx, model)
 	if err != nil {
 		result.Passed = false
 		result.Error = fmt.Sprintf("Preparation failed: %v", err)
@@ -208,7 +208,7 @@ func (r *Runner) BuildModel(ctx context.Context, model manifest.Model) *report.M
 	}
 
 	// Prepare model
-	modelDir, err := r.prepareModel(model)
+	modelDir, err := r.prepareModel(ctx, model)
 	if err != nil {
 		result.Passed = false
 		result.Error = fmt.Sprintf("Preparation failed: %v", err)
@@ -236,7 +236,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 	}
 
 	// Prepare model
-	modelDir, err := r.prepareModel(model)
+	modelDir, err := r.prepareModel(ctx, model)
 	if err != nil {
 		result.Passed = false
 		result.Error = fmt.Sprintf("Preparation failed: %v", err)
@@ -280,7 +280,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 		if staticErr != nil {
 			return nil // Don't fail the group, we'll check errors after
 		}
-		staticSchema, staticSchemaErr = r.extractSchemaLabel(staticTag)
+		staticSchema, staticSchemaErr = r.extractSchemaLabel(ctx, staticTag)
 		staticDuration = time.Since(staticStart).Seconds()
 		return nil
 	})
@@ -290,7 +290,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 		if runtimeErr != nil {
 			return nil
 		}
-		runtimeSchema, runtimeSchemaErr = r.extractSchemaLabel(runtimeTag)
+		runtimeSchema, runtimeSchemaErr = r.extractSchemaLabel(ctx, runtimeTag)
 		runtimeDuration = time.Since(runtimeStart).Seconds()
 		return nil
 	})
@@ -349,7 +349,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 	return result
 }
 
-func (r *Runner) prepareModel(model manifest.Model) (string, error) {
+func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string, error) {
 	// Local fixture models
 	if model.Repo == "local" {
 		fixturesModels := filepath.Join(r.fixturesDir, "models")
@@ -381,7 +381,7 @@ func (r *Runner) prepareModel(model manifest.Model) (string, error) {
 	}
 
 	// Clone repo
-	repoDir, err := r.cloneRepo(model.Repo)
+	repoDir, err := r.cloneRepo(ctx, model.Repo)
 	if err != nil {
 		return "", err
 	}
@@ -403,7 +403,7 @@ func (r *Runner) prepareModel(model manifest.Model) (string, error) {
 	return modelDir, nil
 }
 
-func (r *Runner) cloneRepo(repo string) (string, error) {
+func (r *Runner) cloneRepo(ctx context.Context, repo string) (string, error) {
 	if dir, ok := r.clonedRepos[repo]; ok {
 		return dir, nil
 	}
@@ -414,7 +414,7 @@ func (r *Runner) cloneRepo(repo string) (string, error) {
 	os.RemoveAll(dest)
 
 	url := fmt.Sprintf("https://github.com/%s.git", repo)
-	cmd := exec.Command("git", "clone", "--depth=1", url, dest)
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", url, dest)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("cloning %s: %w", repo, err)
@@ -470,8 +470,8 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 	return nil
 }
 
-func (r *Runner) extractSchemaLabel(imageTag string) (string, error) {
-	cmd := exec.Command("docker", "inspect", imageTag, "--format", fmt.Sprintf("{{index .Config.Labels \"%s\"}}", openapiSchemaLabel))
+func (r *Runner) extractSchemaLabel(ctx context.Context, imageTag string) (string, error) {
+	cmd := exec.CommandContext(ctx, "docker", "inspect", imageTag, "--format", fmt.Sprintf("{{index .Config.Labels \"%s\"}}", openapiSchemaLabel))
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err

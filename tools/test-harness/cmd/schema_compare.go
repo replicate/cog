@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -98,10 +99,14 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 	}
 
 	// Check for failures
+	var failedNames []string
 	for _, r := range results {
 		if !r.Passed {
-			return fmt.Errorf("some schema comparisons failed")
+			failedNames = append(failedNames, r.Name)
 		}
+	}
+	if len(failedNames) > 0 {
+		return fmt.Errorf("%d schema comparison(s) failed: %s", len(failedNames), strings.Join(failedNames, ", "))
 	}
 
 	return nil

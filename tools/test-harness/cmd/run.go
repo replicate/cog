@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -104,10 +105,14 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 	}
 
 	// Check for failures
+	var failedNames []string
 	for _, r := range results {
 		if !r.Passed && !r.Skipped {
-			return fmt.Errorf("some tests failed")
+			failedNames = append(failedNames, r.Name)
 		}
+	}
+	if len(failedNames) > 0 {
+		return fmt.Errorf("%d model(s) failed: %s", len(failedNames), strings.Join(failedNames, ", "))
 	}
 
 	return nil

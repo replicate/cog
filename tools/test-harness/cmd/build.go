@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -52,10 +53,14 @@ func runBuild(ctx context.Context) error {
 	report.ConsoleReport(results, resolved.SDKVersion, resolved.CogVersion)
 
 	// Check for failures
+	var failedNames []string
 	for _, r := range results {
 		if !r.Passed && !r.Skipped {
-			return fmt.Errorf("some builds failed")
+			failedNames = append(failedNames, r.Name)
 		}
+	}
+	if len(failedNames) > 0 {
+		return fmt.Errorf("%d build(s) failed: %s", len(failedNames), strings.Join(failedNames, ", "))
 	}
 
 	return nil

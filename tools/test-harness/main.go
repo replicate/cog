@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/replicate/cog/tools/test-harness/cmd"
@@ -9,8 +8,11 @@ import (
 
 func main() {
 	rootCmd := cmd.NewRootCommand()
+	rootCmd.SilenceErrors = true
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		// Cobra's SilenceErrors prevents double-printing.
+		// We print manually to control the format.
+		rootCmd.PrintErrln("Error:", err)
 		os.Exit(1)
 	}
 }
