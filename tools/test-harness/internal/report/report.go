@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -67,11 +68,18 @@ func ConsoleReport(results []ModelResult, sdkVersion, cogVersion string) {
 		}
 
 		if r.Error != "" {
-			msg := r.Error
-			if len(msg) > 80 {
-				msg = msg[:80]
+			// Print the summary line with just the first line of the error
+			firstLine := r.Error
+			if idx := strings.Index(firstLine, "\n"); idx != -1 {
+				firstLine = firstLine[:idx]
 			}
-			writeStatus("x", r.Name, msg, r.GPU)
+			writeStatus("x", r.Name, firstLine, r.GPU)
+			// Print full error details indented below
+			for _, line := range strings.Split(r.Error, "\n") {
+				if line != "" {
+					fmt.Printf("    %s\n", line)
+				}
+			}
 			failed++
 			continue
 		}
@@ -99,22 +107,22 @@ func ConsoleReport(results []ModelResult, sdkVersion, cogVersion string) {
 			}
 			msg := fmt.Sprintf("%d test(s) failed", len(failures))
 			if len(failures) > 0 {
-				failureMsg := failures[0].Message
-				if len(failureMsg) > 60 {
-					failureMsg = failureMsg[:60]
+				// Use just the first line of the first failure for the summary
+				firstLine := failures[0].Message
+				if idx := strings.Index(firstLine, "\n"); idx != -1 {
+					firstLine = firstLine[:idx]
 				}
-				msg += fmt.Sprintf(": %s", failureMsg)
+				msg += fmt.Sprintf(": %s", firstLine)
 			}
 			writeStatus("x", r.Name, msg, r.GPU)
 			failed++
 
-			// Print individual failures
+			// Print individual failures with full output
 			for _, t := range failures {
-				msg := t.Message
-				if len(msg) > 100 {
-					msg = msg[:100]
+				fmt.Printf("    x %s:\n", t.Description)
+				for _, line := range strings.Split(t.Message, "\n") {
+					fmt.Printf("      %s\n", line)
 				}
-				fmt.Printf("    x %s: %s\n", t.Description, msg)
 			}
 		}
 	}
@@ -226,11 +234,16 @@ func SchemaCompareConsoleReport(results []SchemaCompareResult, cogVersion string
 
 	for _, r := range results {
 		if r.Error != "" {
-			msg := r.Error
-			if len(msg) > 80 {
-				msg = msg[:80]
+			firstLine := r.Error
+			if idx := strings.Index(firstLine, "\n"); idx != -1 {
+				firstLine = firstLine[:idx]
 			}
-			writeStatus("x", r.Name, msg, false)
+			writeStatus("x", r.Name, firstLine, false)
+			for _, line := range strings.Split(r.Error, "\n") {
+				if line != "" {
+					fmt.Printf("    %s\n", line)
+				}
+			}
 			failed++
 			continue
 		}

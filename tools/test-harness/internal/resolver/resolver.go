@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +25,19 @@ const (
 )
 
 var prereleaseRe = regexp.MustCompile(`(?i)-(alpha|beta|rc|dev)`)
+
+// checksumMismatchError indicates the downloaded file's checksum does not match the expected value.
+// This is a hard error (possible corruption or tampering), distinct from the checksum file being
+// unavailable or the asset name not being found.
+type checksumMismatchError struct {
+	Asset    string
+	Expected string
+	Actual   string
+}
+
+func (e *checksumMismatchError) Error() string {
+	return fmt.Sprintf("checksum mismatch for %s: expected %s, got %s", e.Asset, e.Expected, e.Actual)
+}
 
 // Result holds resolved versions and paths
 type Result struct {
@@ -222,6 +236,15 @@ func downloadCogBinary(tag string) (dest string, err error) {
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 
+	// Normalize OS names to match release asset naming (e.g. Darwin, Linux)
+	osMap := map[string]string{
+		"darwin": "Darwin",
+		"linux":  "Linux",
+	}
+	if normalized, ok := osMap[osName]; ok {
+		osName = normalized
+	}
+
 	// Normalize architecture names
 	archMap := map[string]string{
 		"amd64": "x86_64",
@@ -278,7 +301,14 @@ func downloadCogBinary(tag string) (dest string, err error) {
 	}
 
 	if err := verifyDownloadedBinary(tag, assetName, dest); err != nil {
-		return "", err
+		var mismatchErr *checksumMismatchError
+		if errors.As(err, &mismatchErr) {
+			return "", err
+		}
+		fmt.Fprintf(os.Stderr, "WARNING: could not verify checksum: %v\n", err)
+		fmt.Fprintf(os.Stderr, "WARNING: continuing without checksum verification\n")
+	} else {
+		fmt.Printf("Checksum verified for %s\n", assetName)
 	}
 
 	return dest, nil
@@ -323,7 +353,7 @@ func verifyDownloadedBinary(tag, assetName, dest string) error {
 	}
 
 	if !strings.EqualFold(expected, actual) {
-		return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", assetName, expected, actual)
+		return &checksumMismatchError{Asset: assetName, Expected: expected, Actual: actual}
 	}
 
 	return nil

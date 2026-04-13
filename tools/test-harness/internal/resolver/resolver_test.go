@@ -31,16 +31,22 @@ func TestResolveWithSDKWheelAndExplicitSDKVersionSetsPatchVersion(t *testing.T) 
 }
 
 func TestParseChecksum(t *testing.T) {
-	content := "abc123  cog_darwin_arm64\nfeedbeef *other_file\n"
-	checksum, err := parseChecksum(content, "cog_darwin_arm64")
+	content := "abc123  cog_Darwin_arm64\nfeedbeef *other_file\n"
+	checksum, err := parseChecksum(content, "cog_Darwin_arm64")
 	require.NoError(t, err)
 	assert.Equal(t, "abc123", checksum)
 }
 
 func TestParseChecksumNotFound(t *testing.T) {
-	_, err := parseChecksum("abc123  some_other_file\n", "cog_linux_x86_64")
+	_, err := parseChecksum("abc123  some_other_file\n", "cog_Linux_x86_64")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "checksum for cog_linux_x86_64 not found")
+	assert.Contains(t, err.Error(), "checksum for cog_Linux_x86_64 not found")
+}
+
+func TestChecksumMismatchError(t *testing.T) {
+	err := &checksumMismatchError{Asset: "cog_Darwin_arm64", Expected: "aaa", Actual: "bbb"}
+	assert.Contains(t, err.Error(), "checksum mismatch")
+	assert.Contains(t, err.Error(), "cog_Darwin_arm64")
 }
 
 func TestFileSHA256(t *testing.T) {

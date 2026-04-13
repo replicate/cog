@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -42,7 +43,16 @@ func New(cogBinary, sdkVersion, sdkWheel string, fixturesDir string, keepImages 
 		}
 	}
 
-	workDir, err := os.MkdirTemp("", "cog-harness-*")
+	// Create the work directory under $HOME so that Docker volume mounts work
+	// with VM-based runtimes like Colima that only share $HOME by default.
+	// Using the system temp dir ($TMPDIR, e.g. /var/folders/... on macOS) would
+	// result in empty volume mounts when cog predict/train/serve runs containers
+	// with source directories mounted as /src.
+	baseDir := filepath.Join(os.Getenv("HOME"), ".cache", "cog-harness")
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return nil, fmt.Errorf("creating harness cache dir: %w", err)
+	}
+	workDir, err := os.MkdirTemp(baseDir, "run-*")
 	if err != nil {
 		return nil, fmt.Errorf("creating work dir: %w", err)
 	}
@@ -415,7 +425,6 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 	defer cancel()
 	cmd := exec.CommandContext(ctx, r.cogBinary, "build", "-t", imageTag)
 	cmd.Dir = modelDir
-	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()
 	if r.sdkWheel != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("COG_SDK_WHEEL=%s", r.sdkWheel))
@@ -427,7 +436,11 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	return cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w\n%s", err, string(output))
+	}
+	return nil
 }
 
 func (r *Runner) extractSchemaLabel(imageTag string) (string, error) {
@@ -483,7 +496,10 @@ func (r *Runner) runCogTest(ctx context.Context, modelDir string, model manifest
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, os.ExpandEnv(v)))
 	}
 
-	output, err := cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	result.DurationSec = time.Since(start).Seconds()
 
 	if ctx.Err() == context.DeadlineExceeded {
@@ -494,12 +510,13 @@ func (r *Runner) runCogTest(ctx context.Context, modelDir string, model manifest
 
 	if err != nil {
 		result.Passed = false
-		result.Message = fmt.Sprintf("cog %s exited with error: %v\n%s", command, err, string(output))
+		result.Message = fmt.Sprintf("cog %s exited with error: %v\n%s", command, err, stderr.String())
 		return result
 	}
 
-	// Extract output
-	outputStr := extractOutput(string(output), modelDir)
+	// Extract output from stdout only — stderr contains build logs and status
+	// messages that should not be matched against expected values.
+	outputStr := extractOutput(stdout.String(), stderr.String(), modelDir)
 
 	// Validate
 	vr := validator.Validate(outputStr, tc.Expect)
@@ -546,11 +563,10 @@ func (r *Runner) resolveInput(value any) string {
 	return fmt.Sprintf("@%s", absPath)
 }
 
-func extractOutput(output, modelDir string) string {
-	lines := strings.Split(output, "\n")
-
-	// Look for "Written output to:" in stderr
-	for _, line := range lines {
+func extractOutput(stdout, stderr, modelDir string) string {
+	// For file outputs (e.g. images), cog writes the file to CWD and prints
+	// "Written output to: <path>" on stderr. Check stderr for this pattern.
+	for _, line := range strings.Split(stderr, "\n") {
 		if strings.Contains(line, "Written output to:") {
 			parts := strings.SplitN(line, "Written output to:", 2)
 			if len(parts) == 2 {
@@ -564,8 +580,8 @@ func extractOutput(output, modelDir string) string {
 		}
 	}
 
-	// Return stdout
-	return strings.TrimSpace(output)
+	// Return stdout (the actual prediction output)
+	return strings.TrimSpace(stdout)
 }
 
 func copyDir(src, dst string) error {

@@ -1,4 +1,4 @@
-# Cog Model Test Harness (Go)
+# Cog Model Test Harness
 
 Automated test harness for validating Cog models against new CLI/SDK versions.
 
