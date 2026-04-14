@@ -337,36 +337,46 @@ impl PredictionService {
         self.schema.read().await.clone()
     }
 
-    /// Validate prediction input against the OpenAPI schema.
+    /// Strip unknown fields from input and validate in one pass.
     ///
-    /// Returns Ok(()) if no schema is loaded or if validation passes.
-    /// Returns Err with per-field validation errors on failure.
-    pub async fn validate_input(
+    /// Unknown inputs are silently dropped to match Replicate's historical API
+    /// behavior. Returns the stripped field names and the validation result
+    /// under a single lock acquisition.
+    pub async fn strip_and_validate_input(
         &self,
-        input: &serde_json::Value,
-    ) -> Result<(), Vec<crate::input_validation::ValidationError>> {
+        input: &mut serde_json::Value,
+    ) -> (
+        Vec<String>,
+        Result<(), Vec<crate::input_validation::ValidationError>>,
+    ) {
         let guard = self.input_validator.read().await;
         if let Some(ref validator) = *guard {
-            validator.validate(input)
+            let stripped = validator.strip_unknown(input);
+            let result = validator.validate(input);
+            (stripped, result)
         } else {
-            Ok(())
+            (Vec::new(), Ok(()))
         }
     }
 
-    /// Validate training input against the TrainingInput schema.
+    /// Strip unknown fields from training input and validate in one pass.
     ///
     /// Falls back to the predict validator if no training schema is present.
-    pub async fn validate_train_input(
+    pub async fn strip_and_validate_train_input(
         &self,
-        input: &serde_json::Value,
-    ) -> Result<(), Vec<crate::input_validation::ValidationError>> {
+        input: &mut serde_json::Value,
+    ) -> (
+        Vec<String>,
+        Result<(), Vec<crate::input_validation::ValidationError>>,
+    ) {
         let guard = self.train_validator.read().await;
         if let Some(ref validator) = *guard {
-            return validator.validate(input);
+            let stripped = validator.strip_unknown(input);
+            let result = validator.validate(input);
+            return (stripped, result);
         }
         drop(guard);
-        // Fallback: no TrainingInput schema — use predict validator (legacy compat)
-        self.validate_input(input).await
+        self.strip_and_validate_input(input).await
     }
 
     /// Run user-defined healthcheck via orchestrator.

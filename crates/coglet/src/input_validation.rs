@@ -1,8 +1,8 @@
 //! Input validation against the OpenAPI schema.
 //!
-//! Validates prediction inputs before dispatching to the Python worker,
-//! catching missing required fields and unknown fields early with clear
-//! error messages (matching the format users expect from pydantic).
+//! Validates prediction inputs before dispatching to the Python worker.
+//! Strips unknown fields silently and catches missing required fields
+//! with clear error messages (matching the format users expect from pydantic).
 
 use std::collections::HashSet;
 
@@ -31,8 +31,9 @@ pub struct InputValidator {
 impl InputValidator {
     /// Build a validator from a full OpenAPI schema document.
     ///
-    /// Extracts `components.schemas.Input`, injects `additionalProperties: false`
-    /// (for pydantic parity), and compiles a JSON Schema validator.
+    /// Extracts `components.schemas.Input` and compiles a JSON Schema validator.
+    /// Unknown input fields should be stripped via `strip_unknown()` before
+    /// calling `validate()`.
     ///
     /// Returns None if the schema doesn't contain an Input component.
     pub fn from_openapi_schema(schema: &Value) -> Option<Self> {
@@ -62,11 +63,7 @@ impl InputValidator {
             })
             .unwrap_or_default();
 
-        // Clone and inject additionalProperties: false for pydantic parity
         let mut resolved = input_schema.clone();
-        if let Some(obj) = resolved.as_object_mut() {
-            obj.insert("additionalProperties".to_string(), Value::Bool(false));
-        }
 
         // Inline $ref pointers so the validator can resolve them without
         // the full OpenAPI document context. cog-schema-gen emits $ref for
@@ -91,6 +88,22 @@ impl InputValidator {
         self.required.len()
     }
 
+    /// Strip unknown input fields in place, returning the names of removed fields.
+    pub fn strip_unknown(&self, input: &mut Value) -> Vec<String> {
+        let Some(obj) = input.as_object_mut() else {
+            return Vec::new();
+        };
+        let unknown_keys: Vec<String> = obj
+            .keys()
+            .filter(|k| !self.properties.contains(*k))
+            .cloned()
+            .collect();
+        for key in &unknown_keys {
+            obj.remove(key);
+        }
+        unknown_keys
+    }
+
     /// Validate an input value against the schema.
     ///
     /// Returns Ok(()) on success, or a list of per-field validation errors
@@ -102,7 +115,6 @@ impl InputValidator {
 
         let mut errors = Vec::new();
         let mut seen_required = false;
-        let mut seen_additional = false;
 
         for error in self.validator.iter_errors(input) {
             let msg = error.to_string();
@@ -126,28 +138,8 @@ impl InputValidator {
                 continue;
             }
 
-            // "additionalProperties" errors: emit one entry per unknown field
-            if msg.contains("Additional properties") && !seen_additional {
-                seen_additional = true;
-                if let Some(input_obj) = input.as_object() {
-                    for key in input_obj.keys() {
-                        if !self.properties.contains(key) {
-                            errors.push(ValidationError {
-                                field: key.clone(),
-                                msg: format!("Unexpected field '{key}'"),
-                                error_type: "value_error.extra".to_string(),
-                            });
-                        }
-                    }
-                }
-                continue;
-            }
-
-            // Skip duplicate required/additional messages
+            // Skip duplicate required messages
             if seen_required && msg.contains("is a required property") {
-                continue;
-            }
-            if seen_additional && msg.contains("Additional properties") {
                 continue;
             }
 
@@ -250,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_additional_properties() {
+    fn allows_additional_properties_in_validate() {
         let schema = make_schema(json!({
             "type": "object",
             "properties": {
@@ -261,17 +253,17 @@ mod tests {
 
         let validator = InputValidator::from_openapi_schema(&schema).unwrap();
 
-        // Extra field should fail
-        let errs = validator
-            .validate(&json!({"s": "hello", "extra": "bad"}))
-            .unwrap_err();
-        assert_eq!(errs.len(), 1);
-        assert_eq!(errs[0].field, "extra");
-        assert!(errs[0].msg.contains("Unexpected"));
+        // Extra fields should NOT cause validation failure — they get stripped separately
+        assert!(
+            validator
+                .validate(&json!({"s": "hello", "extra": "bad"}))
+                .is_ok(),
+            "unknown inputs should not cause validation errors"
+        );
     }
 
     #[test]
-    fn missing_and_extra_fields() {
+    fn strip_unknown_removes_extra_fields() {
         let schema = make_schema(json!({
             "type": "object",
             "properties": {
@@ -282,15 +274,77 @@ mod tests {
 
         let validator = InputValidator::from_openapi_schema(&schema).unwrap();
 
-        // wrong=value with missing s
-        let errs = validator.validate(&json!({"wrong": "value"})).unwrap_err();
-        assert!(errs.len() >= 2);
-        let fields: Vec<&str> = errs.iter().map(|e| e.field.as_str()).collect();
-        assert!(fields.contains(&"s"), "should report missing s: {fields:?}");
-        assert!(
-            fields.contains(&"wrong"),
-            "should report extra wrong: {fields:?}"
-        );
+        let mut input = json!({"s": "hello", "guidance_scale": 7.5, "extra": "bad"});
+        let stripped = validator.strip_unknown(&mut input);
+
+        // Should have removed the unknown fields
+        assert_eq!(stripped.len(), 2);
+        assert!(stripped.contains(&"guidance_scale".to_string()));
+        assert!(stripped.contains(&"extra".to_string()));
+
+        // Known field should remain
+        assert_eq!(input, json!({"s": "hello"}));
+    }
+
+    #[test]
+    fn strip_unknown_preserves_known_fields() {
+        let schema = make_schema(json!({
+            "type": "object",
+            "properties": {
+                "s": {"type": "string", "title": "S"},
+                "n": {"type": "integer"}
+            },
+            "required": ["s"]
+        }));
+
+        let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+
+        let mut input = json!({"s": "hello", "n": 42});
+        let stripped = validator.strip_unknown(&mut input);
+
+        assert!(stripped.is_empty());
+        assert_eq!(input, json!({"s": "hello", "n": 42}));
+    }
+
+    #[test]
+    fn strip_unknown_returns_empty_for_no_extra_fields() {
+        let schema = make_schema(json!({
+            "type": "object",
+            "properties": {
+                "s": {"type": "string", "title": "S"}
+            },
+            "required": ["s"]
+        }));
+
+        let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+
+        let mut input = json!({"s": "hello"});
+        let stripped = validator.strip_unknown(&mut input);
+        assert!(stripped.is_empty());
+    }
+
+    #[test]
+    fn missing_required_with_extra_fields() {
+        let schema = make_schema(json!({
+            "type": "object",
+            "properties": {
+                "s": {"type": "string", "title": "S"}
+            },
+            "required": ["s"]
+        }));
+
+        let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+
+        // Strip unknowns first, then validate — only the missing required field
+        // should be an error, not the extra field
+        let mut input = json!({"wrong": "value"});
+        let stripped = validator.strip_unknown(&mut input);
+        assert_eq!(stripped, vec!["wrong".to_string()]);
+
+        let errs = validator.validate(&input).unwrap_err();
+        assert_eq!(errs.len(), 1);
+        assert_eq!(errs[0].field, "s");
+        assert_eq!(errs[0].msg, "Field required");
     }
 
     #[test]
