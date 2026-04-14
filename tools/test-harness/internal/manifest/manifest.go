@@ -32,6 +32,7 @@ type Model struct {
 	Env              map[string]string `yaml:"env"`
 	SDKVersion       string            `yaml:"sdk_version"`
 	CogYAMLOverrides map[string]any    `yaml:"cog_yaml_overrides"`
+	Setup            []string          `yaml:"setup"`
 	Tests            []TestCase        `yaml:"tests"`
 	TrainTests       []TestCase        `yaml:"train_tests"`
 }

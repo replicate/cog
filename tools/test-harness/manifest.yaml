@@ -13,6 +13,14 @@
 #   json_match  - parse output as JSON, assert `match` is a subset
 #   json_keys   - parse output as JSON dict, assert it has entries
 #   not_empty   - output is non-empty (loose smoke test)
+#
+# Setup commands:
+#   Optional `setup` list of shell commands to run after cloning the repo
+#   but before building. Useful for models that generate cog.yaml from
+#   templates or need other preparation steps.
+#   Example:
+#     setup:
+#       - "script/select.sh dev"
 
 defaults:
   sdk_version: "latest"          # "latest" = newest stable from PyPI; or pin e.g. "0.16.12"
@@ -251,3 +259,18 @@ models:
   #       expect:
   #         type: contains
   #         value: "result"
+  #
+  # Models that need setup commands before building (e.g. generating cog.yaml):
+  # - name: flux-dev
+  #   repo: replicate/cog-flux
+  #   path: "."
+  #   gpu: true
+  #   setup:
+  #     - "script/select.sh dev"
+  #   timeout: 900
+  #   tests:
+  #     - description: "generate image"
+  #       inputs:
+  #         prompt: "a cat"
+  #       expect:
+  #         type: file_exists

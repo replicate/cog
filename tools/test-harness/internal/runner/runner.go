@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -350,45 +351,38 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 }
 
 func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string, error) {
+	var modelDir string
+
 	// Local fixture models
 	if model.Repo == "local" {
 		fixturesModels := filepath.Join(r.fixturesDir, "models")
-		modelDir, err := safeSubpath(fixturesModels, model.Path)
+		srcDir, err := safeSubpath(fixturesModels, model.Path)
 		if err != nil {
 			return "", err
 		}
 
-		if _, err := os.Stat(filepath.Join(modelDir, "cog.yaml")); err != nil {
-			return "", fmt.Errorf("no cog.yaml in %s", modelDir)
-		}
-
 		// Copy to work dir
 		dest := filepath.Join(r.workDir, fmt.Sprintf("local-%s", model.Name))
-		if err := copyDir(modelDir, dest); err != nil {
+		if err := copyDir(srcDir, dest); err != nil {
 			return "", fmt.Errorf("copying model: %w", err)
 		}
-
-		// Patch cog.yaml
-		sdkVersion := model.SDKVersion
-		if sdkVersion == "" {
-			sdkVersion = r.sdkVersion
+		modelDir = dest
+	} else {
+		// Clone repo
+		repoDir, err := r.cloneRepo(ctx, model.Repo)
+		if err != nil {
+			return "", err
 		}
-		if err := patcher.Patch(filepath.Join(dest, "cog.yaml"), sdkVersion, model.CogYAMLOverrides); err != nil {
-			return "", fmt.Errorf("patching cog.yaml: %w", err)
-		}
-
-		return dest, nil
+		modelDir = filepath.Join(repoDir, model.Path)
 	}
 
-	// Clone repo
-	repoDir, err := r.cloneRepo(ctx, model.Repo)
-	if err != nil {
-		return "", err
+	// Run setup commands (e.g. script/select.sh to generate cog.yaml)
+	if err := r.runSetupCommands(ctx, modelDir, model); err != nil {
+		return "", fmt.Errorf("running setup commands: %w", err)
 	}
 
-	modelDir := filepath.Join(repoDir, model.Path)
 	if _, err := os.Stat(filepath.Join(modelDir, "cog.yaml")); err != nil {
-		return "", fmt.Errorf("no cog.yaml in %s", modelDir)
+		return "", fmt.Errorf("no cog.yaml in %s (did setup commands run correctly?)", modelDir)
 	}
 
 	// Patch cog.yaml
@@ -401,6 +395,28 @@ func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string
 	}
 
 	return modelDir, nil
+}
+
+// runSetupCommands executes the model's setup commands in the model directory.
+// Setup commands run after clone/copy but before cog.yaml validation and patching.
+// This is used for models that need preparation steps like generating cog.yaml
+// from templates (e.g. "script/select.sh dev" in replicate/cog-flux).
+func (r *Runner) runSetupCommands(ctx context.Context, modelDir string, model manifest.Model) error {
+	for _, cmdStr := range model.Setup {
+		fmt.Printf("  Running setup: %s\n", cmdStr)
+		cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+		cmd.Dir = modelDir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Env = os.Environ()
+		for k, v := range model.Env {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, os.ExpandEnv(v)))
+		}
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("setup command %q failed: %w", cmdStr, err)
+		}
+	}
+	return nil
 }
 
 func (r *Runner) cloneRepo(ctx context.Context, repo string) (string, error) {
@@ -463,9 +479,13 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%w\n%s", err, string(output))
+	// Stream build output to stderr in real-time so the user can see progress,
+	// while also capturing it for error reporting if the build fails.
+	var outputBuf bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stderr, &outputBuf)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &outputBuf)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%w\n%s", err, outputBuf.String())
 	}
 	return nil
 }
