@@ -19,7 +19,7 @@ var (
 	cogBinary    string
 	cogRef       string
 	sdkWheel     string
-	keepImages   bool
+	cleanImages  bool
 	keepOutputs  bool
 )
 
@@ -44,7 +44,7 @@ It reads the same manifest.yaml format as the Python version.`,
 	rootCmd.PersistentFlags().StringVar(&cogBinary, "cog-binary", "cog", "Path to cog binary")
 	rootCmd.PersistentFlags().StringVar(&cogRef, "cog-ref", "", "Git ref to build cog from")
 	rootCmd.PersistentFlags().StringVar(&sdkWheel, "sdk-wheel", "", "Path to pre-built SDK wheel")
-	rootCmd.PersistentFlags().BoolVar(&keepImages, "keep-images", false, "Don't clean up Docker images")
+	rootCmd.PersistentFlags().BoolVar(&cleanImages, "clean-images", false, "Remove Docker images after run (default: keep them)")
 	rootCmd.PersistentFlags().BoolVar(&keepOutputs, "keep-outputs", false, "Preserve prediction outputs (images, files) in the work directory")
 
 	// Subcommands

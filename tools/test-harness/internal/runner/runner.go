@@ -32,7 +32,7 @@ type Options struct {
 	SDKVersion  string
 	SDKWheel    string
 	FixturesDir string
-	KeepImages  bool
+	CleanImages bool
 	KeepOutputs bool
 }
 
@@ -115,7 +115,7 @@ func resolveFixturesDir() (string, error) {
 // Cleanup removes temp directories and Docker images
 func (r *Runner) Cleanup() error {
 	var errs []error
-	if !r.opts.KeepImages {
+	if r.opts.CleanImages {
 		cmd := exec.Command("docker", "images", "--filter", "reference=cog-harness-*", "--format", "{{.Repository}}:{{.Tag}}")
 		output, err := cmd.Output()
 		if err == nil && len(output) > 0 {

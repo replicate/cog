@@ -84,7 +84,7 @@ Common options:
   --cog-binary PATH     Path to local cog binary
   --cog-ref REF         Git ref to build cog from source
   --sdk-wheel PATH      Local SDK wheel path
-  --keep-images         Keep Docker images after run
+  --clean-images        Remove Docker images after run (default: keep them)
   --keep-outputs        Preserve prediction outputs (images, files) in the work directory
 
 Run/schema-compare options:

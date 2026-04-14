@@ -39,7 +39,7 @@ func runBuild(ctx context.Context) error {
 		CogBinary:   resolved.CogBinary,
 		SDKVersion:  resolved.SDKPatchVersion,
 		SDKWheel:    resolved.SDKWheel,
-		KeepImages:  keepImages,
+		CleanImages: cleanImages,
 		KeepOutputs: keepOutputs,
 	})
 	if err != nil {

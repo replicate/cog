@@ -52,7 +52,7 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 		CogBinary:   resolved.CogBinary,
 		SDKVersion:  resolved.SDKPatchVersion,
 		SDKWheel:    resolved.SDKWheel,
-		KeepImages:  keepImages,
+		CleanImages: cleanImages,
 		KeepOutputs: keepOutputs,
 	})
 	if err != nil {
