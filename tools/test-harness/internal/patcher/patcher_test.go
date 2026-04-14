@@ -4,47 +4,35 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPatch(t *testing.T) {
-	// Create temp directory
 	tmpDir := t.TempDir()
 
-	// Test case 1: Patch with SDK version
 	t.Run("patch sdk version", func(t *testing.T) {
 		cogYAML := filepath.Join(tmpDir, "cog1.yaml")
 		content := `build:
   python_version: "3.10"
 predict: predict.py
 `
-		if err := os.WriteFile(cogYAML, []byte(content), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := Patch(cogYAML, "0.16.12", nil); err != nil {
-			t.Fatalf("Patch failed: %v", err)
-		}
+		require.NoError(t, os.WriteFile(cogYAML, []byte(content), 0644))
+		require.NoError(t, Patch(cogYAML, "0.16.12", nil))
 
 		data, err := os.ReadFile(cogYAML)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if !contains(string(data), "sdk_version: 0.16.12") {
-			t.Errorf("Expected sdk_version in output, got:\n%s", string(data))
-		}
+		require.NoError(t, err)
+		assert.Contains(t, string(data), "sdk_version: 0.16.12")
 	})
 
-	// Test case 2: Patch with overrides
 	t.Run("patch with overrides", func(t *testing.T) {
 		cogYAML := filepath.Join(tmpDir, "cog2.yaml")
 		content := `build:
   python_version: "3.10"
 predict: predict.py
 `
-		if err := os.WriteFile(cogYAML, []byte(content), 0644); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, os.WriteFile(cogYAML, []byte(content), 0644))
 
 		overrides := map[string]any{
 			"build": map[string]any{
@@ -52,51 +40,33 @@ predict: predict.py
 			},
 		}
 
-		if err := Patch(cogYAML, "", overrides); err != nil {
-			t.Fatalf("Patch failed: %v", err)
-		}
+		require.NoError(t, Patch(cogYAML, "", overrides))
 
 		data, err := os.ReadFile(cogYAML)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if !contains(string(data), "system_packages") {
-			t.Errorf("Expected system_packages in output, got:\n%s", string(data))
-		}
+		require.NoError(t, err)
+		assert.Contains(t, string(data), "system_packages")
 	})
 
-	// Test case 3: Patch with both SDK version and overrides
 	t.Run("patch sdk and overrides", func(t *testing.T) {
 		cogYAML := filepath.Join(tmpDir, "cog3.yaml")
 		content := `build:
   python_version: "3.10"
 predict: predict.py
 `
-		if err := os.WriteFile(cogYAML, []byte(content), 0644); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, os.WriteFile(cogYAML, []byte(content), 0644))
 
 		overrides := map[string]any{
 			"predict": "new_predict.py",
 		}
 
-		if err := Patch(cogYAML, "0.16.12", overrides); err != nil {
-			t.Fatalf("Patch failed: %v", err)
-		}
+		require.NoError(t, Patch(cogYAML, "0.16.12", overrides))
 
 		data, err := os.ReadFile(cogYAML)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 
 		result := string(data)
-		if !contains(result, "sdk_version: 0.16.12") {
-			t.Errorf("Expected sdk_version in output, got:\n%s", result)
-		}
-		if !contains(result, "new_predict.py") {
-			t.Errorf("Expected new_predict.py in output, got:\n%s", result)
-		}
+		assert.Contains(t, result, "sdk_version: 0.16.12")
+		assert.Contains(t, result, "new_predict.py")
 	})
 }
 
@@ -129,45 +99,7 @@ func TestDeepMerge(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := deepMerge(tt.base, tt.override)
-			if !mapsEqual(got, tt.want) {
-				t.Errorf("deepMerge() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, deepMerge(tt.base, tt.override))
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || containsAt(s, substr))
-}
-
-func containsAt(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
-func mapsEqual(a, b map[string]any) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		bv, ok := b[k]
-		if !ok {
-			return false
-		}
-		vma, vmaOK := v.(map[string]any)
-		vmb, vmbOK := bv.(map[string]any)
-		if vmaOK && vmbOK {
-			if !mapsEqual(vma, vmb) {
-				return false
-			}
-		} else if v != bv {
-			return false
-		}
-	}
-	return true
 }
