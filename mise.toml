@@ -521,23 +521,23 @@ target="${1:-all}"
 case "$target" in
   cuda)
     echo "Generating CUDA base images..."
-    (cd tools/compatgen && go run . cuda -o ../../pkg/config/cuda_base_images.json)
+    go run ./tools/compatgen/main.go cuda -o pkg/config/cuda_base_images.json
     ;;
   torch)
     echo "Generating PyTorch compatibility matrix..."
-    (cd tools/compatgen && go run . torch -o ../../pkg/config/torch_compatibility_matrix.json)
+    go run ./tools/compatgen/main.go torch -o pkg/config/torch_compatibility_matrix.json
     ;;
   tensorflow|tf)
     echo "Generating TensorFlow compatibility matrix..."
-    (cd tools/compatgen && go run . tensorflow -o ../../pkg/config/tf_compatibility_matrix.json)
+    go run ./tools/compatgen/main.go tensorflow -o pkg/config/tf_compatibility_matrix.json
     ;;
   all)
     echo "Generating CUDA base images..."
-    (cd tools/compatgen && go run . cuda -o ../../pkg/config/cuda_base_images.json)
+    go run ./tools/compatgen/main.go cuda -o pkg/config/cuda_base_images.json
     echo "Generating PyTorch compatibility matrix..."
-    (cd tools/compatgen && go run . torch -o ../../pkg/config/torch_compatibility_matrix.json)
+    go run ./tools/compatgen/main.go torch -o pkg/config/torch_compatibility_matrix.json
     echo "Generating TensorFlow compatibility matrix..."
-    (cd tools/compatgen && go run . tensorflow -o ../../pkg/config/tf_compatibility_matrix.json)
+    go run ./tools/compatgen/main.go tensorflow -o pkg/config/tf_compatibility_matrix.json
     ;;
   *)
     echo "Unknown target: $target"
@@ -750,13 +750,13 @@ echo "Wheels in dist/: $(ls dist/cog-*.whl 2>/dev/null || echo 'none')"
 
 [tasks."version"]
 description = "Show current version from VERSION.txt"
-run = "go run ./tools/version/main.go show"
+run = "go run ./tools/version show"
 
 [tasks."version:bump"]
 description = "Bump version: updates VERSION.txt, Cargo.toml, Cargo.lock, and commits"
 usage = 'arg "<version>" help="New semver version (e.g. 0.17.1, 0.18.0-rc.1)"'
-run = "go run ./tools/version/main.go bump ${usage_version}"
+run = "go run ./tools/version bump ${usage_version}"
 
 [tasks."version:check"]
 description = "Verify VERSION.txt matches crates/Cargo.toml"
-run = "go run ./tools/version/main.go check"
+run = "go run ./tools/version check"
