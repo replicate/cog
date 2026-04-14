@@ -20,6 +20,7 @@ var (
 	cogRef       string
 	sdkWheel     string
 	keepImages   bool
+	keepOutputs  bool
 )
 
 // NewRootCommand creates the root command
@@ -44,6 +45,7 @@ It reads the same manifest.yaml format as the Python version.`,
 	rootCmd.PersistentFlags().StringVar(&cogRef, "cog-ref", "", "Git ref to build cog from")
 	rootCmd.PersistentFlags().StringVar(&sdkWheel, "sdk-wheel", "", "Path to pre-built SDK wheel")
 	rootCmd.PersistentFlags().BoolVar(&keepImages, "keep-images", false, "Don't clean up Docker images")
+	rootCmd.PersistentFlags().BoolVar(&keepOutputs, "keep-outputs", false, "Preserve prediction outputs (images, files) in the work directory")
 
 	// Subcommands
 	rootCmd.AddCommand(newRunCommand())

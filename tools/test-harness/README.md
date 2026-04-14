@@ -85,6 +85,7 @@ Common options:
   --cog-ref REF         Git ref to build cog from source
   --sdk-wheel PATH      Local SDK wheel path
   --keep-images         Keep Docker images after run
+  --keep-outputs        Preserve prediction outputs (images, files) in the work directory
 
 Run/schema-compare options:
   --output {console,json}   Output format
