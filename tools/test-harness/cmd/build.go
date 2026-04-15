@@ -49,7 +49,7 @@ func runBuild(ctx context.Context) error {
 		SDKWheel:    resolved.SDKWheel,
 		CleanImages: cleanImages,
 		KeepOutputs: keepOutputs,
-		Quiet:       parallel,
+		Parallel:    parallel,
 	})
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)

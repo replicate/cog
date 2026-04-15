@@ -27,6 +27,69 @@ import (
 
 const openapiSchemaLabel = "run.cog.openapi_schema"
 
+// prefixWriter wraps an io.Writer and prepends a prefix to each line.
+// Partial lines (no trailing newline) are buffered until a newline arrives.
+type prefixWriter struct {
+	prefix string
+	dest   io.Writer
+	mu     sync.Mutex
+	buf    []byte
+}
+
+func newPrefixWriter(dest io.Writer, modelName string) *prefixWriter {
+	return &prefixWriter{
+		prefix: fmt.Sprintf("[%-20s] ", modelName),
+		dest:   dest,
+	}
+}
+
+func (pw *prefixWriter) Write(p []byte) (int, error) {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+
+	total := len(p)
+	pw.buf = append(pw.buf, p...)
+
+	for {
+		idx := bytes.IndexByte(pw.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := pw.buf[:idx]
+		pw.buf = pw.buf[idx+1:]
+		if _, err := fmt.Fprintf(pw.dest, "%s%s\n", pw.prefix, line); err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}
+
+// Flush writes any remaining buffered content (partial line without trailing newline).
+func (pw *prefixWriter) Flush() {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+
+	if len(pw.buf) > 0 {
+		_, _ = fmt.Fprintf(pw.dest, "%s%s\n", pw.prefix, pw.buf)
+		pw.buf = nil
+	}
+}
+
+// modelOutput returns stdout/stderr writers for a model.
+// In parallel mode, output is prefixed with the model name and
+// also captured in a buffer for error reporting.
+// In sequential mode, output streams directly to the terminal
+// and is also captured.
+func (r *Runner) modelOutput(modelName string) (stdout, stderr io.Writer, capture *bytes.Buffer, flush func()) {
+	var buf bytes.Buffer
+	if r.opts.Parallel {
+		pw := newPrefixWriter(os.Stderr, modelName)
+		w := io.MultiWriter(pw, &buf)
+		return w, w, &buf, pw.Flush
+	}
+	return io.MultiWriter(os.Stdout, &buf), io.MultiWriter(os.Stderr, &buf), &buf, func() {}
+}
+
 // Options configures a Runner.
 type Options struct {
 	CogBinary   string
@@ -35,7 +98,7 @@ type Options struct {
 	FixturesDir string
 	CleanImages bool
 	KeepOutputs bool
-	Quiet       bool // Suppress real-time build output (for parallel execution)
+	Parallel    bool // Prefix output lines with model name (for parallel execution)
 }
 
 // Runner orchestrates the test lifecycle.
@@ -450,10 +513,10 @@ func (r *Runner) runSetupCommands(ctx context.Context, modelDir string, model ma
 		return err
 	}
 
+	stdout, stderr, capture, flush := r.modelOutput(model.Name)
+
 	for _, cmdStr := range model.Setup {
-		if !r.opts.Quiet {
-			fmt.Printf("  Running setup: %s\n", cmdStr)
-		}
+		_, _ = fmt.Fprintf(stderr, "  Running setup: %s\n", cmdStr)
 		// Use bash with strict mode so any failing command in the
 		// script (e.g. a missing yq binary) is caught immediately
 		// rather than silently producing an empty/invalid cog.yaml.
@@ -464,20 +527,14 @@ func (r *Runner) runSetupCommands(ctx context.Context, modelDir string, model ma
 		for k, v := range model.Env {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, os.ExpandEnv(v)))
 		}
-		// Always capture output for error reporting. In non-quiet mode,
-		// also stream to stdout/stderr so the user sees progress.
-		var outputBuf bytes.Buffer
-		if r.opts.Quiet {
-			cmd.Stdout = &outputBuf
-			cmd.Stderr = &outputBuf
-		} else {
-			cmd.Stdout = io.MultiWriter(os.Stdout, &outputBuf)
-			cmd.Stderr = io.MultiWriter(os.Stderr, &outputBuf)
-		}
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("setup command %q failed: %w\n%s", cmdStr, err, outputBuf.String())
+			flush()
+			return fmt.Errorf("setup command %q failed: %w\n%s", cmdStr, err, capture.String())
 		}
 	}
+	flush()
 	return nil
 }
 
@@ -545,21 +602,17 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	// Stream build output to stderr in real-time so the user can see progress,
+	// Stream build output in real-time so the user can see progress,
 	// while also capturing it for error reporting if the build fails.
-	// When running in parallel mode (opts.Quiet), only capture output and
-	// include it in error messages to avoid interleaved output.
-	var outputBuf bytes.Buffer
-	if r.opts.Quiet {
-		cmd.Stdout = &outputBuf
-		cmd.Stderr = &outputBuf
-	} else {
-		cmd.Stdout = io.MultiWriter(os.Stderr, &outputBuf)
-		cmd.Stderr = io.MultiWriter(os.Stderr, &outputBuf)
-	}
-	if err := cmd.Run(); err != nil {
+	// In parallel mode, each line is prefixed with the model name.
+	_, stderr, capture, flush := r.modelOutput(model.Name)
+	cmd.Stdout = stderr
+	cmd.Stderr = stderr
+	err := cmd.Run()
+	flush()
+	if err != nil {
 		// Include the last portion of build output for context.
-		output := outputBuf.String()
+		output := capture.String()
 		const maxTail = 2000
 		if len(output) > maxTail {
 			output = "...\n" + output[len(output)-maxTail:]
