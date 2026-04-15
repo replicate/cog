@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"mime"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -105,7 +106,7 @@ func validateFileExists(output string, expect manifest.Expectation) Result {
 
 	// Check MIME type if specified
 	if expect.Mime != "" {
-		guessed := mime.TypeByExtension(pathStr)
+		guessed := mime.TypeByExtension(filepath.Ext(pathStr))
 		if guessed != expect.Mime {
 			return Result{
 				Passed:  false,

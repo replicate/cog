@@ -54,7 +54,13 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 	fmt.Printf("Running %d model(s)\n\n", len(models))
 
 	// Create runner
-	r, err := runner.New(resolved.CogBinary, resolved.SDKPatchVersion, resolved.SDKWheel, "", keepImages)
+	r, err := runner.New(runner.Options{
+		CogBinary:   resolved.CogBinary,
+		SDKVersion:  resolved.SDKPatchVersion,
+		SDKWheel:    resolved.SDKWheel,
+		CleanImages: cleanImages,
+		KeepOutputs: keepOutputs,
+	})
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)
 	}

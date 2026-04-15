@@ -1,7 +1,11 @@
 package validator
 
 import (
+	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/tools/test-harness/internal/manifest"
 )
@@ -36,9 +40,7 @@ func TestValidateExact(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Validate(tt.output, tt.expect)
-			if result.Passed != tt.wantPass {
-				t.Errorf("Validate() passed = %v, want %v, message: %s", result.Passed, tt.wantPass, result.Message)
-			}
+			assert.Equal(t, tt.wantPass, result.Passed, "message: %s", result.Message)
 		})
 	}
 }
@@ -67,9 +69,7 @@ func TestValidateContains(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Validate(tt.output, tt.expect)
-			if result.Passed != tt.wantPass {
-				t.Errorf("Validate() passed = %v, want %v", result.Passed, tt.wantPass)
-			}
+			assert.Equal(t, tt.wantPass, result.Passed, "message: %s", result.Message)
 		})
 	}
 }
@@ -104,9 +104,59 @@ func TestValidateRegex(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Validate(tt.output, tt.expect)
-			if result.Passed != tt.wantPass {
-				t.Errorf("Validate() passed = %v, want %v", result.Passed, tt.wantPass)
-			}
+			assert.Equal(t, tt.wantPass, result.Passed, "message: %s", result.Message)
+		})
+	}
+}
+
+func TestValidateFileExists(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "test-*.png")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	tests := []struct {
+		name     string
+		output   string
+		expect   manifest.Expectation
+		wantPass bool
+	}{
+		{
+			name:     "file exists no mime check",
+			output:   tmpFile.Name(),
+			expect:   manifest.Expectation{Type: "file_exists"},
+			wantPass: true,
+		},
+		{
+			name:     "file exists with correct mime",
+			output:   tmpFile.Name(),
+			expect:   manifest.Expectation{Type: "file_exists", Mime: "image/png"},
+			wantPass: true,
+		},
+		{
+			name:     "file exists with wrong mime",
+			output:   tmpFile.Name(),
+			expect:   manifest.Expectation{Type: "file_exists", Mime: "image/jpeg"},
+			wantPass: false,
+		},
+		{
+			name:     "file does not exist",
+			output:   "/nonexistent/path/file.png",
+			expect:   manifest.Expectation{Type: "file_exists"},
+			wantPass: false,
+		},
+		{
+			name:     "url passes",
+			output:   "https://example.com/image.png",
+			expect:   manifest.Expectation{Type: "file_exists"},
+			wantPass: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Validate(tt.output, tt.expect)
+			assert.Equal(t, tt.wantPass, result.Passed, "message: %s", result.Message)
 		})
 	}
 }
@@ -137,9 +187,7 @@ func TestValidateNotEmpty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Validate(tt.output, manifest.Expectation{Type: "not_empty"})
-			if result.Passed != tt.wantPass {
-				t.Errorf("Validate() passed = %v, want %v", result.Passed, tt.wantPass)
-			}
+			assert.Equal(t, tt.wantPass, result.Passed, "message: %s", result.Message)
 		})
 	}
 }
@@ -189,9 +237,7 @@ func TestValidateJSONMatch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Validate(tt.output, tt.expect)
-			if result.Passed != tt.wantPass {
-				t.Errorf("Validate() passed = %v, want %v, message: %s", result.Passed, tt.wantPass, result.Message)
-			}
+			assert.Equal(t, tt.wantPass, result.Passed, "message: %s", result.Message)
 		})
 	}
 }
@@ -232,9 +278,7 @@ func TestValidateJSONKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Validate(tt.output, tt.expect)
-			if result.Passed != tt.wantPass {
-				t.Errorf("Validate() passed = %v, want %v", result.Passed, tt.wantPass)
-			}
+			assert.Equal(t, tt.wantPass, result.Passed, "message: %s", result.Message)
 		})
 	}
 }
@@ -274,10 +318,7 @@ func TestIsSubset(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isSubset(tt.subset, tt.superset)
-			if got != tt.want {
-				t.Errorf("isSubset() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, isSubset(tt.subset, tt.superset))
 		})
 	}
 }

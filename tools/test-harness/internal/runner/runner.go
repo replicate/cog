@@ -26,19 +26,27 @@ import (
 
 const openapiSchemaLabel = "run.cog.openapi_schema"
 
+// Options configures a Runner.
+type Options struct {
+	CogBinary   string
+	SDKVersion  string
+	SDKWheel    string
+	FixturesDir string
+	CleanImages bool
+	KeepOutputs bool
+}
+
 // Runner orchestrates the test lifecycle
 type Runner struct {
-	cogBinary   string
-	sdkVersion  string
-	sdkWheel    string
+	opts        Options
 	fixturesDir string
 	workDir     string
-	keepImages  bool
 	clonedRepos map[string]string
 }
 
 // New creates a new Runner
-func New(cogBinary, sdkVersion, sdkWheel string, fixturesDir string, keepImages bool) (*Runner, error) {
+func New(opts Options) (*Runner, error) {
+	fixturesDir := opts.FixturesDir
 	if fixturesDir == "" {
 		var err error
 		fixturesDir, err = resolveFixturesDir()
@@ -66,12 +74,9 @@ func New(cogBinary, sdkVersion, sdkWheel string, fixturesDir string, keepImages 
 	}
 
 	return &Runner{
-		cogBinary:   cogBinary,
-		sdkVersion:  sdkVersion,
-		sdkWheel:    sdkWheel,
+		opts:        opts,
 		fixturesDir: fixturesDir,
 		workDir:     workDir,
-		keepImages:  keepImages,
 		clonedRepos: make(map[string]string),
 	}, nil
 }
@@ -110,7 +115,7 @@ func resolveFixturesDir() (string, error) {
 // Cleanup removes temp directories and Docker images
 func (r *Runner) Cleanup() error {
 	var errs []error
-	if !r.keepImages {
+	if r.opts.CleanImages {
 		cmd := exec.Command("docker", "images", "--filter", "reference=cog-harness-*", "--format", "{{.Repository}}:{{.Tag}}")
 		output, err := cmd.Output()
 		if err == nil && len(output) > 0 {
@@ -125,8 +130,12 @@ func (r *Runner) Cleanup() error {
 	}
 
 	if r.workDir != "" {
-		if err := os.RemoveAll(r.workDir); err != nil {
-			errs = append(errs, fmt.Errorf("removing work dir: %w", err))
+		if r.opts.KeepOutputs {
+			fmt.Printf("Outputs preserved in: %s\n", r.workDir)
+		} else {
+			if err := os.RemoveAll(r.workDir); err != nil {
+				errs = append(errs, fmt.Errorf("removing work dir: %w", err))
+			}
 		}
 	}
 
@@ -388,7 +397,7 @@ func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string
 	// Patch cog.yaml
 	sdkVersion := model.SDKVersion
 	if sdkVersion == "" {
-		sdkVersion = r.sdkVersion
+		sdkVersion = r.opts.SDKVersion
 	}
 	if err := patcher.Patch(filepath.Join(modelDir, "cog.yaml"), sdkVersion, model.CogYAMLOverrides); err != nil {
 		return "", fmt.Errorf("patching cog.yaml: %w", err)
@@ -454,11 +463,11 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, r.cogBinary, "build", "-t", imageTag)
+	cmd := exec.CommandContext(ctx, r.opts.CogBinary, "build", "-t", imageTag)
 	cmd.Dir = modelDir
 	cmd.Env = os.Environ()
-	if r.sdkWheel != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("COG_SDK_WHEEL=%s", r.sdkWheel))
+	if r.opts.SDKWheel != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("COG_SDK_WHEEL=%s", r.opts.SDKWheel))
 	}
 	envKeys := make([]string, 0, len(model.Env))
 	for k := range model.Env {
@@ -539,11 +548,11 @@ func (r *Runner) runCogTest(ctx context.Context, modelDir string, model manifest
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, r.cogBinary, args...)
+	cmd := exec.CommandContext(ctx, r.opts.CogBinary, args...)
 	cmd.Dir = modelDir
 	cmd.Env = os.Environ()
-	if r.sdkWheel != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("COG_SDK_WHEEL=%s", r.sdkWheel))
+	if r.opts.SDKWheel != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("COG_SDK_WHEEL=%s", r.opts.SDKWheel))
 	}
 	envKeys := make([]string, 0, len(model.Env))
 	for k := range model.Env {
