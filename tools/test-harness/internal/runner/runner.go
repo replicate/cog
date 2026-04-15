@@ -433,10 +433,11 @@ func (r *Runner) runSetupCommands(ctx context.Context, modelDir string, model ma
 		if !r.opts.Quiet {
 			fmt.Printf("  Running setup: %s\n", cmdStr)
 		}
-		// Wrap with set -euo pipefail so any failing command in the
+		// Use bash with strict mode so any failing command in the
 		// script (e.g. a missing yq binary) is caught immediately
 		// rather than silently producing an empty/invalid cog.yaml.
-		cmd := exec.CommandContext(ctx, "sh", "-c", "set -euo pipefail; "+cmdStr)
+		// We use bash (not sh) because dash does not support pipefail.
+		cmd := exec.CommandContext(ctx, "bash", "-euo", "pipefail", "-c", cmdStr)
 		cmd.Dir = modelDir
 		cmd.Env = os.Environ()
 		for k, v := range model.Env {
