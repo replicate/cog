@@ -424,11 +424,32 @@ func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string
 	return modelDir, nil
 }
 
+// checkRequiredTools verifies that all tools listed in requires_tools are
+// available on PATH. Returns a descriptive error listing missing tools and
+// install hints when possible.
+func checkRequiredTools(tools []string) error {
+	var missing []string
+	for _, tool := range tools {
+		if _, err := exec.LookPath(tool); err != nil {
+			missing = append(missing, tool)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("required tool(s) not found on PATH: %s", strings.Join(missing, ", "))
+}
+
 // runSetupCommands executes the model's setup commands in the model directory.
 // Setup commands run after clone/copy but before cog.yaml validation and patching.
 // This is used for models that need preparation steps like generating cog.yaml
 // from templates (e.g. "script/select.sh dev" in replicate/cog-flux).
 func (r *Runner) runSetupCommands(ctx context.Context, modelDir string, model manifest.Model) error {
+	// Check required tools before running any setup commands
+	if err := checkRequiredTools(model.RequiresTools); err != nil {
+		return err
+	}
+
 	for _, cmdStr := range model.Setup {
 		if !r.opts.Quiet {
 			fmt.Printf("  Running setup: %s\n", cmdStr)
@@ -443,19 +464,18 @@ func (r *Runner) runSetupCommands(ctx context.Context, modelDir string, model ma
 		for k, v := range model.Env {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, os.ExpandEnv(v)))
 		}
+		// Always capture output for error reporting. In non-quiet mode,
+		// also stream to stdout/stderr so the user sees progress.
+		var outputBuf bytes.Buffer
 		if r.opts.Quiet {
-			var outputBuf bytes.Buffer
 			cmd.Stdout = &outputBuf
 			cmd.Stderr = &outputBuf
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("setup command %q failed: %w\n%s", cmdStr, err, outputBuf.String())
-			}
 		} else {
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("setup command %q failed: %w", cmdStr, err)
-			}
+			cmd.Stdout = io.MultiWriter(os.Stdout, &outputBuf)
+			cmd.Stderr = io.MultiWriter(os.Stderr, &outputBuf)
+		}
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("setup command %q failed: %w\n%s", cmdStr, err, outputBuf.String())
 		}
 	}
 	return nil

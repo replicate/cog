@@ -29,6 +29,7 @@ type Model struct {
 	GPU              bool              `yaml:"gpu"`
 	Timeout          int               `yaml:"timeout"`
 	RequiresEnv      []string          `yaml:"requires_env"`
+	RequiresTools    []string          `yaml:"requires_tools"`
 	Env              map[string]string `yaml:"env"`
 	SDKVersion       string            `yaml:"sdk_version"`
 	CogYAMLOverrides map[string]any    `yaml:"cog_yaml_overrides"`
