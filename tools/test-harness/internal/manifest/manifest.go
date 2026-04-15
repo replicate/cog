@@ -23,19 +23,20 @@ type Defaults struct {
 
 // Model represents a single model definition
 type Model struct {
-	Name             string            `yaml:"name"`
-	Repo             string            `yaml:"repo"`
-	Path             string            `yaml:"path"`
-	GPU              bool              `yaml:"gpu"`
-	Timeout          int               `yaml:"timeout"`
-	RequiresEnv      []string          `yaml:"requires_env"`
-	RequiresTools    []string          `yaml:"requires_tools"`
-	Env              map[string]string `yaml:"env"`
-	SDKVersion       string            `yaml:"sdk_version"`
-	CogYAMLOverrides map[string]any    `yaml:"cog_yaml_overrides"`
-	Setup            []string          `yaml:"setup"`
-	Tests            []TestCase        `yaml:"tests"`
-	TrainTests       []TestCase        `yaml:"train_tests"`
+	Name                 string            `yaml:"name"`
+	Repo                 string            `yaml:"repo"`
+	Path                 string            `yaml:"path"`
+	GPU                  bool              `yaml:"gpu"`
+	Timeout              int               `yaml:"timeout"`
+	RequiresEnv          []string          `yaml:"requires_env"`
+	RequiresTools        []string          `yaml:"requires_tools"`
+	Env                  map[string]string `yaml:"env"`
+	SDKVersion           string            `yaml:"sdk_version"`
+	CogYAMLOverrides     map[string]any    `yaml:"cog_yaml_overrides"`
+	Setup                []string          `yaml:"setup"`
+	SkipSchemaValidation bool              `yaml:"skip_schema_validation"`
+	Tests                []TestCase        `yaml:"tests"`
+	TrainTests           []TestCase        `yaml:"train_tests"`
 }
 
 // TestCase represents a single test case

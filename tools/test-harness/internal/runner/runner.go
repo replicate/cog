@@ -611,7 +611,11 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, r.opts.CogBinary, "build", "-t", imageTag)
+	buildArgs := []string{"build", "-t", imageTag}
+	if model.SkipSchemaValidation {
+		buildArgs = append(buildArgs, "--skip-schema-validation")
+	}
+	cmd := exec.CommandContext(ctx, r.opts.CogBinary, buildArgs...)
 	cmd.Dir = modelDir
 	cmd.Env = os.Environ()
 	if r.opts.SDKWheel != "" {

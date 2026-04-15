@@ -26,6 +26,7 @@ var buildDockerfileFile string
 var buildUseCogBaseImage bool
 var buildStrip bool
 var buildPrecompile bool
+var buildSkipSchemaValidation bool
 var configFilename string
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
@@ -66,6 +67,7 @@ with 'cog push'.`,
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
 	addConfigFlag(cmd)
+	addSkipSchemaValidationFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -194,22 +196,27 @@ func DetermineUseCogBaseImage(cmd *cobra.Command) *bool {
 	return useCogBaseImage
 }
 
+func addSkipSchemaValidationFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&buildSkipSchemaValidation, "skip-schema-validation", false, "Skip OpenAPI schema generation and validation")
+}
+
 // buildOptionsFromFlags creates BuildOptions from the current CLI flag values.
 // The imageName and annotations parameters vary by command and must be provided.
 func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map[string]string) model.BuildOptions {
 	return model.BuildOptions{
-		ImageName:        imageName,
-		Secrets:          buildSecrets,
-		NoCache:          buildNoCache,
-		SeparateWeights:  buildSeparateWeights,
-		UseCudaBaseImage: buildUseCudaBaseImage,
-		ProgressOutput:   buildProgressOutput,
-		SchemaFile:       buildSchemaFile,
-		DockerfileFile:   buildDockerfileFile,
-		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
-		Strip:            buildStrip,
-		Precompile:       buildPrecompile,
-		Annotations:      annotations,
-		OCIIndex:         model.OCIIndexEnabled(),
+		ImageName:            imageName,
+		Secrets:              buildSecrets,
+		NoCache:              buildNoCache,
+		SeparateWeights:      buildSeparateWeights,
+		UseCudaBaseImage:     buildUseCudaBaseImage,
+		ProgressOutput:       buildProgressOutput,
+		SchemaFile:           buildSchemaFile,
+		DockerfileFile:       buildDockerfileFile,
+		UseCogBaseImage:      DetermineUseCogBaseImage(cmd),
+		Strip:                buildStrip,
+		Precompile:           buildPrecompile,
+		Annotations:          annotations,
+		OCIIndex:             model.OCIIndexEnabled(),
+		SkipSchemaValidation: buildSkipSchemaValidation,
 	}
 }
