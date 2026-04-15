@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
+	"sync"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/spf13/cobra"
 
@@ -51,7 +53,13 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 		fmt.Println("No models to run")
 		return nil
 	}
-	fmt.Printf("Running %d model(s)\n\n", len(models))
+
+	parallel := concurrency > 1 && len(models) > 1
+	if parallel {
+		fmt.Printf("Running %d model(s) with concurrency %d\n\n", len(models), concurrency)
+	} else {
+		fmt.Printf("Running %d model(s)\n\n", len(models))
+	}
 
 	// Create runner
 	r, err := runner.New(runner.Options{
@@ -60,18 +68,52 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 		SDKWheel:    resolved.SDKWheel,
 		CleanImages: cleanImages,
 		KeepOutputs: keepOutputs,
+		Quiet:       parallel,
 	})
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)
 	}
-	defer r.Cleanup()
+	defer func() { _ = r.Cleanup() }()
 
 	// Run tests
-	var results []report.ModelResult
-	for _, model := range models {
-		fmt.Printf("Running %s...\n", model.Name)
-		result := r.RunModel(ctx, model)
-		results = append(results, *result)
+	results := make([]report.ModelResult, len(models))
+
+	if parallel {
+		g, ctx := errgroup.WithContext(ctx)
+		g.SetLimit(concurrency)
+
+		var mu sync.Mutex
+		for i, model := range models {
+			g.Go(func() error {
+				mu.Lock()
+				fmt.Printf("  [%d/%d] Running %s...\n", i+1, len(models), model.Name)
+				mu.Unlock()
+
+				result := r.RunModel(ctx, model)
+				results[i] = *result
+
+				mu.Lock()
+				switch {
+				case result.Skipped:
+					fmt.Printf("  [%d/%d] - %s (skipped: %s)\n", i+1, len(models), model.Name, result.SkipReason)
+				case result.Passed:
+					testCount := len(result.TestResults) + len(result.TrainResults)
+					fmt.Printf("  [%d/%d] + %s (%.1fs build, %d tests passed)\n", i+1, len(models), model.Name, result.BuildDuration, testCount)
+				default:
+					fmt.Printf("  [%d/%d] x %s FAILED\n", i+1, len(models), model.Name)
+				}
+				mu.Unlock()
+
+				return nil
+			})
+		}
+		_ = g.Wait()
+	} else {
+		for i, model := range models {
+			fmt.Printf("Running %s...\n", model.Name)
+			result := r.RunModel(ctx, model)
+			results[i] = *result
+		}
 	}
 
 	// Output results
@@ -111,14 +153,15 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 	}
 
 	// Check for failures
-	var failedNames []string
+	var hasFailures bool
 	for _, r := range results {
 		if !r.Passed && !r.Skipped {
-			failedNames = append(failedNames, r.Name)
+			hasFailures = true
+			break
 		}
 	}
-	if len(failedNames) > 0 {
-		return fmt.Errorf("%d model(s) failed: %s", len(failedNames), strings.Join(failedNames, ", "))
+	if hasFailures {
+		return formatFailureSummary("model", results)
 	}
 
 	return nil

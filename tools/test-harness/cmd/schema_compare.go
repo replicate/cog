@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/spf13/cobra"
 
@@ -45,7 +48,13 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 		fmt.Println("No models to compare")
 		return nil
 	}
-	fmt.Printf("Comparing schemas for %d model(s)\n\n", len(models))
+
+	parallel := concurrency > 1 && len(models) > 1
+	if parallel {
+		fmt.Printf("Comparing schemas for %d model(s) with concurrency %d\n\n", len(models), concurrency)
+	} else {
+		fmt.Printf("Comparing schemas for %d model(s)\n\n", len(models))
+	}
 
 	// Create runner
 	r, err := runner.New(runner.Options{
@@ -54,18 +63,48 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 		SDKWheel:    resolved.SDKWheel,
 		CleanImages: cleanImages,
 		KeepOutputs: keepOutputs,
+		Quiet:       parallel,
 	})
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)
 	}
-	defer r.Cleanup()
+	defer func() { _ = r.Cleanup() }()
 
 	// Compare schemas
-	var results []report.SchemaCompareResult
-	for _, model := range models {
-		fmt.Printf("Comparing %s...\n", model.Name)
-		result := r.CompareSchema(ctx, model)
-		results = append(results, *result)
+	results := make([]report.SchemaCompareResult, len(models))
+
+	if parallel {
+		g, ctx := errgroup.WithContext(ctx)
+		g.SetLimit(concurrency)
+
+		var mu sync.Mutex
+		for i, model := range models {
+			g.Go(func() error {
+				mu.Lock()
+				fmt.Printf("  [%d/%d] Comparing %s...\n", i+1, len(models), model.Name)
+				mu.Unlock()
+
+				result := r.CompareSchema(ctx, model)
+				results[i] = *result
+
+				mu.Lock()
+				if result.Passed {
+					fmt.Printf("  [%d/%d] + %s schemas match\n", i+1, len(models), model.Name)
+				} else {
+					fmt.Printf("  [%d/%d] x %s FAILED\n", i+1, len(models), model.Name)
+				}
+				mu.Unlock()
+
+				return nil
+			})
+		}
+		_ = g.Wait()
+	} else {
+		for i, model := range models {
+			fmt.Printf("Comparing %s...\n", model.Name)
+			result := r.CompareSchema(ctx, model)
+			results[i] = *result
+		}
 	}
 
 	// Output results
@@ -105,14 +144,24 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 	}
 
 	// Check for failures
-	var failedNames []string
+	var failedDetails []string
 	for _, r := range results {
 		if !r.Passed {
-			failedNames = append(failedNames, r.Name)
+			detail := r.Name
+			if r.Error != "" {
+				firstLine := r.Error
+				if idx := strings.Index(firstLine, "\n"); idx != -1 {
+					firstLine = firstLine[:idx]
+				}
+				detail += ": " + firstLine
+			} else if r.Diff != "" {
+				detail += ": schemas differ"
+			}
+			failedDetails = append(failedDetails, "  x "+detail)
 		}
 	}
-	if len(failedNames) > 0 {
-		return fmt.Errorf("%d schema comparison(s) failed: %s", len(failedNames), strings.Join(failedNames, ", "))
+	if len(failedDetails) > 0 {
+		return fmt.Errorf("%d schema comparison(s) failed:\n%s", len(failedDetails), strings.Join(failedDetails, "\n"))
 	}
 
 	return nil

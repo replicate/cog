@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/tools/test-harness/internal/manifest"
+	"github.com/replicate/cog/tools/test-harness/internal/report"
 	"github.com/replicate/cog/tools/test-harness/internal/resolver"
 )
 
@@ -21,6 +23,7 @@ var (
 	sdkWheel     string
 	cleanImages  bool
 	keepOutputs  bool
+	concurrency  int
 )
 
 // NewRootCommand creates the root command
@@ -46,6 +49,7 @@ It reads the same manifest.yaml format as the Python version.`,
 	rootCmd.PersistentFlags().StringVar(&sdkWheel, "sdk-wheel", "", "Path to pre-built SDK wheel")
 	rootCmd.PersistentFlags().BoolVar(&cleanImages, "clean-images", false, "Remove Docker images after run (default: keep them)")
 	rootCmd.PersistentFlags().BoolVar(&keepOutputs, "keep-outputs", false, "Preserve prediction outputs (images, files) in the work directory")
+	rootCmd.PersistentFlags().IntVar(&concurrency, "concurrency", 4, "Maximum number of models to build/test in parallel")
 
 	// Subcommands
 	rootCmd.AddCommand(newRunCommand())
@@ -76,4 +80,46 @@ func resolveSetup() (*manifest.Manifest, []manifest.Model, *resolver.Result, err
 
 	models := mf.FilterModels(modelFilter, noGPU, gpuOnly)
 	return mf, models, resolved, nil
+}
+
+// formatFailureSummary builds an error message with per-model failure details.
+func formatFailureSummary(action string, results []report.ModelResult) error {
+	var b strings.Builder
+	var failCount int
+	for _, r := range results {
+		if r.Passed || r.Skipped {
+			continue
+		}
+		failCount++
+		fmt.Fprintf(&b, "\n  x %s", r.Name)
+		if r.Error != "" {
+			// Show first line of the error
+			firstLine := r.Error
+			if idx := strings.Index(firstLine, "\n"); idx != -1 {
+				firstLine = firstLine[:idx]
+			}
+			fmt.Fprintf(&b, ": %s", firstLine)
+		} else {
+			// Summarize failed tests
+			for _, t := range r.TestResults {
+				if !t.Passed {
+					msg := t.Message
+					if idx := strings.Index(msg, "\n"); idx != -1 {
+						msg = msg[:idx]
+					}
+					fmt.Fprintf(&b, "\n      test %q: %s", t.Description, msg)
+				}
+			}
+			for _, t := range r.TrainResults {
+				if !t.Passed {
+					msg := t.Message
+					if idx := strings.Index(msg, "\n"); idx != -1 {
+						msg = msg[:idx]
+					}
+					fmt.Fprintf(&b, "\n      train %q: %s", t.Description, msg)
+				}
+			}
+		}
+	}
+	return fmt.Errorf("%d %s(s) failed:%s", failCount, action, b.String())
 }

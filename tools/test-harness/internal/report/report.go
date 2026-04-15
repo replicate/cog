@@ -76,7 +76,7 @@ func ConsoleReport(results []ModelResult, sdkVersion, cogVersion string) {
 			}
 			writeStatus("x", r.Name, firstLine, r.GPU)
 			// Print full error details indented below
-			for _, line := range strings.Split(r.Error, "\n") {
+			for line := range strings.SplitSeq(r.Error, "\n") {
 				if line != "" {
 					fmt.Printf("    %s\n", line)
 				}
@@ -123,7 +123,7 @@ func ConsoleReport(results []ModelResult, sdkVersion, cogVersion string) {
 			// Print individual failures with full output
 			for _, t := range failures {
 				fmt.Printf("    x %s:\n", t.Description)
-				for _, line := range strings.Split(t.Message, "\n") {
+				for line := range strings.SplitSeq(t.Message, "\n") {
 					fmt.Printf("      %s\n", line)
 				}
 			}
@@ -192,11 +192,12 @@ func JSONReport(results []ModelResult, sdkVersion, cogVersion string) map[string
 	failed := 0
 	skipped := 0
 	for _, r := range results {
-		if r.Skipped {
+		switch {
+		case r.Skipped:
 			skipped++
-		} else if r.Passed {
+		case r.Passed:
 			passed++
-		} else {
+		default:
 			failed++
 		}
 	}
@@ -242,7 +243,7 @@ func SchemaCompareConsoleReport(results []SchemaCompareResult, cogVersion string
 				firstLine = firstLine[:idx]
 			}
 			writeStatus("x", r.Name, firstLine, false)
-			for _, line := range strings.Split(r.Error, "\n") {
+			for line := range strings.SplitSeq(r.Error, "\n") {
 				if line != "" {
 					fmt.Printf("    %s\n", line)
 				}
@@ -259,7 +260,7 @@ func SchemaCompareConsoleReport(results []SchemaCompareResult, cogVersion string
 			writeStatus("x", r.Name, "schemas differ", false)
 			failed++
 			if r.Diff != "" {
-				for _, line := range strings.Split(r.Diff, "\n") {
+				for line := range strings.SplitSeq(r.Diff, "\n") {
 					fmt.Printf("    %s\n", line)
 				}
 			}
@@ -339,7 +340,7 @@ func round(val float64, precision int) float64 {
 // SaveResults saves results to a JSON file in the results directory
 func SaveResults(results []ModelResult, sdkVersion, cogVersion string) (string, error) {
 	resultsDir := "results"
-	if err := os.MkdirAll(resultsDir, 0755); err != nil {
+	if err := os.MkdirAll(resultsDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating results dir: %w", err)
 	}
 

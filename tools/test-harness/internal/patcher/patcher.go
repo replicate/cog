@@ -2,6 +2,7 @@ package patcher
 
 import (
 	"fmt"
+	"maps"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -44,7 +45,7 @@ func Patch(cogYAMLPath string, sdkVersion string, overrides map[string]any) erro
 		return fmt.Errorf("marshaling cog.yaml: %w", err)
 	}
 
-	if err := os.WriteFile(cogYAMLPath, output, 0644); err != nil {
+	if err := os.WriteFile(cogYAMLPath, output, 0o644); err != nil {
 		return fmt.Errorf("writing cog.yaml: %w", err)
 	}
 
@@ -54,9 +55,7 @@ func Patch(cogYAMLPath string, sdkVersion string, overrides map[string]any) erro
 // deepMerge recursively merges override into base
 func deepMerge(base, override map[string]any) map[string]any {
 	result := make(map[string]any)
-	for k, v := range base {
-		result[k] = v
-	}
+	maps.Copy(result, base)
 
 	for k, v := range override {
 		if baseVal, ok := result[k]; ok {

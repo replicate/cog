@@ -3,7 +3,9 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
+	"sync"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/spf13/cobra"
 
@@ -32,7 +34,13 @@ func runBuild(ctx context.Context) error {
 		fmt.Println("No models to build")
 		return nil
 	}
-	fmt.Printf("Building %d model(s)\n\n", len(models))
+
+	parallel := concurrency > 1 && len(models) > 1
+	if parallel {
+		fmt.Printf("Building %d model(s) with concurrency %d\n\n", len(models), concurrency)
+	} else {
+		fmt.Printf("Building %d model(s)\n\n", len(models))
+	}
 
 	// Create runner
 	r, err := runner.New(runner.Options{
@@ -41,18 +49,51 @@ func runBuild(ctx context.Context) error {
 		SDKWheel:    resolved.SDKWheel,
 		CleanImages: cleanImages,
 		KeepOutputs: keepOutputs,
+		Quiet:       parallel,
 	})
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)
 	}
-	defer r.Cleanup()
+	defer func() { _ = r.Cleanup() }()
 
 	// Build models
-	var results []report.ModelResult
-	for _, model := range models {
-		fmt.Printf("Building %s...\n", model.Name)
-		result := r.BuildModel(ctx, model)
-		results = append(results, *result)
+	results := make([]report.ModelResult, len(models))
+
+	if parallel {
+		g, ctx := errgroup.WithContext(ctx)
+		g.SetLimit(concurrency)
+
+		var mu sync.Mutex
+		for i, model := range models {
+			g.Go(func() error {
+				mu.Lock()
+				fmt.Printf("  [%d/%d] Building %s...\n", i+1, len(models), model.Name)
+				mu.Unlock()
+
+				result := r.BuildModel(ctx, model)
+				results[i] = *result
+
+				mu.Lock()
+				switch {
+				case result.Passed:
+					fmt.Printf("  [%d/%d] + %s (%.1fs)\n", i+1, len(models), model.Name, result.BuildDuration)
+				case result.Skipped:
+					fmt.Printf("  [%d/%d] - %s (skipped: %s)\n", i+1, len(models), model.Name, result.SkipReason)
+				default:
+					fmt.Printf("  [%d/%d] x %s FAILED\n", i+1, len(models), model.Name)
+				}
+				mu.Unlock()
+
+				return nil
+			})
+		}
+		_ = g.Wait()
+	} else {
+		for i, model := range models {
+			fmt.Printf("Building %s...\n", model.Name)
+			result := r.BuildModel(ctx, model)
+			results[i] = *result
+		}
 	}
 
 	// Output results
@@ -66,7 +107,7 @@ func runBuild(ctx context.Context) error {
 		}
 	}
 	if len(failedNames) > 0 {
-		return fmt.Errorf("%d build(s) failed: %s", len(failedNames), strings.Join(failedNames, ", "))
+		return formatFailureSummary("build", results)
 	}
 
 	return nil

@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -34,14 +35,18 @@ type Options struct {
 	FixturesDir string
 	CleanImages bool
 	KeepOutputs bool
+	Quiet       bool // Suppress real-time build output (for parallel execution)
 }
 
-// Runner orchestrates the test lifecycle
+// Runner orchestrates the test lifecycle.
+// It is safe to call RunModel, BuildModel, and CompareSchema concurrently
+// from multiple goroutines.
 type Runner struct {
 	opts        Options
 	fixturesDir string
 	workDir     string
 	clonedRepos map[string]string
+	mu          sync.Mutex // protects clonedRepos
 }
 
 // New creates a new Runner
@@ -65,7 +70,7 @@ func New(opts Options) (*Runner, error) {
 		return nil, fmt.Errorf("cannot determine home directory for work dir (set $HOME): %w", err)
 	}
 	baseDir := filepath.Join(home, ".cache", "cog-harness")
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating harness cache dir: %w", err)
 	}
 	workDir, err := os.MkdirTemp(baseDir, "run-*")
@@ -258,8 +263,8 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 
 	// Always clean up schema comparison images when done
 	defer func() {
-		exec.Command("docker", "rmi", "-f", staticTag).Run()
-		exec.Command("docker", "rmi", "-f", runtimeTag).Run()
+		_ = exec.Command("docker", "rmi", "-f", staticTag).Run()
+		_ = exec.Command("docker", "rmi", "-f", runtimeTag).Run()
 	}()
 
 	staticDir := filepath.Join(r.workDir, fmt.Sprintf("schema-static-%s", model.Name))
@@ -307,7 +312,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 
 	if err := g.Wait(); err != nil {
 		result.Passed = false
-		result.Error = fmt.Sprintf("context cancelled: %v", err)
+		result.Error = fmt.Sprintf("context canceled: %v", err)
 		return result
 	}
 
@@ -377,12 +382,20 @@ func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string
 		}
 		modelDir = dest
 	} else {
-		// Clone repo
+		// Clone repo (shared cache, thread-safe)
 		repoDir, err := r.cloneRepo(ctx, model.Repo)
 		if err != nil {
 			return "", err
 		}
-		modelDir = filepath.Join(repoDir, model.Path)
+
+		// Each model gets its own copy so that setup commands (e.g.
+		// select.sh) don't clobber each other when running in parallel.
+		srcDir := filepath.Join(repoDir, model.Path)
+		dest := filepath.Join(r.workDir, fmt.Sprintf("model-%s", model.Name))
+		if err := copyDir(srcDir, dest); err != nil {
+			return "", fmt.Errorf("copying repo for model %s: %w", model.Name, err)
+		}
+		modelDir = dest
 	}
 
 	// Run setup commands (e.g. script/select.sh to generate cog.yaml)
@@ -390,8 +403,13 @@ func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string
 		return "", fmt.Errorf("running setup commands: %w", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(modelDir, "cog.yaml")); err != nil {
+	cogYAMLPath := filepath.Join(modelDir, "cog.yaml")
+	info, err := os.Stat(cogYAMLPath)
+	if err != nil {
 		return "", fmt.Errorf("no cog.yaml in %s (did setup commands run correctly?)", modelDir)
+	}
+	if info.Size() == 0 {
+		return "", fmt.Errorf("cog.yaml in %s is empty (setup commands may have failed silently — check that tools like yq are installed)", modelDir)
 	}
 
 	// Patch cog.yaml
@@ -412,23 +430,41 @@ func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string
 // from templates (e.g. "script/select.sh dev" in replicate/cog-flux).
 func (r *Runner) runSetupCommands(ctx context.Context, modelDir string, model manifest.Model) error {
 	for _, cmdStr := range model.Setup {
-		fmt.Printf("  Running setup: %s\n", cmdStr)
-		cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+		if !r.opts.Quiet {
+			fmt.Printf("  Running setup: %s\n", cmdStr)
+		}
+		// Wrap with set -euo pipefail so any failing command in the
+		// script (e.g. a missing yq binary) is caught immediately
+		// rather than silently producing an empty/invalid cog.yaml.
+		cmd := exec.CommandContext(ctx, "sh", "-c", "set -euo pipefail; "+cmdStr)
 		cmd.Dir = modelDir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
 		cmd.Env = os.Environ()
 		for k, v := range model.Env {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, os.ExpandEnv(v)))
 		}
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("setup command %q failed: %w", cmdStr, err)
+		if r.opts.Quiet {
+			var outputBuf bytes.Buffer
+			cmd.Stdout = &outputBuf
+			cmd.Stderr = &outputBuf
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("setup command %q failed: %w\n%s", cmdStr, err, outputBuf.String())
+			}
+		} else {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("setup command %q failed: %w", cmdStr, err)
+			}
 		}
 	}
 	return nil
 }
 
+// cloneRepo clones a repo once and caches the result. Thread-safe.
 func (r *Runner) cloneRepo(ctx context.Context, repo string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if dir, ok := r.clonedRepos[repo]; ok {
 		return dir, nil
 	}
@@ -436,7 +472,7 @@ func (r *Runner) cloneRepo(ctx context.Context, repo string) (string, error) {
 	dest := filepath.Join(r.workDir, strings.ReplaceAll(repo, "/", "--"))
 
 	// Remove if exists
-	os.RemoveAll(dest)
+	_ = os.RemoveAll(dest)
 
 	url := fmt.Sprintf("https://github.com/%s.git", repo)
 	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", url, dest)
@@ -490,11 +526,24 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 
 	// Stream build output to stderr in real-time so the user can see progress,
 	// while also capturing it for error reporting if the build fails.
+	// When running in parallel mode (opts.Quiet), only capture output and
+	// include it in error messages to avoid interleaved output.
 	var outputBuf bytes.Buffer
-	cmd.Stdout = io.MultiWriter(os.Stderr, &outputBuf)
-	cmd.Stderr = io.MultiWriter(os.Stderr, &outputBuf)
+	if r.opts.Quiet {
+		cmd.Stdout = &outputBuf
+		cmd.Stderr = &outputBuf
+	} else {
+		cmd.Stdout = io.MultiWriter(os.Stderr, &outputBuf)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &outputBuf)
+	}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%w\n%s", err, outputBuf.String())
+		// Include the last portion of build output for context.
+		output := outputBuf.String()
+		const maxTail = 2000
+		if len(output) > maxTail {
+			output = "...\n" + output[len(output)-maxTail:]
+		}
+		return fmt.Errorf("%w\n%s", err, output)
 	}
 	return nil
 }
@@ -634,7 +683,7 @@ func (r *Runner) resolveInput(value any) string {
 func extractOutput(stdout, stderr, modelDir string) string {
 	// For file outputs (e.g. images), cog writes the file to CWD and prints
 	// "Written output to: <path>" on stderr. Check stderr for this pattern.
-	for _, line := range strings.Split(stderr, "\n") {
+	for line := range strings.SplitSeq(stderr, "\n") {
 		if strings.Contains(line, "Written output to:") {
 			parts := strings.SplitN(line, "Written output to:", 2)
 			if len(parts) == 2 {
@@ -671,7 +720,7 @@ func copyDir(src, dst string) error {
 		dstPath := filepath.Join(dst, rel)
 
 		if d.IsDir() {
-			return os.MkdirAll(dstPath, 0755)
+			return os.MkdirAll(dstPath, 0o755)
 		}
 
 		data, err := os.ReadFile(path)
