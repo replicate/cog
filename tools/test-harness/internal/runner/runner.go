@@ -687,8 +687,15 @@ func (r *Runner) runCogTest(ctx context.Context, modelDir string, model manifest
 
 	start := time.Now()
 
-	// Build command
-	args := []string{command}
+	// Set timeout
+	timeout := model.Timeout
+	if timeout == 0 {
+		timeout = 300
+	}
+
+	// Build command — pass setup-timeout matching the model timeout so
+	// cog predict doesn't kill the container during model weight downloads.
+	args := []string{command, "--setup-timeout", fmt.Sprintf("%d", timeout)}
 	keys := make([]string, 0, len(tc.Inputs))
 	for k := range tc.Inputs {
 		keys = append(keys, k)
@@ -698,12 +705,6 @@ func (r *Runner) runCogTest(ctx context.Context, modelDir string, model manifest
 		value := tc.Inputs[key]
 		resolved := r.resolveInput(value)
 		args = append(args, "-i", fmt.Sprintf("%s=%s", key, resolved))
-	}
-
-	// Set timeout
-	timeout := model.Timeout
-	if timeout == 0 {
-		timeout = 300
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
