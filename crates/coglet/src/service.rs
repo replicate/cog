@@ -369,14 +369,20 @@ impl PredictionService {
         Vec<String>,
         Result<(), Vec<crate::input_validation::ValidationError>>,
     ) {
-        let guard = self.train_validator.read().await;
-        if let Some(ref validator) = *guard {
+        let train_guard = self.train_validator.read().await;
+        if let Some(ref validator) = *train_guard {
             let stripped = validator.strip_unknown(input);
             let result = validator.validate(input);
             return (stripped, result);
         }
-        drop(guard);
-        self.strip_and_validate_input(input).await
+        drop(train_guard);
+        let predict_guard = self.input_validator.read().await;
+        if let Some(ref validator) = *predict_guard {
+            let stripped = validator.strip_unknown(input);
+            let result = validator.validate(input);
+            return (stripped, result);
+        }
+        (Vec::new(), Ok(()))
     }
 
     /// Run user-defined healthcheck via orchestrator.
