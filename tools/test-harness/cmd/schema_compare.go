@@ -104,6 +104,11 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 			fmt.Printf("Comparing %s...\n", model.Name)
 			result := r.CompareSchema(ctx, model)
 			results[i] = *result
+			if result.Passed {
+				fmt.Printf("  + %s schemas match\n", model.Name)
+			} else {
+				fmt.Printf("  x %s FAILED\n", model.Name)
+			}
 		}
 	}
 

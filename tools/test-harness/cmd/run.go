@@ -113,6 +113,15 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 			fmt.Printf("Running %s...\n", model.Name)
 			result := r.RunModel(ctx, model)
 			results[i] = *result
+			switch {
+			case result.Skipped:
+				fmt.Printf("  - %s (skipped: %s)\n", model.Name, result.SkipReason)
+			case result.Passed:
+				testCount := len(result.TestResults) + len(result.TrainResults)
+				fmt.Printf("  + %s (%.1fs build, %d tests passed)\n", model.Name, result.BuildDuration, testCount)
+			default:
+				fmt.Printf("  x %s FAILED\n", model.Name)
+			}
 		}
 	}
 
