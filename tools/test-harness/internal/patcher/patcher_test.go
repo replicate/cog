@@ -18,7 +18,7 @@ func TestPatch(t *testing.T) {
   python_version: "3.10"
 predict: predict.py
 `
-		require.NoError(t, os.WriteFile(cogYAML, []byte(content), 0644))
+		require.NoError(t, os.WriteFile(cogYAML, []byte(content), 0o644))
 		require.NoError(t, Patch(cogYAML, "0.16.12", nil))
 
 		data, err := os.ReadFile(cogYAML)
@@ -32,7 +32,7 @@ predict: predict.py
   python_version: "3.10"
 predict: predict.py
 `
-		require.NoError(t, os.WriteFile(cogYAML, []byte(content), 0644))
+		require.NoError(t, os.WriteFile(cogYAML, []byte(content), 0o644))
 
 		overrides := map[string]any{
 			"build": map[string]any{
@@ -53,7 +53,7 @@ predict: predict.py
   python_version: "3.10"
 predict: predict.py
 `
-		require.NoError(t, os.WriteFile(cogYAML, []byte(content), 0644))
+		require.NoError(t, os.WriteFile(cogYAML, []byte(content), 0o644))
 
 		overrides := map[string]any{
 			"predict": "new_predict.py",

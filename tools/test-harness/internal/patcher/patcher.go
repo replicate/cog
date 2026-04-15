@@ -44,7 +44,7 @@ func Patch(cogYAMLPath string, sdkVersion string, overrides map[string]any) erro
 		return fmt.Errorf("marshaling cog.yaml: %w", err)
 	}
 
-	if err := os.WriteFile(cogYAMLPath, output, 0644); err != nil {
+	if err := os.WriteFile(cogYAMLPath, output, 0o644); err != nil {
 		return fmt.Errorf("writing cog.yaml: %w", err)
 	}
 

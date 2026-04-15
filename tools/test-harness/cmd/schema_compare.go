@@ -58,7 +58,7 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)
 	}
-	defer r.Cleanup()
+	defer func() { _ = r.Cleanup() }()
 
 	// Compare schemas
 	var results []report.SchemaCompareResult

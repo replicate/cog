@@ -45,7 +45,7 @@ func runBuild(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)
 	}
-	defer r.Cleanup()
+	defer func() { _ = r.Cleanup() }()
 
 	// Build models
 	var results []report.ModelResult

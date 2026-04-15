@@ -258,8 +258,8 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 
 	// Always clean up schema comparison images when done
 	defer func() {
-		exec.Command("docker", "rmi", "-f", staticTag).Run()
-		exec.Command("docker", "rmi", "-f", runtimeTag).Run()
+		_ = exec.Command("docker", "rmi", "-f", staticTag).Run()
+		_ = exec.Command("docker", "rmi", "-f", runtimeTag).Run()
 	}()
 
 	staticDir := filepath.Join(r.workDir, fmt.Sprintf("schema-static-%s", model.Name))
@@ -436,7 +436,7 @@ func (r *Runner) cloneRepo(ctx context.Context, repo string) (string, error) {
 	dest := filepath.Join(r.workDir, strings.ReplaceAll(repo, "/", "--"))
 
 	// Remove if exists
-	os.RemoveAll(dest)
+	_ = os.RemoveAll(dest)
 
 	url := fmt.Sprintf("https://github.com/%s.git", repo)
 	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", url, dest)

@@ -64,7 +64,7 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)
 	}
-	defer r.Cleanup()
+	defer func() { _ = r.Cleanup() }()
 
 	// Run tests
 	var results []report.ModelResult

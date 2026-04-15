@@ -275,7 +275,7 @@ func downloadCogBinary(tag string) (dest string, err error) {
 	}
 	defer func() {
 		if err != nil {
-			os.RemoveAll(tmpDir)
+			_ = os.RemoveAll(tmpDir)
 		}
 	}()
 
@@ -305,7 +305,7 @@ func downloadCogBinary(tag string) (dest string, err error) {
 	}
 
 	if _, copyErr := io.Copy(f, resp.Body); copyErr != nil {
-		f.Close()
+		_ = f.Close()
 		return "", fmt.Errorf("writing binary: %w", copyErr)
 	}
 
