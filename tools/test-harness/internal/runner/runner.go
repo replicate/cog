@@ -212,6 +212,8 @@ func (r *Runner) Cleanup() error {
 
 // RunModel runs all tests for a single model
 func (r *Runner) RunModel(ctx context.Context, model manifest.Model) *report.ModelResult {
+	_, logw, _, flush := r.modelOutput(model.Name)
+
 	result := &report.ModelResult{
 		Name:   model.Name,
 		Passed: true,
@@ -229,46 +231,71 @@ func (r *Runner) RunModel(ctx context.Context, model manifest.Model) *report.Mod
 	}
 
 	// Prepare model
+	_, _ = fmt.Fprintf(logw, "=== Preparing %s...\n", model.Name)
 	modelDir, err := r.prepareModel(ctx, model)
 	if err != nil {
 		result.Passed = false
 		result.Error = fmt.Sprintf("Preparation failed: %v", err)
+		flush()
 		return result
 	}
 
 	// Build
+	_, _ = fmt.Fprintf(logw, "=== Building %s (timeout %ds)...\n", model.Name, model.Timeout)
 	buildStart := time.Now()
 	if err := r.buildModel(ctx, modelDir, model); err != nil {
 		result.Passed = false
 		result.BuildDuration = time.Since(buildStart).Seconds()
 		result.Error = fmt.Sprintf("Build failed: %v", err)
+		_, _ = fmt.Fprintf(logw, "=== Build FAILED after %.1fs\n", result.BuildDuration)
+		flush()
 		return result
 	}
 	result.BuildDuration = time.Since(buildStart).Seconds()
+	_, _ = fmt.Fprintf(logw, "=== Build complete (%.1fs)\n", result.BuildDuration)
 
 	// Run train tests
-	for _, tc := range model.TrainTests {
+	for i, tc := range model.TrainTests {
+		desc := tc.Description
+		if desc == "" {
+			desc = "train"
+		}
+		_, _ = fmt.Fprintf(logw, "=== Train test %d/%d: %s (timeout %ds)...\n", i+1, len(model.TrainTests), desc, model.Timeout)
 		tr := r.runTrainTest(ctx, modelDir, model, tc)
 		result.TrainResults = append(result.TrainResults, tr)
-		if !tr.Passed {
+		if tr.Passed {
+			_, _ = fmt.Fprintf(logw, "=== Train test %d/%d PASSED (%.1fs)\n", i+1, len(model.TrainTests), tr.DurationSec)
+		} else {
+			_, _ = fmt.Fprintf(logw, "=== Train test %d/%d FAILED (%.1fs)\n", i+1, len(model.TrainTests), tr.DurationSec)
 			result.Passed = false
 		}
 	}
 
 	// Run predict tests
-	for _, tc := range model.Tests {
+	for i, tc := range model.Tests {
+		desc := tc.Description
+		if desc == "" {
+			desc = "predict"
+		}
+		_, _ = fmt.Fprintf(logw, "=== Predict test %d/%d: %s (timeout %ds)...\n", i+1, len(model.Tests), desc, model.Timeout)
 		tr := r.runPredictTest(ctx, modelDir, model, tc)
 		result.TestResults = append(result.TestResults, tr)
-		if !tr.Passed {
+		if tr.Passed {
+			_, _ = fmt.Fprintf(logw, "=== Predict test %d/%d PASSED (%.1fs)\n", i+1, len(model.Tests), tr.DurationSec)
+		} else {
+			_, _ = fmt.Fprintf(logw, "=== Predict test %d/%d FAILED (%.1fs)\n", i+1, len(model.Tests), tr.DurationSec)
 			result.Passed = false
 		}
 	}
 
+	flush()
 	return result
 }
 
 // BuildModel builds a model image only
 func (r *Runner) BuildModel(ctx context.Context, model manifest.Model) *report.ModelResult {
+	_, logw, _, flush := r.modelOutput(model.Name)
+
 	result := &report.ModelResult{
 		Name:   model.Name,
 		Passed: true,
@@ -286,23 +313,30 @@ func (r *Runner) BuildModel(ctx context.Context, model manifest.Model) *report.M
 	}
 
 	// Prepare model
+	_, _ = fmt.Fprintf(logw, "=== Preparing %s...\n", model.Name)
 	modelDir, err := r.prepareModel(ctx, model)
 	if err != nil {
 		result.Passed = false
 		result.Error = fmt.Sprintf("Preparation failed: %v", err)
+		flush()
 		return result
 	}
 
 	// Build
+	_, _ = fmt.Fprintf(logw, "=== Building %s (timeout %ds)...\n", model.Name, model.Timeout)
 	buildStart := time.Now()
 	if err := r.buildModel(ctx, modelDir, model); err != nil {
 		result.Passed = false
 		result.BuildDuration = time.Since(buildStart).Seconds()
 		result.Error = fmt.Sprintf("Build failed: %v", err)
+		_, _ = fmt.Fprintf(logw, "=== Build FAILED after %.1fs\n", result.BuildDuration)
+		flush()
 		return result
 	}
 	result.BuildDuration = time.Since(buildStart).Seconds()
+	_, _ = fmt.Fprintf(logw, "=== Build complete (%.1fs)\n", result.BuildDuration)
 
+	flush()
 	return result
 }
 
