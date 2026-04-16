@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/tools/test-harness/internal/manifest"
 	"github.com/replicate/cog/tools/test-harness/internal/report"
 	"github.com/replicate/cog/tools/test-harness/internal/runner"
 )
@@ -37,6 +35,10 @@ func newSchemaCompareCommand() *cobra.Command {
 func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) error {
 	if outputFormat != "console" && outputFormat != "json" {
 		return fmt.Errorf("invalid output format %q: must be 'console' or 'json'", outputFormat)
+	}
+
+	if err := validateConcurrency(); err != nil {
+		return err
 	}
 
 	_, models, resolved, err := resolveSetup()
@@ -73,44 +75,29 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 	// Compare schemas
 	results := make([]report.SchemaCompareResult, len(models))
 
-	if parallel {
-		g, ctx := errgroup.WithContext(ctx)
-		g.SetLimit(concurrency)
-
-		var mu sync.Mutex
-		for i, model := range models {
-			g.Go(func() error {
-				mu.Lock()
-				fmt.Printf("  [%d/%d] Comparing %s...\n", i+1, len(models), model.Name)
-				mu.Unlock()
-
-				result := r.CompareSchema(ctx, model)
-				results[i] = *result
-
-				mu.Lock()
-				if result.Passed {
-					fmt.Printf("  [%d/%d] + %s schemas match\n", i+1, len(models), model.Name)
-				} else {
-					fmt.Printf("  [%d/%d] x %s FAILED\n", i+1, len(models), model.Name)
-				}
-				mu.Unlock()
-
-				return nil
-			})
-		}
-		_ = g.Wait()
-	} else {
-		for i, model := range models {
-			fmt.Printf("Comparing %s...\n", model.Name)
-			result := r.CompareSchema(ctx, model)
-			results[i] = *result
-			if result.Passed {
-				fmt.Printf("  + %s schemas match\n", model.Name)
-			} else {
-				fmt.Printf("  x %s FAILED\n", model.Name)
+	runModels(ctx, models, results, parallel,
+		func(ctx context.Context, model manifest.Model) *report.SchemaCompareResult {
+			return r.CompareSchema(ctx, model)
+		},
+		func(index, total int, model manifest.Model) string {
+			if parallel {
+				return fmt.Sprintf("  [%d/%d] Comparing %s...\n", index, total, model.Name)
 			}
-		}
-	}
+			return fmt.Sprintf("Comparing %s...\n", model.Name)
+		},
+		func(index, total int, model manifest.Model, result *report.SchemaCompareResult) string {
+			if parallel {
+				if result.Passed {
+					return fmt.Sprintf("  [%d/%d] + %s schemas match\n", index, total, model.Name)
+				}
+				return fmt.Sprintf("  [%d/%d] x %s FAILED\n", index, total, model.Name)
+			}
+			if result.Passed {
+				return fmt.Sprintf("  + %s schemas match\n", model.Name)
+			}
+			return fmt.Sprintf("  x %s FAILED\n", model.Name)
+		},
+	)
 
 	// Output results
 	if outputFormat == "json" {

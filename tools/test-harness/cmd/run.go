@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/tools/test-harness/internal/manifest"
 	"github.com/replicate/cog/tools/test-harness/internal/report"
 	"github.com/replicate/cog/tools/test-harness/internal/runner"
 )
@@ -36,6 +34,10 @@ func newRunCommand() *cobra.Command {
 func runRun(ctx context.Context, outputFormat, outputFile string) error {
 	if outputFormat != "console" && outputFormat != "json" {
 		return fmt.Errorf("invalid output format %q: must be 'console' or 'json'", outputFormat)
+	}
+
+	if err := validateConcurrency(); err != nil {
+		return err
 	}
 
 	_, models, resolved, err := resolveSetup()
@@ -78,52 +80,38 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 	// Run tests
 	results := make([]report.ModelResult, len(models))
 
-	if parallel {
-		g, ctx := errgroup.WithContext(ctx)
-		g.SetLimit(concurrency)
-
-		var mu sync.Mutex
-		for i, model := range models {
-			g.Go(func() error {
-				mu.Lock()
-				fmt.Printf("  [%d/%d] Running %s...\n", i+1, len(models), model.Name)
-				mu.Unlock()
-
-				result := r.RunModel(ctx, model)
-				results[i] = *result
-
-				mu.Lock()
+	runModels(ctx, models, results, parallel,
+		func(ctx context.Context, model manifest.Model) *report.ModelResult {
+			return r.RunModel(ctx, model)
+		},
+		func(index, total int, model manifest.Model) string {
+			if parallel {
+				return fmt.Sprintf("  [%d/%d] Running %s...\n", index, total, model.Name)
+			}
+			return fmt.Sprintf("Running %s...\n", model.Name)
+		},
+		func(index, total int, model manifest.Model, result *report.ModelResult) string {
+			testCount := len(result.TestResults) + len(result.TrainResults)
+			if parallel {
 				switch {
 				case result.Skipped:
-					fmt.Printf("  [%d/%d] - %s (skipped: %s)\n", i+1, len(models), model.Name, result.SkipReason)
+					return fmt.Sprintf("  [%d/%d] - %s (skipped: %s)\n", index, total, model.Name, result.SkipReason)
 				case result.Passed:
-					testCount := len(result.TestResults) + len(result.TrainResults)
-					fmt.Printf("  [%d/%d] + %s (%.1fs build, %d tests passed)\n", i+1, len(models), model.Name, result.BuildDuration, testCount)
+					return fmt.Sprintf("  [%d/%d] + %s (%.1fs build, %d tests passed)\n", index, total, model.Name, result.BuildDuration, testCount)
 				default:
-					fmt.Printf("  [%d/%d] x %s FAILED\n", i+1, len(models), model.Name)
+					return fmt.Sprintf("  [%d/%d] x %s FAILED\n", index, total, model.Name)
 				}
-				mu.Unlock()
-
-				return nil
-			})
-		}
-		_ = g.Wait()
-	} else {
-		for i, model := range models {
-			fmt.Printf("Running %s...\n", model.Name)
-			result := r.RunModel(ctx, model)
-			results[i] = *result
+			}
 			switch {
 			case result.Skipped:
-				fmt.Printf("  - %s (skipped: %s)\n", model.Name, result.SkipReason)
+				return fmt.Sprintf("  - %s (skipped: %s)\n", model.Name, result.SkipReason)
 			case result.Passed:
-				testCount := len(result.TestResults) + len(result.TrainResults)
-				fmt.Printf("  + %s (%.1fs build, %d tests passed)\n", model.Name, result.BuildDuration, testCount)
+				return fmt.Sprintf("  + %s (%.1fs build, %d tests passed)\n", model.Name, result.BuildDuration, testCount)
 			default:
-				fmt.Printf("  x %s FAILED\n", model.Name)
+				return fmt.Sprintf("  x %s FAILED\n", model.Name)
 			}
-		}
-	}
+		},
+	)
 
 	// Output results
 	if outputFormat == "json" {
@@ -162,15 +150,10 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 	}
 
 	// Check for failures
-	var hasFailures bool
 	for _, r := range results {
 		if !r.Passed && !r.Skipped {
-			hasFailures = true
-			break
+			return formatFailureSummary("model", results)
 		}
-	}
-	if hasFailures {
-		return formatFailureSummary("model", results)
 	}
 
 	return nil

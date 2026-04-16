@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -82,7 +84,73 @@ func resolveSetup() (*manifest.Manifest, []manifest.Model, *resolver.Result, err
 	return mf, models, resolved, nil
 }
 
+// validateConcurrency checks that the concurrency flag is a valid value.
+// errgroup.SetLimit panics on 0, and negative values mean unlimited.
+func validateConcurrency() error {
+	if concurrency < 1 {
+		return fmt.Errorf("--concurrency must be at least 1, got %d", concurrency)
+	}
+	return nil
+}
+
+// modelAction is a function that processes a single model and returns a result.
+type modelAction[T any] func(ctx context.Context, model manifest.Model) *T
+
+// statusPrinter formats a per-model status line after processing completes.
+type statusPrinter[T any] func(index, total int, model manifest.Model, result *T) string
+
+// runModels executes an action for each model, either sequentially or in parallel
+// depending on the concurrency setting. It handles the common pattern of:
+//   - printing a "starting" line
+//   - running the action
+//   - printing a "done/failed" status line
+//
+// The results slice is pre-allocated by the caller. This function fills it in.
+func runModels[T any](
+	ctx context.Context,
+	models []manifest.Model,
+	results []T,
+	parallel bool,
+	action modelAction[T],
+	startLine func(index, total int, model manifest.Model) string,
+	statusLine statusPrinter[T],
+) {
+	if parallel {
+		sem := make(chan struct{}, concurrency)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+
+		for i, model := range models {
+			wg.Go(func() {
+				sem <- struct{}{}        // acquire
+				defer func() { <-sem }() // release
+
+				mu.Lock()
+				fmt.Print(startLine(i+1, len(models), model))
+				mu.Unlock()
+
+				result := action(ctx, model)
+				results[i] = *result
+
+				mu.Lock()
+				fmt.Print(statusLine(i+1, len(models), model, result))
+				mu.Unlock()
+			})
+		}
+		wg.Wait()
+	} else {
+		for i, model := range models {
+			fmt.Print(startLine(i+1, len(models), model))
+			result := action(ctx, model)
+			results[i] = *result
+			fmt.Print(statusLine(i+1, len(models), model, result))
+		}
+	}
+}
+
 // formatFailureSummary builds an error message with per-model failure details.
+//
+//nolint:gosec // G705: writes to strings.Builder, not an HTTP response — no XSS risk
 func formatFailureSummary(action string, results []report.ModelResult) error {
 	var b strings.Builder
 	var failCount int

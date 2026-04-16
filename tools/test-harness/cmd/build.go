@@ -3,12 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"sync"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/tools/test-harness/internal/manifest"
 	"github.com/replicate/cog/tools/test-harness/internal/report"
 	"github.com/replicate/cog/tools/test-harness/internal/runner"
 )
@@ -25,6 +23,10 @@ func newBuildCommand() *cobra.Command {
 }
 
 func runBuild(ctx context.Context) error {
+	if err := validateConcurrency(); err != nil {
+		return err
+	}
+
 	_, models, resolved, err := resolveSetup()
 	if err != nil {
 		return err
@@ -59,63 +61,46 @@ func runBuild(ctx context.Context) error {
 	// Build models
 	results := make([]report.ModelResult, len(models))
 
-	if parallel {
-		g, ctx := errgroup.WithContext(ctx)
-		g.SetLimit(concurrency)
-
-		var mu sync.Mutex
-		for i, model := range models {
-			g.Go(func() error {
-				mu.Lock()
-				fmt.Printf("  [%d/%d] Building %s...\n", i+1, len(models), model.Name)
-				mu.Unlock()
-
-				result := r.BuildModel(ctx, model)
-				results[i] = *result
-
-				mu.Lock()
+	runModels(ctx, models, results, parallel,
+		func(ctx context.Context, model manifest.Model) *report.ModelResult {
+			return r.BuildModel(ctx, model)
+		},
+		func(index, total int, model manifest.Model) string {
+			if parallel {
+				return fmt.Sprintf("  [%d/%d] Building %s...\n", index, total, model.Name)
+			}
+			return fmt.Sprintf("Building %s...\n", model.Name)
+		},
+		func(index, total int, model manifest.Model, result *report.ModelResult) string {
+			if parallel {
 				switch {
 				case result.Passed:
-					fmt.Printf("  [%d/%d] + %s (%.1fs)\n", i+1, len(models), model.Name, result.BuildDuration)
+					return fmt.Sprintf("  [%d/%d] + %s (%.1fs)\n", index, total, model.Name, result.BuildDuration)
 				case result.Skipped:
-					fmt.Printf("  [%d/%d] - %s (skipped: %s)\n", i+1, len(models), model.Name, result.SkipReason)
+					return fmt.Sprintf("  [%d/%d] - %s (skipped: %s)\n", index, total, model.Name, result.SkipReason)
 				default:
-					fmt.Printf("  [%d/%d] x %s FAILED\n", i+1, len(models), model.Name)
+					return fmt.Sprintf("  [%d/%d] x %s FAILED\n", index, total, model.Name)
 				}
-				mu.Unlock()
-
-				return nil
-			})
-		}
-		_ = g.Wait()
-	} else {
-		for i, model := range models {
-			fmt.Printf("Building %s...\n", model.Name)
-			result := r.BuildModel(ctx, model)
-			results[i] = *result
+			}
 			switch {
 			case result.Passed:
-				fmt.Printf("  + %s built successfully (%.1fs)\n", model.Name, result.BuildDuration)
+				return fmt.Sprintf("  + %s built successfully (%.1fs)\n", model.Name, result.BuildDuration)
 			case result.Skipped:
-				fmt.Printf("  - %s (skipped: %s)\n", model.Name, result.SkipReason)
+				return fmt.Sprintf("  - %s (skipped: %s)\n", model.Name, result.SkipReason)
 			default:
-				fmt.Printf("  x %s FAILED\n", model.Name)
+				return fmt.Sprintf("  x %s FAILED\n", model.Name)
 			}
-		}
-	}
+		},
+	)
 
 	// Output results
 	report.ConsoleReport(results, resolved.SDKVersion, resolved.CogVersion)
 
 	// Check for failures
-	var failedNames []string
 	for _, r := range results {
 		if !r.Passed && !r.Skipped {
-			failedNames = append(failedNames, r.Name)
+			return formatFailureSummary("build", results)
 		}
-	}
-	if len(failedNames) > 0 {
-		return formatFailureSummary("build", results)
 	}
 
 	return nil

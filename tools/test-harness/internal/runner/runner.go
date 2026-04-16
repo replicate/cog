@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/replicate/cog/tools/test-harness/internal/manifest"
 	"github.com/replicate/cog/tools/test-harness/internal/patcher"
@@ -27,8 +28,14 @@ import (
 
 const openapiSchemaLabel = "run.cog.openapi_schema"
 
+// maxPrefixBuf is the maximum size of the prefixWriter line buffer before
+// it is force-flushed. This prevents unbounded memory growth when a
+// subprocess writes very long lines without newlines (e.g. progress bars).
+const maxPrefixBuf = 64 * 1024 // 64 KiB
+
 // prefixWriter wraps an io.Writer and prepends a prefix to each line.
-// Partial lines (no trailing newline) are buffered until a newline arrives.
+// Partial lines (no trailing newline) are buffered until a newline arrives
+// or the buffer exceeds maxPrefixBuf.
 type prefixWriter struct {
 	prefix string
 	dest   io.Writer
@@ -61,6 +68,15 @@ func (pw *prefixWriter) Write(p []byte) (int, error) {
 			return total, err
 		}
 	}
+
+	// Force-flush if the buffer has grown too large (e.g. no newlines in output).
+	if len(pw.buf) > maxPrefixBuf {
+		if _, err := fmt.Fprintf(pw.dest, "%s%s\n", pw.prefix, pw.buf); err != nil {
+			return total, err
+		}
+		pw.buf = pw.buf[:0]
+	}
+
 	return total, nil
 }
 
@@ -75,11 +91,22 @@ func (pw *prefixWriter) Flush() {
 	}
 }
 
-// modelOutput returns stdout/stderr writers for a model.
-// In parallel mode, output is prefixed with the model name and
-// also captured in a buffer for error reporting.
-// In sequential mode, output streams directly to the terminal
-// and is also captured.
+// modelLoggers returns stdout/stderr writers for status logging only.
+// In parallel mode, output is prefixed with the model name.
+// In sequential mode, output streams directly to the terminal.
+// Use modelOutput when captured output is needed for error reporting.
+func (r *Runner) modelLoggers(modelName string) (logw io.Writer, flush func()) {
+	if r.opts.Parallel {
+		pw := newPrefixWriter(os.Stderr, modelName)
+		return pw, pw.Flush
+	}
+	return os.Stderr, func() {}
+}
+
+// modelOutput returns stdout/stderr writers for a model that also capture
+// output into a buffer for error reporting.
+// In parallel mode, output is prefixed with the model name.
+// In sequential mode, output streams directly to the terminal.
 func (r *Runner) modelOutput(modelName string) (stdout, stderr io.Writer, capture *bytes.Buffer, flush func()) {
 	var buf bytes.Buffer
 	if r.opts.Parallel {
@@ -108,8 +135,7 @@ type Runner struct {
 	opts        Options
 	fixturesDir string
 	workDir     string
-	clonedRepos map[string]string
-	mu          sync.Mutex // protects clonedRepos
+	cloneGroup  singleflight.Group // deduplicates concurrent clones of the same repo
 }
 
 // New creates a new Runner
@@ -145,7 +171,6 @@ func New(opts Options) (*Runner, error) {
 		opts:        opts,
 		fixturesDir: fixturesDir,
 		workDir:     workDir,
-		clonedRepos: make(map[string]string),
 	}, nil
 }
 
@@ -212,7 +237,7 @@ func (r *Runner) Cleanup() error {
 
 // RunModel runs all tests for a single model
 func (r *Runner) RunModel(ctx context.Context, model manifest.Model) *report.ModelResult {
-	_, logw, _, flush := r.modelOutput(model.Name)
+	logw, flush := r.modelLoggers(model.Name)
 
 	result := &report.ModelResult{
 		Name:   model.Name,
@@ -294,7 +319,7 @@ func (r *Runner) RunModel(ctx context.Context, model manifest.Model) *report.Mod
 
 // BuildModel builds a model image only
 func (r *Runner) BuildModel(ctx context.Context, model manifest.Model) *report.ModelResult {
-	_, logw, _, flush := r.modelOutput(model.Name)
+	logw, flush := r.modelLoggers(model.Name)
 
 	result := &report.ModelResult{
 		Name:   model.Name,
@@ -565,7 +590,14 @@ func (r *Runner) runSetupCommands(ctx context.Context, modelDir string, model ma
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
 			flush()
-			return fmt.Errorf("setup command %q failed: %w\n%s", cmdStr, err, capture.String())
+			// Truncate captured output to avoid unwieldy error messages,
+			// matching the pattern used in buildModelWithEnv.
+			output := capture.String()
+			const maxTail = 2000
+			if len(output) > maxTail {
+				output = "...\n" + output[len(output)-maxTail:]
+			}
+			return fmt.Errorf("setup command %q failed: %w\n%s", cmdStr, err, output)
 		}
 	}
 	flush()
@@ -573,28 +605,29 @@ func (r *Runner) runSetupCommands(ctx context.Context, modelDir string, model ma
 }
 
 // cloneRepo clones a repo once and caches the result. Thread-safe.
+// Uses singleflight to deduplicate concurrent clones of the same repo
+// without holding a mutex during the (potentially slow) git clone.
 func (r *Runner) cloneRepo(ctx context.Context, repo string) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	result, err, _ := r.cloneGroup.Do(repo, func() (any, error) {
+		dest := filepath.Join(r.workDir, strings.ReplaceAll(repo, "/", "--"))
 
-	if dir, ok := r.clonedRepos[repo]; ok {
-		return dir, nil
+		// Remove if exists
+		_ = os.RemoveAll(dest)
+
+		url := fmt.Sprintf("https://github.com/%s.git", repo)
+		cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", url, dest)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("cloning %s: %w\n%s", repo, err, stderr.String())
+		}
+
+		return dest, nil
+	})
+	if err != nil {
+		return "", err
 	}
-
-	dest := filepath.Join(r.workDir, strings.ReplaceAll(repo, "/", "--"))
-
-	// Remove if exists
-	_ = os.RemoveAll(dest)
-
-	url := fmt.Sprintf("https://github.com/%s.git", repo)
-	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", url, dest)
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("cloning %s: %w", repo, err)
-	}
-
-	r.clonedRepos[repo] = dest
-	return dest, nil
+	return result.(string), nil
 }
 
 func (r *Runner) buildModel(ctx context.Context, modelDir string, model manifest.Model) error {
