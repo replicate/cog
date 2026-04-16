@@ -413,7 +413,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 	runtimeStart := time.Now()
 
 	g.Go(func() error {
-		staticErr = r.buildModelWithEnv(ctx, staticDir, model, staticTag, map[string]string{"COG_STATIC_SCHEMA": "1"})
+		staticErr = r.quietBuildModelWithEnv(ctx, staticDir, model, staticTag, map[string]string{"COG_STATIC_SCHEMA": "1"})
 		if staticErr != nil {
 			return nil // Don't fail the group, we'll check errors after
 		}
@@ -423,7 +423,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 	})
 
 	g.Go(func() error {
-		runtimeErr = r.buildModelWithEnv(ctx, runtimeDir, model, runtimeTag, map[string]string{})
+		runtimeErr = r.quietBuildModelWithEnv(ctx, runtimeDir, model, runtimeTag, map[string]string{})
 		if runtimeErr != nil {
 			return nil
 		}
@@ -635,7 +635,22 @@ func (r *Runner) buildModel(ctx context.Context, modelDir string, model manifest
 	return r.buildModelWithEnv(ctx, modelDir, model, imageTag, nil)
 }
 
+// buildModelWithEnv builds a model image, streaming output to the terminal
+// (or prefixed in parallel mode) for real-time progress visibility.
 func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model manifest.Model, imageTag string, extraEnv map[string]string) error {
+	_, stderr, capture, flush := r.modelOutput(model.Name)
+	return r.doBuild(ctx, modelDir, model, imageTag, extraEnv, stderr, capture, flush)
+}
+
+// quietBuildModelWithEnv builds a model image without streaming output to
+// the terminal. Output is captured for inclusion in error messages on failure.
+// Used by CompareSchema where build logs would interleave with diff results.
+func (r *Runner) quietBuildModelWithEnv(ctx context.Context, modelDir string, model manifest.Model, imageTag string, extraEnv map[string]string) error {
+	var capture bytes.Buffer
+	return r.doBuild(ctx, modelDir, model, imageTag, extraEnv, &capture, &capture, func() {})
+}
+
+func (r *Runner) doBuild(ctx context.Context, modelDir string, model manifest.Model, imageTag string, extraEnv map[string]string, output io.Writer, capture *bytes.Buffer, flush func()) error {
 	// Set timeout
 	timeout := model.Timeout
 	if timeout == 0 {
@@ -673,22 +688,18 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	// Stream build output in real-time so the user can see progress,
-	// while also capturing it for error reporting if the build fails.
-	// In parallel mode, each line is prefixed with the model name.
-	_, stderr, capture, flush := r.modelOutput(model.Name)
-	cmd.Stdout = stderr
-	cmd.Stderr = stderr
+	cmd.Stdout = output
+	cmd.Stderr = output
 	err := cmd.Run()
 	flush()
 	if err != nil {
 		// Include the last portion of build output for context.
-		output := capture.String()
+		out := capture.String()
 		const maxTail = 2000
-		if len(output) > maxTail {
-			output = "...\n" + output[len(output)-maxTail:]
+		if len(out) > maxTail {
+			out = "...\n" + out[len(out)-maxTail:]
 		}
-		return fmt.Errorf("%w\n%s", err, output)
+		return fmt.Errorf("%w\n%s", err, out)
 	}
 	return nil
 }
@@ -883,21 +894,86 @@ func copyDir(src, dst string) error {
 	})
 }
 
+// jsonDiff produces a unified-diff-style comparison between two JSON objects.
+// The output resembles git diff, showing the static schema as "a" (old) and
+// the runtime schema as "b" (new), with -, + and ~ prefixes for removed,
+// added, and changed values respectively.
 func jsonDiff(a, b map[string]any) string {
-	var lines []string
-	diffRecursive(a, b, "$", &lines)
-	if len(lines) == 0 {
+	var hunks []diffHunk
+	collectDiffs(a, b, "$", &hunks)
+	if len(hunks) == 0 {
 		return ""
 	}
-	return strings.Join(lines, "\n")
+
+	var buf strings.Builder
+	buf.WriteString("--- static schema\n")
+	buf.WriteString("+++ runtime schema\n")
+	for _, h := range hunks {
+		buf.WriteString("\n")
+		buf.WriteString(h.String())
+	}
+	return buf.String()
 }
 
-func diffRecursive(a, b any, path string, lines *[]string) {
+// diffHunk represents a single difference between two JSON values.
+type diffHunk struct {
+	Path     string
+	Kind     string // "missing_in_static", "missing_in_runtime", "changed", "type_mismatch", "array_length"
+	StaticV  any    // value in static (nil if missing)
+	RuntimeV any    // value in runtime (nil if missing)
+}
+
+func (h diffHunk) String() string {
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "@@ %s @@\n", h.Path)
+	switch h.Kind {
+	case "missing_in_runtime":
+		// Present in static, absent in runtime
+		for _, line := range prettyLines(h.StaticV) {
+			fmt.Fprintf(&buf, "-%s\n", line)
+		}
+	case "missing_in_static":
+		// Absent in static, present in runtime
+		for _, line := range prettyLines(h.RuntimeV) {
+			fmt.Fprintf(&buf, "+%s\n", line)
+		}
+	case "changed", "type_mismatch":
+		for _, line := range prettyLines(h.StaticV) {
+			fmt.Fprintf(&buf, "-%s\n", line)
+		}
+		for _, line := range prettyLines(h.RuntimeV) {
+			fmt.Fprintf(&buf, "+%s\n", line)
+		}
+	case "array_length":
+		for _, line := range prettyLines(h.StaticV) {
+			fmt.Fprintf(&buf, "-%s\n", line)
+		}
+		for _, line := range prettyLines(h.RuntimeV) {
+			fmt.Fprintf(&buf, "+%s\n", line)
+		}
+	}
+	return buf.String()
+}
+
+// prettyLines returns a compact JSON representation split into lines.
+func prettyLines(v any) []string {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return []string{fmt.Sprintf("%v", v)}
+	}
+	return strings.Split(string(data), "\n")
+}
+
+func collectDiffs(a, b any, path string, hunks *[]diffHunk) {
 	if a == nil && b == nil {
 		return
 	}
-	if a == nil || b == nil {
-		*lines = append(*lines, fmt.Sprintf("  %s: one side is nil", path))
+	if a == nil {
+		*hunks = append(*hunks, diffHunk{Path: path, Kind: "missing_in_static", RuntimeV: b})
+		return
+	}
+	if b == nil {
+		*hunks = append(*hunks, diffHunk{Path: path, Kind: "missing_in_runtime", StaticV: a})
 		return
 	}
 
@@ -905,9 +981,10 @@ func diffRecursive(a, b any, path string, lines *[]string) {
 	case map[string]any:
 		bv, ok := b.(map[string]any)
 		if !ok {
-			*lines = append(*lines, fmt.Sprintf("  %s: type mismatch (object vs %T)", path, b))
+			*hunks = append(*hunks, diffHunk{Path: path, Kind: "type_mismatch", StaticV: a, RuntimeV: b})
 			return
 		}
+		// Collect all keys, sorted for deterministic output
 		allKeys := make(map[string]bool)
 		for k := range av {
 			allKeys[k] = true
@@ -915,33 +992,42 @@ func diffRecursive(a, b any, path string, lines *[]string) {
 		for k := range bv {
 			allKeys[k] = true
 		}
+		sortedKeys := make([]string, 0, len(allKeys))
 		for k := range allKeys {
+			sortedKeys = append(sortedKeys, k)
+		}
+		sort.Strings(sortedKeys)
+
+		for _, k := range sortedKeys {
 			childPath := fmt.Sprintf("%s.%s", path, k)
-			if _, ok := av[k]; !ok {
-				*lines = append(*lines, fmt.Sprintf("  %s: missing in static", childPath))
-			} else if _, ok := bv[k]; !ok {
-				*lines = append(*lines, fmt.Sprintf("  %s: missing in runtime", childPath))
-			} else {
-				diffRecursive(av[k], bv[k], childPath, lines)
+			aVal, aOK := av[k]
+			bVal, bOK := bv[k]
+			switch {
+			case !aOK:
+				*hunks = append(*hunks, diffHunk{Path: childPath, Kind: "missing_in_static", RuntimeV: bVal})
+			case !bOK:
+				*hunks = append(*hunks, diffHunk{Path: childPath, Kind: "missing_in_runtime", StaticV: aVal})
+			default:
+				collectDiffs(aVal, bVal, childPath, hunks)
 			}
 		}
 	case []any:
 		bv, ok := b.([]any)
 		if !ok {
-			*lines = append(*lines, fmt.Sprintf("  %s: type mismatch (array vs %T)", path, b))
+			*hunks = append(*hunks, diffHunk{Path: path, Kind: "type_mismatch", StaticV: a, RuntimeV: b})
 			return
 		}
 		if len(av) != len(bv) {
-			*lines = append(*lines, fmt.Sprintf("  %s: array length mismatch (%d vs %d)", path, len(av), len(bv)))
+			*hunks = append(*hunks, diffHunk{Path: path, Kind: "array_length", StaticV: a, RuntimeV: b})
 			return
 		}
 		for i := range av {
 			childPath := fmt.Sprintf("%s[%d]", path, i)
-			diffRecursive(av[i], bv[i], childPath, lines)
+			collectDiffs(av[i], bv[i], childPath, hunks)
 		}
 	default:
-		if a != b {
-			*lines = append(*lines, fmt.Sprintf("  %s: value mismatch (%v vs %v)", path, a, b))
+		if fmt.Sprint(a) != fmt.Sprint(b) {
+			*hunks = append(*hunks, diffHunk{Path: path, Kind: "changed", StaticV: a, RuntimeV: b})
 		}
 	}
 }

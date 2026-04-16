@@ -260,9 +260,11 @@ func SchemaCompareConsoleReport(results []SchemaCompareResult, cogVersion string
 			writeStatus("x", r.Name, "schemas differ", false)
 			failed++
 			if r.Diff != "" {
+				fmt.Println()
 				for line := range strings.SplitSeq(r.Diff, "\n") {
-					fmt.Printf("    %s\n", line)
+					fmt.Printf("      %s\n", line)
 				}
+				fmt.Println()
 			}
 		}
 	}

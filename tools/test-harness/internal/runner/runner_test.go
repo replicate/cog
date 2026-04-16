@@ -2,6 +2,7 @@ package runner
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,6 +37,68 @@ func TestSafeSubpathRejectsAbsoluteOutsidePath(t *testing.T) {
 	_, err := safeSubpath(root, absOutside)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must be relative")
+}
+
+func TestJsonDiffUnifiedFormat(t *testing.T) {
+	tests := []struct {
+		name     string
+		static   map[string]any
+		runtime  map[string]any
+		contains []string // substrings the diff must contain
+		empty    bool     // expect no diff
+	}{
+		{
+			name:    "identical schemas produce no diff",
+			static:  map[string]any{"a": 1, "b": "hello"},
+			runtime: map[string]any{"a": 1, "b": "hello"},
+			empty:   true,
+		},
+		{
+			name:     "missing key in static shows + lines",
+			static:   map[string]any{"a": 1},
+			runtime:  map[string]any{"a": 1, "b": "new"},
+			contains: []string{"--- static schema", "+++ runtime schema", "@@ $.b @@", "+\"new\""},
+		},
+		{
+			name:     "missing key in runtime shows - lines",
+			static:   map[string]any{"a": 1, "b": "old"},
+			runtime:  map[string]any{"a": 1},
+			contains: []string{"@@ $.b @@", "-\"old\""},
+		},
+		{
+			name:     "changed value shows - and + lines",
+			static:   map[string]any{"a": "foo"},
+			runtime:  map[string]any{"a": "bar"},
+			contains: []string{"@@ $.a @@", "-\"foo\"", "+\"bar\""},
+		},
+		{
+			name:     "nested object diff shows full path",
+			static:   map[string]any{"outer": map[string]any{"inner": 1}},
+			runtime:  map[string]any{"outer": map[string]any{"inner": 2}},
+			contains: []string{"@@ $.outer.inner @@", "-1", "+2"},
+		},
+		{
+			name:     "array length mismatch shows both arrays",
+			static:   map[string]any{"arr": []any{"a", "b"}},
+			runtime:  map[string]any{"arr": []any{"a", "b", "c"}},
+			contains: []string{"@@ $.arr @@", "-[", "+[", "+  \"c\""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diff := jsonDiff(tt.static, tt.runtime)
+			if tt.empty {
+				assert.Empty(t, diff)
+				return
+			}
+			require.NotEmpty(t, diff)
+			for _, substr := range tt.contains {
+				assert.True(t, strings.Contains(diff, substr),
+					"diff should contain %q but got:\n%s", substr, diff)
+			}
+		})
+	}
 }
 
 func TestExtractOutput(t *testing.T) {
