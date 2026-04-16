@@ -65,7 +65,7 @@ func New(opts Options) (*Runner, error) {
 		return nil, fmt.Errorf("cannot determine home directory for work dir (set $HOME): %w", err)
 	}
 	baseDir := filepath.Join(home, ".cache", "cog-harness")
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating harness cache dir: %w", err)
 	}
 	workDir, err := os.MkdirTemp(baseDir, "run-*")
@@ -307,7 +307,7 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 
 	if err := g.Wait(); err != nil {
 		result.Passed = false
-		result.Error = fmt.Sprintf("context cancelled: %v", err)
+		result.Error = fmt.Sprintf("context canceled: %v", err)
 		return result
 	}
 
@@ -634,7 +634,7 @@ func (r *Runner) resolveInput(value any) string {
 func extractOutput(stdout, stderr, modelDir string) string {
 	// For file outputs (e.g. images), cog writes the file to CWD and prints
 	// "Written output to: <path>" on stderr. Check stderr for this pattern.
-	for _, line := range strings.Split(stderr, "\n") {
+	for line := range strings.SplitSeq(stderr, "\n") {
 		if strings.Contains(line, "Written output to:") {
 			parts := strings.SplitN(line, "Written output to:", 2)
 			if len(parts) == 2 {
@@ -671,7 +671,7 @@ func copyDir(src, dst string) error {
 		dstPath := filepath.Join(dst, rel)
 
 		if d.IsDir() {
-			return os.MkdirAll(dstPath, 0755)
+			return os.MkdirAll(dstPath, 0o755)
 		}
 
 		data, err := os.ReadFile(path)

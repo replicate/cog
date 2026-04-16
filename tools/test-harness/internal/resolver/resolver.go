@@ -63,21 +63,22 @@ func Resolve(cogBinary, cogVersion, cogRef, sdkVersion, sdkWheel string, manifes
 	result.CogVersion = version
 
 	// Determine SDK wheel: explicit --sdk-wheel wins over ref-built
-	if sdkWheel != "" {
+	switch {
+	case sdkWheel != "":
 		result.SDKWheel = sdkWheel
 		result.SDKVersion = fmt.Sprintf("wheel:%s", filepath.Base(sdkWheel))
 		if sdkVersion != "" {
 			result.SDKPatchVersion = sdkVersion
 			result.SDKVersion = sdkVersion
 		}
-	} else if wheel != "" {
+	case wheel != "":
 		result.SDKWheel = wheel
 		result.SDKVersion = version
 		if sdkVersion != "" {
 			result.SDKPatchVersion = sdkVersion
 			result.SDKVersion = sdkVersion
 		}
-	} else {
+	default:
 		// Resolve SDK version from PyPI or explicit flag
 		sdkVer, err := resolveSDKVersion(sdkVersion, manifestDefaults)
 		if err != nil {
@@ -168,7 +169,7 @@ func resolveLatestCogVersion() (string, error) {
 	setGitHubAuth(req)
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is constructed from a hardcoded API base
 	if err != nil {
 		return "", fmt.Errorf("fetching GitHub releases: %w", err)
 	}
@@ -208,7 +209,7 @@ func resolveLatestPyPIVersion() (string, error) {
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is a hardcoded PyPI endpoint
 	if err != nil {
 		return "", fmt.Errorf("fetching PyPI: %w", err)
 	}
@@ -266,7 +267,7 @@ func downloadCogBinary(tag string) (dest string, err error) {
 		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
 	baseDir := filepath.Join(home, ".cache", "cog-harness", "bin")
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating bin cache dir: %w", err)
 	}
 	tmpDir, err := os.MkdirTemp(baseDir, "cog-bin-*")
@@ -289,7 +290,7 @@ func downloadCogBinary(tag string) (dest string, err error) {
 	setGitHubAuth(req)
 
 	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is constructed from GitHub release tag
 	if err != nil {
 		return "", fmt.Errorf("downloading cog binary: %w", err)
 	}
@@ -299,7 +300,7 @@ func downloadCogBinary(tag string) (dest string, err error) {
 		return "", fmt.Errorf("download returned %d", resp.StatusCode)
 	}
 
-	f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY, 0755)
+	f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY, 0o755)
 	if err != nil {
 		return "", fmt.Errorf("creating binary file: %w", err)
 	}
@@ -336,7 +337,7 @@ func verifyDownloadedBinary(tag, assetName, dest string) error {
 	setGitHubAuth(req)
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // URL is constructed from GitHub release tag
 	if err != nil {
 		return fmt.Errorf("downloading checksum file: %w", err)
 	}
@@ -369,7 +370,7 @@ func verifyDownloadedBinary(tag, assetName, dest string) error {
 }
 
 func parseChecksum(content, assetName string) (string, error) {
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -470,7 +471,7 @@ func buildCogFromRef(ref string) (string, string, string, error) {
 
 	// Build SDK wheel
 	wheelDir := filepath.Join(tmpDir, "dist")
-	if err := os.MkdirAll(wheelDir, 0755); err != nil {
+	if err := os.MkdirAll(wheelDir, 0o755); err != nil {
 		return "", "", "", fmt.Errorf("creating wheel dir: %w", err)
 	}
 
