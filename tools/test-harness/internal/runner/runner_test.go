@@ -101,6 +101,95 @@ func TestJsonDiffUnifiedFormat(t *testing.T) {
 	}
 }
 
+func TestJsonCompareClassifiesExpectedDiffs(t *testing.T) {
+	t.Run("training schemas missing in runtime are expected", func(t *testing.T) {
+		static := map[string]any{
+			"components": map[string]any{
+				"schemas": map[string]any{
+					"Input":         map[string]any{"type": "object"},
+					"TrainingInput": map[string]any{"type": "object"},
+				},
+			},
+			"paths": map[string]any{
+				"/predictions":                    map[string]any{"post": true},
+				"/trainings":                      map[string]any{"post": true},
+				"/trainings/{training_id}/cancel": map[string]any{"post": true},
+			},
+		}
+		runtime := map[string]any{
+			"components": map[string]any{
+				"schemas": map[string]any{
+					"Input": map[string]any{"type": "object"},
+				},
+			},
+			"paths": map[string]any{
+				"/predictions": map[string]any{"post": true},
+			},
+		}
+
+		result := jsonCompare(static, runtime)
+		assert.Empty(t, result.Real, "training schema diffs should not be real failures")
+		assert.Len(t, result.Expected, 3, "should have 3 expected diffs (TrainingInput, /trainings, /trainings/.../cancel)")
+	})
+
+	t.Run("missing description in static is expected", func(t *testing.T) {
+		static := map[string]any{
+			"properties": map[string]any{
+				"steps": map[string]any{
+					"type":    "integer",
+					"default": float64(4),
+				},
+			},
+		}
+		runtime := map[string]any{
+			"properties": map[string]any{
+				"steps": map[string]any{
+					"type":        "integer",
+					"default":     float64(4),
+					"description": "Number of denoising steps.",
+				},
+			},
+		}
+
+		result := jsonCompare(static, runtime)
+		assert.Empty(t, result.Real, "missing description in static should not be a real failure")
+		assert.Len(t, result.Expected, 1)
+	})
+
+	t.Run("real diffs are not classified as expected", func(t *testing.T) {
+		static := map[string]any{
+			"type":    "integer",
+			"default": float64(4),
+		}
+		runtime := map[string]any{
+			"type":    "string",
+			"default": float64(4),
+		}
+
+		result := jsonCompare(static, runtime)
+		assert.Len(t, result.Real, 1, "type mismatch should be a real failure")
+		assert.Empty(t, result.Expected)
+	})
+
+	t.Run("only expected diffs means jsonDiff returns empty", func(t *testing.T) {
+		static := map[string]any{
+			"components": map[string]any{
+				"schemas": map[string]any{
+					"TrainingInput": map[string]any{"type": "object"},
+				},
+			},
+		}
+		runtime := map[string]any{
+			"components": map[string]any{
+				"schemas": map[string]any{},
+			},
+		}
+
+		diff := jsonDiff(static, runtime)
+		assert.Empty(t, diff, "jsonDiff should return empty when only expected diffs exist")
+	})
+}
+
 func TestExtractOutput(t *testing.T) {
 	tests := []struct {
 		name     string

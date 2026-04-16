@@ -476,11 +476,15 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 		return result
 	}
 
-	// Compare
-	diff := jsonDiff(staticJSON, runtimeJSON)
-	if diff != "" {
+	// Compare and classify differences
+	cmp := jsonCompare(staticJSON, runtimeJSON)
+
+	if len(cmp.Real) > 0 {
 		result.Passed = false
-		result.Diff = diff
+		result.Diff = formatDiffHunks(cmp.Real)
+	}
+	if len(cmp.Expected) > 0 {
+		result.ExpectedDiff = formatDiffHunks(cmp.Expected)
 	}
 
 	return result
@@ -894,17 +898,61 @@ func copyDir(src, dst string) error {
 	})
 }
 
-// jsonDiff produces a unified-diff-style comparison between two JSON objects.
-// The output resembles git diff, showing the static schema as "a" (old) and
-// the runtime schema as "b" (new), with -, + and ~ prefixes for removed,
-// added, and changed values respectively.
-func jsonDiff(a, b map[string]any) string {
+// diffResult contains classified diff hunks from a schema comparison.
+type diffResult struct {
+	Real     []diffHunk // Genuine mismatches that indicate a bug
+	Expected []diffHunk // Known limitations (dynamic descriptions, training schemas)
+}
+
+// jsonCompare compares two JSON schemas and classifies differences as
+// "real" (genuine mismatches) or "expected" (known static-gen limitations).
+//
+// Expected differences:
+//   - Training schemas/paths present in static but absent in runtime
+//     (runtime only generates predict schema)
+//   - Descriptions present in runtime but absent in static
+//     (static can't resolve dynamically-constructed descriptions)
+func jsonCompare(a, b map[string]any) diffResult {
 	var hunks []diffHunk
 	collectDiffs(a, b, "$", &hunks)
+
+	var result diffResult
+	for _, h := range hunks {
+		if isExpectedDiff(h) {
+			result.Expected = append(result.Expected, h)
+		} else {
+			result.Real = append(result.Real, h)
+		}
+	}
+	return result
+}
+
+// isExpectedDiff returns true if a diff hunk represents a known limitation
+// of static schema generation rather than a real bug.
+func isExpectedDiff(h diffHunk) bool {
+	// Static generates training schemas; runtime only generates predict.
+	// Training-related schemas/paths are expected to be missing in runtime.
+	if h.Kind == "missing_in_runtime" {
+		if strings.Contains(h.Path, "Training") ||
+			strings.Contains(h.Path, "trainings") {
+			return true
+		}
+	}
+
+	// Static can't resolve dynamically-constructed descriptions (e.g.
+	// f-strings with conditional logic in class methods).
+	if h.Kind == "missing_in_static" && strings.HasSuffix(h.Path, ".description") {
+		return true
+	}
+
+	return false
+}
+
+// formatDiffHunks formats a slice of hunks as a unified-diff-style string.
+func formatDiffHunks(hunks []diffHunk) string {
 	if len(hunks) == 0 {
 		return ""
 	}
-
 	var buf strings.Builder
 	buf.WriteString("--- static schema\n")
 	buf.WriteString("+++ runtime schema\n")
@@ -913,6 +961,13 @@ func jsonDiff(a, b map[string]any) string {
 		buf.WriteString(h.String())
 	}
 	return buf.String()
+}
+
+// jsonDiff produces a unified-diff-style comparison between two JSON objects.
+// Only includes "real" differences (not expected/known limitations).
+func jsonDiff(a, b map[string]any) string {
+	result := jsonCompare(a, b)
+	return formatDiffHunks(result.Real)
 }
 
 // diffHunk represents a single difference between two JSON values.
