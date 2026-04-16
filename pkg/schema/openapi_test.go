@@ -198,6 +198,75 @@ func TestInputDefaultValue(t *testing.T) {
 	assert.Equal(t, float64(42), countField["default"])
 }
 
+func TestNoneDefaultOnRequiredTypeIsRequired(t *testing.T) {
+	// When a non-optional field has default=None (e.g. seed: int = Input(default=None)),
+	// the None is not a valid default — the field should be treated as required
+	// with no default emitted, matching the runtime schema behavior.
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("prompt", InputField{
+		Name:      "prompt",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypeString, Repetition: Required},
+	})
+	inputs.Set("seed", InputField{
+		Name:      "seed",
+		Order:     1,
+		FieldType: FieldType{Primitive: TypeInteger, Repetition: Required},
+		Default:   &DefaultValue{Kind: DefaultNone},
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+
+	// seed should be required (None is not a valid int default)
+	inputSchema := getPath(spec, "components", "schemas", "Input").(map[string]any)
+	required := inputSchema["required"].([]any)
+	assert.Contains(t, required, "prompt")
+	assert.Contains(t, required, "seed")
+
+	// seed should NOT have a "default" key
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+	seedField := props["seed"].(map[string]any)
+	_, hasDefault := seedField["default"]
+	assert.False(t, hasDefault, "non-optional field with default=None should not emit 'default' in schema")
+}
+
+func TestNoneDefaultOnOptionalTypeEmitsNull(t *testing.T) {
+	// When an Optional field has default=None, that IS a valid default.
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("image", InputField{
+		Name:      "image",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypeString, Repetition: Optional},
+		Default:   &DefaultValue{Kind: DefaultNone},
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+
+	// image should NOT be required (it has a valid None default)
+	inputSchema := getPath(spec, "components", "schemas", "Input").(map[string]any)
+	_, hasRequired := inputSchema["required"]
+	assert.False(t, hasRequired, "optional field with default=None should not be required")
+
+	// image SHOULD have "default": null
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+	imageField := props["image"].(map[string]any)
+	assert.Nil(t, imageField["default"]) // nil = JSON null
+	_, hasDefault := imageField["default"]
+	assert.True(t, hasDefault, "optional field with default=None should emit 'default': null")
+}
+
 func TestInputDescription(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
 	inputs.Set("text", InputField{
@@ -390,10 +459,10 @@ func TestChoicesGenerateEnum(t *testing.T) {
 
 	spec := parseSpec(t, info)
 
-	// Enum schema created
+	// Enum schema created — name matches the parameter name (lowercase)
 	schemas := getPath(spec, "components", "schemas").(map[string]any)
-	colorEnum := schemas["Color"].(map[string]any)
-	assert.Equal(t, "Color", colorEnum["title"])
+	colorEnum := schemas["color"].(map[string]any)
+	assert.Equal(t, "color", colorEnum["title"])
 	assert.Equal(t, "string", colorEnum["type"])
 	assert.Equal(t, []any{"red", "blue"}, colorEnum["enum"])
 
@@ -403,7 +472,7 @@ func TestChoicesGenerateEnum(t *testing.T) {
 	allOf := colorProp["allOf"].([]any)
 	assert.Len(t, allOf, 1)
 	ref := allOf[0].(map[string]any)
-	assert.Equal(t, "#/components/schemas/Color", ref["$ref"])
+	assert.Equal(t, "#/components/schemas/color", ref["$ref"])
 }
 
 func TestIntegerChoices(t *testing.T) {
@@ -427,7 +496,7 @@ func TestIntegerChoices(t *testing.T) {
 
 	spec := parseSpec(t, info)
 	schemas := getPath(spec, "components", "schemas").(map[string]any)
-	sizeEnum := schemas["Size"].(map[string]any)
+	sizeEnum := schemas["size"].(map[string]any)
 	assert.Equal(t, "integer", sizeEnum["type"])
 	// JSON numbers are float64
 	assert.Equal(t, []any{float64(256), float64(512), float64(1024)}, sizeEnum["enum"])

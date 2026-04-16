@@ -280,8 +280,10 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 		prop.Set("x-order", field.Order)
 
 		if len(field.Choices) > 0 {
-			// Choices -> use allOf with $ref to enum schema
-			enumName := TitleCaseSingle(name)
+			// Choices -> use allOf with $ref to enum schema.
+			// Use the parameter name as-is (lowercase) to match runtime schema
+			// generation, which uses the Python attribute name directly.
+			enumName := name
 			enumType := field.FieldType.Primitive.JSONType()
 			typeStr, _ := enumType["type"].(string)
 			if typeStr == "" {
@@ -321,18 +323,29 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 			}
 		}
 
+		// Determine effective default. A default of None on a non-nullable
+		// field is not a real default — it's a Python pattern meaning "this
+		// field has no default; generate one at runtime" (e.g. random seeds).
+		// The runtime schema generator treats these as required with no default,
+		// so we match that behavior by ignoring the None default.
+		isNullable := field.FieldType.Repetition == Optional || field.FieldType.Repetition == OptionalRepeated
+		hasEffectiveDefault := field.Default != nil
+		if hasEffectiveDefault && field.Default.Kind == DefaultNone && !isNullable {
+			hasEffectiveDefault = false
+		}
+
 		// Required?
-		if field.IsRequired() {
+		if !hasEffectiveDefault && (field.FieldType.Repetition == Required || field.FieldType.Repetition == Repeated) {
 			required = append(required, name)
 		}
 
 		// Default value
-		if field.Default != nil {
+		if hasEffectiveDefault {
 			prop.Set("default", field.Default.ToJSON())
 		}
 
 		// Nullable
-		if field.FieldType.Repetition == Optional || field.FieldType.Repetition == OptionalRepeated {
+		if isNullable {
 			prop.Set("nullable", true)
 		}
 
