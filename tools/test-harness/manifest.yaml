@@ -21,6 +21,13 @@
 #   Example:
 #     setup:
 #       - "script/select.sh dev"
+#
+# Required tools:
+#   Optional `requires_tools` list of CLI tools that must be on PATH for
+#   setup commands to work. The harness checks before running and prints
+#   install instructions for known tools (yq, envsubst).
+#   Example:
+#     requires_tools: ["yq"]
 
 defaults:
   sdk_version: "latest"          # "latest" = newest stable from PyPI; or pin e.g. "0.16.12"

@@ -36,7 +36,8 @@ type SchemaCompareResult struct {
 	Name         string  `json:"name"`
 	Passed       bool    `json:"passed"`
 	Error        string  `json:"error,omitempty"`
-	Diff         string  `json:"diff,omitempty"`
+	Diff         string  `json:"diff,omitempty"`          // Real differences (failures)
+	ExpectedDiff string  `json:"expected_diff,omitempty"` // Known limitations (informational)
 	StaticBuild  float64 `json:"static_build_s"`
 	RuntimeBuild float64 `json:"runtime_build_s"`
 }
@@ -254,15 +255,39 @@ func SchemaCompareConsoleReport(results []SchemaCompareResult, cogVersion string
 
 		if r.Passed {
 			timing := fmt.Sprintf("(static %.1fs, runtime %.1fs)", r.StaticBuild, r.RuntimeBuild)
-			writeStatus("+", r.Name, fmt.Sprintf("schemas match %s", timing), false)
+			status := "schemas match"
+			if r.ExpectedDiff != "" {
+				status = "schemas match (with expected differences)"
+			}
+			writeStatus("+", r.Name, fmt.Sprintf("%s %s", status, timing), false)
 			passed++
+
+			// Show expected differences as informational notes
+			if r.ExpectedDiff != "" {
+				fmt.Println()
+				fmt.Printf("      Known limitations (not failures):\n")
+				for line := range strings.SplitSeq(r.ExpectedDiff, "\n") {
+					fmt.Printf("      %s\n", line)
+				}
+				fmt.Println()
+			}
 		} else {
 			writeStatus("x", r.Name, "schemas differ", false)
 			failed++
 			if r.Diff != "" {
+				fmt.Println()
 				for line := range strings.SplitSeq(r.Diff, "\n") {
-					fmt.Printf("    %s\n", line)
+					fmt.Printf("      %s\n", line)
 				}
+				fmt.Println()
+			}
+			// Also show expected diffs for context
+			if r.ExpectedDiff != "" {
+				fmt.Printf("      Additionally, known limitations (not counted as failures):\n")
+				for line := range strings.SplitSeq(r.ExpectedDiff, "\n") {
+					fmt.Printf("      %s\n", line)
+				}
+				fmt.Println()
 			}
 		}
 	}

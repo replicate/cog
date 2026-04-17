@@ -169,7 +169,7 @@ func resolveLatestCogVersion() (string, error) {
 	setGitHubAuth(req)
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req) //nolint:gosec // URL is constructed from a hardcoded API base
+	resp, err := client.Do(req) //nolint:gosec // URL is constructed from a known constant
 	if err != nil {
 		return "", fmt.Errorf("fetching GitHub releases: %w", err)
 	}
@@ -209,7 +209,7 @@ func resolveLatestPyPIVersion() (string, error) {
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req) //nolint:gosec // URL is a hardcoded PyPI endpoint
+	resp, err := client.Do(req) //nolint:gosec // URL is a known PyPI API constant
 	if err != nil {
 		return "", fmt.Errorf("fetching PyPI: %w", err)
 	}
@@ -290,7 +290,7 @@ func downloadCogBinary(tag string) (dest string, err error) {
 	setGitHubAuth(req)
 
 	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req) //nolint:gosec // URL is constructed from GitHub release tag
+	resp, err := client.Do(req) //nolint:gosec // URL is constructed from GitHub releases
 	if err != nil {
 		return "", fmt.Errorf("downloading cog binary: %w", err)
 	}
@@ -337,7 +337,7 @@ func verifyDownloadedBinary(tag, assetName, dest string) error {
 	setGitHubAuth(req)
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req) //nolint:gosec // URL is constructed from GitHub release tag
+	resp, err := client.Do(req) //nolint:gosec // URL is constructed from GitHub releases
 	if err != nil {
 		return fmt.Errorf("downloading checksum file: %w", err)
 	}

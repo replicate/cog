@@ -3,10 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/tools/test-harness/internal/manifest"
 	"github.com/replicate/cog/tools/test-harness/internal/report"
 	"github.com/replicate/cog/tools/test-harness/internal/runner"
 )
@@ -23,6 +23,10 @@ func newBuildCommand() *cobra.Command {
 }
 
 func runBuild(ctx context.Context) error {
+	if err := validateConcurrency(); err != nil {
+		return err
+	}
+
 	_, models, resolved, err := resolveSetup()
 	if err != nil {
 		return err
@@ -32,7 +36,13 @@ func runBuild(ctx context.Context) error {
 		fmt.Println("No models to build")
 		return nil
 	}
-	fmt.Printf("Building %d model(s)\n\n", len(models))
+
+	parallel := concurrency > 1 && len(models) > 1
+	if parallel {
+		fmt.Printf("Building %d model(s) with concurrency %d\n\n", len(models), concurrency)
+	} else {
+		fmt.Printf("Building %d model(s)\n\n", len(models))
+	}
 
 	// Create runner
 	r, err := runner.New(runner.Options{
@@ -41,6 +51,7 @@ func runBuild(ctx context.Context) error {
 		SDKWheel:    resolved.SDKWheel,
 		CleanImages: cleanImages,
 		KeepOutputs: keepOutputs,
+		Parallel:    parallel,
 	})
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)
@@ -48,25 +59,48 @@ func runBuild(ctx context.Context) error {
 	defer func() { _ = r.Cleanup() }()
 
 	// Build models
-	var results []report.ModelResult
-	for _, model := range models {
-		fmt.Printf("Building %s...\n", model.Name)
-		result := r.BuildModel(ctx, model)
-		results = append(results, *result)
-	}
+	results := make([]report.ModelResult, len(models))
+
+	runModels(ctx, models, results, parallel,
+		func(ctx context.Context, model manifest.Model) *report.ModelResult {
+			return r.BuildModel(ctx, model)
+		},
+		func(index, total int, model manifest.Model) string {
+			if parallel {
+				return fmt.Sprintf("  [%d/%d] Building %s...\n", index, total, model.Name)
+			}
+			return fmt.Sprintf("Building %s...\n", model.Name)
+		},
+		func(index, total int, model manifest.Model, result *report.ModelResult) string {
+			if parallel {
+				switch {
+				case result.Passed:
+					return fmt.Sprintf("  [%d/%d] + %s (%.1fs)\n", index, total, model.Name, result.BuildDuration)
+				case result.Skipped:
+					return fmt.Sprintf("  [%d/%d] - %s (skipped: %s)\n", index, total, model.Name, result.SkipReason)
+				default:
+					return fmt.Sprintf("  [%d/%d] x %s FAILED\n", index, total, model.Name)
+				}
+			}
+			switch {
+			case result.Passed:
+				return fmt.Sprintf("  + %s built successfully (%.1fs)\n", model.Name, result.BuildDuration)
+			case result.Skipped:
+				return fmt.Sprintf("  - %s (skipped: %s)\n", model.Name, result.SkipReason)
+			default:
+				return fmt.Sprintf("  x %s FAILED\n", model.Name)
+			}
+		},
+	)
 
 	// Output results
 	report.ConsoleReport(results, resolved.SDKVersion, resolved.CogVersion)
 
 	// Check for failures
-	var failedNames []string
 	for _, r := range results {
 		if !r.Passed && !r.Skipped {
-			failedNames = append(failedNames, r.Name)
+			return formatFailureSummary("build", results)
 		}
-	}
-	if len(failedNames) > 0 {
-		return fmt.Errorf("%d build(s) failed: %s", len(failedNames), strings.Join(failedNames, ", "))
 	}
 
 	return nil
