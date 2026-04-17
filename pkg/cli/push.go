@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -123,9 +124,13 @@ func push(cmd *cobra.Command, args []string) error {
 	pw := docker.NewProgressWriter()
 	defer pw.Close()
 
+	// Print the "Pushing weights..." header on the first progress event so
+	// it doesn't appear when the image push fails before the weight phase.
+	// WeightProgressFn is called concurrently from multiple goroutines.
+	var weightHeaderOnce sync.Once
+
 	pushErr := resolver.Push(ctx, m, model.PushOptions{
 		ImageProgressFn: func(prog model.PushProgress) {
-			// Phase transitions: use console.Info for pretty CLI formatting
 			if prog.Phase != "" {
 				switch prog.Phase {
 				case model.PushPhaseExporting:
@@ -136,14 +141,17 @@ func push(cmd *cobra.Command, args []string) error {
 				return
 			}
 
-			// Byte progress: show per-layer progress bars
-			// Truncate digest for display: "sha256:abc123..." → "abc123..."
-			displayDigest := prog.LayerDigest
-			if len(displayDigest) > 7+12 { // "sha256:" + 12 hex chars
-				displayDigest = displayDigest[7:19] + "..."
-			}
+			pw.Write(model.ShortDigest(prog.LayerDigest), "Pushing", prog.Complete, prog.Total)
+		},
+		WeightProgressFn: func(prog model.WeightLayerProgress) {
+			weightHeaderOnce.Do(func() {
+				console.Infof("\nPushing weights...")
+			})
 
-			pw.Write(displayDigest, "Pushing", prog.Complete, prog.Total)
+			// Namespace the line id with the weight name so concurrent weight
+			// artifacts don't share a row. Matches pkg/cli/weights.go:231.
+			id := prog.WeightName + "/" + model.ShortDigest(prog.LayerDigest)
+			pw.Write(id, "Pushing", prog.Complete, prog.Total)
 		},
 		OnFallback: func() {
 			// Close progress writer to finalize OCI progress bars before Docker
