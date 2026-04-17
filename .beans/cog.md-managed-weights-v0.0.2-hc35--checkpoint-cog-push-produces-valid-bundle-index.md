@@ -1,11 +1,11 @@
 ---
 # cog.md-managed-weights-v0.0.2-hc35
-title: 'CHECKPOINT: cog push produces valid bundle index'
+title: cog push produces valid bundle index
 status: todo
-type: task
+type: milestone
 priority: high
 created_at: 2026-04-17T19:34:37Z
-updated_at: 2026-04-17T19:34:37Z
+updated_at: 2026-04-17T21:51:27Z
 parent: cog.md-managed-weights-v0.0.2-9qcd
 blocked_by:
     - cog.md-managed-weights-v0.0.2-m4e8
@@ -40,3 +40,30 @@ crane manifest <registry>/<model>:latest | jq '.manifests[] | {mediaType, platfo
 crane manifest <registry>/<model>:latest --platform unknown/unknown | jq .artifactType
 # Should output: application/vnd.cog.weight.v1
 ```
+
+
+
+## Status (4fg4, 2026-04-17)
+
+Checklist infrastructure is ready. One code blocker remains before this checkpoint can be verified cleanly:
+
+- [ ] Remove the `COG_OCI_INDEX=1` env gate (tracked in m4e8). Without this, `cog push` produces a single-manifest push unless the caller sets the env var. After removal, presence of `weights:` in `cog.yaml` triggers bundle format automatically.
+
+Amended verification steps:
+
+```bash
+# Full pipeline (current command names; to be renamed to `cog weights import` in 5lg2)
+cog weights build
+cog weights push
+cog build
+COG_OCI_INDEX=1 cog push    # env gate still required pre-m4e8
+
+# Verify index structure (model image + weight descriptors with annotations)
+crane manifest <registry>/<model>:latest | jq '.manifests[] | {mediaType, platform, annotations}'
+
+# Verify weight manifest resolves from index
+crane manifest <registry>/<model>:latest --platform unknown/unknown | jq .artifactType
+# Expected: application/vnd.cog.weight.v1
+```
+
+Once m4e8 lands, drop the `COG_OCI_INDEX=1` prefix and run this checklist unmodified.

@@ -1,11 +1,11 @@
 ---
 # cog.md-managed-weights-v0.0.2-iy3e
-title: 'CHECKPOINT: coglet readiness protocol works in container'
+title: coglet readiness protocol works in container
 status: todo
-type: task
+type: milestone
 priority: normal
 created_at: 2026-04-17T19:35:01Z
-updated_at: 2026-04-17T19:35:01Z
+updated_at: 2026-04-17T21:51:27Z
 parent: cog.md-managed-weights-v0.0.2-9qcd
 blocked_by:
     - cog.md-managed-weights-v0.0.2-7sne

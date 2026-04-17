@@ -249,7 +249,7 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 
 	if opts.OCIIndex && len(src.Config.Weights) > 0 {
-		wb := NewWeightBuilder(src, m.CogVersion, lockPath)
+		wb := NewWeightBuilder(src, lockPath)
 		for _, ws := range src.Config.Weights {
 			spec := NewWeightSpec(ws.Name, ws.Source, ws.Target)
 			artifact, buildErr := wb.Build(ctx, spec)
@@ -258,7 +258,6 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 			}
 			m.Artifacts = append(m.Artifacts, artifact)
 		}
-
 	}
 
 	return m, nil
@@ -420,7 +419,7 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 			}
 		}
 		// Determine manifest type
-		if pm.OS == PlatformUnknown && pm.Annotations != nil && pm.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
+		if pm.OS == PlatformUnknown && pm.Annotations != nil && pm.Annotations[AnnotationV1ReferenceType] == ReferenceTypeWeights {
 			im.Type = ManifestTypeWeights
 		} else {
 			im.Type = ManifestTypeImage
@@ -441,7 +440,7 @@ func isOCIIndex(mr *registry.ManifestResult) bool {
 func findWeightsManifest(manifests []registry.PlatformManifest) *registry.PlatformManifest {
 	for i := range manifests {
 		m := &manifests[i]
-		if m.Annotations != nil && m.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
+		if m.Annotations != nil && m.Annotations[AnnotationV1ReferenceType] == ReferenceTypeWeights {
 			return m
 		}
 	}

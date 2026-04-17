@@ -68,19 +68,21 @@ func (b *IndexBuilder) BuildFromDescriptors() (v1.ImageIndex, error) {
 		},
 	})
 
-	// Add weight manifest(s)
+	// Add weight manifest(s). Per spec §2.4, weight descriptors in the
+	// index duplicate the manifest-level annotations so the index is
+	// inspectable without fetching child manifests.
 	for _, entry := range b.weightDescriptors {
 		annotations := map[string]string{
-			AnnotationReferenceType: AnnotationValueWeights,
+			AnnotationV1ReferenceType: ReferenceTypeWeights,
 		}
 		if entry.imageDigest != "" {
-			annotations[AnnotationReferenceDigest] = entry.imageDigest
+			annotations[AnnotationV1ReferenceDigest] = entry.imageDigest
 		}
 		if entry.name != "" {
-			annotations[AnnotationWeightName] = entry.name
+			annotations[AnnotationV1WeightName] = entry.name
 		}
 		if entry.target != "" {
-			annotations[AnnotationWeightDest] = entry.target
+			annotations[AnnotationV1WeightTarget] = entry.target
 		}
 
 		idx = mutate.AppendManifests(idx, mutate.IndexAddendum{

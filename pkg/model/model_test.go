@@ -2,7 +2,6 @@ package model
 
 import (
 	"testing"
-	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -127,8 +126,8 @@ func TestModel_GetImageArtifact(t *testing.T) {
 	)
 	weightArtifact := NewWeightArtifact("weights",
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "def456"}, Size: 4096},
-		"/data/weights.bin", "/weights/model.bin",
-		WeightConfig{SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "weights", Target: "/weights/model.bin", Created: time.Now()},
+		"/src/weights",
+		[]LayerResult{{TarPath: "/tmp/l.tar.gz", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: MediaTypeOCILayerTarGzip}},
 	)
 
 	tests := []struct {
@@ -179,13 +178,13 @@ func TestModel_WeightArtifacts(t *testing.T) {
 	)
 	w1 := NewWeightArtifact("llama",
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w1"}, Size: 4096},
-		"/data/llama.bin", "/weights/llama.bin",
-		WeightConfig{SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "llama", Target: "/weights/llama.bin", Created: time.Now()},
+		"/src/weights/llama",
+		[]LayerResult{{TarPath: "/tmp/l1.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: MediaTypeOCILayerTar}},
 	)
 	w2 := NewWeightArtifact("embeddings",
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w2"}, Size: 2048},
-		"/data/embed.bin", "/weights/embed.bin",
-		WeightConfig{SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "embeddings", Target: "/weights/embed.bin", Created: time.Now()},
+		"/src/weights/embed",
+		[]LayerResult{{TarPath: "/tmp/l2.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "bbb"}, Size: 100, MediaType: MediaTypeOCILayerTar}},
 	)
 
 	tests := []struct {
@@ -214,8 +213,8 @@ func TestModel_ArtifactsByType(t *testing.T) {
 	)
 	w1 := NewWeightArtifact("llama",
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w1"}, Size: 4096},
-		"/data/llama.bin", "/weights/llama.bin",
-		WeightConfig{SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "llama", Target: "/weights/llama.bin", Created: time.Now()},
+		"/src/weights/llama",
+		[]LayerResult{{TarPath: "/tmp/l.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: MediaTypeOCILayerTar}},
 	)
 
 	m := &Model{Artifacts: []Artifact{imgArtifact, w1}}

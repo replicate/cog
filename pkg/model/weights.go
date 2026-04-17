@@ -1,23 +1,54 @@
 package model
 
-// WeightFile represents a single weight file entry in a weights lockfile or manifest.
-// The Name field is an identifier/handle (like a Docker volume name), not a filename.
-type WeightFile struct {
-	// Name is the identifier/handle for this weight (e.g., "personaplex-7b-v1", "model-v42.5").
-	// This is a logical name that maps to deployment blob metadata, not a file path.
-	Name string `json:"name"`
-	// Dest is the mount path in the container (e.g., /cache/model.safetensors).
-	Dest string `json:"dest"`
-	// DigestOriginal is the SHA256 of the uncompressed file (canonical ID).
-	DigestOriginal string `json:"digestOriginal"`
-	// Digest is the SHA256 of the compressed blob (OCI layer ID).
+import "maps"
+
+// WeightLockLayer describes a single packed layer inside a WeightLockEntry.
+// The shape matches spec §3.6 (/.cog/weights.json) so this struct can be
+// written verbatim into the model image at build time.
+type WeightLockLayer struct {
+	// Digest is the sha256 digest of the layer blob on disk.
 	Digest string `json:"digest"`
-	// Size is the compressed size in bytes.
+	// Size is the size of the layer blob in bytes.
 	Size int64 `json:"size"`
-	// SizeUncompressed is the original size in bytes.
-	SizeUncompressed int64 `json:"sizeUncompressed"`
-	// MediaType is the OCI layer media type (e.g., application/vnd.cog.weight.layer.v1+gzip).
+	// MediaType is the OCI layer media type
+	// (application/vnd.oci.image.layer.v1.tar or .tar+gzip).
 	MediaType string `json:"mediaType"`
-	// ContentType is the file's MIME type (e.g., application/octet-stream).
-	ContentType string `json:"contentType,omitempty"`
+	// Annotations are the descriptor annotations attached to this layer in
+	// the manifest (e.g. run.cog.weight.content, run.cog.weight.file).
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// WeightLockEntry describes a single weight in a weights lockfile.
+// The manifest digest is the unit of identity — there is no per-file entry.
+type WeightLockEntry struct {
+	// Name is the weight's logical name (e.g. "z-image-turbo").
+	Name string `json:"name"`
+	// Target is the container mount path for this weight.
+	Target string `json:"target"`
+	// Digest is the sha256 digest of the assembled OCI manifest.
+	Digest string `json:"digest"`
+	// Layers are the descriptors of the tar layers making up this weight,
+	// in manifest order.
+	Layers []WeightLockLayer `json:"layers"`
+}
+
+// NewWeightLockEntry builds a WeightLockEntry from a set of packed tar
+// layers. Annotations are cloned so later mutations on the LayerResult do
+// not bleed into the entry.
+func NewWeightLockEntry(name, target, manifestDigest string, layers []LayerResult) WeightLockEntry {
+	lockLayers := make([]WeightLockLayer, len(layers))
+	for i, l := range layers {
+		lockLayers[i] = WeightLockLayer{
+			Digest:      l.Digest.String(),
+			Size:        l.Size,
+			MediaType:   string(l.MediaType),
+			Annotations: maps.Clone(l.Annotations),
+		}
+	}
+	return WeightLockEntry{
+		Name:   name,
+		Target: target,
+		Digest: manifestDigest,
+		Layers: lockLayers,
+	}
 }

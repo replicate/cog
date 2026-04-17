@@ -10,7 +10,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
@@ -67,9 +66,10 @@ func weightsBuildCommand(cmd *cobra.Command, args []string) error {
 	console.Infof("Processing %d weight source(s)...", len(weightSpecs))
 
 	lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
-	builder := model.NewWeightBuilder(src, global.Version, lockPath)
+	builder := model.NewWeightBuilder(src, lockPath)
 
-	// Build each weight artifact (hashes file, updates lockfile)
+	// Build each weight artifact (packs the source directory into tar
+	// layers and updates the lockfile).
 	var totalSize int64
 	for _, ws := range weightSpecs {
 		artifact, buildErr := builder.Build(ctx, ws)
@@ -81,9 +81,16 @@ func weightsBuildCommand(cmd *cobra.Command, args []string) error {
 		if !ok {
 			return fmt.Errorf("unexpected artifact type %T for weight %q", artifact, ws.Name())
 		}
-		size := wa.Descriptor().Size
-		totalSize += size
-		console.Infof("  %s -> %s (%s)", wa.Name(), wa.Target, formatSize(size))
+
+		// Sum layer blob sizes — the user cares about how much will go
+		// over the wire, not the manifest envelope size.
+		var weightSize int64
+		for _, l := range wa.Layers {
+			weightSize += l.Size
+		}
+		totalSize += weightSize
+		console.Infof("  %s -> %s (%d layer(s), %s)",
+			wa.Name(), wa.Target, len(wa.Layers), formatSize(weightSize))
 	}
 
 	console.Infof("\nGenerated %s with %d file(s) (%s total)",
@@ -164,7 +171,7 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 
 	// Build weight artifacts (reads lockfile as cache, hashes files)
 	lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
-	builder := model.NewWeightBuilder(src, global.Version, lockPath)
+	builder := model.NewWeightBuilder(src, lockPath)
 
 	var artifacts []*model.WeightArtifact
 	for _, spec := range src.ArtifactSpecs() {
@@ -210,12 +217,19 @@ func weightsPushCommand(cmd *cobra.Command, args []string) error {
 
 	for i, wa := range artifacts {
 		artName := wa.Name()
-		artSize := wa.Descriptor().Size
+		var artSize int64
+		for _, l := range wa.Layers {
+			artSize += l.Size
+		}
 
 		g.Go(func() error {
 			result, pushErr := pusher.Push(ctx, repo, wa, model.WeightPushOptions{
-				ProgressFn: func(prog model.PushProgress) {
-					pw.Write(artName, "Pushing", prog.Complete, prog.Total)
+				ProgressFn: func(prog model.WeightLayerProgress) {
+					// Per-layer progress: use the short digest as the row
+					// key so each layer gets its own progress bar in the
+					// TTY rendering.
+					row := model.ShortDigest(prog.LayerDigest)
+					pw.Write(artName+"/"+row, "Pushing", prog.Complete, prog.Total)
 				},
 				RetryFn: func(event model.WeightRetryEvent) bool {
 					status := fmt.Sprintf("Retrying (%d/%d) in %s",

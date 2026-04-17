@@ -6,94 +6,64 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
-// Media types for weight artifacts (OCI 1.1 conventions).
-const (
-	// MediaTypeWeightArtifact is the artifactType for weight manifests.
-	MediaTypeWeightArtifact = "application/vnd.cog.weight.v1"
-	// MediaTypeWeightConfig is the media type for weight config blobs.
-	MediaTypeWeightConfig = "application/vnd.cog.weight.config.v1+json"
-	// MediaTypeWeightLayer is the media type for uncompressed weight layers.
-	MediaTypeWeightLayer = "application/vnd.cog.weight.layer.v1"
-	// MediaTypeWeightLayerGzip is the media type for gzip-compressed weight layers.
-	MediaTypeWeightLayerGzip = "application/vnd.cog.weight.layer.v1+gzip"
-	// MediaTypeWeightLayerZstd is the media type for zstd-compressed weight layers (future).
-	MediaTypeWeightLayerZstd = "application/vnd.cog.weight.layer.v1+zstd"
-)
+// MediaTypeWeightArtifact is the artifactType on a weight manifest. Layers
+// use standard OCI layer media types; this constant lives on the manifest
+// itself so clients can distinguish weight manifests from image manifests
+// without parsing annotations.
+const MediaTypeWeightArtifact = "application/vnd.cog.weight.v1"
 
-// Annotation keys for weight file layers in OCI manifests.
-const (
-	AnnotationWeightName             = "vnd.cog.weight.name"
-	AnnotationWeightDest             = "vnd.cog.weight.dest"
-	AnnotationWeightDigestOriginal   = "vnd.cog.weight.digest.original"
-	AnnotationWeightSizeUncompressed = "vnd.cog.weight.size.uncompressed"
-)
-
-// WeightSpec declares a weight artifact to be built.
-// It implements ArtifactSpec.
+// WeightSpec declares a v1 weight artifact to be built from a source
+// directory. It implements ArtifactSpec.
 type WeightSpec struct {
-	name string
-	// Source is the local file path to the weight file.
-	Source string
-	// Target is the container mount path for this weight.
-	Target string
+	name   string
+	Source string // source directory, relative to the project dir
+	Target string // container mount path
 }
 
-// NewWeightSpec creates a WeightSpec with the given name, source path, and target mount path.
+// NewWeightSpec creates a WeightSpec with the given name, source directory,
+// and target mount path.
 func NewWeightSpec(name, source, target string) *WeightSpec {
-	return &WeightSpec{
-		name:   name,
-		Source: source,
-		Target: target,
-	}
+	return &WeightSpec{name: name, Source: source, Target: target}
 }
 
-// Type returns ArtifactTypeWeight.
 func (s *WeightSpec) Type() ArtifactType { return ArtifactTypeWeight }
+func (s *WeightSpec) Name() string       { return s.name }
 
-// Name returns the spec's logical name.
-func (s *WeightSpec) Name() string { return s.name }
-
-// WeightArtifact is a built weight artifact ready to push as an OCI artifact.
+// WeightArtifact is a built weight artifact ready to push as an OCI manifest.
 // It implements Artifact.
+//
+// The packer has already written one tar file per layer to disk; Layers
+// carries the on-disk paths, digests, sizes, media types, and per-layer
+// annotations. The pusher consumes Layers to upload blobs and assemble the
+// manifest.
 type WeightArtifact struct {
 	name       string
 	descriptor v1.Descriptor
 
-	// FilePath is the local file path to the weight data (for pushing layers).
-	FilePath string
-	// Target is the container mount path for this weight.
 	Target string
-	// Config is the weight metadata for the config blob.
-	Config WeightConfig
+	Layers []LayerResult
+
+	// Created is stamped into the manifest's org.opencontainers.image.created
+	// annotation. Carried on the artifact so the manifest digest recorded
+	// by the builder matches the one the pusher sends, given identical
+	// layer inputs. Pushers that also set a ReferenceDigest will still
+	// produce a different manifest digest — the builder's descriptor is
+	// the standalone-push (no-reference) shape.
+	Created time.Time
 }
 
-// NewWeightArtifact creates a WeightArtifact from a build result.
-func NewWeightArtifact(name string, desc v1.Descriptor, filePath, target string, cfg WeightConfig) *WeightArtifact {
+// NewWeightArtifact creates a WeightArtifact. desc is the manifest
+// descriptor computed by the builder, matching the standalone (no
+// ReferenceDigest) manifest shape.
+func NewWeightArtifact(name string, desc v1.Descriptor, target string, layers []LayerResult) *WeightArtifact {
 	return &WeightArtifact{
 		name:       name,
 		descriptor: desc,
-		FilePath:   filePath,
 		Target:     target,
-		Config:     cfg,
+		Layers:     layers,
 	}
 }
 
-// Type returns ArtifactTypeWeight.
-func (a *WeightArtifact) Type() ArtifactType { return ArtifactTypeWeight }
-
-// Name returns the artifact's logical name.
-func (a *WeightArtifact) Name() string { return a.name }
-
-// Descriptor returns the OCI descriptor for this weight artifact.
+func (a *WeightArtifact) Type() ArtifactType     { return ArtifactTypeWeight }
+func (a *WeightArtifact) Name() string           { return a.name }
 func (a *WeightArtifact) Descriptor() v1.Descriptor { return a.descriptor }
-
-// WeightConfig contains metadata about a weight artifact.
-// This is serialized as the config blob in the OCI manifest.
-// The schema is versioned via SchemaVersion to allow evolution.
-type WeightConfig struct {
-	SchemaVersion string    `json:"schemaVersion"`
-	CogVersion    string    `json:"cogVersion"`
-	Name          string    `json:"name"`
-	Target        string    `json:"target"`
-	Created       time.Time `json:"created"` // RFC 3339 format when serialized to JSON
-}

@@ -1,11 +1,11 @@
 ---
 # cog.md-managed-weights-v0.0.2-0wma
-title: 'CHECKPOINT: v2 weight artifact in registry'
+title: v2 weight artifact in registry
 status: todo
-type: task
+type: milestone
 priority: high
 created_at: 2026-04-17T19:34:21Z
-updated_at: 2026-04-17T19:34:21Z
+updated_at: 2026-04-17T21:51:27Z
 parent: cog.md-managed-weights-v0.0.2-9qcd
 blocked_by:
     - cog.md-managed-weights-v0.0.2-2gv9
@@ -46,3 +46,34 @@ crane pull <registry>/test-model/weights/test-weights:latest /tmp/test-pull.tar
 # Verify lockfile
 cat weights.lock | jq .
 ```
+
+
+
+## Status (4fg4, 2026-04-17)
+
+Ready to verify. The infrastructure exists via `cog weights build` + `cog weights push` (the eventual unified `cog weights import` is tracked as `cog.md-managed-weights-v0.0.2-5lg2`).
+
+Amended verification steps for the current command names:
+
+```bash
+# Synthetic test: directory with mixed small/large files
+mkdir -p /tmp/test-weights
+echo '{"model": "test"}' > /tmp/test-weights/config.json
+dd if=/dev/urandom of=/tmp/test-weights/model.safetensors bs=1M count=100
+
+# cog.yaml configured with source: /tmp/test-weights
+cog weights build       # packs + writes weights.lock
+cog weights push        # uploads to registry
+
+# Verify manifest (tag format: weights-<name>-<short-digest>)
+crane manifest <registry>/test-model:weights-test-weights-<digest12> | jq .
+
+# Verify artifactType
+crane manifest ... | jq .artifactType
+# Expected: application/vnd.cog.weight.v1
+
+# Verify lockfile (v1 schema: version=v1, weights[].layers[])
+cat weights.lock | jq .
+```
+
+One discrepancy from the original verification: the push tag format is `weights-<name>-<short-digest>`, not `:latest`. The `:latest` tag is owned by `cog push` which produces the OCI index.

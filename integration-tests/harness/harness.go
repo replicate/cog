@@ -1067,26 +1067,28 @@ func (h *Harness) cmdDockerPush(ts *testscript.TestScript, neg bool, args []stri
 // Mock weights command
 // =============================================================================
 
-// mockWeightsLock mirrors the structure from pkg/model/weights_lock.go
-// SYNC: If pkg/model/WeightsLock changes, update this copy.
-// We duplicate it here to avoid importing pkg/model which transitively imports pkg/wheels.
+// mockWeightsLock mirrors pkg/model.WeightsLock (v1 schema, spec §3.6).
+// SYNC: If model.WeightsLock changes, update this copy.
+// We duplicate the types here to avoid importing pkg/model which transitively
+// imports pkg/wheels.
 type mockWeightsLock struct {
-	Version string           `json:"version"`
-	Created time.Time        `json:"created"`
-	Files   []mockWeightFile `json:"files"`
+	Version string            `json:"version"`
+	Created time.Time         `json:"created"`
+	Weights []mockWeightEntry `json:"weights"`
 }
 
-// mockWeightFile mirrors WeightFile from pkg/model/weights.go
-// SYNC: If pkg/model/WeightFile changes, update this copy.
-type mockWeightFile struct {
-	Name             string `json:"name"`
-	Dest             string `json:"dest"`
-	DigestOriginal   string `json:"digestOriginal"`
-	Digest           string `json:"digest"`
-	Size             int64  `json:"size"`
-	SizeUncompressed int64  `json:"sizeUncompressed"`
-	MediaType        string `json:"mediaType"`
-	ContentType      string `json:"contentType,omitempty"`
+type mockWeightEntry struct {
+	Name   string            `json:"name"`
+	Target string            `json:"target"`
+	Digest string            `json:"digest"`
+	Layers []mockWeightLayer `json:"layers"`
+}
+
+type mockWeightLayer struct {
+	Digest      string            `json:"digest"`
+	Size        int64             `json:"size"`
+	MediaType   string            `json:"mediaType"`
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // cmdMockWeights generates mock weight files and a weights.lock file.
@@ -1142,7 +1144,7 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 		ts.Fatalf("mock-weights: failed to create weights dir: %v", err)
 	}
 
-	var files []mockWeightFile
+	var entries []mockWeightEntry
 
 	for i := 1; i <= count; i++ {
 		// Random size between min and max
@@ -1151,10 +1153,16 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 			size = minSize + mathrand.Int64N(maxSize-minSize+1) //nolint:gosec // test data, not security-sensitive
 		}
 
-		// Generate identifier (e.g., "weights-001")
+		// Each weight is a directory containing a single random file.
+		// That's the smallest thing that still exercises the v1
+		// directory-per-weight contract.
 		weightName := fmt.Sprintf("weights-%03d", i)
-		filename := weightName + ".bin"
-		filePath := filepath.Join(weightsDir, filename)
+		weightDir := filepath.Join(weightsDir, weightName)
+		if err := os.MkdirAll(weightDir, 0o755); err != nil {
+			ts.Fatalf("mock-weights: failed to create weight dir: %v", err)
+		}
+		filename := "data.bin"
+		filePath := filepath.Join(weightDir, filename)
 
 		// Generate random data
 		data := make([]byte, size)
@@ -1162,33 +1170,43 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 			ts.Fatalf("mock-weights: failed to generate random data: %v", err)
 		}
 
-		// Write file
 		if err := os.WriteFile(filePath, data, 0o644); err != nil {
 			ts.Fatalf("mock-weights: failed to write %s: %v", filename, err)
 		}
 
-		// Compute digest (uncompressed, since we're not actually compressing for tests)
-		hash := sha256.Sum256(data)
-		digest := "sha256:" + hex.EncodeToString(hash[:])
+		// Layer digest stands in for the content digest (no actual packing
+		// happens here — this is a mock). The manifest digest is derived
+		// from name+layerDigest for determinism.
+		layerHash := sha256.Sum256(data)
+		layerDigest := "sha256:" + hex.EncodeToString(layerHash[:])
 
-		files = append(files, mockWeightFile{
-			Name:             weightName,
-			Dest:             "/cache/" + filename,
-			DigestOriginal:   digest,
-			Digest:           digest, // Same as original since we're not compressing
-			Size:             size,
-			SizeUncompressed: size,
-			// MediaType matches production WeightBuilder output (uncompressed).
-			MediaType:   "application/vnd.cog.weight.layer.v1",
-			ContentType: "application/octet-stream",
+		manifestSeed := sha256.Sum256([]byte(weightName + "|" + layerDigest))
+		manifestDigest := "sha256:" + hex.EncodeToString(manifestSeed[:])
+
+		entries = append(entries, mockWeightEntry{
+			Name:   weightName,
+			Target: "/src/weights/" + weightName,
+			Digest: manifestDigest,
+			Layers: []mockWeightLayer{
+				{
+					Digest:    layerDigest,
+					Size:      size,
+					MediaType: "application/vnd.oci.image.layer.v1.tar",
+					Annotations: map[string]string{
+						"run.cog.weight.content":           "file",
+						"run.cog.weight.file":              filename,
+						"run.cog.weight.size.uncompressed": strconv.FormatInt(size, 10),
+					},
+				},
+			},
 		})
 	}
 
 	// Create weights.lock
 	lock := mockWeightsLock{
-		Version: "1.0",
+		Version: "v1",
 		Created: time.Now().UTC(),
-		Files:   files,
+		Weights: entries,
 	}
 
 	lockData, err := json.MarshalIndent(lock, "", "  ")

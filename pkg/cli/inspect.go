@@ -34,12 +34,12 @@ type InspectIndex struct {
 // InspectManifest represents a manifest entry in inspect output.
 type InspectManifest struct {
 	Type        string            `json:"type"`           // "image" or "weights"
-	Name        string            `json:"name,omitempty"` // weight name from AnnotationWeightName
+	Name        string            `json:"name,omitempty"` // weight name from run.cog.weight.name
 	Digest      string            `json:"digest"`
 	MediaType   string            `json:"mediaType"`
 	Size        int64             `json:"size"`
 	Platform    string            `json:"platform,omitempty"` // "linux/amd64"
-	Target      string            `json:"target,omitempty"`   // weight mount path from AnnotationWeightDest
+	Target      string            `json:"target,omitempty"`   // mount path from run.cog.weight.target
 	Annotations map[string]string `json:"annotations,omitempty"`
 	Layers      []InspectLayer    `json:"layers"`
 }
@@ -194,8 +194,8 @@ func buildManifestEntry(im model.IndexManifest) InspectManifest {
 	switch im.Type {
 	case model.ManifestTypeWeights:
 		manifest.Type = "weights"
-		manifest.Name = im.Annotations[model.AnnotationWeightName]
-		manifest.Target = im.Annotations[model.AnnotationWeightDest]
+		manifest.Name = im.Annotations[model.AnnotationV1WeightName]
+		manifest.Target = im.Annotations[model.AnnotationV1WeightTarget]
 	default:
 		manifest.Type = "image"
 		if im.Platform != nil {

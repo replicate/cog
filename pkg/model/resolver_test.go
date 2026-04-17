@@ -1103,16 +1103,17 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 	}
 	resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
 
-	// Create a temp directory with a real weight file
+	// Create a temp project with a weight directory containing a small config file.
 	dir := t.TempDir()
-	weightContent := []byte("test weight for resolver build")
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.safetensors"), weightContent, 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "weights/model"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "weights/model/config.json"),
+		[]byte(`{"hidden_size": 768}`), 0o644))
 
 	src := &Source{
 		Config: &config.Config{
 			Build: &config.Build{},
 			Weights: []config.WeightSource{
-				{Name: "my-model", Source: "model.safetensors", Target: "/srv/weights/model.safetensors"},
+				{Name: "my-model", Source: "weights/model", Target: "/srv/weights/model"},
 			},
 		},
 		ProjectDir: dir,
@@ -1140,14 +1141,15 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 	wa := weightArtifacts[0]
 	require.Equal(t, "my-model", wa.Name())
 	require.Equal(t, ArtifactTypeWeight, wa.Type())
-	require.Equal(t, "/srv/weights/model.safetensors", wa.Target)
-	require.Equal(t, filepath.Join(dir, "model.safetensors"), wa.FilePath)
+	require.Equal(t, "/srv/weights/model", wa.Target)
 
-	// Weight config should be populated
-	require.Equal(t, "1.0", wa.Config.SchemaVersion)
-	require.Equal(t, "my-model", wa.Config.Name)
-	require.Equal(t, "/srv/weights/model.safetensors", wa.Config.Target)
-	require.False(t, wa.Config.Created.IsZero())
+	// v1 artifacts carry packed tar layers and a valid manifest descriptor.
+	require.NotEmpty(t, wa.Layers, "expected at least one packed layer")
+	for _, l := range wa.Layers {
+		require.NotEmpty(t, l.TarPath)
+		require.FileExists(t, l.TarPath)
+	}
+	require.NotEmpty(t, wa.Descriptor().Digest.Hex)
 }
 
 func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
@@ -1182,13 +1184,16 @@ func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
 	resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.bin"), []byte("test weights"), 0o644))
+	weightDir := filepath.Join(dir, "weights")
+	require.NoError(t, os.MkdirAll(weightDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(weightDir, "config.json"),
+		[]byte(`{"x":1}`), 0o644))
 
 	src := &Source{
 		Config: &config.Config{
 			Build: &config.Build{},
 			Weights: []config.WeightSource{
-				{Name: "my-model", Source: "model.bin", Target: "/weights/model.bin"},
+				{Name: "my-model", Source: "weights", Target: "/src/weights"},
 			},
 		},
 		ProjectDir: dir,
@@ -1221,7 +1226,7 @@ func TestIndexDetectionHelpers(t *testing.T) {
 				OS:           PlatformUnknown,
 				Architecture: PlatformUnknown,
 				Annotations: map[string]string{
-					AnnotationReferenceType: AnnotationValueWeights,
+					AnnotationV1ReferenceType: ReferenceTypeWeights,
 				},
 			},
 		}

@@ -1,11 +1,11 @@
 ---
 # cog.md-managed-weights-v0.0.2-kgd7
-title: 'CHECKPOINT: cog predict works with managed weights locally'
+title: cog predict works with managed weights locally
 status: todo
-type: task
+type: milestone
 priority: normal
 created_at: 2026-04-17T19:34:49Z
-updated_at: 2026-04-17T19:34:49Z
+updated_at: 2026-04-17T21:51:27Z
 parent: cog.md-managed-weights-v0.0.2-9qcd
 blocked_by:
     - cog.md-managed-weights-v0.0.2-by3m

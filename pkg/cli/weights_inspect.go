@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
@@ -18,7 +19,7 @@ import (
 type localWeight struct {
 	target   string
 	source   string
-	lockFile *model.WeightFile
+	lockFile *model.WeightLockEntry
 }
 
 // WeightsInspectOutput is the structured output for cog weights inspect --json.
@@ -35,30 +36,35 @@ type WeightInspectEntry struct {
 	Remote *WeightRemoteState `json:"remote,omitempty"`
 }
 
-// WeightLocalState represents the local state of a weight from cog.yaml + weights.lock.
-type WeightLocalState struct {
-	Digest     string `json:"digest"`
-	Size       int64  `json:"size"`
-	Target     string `json:"target"`
-	FileExists bool   `json:"fileExists"`
-}
-
-// WeightRemoteLayer represents a single layer in a remote weight manifest.
-type WeightRemoteLayer struct {
+// WeightInspectLayer is a single layer descriptor, shared between local
+// and remote state. Annotations are not surfaced — they'd just noise up
+// the output.
+type WeightInspectLayer struct {
 	Digest    string `json:"digest"`
 	Size      int64  `json:"size"`
 	MediaType string `json:"mediaType"`
 }
 
+// WeightLocalState describes the local lockfile view of a weight.
+type WeightLocalState struct {
+	// Digest is the weight's assembled manifest digest (spec §3.6).
+	Digest string `json:"digest"`
+	// Target is the container mount path for the weight.
+	Target string `json:"target"`
+	// SourceExists reports whether the source directory is still on disk.
+	SourceExists bool                 `json:"sourceExists"`
+	Layers       []WeightInspectLayer `json:"layers,omitempty"`
+}
+
 // WeightRemoteState represents the remote state of a weight from the registry.
 type WeightRemoteState struct {
-	Ref              string              `json:"ref"`
-	Tag              string              `json:"tag"`
-	Digest           string              `json:"digest"`
-	Size             int64               `json:"size"`
-	MediaType        string              `json:"mediaType"`
-	Layers           []WeightRemoteLayer `json:"layers,omitempty"`
-	MatchedByContent bool                `json:"matchedByContent,omitempty"`
+	Ref              string               `json:"ref"`
+	Tag              string               `json:"tag"`
+	Digest           string               `json:"digest"`
+	Size             int64                `json:"size"`
+	MediaType        string               `json:"mediaType"`
+	Layers           []WeightInspectLayer `json:"layers,omitempty"`
+	MatchedByContent bool                 `json:"matchedByContent,omitempty"`
 }
 
 func newWeightsInspectCommand() *cobra.Command {
@@ -92,22 +98,21 @@ func weightsInspectCommand(cmd *cobra.Command, args []string, jsonOutput bool) e
 	lock, lockErr := model.LoadWeightsLock(lockPath)
 	// lockErr is OK — lockfile may not exist yet
 
-	// Build local weight map: name -> (lockfile entry, source file path)
+	// Build local weight map: name -> (lockfile entry, source directory path)
 	localWeights := make(map[string]*localWeight)
 	for _, w := range src.Config.Weights {
-		lw := &localWeight{
+		localWeights[w.Name] = &localWeight{
 			target: w.Target,
 			source: w.Source,
 		}
-		localWeights[w.Name] = lw
 	}
 
 	// Fill in lockfile data
 	if lockErr == nil && lock != nil {
-		for i := range lock.Files {
-			f := &lock.Files[i]
-			if lw, ok := localWeights[f.Name]; ok {
-				lw.lockFile = f
+		for i := range lock.Weights {
+			entry := &lock.Weights[i]
+			if lw, ok := localWeights[entry.Name]; ok {
+				lw.lockFile = entry
 			}
 		}
 	}
@@ -137,22 +142,21 @@ func weightsInspectCommand(cmd *cobra.Command, args []string, jsonOutput bool) e
 	for _, w := range src.Config.Weights {
 		entry := WeightInspectEntry{Name: w.Name}
 		lw := localWeights[w.Name]
+		sourceExists := dirExists(filepath.Join(src.ProjectDir, lw.source))
 
 		if lw.lockFile == nil {
 			// No lockfile entry — needs `cog weights build`
 			entry.Status = "missing-lockfile"
 			entry.Local = &WeightLocalState{
-				Target:     lw.target,
-				FileExists: fileExists(filepath.Join(src.ProjectDir, lw.source)),
+				Target:       lw.target,
+				SourceExists: sourceExists,
 			}
 		} else {
-			// Check if source file exists on disk
-			exists := fileExists(filepath.Join(src.ProjectDir, lw.source))
 			entry.Local = &WeightLocalState{
-				Digest:     lw.lockFile.Digest,
-				Size:       lw.lockFile.Size,
-				Target:     lw.lockFile.Dest,
-				FileExists: exists,
+				Digest:       lw.lockFile.Digest,
+				Target:       lw.lockFile.Target,
+				SourceExists: sourceExists,
+				Layers:       lockLayersForInspect(lw.lockFile.Layers),
 			}
 
 			if remote, ok := remoteWeights[w.Name]; ok {
@@ -196,65 +200,102 @@ func weightsInspectCommand(cmd *cobra.Command, args []string, jsonOutput bool) e
 }
 
 // resolveWeightsByTag checks for each local weight's tag in the registry.
-// This is the fallback path when no OCI index exists (e.g., after `cog weights push`
-// but before `cog push`).
+// This is the fallback path when no OCI index exists (e.g., after
+// `cog weights push` but before `cog push`). The tag encodes the weight
+// name plus the short prefix of its manifest digest; a hit means the exact
+// content is synced.
 //
-// It looks up the combined tag :weights-<name>-<shortdigest> which encodes both
-// the weight name and its content digest. A match means the exact content is synced.
+// Each weight is an independent registry round-trip, so we fan them out
+// concurrently. Errors are silently ignored per-weight (same as before).
 func resolveWeightsByTag(ctx context.Context, repo string, localWeights map[string]*localWeight, reg registry.Client) map[string]*WeightRemoteState {
-	result := make(map[string]*WeightRemoteState)
+	type lookup struct {
+		name  string
+		state *WeightRemoteState
+	}
+	results := make(chan lookup, len(localWeights))
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, model.GetPushConcurrency())
 	for weightName, lw := range localWeights {
 		if lw.lockFile == nil {
 			continue
 		}
-
-		tag := model.WeightTag(weightName, lw.lockFile.Digest)
-		tagRef := repo + ":" + tag
-
-		// Use GetImage to fetch the full manifest (not just HEAD) so we can read layer sizes.
-		img, err := reg.GetImage(ctx, tagRef, nil)
-		if err != nil {
-			continue
-		}
-
-		manifest, err := img.Manifest()
-		if err != nil {
-			continue
-		}
-
-		digest, err := img.Digest()
-		if err != nil {
-			continue
-		}
-
-		rawManifest, err := img.RawManifest()
-		if err != nil {
-			continue
-		}
-
-		state := &WeightRemoteState{
-			Ref:              tagRef,
-			Tag:              tag,
-			Digest:           digest.String(),
-			Size:             int64(len(rawManifest)),
-			MediaType:        string(manifest.MediaType),
-			MatchedByContent: true,
-		}
-
-		for _, layer := range manifest.Layers {
-			state.Layers = append(state.Layers, WeightRemoteLayer{
-				Digest:    layer.Digest.String(),
-				Size:      layer.Size,
-				MediaType: string(layer.MediaType),
-			})
-		}
-
-		result[weightName] = state
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			results <- lookup{name: weightName, state: fetchRemoteWeight(ctx, reg, repo, weightName, lw.lockFile.Digest)}
+		})
 	}
-	if len(result) == 0 {
+	wg.Wait()
+	close(results)
+
+	resolved := make(map[string]*WeightRemoteState)
+	for r := range results {
+		if r.state != nil {
+			resolved[r.name] = r.state
+		}
+	}
+	if len(resolved) == 0 {
 		return nil
 	}
-	return result
+	return resolved
+}
+
+// fetchRemoteWeight returns the remote state for a single weight, or nil if
+// the tag isn't present (or any other fetch error — the caller treats
+// missing-in-registry as "not synced", not as a hard failure).
+func fetchRemoteWeight(ctx context.Context, reg registry.Client, repo, weightName, manifestDigest string) *WeightRemoteState {
+	tag := model.WeightTag(weightName, manifestDigest)
+	tagRef := repo + ":" + tag
+
+	img, err := reg.GetImage(ctx, tagRef, nil)
+	if err != nil {
+		return nil
+	}
+	manifest, err := img.Manifest()
+	if err != nil {
+		return nil
+	}
+	digest, err := img.Digest()
+	if err != nil {
+		return nil
+	}
+	rawManifest, err := img.RawManifest()
+	if err != nil {
+		return nil
+	}
+
+	state := &WeightRemoteState{
+		Ref:              tagRef,
+		Tag:              tag,
+		Digest:           digest.String(),
+		Size:             int64(len(rawManifest)),
+		MediaType:        string(manifest.MediaType),
+		MatchedByContent: true,
+	}
+	for _, layer := range manifest.Layers {
+		state.Layers = append(state.Layers, WeightInspectLayer{
+			Digest:    layer.Digest.String(),
+			Size:      layer.Size,
+			MediaType: string(layer.MediaType),
+		})
+	}
+	return state
+}
+
+func lockLayersForInspect(in []model.WeightLockLayer) []WeightInspectLayer {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]WeightInspectLayer, len(in))
+	for i, l := range in {
+		out[i] = WeightInspectLayer{
+			Digest:    l.Digest,
+			Size:      l.Size,
+			MediaType: l.MediaType,
+		}
+	}
+	return out
 }
 
 func printWeightsInspectText(out *WeightsInspectOutput) {
@@ -280,7 +321,10 @@ func printWeightsInspectText(out *WeightsInspectOutput) {
 
 		if w.Local != nil {
 			if w.Local.Digest != "" {
-				fmt.Printf("    Local:   %s (%s) -> %s\n", w.Local.Digest, formatSize(w.Local.Size), w.Local.Target)
+				fmt.Printf("    Local:   %s -> %s\n", w.Local.Digest, w.Local.Target)
+				for _, layer := range w.Local.Layers {
+					fmt.Printf("    Layer:   %s (%s)\n", layer.Digest, formatSize(layer.Size))
+				}
 			} else {
 				fmt.Printf("    Local:   (no lockfile entry) -> %s\n", w.Local.Target)
 			}
@@ -290,7 +334,7 @@ func printWeightsInspectText(out *WeightsInspectOutput) {
 
 		if w.Remote != nil {
 			for _, layer := range w.Remote.Layers {
-				fmt.Printf("    Layer:   %s (%s)\n", layer.Digest, formatSize(layer.Size))
+				fmt.Printf("    Remote:  %s (%s)\n", layer.Digest, formatSize(layer.Size))
 			}
 		} else {
 			fmt.Println("    Remote:  -")
@@ -300,7 +344,9 @@ func printWeightsInspectText(out *WeightsInspectOutput) {
 	}
 }
 
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+// dirExists is true when path is a readable directory on disk. Everything
+// else (missing, stat error, regular file) is false.
+func dirExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
 }

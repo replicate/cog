@@ -49,10 +49,10 @@ func TestIndexBuilder_BuildFromDescriptors(t *testing.T) {
 		require.Equal(t, weightDesc.Size, idxManifest.Manifests[1].Size)
 		require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.OS)
 		require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.Architecture)
-		require.Equal(t, AnnotationValueWeights, idxManifest.Manifests[1].Annotations[AnnotationReferenceType])
-		require.Equal(t, imgDesc.Digest.String(), idxManifest.Manifests[1].Annotations[AnnotationReferenceDigest])
-		require.Equal(t, "model-v1", idxManifest.Manifests[1].Annotations[AnnotationWeightName])
-		require.Equal(t, "/cache/model.safetensors", idxManifest.Manifests[1].Annotations[AnnotationWeightDest])
+		require.Equal(t, ReferenceTypeWeights, idxManifest.Manifests[1].Annotations[AnnotationV1ReferenceType])
+		require.Equal(t, imgDesc.Digest.String(), idxManifest.Manifests[1].Annotations[AnnotationV1ReferenceDigest])
+		require.Equal(t, "model-v1", idxManifest.Manifests[1].Annotations[AnnotationV1WeightName])
+		require.Equal(t, "/cache/model.safetensors", idxManifest.Manifests[1].Annotations[AnnotationV1WeightTarget])
 	})
 
 	t.Run("builds index with multiple weight descriptors", func(t *testing.T) {
