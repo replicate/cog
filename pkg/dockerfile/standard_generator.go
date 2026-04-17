@@ -917,7 +917,7 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 		return "", err
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r " + containerPath
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}

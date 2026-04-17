@@ -1,0 +1,392 @@
+# Replicate Model Test Manifest
+# ==============================
+# Models from models.tsv — the top Replicate models and their cogified repos.
+#
+# Input values prefixed with "@" are resolved as fixture file paths relative
+# to the fixtures/ directory (e.g. "@test_image.png" -> fixtures/test_image.png).
+#
+# Many of these models require GPU hardware with significant VRAM (40GB+).
+# Proxy models (llama, alibaba) require API keys and run on CPU.
+#
+# Validation types:
+#   exact       - output string must equal `value` exactly
+#   contains    - output string must contain `value` as a substring
+#   regex       - output string must match `pattern`
+#   file_exists - output is a file path; optionally check `mime` type
+#   json_match  - parse output as JSON, assert `match` is a subset
+#   json_keys   - parse output as JSON dict, assert it has entries
+#   not_empty   - output is non-empty (loose smoke test)
+
+defaults:
+  sdk_version: "latest"
+  cog_version: "latest"
+
+models:
+
+  # ── FLUX models (cog-flux) ──────────────────────────────────────────
+  # All FLUX variants live in replicate/cog-flux and are selected via
+  # script/select.sh <variant> which merges cog.yaml.template with
+  # model-cog-configs/<variant>.yaml to produce cog.yaml.
+
+  - name: flux-schnell
+    repo: replicate/cog-flux
+    path: "."
+    gpu: true
+    timeout: 900
+    requires_tools: ["yq"]
+    setup:
+      - "script/select.sh schnell"
+    tests:
+      - description: "generate image from prompt"
+        inputs:
+          prompt: "a golden retriever sitting in a field of sunflowers"
+          num_inference_steps: 4
+          output_format: "png"
+        expect:
+          type: file_exists
+          mime: "image/png"
+
+  - name: flux-dev-lora
+    repo: replicate/cog-flux
+    path: "."
+    gpu: true
+    timeout: 900
+    requires_tools: ["yq"]
+    setup:
+      - "script/select.sh dev-lora"
+    tests:
+      - description: "generate image with prompt (no LoRA)"
+        inputs:
+          prompt: "a cat wearing a tiny top hat, studio lighting"
+          num_inference_steps: 28
+          guidance: 3.0
+          output_format: "png"
+        expect:
+          type: file_exists
+          mime: "image/png"
+
+  - name: flux-fill-dev
+    repo: replicate/cog-flux
+    path: "."
+    gpu: true
+    timeout: 900
+    requires_tools: ["yq"]
+    setup:
+      - "script/select.sh fill-dev"
+    tests:
+      - description: "inpaint region of image"
+        inputs:
+          prompt: "a bright red door"
+          image: "@test_image.png"
+          num_inference_steps: 28
+          guidance: 30
+          output_format: "png"
+        expect:
+          type: file_exists
+          mime: "image/png"
+
+  - name: flux-depth-dev
+    repo: replicate/cog-flux
+    path: "."
+    gpu: true
+    timeout: 900
+    requires_tools: ["yq"]
+    setup:
+      - "script/select.sh depth-dev"
+    tests:
+      - description: "depth-conditioned generation"
+        inputs:
+          prompt: "a futuristic cityscape at sunset"
+          control_image: "@test_image.png"
+          num_inference_steps: 28
+          guidance: 10
+          output_format: "png"
+        expect:
+          type: file_exists
+          mime: "image/png"
+
+  - name: flux-schnell-lora
+    repo: replicate/cog-flux
+    path: "."
+    gpu: true
+    timeout: 900
+    requires_tools: ["yq"]
+    setup:
+      - "script/select.sh schnell-lora"
+    tests:
+      - description: "generate image with schnell (no LoRA)"
+        inputs:
+          prompt: "a minimalist logo of a mountain, vector art"
+          num_inference_steps: 4
+          output_format: "png"
+        expect:
+          type: file_exists
+          mime: "image/png"
+
+  - name: flux-canny-dev
+    repo: replicate/cog-flux
+    path: "."
+    gpu: true
+    timeout: 900
+    requires_tools: ["yq"]
+    setup:
+      - "script/select.sh canny-dev"
+    tests:
+      - description: "canny edge conditioned generation"
+        inputs:
+          prompt: "a pencil sketch of a building"
+          control_image: "@test_image.png"
+          num_inference_steps: 28
+          guidance: 30
+          output_format: "png"
+        expect:
+          type: file_exists
+          mime: "image/png"
+
+  - name: flux-redux-dev
+    repo: replicate/cog-flux
+    path: "."
+    gpu: true
+    timeout: 900
+    requires_tools: ["yq"]
+    setup:
+      - "script/select.sh redux-dev"
+    tests:
+      - description: "redux image variation"
+        inputs:
+          redux_image: "@test_image.png"
+          num_inference_steps: 28
+          guidance: 3
+          output_format: "png"
+        expect:
+          type: file_exists
+          mime: "image/png"
+
+  # ── FLUX Kontext LoRA (diy-flux-lora) ───────────────────────────────
+  # Training/inference repo for FLUX LoRA fine-tuning. Uses
+  # script/select-model to generate cog.yaml from template.
+
+  - name: flux-kontext-dev-lora
+    repo: replicate/diy-flux-lora
+    path: "."
+    gpu: true
+    timeout: 900
+    requires_tools: ["envsubst"]
+    setup:
+      - "script/select-model kontext-dev"
+    train_tests:
+      - description: "train a LoRA"
+        inputs:
+          input_images: "@test_image.png"
+        expect:
+          type: not_empty
+    tests:
+      - description: "generate with kontext (no LoRA)"
+        inputs:
+          prompt: "a watercolor painting of a forest"
+        expect:
+          type: file_exists
+
+  # ── Qwen Edit (cog-qwen-edit-2509-multi-angle) ─────────────────────
+  # Direct cog.yaml, no setup script needed.
+
+  - name: qwen-edit-multiangle
+    repo: replicate/cog-qwen-edit-2509-multi-angle
+    path: "."
+    gpu: true
+    timeout: 600
+    tests:
+      - description: "rotate camera angle on image"
+        inputs:
+          image: "@test_image.png"
+          rotate_degrees: 15
+        expect:
+          type: file_exists
+
+  # ── Real-ESRGAN (cog-official-nightmareai-real-esrgan) ──────────────
+  # Image upscaling. Direct cog.yaml, no setup needed.
+
+  - name: real-esrgan
+    repo: replicate/cog-official-nightmareai-real-esrgan
+    path: "."
+    gpu: true
+    timeout: 300
+    tests:
+      - description: "upscale image 4x"
+        inputs:
+          image: "@test_image.png"
+          scale: 4
+          face_enhance: false
+        expect:
+          type: file_exists
+
+  # ── Stable Diffusion 3 (cog-stable-diffusion-3) ────────────────────
+  # Direct cog.yaml, no setup needed.
+
+  - name: stable-diffusion-3
+    repo: replicate/cog-stable-diffusion-3
+    path: "."
+    gpu: true
+    timeout: 600
+    tests:
+      - description: "text-to-image generation"
+        inputs:
+          prompt: "a photorealistic image of an astronaut riding a horse on mars"
+          aspect_ratio: "1:1"
+          num_outputs: 1
+          guidance_scale: 4.5
+          output_format: "png"
+        expect:
+          type: file_exists
+          mime: "image/png"
+
+  # ── Wan 2.1 1.3B (cog-wan-2.1) ─────────────────────────────────────
+  # Text-to-video model. Uses predict-1.3b.py directly via cog.yaml.
+
+  - name: wan-2.1-1.3b
+    repo: replicate/cog-wan-2.1
+    path: "."
+    gpu: true
+    timeout: 900
+    tests:
+      - description: "text-to-video generation"
+        inputs:
+          prompt: "a timelapse of clouds moving across a blue sky"
+          aspect_ratio: "16:9"
+          frame_num: 17
+        expect:
+          type: file_exists
+
+  # ── Resemble AI Chatterbox (cog-resemble-chatterbox) ────────────────
+  # TTS model. Direct cog.yaml, no setup needed.
+
+  - name: chatterbox
+    repo: replicate/cog-resemble-chatterbox
+    path: "."
+    gpu: true
+    timeout: 300
+    tests:
+      - description: "text-to-speech synthesis"
+        inputs:
+          prompt: "Hello, this is a test of the Chatterbox text to speech model."
+          exaggeration: 0.5
+          cfg_weight: 0.5
+          temperature: 0.8
+        expect:
+          type: file_exists
+
+  # ── Resemble AI Chatterbox Turbo (cog-resemble-chatterbox-turbo) ────
+  # Faster TTS variant. Direct cog.yaml, no setup needed.
+
+  - name: chatterbox-turbo
+    repo: replicate/cog-resemble-chatterbox-turbo
+    path: "."
+    gpu: true
+    timeout: 300
+    tests:
+      - description: "fast text-to-speech synthesis"
+        inputs:
+          text: "Hello, this is a test of the Chatterbox Turbo text to speech model."
+          temperature: 0.8
+          seed: 42
+        expect:
+          type: file_exists
+
+  # ── Qwen3 TTS (cog-qwen-tts) ───────────────────────────────────────
+  # TTS model with multiple modes. Uses script/select-model.
+
+  - name: qwen3-tts
+    repo: replicate/cog-qwen-tts
+    path: "."
+    gpu: true
+    timeout: 600
+    requires_tools: ["envsubst"]
+    setup:
+      - "script/select-model qwen3-tts"
+    tests:
+      - description: "text-to-speech with preset voice"
+        inputs:
+          text: "The quick brown fox jumps over the lazy dog."
+          mode: "custom_voice"
+          language: "auto"
+          speaker: "Serena"
+        expect:
+          type: file_exists
+
+  # ── Proxy models (CPU, require API keys) ────────────────────────────
+  # These are thin wrappers around external APIs (Groq, Dashscope, etc.).
+  # They require API keys written to .proxy-api-key and similar files.
+
+  # - name: meta-llama-3-70b-instruct
+  #   repo: replicate/cog-llama-proxy
+  #   path: "."
+  #   gpu: false
+  #   timeout: 300
+  #   setup:
+  #     # NOTE: select-model currently only supports 405b in the script.
+  #     # The 70b model uses MetaLlama370bInstructPredictor (backed by Groq).
+  #     # You may need to manually generate cog.yaml or extend select-model.
+  #     - "PREDICTOR=MetaLlama370bInstructPredictor envsubst < cog.yaml.tpl > cog.yaml"
+  #   requires_env:
+  #     - GROQ_API_KEY
+  #   tests:
+  #     - description: "basic chat completion"
+  #       inputs:
+  #         prompt: "What is the capital of France? Answer in one word."
+  #         max_tokens: 10
+  #         temperature: 0.1
+  #       expect:
+  #         type: contains
+  #         value: "Paris"
+
+  # - name: qwen-image-2-pro
+  #   repo: replicate/cog-alibaba-proxy
+  #   path: "."
+  #   gpu: false
+  #   timeout: 300
+  #   setup:
+  #     - "script/select-model qwen-image-2-pro"
+  #   requires_env:
+  #     - DASHSCOPE_API_KEY
+  #   tests:
+  #     - description: "text-to-image generation"
+  #       inputs:
+  #         prompt: "a serene japanese garden with a koi pond, watercolor style"
+  #         aspect_ratio: "1:1"
+  #       expect:
+  #         type: file_exists
+
+  # - name: qwen-image-2
+  #   repo: replicate/cog-alibaba-proxy
+  #   path: "."
+  #   gpu: false
+  #   timeout: 300
+  #   setup:
+  #     - "script/select-model qwen-image-2"
+  #   requires_env:
+  #     - DASHSCOPE_API_KEY
+  #   tests:
+  #     - description: "text-to-image generation"
+  #       inputs:
+  #         prompt: "a cozy cabin in the snowy mountains at night"
+  #         aspect_ratio: "16:9"
+  #       expect:
+  #         type: file_exists
+
+  # ── Models without identified repos ─────────────────────────────────
+  # These models could not be matched to a repo in the replicate org.
+  # They are listed here as placeholders for future discovery.
+
+  # - name: nsfw-image-detection
+  #   # falcons-ai/nsfw_image_detection — no repo found in replicate org
+  #   repo: unknown
+  #   path: "."
+  #   gpu: true
+  #   tests: []
+
+  # - name: meta-llama-3-8b-instruct
+  #   # meta/meta-llama-3-8b-instruct — repo not confirmed
+  #   repo: unknown
+  #   path: "."
+  #   gpu: true
+  #   tests: []
