@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/tools/test-harness/internal/manifest"
 	"github.com/replicate/cog/tools/test-harness/internal/report"
 	"github.com/replicate/cog/tools/test-harness/internal/runner"
 )
@@ -36,6 +37,10 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 		return fmt.Errorf("invalid output format %q: must be 'console' or 'json'", outputFormat)
 	}
 
+	if err := validateConcurrency(); err != nil {
+		return err
+	}
+
 	_, models, resolved, err := resolveSetup()
 	if err != nil {
 		return err
@@ -45,7 +50,13 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 		fmt.Println("No models to compare")
 		return nil
 	}
-	fmt.Printf("Comparing schemas for %d model(s)\n\n", len(models))
+
+	parallel := concurrency > 1 && len(models) > 1
+	if parallel {
+		fmt.Printf("Comparing schemas for %d model(s) with concurrency %d\n\n", len(models), concurrency)
+	} else {
+		fmt.Printf("Comparing schemas for %d model(s)\n\n", len(models))
+	}
 
 	// Create runner
 	r, err := runner.New(runner.Options{
@@ -54,19 +65,39 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 		SDKWheel:    resolved.SDKWheel,
 		CleanImages: cleanImages,
 		KeepOutputs: keepOutputs,
+		Parallel:    parallel,
 	})
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)
 	}
-	defer r.Cleanup()
+	defer func() { _ = r.Cleanup() }()
 
 	// Compare schemas
-	var results []report.SchemaCompareResult
-	for _, model := range models {
-		fmt.Printf("Comparing %s...\n", model.Name)
-		result := r.CompareSchema(ctx, model)
-		results = append(results, *result)
-	}
+	results := make([]report.SchemaCompareResult, len(models))
+
+	runModels(ctx, models, results, parallel,
+		func(ctx context.Context, model manifest.Model) *report.SchemaCompareResult {
+			return r.CompareSchema(ctx, model)
+		},
+		func(index, total int, model manifest.Model) string {
+			if parallel {
+				return fmt.Sprintf("  [%d/%d] Comparing %s...\n", index, total, model.Name)
+			}
+			return fmt.Sprintf("Comparing %s...\n", model.Name)
+		},
+		func(index, total int, model manifest.Model, result *report.SchemaCompareResult) string {
+			if parallel {
+				if result.Passed {
+					return fmt.Sprintf("  [%d/%d] + %s schemas match\n", index, total, model.Name)
+				}
+				return fmt.Sprintf("  [%d/%d] x %s FAILED\n", index, total, model.Name)
+			}
+			if result.Passed {
+				return fmt.Sprintf("  + %s schemas match\n", model.Name)
+			}
+			return fmt.Sprintf("  x %s FAILED\n", model.Name)
+		},
+	)
 
 	// Output results
 	if outputFormat == "json" {
@@ -105,14 +136,24 @@ func runSchemaCompare(ctx context.Context, outputFormat, outputFile string) erro
 	}
 
 	// Check for failures
-	var failedNames []string
+	var failedDetails []string
 	for _, r := range results {
 		if !r.Passed {
-			failedNames = append(failedNames, r.Name)
+			detail := r.Name
+			if r.Error != "" {
+				firstLine := r.Error
+				if idx := strings.Index(firstLine, "\n"); idx != -1 {
+					firstLine = firstLine[:idx]
+				}
+				detail += ": " + firstLine
+			} else if r.Diff != "" {
+				detail += ": schemas differ"
+			}
+			failedDetails = append(failedDetails, "  x "+detail)
 		}
 	}
-	if len(failedNames) > 0 {
-		return fmt.Errorf("%d schema comparison(s) failed: %s", len(failedNames), strings.Join(failedNames, ", "))
+	if len(failedDetails) > 0 {
+		return fmt.Errorf("%d schema comparison(s) failed:\n%s", len(failedDetails), strings.Join(failedDetails, "\n"))
 	}
 
 	return nil

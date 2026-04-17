@@ -36,7 +36,8 @@ type SchemaCompareResult struct {
 	Name         string  `json:"name"`
 	Passed       bool    `json:"passed"`
 	Error        string  `json:"error,omitempty"`
-	Diff         string  `json:"diff,omitempty"`
+	Diff         string  `json:"diff,omitempty"`          // Real differences (failures)
+	ExpectedDiff string  `json:"expected_diff,omitempty"` // Known limitations (informational)
 	StaticBuild  float64 `json:"static_build_s"`
 	RuntimeBuild float64 `json:"runtime_build_s"`
 }
@@ -76,7 +77,7 @@ func ConsoleReport(results []ModelResult, sdkVersion, cogVersion string) {
 			}
 			writeStatus("x", r.Name, firstLine, r.GPU)
 			// Print full error details indented below
-			for _, line := range strings.Split(r.Error, "\n") {
+			for line := range strings.SplitSeq(r.Error, "\n") {
 				if line != "" {
 					fmt.Printf("    %s\n", line)
 				}
@@ -123,7 +124,7 @@ func ConsoleReport(results []ModelResult, sdkVersion, cogVersion string) {
 			// Print individual failures with full output
 			for _, t := range failures {
 				fmt.Printf("    x %s:\n", t.Description)
-				for _, line := range strings.Split(t.Message, "\n") {
+				for line := range strings.SplitSeq(t.Message, "\n") {
 					fmt.Printf("      %s\n", line)
 				}
 			}
@@ -192,11 +193,12 @@ func JSONReport(results []ModelResult, sdkVersion, cogVersion string) map[string
 	failed := 0
 	skipped := 0
 	for _, r := range results {
-		if r.Skipped {
+		switch {
+		case r.Skipped:
 			skipped++
-		} else if r.Passed {
+		case r.Passed:
 			passed++
-		} else {
+		default:
 			failed++
 		}
 	}
@@ -242,7 +244,7 @@ func SchemaCompareConsoleReport(results []SchemaCompareResult, cogVersion string
 				firstLine = firstLine[:idx]
 			}
 			writeStatus("x", r.Name, firstLine, false)
-			for _, line := range strings.Split(r.Error, "\n") {
+			for line := range strings.SplitSeq(r.Error, "\n") {
 				if line != "" {
 					fmt.Printf("    %s\n", line)
 				}
@@ -253,15 +255,39 @@ func SchemaCompareConsoleReport(results []SchemaCompareResult, cogVersion string
 
 		if r.Passed {
 			timing := fmt.Sprintf("(static %.1fs, runtime %.1fs)", r.StaticBuild, r.RuntimeBuild)
-			writeStatus("+", r.Name, fmt.Sprintf("schemas match %s", timing), false)
+			status := "schemas match"
+			if r.ExpectedDiff != "" {
+				status = "schemas match (with expected differences)"
+			}
+			writeStatus("+", r.Name, fmt.Sprintf("%s %s", status, timing), false)
 			passed++
+
+			// Show expected differences as informational notes
+			if r.ExpectedDiff != "" {
+				fmt.Println()
+				fmt.Printf("      Known limitations (not failures):\n")
+				for line := range strings.SplitSeq(r.ExpectedDiff, "\n") {
+					fmt.Printf("      %s\n", line)
+				}
+				fmt.Println()
+			}
 		} else {
 			writeStatus("x", r.Name, "schemas differ", false)
 			failed++
 			if r.Diff != "" {
-				for _, line := range strings.Split(r.Diff, "\n") {
-					fmt.Printf("    %s\n", line)
+				fmt.Println()
+				for line := range strings.SplitSeq(r.Diff, "\n") {
+					fmt.Printf("      %s\n", line)
 				}
+				fmt.Println()
+			}
+			// Also show expected diffs for context
+			if r.ExpectedDiff != "" {
+				fmt.Printf("      Additionally, known limitations (not counted as failures):\n")
+				for line := range strings.SplitSeq(r.ExpectedDiff, "\n") {
+					fmt.Printf("      %s\n", line)
+				}
+				fmt.Println()
 			}
 		}
 	}
@@ -339,7 +365,7 @@ func round(val float64, precision int) float64 {
 // SaveResults saves results to a JSON file in the results directory
 func SaveResults(results []ModelResult, sdkVersion, cogVersion string) (string, error) {
 	resultsDir := "results"
-	if err := os.MkdirAll(resultsDir, 0755); err != nil {
+	if err := os.MkdirAll(resultsDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating results dir: %w", err)
 	}
 
