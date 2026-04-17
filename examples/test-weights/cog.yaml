@@ -1,0 +1,24 @@
+# Example model for testing the v1 managed-weights OCI artifact format.
+#
+# The weights/ directory is populated by a human (see README.md) with
+# nvidia/parakeet-tdt-0.6b-v3 from HuggingFace. It's listed in the root
+# .gitignore so the ~5GB payload never hits git.
+#
+# Build and push the full bundle with:
+#   COG_OCI_INDEX=1 cog push localhost:5000/test-weights
+#
+# Or run the weight pipeline in isolation:
+#   cog weights build
+#   cog weights push localhost:5000/test-weights
+
+build:
+  gpu: false
+  python_version: "3.12"
+  python_requirements: requirements.txt
+
+predict: "predict.py:Predictor"
+
+weights:
+  - name: parakeet
+    source: weights
+    target: /src/weights

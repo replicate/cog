@@ -26,8 +26,10 @@ bin/*
 # Compiled test tools
 /weights-gen
 
-# Test directory for weights testing
-/test-weights/
+# Large weight payloads for examples/test-weights (populated manually; see that
+# directory's README.md).
+examples/test-weights/weights/
+examples/test-weights/.cog/
 weights.lock
 
 # Auto-:d version files from setuptools-scm

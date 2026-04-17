@@ -1,0 +1,17 @@
+# Keep the weights/ directory out of the docker build context.
+#
+# With v1 managed weights, `cog.yaml`'s weights: entries are packed into
+# separate OCI layers and land at their `target` paths at runtime via the
+# image index — they must NOT be baked into the model image by `cog build`.
+# Without this exclude, buildkit ships the full (multi-GB) weights/ directory
+# to the docker daemon on every build.
+weights/
+
+# Packed layer cache written by `cog weights build`. Do NOT exclude all of
+# .cog/ — `cog build` stages the SDK + coglet wheels and CA cert under
+# .cog/tmp/ and references them from its generated Dockerfile, so excluding
+# the whole directory breaks the image build.
+.cog/weights-cache/
+
+# Git metadata doesn't belong in the image.
+.git/
