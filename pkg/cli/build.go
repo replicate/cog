@@ -15,19 +15,21 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-var buildTag string
-var buildSeparateWeights bool
-var buildSecrets []string
-var buildNoCache bool
-var buildProgressOutput string
-var buildSchemaFile string
-var buildUseCudaBaseImage string
-var buildDockerfileFile string
-var buildUseCogBaseImage bool
-var buildStrip bool
-var buildPrecompile bool
-var buildSkipSchemaValidation bool
-var configFilename string
+var (
+	buildTag                  string
+	buildSeparateWeights      bool
+	buildSecrets              []string
+	buildNoCache              bool
+	buildProgressOutput       string
+	buildSchemaFile           string
+	buildUseCudaBaseImage     string
+	buildDockerfileFile       string
+	buildUseCogBaseImage      bool
+	buildStrip                bool
+	buildPrecompile           bool
+	buildSkipSchemaValidation bool
+	configFilename            string
+)
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
 
@@ -198,6 +200,7 @@ func DetermineUseCogBaseImage(cmd *cobra.Command) *bool {
 
 func addSkipSchemaValidationFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&buildSkipSchemaValidation, "skip-schema-validation", false, "Skip OpenAPI schema generation and validation")
+	_ = cmd.Flags().MarkHidden("skip-schema-validation")
 }
 
 // buildOptionsFromFlags creates BuildOptions from the current CLI flag values.
