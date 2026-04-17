@@ -34,23 +34,25 @@ Without the schema, consumers would have no way to know:
 
 Cog supports two schema generation paths:
 
-### Runtime Path (default)
+### Static Path (default)
 
-The **runtime path** boots the built Docker container and runs `python -m cog.command.openapi_schema` to introspect the model at runtime. This is the default for all builds. It uses Python's `inspect` module and `typing.get_type_hints()` to extract parameter types, then builds OpenAPI JSON from a hand-rolled ADT type system (dataclasses in `_adt.py`). No pydantic is involved in schema generation -- `cog.BaseModel` is a dataclass wrapper, not pydantic.
+The **static path** parses Python source code at `cog build` time using [tree-sitter](https://tree-sitter.github.io/tree-sitter/) in Go. No Python runtime is invoked, no container boots — the schema is produced from the model's source files before Docker build even begins. This makes schema generation deterministic, fast, and independent of the model's runtime dependencies. Static generation is the default for all commands and requires SDK >= 0.17.0.
 
-### Static Path (experimental)
+If the static parser encounters a type it can't resolve (for example, a `BaseModel` subclass exported from a package `__init__.py` that the file-based resolver can't find), it **falls back to the runtime path** automatically with a warning — so builds don't break due to static-parser limitations. Hard user errors (parse errors, unsupported features like `default_factory`) still fail fast with a clear static-generator error rather than being swept into the fallback.
 
-The **static path** parses Python source code at `cog build` time using [tree-sitter](https://tree-sitter.github.io/tree-sitter/) in Go. No Python runtime is invoked. The goal is to replace the runtime path entirely -- making schema generation deterministic, fast, and independent of the model's dependencies. It's not there yet.
+### Runtime Path (legacy fallback)
 
-Enable it for testing with the `COG_STATIC_SCHEMA` environment variable:
+The **runtime path** boots the built Docker container and runs `python -m cog.command.openapi_schema` to introspect the model at runtime. It uses Python's `inspect` module and `typing.get_type_hints()` to extract parameter types, then builds OpenAPI JSON from a hand-rolled ADT type system (dataclasses in `_adt.py`). No pydantic is involved in schema generation -- `cog.BaseModel` is a dataclass wrapper, not pydantic.
+
+The runtime path is the default for SDK versions < 0.17.0 (pydantic-based schemas the static parser cannot analyze) and for the static-path fallback described above. It can be forced globally by setting `COG_LEGACY_SCHEMA=1`:
 
 ```bash
-COG_STATIC_SCHEMA=1 cog build -t my-model
+COG_LEGACY_SCHEMA=1 cog build -t my-model
 ```
 
-The static path requires SDK >= 0.17.0. If the static parser encounters a type it can't resolve, it **falls back to the runtime path** automatically with a warning -- so builds don't break due to static parser limitations.
+This opt-out exists as a lifeline for users pinned to old SDKs or hitting static-parser bugs that haven't been resolved yet. The older `COG_STATIC_SCHEMA=1` flag (the opt-in toggle in 0.18.0 and earlier) is accepted for backward compatibility but is now a no-op — static generation is already on by default.
 
-For local commands (`cog serve`, `cog predict`), the static path is always used regardless of the `COG_STATIC_SCHEMA` flag, because these commands run before the post-build runtime generation step -- the CLI needs the schema to parse `-i` input flags.
+Local commands (`cog serve`, `cog predict`, `cog train`) need a schema to parse `-i` input flags into correctly-typed Python objects. Because those commands run before the post-build legacy runtime generation step, they only work when the static path produced a schema — setting `COG_LEGACY_SCHEMA=1` for a `cog predict` build leaves the image without a bundled schema and `-i` parsing is unavailable.
 
 ```mermaid
 flowchart LR
@@ -254,12 +256,16 @@ Also written to `.cog/openapi_schema.json` inside the image for the runtime to s
 
 | Environment Variable | Purpose |
 |---------------------|---------|
-| `COG_STATIC_SCHEMA=1` | Enable experimental static schema generator (falls back to runtime path on failure) |
-| `COG_OPENAPI_SCHEMA=path` | Skip generation entirely and use a pre-built schema file |
+| `COG_LEGACY_SCHEMA=1` | Force the legacy runtime schema path (opt-out of the default static generator). Use when pinned to SDK < 0.17.0 or hitting a static-parser bug. |
+| `COG_OPENAPI_SCHEMA=path` | Skip generation entirely and use a pre-built schema file. |
+| `COG_STATIC_SCHEMA=1` | **Deprecated.** Accepted for backward compatibility with 0.18.0-era scripts but is now a no-op — static generation is already the default. |
 
 ```bash
-# Use static schema generation
-COG_STATIC_SCHEMA=1 cog build -t my-model
+# Default: static schema generation, falls back to runtime on parser limits
+cog build -t my-model
+
+# Force the legacy runtime path (pinned to old SDK, debugging static parser, etc.)
+COG_LEGACY_SCHEMA=1 cog build -t my-model
 
 # Use a pre-built schema file
 COG_OPENAPI_SCHEMA=my_schema.json cog build

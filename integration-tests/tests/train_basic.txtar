@@ -1,6 +1,9 @@
-skip 'cog train requires static schema gen which is gated behind COG_STATIC_SCHEMA=1'
-
-# Test basic training functionality
+# Test basic training functionality.
+#
+# `cog train` needs a schema to parse the -i flags into typed Python
+# arguments. That schema comes from the static path (the default as of
+# 0.19.0); the legacy runtime path only runs during `cog build`, not
+# during `cog train`.
 
 # Train with input (no pre-built image, runs from cog.yaml)
 cog train -i n=42

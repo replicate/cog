@@ -7,9 +7,8 @@
 #   - Output type imported from a sibling module (from output_types import Output)
 #   - BaseModel fields appear correctly in the OpenAPI schema label
 #   - Prediction works end-to-end with the multi-file setup
-
-# Opt in to static schema generation
-env COG_STATIC_SCHEMA=1
+#
+# Static generation is the default as of 0.19.0, so no env var is needed.
 
 # Build the image
 cog build -t $TEST_IMAGE
