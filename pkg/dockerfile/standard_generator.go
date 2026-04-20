@@ -201,10 +201,14 @@ func (g *StandardGenerator) GenerateInitialSteps(ctx context.Context) (string, e
 			aptInstalls,
 			g.installUV(),
 		}
+		// Install user packages before the SDK so that changing the SDK
+		// wheel (e.g. via --cog-ref or COG_SDK_WHEEL) does not invalidate
+		// the Docker cache for expensive user dependencies like torch.
+		// This matches the non-cog-base-image path ordering below.
+		steps = append(steps, pipInstalls)
 		if installCog != "" {
 			steps = append(steps, installCog)
 		}
-		steps = append(steps, pipInstalls)
 		if g.precompile {
 			steps = append(steps, PrecompilePythonCommand)
 		}

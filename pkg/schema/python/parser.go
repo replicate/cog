@@ -246,6 +246,22 @@ func collectModuleScope(root *sitter.Node, source []byte) moduleScope {
 	return scope
 }
 
+// resolveStringExpr tries to resolve an expression to a string value by
+// literal parsing, then falling back to module scope lookup for identifiers.
+// Used for description= and regex= keyword arguments.
+func resolveStringExpr(node *sitter.Node, source []byte, scope moduleScope) (string, bool) {
+	if s, ok := parseStringLiteral(node, source); ok {
+		return s, true
+	}
+	if node.Type() == "identifier" {
+		name := content(node, source)
+		if val, ok := scope[name]; ok && val.Kind == schema.DefaultString {
+			return val.Str, true
+		}
+	}
+	return "", false
+}
+
 // resolveDefaultExpr tries to resolve an expression to a DefaultValue by
 // literal parsing, then falling back to module scope lookup for identifiers.
 func resolveDefaultExpr(node *sitter.Node, source []byte, scope moduleScope) (schema.DefaultValue, bool) {
@@ -1379,7 +1395,7 @@ func parseInputCall(node *sitter.Node, source []byte, paramName string, scope mo
 		case "default_factory":
 			return inputCallInfo{}, schema.WrapError(schema.ErrDefaultFactoryNotSupported, fmt.Sprintf("parameter '%s': default_factory is not supported in static schema generation", paramName), nil)
 		case "description":
-			if s, ok := parseStringLiteral(valNode, source); ok {
+			if s, ok := resolveStringExpr(valNode, source, scope); ok {
 				info.Description = &s
 			}
 		case "ge":

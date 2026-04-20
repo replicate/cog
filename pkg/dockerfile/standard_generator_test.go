@@ -564,11 +564,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:python3.12
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
-` + testInstallCog(gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
+` + testInstallCog(gen.strip) + `
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -624,11 +624,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.11-torch%s
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 `+testInstallUVLine+`
-`+testInstallCog(gen.strip)+`
 COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
+`+testInstallCog(gen.strip)+`
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -683,11 +683,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
-` + testInstallCog(gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
+` + testInstallCog(gen.strip) + `
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -741,11 +741,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
-` + testInstallCog(gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
+` + testInstallCog(gen.strip) + `
 RUN cowsay moo
 WORKDIR /src
 EXPOSE 5000
@@ -835,11 +835,11 @@ FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
-` + testInstallCog(gen.strip) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
+` + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec touch -t 197001010000 {} \; && find / -type f -name "*.py" -printf "%h\n" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0
 RUN cowsay moo
 WORKDIR /src
@@ -891,17 +891,17 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	// coglet in python_packages is stripped — the build system always installs coglet
-	// via installCog(), which runs before pip requirements.
+	// via installCog(), which runs after pip requirements.
 	expected := `#syntax=docker/dockerfile:1.4
 FROM r8.im/replicate/cog-test-weights AS weights
 FROM r8.im/cog-base:cuda11.8-python3.12-torch2.3.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallUVLine + `
-` + testInstallCog(true) + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
 RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
+` + testInstallCog(true) + `
 RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec touch -t 197001010000 {} \; && find / -type f -name "*.py" -printf "%h\n" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0
 RUN cowsay moo
 WORKDIR /src
