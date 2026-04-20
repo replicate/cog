@@ -329,7 +329,7 @@ fn build_webhook_sender(
 async fn create_prediction_with_id(
     service: Arc<PredictionService>,
     prediction_id: String,
-    input: serde_json::Value,
+    mut input: serde_json::Value,
     context: std::collections::HashMap<String, String>,
     webhook: Option<String>,
     webhook_events_filter: Vec<WebhookEventType>,
@@ -337,12 +337,20 @@ async fn create_prediction_with_id(
     trace_context: TraceContext,
     is_training: bool,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    // Validate input against the appropriate schema
-    let validation_result = if is_training {
-        service.validate_train_input(&input).await
+    // Strip unknown fields and validate in one pass. Unknown inputs are
+    // silently dropped to match Replicate's historical API behavior.
+    let (stripped, validation_result) = if is_training {
+        service.strip_and_validate_train_input(&mut input).await
     } else {
-        service.validate_input(&input).await
+        service.strip_and_validate_input(&mut input).await
     };
+    if !stripped.is_empty() {
+        tracing::warn!(
+            prediction_id = %prediction_id,
+            fields = ?stripped,
+            "Stripped unknown input fields"
+        );
+    }
     if let Err(errors) = validation_result {
         let detail: Vec<serde_json::Value> = errors
             .into_iter()

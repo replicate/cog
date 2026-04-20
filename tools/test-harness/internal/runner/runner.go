@@ -1,0 +1,1081 @@
+package runner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/sync/singleflight"
+
+	"github.com/replicate/cog/tools/test-harness/internal/manifest"
+	"github.com/replicate/cog/tools/test-harness/internal/patcher"
+	"github.com/replicate/cog/tools/test-harness/internal/report"
+	"github.com/replicate/cog/tools/test-harness/internal/validator"
+)
+
+const openapiSchemaLabel = "run.cog.openapi_schema"
+
+// maxPrefixBuf is the maximum size of the prefixWriter line buffer before
+// it is force-flushed. This prevents unbounded memory growth when a
+// subprocess writes very long lines without newlines (e.g. progress bars).
+const maxPrefixBuf = 64 * 1024 // 64 KiB
+
+// prefixWriter wraps an io.Writer and prepends a prefix to each line.
+// Partial lines (no trailing newline) are buffered until a newline arrives
+// or the buffer exceeds maxPrefixBuf.
+type prefixWriter struct {
+	prefix string
+	dest   io.Writer
+	mu     sync.Mutex
+	buf    []byte
+}
+
+func newPrefixWriter(dest io.Writer, modelName string) *prefixWriter {
+	return &prefixWriter{
+		prefix: fmt.Sprintf("[%-20s] ", modelName),
+		dest:   dest,
+	}
+}
+
+func (pw *prefixWriter) Write(p []byte) (int, error) {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+
+	total := len(p)
+	pw.buf = append(pw.buf, p...)
+
+	for {
+		idx := bytes.IndexByte(pw.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := pw.buf[:idx]
+		pw.buf = pw.buf[idx+1:]
+		if _, err := fmt.Fprintf(pw.dest, "%s%s\n", pw.prefix, line); err != nil {
+			return total, err
+		}
+	}
+
+	// Force-flush if the buffer has grown too large (e.g. no newlines in output).
+	if len(pw.buf) > maxPrefixBuf {
+		if _, err := fmt.Fprintf(pw.dest, "%s%s\n", pw.prefix, pw.buf); err != nil {
+			return total, err
+		}
+		pw.buf = pw.buf[:0]
+	}
+
+	return total, nil
+}
+
+// Flush writes any remaining buffered content (partial line without trailing newline).
+func (pw *prefixWriter) Flush() {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+
+	if len(pw.buf) > 0 {
+		_, _ = fmt.Fprintf(pw.dest, "%s%s\n", pw.prefix, pw.buf)
+		pw.buf = nil
+	}
+}
+
+// modelLoggers returns stdout/stderr writers for status logging only.
+// In parallel mode, output is prefixed with the model name.
+// In sequential mode, output streams directly to the terminal.
+// Use modelOutput when captured output is needed for error reporting.
+func (r *Runner) modelLoggers(modelName string) (logw io.Writer, flush func()) {
+	if r.opts.Parallel {
+		pw := newPrefixWriter(os.Stderr, modelName)
+		return pw, pw.Flush
+	}
+	return os.Stderr, func() {}
+}
+
+// modelOutput returns stdout/stderr writers for a model that also capture
+// output into a buffer for error reporting.
+// In parallel mode, output is prefixed with the model name.
+// In sequential mode, output streams directly to the terminal.
+func (r *Runner) modelOutput(modelName string) (stdout, stderr io.Writer, capture *bytes.Buffer, flush func()) {
+	var buf bytes.Buffer
+	if r.opts.Parallel {
+		pw := newPrefixWriter(os.Stderr, modelName)
+		w := io.MultiWriter(pw, &buf)
+		return w, w, &buf, pw.Flush
+	}
+	return io.MultiWriter(os.Stdout, &buf), io.MultiWriter(os.Stderr, &buf), &buf, func() {}
+}
+
+// Options configures a Runner.
+type Options struct {
+	CogBinary   string
+	SDKVersion  string
+	SDKWheel    string
+	FixturesDir string
+	CleanImages bool
+	KeepOutputs bool
+	Parallel    bool // Prefix output lines with model name (for parallel execution)
+}
+
+// Runner orchestrates the test lifecycle.
+// It is safe to call RunModel, BuildModel, and CompareSchema concurrently
+// from multiple goroutines.
+type Runner struct {
+	opts        Options
+	fixturesDir string
+	workDir     string
+	cloneGroup  singleflight.Group // deduplicates concurrent clones of the same repo
+}
+
+// New creates a new Runner
+func New(opts Options) (*Runner, error) {
+	fixturesDir := opts.FixturesDir
+	if fixturesDir == "" {
+		var err error
+		fixturesDir, err = resolveFixturesDir()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Create the work directory under $HOME so that Docker volume mounts work
+	// with VM-based runtimes like Colima that only share $HOME by default.
+	// Using the system temp dir ($TMPDIR, e.g. /var/folders/... on macOS) would
+	// result in empty volume mounts when cog predict/train/serve runs containers
+	// with source directories mounted as /src.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("cannot determine home directory for work dir (set $HOME): %w", err)
+	}
+	baseDir := filepath.Join(home, ".cache", "cog-harness")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return nil, fmt.Errorf("creating harness cache dir: %w", err)
+	}
+	workDir, err := os.MkdirTemp(baseDir, "run-*")
+	if err != nil {
+		return nil, fmt.Errorf("creating work dir: %w", err)
+	}
+
+	return &Runner{
+		opts:        opts,
+		fixturesDir: fixturesDir,
+		workDir:     workDir,
+	}, nil
+}
+
+func resolveFixturesDir() (string, error) {
+	if cwd, err := os.Getwd(); err == nil {
+		candidates := []string{
+			filepath.Join(cwd, "fixtures"),
+			filepath.Join(cwd, "tools", "test-harness", "fixtures"),
+		}
+		for _, candidate := range candidates {
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				absPath, err := filepath.Abs(candidate)
+				if err == nil {
+					return absPath, nil
+				}
+			}
+		}
+	}
+
+	_, filename, _, ok := runtime.Caller(0)
+	if ok {
+		sourceDir := filepath.Dir(filename)
+		candidate := filepath.Join(sourceDir, "..", "..", "fixtures")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			absPath, err := filepath.Abs(candidate)
+			if err == nil {
+				return absPath, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("fixtures directory not found: specify fixtures dir or run from project root/tool dir")
+}
+
+// Cleanup removes temp directories and Docker images
+func (r *Runner) Cleanup() error {
+	var errs []error
+	if r.opts.CleanImages {
+		cmd := exec.Command("docker", "images", "--filter", "reference=cog-harness-*", "--format", "{{.Repository}}:{{.Tag}}")
+		output, err := cmd.Output()
+		if err == nil && len(output) > 0 {
+			images := strings.Fields(string(output))
+			if len(images) > 0 {
+				args := append([]string{"rmi", "--force"}, images...)
+				if err := exec.Command("docker", args...).Run(); err != nil {
+					errs = append(errs, fmt.Errorf("removing docker images: %w", err))
+				}
+			}
+		}
+	}
+
+	if r.workDir != "" {
+		if r.opts.KeepOutputs {
+			fmt.Printf("Outputs preserved in: %s\n", r.workDir)
+		} else {
+			if err := os.RemoveAll(r.workDir); err != nil {
+				errs = append(errs, fmt.Errorf("removing work dir: %w", err))
+			}
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// RunModel runs all tests for a single model
+func (r *Runner) RunModel(ctx context.Context, model manifest.Model) *report.ModelResult {
+	logw, flush := r.modelLoggers(model.Name)
+
+	result := &report.ModelResult{
+		Name:   model.Name,
+		Passed: true,
+		GPU:    model.GPU,
+	}
+
+	// Check required env vars
+	for _, envVar := range model.RequiresEnv {
+		if os.Getenv(envVar) == "" {
+			result.Passed = true
+			result.Skipped = true
+			result.SkipReason = fmt.Sprintf("Missing env var: %s", envVar)
+			return result
+		}
+	}
+
+	// Prepare model
+	_, _ = fmt.Fprintf(logw, "=== Preparing %s...\n", model.Name)
+	modelDir, err := r.prepareModel(ctx, model)
+	if err != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("Preparation failed: %v", err)
+		flush()
+		return result
+	}
+
+	// Build
+	_, _ = fmt.Fprintf(logw, "=== Building %s (timeout %ds)...\n", model.Name, model.Timeout)
+	buildStart := time.Now()
+	if err := r.buildModel(ctx, modelDir, model); err != nil {
+		result.Passed = false
+		result.BuildDuration = time.Since(buildStart).Seconds()
+		result.Error = fmt.Sprintf("Build failed: %v", err)
+		_, _ = fmt.Fprintf(logw, "=== Build FAILED after %.1fs\n", result.BuildDuration)
+		flush()
+		return result
+	}
+	result.BuildDuration = time.Since(buildStart).Seconds()
+	_, _ = fmt.Fprintf(logw, "=== Build complete (%.1fs)\n", result.BuildDuration)
+
+	// Run train tests
+	for i, tc := range model.TrainTests {
+		desc := tc.Description
+		if desc == "" {
+			desc = "train"
+		}
+		_, _ = fmt.Fprintf(logw, "=== Train test %d/%d: %s (timeout %ds)...\n", i+1, len(model.TrainTests), desc, model.Timeout)
+		tr := r.runTrainTest(ctx, modelDir, model, tc)
+		result.TrainResults = append(result.TrainResults, tr)
+		if tr.Passed {
+			_, _ = fmt.Fprintf(logw, "=== Train test %d/%d PASSED (%.1fs)\n", i+1, len(model.TrainTests), tr.DurationSec)
+		} else {
+			_, _ = fmt.Fprintf(logw, "=== Train test %d/%d FAILED (%.1fs)\n", i+1, len(model.TrainTests), tr.DurationSec)
+			result.Passed = false
+		}
+	}
+
+	// Run predict tests
+	for i, tc := range model.Tests {
+		desc := tc.Description
+		if desc == "" {
+			desc = "predict"
+		}
+		_, _ = fmt.Fprintf(logw, "=== Predict test %d/%d: %s (timeout %ds)...\n", i+1, len(model.Tests), desc, model.Timeout)
+		tr := r.runPredictTest(ctx, modelDir, model, tc)
+		result.TestResults = append(result.TestResults, tr)
+		if tr.Passed {
+			_, _ = fmt.Fprintf(logw, "=== Predict test %d/%d PASSED (%.1fs)\n", i+1, len(model.Tests), tr.DurationSec)
+		} else {
+			_, _ = fmt.Fprintf(logw, "=== Predict test %d/%d FAILED (%.1fs)\n", i+1, len(model.Tests), tr.DurationSec)
+			result.Passed = false
+		}
+	}
+
+	flush()
+	return result
+}
+
+// BuildModel builds a model image only
+func (r *Runner) BuildModel(ctx context.Context, model manifest.Model) *report.ModelResult {
+	logw, flush := r.modelLoggers(model.Name)
+
+	result := &report.ModelResult{
+		Name:   model.Name,
+		Passed: true,
+		GPU:    model.GPU,
+	}
+
+	// Check required env vars
+	for _, envVar := range model.RequiresEnv {
+		if os.Getenv(envVar) == "" {
+			result.Passed = true
+			result.Skipped = true
+			result.SkipReason = fmt.Sprintf("Missing env var: %s", envVar)
+			return result
+		}
+	}
+
+	// Prepare model
+	_, _ = fmt.Fprintf(logw, "=== Preparing %s...\n", model.Name)
+	modelDir, err := r.prepareModel(ctx, model)
+	if err != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("Preparation failed: %v", err)
+		flush()
+		return result
+	}
+
+	// Build
+	_, _ = fmt.Fprintf(logw, "=== Building %s (timeout %ds)...\n", model.Name, model.Timeout)
+	buildStart := time.Now()
+	if err := r.buildModel(ctx, modelDir, model); err != nil {
+		result.Passed = false
+		result.BuildDuration = time.Since(buildStart).Seconds()
+		result.Error = fmt.Sprintf("Build failed: %v", err)
+		_, _ = fmt.Fprintf(logw, "=== Build FAILED after %.1fs\n", result.BuildDuration)
+		flush()
+		return result
+	}
+	result.BuildDuration = time.Since(buildStart).Seconds()
+	_, _ = fmt.Fprintf(logw, "=== Build complete (%.1fs)\n", result.BuildDuration)
+
+	flush()
+	return result
+}
+
+// CompareSchema builds model twice and compares schemas
+func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *report.SchemaCompareResult {
+	result := &report.SchemaCompareResult{
+		Name:   model.Name,
+		Passed: true,
+	}
+
+	// Prepare model
+	modelDir, err := r.prepareModel(ctx, model)
+	if err != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("Preparation failed: %v", err)
+		return result
+	}
+
+	staticTag := fmt.Sprintf("cog-harness-%s:static", model.Name)
+	runtimeTag := fmt.Sprintf("cog-harness-%s:runtime", model.Name)
+
+	// Always clean up schema comparison images when done
+	defer func() {
+		_ = exec.Command("docker", "rmi", "-f", staticTag).Run()
+		_ = exec.Command("docker", "rmi", "-f", runtimeTag).Run()
+	}()
+
+	staticDir := filepath.Join(r.workDir, fmt.Sprintf("schema-static-%s", model.Name))
+	runtimeDir := filepath.Join(r.workDir, fmt.Sprintf("schema-runtime-%s", model.Name))
+	if err := copyDir(modelDir, staticDir); err != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("preparing static schema dir failed: %v", err)
+		return result
+	}
+	if err := copyDir(modelDir, runtimeDir); err != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("preparing runtime schema dir failed: %v", err)
+		return result
+	}
+
+	// Build the two variants sequentially rather than concurrently.
+	//
+	// Running them in parallel doubles peak memory and disk I/O inside the
+	// Docker VM, which consistently OOM-kills the `cog build` process on
+	// heavy ML models (torch + cuda + diffusers + transformers, etc.) when
+	// running on Docker Desktop / Colima with a bounded VM memory budget.
+	// The failure mode surfaces as `signal: killed` from the outer
+	// exec.Command.
+	//
+	// Serial execution is only modestly slower in practice because the
+	// Docker layer cache populated by the first build makes most steps of
+	// the second build near-instant (same base image, same python_packages,
+	// same user run commands — the only CLI-side difference is the
+	// COG_STATIC_SCHEMA env var, which affects pre-build schema generation,
+	// not the Docker layers themselves).
+	staticStart := time.Now()
+	staticErr := r.quietBuildModelWithEnv(ctx, staticDir, model, staticTag, map[string]string{"COG_STATIC_SCHEMA": "1"})
+	var staticSchema string
+	var staticSchemaErr error
+	if staticErr == nil {
+		staticSchema, staticSchemaErr = r.extractSchemaLabel(ctx, staticTag)
+	}
+	result.StaticBuild = time.Since(staticStart).Seconds()
+
+	runtimeStart := time.Now()
+	runtimeErr := r.quietBuildModelWithEnv(ctx, runtimeDir, model, runtimeTag, map[string]string{})
+	var runtimeSchema string
+	var runtimeSchemaErr error
+	if runtimeErr == nil {
+		runtimeSchema, runtimeSchemaErr = r.extractSchemaLabel(ctx, runtimeTag)
+	}
+	result.RuntimeBuild = time.Since(runtimeStart).Seconds()
+
+	// Check for build errors
+	if staticErr != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("Static build failed: %v", staticErr)
+		return result
+	}
+	if runtimeErr != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("Runtime build failed: %v", runtimeErr)
+		return result
+	}
+	if staticSchemaErr != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("extracting static schema label failed: %v", staticSchemaErr)
+		return result
+	}
+	if runtimeSchemaErr != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("extracting runtime schema label failed: %v", runtimeSchemaErr)
+		return result
+	}
+
+	// Parse and compare schemas
+	var staticJSON, runtimeJSON map[string]any
+	if err := json.Unmarshal([]byte(staticSchema), &staticJSON); err != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("Static schema is not valid JSON: %v", err)
+		return result
+	}
+	if err := json.Unmarshal([]byte(runtimeSchema), &runtimeJSON); err != nil {
+		result.Passed = false
+		result.Error = fmt.Sprintf("Runtime schema is not valid JSON: %v", err)
+		return result
+	}
+
+	// Compare and classify differences
+	cmp := jsonCompare(staticJSON, runtimeJSON)
+
+	if len(cmp.Real) > 0 {
+		result.Passed = false
+		result.Diff = formatDiffHunks(cmp.Real)
+	}
+	if len(cmp.Expected) > 0 {
+		result.ExpectedDiff = formatDiffHunks(cmp.Expected)
+	}
+
+	return result
+}
+
+func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string, error) {
+	var modelDir string
+
+	// Local fixture models
+	if model.Repo == "local" {
+		fixturesModels := filepath.Join(r.fixturesDir, "models")
+		srcDir, err := safeSubpath(fixturesModels, model.Path)
+		if err != nil {
+			return "", err
+		}
+
+		// Copy to work dir
+		dest := filepath.Join(r.workDir, fmt.Sprintf("local-%s", model.Name))
+		if err := copyDir(srcDir, dest); err != nil {
+			return "", fmt.Errorf("copying model: %w", err)
+		}
+		modelDir = dest
+	} else {
+		// Clone repo (shared cache, thread-safe)
+		repoDir, err := r.cloneRepo(ctx, model.Repo)
+		if err != nil {
+			return "", err
+		}
+
+		// Each model gets its own copy so that setup commands (e.g.
+		// select.sh) don't clobber each other when running in parallel.
+		srcDir := filepath.Join(repoDir, model.Path)
+		dest := filepath.Join(r.workDir, fmt.Sprintf("model-%s", model.Name))
+		if err := copyDir(srcDir, dest); err != nil {
+			return "", fmt.Errorf("copying repo for model %s: %w", model.Name, err)
+		}
+		modelDir = dest
+	}
+
+	// Run setup commands (e.g. script/select.sh to generate cog.yaml)
+	if err := r.runSetupCommands(ctx, modelDir, model); err != nil {
+		return "", fmt.Errorf("running setup commands: %w", err)
+	}
+
+	cogYAMLPath := filepath.Join(modelDir, "cog.yaml")
+	info, err := os.Stat(cogYAMLPath)
+	if err != nil {
+		return "", fmt.Errorf("no cog.yaml in %s (did setup commands run correctly?)", modelDir)
+	}
+	if info.Size() == 0 {
+		return "", fmt.Errorf("cog.yaml in %s is empty (setup commands may have failed silently — check that tools like yq are installed)", modelDir)
+	}
+
+	// Patch cog.yaml
+	sdkVersion := model.SDKVersion
+	if sdkVersion == "" {
+		sdkVersion = r.opts.SDKVersion
+	}
+	if err := patcher.Patch(filepath.Join(modelDir, "cog.yaml"), sdkVersion, model.CogYAMLOverrides); err != nil {
+		return "", fmt.Errorf("patching cog.yaml: %w", err)
+	}
+
+	return modelDir, nil
+}
+
+// checkRequiredTools verifies that all tools listed in requires_tools are
+// available on PATH. Returns a descriptive error listing missing tools and
+// install hints when possible.
+func checkRequiredTools(tools []string) error {
+	var missing []string
+	for _, tool := range tools {
+		if _, err := exec.LookPath(tool); err != nil {
+			missing = append(missing, tool)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("required tool(s) not found on PATH: %s", strings.Join(missing, ", "))
+}
+
+// runSetupCommands executes the model's setup commands in the model directory.
+// Setup commands run after clone/copy but before cog.yaml validation and patching.
+// This is used for models that need preparation steps like generating cog.yaml
+// from templates (e.g. "script/select.sh dev" in replicate/cog-flux).
+func (r *Runner) runSetupCommands(ctx context.Context, modelDir string, model manifest.Model) error {
+	// Check required tools before running any setup commands
+	if err := checkRequiredTools(model.RequiresTools); err != nil {
+		return err
+	}
+
+	stdout, stderr, capture, flush := r.modelOutput(model.Name)
+
+	for _, cmdStr := range model.Setup {
+		_, _ = fmt.Fprintf(stderr, "  Running setup: %s\n", cmdStr)
+		// Use bash with strict mode so any failing command in the
+		// script (e.g. a missing yq binary) is caught immediately
+		// rather than silently producing an empty/invalid cog.yaml.
+		// We use bash (not sh) because dash does not support pipefail.
+		cmd := exec.CommandContext(ctx, "bash", "-euo", "pipefail", "-c", cmdStr)
+		cmd.Dir = modelDir
+		cmd.Env = os.Environ()
+		for k, v := range model.Env {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, os.ExpandEnv(v)))
+		}
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		if err := cmd.Run(); err != nil {
+			flush()
+			// Truncate captured output to avoid unwieldy error messages,
+			// matching the pattern used in buildModelWithEnv.
+			output := capture.String()
+			const maxTail = 2000
+			if len(output) > maxTail {
+				output = "...\n" + output[len(output)-maxTail:]
+			}
+			return fmt.Errorf("setup command %q failed: %w\n%s", cmdStr, err, output)
+		}
+	}
+	flush()
+	return nil
+}
+
+// cloneRepo clones a repo once and caches the result. Thread-safe.
+// Uses singleflight to deduplicate concurrent clones of the same repo
+// without holding a mutex during the (potentially slow) git clone.
+func (r *Runner) cloneRepo(ctx context.Context, repo string) (string, error) {
+	result, err, _ := r.cloneGroup.Do(repo, func() (any, error) {
+		dest := filepath.Join(r.workDir, strings.ReplaceAll(repo, "/", "--"))
+
+		// Remove if exists
+		_ = os.RemoveAll(dest)
+
+		url := fmt.Sprintf("https://github.com/%s.git", repo)
+		cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", url, dest)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("cloning %s: %w\n%s", repo, err, stderr.String())
+		}
+
+		return dest, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return result.(string), nil
+}
+
+func (r *Runner) buildModel(ctx context.Context, modelDir string, model manifest.Model) error {
+	imageTag := fmt.Sprintf("cog-harness-%s:test", model.Name)
+	return r.buildModelWithEnv(ctx, modelDir, model, imageTag, nil)
+}
+
+// buildModelWithEnv builds a model image, streaming output to the terminal
+// (or prefixed in parallel mode) for real-time progress visibility.
+func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model manifest.Model, imageTag string, extraEnv map[string]string) error {
+	_, stderr, capture, flush := r.modelOutput(model.Name)
+	return r.doBuild(ctx, modelDir, model, imageTag, extraEnv, stderr, capture, flush)
+}
+
+// quietBuildModelWithEnv builds a model image without streaming output to
+// the terminal. Output is captured for inclusion in error messages on failure.
+// Used by CompareSchema where build logs would interleave with diff results.
+func (r *Runner) quietBuildModelWithEnv(ctx context.Context, modelDir string, model manifest.Model, imageTag string, extraEnv map[string]string) error {
+	var capture bytes.Buffer
+	return r.doBuild(ctx, modelDir, model, imageTag, extraEnv, &capture, &capture, func() {})
+}
+
+func (r *Runner) doBuild(ctx context.Context, modelDir string, model manifest.Model, imageTag string, extraEnv map[string]string, output io.Writer, capture *bytes.Buffer, flush func()) error {
+	// Set timeout
+	timeout := model.Timeout
+	if timeout == 0 {
+		timeout = 300
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+	buildArgs := []string{"build", "-t", imageTag}
+	if model.SkipSchemaValidation {
+		buildArgs = append(buildArgs, "--skip-schema-validation")
+	}
+	cmd := exec.CommandContext(ctx, r.opts.CogBinary, buildArgs...)
+	cmd.Dir = modelDir
+	cmd.Env = os.Environ()
+	if r.opts.SDKWheel != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("COG_SDK_WHEEL=%s", r.opts.SDKWheel))
+	}
+	envKeys := make([]string, 0, len(model.Env))
+	for k := range model.Env {
+		envKeys = append(envKeys, k)
+	}
+	sort.Strings(envKeys)
+	for _, k := range envKeys {
+		v := model.Env[k]
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, os.ExpandEnv(v)))
+	}
+	extraKeys := make([]string, 0, len(extraEnv))
+	for k := range extraEnv {
+		extraKeys = append(extraKeys, k)
+	}
+	sort.Strings(extraKeys)
+	for _, k := range extraKeys {
+		v := extraEnv[k]
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	cmd.Stdout = output
+	cmd.Stderr = output
+	err := cmd.Run()
+	flush()
+	if err != nil {
+		// Include the last portion of build output for context.
+		out := capture.String()
+		const maxTail = 2000
+		if len(out) > maxTail {
+			out = "...\n" + out[len(out)-maxTail:]
+		}
+		return fmt.Errorf("%w\n%s", err, out)
+	}
+	return nil
+}
+
+func (r *Runner) extractSchemaLabel(ctx context.Context, imageTag string) (string, error) {
+	cmd := exec.CommandContext(ctx, "docker", "inspect", imageTag, "--format", fmt.Sprintf("{{index .Config.Labels \"%s\"}}", openapiSchemaLabel))
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func (r *Runner) runPredictTest(ctx context.Context, modelDir string, model manifest.Model, tc manifest.TestCase) report.TestResult {
+	return r.runCogTest(ctx, modelDir, model, tc, "predict")
+}
+
+func (r *Runner) runTrainTest(ctx context.Context, modelDir string, model manifest.Model, tc manifest.TestCase) report.TestResult {
+	return r.runCogTest(ctx, modelDir, model, tc, "train")
+}
+
+func (r *Runner) runCogTest(ctx context.Context, modelDir string, model manifest.Model, tc manifest.TestCase, command string) report.TestResult {
+	result := report.TestResult{
+		Description: tc.Description,
+	}
+	if result.Description == "" {
+		result.Description = command
+	}
+
+	start := time.Now()
+
+	// Set timeout
+	timeout := model.Timeout
+	if timeout == 0 {
+		timeout = 300
+	}
+
+	// Build command — pass setup-timeout matching the model timeout so
+	// cog predict doesn't kill the container during model weight downloads.
+	args := []string{command, "--setup-timeout", fmt.Sprintf("%d", timeout)}
+	keys := make([]string, 0, len(tc.Inputs))
+	for k := range tc.Inputs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := tc.Inputs[key]
+		resolved := r.resolveInput(value)
+		args = append(args, "-i", fmt.Sprintf("%s=%s", key, resolved))
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, r.opts.CogBinary, args...)
+	cmd.Dir = modelDir
+	cmd.Env = os.Environ()
+	if r.opts.SDKWheel != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("COG_SDK_WHEEL=%s", r.opts.SDKWheel))
+	}
+	envKeys := make([]string, 0, len(model.Env))
+	for k := range model.Env {
+		envKeys = append(envKeys, k)
+	}
+	sort.Strings(envKeys)
+	for _, k := range envKeys {
+		v := model.Env[k]
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, os.ExpandEnv(v)))
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	result.DurationSec = time.Since(start).Seconds()
+
+	if ctx.Err() == context.DeadlineExceeded {
+		result.Passed = false
+		result.Message = fmt.Sprintf("Timed out after %ds", timeout)
+		return result
+	}
+
+	if err != nil {
+		result.Passed = false
+		result.Message = fmt.Sprintf("cog %s exited with error: %v\n%s", command, err, stderr.String())
+		return result
+	}
+
+	// Extract output from stdout only — stderr contains build logs and status
+	// messages that should not be matched against expected values.
+	outputStr := extractOutput(stdout.String(), stderr.String(), modelDir)
+
+	// Validate
+	vr := validator.Validate(outputStr, tc.Expect)
+	result.Passed = vr.Passed
+	result.Message = vr.Message
+
+	return result
+}
+
+func safeSubpath(root, sub string) (string, error) {
+	if filepath.IsAbs(sub) {
+		return "", fmt.Errorf("local model path must be relative: %q", sub)
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("resolving root path: %w", err)
+	}
+	targetAbs, err := filepath.Abs(filepath.Join(rootAbs, sub))
+	if err != nil {
+		return "", fmt.Errorf("resolving target path: %w", err)
+	}
+	rel, err := filepath.Rel(rootAbs, targetAbs)
+	if err != nil {
+		return "", fmt.Errorf("resolving relative path: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("local model path escapes fixtures root: %q", sub)
+	}
+	return targetAbs, nil
+}
+
+func (r *Runner) resolveInput(value any) string {
+	s := fmt.Sprint(value)
+	if !strings.HasPrefix(s, "@") {
+		return s
+	}
+
+	fixtureName := s[1:]
+	fixturePath := filepath.Join(r.fixturesDir, fixtureName)
+	absPath, err := filepath.Abs(fixturePath)
+	if err != nil {
+		return s
+	}
+	return fmt.Sprintf("@%s", absPath)
+}
+
+func extractOutput(stdout, stderr, modelDir string) string {
+	// For file outputs (e.g. images), cog writes the file to CWD and prints
+	// "Written output to: <path>" on stderr. Check stderr for this pattern.
+	for line := range strings.SplitSeq(stderr, "\n") {
+		if strings.Contains(line, "Written output to:") {
+			parts := strings.SplitN(line, "Written output to:", 2)
+			if len(parts) == 2 {
+				path := strings.TrimSpace(parts[1])
+				// Make absolute if relative
+				if !filepath.IsAbs(path) {
+					path = filepath.Join(modelDir, path)
+				}
+				return path
+			}
+		}
+	}
+
+	// Return stdout (the actual prediction output)
+	return strings.TrimSpace(stdout)
+}
+
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip symlinks
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		dstPath := filepath.Join(dst, rel)
+
+		if d.IsDir() {
+			return os.MkdirAll(dstPath, 0o755)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(dstPath, data, info.Mode())
+	})
+}
+
+// diffResult contains classified diff hunks from a schema comparison.
+type diffResult struct {
+	Real     []diffHunk // Genuine mismatches that indicate a bug
+	Expected []diffHunk // Known limitations (dynamic descriptions, training schemas)
+}
+
+// jsonCompare compares two JSON schemas and classifies differences as
+// "real" (genuine mismatches) or "expected" (known static-gen limitations).
+//
+// Expected differences:
+//   - Training schemas/paths present in static but absent in runtime
+//     (runtime only generates predict schema)
+//   - Descriptions present in runtime but absent in static
+//     (static can't resolve dynamically-constructed descriptions)
+func jsonCompare(a, b map[string]any) diffResult {
+	var hunks []diffHunk
+	collectDiffs(a, b, "$", &hunks)
+
+	var result diffResult
+	for _, h := range hunks {
+		if isExpectedDiff(h) {
+			result.Expected = append(result.Expected, h)
+		} else {
+			result.Real = append(result.Real, h)
+		}
+	}
+	return result
+}
+
+// isExpectedDiff returns true if a diff hunk represents a known limitation
+// of static schema generation rather than a real bug.
+func isExpectedDiff(h diffHunk) bool {
+	// Static generates training schemas; runtime only generates predict.
+	// Training-related schemas/paths are expected to be missing in runtime.
+	if h.Kind == "missing_in_runtime" {
+		if strings.Contains(h.Path, "Training") ||
+			strings.Contains(h.Path, "trainings") {
+			return true
+		}
+	}
+
+	// Static can't resolve dynamically-constructed descriptions (e.g.
+	// f-strings with conditional logic in class methods).
+	if h.Kind == "missing_in_static" && strings.HasSuffix(h.Path, ".description") {
+		return true
+	}
+
+	return false
+}
+
+// formatDiffHunks formats a slice of hunks as a unified-diff-style string.
+func formatDiffHunks(hunks []diffHunk) string {
+	if len(hunks) == 0 {
+		return ""
+	}
+	var buf strings.Builder
+	buf.WriteString("--- static schema\n")
+	buf.WriteString("+++ runtime schema\n")
+	for _, h := range hunks {
+		buf.WriteString("\n")
+		buf.WriteString(h.String())
+	}
+	return buf.String()
+}
+
+// jsonDiff produces a unified-diff-style comparison between two JSON objects.
+// Only includes "real" differences (not expected/known limitations).
+func jsonDiff(a, b map[string]any) string {
+	result := jsonCompare(a, b)
+	return formatDiffHunks(result.Real)
+}
+
+// diffHunk represents a single difference between two JSON values.
+type diffHunk struct {
+	Path     string
+	Kind     string // "missing_in_static", "missing_in_runtime", "changed", "type_mismatch", "array_length"
+	StaticV  any    // value in static (nil if missing)
+	RuntimeV any    // value in runtime (nil if missing)
+}
+
+func (h diffHunk) String() string {
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "@@ %s @@\n", h.Path)
+	switch h.Kind {
+	case "missing_in_runtime":
+		// Present in static, absent in runtime
+		for _, line := range prettyLines(h.StaticV) {
+			fmt.Fprintf(&buf, "-%s\n", line)
+		}
+	case "missing_in_static":
+		// Absent in static, present in runtime
+		for _, line := range prettyLines(h.RuntimeV) {
+			fmt.Fprintf(&buf, "+%s\n", line)
+		}
+	case "changed", "type_mismatch":
+		for _, line := range prettyLines(h.StaticV) {
+			fmt.Fprintf(&buf, "-%s\n", line)
+		}
+		for _, line := range prettyLines(h.RuntimeV) {
+			fmt.Fprintf(&buf, "+%s\n", line)
+		}
+	case "array_length":
+		for _, line := range prettyLines(h.StaticV) {
+			fmt.Fprintf(&buf, "-%s\n", line)
+		}
+		for _, line := range prettyLines(h.RuntimeV) {
+			fmt.Fprintf(&buf, "+%s\n", line)
+		}
+	}
+	return buf.String()
+}
+
+// prettyLines returns a compact JSON representation split into lines.
+func prettyLines(v any) []string {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return []string{fmt.Sprintf("%v", v)}
+	}
+	return strings.Split(string(data), "\n")
+}
+
+func collectDiffs(a, b any, path string, hunks *[]diffHunk) {
+	if a == nil && b == nil {
+		return
+	}
+	if a == nil {
+		*hunks = append(*hunks, diffHunk{Path: path, Kind: "missing_in_static", RuntimeV: b})
+		return
+	}
+	if b == nil {
+		*hunks = append(*hunks, diffHunk{Path: path, Kind: "missing_in_runtime", StaticV: a})
+		return
+	}
+
+	switch av := a.(type) {
+	case map[string]any:
+		bv, ok := b.(map[string]any)
+		if !ok {
+			*hunks = append(*hunks, diffHunk{Path: path, Kind: "type_mismatch", StaticV: a, RuntimeV: b})
+			return
+		}
+		// Collect all keys, sorted for deterministic output
+		allKeys := make(map[string]bool)
+		for k := range av {
+			allKeys[k] = true
+		}
+		for k := range bv {
+			allKeys[k] = true
+		}
+		sortedKeys := make([]string, 0, len(allKeys))
+		for k := range allKeys {
+			sortedKeys = append(sortedKeys, k)
+		}
+		sort.Strings(sortedKeys)
+
+		for _, k := range sortedKeys {
+			childPath := fmt.Sprintf("%s.%s", path, k)
+			aVal, aOK := av[k]
+			bVal, bOK := bv[k]
+			switch {
+			case !aOK:
+				*hunks = append(*hunks, diffHunk{Path: childPath, Kind: "missing_in_static", RuntimeV: bVal})
+			case !bOK:
+				*hunks = append(*hunks, diffHunk{Path: childPath, Kind: "missing_in_runtime", StaticV: aVal})
+			default:
+				collectDiffs(aVal, bVal, childPath, hunks)
+			}
+		}
+	case []any:
+		bv, ok := b.([]any)
+		if !ok {
+			*hunks = append(*hunks, diffHunk{Path: path, Kind: "type_mismatch", StaticV: a, RuntimeV: b})
+			return
+		}
+		if len(av) != len(bv) {
+			*hunks = append(*hunks, diffHunk{Path: path, Kind: "array_length", StaticV: a, RuntimeV: b})
+			return
+		}
+		for i := range av {
+			childPath := fmt.Sprintf("%s[%d]", path, i)
+			collectDiffs(av[i], bv[i], childPath, hunks)
+		}
+	default:
+		if fmt.Sprint(a) != fmt.Sprint(b) {
+			*hunks = append(*hunks, diffHunk{Path: path, Kind: "changed", StaticV: a, RuntimeV: b})
+		}
+	}
+}

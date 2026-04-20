@@ -666,6 +666,23 @@ class Predictor(BasePredictor):
 	require.Contains(t, se.Message, "cannot be statically resolved")
 }
 
+func TestDescriptionFromModuleLevelVar(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input
+
+STEP_DESC = "Number of denoising steps. 4 is recommended."
+
+class Predictor(BasePredictor):
+    def predict(self, num_steps: int = Input(default=4, description=STEP_DESC)) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	field, ok := info.Inputs.Get("num_steps")
+	require.True(t, ok)
+	require.NotNil(t, field.Description, "description from module-level variable should be resolved")
+	require.Equal(t, "Number of denoising steps. 4 is recommended.", *field.Description)
+}
+
 // ---------------------------------------------------------------------------
 // InputRegistry — class attribute reference
 // ---------------------------------------------------------------------------
