@@ -267,6 +267,105 @@ func TestNoneDefaultOnOptionalTypeEmitsNull(t *testing.T) {
 	assert.True(t, hasDefault, "optional field with default=None should emit 'default': null")
 }
 
+func TestNoneDefaultOnBareSecretIsOptional(t *testing.T) {
+	// Regression: `api_key: Secret = Input(default=None)` is a documented
+	// idiom for "optional credential — fall back to a proxy key if omitted".
+	// Prior to the fix, the schema generator applied the "DefaultNone on a
+	// non-nullable field is not a real default" rule uniformly (originally
+	// intended for `seed: int = Input(default=None)`), which put the field
+	// in `required` and dropped both the default and the nullable marker.
+	// That broke every proxy-style model with a BYOK credential.
+	//
+	// Secret is special: the idiom is widespread and documented, and the
+	// value of `default=None` is never ambiguous (unlike `int`, where None
+	// conventionally means "generate a random seed at runtime").
+	//
+	// After the fix, a bare `Secret` with an explicit `default=None` should
+	// be equivalent to `Optional[Secret] = Input(default=None)`: nullable,
+	// not required, and emitting `"default": null`.
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("prompt", InputField{
+		Name:      "prompt",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypeString, Repetition: Required},
+	})
+	inputs.Set("api_key", InputField{
+		Name:      "api_key",
+		Order:     1,
+		FieldType: FieldType{Primitive: TypeSecret, Repetition: Required},
+		Default:   &DefaultValue{Kind: DefaultNone},
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+	apiKey := props["api_key"].(map[string]any)
+
+	// The Secret shape itself is unchanged.
+	assert.Equal(t, "string", apiKey["type"])
+	assert.Equal(t, "password", apiKey["format"])
+	assert.Equal(t, true, apiKey["x-cog-secret"])
+	assert.Equal(t, true, apiKey["writeOnly"])
+
+	// And the field should now be treated as optional/nullable with an
+	// explicit null default, matching `Optional[Secret] = Input(default=None)`.
+	assert.Equal(t, true, apiKey["nullable"], "Secret with default=None should be nullable")
+	assert.Nil(t, apiKey["default"], "Secret with default=None should emit 'default': null")
+	_, hasDefault := apiKey["default"]
+	assert.True(t, hasDefault, "Secret with default=None should emit a 'default' key (set to null)")
+
+	// Only `prompt` is required.
+	required := getPath(spec, "components", "schemas", "Input", "required").([]any)
+	assert.Contains(t, required, "prompt")
+	assert.NotContains(t, required, "api_key",
+		"Secret with default=None should not be in required")
+}
+
+func TestBareSecretWithoutDefaultRemainsRequired(t *testing.T) {
+	// Regression guard: `api_key: Secret = Input(description="API key")`
+	// (i.e. no `default=` kwarg at all) should stay required. The fix for
+	// `Secret = Input(default=None)` must not accidentally flip bare Secrets
+	// to optional — the two patterns carry different intent. This mirrors
+	// the behavior exercised by integration-tests/tests/build_openapi_schema_complex.txtar.
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("api_key", InputField{
+		Name:      "api_key",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypeSecret, Repetition: Required},
+		// Default is intentionally nil — no default= kwarg was supplied.
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+	apiKey := props["api_key"].(map[string]any)
+
+	// Still a Secret.
+	assert.Equal(t, "string", apiKey["type"])
+	assert.Equal(t, "password", apiKey["format"])
+	assert.Equal(t, true, apiKey["x-cog-secret"])
+
+	// Not nullable, no default key.
+	_, hasNullable := apiKey["nullable"]
+	assert.False(t, hasNullable, "bare Secret without default should not be nullable")
+	_, hasDefault := apiKey["default"]
+	assert.False(t, hasDefault, "bare Secret without default should not emit 'default'")
+
+	// And still required.
+	required := getPath(spec, "components", "schemas", "Input", "required").([]any)
+	assert.Contains(t, required, "api_key")
+}
+
 func TestInputDescription(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
 	inputs.Set("text", InputField{
