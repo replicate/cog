@@ -64,7 +64,7 @@ These facts should be reflected consistently across all docs. If the code change
 
 **Pydantic is not core:** Neither schema path uses pydantic. The default static path parses Python source in Go with tree-sitter and emits OpenAPI directly. The legacy runtime fallback uses Python's `inspect` module + a custom ADT dataclass system in `_adt.py`/`_schemas.py`. `cog.BaseModel` is a dataclass wrapper. Pydantic BaseModel is supported in user code for compatibility but isn't part of Cog's own type system.
 
-**Static schema path is the default:** The tree-sitter-based static schema generator (Go side, `pkg/schema/`) runs by default on all `cog build` invocations, with automatic fallback to the legacy runtime path on `ErrUnresolvableType`. Users can force the runtime path globally with `COG_LEGACY_SCHEMA=1` as a lifeline for SDK < 0.17.0 or static-parser edge cases. The older `COG_STATIC_SCHEMA=1` opt-in flag is accepted for backward compatibility but is now a no-op. The runtime path remains in the tree as the fallback; it is not going away yet.
+**Static schema path is the default:** The tree-sitter-based static schema generator (Go side, `pkg/schema/`) runs by default on all `cog build` invocations, with automatic fallback to the legacy runtime path on `ErrUnresolvableType`. Users can force the runtime path globally with `COG_LEGACY_SCHEMA=1` as a lifeline for SDK < 0.17.0 or static-parser edge cases. The runtime path remains in the tree as the fallback; it is not going away yet.
 
 **Wheels aren't embedded:** SDK and coglet wheels are resolved at Docker build time from PyPI, env vars, or local `dist/` directory. They're not compiled into the Go binary.
 

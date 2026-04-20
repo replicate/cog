@@ -50,7 +50,7 @@ The runtime path is the default for SDK versions < 0.17.0 (pydantic-based schema
 COG_LEGACY_SCHEMA=1 cog build -t my-model
 ```
 
-This opt-out exists as a lifeline for users pinned to old SDKs or hitting static-parser bugs that haven't been resolved yet. The older `COG_STATIC_SCHEMA=1` flag (the opt-in toggle in 0.18.0 and earlier) is accepted for backward compatibility but is now a no-op — static generation is already on by default.
+This opt-out exists as a lifeline for users pinned to old SDKs or hitting static-parser bugs that haven't been resolved yet.
 
 Local commands (`cog serve`, `cog predict`, `cog train`) need a schema to parse `-i` input flags into correctly-typed Python objects. Because those commands run before the post-build legacy runtime generation step, they only work when the static path produced a schema — setting `COG_LEGACY_SCHEMA=1` for a `cog predict` build leaves the image without a bundled schema and `-i` parsing is unavailable.
 
@@ -258,7 +258,6 @@ Also written to `.cog/openapi_schema.json` inside the image for the runtime to s
 |---------------------|---------|
 | `COG_LEGACY_SCHEMA=1` | Force the legacy runtime schema path (opt-out of the default static generator). Use when pinned to SDK < 0.17.0 or hitting a static-parser bug. |
 | `COG_OPENAPI_SCHEMA=path` | Skip generation entirely and use a pre-built schema file. |
-| `COG_STATIC_SCHEMA=1` | **Deprecated.** Accepted for backward compatibility with 0.18.0-era scripts but is now a no-op — static generation is already the default. |
 
 ```bash
 # Default: static schema generation, falls back to runtime on parser limits

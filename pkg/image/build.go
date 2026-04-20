@@ -453,11 +453,6 @@ const legacySchemaEnvVar = "COG_LEGACY_SCHEMA"
 // is also bypassed when the configured SDK version is explicitly pinned
 // below staticSchemaGenMinSDKVersion (older SDKs use pydantic-based
 // schemas the static parser cannot analyze).
-//
-// The older opt-in flag, COG_STATIC_SCHEMA=1, is accepted for backward
-// compatibility but is now a no-op — static generation is already on by
-// default — so existing CI scripts and Dockerfiles that set it continue
-// to behave the way their authors intended.
 func useStaticSchemaGen(cfg *config.Config) bool {
 	if isTruthyEnv(legacySchemaEnvVar) {
 		return false
