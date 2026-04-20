@@ -666,6 +666,23 @@ class Predictor(BasePredictor):
 	require.Contains(t, se.Message, "cannot be statically resolved")
 }
 
+func TestDescriptionFromModuleLevelVar(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input
+
+STEP_DESC = "Number of denoising steps. 4 is recommended."
+
+class Predictor(BasePredictor):
+    def predict(self, num_steps: int = Input(default=4, description=STEP_DESC)) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	field, ok := info.Inputs.Get("num_steps")
+	require.True(t, ok)
+	require.NotNil(t, field.Description, "description from module-level variable should be resolved")
+	require.Equal(t, "Number of denoising steps. 4 is recommended.", *field.Description)
+}
+
 // ---------------------------------------------------------------------------
 // InputRegistry — class attribute reference
 // ---------------------------------------------------------------------------
@@ -968,6 +985,66 @@ class Predictor(BasePredictor):
 	token, ok := info.Inputs.Get("token")
 	require.True(t, ok)
 	require.Equal(t, schema.TypeSecret, token.FieldType.Primitive)
+}
+
+// TestSecretWithDefaultNoneIsOptional verifies that when a predictor declares
+// `api_key: Secret = Input(default=None)` — the documented idiom for an
+// optional credential that falls back to a proxy key — the parser surfaces
+// enough information for the schema generator to render the field as
+// nullable and not required.
+//
+// The parser itself does not flip the Repetition; it records the bare-Secret
+// annotation (Repetition=Required) and the explicit DefaultNone. The
+// openapi.go builder is responsible for treating this combination as optional.
+// What we assert here is the invariant the parser must preserve: the explicit
+// `default=None` kwarg produces a non-nil Default with Kind=DefaultNone,
+// distinct from "no default was supplied" (Default==nil). Without this the
+// downstream generator has no way to tell the two patterns apart.
+func TestSecretWithDefaultNoneIsOptional(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Secret
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        api_key: Secret = Input(
+            description="Your API key (optional - uses proxy if not provided)",
+            default=None,
+        ),
+    ) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	apiKey, ok := info.Inputs.Get("api_key")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeSecret, apiKey.FieldType.Primitive)
+	require.Equal(t, schema.Required, apiKey.FieldType.Repetition,
+		"bare Secret annotation should parse as Required — the openapi builder interprets default=None to flip to optional")
+	require.NotNil(t, apiKey.Default, "explicit default=None must round-trip as a non-nil DefaultValue")
+	require.Equal(t, schema.DefaultNone, apiKey.Default.Kind)
+}
+
+// TestBareSecretHasNoDefault guards against a subtle regression: `Secret`
+// without any `default=` kwarg must produce Default==nil (not
+// &DefaultValue{Kind: DefaultNone}). The openapi builder uses this
+// distinction to keep `api_key: Secret = Input(description="API key")`
+// required while making `api_key: Secret = Input(default=None)` optional.
+func TestBareSecretHasNoDefault(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Secret
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        api_key: Secret = Input(description="API key"),
+    ) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	apiKey, ok := info.Inputs.Get("api_key")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeSecret, apiKey.FieldType.Primitive)
+	require.Nil(t, apiKey.Default, "Input() without a default= kwarg must produce a nil Default, distinct from default=None")
 }
 
 // ---------------------------------------------------------------------------
