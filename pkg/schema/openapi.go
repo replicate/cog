@@ -3,7 +3,6 @@ package schema
 import (
 	"encoding/json"
 	"maps"
-	"sort"
 )
 
 // GenerateOpenAPISchema produces a complete OpenAPI 3.0.2 specification
@@ -274,10 +273,17 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 	var enums []enumSchema
 
 	info.Inputs.Entries(func(name string, field InputField) {
-		prop := newOrderedMapAny()
-
-		// x-order for field ordering
-		prop.Set("x-order", field.Order)
+		// Each input property is a plain map[string]any. Go's encoding/json
+		// emits map keys in alphabetical order on marshal, which matches the
+		// observable order of the legacy runtime path (it round-trips
+		// through map[string]any in pkg/image/openapi_schema.go). Preserving
+		// that order across the two generators keeps the bundled schema
+		// byte-identical between static and runtime for the same predictor
+		// and avoids breaking integration tests that assert exact substrings
+		// (see dict_input.txtar, list_dict_input.txtar, typing_dict_input.txtar).
+		prop := map[string]any{
+			"x-order": field.Order,
+		}
 
 		if len(field.Choices) > 0 {
 			// Choices -> use allOf with $ref to enum schema.
@@ -305,22 +311,13 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 				},
 			})
 
-			prop.Set("allOf", []any{
+			prop["allOf"] = []any{
 				map[string]any{"$ref": "#/components/schemas/" + enumName},
-			})
+			}
 		} else {
 			// Regular field — inline type
-			prop.Set("title", TitleCase(name))
-			typeSchema := field.FieldType.JSONType()
-			// Merge type schema keys into prop in sorted order for determinism
-			keys := make([]string, 0, len(typeSchema))
-			for k := range typeSchema {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				prop.Set(k, typeSchema[k])
-			}
+			prop["title"] = TitleCase(name)
+			maps.Copy(prop, field.FieldType.JSONType())
 		}
 
 		// Determine effective default. A default of None on a non-nullable
@@ -328,7 +325,22 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 		// field has no default; generate one at runtime" (e.g. random seeds).
 		// The runtime schema generator treats these as required with no default,
 		// so we match that behavior by ignoring the None default.
+		//
+		// Secret is the one exception: `api_key: Secret = Input(default=None)`
+		// is a widespread, documented idiom for an optional credential that
+		// falls back to a proxy key when the caller omits it. Unlike
+		// `seed: int = Input(default=None)` (where None signals "generate
+		// at runtime"), None on a Secret unambiguously means "no credential
+		// was supplied". Treat that combination as an optional/nullable
+		// field so the generated schema matches the user's intent and
+		// `Optional[Secret] = Input(default=None)`. See
+		// TestNoneDefaultOnBareSecretIsOptional for the regression case.
 		isNullable := field.FieldType.Repetition == Optional || field.FieldType.Repetition == OptionalRepeated
+		if field.FieldType.Primitive == TypeSecret &&
+			field.FieldType.Repetition == Required &&
+			field.Default != nil && field.Default.Kind == DefaultNone {
+			isNullable = true
+		}
 		hasEffectiveDefault := field.Default != nil
 		if hasEffectiveDefault && field.Default.Kind == DefaultNone && !isNullable {
 			hasEffectiveDefault = false
@@ -341,41 +353,41 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 
 		// Default value
 		if hasEffectiveDefault {
-			prop.Set("default", field.Default.ToJSON())
+			prop["default"] = field.Default.ToJSON()
 		}
 
 		// Nullable
 		if isNullable {
-			prop.Set("nullable", true)
+			prop["nullable"] = true
 		}
 
 		// Description
 		if field.Description != nil {
-			prop.Set("description", *field.Description)
+			prop["description"] = *field.Description
 		}
 
 		// Numeric constraints
 		if field.GE != nil {
-			prop.Set("minimum", *field.GE)
+			prop["minimum"] = *field.GE
 		}
 		if field.LE != nil {
-			prop.Set("maximum", *field.LE)
+			prop["maximum"] = *field.LE
 		}
 
 		// String constraints
 		if field.MinLength != nil {
-			prop.Set("minLength", *field.MinLength)
+			prop["minLength"] = *field.MinLength
 		}
 		if field.MaxLength != nil {
-			prop.Set("maxLength", *field.MaxLength)
+			prop["maxLength"] = *field.MaxLength
 		}
 		if field.Regex != nil {
-			prop.Set("pattern", *field.Regex)
+			prop["pattern"] = *field.Regex
 		}
 
 		// Deprecated
 		if field.Deprecated != nil && *field.Deprecated {
-			prop.Set("deprecated", true)
+			prop["deprecated"] = true
 		}
 
 		properties.Set(name, prop)

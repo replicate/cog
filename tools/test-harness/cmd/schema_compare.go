@@ -20,7 +20,7 @@ func newSchemaCompareCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schema-compare",
 		Short: "Compare static vs runtime schema generation",
-		Long:  `Build each model twice (with and without COG_STATIC_SCHEMA=1) and compare the generated OpenAPI schemas.`,
+		Long:  `Build each model twice (once with static schema generation, once with COG_LEGACY_SCHEMA=1 forcing the runtime path) and compare the generated OpenAPI schemas.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSchemaCompare(cmd.Context(), outputFormat, outputFile)
 		},

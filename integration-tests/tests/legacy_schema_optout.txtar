@@ -1,0 +1,46 @@
+# Test that COG_LEGACY_SCHEMA=1 forces the legacy runtime schema path,
+# skipping the static Go tree-sitter parser entirely.
+#
+# The predictor here parses cleanly with the static generator, so without
+# the opt-out flag `cog build` would take the static path. Setting
+# COG_LEGACY_SCHEMA=1 forces the build to route through the in-container
+# `python -m cog.command.openapi_schema` entry point instead, proving the
+# opt-out actually takes effect.
+#
+# We don't have a `cog build` status line that directly says "using static"
+# vs "using legacy", but the legacy path always runs the "Validating model
+# schema..." phase (boot container + python introspection). The static
+# path bundles the pre-built schema file and skips that phase.
+
+# Force the legacy runtime schema path.
+env COG_LEGACY_SCHEMA=1
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# The legacy path announces itself when it runs.
+stderr 'Validating model schema'
+
+# Schema should still end up bundled and correct.
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout '"openapi":"3.0.2"'
+stdout '"prompt":'
+stdout '"type":"string"'
+stdout '"required":\["prompt"\]'
+
+# Predict end-to-end via the legacy-generated schema.
+cog predict $TEST_IMAGE -i prompt=world
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> str:
+        return "hello " + prompt

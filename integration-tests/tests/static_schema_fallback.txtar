@@ -1,4 +1,4 @@
-# Test that when static schema generation is opted in but encounters an
+# Test that when static schema generation (the default) encounters an
 # unresolvable output type, the build falls back to legacy runtime schema
 # generation instead of failing.
 #
@@ -9,9 +9,6 @@
 # The legacy Python inspector imports modules normally via Python's import
 # system, which handles __init__.py packages correctly, so schema generation
 # succeeds at runtime.
-
-# Opt in to static schema generation
-env COG_STATIC_SCHEMA=1
 
 # Build should succeed — static fails, legacy takes over
 cog build -t $TEST_IMAGE
