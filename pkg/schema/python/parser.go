@@ -254,7 +254,7 @@ func resolveStringExpr(node *sitter.Node, source []byte, scope moduleScope) (str
 		return s, true
 	}
 	if node.Type() == "identifier" {
-		name := content(node, source)
+		name := Content(node, source)
 		if val, ok := scope[name]; ok && val.Kind == schema.DefaultString {
 			return val.Str, true
 		}

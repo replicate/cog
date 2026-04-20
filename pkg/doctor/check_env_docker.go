@@ -14,11 +14,11 @@ func (c *DockerCheck) Name() string        { return "env-docker" }
 func (c *DockerCheck) Group() Group        { return GroupEnvironment }
 func (c *DockerCheck) Description() string { return "Docker" }
 
-func (c *DockerCheck) Check(_ *CheckContext) ([]Finding, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func (c *DockerCheck) Check(ctx *CheckContext) ([]Finding, error) {
+	execCtx, cancel := context.WithTimeout(ctx.ctx, 5*time.Second)
 	defer cancel()
 
-	if err := exec.CommandContext(ctx, "docker", "info").Run(); err != nil {
+	if err := exec.CommandContext(execCtx, "docker", "info").Run(); err != nil {
 		return []Finding{{
 			Severity:    SeverityError,
 			Message:     fmt.Sprintf("Docker is not available: %v", err),

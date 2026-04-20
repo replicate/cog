@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -175,6 +176,7 @@ func TestConfigPredictRefCheck_NoPredictField(t *testing.T) {
 func buildTestCheckContext(t *testing.T, dir string) *CheckContext {
 	t.Helper()
 	ctx := &CheckContext{
+		ctx:            context.Background(),
 		ProjectDir:     dir,
 		ConfigFilename: "cog.yaml",
 		PythonFiles:    make(map[string]*ParsedFile),

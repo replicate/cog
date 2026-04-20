@@ -25,7 +25,7 @@ func (c *PythonVersionCheck) Check(ctx *CheckContext) ([]Finding, error) {
 		}}, nil
 	}
 
-	execCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	execCtx, cancel := context.WithTimeout(ctx.ctx, 5*time.Second)
 	defer cancel()
 
 	out, err := exec.CommandContext(execCtx, ctx.PythonPath, "--version").Output()

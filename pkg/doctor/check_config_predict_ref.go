@@ -1,7 +1,6 @@
 package doctor
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -75,7 +74,7 @@ func (c *ConfigPredictRefCheck) Check(ctx *CheckContext) ([]Finding, error) {
 
 		parser := sitter.NewParser()
 		parser.SetLanguage(python.GetLanguage())
-		tree, err := parser.ParseCtx(context.Background(), nil, source)
+		tree, err := parser.ParseCtx(ctx.ctx, nil, source)
 		if err != nil {
 			return []Finding{{
 				Severity: SeverityError,

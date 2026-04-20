@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestDockerCheck_RunsWithoutError(t *testing.T) {
-	ctx := &CheckContext{ProjectDir: t.TempDir()}
+	ctx := &CheckContext{ctx: context.Background(), ProjectDir: t.TempDir()}
 	check := &DockerCheck{}
 	// We don't assert findings — Docker may or may not be available in the test environment.
 	// We just verify the check doesn't panic or return an error.
@@ -24,7 +25,7 @@ func TestDockerCheck_FixReturnsNoAutoFix(t *testing.T) {
 }
 
 func TestPythonVersionCheck_RunsWithoutError(t *testing.T) {
-	ctx := &CheckContext{ProjectDir: t.TempDir()}
+	ctx := &CheckContext{ctx: context.Background(), ProjectDir: t.TempDir()}
 	check := &PythonVersionCheck{}
 	// Python may or may not be available; just ensure no panic or error.
 	_, err := check.Check(ctx)
@@ -33,6 +34,7 @@ func TestPythonVersionCheck_RunsWithoutError(t *testing.T) {
 
 func TestPythonVersionCheck_NoPython(t *testing.T) {
 	ctx := &CheckContext{
+		ctx:        context.Background(),
 		ProjectDir: t.TempDir(),
 		PythonPath: "", // explicitly no Python
 	}
@@ -72,6 +74,7 @@ func TestPythonVersionCheck_VersionMismatch(t *testing.T) {
 	// This test verifies that when PythonPath is set but not a real binary,
 	// we get a warning. We can't easily fake the version output without a real binary.
 	ctx := &CheckContext{
+		ctx:        context.Background(),
 		ProjectDir: t.TempDir(),
 		PythonPath: "/nonexistent/python3",
 		Config: &config.Config{
