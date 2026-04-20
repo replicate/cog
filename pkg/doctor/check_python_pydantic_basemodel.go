@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -23,7 +24,15 @@ func (c *PydanticBaseModelCheck) Description() string { return "Pydantic BaseMod
 func (c *PydanticBaseModelCheck) Check(ctx *CheckContext) ([]Finding, error) {
 	var findings []Finding
 
-	for _, pf := range ctx.PythonFiles {
+	// Iterate in sorted order so findings are deterministic.
+	paths := make([]string, 0, len(ctx.PythonFiles))
+	for p := range ctx.PythonFiles {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		pf := ctx.PythonFiles[path]
 		root := pf.Tree.RootNode()
 
 		for _, child := range schemaPython.NamedChildren(root) {
@@ -70,7 +79,14 @@ func (c *PydanticBaseModelCheck) Fix(ctx *CheckContext, findings []Finding) erro
 		fileFindings[f.File] = append(fileFindings[f.File], f)
 	}
 
-	for relPath := range fileFindings {
+	// Iterate in sorted order so errors/writes are deterministic.
+	relPaths := make([]string, 0, len(fileFindings))
+	for p := range fileFindings {
+		relPaths = append(relPaths, p)
+	}
+	sort.Strings(relPaths)
+
+	for _, relPath := range relPaths {
 		fullPath := filepath.Join(ctx.ProjectDir, relPath)
 		info, err := os.Stat(fullPath)
 		if err != nil {

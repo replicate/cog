@@ -66,6 +66,14 @@ func Run(ctx context.Context, opts RunOptions, checks []Check) (*Result, error) 
 	result := &Result{}
 
 	for _, check := range checks {
+		// Short-circuit if the caller has canceled the context (e.g. Ctrl-C).
+		// Checks themselves may also honor ctx.ctx internally, but we check here
+		// so cancellation is respected between checks even for fast, synchronous
+		// checks that never inspect the context.
+		if err := checkCtx.ctx.Err(); err != nil {
+			return result, err
+		}
+
 		cr := CheckResult{Check: check}
 
 		findings, err := check.Check(checkCtx)

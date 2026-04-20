@@ -40,7 +40,15 @@ func (c *DeprecatedImportsCheck) Description() string { return "Deprecated impor
 func (c *DeprecatedImportsCheck) Check(ctx *CheckContext) ([]Finding, error) {
 	var findings []Finding
 
-	for _, pf := range ctx.PythonFiles {
+	// Iterate in sorted order so findings are deterministic.
+	paths := make([]string, 0, len(ctx.PythonFiles))
+	for p := range ctx.PythonFiles {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		pf := ctx.PythonFiles[path]
 		root := pf.Tree.RootNode()
 
 		for _, child := range schemaPython.NamedChildren(root) {
@@ -82,7 +90,14 @@ func (c *DeprecatedImportsCheck) Fix(ctx *CheckContext, findings []Finding) erro
 		affectedFiles[f.File] = true
 	}
 
-	for relPath := range affectedFiles {
+	// Iterate in sorted order so errors/writes are deterministic.
+	relPaths := make([]string, 0, len(affectedFiles))
+	for p := range affectedFiles {
+		relPaths = append(relPaths, p)
+	}
+	sort.Strings(relPaths)
+
+	for _, relPath := range relPaths {
 		fullPath := filepath.Join(ctx.ProjectDir, relPath)
 		info, err := os.Stat(fullPath)
 		if err != nil {
