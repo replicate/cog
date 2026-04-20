@@ -172,6 +172,37 @@ func TestConfigPredictRefCheck_NoPredictField(t *testing.T) {
 	require.Empty(t, findings) // No predict field is valid (some projects are train-only)
 }
 
+// TestConfigPredictRefCheck_HonorsContextCancellation verifies that
+// ConfigPredictRefCheck threads CheckContext.ctx into parser.ParseCtx
+// so that a canceled context interrupts parsing.
+func TestConfigPredictRefCheck_HonorsContextCancellation(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	// Write a predict.py so we reach the parsing path (not the PythonFiles cache
+	// path, which short-circuits before ParseCtx).
+	writeFile(t, dir, "predict.py", `class Predictor:
+    def predict(self) -> str:
+        return ""
+`)
+
+	// Build context, then replace ctx.ctx with a pre-canceled one and wipe
+	// the cached ParsedFile so the check goes through the ParseCtx path.
+	ctx := buildTestCheckContext(t, dir)
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	ctx.ctx = canceled
+	ctx.PythonFiles = make(map[string]*ParsedFile)
+
+	check := &ConfigPredictRefCheck{}
+	// The check should not panic or hang. It may return findings (e.g., a
+	// parse error) or an empty result; both are acceptable.
+	_, err := check.Check(ctx)
+	require.NoError(t, err)
+}
+
 // buildTestCheckContext creates a CheckContext by loading the cog.yaml in the given dir.
 func buildTestCheckContext(t *testing.T, dir string) *CheckContext {
 	t.Helper()

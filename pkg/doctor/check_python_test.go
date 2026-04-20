@@ -27,6 +27,7 @@ class Predictor(BasePredictor):
 `)
 
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -53,6 +54,7 @@ class Predictor(BasePredictor):
 `)
 
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -82,6 +84,7 @@ class Predictor(BasePredictor):
 `)
 
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -124,6 +127,7 @@ class Predictor(BasePredictor):
         return Output(audio="a.wav")
 `)
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -142,6 +146,7 @@ class Output(BaseModel):
     name: str
 `)
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -173,6 +178,7 @@ class Predictor(BasePredictor):
         return Output(audio="a.wav")
 `)
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -206,6 +212,7 @@ class Predictor(BasePredictor):
         return Output(audio="a.wav")
 `)
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -241,6 +248,7 @@ class Predictor(BasePredictor):
         return Output(audio="a.wav")
 `)
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -269,6 +277,7 @@ class Predictor(BasePredictor):
 `)
 
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -290,6 +299,7 @@ class Predictor(BasePredictor):
 `)
 
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 	}
@@ -425,6 +435,7 @@ class Predictor(BasePredictor):
 `)
 
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 		Config:      &config.Config{Predict: "predict.py:Predictor"},
@@ -446,6 +457,7 @@ class Predictor(BasePredictor):
 `)
 
 	ctx := &CheckContext{
+		ctx:         context.Background(),
 		ProjectDir:  dir,
 		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
 		Config:      &config.Config{Predict: "predict.py:Predictor"},
@@ -462,6 +474,7 @@ class Predictor(BasePredictor):
 
 func TestMissingTypeAnnotationsCheck_NoConfig(t *testing.T) {
 	ctx := &CheckContext{
+		ctx:        context.Background(),
 		ProjectDir: t.TempDir(),
 		Config:     nil,
 	}

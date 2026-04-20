@@ -3,6 +3,7 @@ package doctor
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -90,4 +91,37 @@ func TestPythonVersionCheck_VersionMismatch(t *testing.T) {
 	require.Len(t, findings, 1)
 	require.Equal(t, SeverityWarning, findings[0].Severity)
 	require.Contains(t, findings[0].Message, "could not determine Python version")
+}
+
+// TestDockerCheck_HonorsContextCancellation verifies that DockerCheck propagates
+// cancellation from CheckContext.ctx so that the caller (e.g. Ctrl-C) can
+// interrupt a slow `docker info` probe.
+func TestDockerCheck_HonorsContextCancellation(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+	ctx := &CheckContext{ctx: canceled, ProjectDir: t.TempDir()}
+
+	start := time.Now()
+	_, err := (&DockerCheck{}).Check(ctx)
+	require.NoError(t, err, "Check itself should not error; cancellation is surfaced via Finding")
+	require.Less(t, time.Since(start), 2*time.Second,
+		"Check should return quickly when context is already canceled, well under the 5s timeout")
+}
+
+// TestPythonVersionCheck_HonorsContextCancellation verifies that
+// PythonVersionCheck propagates cancellation from CheckContext.ctx.
+func TestPythonVersionCheck_HonorsContextCancellation(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+	ctx := &CheckContext{
+		ctx:        canceled,
+		ProjectDir: t.TempDir(),
+		PythonPath: "/usr/bin/python3", // needs to be non-empty to reach the exec call
+	}
+
+	start := time.Now()
+	_, err := (&PythonVersionCheck{}).Check(ctx)
+	require.NoError(t, err, "Check itself should not error; cancellation is surfaced via Finding")
+	require.Less(t, time.Since(start), 2*time.Second,
+		"Check should return quickly when context is already canceled, well under the 5s timeout")
 }
