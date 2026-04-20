@@ -68,6 +68,61 @@ class Predictor(BasePredictor):
 	require.Contains(t, findings[0].Message, "pydantic.BaseModel")
 }
 
+func TestPydanticBaseModelCheck_DetectsAliased(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path
+from pydantic import BaseModel as PBM, ConfigDict
+
+class VoiceCloningOutputs(PBM):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    audio: Path
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> VoiceCloningOutputs:
+        return VoiceCloningOutputs(audio="a.wav")
+`)
+
+	ctx := &CheckContext{
+		ctx:         context.Background(),
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+
+	check := &PydanticBaseModelCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1,
+		"aliased `from pydantic import BaseModel as PBM` should still trigger detection")
+	require.Contains(t, findings[0].Message, "VoiceCloningOutputs")
+}
+
+func TestPydanticBaseModelCheck_DetectsDottedAttribute(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path
+import pydantic
+
+class VoiceCloningOutputs(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+    audio: Path
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> VoiceCloningOutputs:
+        return VoiceCloningOutputs(audio="a.wav")
+`)
+
+	ctx := &CheckContext{
+		ctx:         context.Background(),
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+
+	check := &PydanticBaseModelCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Contains(t, findings[0].Message, "VoiceCloningOutputs")
+}
+
 func TestPydanticBaseModelCheck_Fix(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path

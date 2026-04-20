@@ -109,7 +109,10 @@ func (c *PydanticBaseModelCheck) Fix(ctx *CheckContext, findings []Finding) erro
 }
 
 // inheritsPydanticBaseModel checks if a class inherits from pydantic.BaseModel
-// (as opposed to cog.BaseModel or another BaseModel).
+// (as opposed to cog.BaseModel or another BaseModel). Handles:
+//   - class X(BaseModel)       with  from pydantic import BaseModel
+//   - class X(PBM)             with  from pydantic import BaseModel as PBM
+//   - class X(pydantic.BaseModel)
 func inheritsPydanticBaseModel(classNode *sitter.Node, source []byte, imports *schema.ImportContext) bool {
 	supers := classNode.ChildByFieldName("superclasses")
 	if supers == nil {
@@ -117,18 +120,31 @@ func inheritsPydanticBaseModel(classNode *sitter.Node, source []byte, imports *s
 	}
 
 	for _, child := range schemaPython.AllChildren(supers) {
-		text := schemaPython.Content(child, source)
-
 		switch child.Type() {
 		case "identifier":
-			if text == "BaseModel" {
-				// Check if BaseModel was imported from pydantic
-				if entry, ok := imports.Names.Get("BaseModel"); ok {
-					return entry.Module == "pydantic"
+			// Look up whatever local identifier is used, then check whether it
+			// resolves to pydantic.BaseModel — this catches aliased imports
+			// like `from pydantic import BaseModel as PBM` where the super is `PBM`.
+			name := schemaPython.Content(child, source)
+			if entry, ok := imports.Names.Get(name); ok {
+				if entry.Module == "pydantic" && entry.Original == "BaseModel" {
+					return true
 				}
 			}
 		case "attribute":
-			if text == "pydantic.BaseModel" {
+			// Handle explicit `pydantic.BaseModel`. (Aliased module imports like
+			// `import pydantic as pd` are not currently tracked by CollectImports,
+			// so `pd.BaseModel` is not detected. Users using this pattern can
+			// migrate manually; the check won't produce a false positive.)
+			obj := child.ChildByFieldName("object")
+			attr := child.ChildByFieldName("attribute")
+			if obj == nil || attr == nil {
+				continue
+			}
+			if schemaPython.Content(attr, source) != "BaseModel" {
+				continue
+			}
+			if schemaPython.Content(obj, source) == "pydantic" {
 				return true
 			}
 		}
