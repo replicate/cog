@@ -1,7 +1,7 @@
 # Managed Weights: OCI Format Specification
 
-Version: 1.0-draft
-Status: Draft
+- Version: 1.0-draft
+- Status: Draft
 
 ## Overview
 
@@ -15,9 +15,11 @@ The spec is driven by the needs of [Cog](https://github.com/replicate/cog) but i
 
 All layers are tar archives. Tar provides file metadata (path, size, permissions) at negligible overhead (512 bytes per entry) and supports streaming extraction without buffering.
 
+**Layers are immutable.** Once a layer is produced and pushed, its content never changes -- the digest is its identity. A weight set is a fixed collection of immutable layers. If all layers are present, the complete file set is present. This property is fundamental to the caching and delivery model: layers can be cached indefinitely, shared across weights and models, and assembled into weight sets without re-verification.
+
 ### 1.1 Layer independence (order-invariant extraction)
 
-**Layers MUST be extractable in any order and produce identical results regardless of extraction order.** Unlike Docker image layers which use overlay semantics (later layers shadow earlier ones), weight layers are independent units. Each layer contains a disjoint set of files. No file path appears in more than one layer within a manifest.
+**Layers MUST be extractable in any order and produce identical results.** Unlike Docker image layers which use overlay semantics (later layers shadow earlier ones), weight layers are independent units. Each layer contains a disjoint set of files. No file path appears in more than one layer within a manifest.
 
 Specifically:
 - No file path appears in more than one layer (disjoint file sets).
@@ -30,29 +32,18 @@ The packing algorithm (§1.2) enforces this: each source file is assigned to exa
 
 ### 1.2 Packing strategy
 
-Two thresholds control layer construction:
+Producers assign each source file to exactly one layer, maintaining the disjoint file set invariant (§1.1). Two categories of layers exist:
 
-| Threshold | Default | Purpose |
-|-----------|---------|---------|
-| `bundle_file_max` | 64 MB | Files below this are eligible for bundling. Files at or above this get their own layer. |
-| `bundle_size_max` | 256 MB | Max cumulative size of a single bundle tar. |
+- **Bundle layers** contain multiple small files packed into a single tar archive. Files within a bundle MUST be stable-sorted by relative path so that identical source files produce byte-identical tar archives (and therefore identical layer digests) across reimports.
+- **Standalone layers** contain a single file as a single-entry tar.
 
-These are internal implementation parameters, not user-facing configuration.
+Whether to bundle or not, whether to compress or not, and all other packing parameters are producer implementation choices. Consumers MUST process each layer according to its media type (§2.1) regardless of the producer's choices. For example, a producer might bundle all files under 64 MB into compressed tar layers (up to 256 MB each) and give every file at or above 64 MB its own uncompressed layer. A different producer could skip bundling entirely and emit one layer per file.
 
-**Small files** (< `bundle_file_max`): Collected, stable-sorted by relative path, and packed sequentially into compressed tar layers (each up to `bundle_size_max`). Compression is always applied since small files are dominated by compressible text formats (JSON, YAML, tokenizer files). Stable sorting ensures deterministic layer assignment across re-imports.
+As a general principle, producers SHOULD compress bundle layers (dominated by compressible text formats like JSON and YAML) and SHOULD NOT compress standalone layers (often high-entropy binary data where compression yields negligible savings at substantial CPU cost). If a producer does compress large standalone layers, it SHOULD first probe the content to verify compression yields meaningful savings -- many weight formats are high-entropy and compress poorly. It SHOULD also use a format that supports parallel decompression (e.g., seekable zstd) to avoid serializing extraction of multi-GB layers.
 
-**Large files** (>= `bundle_file_max`): Each file becomes its own layer as a single-entry tar. Whether a large file layer is compressed depends on its content:
+### 1.3 Allowed content
 
-- **Uncompressed**: Dense binary formats that don't benefit from compression: `.safetensors`, `.bin`, `.gguf`, `.onnx`, `.parquet`, `.pt`, `.pth`. These are high-entropy data (packed floating point arrays) where compression yields negligible savings (typically 2-5%) at substantial CPU cost on both import and extraction.
-- **Compressed**: All other large files.
-
-The specific compression algorithm and level are implementation choices, not part of this spec. The layer's media type (§2.1) tells consumers how to decompress; consumers MUST support all media types listed there. Parallelism comes from downloading and extracting multiple independent layers concurrently, not from intra-layer parallel decompression.
-
-**Rationale and future directions:** The extension-based skip list is deliberately conservative -- it's cheaper to leave a compressible file uncompressed than to pay decompression cost on every pull for negligible savings. Future producer versions may introduce content-aware compression, where the producer samples file content to decide whether compression is worthwhile for files not on the skip list. This would not change the consumer contract: consumers already handle all defined media types, and the compression decision is purely producer-side policy. If adopted, seekable zstd (independently-decompressible frames with a seek table) could enable consumers to parallelize download and decompression within a single compressed layer -- a seekable zstd stream is a valid zstd stream, so no new media types would be required.
-
-### 1.3 Excluded content
-
-Layers MUST contain only regular files and directories. The following are explicitly excluded:
+Layers MUST contain only regular files and directories. The following are not permitted:
 
 - **Symlinks** (symbolic and hard links) -- introduce ambiguity (relative vs absolute targets, dangling references, circular chains) and path traversal risk during extraction. Source directories containing symlinks MUST be resolved to regular files before import.
 - **Device nodes, FIFOs, sockets** -- not meaningful for weight data.
@@ -60,6 +51,8 @@ Layers MUST contain only regular files and directories. The following are explic
 - **Extended attributes, ACLs, security labels** -- platform-specific metadata that breaks deterministic packing.
 
 Producers MUST reject (not silently skip) excluded content with a descriptive error.
+
+Producers MUST also reject source directories containing a `.cog/` (or equivalent state directory, see §3) directory, which is reserved for the runtime state protocol.
 
 ### 1.4 Tar properties (deterministic packing)
 
@@ -71,10 +64,15 @@ All tar archives MUST be produced with these properties to ensure byte-identical
 - Permissions: 0644 (files), 0755 (directories)
 - No extended attributes, no system-specific metadata
 - Paths relative to the weight's target directory (no leading `/` or `./`)
+- Paths are case-sensitive with no case folding.
+- Paths MUST be valid UTF-8.
+- Path components MUST NOT contain: NUL (`\0`), forward slash (`/` -- used only as the path separator), backslash (`\`), or control characters (bytes `0x01`-`0x1F` and `0x7F`).
 
-### 1.5 Note on chunking
+### 1.5 No file splitting
 
-Training frameworks already shard weight files into manageable sizes (e.g., 64x 9.8 GB safetensors for kimi-k2.5). We do not split individual files across layers. If this becomes necessary, it would require reassembly metadata and is deferred.
+Each file is packed into exactly one layer, whole. Files are never split across multiple layers. This keeps the format simple -- no reassembly metadata, no ordering dependencies between layers, and each extracted file is immediately usable.
+
+This works because training frameworks already shard large models into multiple files (e.g., 64x 9.8 GB safetensors for kimi-k2.5). The sharding provides natural parallelism at the layer level. If a use case arises where individual files are too large for practical single-layer transport, file splitting would require a reassembly protocol and is deferred to a future spec version.
 
 ## 2. OCI Manifest
 
@@ -85,11 +83,14 @@ Each named weight is an OCI manifest with `artifactType` identifying it as a cog
 | Media type | Usage |
 |-----------|-------|
 | `application/vnd.cog.weight.v1` | Manifest `artifactType` field |
+| `application/vnd.cog.weight.config.v1+json` | Config blob media type |
 | `application/vnd.oci.image.layer.v1.tar` | Uncompressed tar layer |
 | `application/vnd.oci.image.layer.v1.tar+gzip` | Gzip-compressed tar layer |
 | `application/vnd.oci.image.layer.v1.tar+zstd` | Zstd-compressed tar layer |
 
-Layers use standard OCI layer media types for ecosystem compatibility (crane, skopeo, containerd). All three layer types are defined in the OCI image spec. Consumers MUST accept all three. The current packing strategy (§1.2) produces `tar+gzip` for compressed layers and `tar` for uncompressed layers; `tar+zstd` is reserved for future use by producers that adopt zstd compression. The manifest's `artifactType` distinguishes weight manifests from runnable image manifests.
+The layer media types (`tar`, `tar+gzip`, `tar+zstd`) are standard OCI types defined in the [OCI image spec](https://github.com/opencontainers/image-spec/blob/main/layer.md), reused here for ecosystem compatibility. Consumers MUST accept all three. Producers choose which to use for each layer (§1.2); the media type communicates that choice. Because the manifest uses standard OCI media types throughout, existing tools (crane, skopeo, containerd, `docker pull`) work with weight artifacts without modification.
+
+The `artifactType` distinguishes weight manifests from runnable image manifests. The config blob carries a file-level index for the weight (§2.3).
 
 ### 2.2 Manifest structure
 
@@ -99,44 +100,113 @@ Layers use standard OCI layer media types for ecosystem compatibility (crane, sk
   "mediaType": "application/vnd.oci.image.manifest.v1+json",
   "artifactType": "application/vnd.cog.weight.v1",
   "config": {
-    "mediaType": "application/vnd.oci.empty.v1+json",
-    "digest": "sha256:44136fa355b3...",
-    "size": 2
+    "mediaType": "application/vnd.cog.weight.config.v1+json",
+    "digest": "sha256:config123...",
+    "size": 512
   },
   "layers": [
     {
       "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
       "digest": "sha256:aaa...",
-      "size": 15000000,
-      "annotations": {
-        "run.cog.weight.content": "bundle",
-        "run.cog.weight.size.uncompressed": "18500000"
-      }
+      "size": 15000000
     },
     {
       "mediaType": "application/vnd.oci.image.layer.v1.tar",
       "digest": "sha256:bbb...",
-      "size": 3957900840,
-      "annotations": {
-        "run.cog.weight.content": "file",
-        "run.cog.weight.file": "text_encoder/model-00001-of-00003.safetensors",
-        "run.cog.weight.size.uncompressed": "3957900840"
-      }
+      "size": 3957900840
     }
   ],
   "annotations": {
     "run.cog.weight.name": "z-image-turbo",
     "run.cog.weight.target": "/src/weights",
-    "run.cog.reference.type": "weights",
-    "run.cog.reference.digest": "sha256:model123...",
-    "org.opencontainers.image.created": "2026-04-16T17:27:07Z"
+    "run.cog.weight.set-digest": "sha256:def456..."
   }
 }
 ```
 
-Config is the OCI empty descriptor (`{}`, sha256 of `{}`). No typed config blob -- all metadata lives in annotations.
+The manifest contains no timestamps, source URIs, or producer version metadata. This makes the manifest a pure function of the weight content (files), the packing strategy (layers), and the cog.yaml config (name, target). Identical inputs always produce an identical manifest digest, and the registry handles dedup at the storage level (§2.7).
 
-### 2.3 Annotations
+### 2.3 Config blob (file index)
+
+The config blob is a JSON document with media type `application/vnd.cog.weight.config.v1+json`. It describes the weight artifact and provides a file-level index: every file, which layer it belongs to, its size, and its content digest.
+
+```json
+{
+  "name": "z-image-turbo",
+  "target": "/src/weights",
+  "setDigest": "sha256:def456...",
+  "files": [
+    {
+      "path": "config.json",
+      "layer": "sha256:aaa...",
+      "size": 1234,
+      "digest": "sha256:f01..."
+    },
+    {
+      "path": "tokenizer.json",
+      "layer": "sha256:aaa...",
+      "size": 5678,
+      "digest": "sha256:f02..."
+    },
+    {
+      "path": "text_encoder/model-00001-of-00003.safetensors",
+      "layer": "sha256:bbb...",
+      "size": 3957900840,
+      "digest": "sha256:f03..."
+    }
+  ]
+}
+```
+
+**Top-level fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Weight name (e.g., `z-image-turbo`). Same as the manifest annotation. |
+| `target` | string | Absolute mount path in the container (e.g., `/src/weights`). Same as the manifest annotation. |
+| `setDigest` | string | Weight set digest (§2.4). Same as the manifest annotation. |
+
+**File entry fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | string | File path relative to the weight target directory. Same as the tar entry path. |
+| `layer` | string | Digest of the layer containing this file. |
+| `size` | integer | File size in bytes (uncompressed). |
+| `digest` | string | SHA-256 content digest of the individual file. |
+
+The `files` array MUST be sorted by `path` lexicographically. This ensures the config blob is deterministic for a given packing: the same source files packed with the same parameters always produce an identical config blob. Note that the config blob may differ across packing changes (different `layer` values), but the weight set digest (§2.4) remains stable because it is computed from file content only.
+
+The config blob provides a complete file-level index of the weight. Infra uses it to assemble the final weight directory from extracted layers without walking the filesystem -- for each file, it knows exactly which layer to source from. The per-file `digest` additionally enables infra to identify identical files across different layers or weights. The `name`, `target`, and `setDigest` fields duplicate the manifest annotations so the config blob is self-describing -- a consumer with only the config blob has enough context to understand what it is and where it goes.
+
+### 2.4 Weight set digest
+
+The **weight set digest** is the content identity of a weight's file set, independent of how those files are packed into layers, and independent of manifest metadata (annotations, timestamps, producer version). It is the canonical content-addressable identifier for a set of weight files: two weight manifests with identical weight set digests produce byte-identical extracted results.
+
+Producers MUST compute the weight set digest as:
+
+```
+sha256(join(sort(entries), "\n"))
+```
+
+Where each entry is `<hex-sha256>  <path>` (hex-encoded SHA-256 hash of the file content, two spaces, file path) from the config blob's `files` array, sorted lexicographically by `path`. The result is encoded as a standard OCI digest string (e.g., `sha256:def456...`).
+
+This entry format matches the output of `sha256sum`, so producers and operators can verify a weight set digest from a shell:
+
+```bash
+sha256sum $(find <target> -type f | sort) | sha256sum
+```
+
+Because the weight set digest is computed from file content (not layer structure), it is **packing-independent**: changing bundle thresholds, compression settings, or any other packing parameter does not change the weight set digest as long as the source files are identical. Different producer versions producing different layer layouts from the same source files will produce the same weight set digest.
+
+Producers MUST include this value as the `run.cog.weight.set-digest` manifest annotation. The computation is specified so that any party (producers, infra, operators) can independently verify or recompute it.
+
+The weight set digest enables several behaviors:
+
+- **Caching**: Infra uses it as the key for assembled weights. If the assembled result already exists for this digest, skip extraction entirely.
+- **Cross-model reuse**: Two models using identical weight files produce identical file digests and therefore identical weight set digests, enabling shared caching even when the models have separate weight repositories and different layer layouts.
+
+### 2.5 Annotations
 
 Annotations use the `run.cog.*` namespace (reverse-domain of cog.run).
 
@@ -144,23 +214,17 @@ Annotations use the `run.cog.*` namespace (reverse-domain of cog.run).
 
 | Key | Value | Description |
 |-----|-------|-------------|
-| `run.cog.weight.name` | string | Weight name (e.g., `z-image-turbo`) |
-| `run.cog.weight.target` | string | Absolute mount path in the container (e.g., `/src/weights`) |
-| `run.cog.reference.type` | `"weights"` | Artifact type discriminator |
-| `run.cog.reference.digest` | digest string | Digest of the model image this weight belongs to |
-| `org.opencontainers.image.created` | RFC 3339 timestamp | When the weight was imported |
+| `run.cog.weight.name` | string | Weight name (e.g., `z-image-turbo`). REQUIRED. |
+| `run.cog.weight.target` | string | Absolute mount path in the container (e.g., `/src/weights`). REQUIRED. |
+| `run.cog.weight.set-digest` | digest string | Weight set digest (§2.4). REQUIRED. |
 
-Manifest-level annotations are duplicated on the corresponding descriptor in the OCI index, so the index is inspectable without fetching child manifests (enables `cog weights list --remote`, platform placement decisions).
+All manifest-level annotations are deterministic from the weight content and cog.yaml config. No timestamps, source URIs, or producer metadata are included -- identical inputs always produce an identical manifest digest.
 
-**Layer-level annotations:**
+Manifest-level annotations are duplicated on the corresponding descriptor in the OCI index (§2.6), so the index is inspectable without fetching child manifests.
 
-| Key | Value | Description |
-|-----|-------|-------------|
-| `run.cog.weight.content` | `"bundle"` or `"file"` | Whether the layer is a binpacked bundle of small files or a single large file |
-| `run.cog.weight.file` | relative path | For `file` layers only: path within the weight directory |
-| `run.cog.weight.size.uncompressed` | numeric string | Uncompressed size in bytes |
+Layers carry no annotations. All file-level metadata (paths, sizes, layer mappings) is in the config blob (§2.3). Consumers process layers according to their media type.
 
-### 2.4 OCI index (bundle)
+### 2.6 OCI index (bundle)
 
 When a model uses managed weights, the push operation produces an OCI image index containing the model image manifest and all weight manifests:
 
@@ -183,9 +247,7 @@ When a model uses managed weights, the push operation produces an OCI image inde
       "platform": { "os": "unknown", "architecture": "unknown" },
       "annotations": {
         "run.cog.weight.name": "z-image-turbo",
-        "run.cog.weight.target": "/src/weights",
-        "run.cog.reference.type": "weights",
-        "run.cog.reference.digest": "sha256:image..."
+        "run.cog.weight.set-digest": "sha256:def456..."
       }
     }
   ]
@@ -197,117 +259,72 @@ The model image gets a real platform descriptor. Weight descriptors carry both `
 - **`artifactType`**: Set to `application/vnd.cog.weight.v1`. This is the OCI-standard mechanism ([image-spec descriptor](https://github.com/opencontainers/image-spec/blob/main/descriptor.md)) for identifying non-image content in an index. It enables tooling to distinguish weight manifests from runnable images without inspecting annotations.
 - **`platform`**: Set to `{"os": "unknown", "architecture": "unknown"}`. Weight data is not platform-specific, but the field is included for compatibility. This follows the precedent set by [Docker BuildKit attestations](https://docs.docker.com/build/metadata/attestations/attestation-storage/), which use the same convention to prevent container runtimes from accidentally pulling non-image entries. Omitting `platform` entirely is spec-valid (the field is OPTIONAL per the OCI image-spec) but risks being filtered out by containerd's platform matcher and other tools that assume its presence.
 
-Weight annotations are duplicated from the manifest onto the index descriptor so the index is inspectable without fetching child manifests (enables remote listing and platform placement decisions).
+The binding between a model image and its weights is structural: both appear as siblings in the same OCI index. No back-reference annotation from weight to model is needed. The index descriptor carries `run.cog.weight.name` and `run.cog.weight.set-digest` so the index is inspectable without fetching child manifests.
 
-### 2.5 Registry namespace
+### 2.7 Import behavior
+
+`cog weights import` hashes source files, packs layers, builds the config blob, and pushes the manifest. The lockfile is updated when the weight content changes; if nothing changed, the lockfile is unchanged.
+
+Because the manifest contains no volatile metadata (§2.2), identical inputs always produce an identical manifest digest. The registry handles blob and manifest dedup at the storage level -- pushing an already-existing blob or manifest is a no-op. No special client-side dedup logic is required.
+
+Note that the manifest digest and weight set digest (§2.4) operate at different levels. The manifest digest changes when packing changes (different layers, config, and annotations); the weight set digest does not (same files). Infra uses the weight set digest to reuse assembled weights even when the manifest differs.
+
+### 2.8 Registry namespace and tagging (Cog convention)
+
+This section describes how Cog organizes weight artifacts in a registry. The namespace layout and tagging scheme are Cog conventions, not normative requirements of the format. Other producers may organize weight artifacts differently.
 
 ```
-<model>                              # OCI index (bundle)
-<model>:v1                           # Tagged bundle version
-<model>/weights/<name>               # Named weight repository
-<model>/weights/<name>:latest        # Latest weight version
-<model>/weights/<name>@sha256:...    # Specific weight version
+<model>                        # OCI index (bundle)
+<model>/weights/<name>         # Named weight repository
+<model>/weights/<name>:<ts>    # Timestamp tag (e.g., 20260416T172707Z)
+<model>/weights/<name>@sha256: # Immutable digest reference
 ```
+
+**Tagging scheme:** Weight imports are tagged with the import timestamp in ISO 8601 compact format (`YYYYMMDDTHHMMSSZ`). This applies uniformly regardless of source type (HuggingFace, filesystem, HTTP, registry). The timestamp answers the question "when was this version imported?" Source-specific identifiers (HF commit SHA, S3 path, etc.) are dev-time concerns tracked in `cog.yaml` and the lockfile, not in the weight artifact.
+
+Cog does not automatically create `:latest` tags. The lockfile records the manifest digest for reproducibility; timestamp tags exist for human-readable listing via `cog weights list`.
 
 ## 3. Runtime State Protocol
 
-The contract between the weight **provider** (platform infra in prod, `cog weights pull` + local orchestration in dev) and the weight **consumer** (coglet). Communicated entirely through files in the mounted weight directory. No out-of-band signaling.
+> **Status: Work in progress.** The design direction is settled (filesystem markers, provider writes, consumer reads). The exact file layout and semantics are being refined as the implementation evolves. The state directory name (`.cog/` vs `.weight/` or similar) is TBD.
 
-### 3.0 Why filesystem markers, not an HTTP API
+### 3.1 Design
 
-The alternative is an API on the consumer (e.g., `POST /weights/deliver`) that the provider calls to report progress. This pushes substantial complexity to both sides:
+The **provider** (platform infra in prod, `cog weights pull` + local orchestration in dev) assembles a weight directory and communicates readiness via marker files. The **consumer** (coglet) reads these markers to gate `setup()` -- blocking until all weights are ready without requiring any user code to handle the wait. In the future, per-weight markers could enable an async API where `setup()` begins processing weights (such as loading to the GPU) as they become available while others are still downloading. The consumer never writes state -- it is a pure observer.
 
-- **Lifecycle coupling**: The provider must wait for the consumer to be up and accepting requests before starting delivery. With files, the provider writes immediately and the consumer reads when ready.
-- **Crash recovery**: If the provider crashes mid-delivery, the consumer has no way to detect this without polling back. With files, the absence of a terminal marker (`.ready` or `.failed`) after `manifest.json` exists is the crash signal.
-- **Retry/backoff/idempotence**: An HTTP API requires the caller to handle transient failures, duplicate delivery attempts, and connection management. With files, atomic rename makes writes idempotent and there is no connection to manage.
-- **Two sources of truth**: An API means in-memory state on the consumer and files on disk, which can diverge. With files, the filesystem IS the state.
-- **Observability**: `ls .cog/layers/` from a shell is a complete status check. No client, no auth, no formatting.
+Filesystem markers are used instead of an HTTP API because they decouple provider and consumer in time and failure domains. The provider can write state before the container boots. The consumer can read state without the provider being alive. Either side can crash and restart independently. No orchestration, no lifecycle coupling, no retry logic. Multiple containers can share the same weight directory without complexity scaling proportionally -- they all observe the same markers. And the consumer interface is identical regardless of how the weight directory was assembled: attaching a ready-to-run cached volume, downloading all layers from scratch, fetching a diff of changed layers, or rebuilding from new layers all look the same to coglet.
 
-The file-based protocol decouples provider and consumer in time and in failure domains. Either side can crash and restart independently. State survives restarts because it lives on the filesystem, not in process memory.
+### 3.2 State markers
 
-### 3.1 State directory
-
-The provider writes state into a `.cog/` subtree at the root of each weight's target directory:
+The provider writes state into a `.cog/` subtree within each weight's target directory:
 
 ```
-<target>/.cog/
-├── manifest.json              # written once at start, identifies the delivery
-├── ready                      # aggregate: all layers complete
-├── failed                     # aggregate: any layer failed (payload: summary)
-├── downloading                # aggregate: work in progress
-└── layers/
-    ├── sha256-aaa.ready
-    ├── sha256-bbb.downloading
-    └── sha256-ccc.failed      # payload: error detail
+<target>/.cog/ready        # weight is usable
+<target>/.cog/failed       # delivery failed (contents: error message)
+<target>/.cog/downloading  # delivery in progress
 ```
 
-Digest characters `:` are replaced with `-` in filenames for filesystem portability.
-
-### 3.2 Manifest file
-
-Written atomically at the start of delivery. Never mutated. Lets consumers detect version skew and fail fast.
-
-```json
-{
-  "version": "1",
-  "name": "z-image-turbo",
-  "digest": "sha256:abc123...",
-  "layers": [
-    "sha256:aaa...",
-    "sha256:bbb...",
-    "sha256:ccc..."
-  ]
-}
-```
-
-### 3.3 State markers
-
-**Per-layer markers** (in `layers/`):
-
-| Filename | Meaning | Payload |
-|----------|---------|---------|
-| `<digest>.downloading` | Layer extraction in progress | empty |
-| `<digest>.ready` | Layer fully extracted and fsync'd | empty |
-| `<digest>.failed` | Extraction failed | UTF-8 error detail |
-
-No file for a digest = pending (not yet started).
-
-**Aggregate markers** (at `.cog/` root): `ready`, `failed`, `downloading`. Same semantics as per-layer, representing the weight as a whole. Enable single `stat()` readiness checks.
-
-### 3.4 Writer rules
-
-1. All markers are created via write-to-temp + rename (atomic).
-2. A `.ready` marker MUST NOT appear until underlying data is fully written and fsync'd.
-3. Per-layer markers land before the aggregate.
-4. Write sequence:
-   - Create `.cog/manifest.json` and `.cog/downloading` when work starts.
-   - For each layer (in any order, concurrently): `layers/<digest>.downloading` → extract → `layers/<digest>.ready`.
-   - Once all layers have `.ready`, create `.cog/ready`.
-   - If any layer fails: write `layers/<digest>.failed` with detail, then `.cog/failed` with summary.
-5. Writers may delete `.downloading` when transitioning to a terminal state; terminal markers are authoritative.
-
-### 3.5 Reader algorithm
+Coglet checks these with a single `stat()` call:
 
 ```
-1. stat <target>/.cog/ready        → weight usable, proceed
-2. stat <target>/.cog/failed       → read payload, surface error, fail
-3. stat <target>/.cog/downloading  → in progress, poll (optionally inspect layers/)
-4. manifest.json exists, no state  → writer crashed; treat as failure
-5. nothing exists                  → provider hasn't started; wait with timeout
+1. .cog/ready exists       → weight usable, proceed
+2. .cog/failed exists      → read error, surface it, fail
+3. .cog/downloading exists → in progress, poll
+4. .cog/ missing           → provider hasn't started, wait with timeout
 ```
 
-Readers never write to `.cog/`. Pure observation.
+Markers are created atomically (write-to-temp + rename). A `ready` marker MUST NOT appear until all weight data is fully written and flushed to disk.
 
-Recovery from states 2 and 4 is the provider's responsibility. The consumer surfaces the error and waits; it does not attempt to repair `.cog/` state or retry extraction. A provider recovering from a crash MUST clean up the `.cog/` directory and restart delivery from scratch (the simplest correct approach) or resume from per-layer markers (an optimization).
+If the weight directory is already fully assembled when mounted (e.g., reused from cache), the provider writes `ready` immediately.
 
-### 3.6 Model image metadata
+**Correctness is the provider's responsibility.** When `ready` is set, the weight directory MUST contain the exact files matching the configured weight set digest. Serving stale or mismatched weights is a catastrophic infra failure. Consumers MUST NOT verify weight content -- no checksumming, no manifest cross-checking, no redundant validation. The `ready` marker is the contract.
+
+### 3.3 Model image metadata
 
 `cog build` writes `/.cog/weights.json` into the model image. This file:
 
-- Signals to coglet that managed weights are active (presence = on, absence = legacy mode).
+- Signals to coglet that managed weights are active (presence = managed weights, absence = no managed weights).
 - Tells coglet what weights the model expects before calling `setup()`.
-
-Schema (subset of `weights.lock`):
 
 ```json
 {
@@ -315,36 +332,32 @@ Schema (subset of `weights.lock`):
     {
       "name": "z-image-turbo",
       "target": "/src/weights",
-      "digest": "sha256:abc123...",
-      "layers": [
-        { "digest": "sha256:aaa...", "size": 15000000 },
-        { "digest": "sha256:bbb...", "size": 3957900840 }
-      ]
+      "setDigest": "sha256:def456..."
     }
   ]
 }
 ```
 
-Coglet reads this on startup and waits for the state protocol (§3.5) to report ready for each weight before invoking `setup()`.
+The `setDigest` is the weight set digest (§2.4). Coglet reads this file to know which weights to expect and where, then waits for each weight's state markers (§3.2) to report ready before invoking `setup()`. If the weight directory reports a different set digest than expected, coglet will refuse to start.
 
-### 3.7 Target directory constraints
+### 3.4 Target directory constraints
 
 - Each weight's `target` must be unique within a model.
 - Weight targets must be disjoint subtrees (no nesting).
 - Both rules enforced at config validation time.
 - Model code should ignore `.cog/` subdirectories in weight targets.
 
-## 4. Worked Example: z-image-turbo (~32 GB)
+## 4. Real Example: z-image-turbo (~32 GB)
 
-Source: HuggingFace repo with 19 files (configs, tokenizers, safetensors shards).
+Source: [HuggingFace repo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) with 19 files (configs, tokenizers, safetensors shards).
 
 **v0:** 19 weight entries in cog.yaml, 19 separate manifests, 19 blobs in the OCI index.
 
-**v1:** 1 weight entry, 1 manifest, 8 layers:
+**v1:** 1 weight entry, 1 manifest, 8 layers. Using a 64 MB bundle threshold: the 12 small files (configs, JSONs, tokenizer, index files -- all under 64 MB, ~16 MB total) are bundled into a single compressed layer. The 7 large files (all safetensors shards, each above 64 MB) each get their own uncompressed standalone layer:
 
 | Layer | Contents | Size | Format |
 |-------|----------|------|--------|
-| 1 | Small files bundle (configs, JSONs, tokenizer, index files) | ~16 MB | compressed |
+| 1 | Bundle: 12 small files (configs, JSONs, tokenizer, index files) | ~16 MB | compressed |
 | 2 | text_encoder/model-00001-of-00003.safetensors | ~3.9 GB | uncompressed |
 | 3 | text_encoder/model-00002-of-00003.safetensors | ~3.9 GB | uncompressed |
 | 4 | text_encoder/model-00003-of-00003.safetensors | ~99 MB | uncompressed |
@@ -353,6 +366,6 @@ Source: HuggingFace repo with 19 files (configs, tokenizers, safetensors shards)
 | 7 | transformer/diffusion_pytorch_model-00002-of-00003.safetensors | ~9.9 GB | uncompressed |
 | 8 | transformer/diffusion_pytorch_model-00003-of-00003.safetensors | ~4.6 GB | uncompressed |
 
-A current producer would emit layer 1 as `tar+gzip` and layers 2-8 as `tar` (safetensors are on the skip list). A future producer could use `tar+zstd` for layer 1 or compress non-skip-list large files -- consumers don't care, they read the media type.
+Layer 1 is `tar+gzip` (small compressible text files). Layers 2-8 are `tar` (large binary safetensors where compression yields negligible savings). Consumers process each layer according to its media type regardless of the producer's threshold or compression choices.
 
 All 8 layers are independent. An extractor can download and unpack them in any order. Layer 1 writes to paths like `config.json`, `tokenizer.json`. Layers 2-8 each write to a single path like `text_encoder/model-00001-of-00003.safetensors`. No path conflicts.
