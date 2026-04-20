@@ -9,7 +9,7 @@ A managed weight is a named set of files (model weights, configs, tokenizers, et
 
 This spec covers three things: how weight data is packed into OCI layers, how those layers are described in an OCI manifest, and how weight readiness is communicated between a provider and a consumer.
 
-The spec is driven by the needs of [Cog](https://github.com/replicate/cog) but is intended to be general-purpose. Any system that needs to store, transfer, and deliver large file sets via OCI registries can implement it.
+The spec is driven by the needs of [Cog](https://github.com/replicate/cog) but is a general-purpose format for storing and delivering AI model weights via OCI registries.
 
 ## 1. Layer Format
 
