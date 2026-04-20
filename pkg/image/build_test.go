@@ -240,6 +240,15 @@ func TestUseStaticSchemaGen(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Explicitly clear every env var the function consults before
+			// applying the subtest-specific values. t.Setenv(key, "") is
+			// equivalent to "unset" for our truthy-value checks, but being
+			// explicit here makes the test robust against any future
+			// additions to the struct where a field might be forgotten.
+			t.Setenv("COG_LEGACY_SCHEMA", "")
+			t.Setenv("COG_STATIC_SCHEMA", "")
+			t.Setenv("COG_SDK_WHEEL", "")
+
 			t.Setenv("COG_LEGACY_SCHEMA", tt.legacy)
 			t.Setenv("COG_STATIC_SCHEMA", tt.static)
 			t.Setenv("COG_SDK_WHEEL", tt.sdkWheel)
