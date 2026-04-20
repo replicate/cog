@@ -163,9 +163,18 @@ func hasArbitraryTypesAllowed(classNode *sitter.Node, source []byte) bool {
 	}
 
 	for _, stmt := range schemaPython.NamedChildren(body) {
-		node := stmt
-		if stmt.Type() == "expression_statement" && stmt.NamedChildCount() == 1 {
+		// A class body statement may be either an expression_statement wrapping
+		// an assignment (the common case in tree-sitter-python) or an assignment
+		// node directly. Handle both so we don't silently skip legitimate
+		// model_config lines.
+		var node *sitter.Node
+		switch {
+		case stmt.Type() == "assignment":
+			node = stmt
+		case stmt.Type() == "expression_statement" && stmt.NamedChildCount() == 1:
 			node = stmt.NamedChild(0)
+		default:
+			continue
 		}
 
 		if node.Type() != "assignment" {
