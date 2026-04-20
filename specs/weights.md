@@ -1,4 +1,4 @@
-# Managed Weights: OCI Format Specification
+# Managed Weights: OCI Format and Runtime State Specification
 
 - Version: 1.0-draft
 - Status: Draft
