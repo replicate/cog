@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/replicate/cog/tools/test-harness/internal/manifest"
@@ -402,44 +401,38 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 		return result
 	}
 
-	// Build both variants concurrently
-	g, ctx := errgroup.WithContext(ctx)
-
-	var staticSchema, runtimeSchema string
-	var staticSchemaErr, runtimeSchemaErr error
-	var staticErr, runtimeErr error
-	var staticDuration, runtimeDuration float64
+	// Build the two variants sequentially rather than concurrently.
+	//
+	// Running them in parallel doubles peak memory and disk I/O inside the
+	// Docker VM, which consistently OOM-kills the `cog build` process on
+	// heavy ML models (torch + cuda + diffusers + transformers, etc.) when
+	// running on Docker Desktop / Colima with a bounded VM memory budget.
+	// The failure mode surfaces as `signal: killed` from the outer
+	// exec.Command.
+	//
+	// Serial execution is only modestly slower in practice because the
+	// Docker layer cache populated by the first build makes most steps of
+	// the second build near-instant (same base image, same python_packages,
+	// same user run commands — the only CLI-side difference is the
+	// COG_STATIC_SCHEMA env var, which affects pre-build schema generation,
+	// not the Docker layers themselves).
 	staticStart := time.Now()
-	runtimeStart := time.Now()
-
-	g.Go(func() error {
-		staticErr = r.quietBuildModelWithEnv(ctx, staticDir, model, staticTag, map[string]string{"COG_STATIC_SCHEMA": "1"})
-		if staticErr != nil {
-			return nil // Don't fail the group, we'll check errors after
-		}
+	staticErr := r.quietBuildModelWithEnv(ctx, staticDir, model, staticTag, map[string]string{"COG_STATIC_SCHEMA": "1"})
+	var staticSchema string
+	var staticSchemaErr error
+	if staticErr == nil {
 		staticSchema, staticSchemaErr = r.extractSchemaLabel(ctx, staticTag)
-		staticDuration = time.Since(staticStart).Seconds()
-		return nil
-	})
-
-	g.Go(func() error {
-		runtimeErr = r.quietBuildModelWithEnv(ctx, runtimeDir, model, runtimeTag, map[string]string{})
-		if runtimeErr != nil {
-			return nil
-		}
-		runtimeSchema, runtimeSchemaErr = r.extractSchemaLabel(ctx, runtimeTag)
-		runtimeDuration = time.Since(runtimeStart).Seconds()
-		return nil
-	})
-
-	if err := g.Wait(); err != nil {
-		result.Passed = false
-		result.Error = fmt.Sprintf("context canceled: %v", err)
-		return result
 	}
+	result.StaticBuild = time.Since(staticStart).Seconds()
 
-	result.StaticBuild = staticDuration
-	result.RuntimeBuild = runtimeDuration
+	runtimeStart := time.Now()
+	runtimeErr := r.quietBuildModelWithEnv(ctx, runtimeDir, model, runtimeTag, map[string]string{})
+	var runtimeSchema string
+	var runtimeSchemaErr error
+	if runtimeErr == nil {
+		runtimeSchema, runtimeSchemaErr = r.extractSchemaLabel(ctx, runtimeTag)
+	}
+	result.RuntimeBuild = time.Since(runtimeStart).Seconds()
 
 	// Check for build errors
 	if staticErr != nil {

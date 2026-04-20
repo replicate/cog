@@ -267,6 +267,7 @@ func TestNoneDefaultOnOptionalTypeEmitsNull(t *testing.T) {
 	assert.True(t, hasDefault, "optional field with default=None should emit 'default': null")
 }
 
+<<<<<<< mphelps/secret-optional-schema-fix
 func TestNoneDefaultOnBareSecretIsOptional(t *testing.T) {
 	// Regression: `api_key: Secret = Input(default=None)` is a documented
 	// idiom for "optional credential — fall back to a proxy key if omitted".
@@ -366,6 +367,8 @@ func TestBareSecretWithoutDefaultRemainsRequired(t *testing.T) {
 	assert.Contains(t, required, "api_key")
 }
 
+=======
+>>>>>>> main
 func TestInputDescription(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
 	inputs.Set("text", InputField{
