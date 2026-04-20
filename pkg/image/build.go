@@ -75,17 +75,19 @@ func Build(
 	// Determine whether to use the static schema generator (Go tree-sitter) or
 	// the legacy runtime path (boot container + python introspection).
 	//
-	// Static generation is opt-in via COG_STATIC_SCHEMA=1 for all commands.
-	// The legacy runtime path (boot container + python -m cog.command.openapi_schema)
-	// remains the default for `cog build`. For `cog train`, `cog predict`, and
-	// `cog serve` (skipLabels=true), no schema is generated unless
-	// COG_STATIC_SCHEMA=1 is set, since these paths return before the post-build
-	// legacy schema generation step.
+	// Static generation is the default for all commands. The legacy runtime
+	// path (boot container + `python -m cog.command.openapi_schema`) is opt-in
+	// via COG_LEGACY_SCHEMA=1 for users pinned to SDKs < 0.17.0 or hitting
+	// static-parser edge cases that haven't been resolved yet. On static-
+	// parser errors that look like incomplete type resolution rather than
+	// hard user bugs (ErrUnresolvableType), `cog build` automatically falls
+	// back to the runtime path — the opt-out flag is only needed when users
+	// want to force the runtime path from the start.
 	//
-	// The SDK version must be >= 0.17.0 (or unpinned/latest/dev) since older
-	// SDKs use pydantic-based schemas that cannot be statically analyzed.
+	// For SDK versions < 0.17.0 (pydantic-based schemas), the static parser
+	// cannot analyze the model and we silently route to the runtime path.
 	needsSchema := !skipSchemaValidation && schemaFile == ""
-	useStatic := needsSchema && canUseStaticSchemaGen(cfg)
+	useStatic := needsSchema && useStaticSchemaGen(cfg)
 
 	// --- Pre-build static schema generation ---
 	// When using the static path, generate schema BEFORE the Docker build so we
@@ -439,15 +441,20 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 // introspection and must fall back to the legacy Docker-based path.
 const staticSchemaGenMinSDKVersion = "0.17.0"
 
-// canUseStaticSchemaGen returns true if the user has opted in to static schema
-// generation via COG_STATIC_SCHEMA=1 (or "true").
-//
-// Even when opted in, returns false when the SDK version is explicitly
-// pinned < 0.17.0, since older SDKs use pydantic-based schemas that the
-// static parser cannot analyze.
-func canUseStaticSchemaGen(cfg *config.Config) bool {
-	env := strings.ToLower(os.Getenv("COG_STATIC_SCHEMA"))
-	if env != "1" && env != "true" {
+// legacySchemaEnvVar is the opt-out toggle: setting it to a truthy value
+// forces the legacy runtime schema path instead of the default static path.
+// Kept as a lifeline for users pinned to old SDKs or hitting static-parser
+// bugs that haven't been resolved yet.
+const legacySchemaEnvVar = "COG_LEGACY_SCHEMA"
+
+// useStaticSchemaGen returns true when the static schema generator should
+// run. Static generation is the default; the user can force the legacy
+// runtime path by setting COG_LEGACY_SCHEMA=1 (or "true"). The static path
+// is also bypassed when the configured SDK version is explicitly pinned
+// below staticSchemaGenMinSDKVersion (older SDKs use pydantic-based
+// schemas the static parser cannot analyze).
+func useStaticSchemaGen(cfg *config.Config) bool {
+	if isTruthyEnv(legacySchemaEnvVar) {
 		return false
 	}
 
@@ -466,6 +473,13 @@ func canUseStaticSchemaGen(cfg *config.Config) bool {
 		}
 	}
 	return true
+}
+
+// isTruthyEnv reports whether the named env var is set to a truthy value
+// ("1" or "true", case-insensitive). Empty and unset are both false.
+func isTruthyEnv(name string) bool {
+	v := strings.ToLower(os.Getenv(name))
+	return v == "1" || v == "true"
 }
 
 // resolveSDKVersion determines the SDK version that will be installed in the

@@ -120,7 +120,7 @@ func TestGitTag(t *testing.T) {
 	})
 }
 
-func TestCanUseStaticSchemaGen(t *testing.T) {
+func TestUseStaticSchemaGen(t *testing.T) {
 	// Helper to build a config with a specific SDK version.
 	cfgWithSDK := func(version string) *config.Config {
 		return &config.Config{
@@ -132,103 +132,128 @@ func TestCanUseStaticSchemaGen(t *testing.T) {
 	tests := []struct {
 		name     string
 		cfg      *config.Config
-		envVar   string // COG_STATIC_SCHEMA value
+		legacy   string // COG_LEGACY_SCHEMA value
+		static   string // COG_STATIC_SCHEMA value (legacy opt-in, now a no-op)
 		sdkWheel string // COG_SDK_WHEEL value
 		want     bool
 	}{
+		// --- Default: static gen is on ---
 		{
-			name: "disabled by default (env not set)",
+			name: "static by default (no env vars set)",
 			cfg:  cfgWithSDK("0.18.0"),
+			want: true,
+		},
+		{
+			name: "static by default for unpinned SDK",
+			cfg:  noBuild,
+			want: true,
+		},
+		{
+			name:     "static by default for new SDK via COG_SDK_WHEEL",
+			cfg:      noBuild,
+			sdkWheel: "pypi:0.18.0",
+			want:     true,
+		},
+
+		// --- Legacy opt-out via COG_LEGACY_SCHEMA ---
+		{
+			name:   "legacy path when COG_LEGACY_SCHEMA=1",
+			cfg:    cfgWithSDK("0.18.0"),
+			legacy: "1",
+			want:   false,
+		},
+		{
+			name:   "legacy path when COG_LEGACY_SCHEMA=true",
+			cfg:    cfgWithSDK("0.18.0"),
+			legacy: "true",
+			want:   false,
+		},
+		{
+			name:   "legacy path when COG_LEGACY_SCHEMA=True (mixed case)",
+			cfg:    cfgWithSDK("0.18.0"),
+			legacy: "True",
+			want:   false,
+		},
+		{
+			name:   "legacy path when COG_LEGACY_SCHEMA=TRUE (upper case)",
+			cfg:    cfgWithSDK("0.18.0"),
+			legacy: "TRUE",
+			want:   false,
+		},
+		{
+			name:   "static path when COG_LEGACY_SCHEMA is empty string",
+			cfg:    cfgWithSDK("0.18.0"),
+			legacy: "",
+			want:   true,
+		},
+		{
+			name:   "static path when COG_LEGACY_SCHEMA=0",
+			cfg:    cfgWithSDK("0.18.0"),
+			legacy: "0",
+			want:   true,
+		},
+
+		// --- SDK version gating ---
+		{
+			name: "legacy path for old pinned SDK (below 0.17.0)",
+			cfg:  cfgWithSDK("0.16.12"),
 			want: false,
 		},
 		{
-			name:   "disabled when env is empty string",
-			cfg:    cfgWithSDK("0.18.0"),
-			envVar: "",
-			want:   false,
+			name: "legacy path for pre-release old SDK",
+			cfg:  cfgWithSDK("0.16.0a1"),
+			want: false,
 		},
 		{
-			name:   "disabled when env is 0",
-			cfg:    cfgWithSDK("0.18.0"),
-			envVar: "0",
-			want:   false,
+			name: "static path for SDK 0.17.0 (min supported)",
+			cfg:  cfgWithSDK("0.17.0"),
+			want: true,
 		},
 		{
-			name:   "enabled when env is 1",
-			cfg:    cfgWithSDK("0.18.0"),
-			envVar: "1",
-			want:   true,
-		},
-		{
-			name:   "enabled when env is true",
-			cfg:    cfgWithSDK("0.18.0"),
-			envVar: "true",
-			want:   true,
-		},
-		{
-			name:   "enabled when env is True (mixed case)",
-			cfg:    cfgWithSDK("0.18.0"),
-			envVar: "True",
-			want:   true,
-		},
-		{
-			name:   "enabled when env is TRUE (upper case)",
-			cfg:    cfgWithSDK("0.18.0"),
-			envVar: "TRUE",
-			want:   true,
-		},
-		{
-			name:   "disabled for old SDK even when opted in",
-			cfg:    cfgWithSDK("0.16.12"),
-			envVar: "1",
-			want:   false,
-		},
-		{
-			name:   "disabled for pre-release old SDK",
-			cfg:    cfgWithSDK("0.16.0a1"),
-			envVar: "1",
-			want:   false,
-		},
-		{
-			name:   "enabled for SDK 0.17.0 when opted in",
-			cfg:    cfgWithSDK("0.17.0"),
-			envVar: "1",
-			want:   true,
-		},
-		{
-			name:   "enabled for SDK 0.18.0 when opted in",
-			cfg:    cfgWithSDK("0.18.0"),
-			envVar: "1",
-			want:   true,
-		},
-		{
-			name:   "enabled for unpinned SDK when opted in",
-			cfg:    noBuild,
-			envVar: "1",
-			want:   true,
-		},
-		{
-			name:     "disabled for old SDK via COG_SDK_WHEEL even when opted in",
+			name:     "legacy path for old SDK via COG_SDK_WHEEL",
 			cfg:      noBuild,
-			envVar:   "1",
 			sdkWheel: "pypi:0.16.12",
 			want:     false,
 		},
+
+		// --- Back-compat with old COG_STATIC_SCHEMA=1 flag (should be a no-op) ---
 		{
-			name:     "enabled for new SDK via COG_SDK_WHEEL when opted in",
-			cfg:      noBuild,
-			envVar:   "1",
-			sdkWheel: "pypi:0.18.0",
-			want:     true,
+			name:   "COG_STATIC_SCHEMA=1 is a no-op (static remains the default)",
+			cfg:    cfgWithSDK("0.18.0"),
+			static: "1",
+			want:   true,
+		},
+		{
+			name:   "COG_STATIC_SCHEMA=1 does not override COG_LEGACY_SCHEMA=1",
+			cfg:    cfgWithSDK("0.18.0"),
+			static: "1",
+			legacy: "1",
+			want:   false,
+		},
+		{
+			name:   "COG_STATIC_SCHEMA=1 cannot force static on old pinned SDK",
+			cfg:    cfgWithSDK("0.16.12"),
+			static: "1",
+			want:   false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("COG_STATIC_SCHEMA", tt.envVar)
+			// Explicitly clear every env var the function consults before
+			// applying the subtest-specific values. t.Setenv(key, "") is
+			// equivalent to "unset" for our truthy-value checks, but being
+			// explicit here makes the test robust against any future
+			// additions to the struct where a field might be forgotten.
+			t.Setenv("COG_LEGACY_SCHEMA", "")
+			t.Setenv("COG_STATIC_SCHEMA", "")
+			t.Setenv("COG_SDK_WHEEL", "")
+
+			t.Setenv("COG_LEGACY_SCHEMA", tt.legacy)
+			t.Setenv("COG_STATIC_SCHEMA", tt.static)
 			t.Setenv("COG_SDK_WHEEL", tt.sdkWheel)
 
-			got := canUseStaticSchemaGen(tt.cfg)
+			got := useStaticSchemaGen(tt.cfg)
 			require.Equal(t, tt.want, got)
 		})
 	}

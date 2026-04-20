@@ -414,10 +414,11 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 	// Docker layer cache populated by the first build makes most steps of
 	// the second build near-instant (same base image, same python_packages,
 	// same user run commands — the only CLI-side difference is the
-	// COG_STATIC_SCHEMA env var, which affects pre-build schema generation,
+	// COG_LEGACY_SCHEMA env var, which affects pre-build schema generation,
 	// not the Docker layers themselves).
 	staticStart := time.Now()
-	staticErr := r.quietBuildModelWithEnv(ctx, staticDir, model, staticTag, map[string]string{"COG_STATIC_SCHEMA": "1"})
+	// Static schema generation is the default — no env var required.
+	staticErr := r.quietBuildModelWithEnv(ctx, staticDir, model, staticTag, map[string]string{})
 	var staticSchema string
 	var staticSchemaErr error
 	if staticErr == nil {
@@ -426,7 +427,8 @@ func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *repor
 	result.StaticBuild = time.Since(staticStart).Seconds()
 
 	runtimeStart := time.Now()
-	runtimeErr := r.quietBuildModelWithEnv(ctx, runtimeDir, model, runtimeTag, map[string]string{})
+	// COG_LEGACY_SCHEMA=1 opts back into the legacy runtime schema path.
+	runtimeErr := r.quietBuildModelWithEnv(ctx, runtimeDir, model, runtimeTag, map[string]string{"COG_LEGACY_SCHEMA": "1"})
 	var runtimeSchema string
 	var runtimeSchemaErr error
 	if runtimeErr == nil {
