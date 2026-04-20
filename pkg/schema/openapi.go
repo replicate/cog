@@ -328,7 +328,6 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 		// field has no default; generate one at runtime" (e.g. random seeds).
 		// The runtime schema generator treats these as required with no default,
 		// so we match that behavior by ignoring the None default.
-<<<<<<< mphelps/secret-optional-schema-fix
 		//
 		// Secret is the one exception: `api_key: Secret = Input(default=None)`
 		// is a widespread, documented idiom for an optional credential that
@@ -345,9 +344,6 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 			field.Default != nil && field.Default.Kind == DefaultNone {
 			isNullable = true
 		}
-=======
-		isNullable := field.FieldType.Repetition == Optional || field.FieldType.Repetition == OptionalRepeated
->>>>>>> main
 		hasEffectiveDefault := field.Default != nil
 		if hasEffectiveDefault && field.Default.Kind == DefaultNone && !isNullable {
 			hasEffectiveDefault = false
