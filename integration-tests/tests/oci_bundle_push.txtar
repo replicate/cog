@@ -17,8 +17,7 @@ exec sh -c 'printf AAAA > weights-alpha/data.bin'
 exec sh -c 'printf BBBB > weights-beta/data.bin'
 
 # cog push runs the weight builder implicitly when cog.yaml declares
-# weights. Enable the OCI-index feature gate.
-env COG_OCI_INDEX=1
+# weights. Presence of weights: in cog.yaml triggers bundle format.
 cog push $TEST_REGISTRY/test/bundle-model:v1
 
 # Image push header, then weight push header — one each.

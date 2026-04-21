@@ -3,9 +3,9 @@
 title: Embed /.cog/weights.json in model image
 status: todo
 type: task
-priority: normal
+priority: critical
 created_at: 2026-04-17T19:28:15Z
-updated_at: 2026-04-21T00:01:21Z
+updated_at: 2026-04-21T15:59:05Z
 parent: cog.md-managed-weights-v0.0.2-9qcd
 blocked_by:
     - cog.md-managed-weights-v0.0.2-2gv9

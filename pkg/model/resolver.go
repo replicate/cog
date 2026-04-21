@@ -239,16 +239,15 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 		return nil, err
 	}
 
-	m.OCIIndex = opts.OCIIndex
 	m.Artifacts = []Artifact{ia}
 
-	// Build weight artifacts if OCI index mode is enabled
+	// Build weight artifacts when weights are declared in cog.yaml.
 	lockPath := opts.WeightsLockPath
 	if lockPath == "" {
 		lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
 	}
 
-	if opts.OCIIndex && len(src.Config.Weights) > 0 {
+	if len(src.Config.Weights) > 0 {
 		wb := NewWeightBuilder(src, lockPath)
 		for _, ws := range src.Config.Weights {
 			spec := NewWeightSpec(ws.Name, ws.Source, ws.Target)
@@ -269,7 +268,7 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 // monolithic push and supports layers of any size through chunked uploads.
 // Falls back to legacy Docker push if OCI push is not available.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	if m.OCIIndex {
+	if m.IsBundle() {
 		pusher := NewBundlePusher(r.docker, r.registry)
 		return pusher.Push(ctx, m, opts)
 	}

@@ -17,8 +17,7 @@ cog weights build
 stderr 'Generated weights.lock'
 exists weights.lock
 
-# Build and push with OCI index mode
-env COG_OCI_INDEX=1
+# Build and push (weights in cog.yaml triggers bundle format automatically)
 cog push $TEST_REGISTRY/test/inspect-model:v1
 
 # Inspect the pushed bundle

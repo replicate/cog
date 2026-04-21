@@ -1,5 +1,5 @@
 # Test building an OCI bundle with declarative weights in cog.yaml.
-# Verifies: cog.yaml weights declaration -> cog weights build -> cog build (COG_OCI_INDEX=1)
+# Verifies: cog.yaml weights declaration -> cog weights build -> cog build
 # The image should build successfully and predictions should work.
 
 # Create weight files (small, deterministic)
@@ -13,8 +13,7 @@ stderr 'Generated weights.lock'
 stderr '2 file'
 exists weights.lock
 
-# Step 2: Build with OCI index mode enabled
-env COG_OCI_INDEX=1
+# Step 2: Build (weights in cog.yaml triggers bundle format automatically)
 cog build -t $TEST_IMAGE
 stderr 'Image built as'
 

@@ -478,7 +478,7 @@ func TestResolver_Push(t *testing.T) {
 		require.True(t, dockerPushed, "standalone should use docker push")
 	})
 
-	t.Run("OCIIndex false uses docker push", func(t *testing.T) {
+	t.Run("no weight artifacts uses docker push", func(t *testing.T) {
 		var dockerPushed bool
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error {
@@ -490,7 +490,6 @@ func TestResolver_Push(t *testing.T) {
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
-			// OCIIndex not set (false by default)
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
@@ -499,10 +498,10 @@ func TestResolver_Push(t *testing.T) {
 
 		err := resolver.Push(context.Background(), m, PushOptions{})
 		require.NoError(t, err)
-		require.True(t, dockerPushed, "default format should use docker push")
+		require.True(t, dockerPushed, "model without weights should use docker push")
 	})
 
-	t.Run("OCIIndex true produces an OCI index", func(t *testing.T) {
+	t.Run("bundle with weight artifacts produces an OCI index", func(t *testing.T) {
 		var indexPushed bool
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error { return nil },
@@ -515,6 +514,7 @@ func TestResolver_Push(t *testing.T) {
 					Digest:    v1.Hash{Algorithm: "sha256", Hex: "abc"},
 				}, nil
 			},
+			pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error { return nil },
 			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
 				indexPushed = true
 				return nil
@@ -522,17 +522,18 @@ func TestResolver_Push(t *testing.T) {
 		}
 		resolver := NewResolver(docker, reg)
 
+		wa := bundleWeightFixture(t, "w1", "/src/weights/w1")
 		m := &Model{
-			OCIIndex: true,
-			Image:    &ImageArtifact{Reference: "r8.im/user/model:latest"},
+			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
+				wa,
 			},
 		}
 
 		err := resolver.Push(context.Background(), m, PushOptions{})
 		require.NoError(t, err)
-		require.True(t, indexPushed, "OCIIndex=true should push an OCI index")
+		require.True(t, indexPushed, "bundle with weights should push an OCI index")
 	})
 
 	t.Run("standalone returns error when image nil", func(t *testing.T) {
@@ -550,15 +551,15 @@ func TestResolver_Push(t *testing.T) {
 		require.Contains(t, err.Error(), "no image artifact")
 	})
 
-	t.Run("OCIIndex true returns error when no image artifact", func(t *testing.T) {
+	t.Run("bundle returns error when no image artifact", func(t *testing.T) {
 		docker := &mockDocker{}
 		reg := &mockRegistry{}
 		resolver := NewResolver(docker, reg)
 
+		wa := bundleWeightFixture(t, "w1", "/src/weights/w1")
 		m := &Model{
-			OCIIndex:  true,
 			Image:     nil,
-			Artifacts: []Artifact{},
+			Artifacts: []Artifact{wa}, // weight but no image
 		}
 
 		err := resolver.Push(context.Background(), m, PushOptions{})

@@ -3,9 +3,9 @@
 title: Auto-generate .dockerignore for cog.yaml weights entries
 status: todo
 type: task
-priority: high
+priority: critical
 created_at: 2026-04-17T23:12:10Z
-updated_at: 2026-04-17T23:12:10Z
+updated_at: 2026-04-21T15:59:04Z
 parent: cog.md-managed-weights-v0.0.2-9qcd
 ---
 

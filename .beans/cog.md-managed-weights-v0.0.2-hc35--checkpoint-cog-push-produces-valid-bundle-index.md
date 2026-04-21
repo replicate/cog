@@ -3,12 +3,13 @@
 title: cog push produces valid bundle index
 status: todo
 type: milestone
-priority: high
+priority: critical
 created_at: 2026-04-17T19:34:37Z
-updated_at: 2026-04-17T21:51:27Z
+updated_at: 2026-04-21T16:00:17Z
 parent: cog.md-managed-weights-v0.0.2-9qcd
 blocked_by:
     - cog.md-managed-weights-v0.0.2-m4e8
+    - cog.md-managed-weights-v0.0.2-jx8l
 ---
 
 Validation checkpoint. At this point you should be able to:

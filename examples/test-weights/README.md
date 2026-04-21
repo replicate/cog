@@ -31,12 +31,12 @@ Start a local registry (or point at any registry you control):
 docker run -d --rm -p 5000:5000 --name cog-test-registry registry:3
 ```
 
-Build and push the full bundle. `COG_OCI_INDEX=1` is required while the
-v1 managed-weights pipeline is behind a feature gate.
+Build and push the full bundle. Presence of `weights:` in `cog.yaml`
+triggers the OCI bundle format automatically.
 
 ```bash
 cd examples/test-weights
-COG_OCI_INDEX=1 cog push localhost:5000/test-weights
+cog push localhost:5000/test-weights
 ```
 
 Or run the weight pipeline in isolation (no model image):

@@ -5,7 +5,7 @@
 # .gitignore so the ~5GB payload never hits git.
 #
 # Build and push the full bundle with:
-#   COG_OCI_INDEX=1 cog push localhost:5000/test-weights
+#   cog push localhost:5000/test-weights
 #
 # Or run the weight pipeline in isolation:
 #   cog weights build
