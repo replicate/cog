@@ -95,3 +95,20 @@ type CheckContext struct {
 	PythonFiles    map[string]*ParsedFile // Pre-parsed Python files keyed by relative path
 	PythonPath     string                 // Path to python binary (empty if not found)
 }
+
+// Close releases resources held by the CheckContext — primarily the
+// C-allocated tree-sitter parse trees cached in PythonFiles. Tree-sitter
+// also releases memory via runtime finalizers, but calling Close() on each
+// tree releases the backing buffer promptly, which matters if the doctor
+// runner is reused from a long-lived process.
+func (cc *CheckContext) Close() {
+	if cc == nil {
+		return
+	}
+	for _, pf := range cc.PythonFiles {
+		if pf != nil && pf.Tree != nil {
+			pf.Tree.Close()
+		}
+	}
+	cc.PythonFiles = nil
+}

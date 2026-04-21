@@ -63,6 +63,7 @@ func Run(ctx context.Context, opts RunOptions, checks []Check) (*Result, error) 
 	if err != nil {
 		return nil, err
 	}
+	defer checkCtx.Close()
 
 	result := &Result{}
 
