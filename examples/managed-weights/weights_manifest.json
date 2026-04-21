@@ -1,0 +1,55 @@
+{
+  "target": "/src/weights",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "size": 1679,
+      "digest": "sha256:a56ee2f5837104b08fe8402f29119e81e6f0f1378cbe68ce2979cb4b7fba8185"
+    },
+    {
+      "path": "README.md",
+      "size": 38225,
+      "digest": "sha256:df03b7a959f8e1b2d32a635556c5012c95304e350945b431ceff64410ea7bf44"
+    },
+    {
+      "path": "config.json",
+      "size": 1153,
+      "digest": "sha256:e747b85e1bdfd300c8b8ac63bac8dd5221f8fe9bc275b48d06c735fcd6971b6e"
+    },
+    {
+      "path": "generation_config.json",
+      "size": 268,
+      "digest": "sha256:fc78f636b071231420356dbf70140a81a389132eb49bc81bcb2efdbe8293e7ad"
+    },
+    {
+      "path": "model.safetensors",
+      "size": 2508311120,
+      "digest": "sha256:3a2026366188c8c68598edbbff92f8d11590a08e0ae2e6775544e7b07d6a5e11"
+    },
+    {
+      "path": "parakeet-tdt-0.6b-v3.nemo",
+      "size": 2509332480,
+      "digest": "sha256:3cbdc85877e668ca7b82d0d56770eb1fac76691f55d6b97545e8d61ca588d10d"
+    },
+    {
+      "path": "plots/asr.png",
+      "size": 114075,
+      "digest": "sha256:43df117825ce8148acce53c1c35cb54e9ecd111b835b171ff903b380429ee105"
+    },
+    {
+      "path": "processor_config.json",
+      "size": 392,
+      "digest": "sha256:8346a93a3b987fa1dec57a78f045cd0817d21786589a5a096b41a57a446fd1d7"
+    },
+    {
+      "path": "tokenizer.json",
+      "size": 1159960,
+      "digest": "sha256:bd321b096832a3f270bd3b2a88823957920f1a5c5ada71114a26ea729d0cbe91"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "size": 258,
+      "digest": "sha256:5e04ae3487a5533224c295622cb206cc6e53914be527503978ce81f2cc75c559"
+    }
+  ]
+}

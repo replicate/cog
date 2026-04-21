@@ -26,11 +26,7 @@ bin/*
 # Compiled test tools
 /weights-gen
 
-# Large weight payloads for examples/test-weights (populated manually; see that
-# directory's README.md).
-examples/test-weights/weights/
-examples/test-weights/.cog/
-weights.lock
+
 
 # Auto-:d version files from setuptools-scm
 python/cog/_version.py

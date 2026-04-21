@@ -5,11 +5,11 @@
 # .gitignore so the ~5GB payload never hits git.
 #
 # Build and push the full bundle with:
-#   cog push localhost:5000/test-weights
+#   cog push localhost:5000/managed-weights
 #
 # Or run the weight pipeline in isolation:
 #   cog weights build
-#   cog weights push localhost:5000/test-weights
+#   cog weights push localhost:5000/managed-weights
 
 build:
   gpu: false

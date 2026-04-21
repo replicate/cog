@@ -1,0 +1,43 @@
+{
+  "version": "v1",
+  "created": "2026-04-21T17:23:26.924075Z",
+  "weights": [
+    {
+      "name": "parakeet",
+      "target": "/src/weights",
+      "digest": "sha256:1fc60b4fcf8efaa4698e7b31dca4967c2b50b98814fe0f399bad9ac848a438bf",
+      "setDigest": "sha256:2c7d12ce4b3dd8f9dbd3e8a5cd18cd2fd1ad9f710487ce5224beb15c15833538",
+      "layers": [
+        {
+          "digest": "sha256:33e9a824dff474203618f5f6e23db4a9eea2c7bbadb6dc4cb2593e9e81241040",
+          "size": 382978,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+          "annotations": {
+            "run.cog.weight.content": "bundle",
+            "run.cog.weight.size.uncompressed": "1316010"
+          }
+        },
+        {
+          "digest": "sha256:65f11b0713429c604eb159d02a1c805815d599414e10c1c295e1937472db3a2f",
+          "size": 2508314112,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "annotations": {
+            "run.cog.weight.content": "file",
+            "run.cog.weight.file": "model.safetensors",
+            "run.cog.weight.size.uncompressed": "2508311120"
+          }
+        },
+        {
+          "digest": "sha256:2c9918dd59b64c5e77b1167324f5e368fab3bd736c26d059a6c68224205fc2f2",
+          "size": 2329899229,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+          "annotations": {
+            "run.cog.weight.content": "file",
+            "run.cog.weight.file": "parakeet-tdt-0.6b-v3.nemo",
+            "run.cog.weight.size.uncompressed": "2509332480"
+          }
+        }
+      ]
+    }
+  ]
+}
