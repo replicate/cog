@@ -31,8 +31,8 @@ env:
   CARGO_TERM_COLOR: always
   # CGo required for go-tree-sitter (static Python schema parser)
   CGO_ENABLED: "1"
-  # Disable tools that are only needed locally or are bundled by maturin-action
-  MISE_DISABLE_TOOLS: rustup,rustup-init
+  # Note: do NOT add rustup/rustup-init to MISE_DISABLE_TOOLS — mise needs
+  # them to install Rust components (rustfmt, clippy) specified in mise.toml.
 
 permissions: {}
 

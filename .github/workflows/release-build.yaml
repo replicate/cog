@@ -121,8 +121,6 @@ jobs:
     needs: verify-tag
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      MISE_DISABLE_TOOLS: rustup,rustup-init
     steps:
       - uses: actions/checkout@v6
         with:
@@ -211,7 +209,6 @@ jobs:
     timeout-minutes: 30
     env:
       CGO_ENABLED: "1"
-      MISE_DISABLE_TOOLS: rustup,rustup-init
     steps:
       - uses: actions/checkout@v6
         with:

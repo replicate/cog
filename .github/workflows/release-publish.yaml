@@ -113,8 +113,6 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
 
       - uses: jdx/mise-action@v4
-        env:
-          MISE_DISABLE_TOOLS: rustup,rustup-init
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
