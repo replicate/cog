@@ -39,18 +39,13 @@ permissions: {}
 jobs:
   # Passthrough for SUPPORTED_PYTHONS — env context is unavailable in
   # strategy.matrix, so matrix jobs reference this job's output instead.
-  # Also warms the mise tool cache so downstream jobs get cache hits.
   setup:
     name: Setup
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     outputs:
       supported_pythons: ${{ env.SUPPORTED_PYTHONS }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v4
-        # This job warms the mise tool cache for all downstream jobs.
-        # All other jobs set cache_save: false to avoid save races.
       - run: echo "supported_pythons=$SUPPORTED_PYTHONS"
 
 # =============================================================================
@@ -127,8 +122,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Build SDK
         run: mise run ci:build:sdk
       - name: Upload SDK package
@@ -179,8 +172,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Get version from VERSION.txt
         id: version
         run: echo "version=$(tr -d '[:space:]' < VERSION.txt)" >> "$GITHUB_OUTPUT"
@@ -210,8 +201,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Check Go formatting
         run: mise run fmt:go
 
@@ -222,8 +211,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Check Rust formatting
         run: mise run fmt:rust
 
@@ -234,8 +221,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Check Python formatting
         run: mise run fmt:python
 
@@ -246,8 +231,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Check llms.txt is up to date
         run: mise run docs:llm:check
       - name: Check CLI docs are up to date
@@ -270,8 +253,6 @@ jobs:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Check stubs are up to date
         run: |
           # stub_gen links libpython dynamically; tell the linker where to find it
@@ -289,8 +270,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Lint Go
         run: mise run lint:go
 
@@ -305,8 +284,6 @@ jobs:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Lint Rust (clippy)
         run: mise run lint:rust
 
@@ -317,8 +294,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Check licenses and advisories
         run: mise run lint:rust:deny
 
@@ -341,8 +316,6 @@ jobs:
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Lint Python
         run: mise run lint:python
 
@@ -353,8 +326,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Lint Markdown
         run: mise run lint:docs
 
@@ -373,9 +344,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
-        with:
-          # Save on macOS (only job on that platform); skip on Linux (setup job saves)
-          cache_save: ${{ matrix.platform == 'macos-latest' }}
       - name: Test Go
         shell: bash
         run: |
@@ -400,8 +368,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Fuzz schema type resolution
         run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime=30s
       - name: Fuzz JSON schema generation
@@ -422,8 +388,6 @@ jobs:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Test Rust
         run: mise run test:rust
 
@@ -445,8 +409,6 @@ jobs:
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test Python
@@ -475,8 +437,6 @@ jobs:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Test coglet-python bindings
         run: uvx nox -s coglet -p ${{ matrix.python-version }}
 
@@ -595,8 +555,6 @@ jobs:
           cp dist/cog ./cog
           chmod +x ./cog
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Set wheel environment
         run: |
           # Use locally-built wheels, not PyPI (version may not be published yet)
@@ -751,8 +709,6 @@ jobs:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
-        with:
-          cache_save: false
       - name: Check coglet crates.io publish
         run: cargo publish --dry-run -p coglet --manifest-path crates/Cargo.toml
       - uses: goreleaser/goreleaser-action@v7
