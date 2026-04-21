@@ -1,11 +1,11 @@
 ---
 # cog-6v8c
 title: cog.yaml v2 weights stanza and model field
-status: in-progress
+status: completed
 type: task
 priority: critical
 created_at: 2026-04-17T19:27:46Z
-updated_at: 2026-04-21T20:57:52Z
+updated_at: 2026-04-21T21:46:32Z
 parent: cog-66gt
 ---
 
@@ -37,3 +37,14 @@ Reference: plans/2026-04-16-managed-weights-v2-design.md §2
 - [x] Run `mise run lint:go` and `mise run test:go` to verify
 
 - [x] Add weight name format validation (OCI tag-safe characters)
+
+## Summary of Changes
+
+Restructured cog.yaml weights from v0 flat-string shape to v1:
+- `WeightSource.Source`: flat string -> `*WeightSourceConfig` (uri, include, exclude)
+- Added `Model` field to config types, schema, and parsing
+- Added `validateWeights`: name (required, unique, OCI-safe), target (required, absolute, unique, disjoint subtrees), model required with weights
+- Updated JSON schema with nested source object and name pattern constraint
+- Updated all consumers (`resolver.go`, `source.go`, `weights_inspect.go`) to use `SourceURI()`
+- Table-driven validation tests (17 cases), updated parse tests, updated model package tests
+- Wrote `plans/2026-04-21-model-field.md` design doc for standalone model field feature

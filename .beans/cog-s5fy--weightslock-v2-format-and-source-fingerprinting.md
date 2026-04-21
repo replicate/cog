@@ -5,7 +5,7 @@ status: todo
 type: task
 priority: critical
 created_at: 2026-04-17T19:27:20Z
-updated_at: 2026-04-21T19:48:11Z
+updated_at: 2026-04-21T22:27:18Z
 parent: cog-66gt
 blocked_by:
     - cog-2gv9
