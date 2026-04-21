@@ -252,7 +252,15 @@ backend = "core:go"
 checksum = "sha256:738ef87d79c34272424ccdf83302b7b0300b8b096ed443896089306117943dd5"
 url = "https://dl.google.com/go/go1.25.6.linux-arm64.tar.gz"
 
+[tools.go."platforms.linux-arm64-musl"]
+checksum = "sha256:738ef87d79c34272424ccdf83302b7b0300b8b096ed443896089306117943dd5"
+url = "https://dl.google.com/go/go1.25.6.linux-arm64.tar.gz"
+
 [tools.go."platforms.linux-x64"]
+checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a"
+url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"
+
+[tools.go."platforms.linux-x64-musl"]
 checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a"
 url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"
 
