@@ -1113,7 +1113,7 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 		Config: &config.Config{
 			Build: &config.Build{},
 			Weights: []config.WeightSource{
-				{Name: "my-model", Source: "weights/model", Target: "/srv/weights/model"},
+				{Name: "my-model", Target: "/srv/weights/model", Source: &config.WeightSourceConfig{URI: "weights/model"}},
 			},
 		},
 		ProjectDir: dir,
@@ -1192,7 +1192,7 @@ func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
 		Config: &config.Config{
 			Build: &config.Build{},
 			Weights: []config.WeightSource{
-				{Name: "my-model", Source: "weights", Target: "/src/weights"},
+				{Name: "my-model", Target: "/src/weights", Source: &config.WeightSourceConfig{URI: "weights"}},
 			},
 		},
 		ProjectDir: dir,

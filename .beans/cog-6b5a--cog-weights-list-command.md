@@ -3,9 +3,9 @@
 title: cog weights list command
 status: todo
 type: task
-priority: normal
+priority: low
 created_at: 2026-04-17T21:31:40Z
-updated_at: 2026-04-21T17:01:35Z
+updated_at: 2026-04-21T19:45:50Z
 parent: cog-66gt
 blocked_by:
     - cog-4fg4

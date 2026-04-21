@@ -86,7 +86,7 @@ func (s *Source) ArtifactSpecs() []ArtifactSpec {
 
 	// Add weight specs from config
 	for _, w := range s.Config.Weights {
-		specs = append(specs, NewWeightSpec(w.Name, w.Source, w.Target))
+		specs = append(specs, NewWeightSpec(w.Name, w.SourceURI(), w.Target))
 	}
 
 	return specs

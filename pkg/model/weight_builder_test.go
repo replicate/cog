@@ -40,7 +40,7 @@ func TestWeightBuilder_HappyPath(t *testing.T) {
 	})
 
 	wb := newTestBuilder(t, projectDir, []config.WeightSource{
-		{Name: "my-model", Source: "weights/my-model", Target: "/src/weights/my-model"},
+		{Name: "my-model", Target: "/src/weights/my-model", Source: &config.WeightSourceConfig{URI: "weights/my-model"}},
 	})
 
 	spec := NewWeightSpec("my-model", "weights/my-model", "/src/weights/my-model")
@@ -78,7 +78,7 @@ func TestWeightBuilder_WritesLockfile(t *testing.T) {
 	})
 
 	wb := newTestBuilder(t, projectDir, []config.WeightSource{
-		{Name: "mw", Source: "weights/mw", Target: "/src/weights/mw"},
+		{Name: "mw", Target: "/src/weights/mw", Source: &config.WeightSourceConfig{URI: "weights/mw"}},
 	})
 
 	spec := NewWeightSpec("mw", "weights/mw", "/src/weights/mw")
@@ -112,8 +112,8 @@ func TestWeightBuilder_UpdatesExistingLockfile(t *testing.T) {
 	makeWeightDir(t, projectDir, "w2", map[string][]byte{"b.json": []byte(`{"w":2}`)})
 
 	wb := newTestBuilder(t, projectDir, []config.WeightSource{
-		{Name: "w1", Source: "w1", Target: "/src/w1"},
-		{Name: "w2", Source: "w2", Target: "/src/w2"},
+		{Name: "w1", Target: "/src/w1", Source: &config.WeightSourceConfig{URI: "w1"}},
+		{Name: "w2", Target: "/src/w2", Source: &config.WeightSourceConfig{URI: "w2"}},
 	})
 
 	_, err := wb.Build(context.Background(), NewWeightSpec("w1", "w1", "/src/w1"))
@@ -138,7 +138,7 @@ func TestWeightBuilder_CacheHit(t *testing.T) {
 	makeWeightDir(t, projectDir, "w", map[string][]byte{"a.json": []byte(`{"x":1}`)})
 
 	wb := newTestBuilder(t, projectDir, []config.WeightSource{
-		{Name: "w", Source: "w", Target: "/src/w"},
+		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: "w"}},
 	})
 
 	spec := NewWeightSpec("w", "w", "/src/w")
@@ -200,7 +200,7 @@ func TestWeightBuilder_CacheMiss_ContentsChanged(t *testing.T) {
 	makeWeightDir(t, projectDir, weightDir, map[string][]byte{"a.json": []byte(`{"x":1}`)})
 
 	wb := newTestBuilder(t, projectDir, []config.WeightSource{
-		{Name: "w", Source: weightDir, Target: "/src/w"},
+		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: weightDir}},
 	})
 
 	spec := NewWeightSpec("w", weightDir, "/src/w")

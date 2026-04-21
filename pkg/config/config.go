@@ -66,16 +66,32 @@ type Concurrency struct {
 	Max int `json:"max,omitempty" yaml:"max"`
 }
 
-// WeightSource defines a weight file or directory to include in the model.
+// WeightSourceConfig describes where to import weights from.
+// This is the "source" sub-object inside a weights entry.
+type WeightSourceConfig struct {
+	URI     string   `json:"uri,omitempty" yaml:"uri,omitempty"`
+	Include []string `json:"include,omitempty" yaml:"include,omitempty"`
+	Exclude []string `json:"exclude,omitempty" yaml:"exclude,omitempty"`
+}
+
+// WeightSource defines a weight directory to include in the model.
 type WeightSource struct {
-	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
-	Source string `json:"source" yaml:"source"`
-	Target string `json:"target,omitempty" yaml:"target,omitempty"`
+	Name   string              `json:"name" yaml:"name"`
+	Target string              `json:"target" yaml:"target"`
+	Source *WeightSourceConfig `json:"source,omitempty" yaml:"source,omitempty"`
+}
+
+func (w *WeightSource) SourceURI() string {
+	if w.Source == nil {
+		return ""
+	}
+	return w.Source.URI
 }
 
 type Config struct {
 	Build       *Build         `json:"build" yaml:"build"`
 	Image       string         `json:"image,omitempty" yaml:"image,omitempty"`
+	Model       string         `json:"model,omitempty" yaml:"model,omitempty"`
 	Predict     string         `json:"predict,omitempty" yaml:"predict"`
 	Train       string         `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *Concurrency   `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`

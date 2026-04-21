@@ -103,7 +103,7 @@ func weightsInspectCommand(cmd *cobra.Command, args []string, jsonOutput bool) e
 	for _, w := range src.Config.Weights {
 		localWeights[w.Name] = &localWeight{
 			target: w.Target,
-			source: w.Source,
+			source: w.SourceURI(),
 		}
 	}
 

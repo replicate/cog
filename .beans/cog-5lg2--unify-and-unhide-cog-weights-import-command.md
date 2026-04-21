@@ -1,11 +1,11 @@
 ---
 # cog-5lg2
-title: Unify and unhide cog weights import command
+title: Unify cog weights import command
 status: todo
 type: task
-priority: high
+priority: critical
 created_at: 2026-04-17T21:32:13Z
-updated_at: 2026-04-21T17:01:35Z
+updated_at: 2026-04-21T19:48:58Z
 parent: cog-66gt
 blocked_by:
     - cog-4fg4
@@ -20,7 +20,7 @@ Bean 2gv9 calls for unifying these into a single `cog weights import` that perfo
 
 Scope:
 - [ ] Add `cog weights import [name...]` — runs build then push for the listed weights (or all if none specified)
-- [ ] Unhide the `weights` command group (remove `Hidden: true`)
+- Unhiding moved to cog-gxqs (deferred until release)
 - [ ] Keep `build` and `push` as visible subcommands for advanced use (build without pushing, push after manual build)
 - [ ] Update `docs/cli.md` via `mise run docs:cli`
 - [ ] Update the 2026-04-16 design doc if the flag names drift

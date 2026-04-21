@@ -3,9 +3,9 @@
 title: Include/exclude filters for weight import
 status: todo
 type: task
-priority: normal
+priority: low
 created_at: 2026-04-17T19:27:37Z
-updated_at: 2026-04-21T17:01:35Z
+updated_at: 2026-04-21T19:47:43Z
 parent: cog-66gt
 blocked_by:
     - cog-2gv9

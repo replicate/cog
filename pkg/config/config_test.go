@@ -676,68 +676,86 @@ func TestAbsolutePathInPythonRequirements(t *testing.T) {
 	require.True(t, ok)
 }
 
-func TestWeightsWithNameYAML(t *testing.T) {
+func TestWeightsWithSourceYAML(t *testing.T) {
 	yamlString := `build:
   python_version: "3.12"
+model: "registry.example.com/acme/my-model"
 predict: "predict.py:Predictor"
 
 weights:
   - name: model-v1
-    source: file://./weights/model-v1.zip
     target: "/weights/model-v1"
+    source:
+      uri: "hf://acme/model-v1"
+      exclude: ["*.onnx"]
   - name: model-v2
-    source: file://./weights/model-v2.zip
     target: "/weights/model-v2"
+    source:
+      uri: "./local-weights/"
 `
 
 	config, err := FromYAML([]byte(yamlString))
 	require.NoError(t, err)
 	require.Len(t, config.Weights, 2)
+	require.Equal(t, "registry.example.com/acme/my-model", config.Model)
 
 	require.Equal(t, "model-v1", config.Weights[0].Name)
-	require.Equal(t, "file://./weights/model-v1.zip", config.Weights[0].Source)
 	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
+	require.NotNil(t, config.Weights[0].Source)
+	require.Equal(t, "hf://acme/model-v1", config.Weights[0].Source.URI)
+	require.Equal(t, "hf://acme/model-v1", config.Weights[0].SourceURI())
+	require.Equal(t, []string{"*.onnx"}, config.Weights[0].Source.Exclude)
+	require.Empty(t, config.Weights[0].Source.Include)
 
 	require.Equal(t, "model-v2", config.Weights[1].Name)
-	require.Equal(t, "file://./weights/model-v2.zip", config.Weights[1].Source)
 	require.Equal(t, "/weights/model-v2", config.Weights[1].Target)
+	require.NotNil(t, config.Weights[1].Source)
+	require.Equal(t, "./local-weights/", config.Weights[1].Source.URI)
 }
 
-func TestWeightsWithoutNameYAML(t *testing.T) {
+func TestWeightsWithoutSourceYAML(t *testing.T) {
 	yamlString := `build:
   python_version: "3.12"
+model: "registry.example.com/acme/my-model"
 predict: "predict.py:Predictor"
 
 weights:
-  - source: file://./weights/model.zip
-    target: "/weights/model"
+  - name: base-model
+    target: "/src/weights"
 `
 
 	config, err := FromYAML([]byte(yamlString))
 	require.NoError(t, err)
 	require.Len(t, config.Weights, 1)
 
-	require.Equal(t, "", config.Weights[0].Name)
-	require.Equal(t, "file://./weights/model.zip", config.Weights[0].Source)
-	require.Equal(t, "/weights/model", config.Weights[0].Target)
+	require.Equal(t, "base-model", config.Weights[0].Name)
+	require.Equal(t, "/src/weights", config.Weights[0].Target)
+	require.Nil(t, config.Weights[0].Source)
+	require.Equal(t, "", config.Weights[0].SourceURI())
 }
 
-func TestWeightsWithNameJSON(t *testing.T) {
+func TestWeightsWithSourceJSON(t *testing.T) {
 	jsonString := `{
 	"build": {
 		"python_version": "3.12"
 	},
+	"model": "registry.example.com/acme/my-model",
 	"predict": "predict.py:Predictor",
 	"weights": [
 		{
 			"name": "model-v1",
-			"source": "file://./weights/model-v1.zip",
-			"target": "/weights/model-v1"
+			"target": "/weights/model-v1",
+			"source": {
+				"uri": "hf://acme/model-v1",
+				"exclude": ["*.onnx"]
+			}
 		},
 		{
 			"name": "model-v2",
-			"source": "file://./weights/model-v2.zip",
-			"target": "/weights/model-v2"
+			"target": "/weights/model-v2",
+			"source": {
+				"uri": "./local-weights/"
+			}
 		}
 	]
 }`
@@ -746,14 +764,18 @@ func TestWeightsWithNameJSON(t *testing.T) {
 	err := json.Unmarshal([]byte(jsonString), &config)
 	require.NoError(t, err)
 	require.Len(t, config.Weights, 2)
+	require.Equal(t, "registry.example.com/acme/my-model", config.Model)
 
 	require.Equal(t, "model-v1", config.Weights[0].Name)
-	require.Equal(t, "file://./weights/model-v1.zip", config.Weights[0].Source)
 	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
+	require.NotNil(t, config.Weights[0].Source)
+	require.Equal(t, "hf://acme/model-v1", config.Weights[0].Source.URI)
+	require.Equal(t, []string{"*.onnx"}, config.Weights[0].Source.Exclude)
 
 	require.Equal(t, "model-v2", config.Weights[1].Name)
-	require.Equal(t, "file://./weights/model-v2.zip", config.Weights[1].Source)
 	require.Equal(t, "/weights/model-v2", config.Weights[1].Target)
+	require.NotNil(t, config.Weights[1].Source)
+	require.Equal(t, "./local-weights/", config.Weights[1].Source.URI)
 }
 
 func TestSDKVersionConfig(t *testing.T) {

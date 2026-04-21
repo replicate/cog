@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -72,6 +73,7 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	validateBuild(cfg, options, result)
 	validateEnvironment(cfg, result)
 	validateConcurrency(cfg, result)
+	validateWeights(cfg, result)
 
 	// Check deprecated fields
 	checkDeprecatedFields(cfg, result)
@@ -453,6 +455,107 @@ func validateConcurrency(cfg *configFile, result *ValidationResult) {
 			}
 		}
 	}
+}
+
+// weightNameRegex matches OCI-safe path components: lowercase alphanumeric,
+// separated by hyphens, dots, or underscores. Weight names become registry
+// path components (<model>/weights/<name>), so they must follow OCI rules.
+var weightNameRegex = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
+
+// validateWeights validates the weights stanza.
+func validateWeights(cfg *configFile, result *ValidationResult) {
+	if len(cfg.Weights) == 0 {
+		return
+	}
+
+	// Weights require a model field.
+	if cfg.Model == nil || *cfg.Model == "" {
+		result.AddError(&ValidationError{
+			Field:   "model",
+			Message: "model is required when weights are configured",
+		})
+	}
+
+	seenNames := make(map[string]bool)
+	seenTargets := make(map[string]bool)
+	var cleanedTargets []string
+
+	for i, w := range cfg.Weights {
+		idx := fmt.Sprintf("weights[%d]", i)
+
+		// Name is required, must be OCI-safe, and must be unique.
+		switch {
+		case w.Name == "":
+			result.AddError(&ValidationError{
+				Field:   idx + ".name",
+				Message: "name is required",
+			})
+		case !weightNameRegex.MatchString(w.Name):
+			result.AddError(&ValidationError{
+				Field:   idx + ".name",
+				Value:   w.Name,
+				Message: "must contain only lowercase alphanumeric characters, hyphens, dots, or underscores (e.g. \"my-model-weights\")",
+			})
+		case seenNames[w.Name]:
+			result.AddError(&ValidationError{
+				Field:   idx + ".name",
+				Value:   w.Name,
+				Message: "duplicate weight name",
+			})
+		default:
+			seenNames[w.Name] = true
+		}
+
+		// Target is required, must be absolute, and must be unique.
+		if w.Target == "" {
+			result.AddError(&ValidationError{
+				Field:   idx + ".target",
+				Message: "target is required",
+			})
+		} else {
+			if !filepath.IsAbs(w.Target) {
+				result.AddError(&ValidationError{
+					Field:   idx + ".target",
+					Value:   w.Target,
+					Message: "target must be an absolute path",
+				})
+			}
+
+			cleaned := filepath.Clean(w.Target)
+			if seenTargets[cleaned] {
+				result.AddError(&ValidationError{
+					Field:   idx + ".target",
+					Value:   w.Target,
+					Message: "duplicate weight target",
+				})
+			} else {
+				seenTargets[cleaned] = true
+
+				// Check disjoint subtrees: no target may be an ancestor
+				// or descendant of another target.
+				for _, prev := range cleanedTargets {
+					if isSubpath(cleaned, prev) || isSubpath(prev, cleaned) {
+						result.AddError(&ValidationError{
+							Field:   idx + ".target",
+							Value:   w.Target,
+							Message: fmt.Sprintf("target overlaps with %q; weight targets must be disjoint", prev),
+						})
+						break
+					}
+				}
+				cleanedTargets = append(cleanedTargets, cleaned)
+			}
+		}
+	}
+}
+
+// isSubpath reports whether child is a strict subdirectory of parent.
+// Both paths must be cleaned absolute paths.
+func isSubpath(child, parent string) bool {
+	if child == parent {
+		return false
+	}
+	return strings.HasPrefix(child, parent+"/")
 }
 
 // checkDeprecatedFields checks for deprecated fields and adds warnings.

@@ -3,9 +3,9 @@
 title: weights.lock v2 format and source fingerprinting
 status: todo
 type: task
-priority: normal
+priority: critical
 created_at: 2026-04-17T19:27:20Z
-updated_at: 2026-04-21T17:01:35Z
+updated_at: 2026-04-21T19:48:11Z
 parent: cog-66gt
 blocked_by:
     - cog-2gv9

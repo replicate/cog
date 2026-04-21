@@ -3,10 +3,10 @@
 title: cog weights pull (download from registry)
 status: todo
 type: task
-priority: normal
+priority: low
 created_at: 2026-04-17T19:27:55Z
-updated_at: 2026-04-21T17:01:35Z
-parent: cog-66gt
+updated_at: 2026-04-21T19:49:02Z
+parent: cog-kgd7
 blocked_by:
     - cog-b2mv
 ---

@@ -1,49 +1,49 @@
 ---
 # cog-ng36
-title: Auto-generate .dockerignore for cog.yaml weights entries
+title: Weight caching and build-context exclusion
 status: todo
 type: task
-priority: critical
+priority: low
 created_at: 2026-04-17T23:12:10Z
-updated_at: 2026-04-21T17:12:44Z
+updated_at: 2026-04-21T19:49:29Z
 parent: cog-66gt
 ---
 
-When cog.yaml has v1 managed `weights:` entries, `cog build` / `cog push` currently copy the entire weight source directory into the docker build context via `COPY . /src`. Weights can be multi-GB per project, so every build transfers gigabytes for no reason — the weights land in the image at runtime via OCI layer extraction, not at build time.
+Two related problems around weight data during builds:
 
-## Repro
+## 1. Build-context bloat (local file:// sources only)
+
+When `cog.yaml` has managed `weights:` entries with local `file://` sources that happen to be inside the Docker build context, `COPY . /src` drags multi-GB weight dirs into buildkit for no reason — weights arrive at runtime via OCI layer extraction, not at build time.
+
+This is worth fixing but **only applies when the source path is within the docker context**. A `.dockerignore` exclusion is the right fix for this narrow case.
+
+## 2. Weight caching/buffering during import (the bigger problem)
+
+The more important question is how we cache and buffer weight data while working on them locally. Consider:
+
+- Source on NFS or S3: `.dockerignore` is useless — the data isn't in the context
+- Iterating on weights locally: re-packing and re-uploading multi-GB on every import is painful
+- The `.cog/weights-cache/` packed-tar cache helps for re-push but doesn't address fetch/download caching
+
+We need a local weight cache strategy that works regardless of source scheme:
+- Local cache directory for fetched/packed weight data
+- Content-addressed so repeated imports of unchanged weights are fast
+- Works with file://, hf://, s3://, http:// sources
+- Cache invalidation tied to source fingerprinting (cog-s5fy)
+
+## Original .dockerignore repro (for reference)
 
 ```bash
 cd examples/test-weights
-rm .dockerignore  # undo the manual fix
+rm .dockerignore
 COG_OCI_INDEX=1 cog push localhost:5000/test-weights
+# transferring context: 9.87GB 64.4s (without ignore)
+# transferring context: 11.97 MB 0.1s (with ignore)
 ```
-
-Observe in buildkit output:
-
-```
-#9 [internal] load build context
-#9 transferring context: 9.87GB 64.4s
-```
-
-With a hand-written `.dockerignore` that excludes `weights/`, the same context transfer is **11.97 MB in 0.1 s**.
-
-## Proposed fix
-
-In `pkg/image/build.go`, on the `!separateWeights` branch (the one taken by v1 managed weights), auto-generate a `.dockerignore` that excludes every `cfg.Weights[].Source` path. Existing machinery to crib from:
-- `backupDockerignore` / `restoreDockerignore` (lines 650–677)
-- `writeDockerignore` (line 637) — already merges with existing user-written `.dockerignore`
-- `makeDockerignoreForWeights` in `pkg/dockerfile/standard_generator.go` — builds an exclude list, but hard-codes the legacy HF auto-detect path. We want something analogous that walks `cfg.Weights` instead of `FindWeights(fileWalker)`.
-
-Also needed: exclude `.cog/weights-cache/` (the packed-tar cache produced by `cog weights build`) but NOT `.cog/tmp/` (cog's own Dockerfile stages wheels + CA cert through there — excluding the whole `.cog/` breaks the build). Learned the hard way.
 
 ## Tasks
-- [ ] Decide whether to do this unconditionally when `cfg.Weights` is non-empty, or gate on `COG_OCI_INDEX` / v1 managed-weights feature flag. Probably unconditional — there is no scenario where weights declared in `cog.yaml` should end up in the image.
-- [ ] Factor a `makeDockerignoreForManagedWeights(cfg.Weights) string` helper
-- [ ] Wire `backupDockerignore` → `writeDockerignore(managedWeightsExcludes)` → docker build → `restoreDockerignore` around the `!separateWeights` image build in `pkg/image/build.go`
-- [ ] Add unit tests covering: no weights (no-op), some weights (excludes appear), existing user `.dockerignore` (merged correctly)
-- [ ] Add integration test that asserts a multi-GB weights dir does not inflate the build context
-- [ ] Update `examples/test-weights/` to delete the hand-written `.dockerignore` once this is fixed
-
-## Out of scope
-- General `include`/`exclude` filters on weight packing (that's bean `6wm0`). This task is just about keeping weights out of the docker build context.
+- [ ] For local sources within docker context: auto-exclude `cfg.Weights[].Source` paths from `.dockerignore`
+- [ ] Also exclude `.cog/weights-cache/` but NOT `.cog/tmp/`
+- [ ] Design local weight cache strategy that works across source schemes
+- [ ] Content-addressed cache so unchanged weights skip re-pack/re-upload
+- [ ] Tie cache invalidation to source fingerprinting (cog-s5fy)
