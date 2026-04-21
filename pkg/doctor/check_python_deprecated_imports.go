@@ -130,9 +130,10 @@ type byteRange struct {
 }
 
 // removeDeprecatedImportsAST uses tree-sitter to identify and remove:
-// 1. import_from_statement nodes that import deprecated names
-// 2. expression_statement nodes that reference those deprecated names
-// 3. orphaned "import X" statements where X is no longer used
+//  1. import_from_statement nodes that import deprecated names (or the
+//     deprecated names alone if other names in the import statement remain)
+//  2. expression_statement nodes that reference those deprecated names
+//  3. orphaned "import X" statements where X is no longer used
 func removeDeprecatedImportsAST(ctx context.Context, source []byte, tree *sitter.Tree) string {
 	root := tree.RootNode()
 
@@ -167,8 +168,28 @@ func removeDeprecatedImportsAST(ctx context.Context, source []byte, tree *sitter
 		return string(source)
 	}
 
-	// Step 2: Remove deprecated import lines/names (handles partial imports).
-	fixed := removeDeprecatedImportLines(string(source), namesToRemove)
+	// Step 2: Remove deprecated names from their import statements via AST.
+	//   - If it's the only imported name from that module, drop the whole line.
+	//   - Otherwise rewrite the import to omit the deprecated name.
+	var importEdits []byteRangeEdit
+	for _, child := range schemaPython.NamedChildren(root) {
+		if child.Type() != "import_from_statement" {
+			continue
+		}
+		moduleNode := child.ChildByFieldName("module_name")
+		if moduleNode == nil {
+			continue
+		}
+		module := schemaPython.Content(moduleNode, source)
+		toDrop := namesToRemove[module]
+		if len(toDrop) == 0 {
+			continue
+		}
+		if edit, ok := editDropFromImport(child, source, toDrop); ok {
+			importEdits = append(importEdits, edit)
+		}
+	}
+	fixed := string(applyByteRangeEdits(source, importEdits))
 
 	// Step 3: Re-parse and use tree-sitter to find statements referencing
 	// the deprecated names, then remove them by byte range.
@@ -255,6 +276,130 @@ func applyRemovals(source []byte, ranges []byteRange) string {
 	}
 
 	return string(result)
+}
+
+// byteRangeEdit represents a byte-range replacement. If replacement is nil,
+// it's a pure deletion. Used to rewrite import statements to drop specific
+// names without removing the whole line.
+type byteRangeEdit struct {
+	start       uint32
+	end         uint32
+	replacement []byte
+}
+
+// editDropFromImport returns an edit that rewrites a `from MODULE import ...`
+// statement to omit the given names. If all names are dropped, the edit
+// removes the entire statement line (including the trailing newline).
+// Returns ok=false if none of the target names are present.
+func editDropFromImport(importNode *sitter.Node, source []byte, toDrop map[string]bool) (byteRangeEdit, bool) {
+	moduleNode := importNode.ChildByFieldName("module_name")
+	if moduleNode == nil {
+		return byteRangeEdit{}, false
+	}
+	module := schemaPython.Content(moduleNode, source)
+
+	// Collect imported names, preserving any `as alias` forms.
+	type entry struct {
+		text string // original source fragment for the name (possibly aliased)
+		base string // original (un-aliased) name to match against toDrop
+	}
+	var all []entry
+	for _, child := range schemaPython.AllChildren(importNode) {
+		switch child.Type() {
+		case "dotted_name":
+			if child.StartByte() == moduleNode.StartByte() {
+				continue
+			}
+			n := schemaPython.Content(child, source)
+			all = append(all, entry{text: n, base: n})
+		case "aliased_import":
+			orig := child.ChildByFieldName("name")
+			if orig == nil {
+				continue
+			}
+			all = append(all, entry{
+				text: schemaPython.Content(child, source),
+				base: schemaPython.Content(orig, source),
+			})
+		case "import_list":
+			for _, ic := range schemaPython.AllChildren(child) {
+				switch ic.Type() {
+				case "dotted_name":
+					n := schemaPython.Content(ic, source)
+					all = append(all, entry{text: n, base: n})
+				case "aliased_import":
+					orig := ic.ChildByFieldName("name")
+					if orig == nil {
+						continue
+					}
+					all = append(all, entry{
+						text: schemaPython.Content(ic, source),
+						base: schemaPython.Content(orig, source),
+					})
+				}
+			}
+		}
+	}
+
+	var kept []string
+	dropped := false
+	for _, e := range all {
+		if toDrop[e.base] {
+			dropped = true
+			continue
+		}
+		kept = append(kept, e.text)
+	}
+	if !dropped {
+		return byteRangeEdit{}, false
+	}
+
+	// If nothing is left, remove the whole statement (and trailing newline).
+	if len(kept) == 0 {
+		start := importNode.StartByte()
+		end := importNode.EndByte()
+		for start > 0 && source[start-1] != '\n' {
+			start--
+		}
+		if int(end) < len(source) && source[end] == '\n' {
+			end++
+		}
+		return byteRangeEdit{start: start, end: end}, true
+	}
+
+	newLine := []byte("from " + module + " import " + strings.Join(kept, ", "))
+	return byteRangeEdit{
+		start:       importNode.StartByte(),
+		end:         importNode.EndByte(),
+		replacement: newLine,
+	}, true
+}
+
+// applyByteRangeEdits applies edits to source. Edits must not overlap.
+// They are sorted descending by start so earlier offsets stay valid.
+func applyByteRangeEdits(source []byte, edits []byteRangeEdit) []byte {
+	if len(edits) == 0 {
+		return source
+	}
+	sorted := make([]byteRangeEdit, len(edits))
+	copy(sorted, edits)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].start > sorted[j].start
+	})
+
+	result := make([]byte, len(source))
+	copy(result, source)
+	for _, e := range sorted {
+		if int(e.start) > len(result) {
+			continue
+		}
+		end := min(int(e.end), len(result))
+		// Replace result[e.start:end] with e.replacement.
+		tail := append([]byte{}, result[end:]...)
+		result = append(result[:e.start], e.replacement...)
+		result = append(result, tail...)
+	}
+	return result
 }
 
 // removeOrphanedImportsAST re-parses source and removes "import X" statements
@@ -358,121 +503,4 @@ func extractImportedNames(importNode *sitter.Node, source []byte) []string {
 	}
 
 	return names
-}
-
-// removeDeprecatedImportLines removes specific names from import lines.
-// If all names are removed, the entire import line is dropped.
-// Handles both single-line and multi-line parenthesized imports.
-func removeDeprecatedImportLines(source string, namesToRemove map[string]map[string]bool) string {
-	lines := strings.Split(source, "\n")
-	var result []string
-
-	// Track multi-line import state
-	inMultilineImport := false
-	var multilineModule string
-	var multilineNames []string
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Handle multi-line imports
-		if inMultilineImport {
-			// Collect names from continuation lines
-			cleaned := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(trimmed), ")"))
-			if cleaned != "" {
-				for n := range strings.SplitSeq(cleaned, ",") {
-					n = strings.TrimSpace(n)
-					if n != "" {
-						multilineNames = append(multilineNames, n)
-					}
-				}
-			}
-			if strings.Contains(trimmed, ")") {
-				inMultilineImport = false
-				// Now filter the collected names
-				names := namesToRemove[multilineModule]
-				var remaining []string
-				for _, name := range multilineNames {
-					if !names[name] {
-						remaining = append(remaining, name)
-					}
-				}
-				if len(remaining) > 0 {
-					result = append(result, "from "+multilineModule+" import "+strings.Join(remaining, ", "))
-				}
-			}
-			continue
-		}
-
-		removed := false
-		for module, names := range namesToRemove {
-			prefix := "from " + module + " import "
-			if !strings.HasPrefix(trimmed, prefix) {
-				continue
-			}
-
-			importPart := trimmed[len(prefix):]
-
-			// Check for multi-line parenthesized import
-			if strings.HasPrefix(strings.TrimSpace(importPart), "(") {
-				inner := strings.TrimSpace(importPart)[1:] // strip leading "("
-				if strings.Contains(inner, ")") {
-					// Single-line parenthesized: from X import (A, B)
-					inner = strings.TrimSuffix(strings.TrimSpace(inner), ")")
-					importNames := strings.Split(inner, ",")
-					var remaining []string
-					for _, name := range importNames {
-						name = strings.TrimSpace(name)
-						if name != "" && !names[name] {
-							remaining = append(remaining, name)
-						}
-					}
-					if len(remaining) > 0 {
-						result = append(result, prefix+strings.Join(remaining, ", "))
-					}
-					removed = true
-				} else {
-					// Start of multi-line import
-					inMultilineImport = true
-					multilineModule = module
-					multilineNames = nil
-					// Collect any names on the first line after "("
-					if inner != "" {
-						for n := range strings.SplitSeq(inner, ",") {
-							n = strings.TrimSpace(n)
-							if n != "" {
-								multilineNames = append(multilineNames, n)
-							}
-						}
-					}
-					removed = true
-				}
-				break
-			}
-
-			importNames := strings.Split(importPart, ",")
-
-			var remaining []string
-			for _, name := range importNames {
-				name = strings.TrimSpace(name)
-				if !names[name] {
-					remaining = append(remaining, name)
-				}
-			}
-
-			if len(remaining) == 0 {
-				removed = true
-			} else {
-				result = append(result, prefix+strings.Join(remaining, ", "))
-				removed = true
-			}
-			break
-		}
-
-		if !removed {
-			result = append(result, line)
-		}
-	}
-
-	return strings.Join(result, "\n")
 }
