@@ -113,6 +113,8 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
 
       - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-v2
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
 

@@ -11,6 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-v2
 
       - name: Generate CLI docs
         run: go run ./tools/gendocs/main.go -o docs/cli.md

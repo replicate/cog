@@ -127,6 +127,8 @@ jobs:
           fetch-depth: 0
 
       - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-v2
 
       - name: Update coglet version constraint
         run: |
@@ -215,6 +217,8 @@ jobs:
           fetch-depth: 0
 
       - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-v2
 
       - name: Check for existing release
         run: |
