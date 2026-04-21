@@ -34,12 +34,14 @@ env:
   # Note: do NOT add rustup/rustup-init to MISE_DISABLE_TOOLS — mise needs
   # them to install Rust components (rustfmt, clippy) specified in mise.toml.
   #
-  # mise cache & Rust components:
-  #   mise-action caches ~/.local/share/mise but NOT ~/.rustup. On cache hit,
-  #   mise sees rust as "installed" (symlink exists) and skips reinstall, but
-  #   the actual rustup toolchain + components (rustfmt, clippy) are missing.
-  #   Rust jobs must run `rustup component add` after mise-action to ensure
-  #   components are present regardless of cache state.
+  # mise cache caveats:
+  #   mise-action caches ~/.local/share/mise but NOT external tool state:
+  #   - ~/.rustup (Rust toolchain + components like rustfmt, clippy)
+  #   - pipx/uv venvs (nox binary is a wrapper pointing to a venv outside mise)
+  #   On cache hit, mise sees tools as "installed" and skips reinstall, but
+  #   the actual binaries are missing. Affected jobs must force-reinstall:
+  #   - Rust jobs: `rustup component add rustfmt clippy`
+  #   - lint-python: `mise install pipx:nox --force`
   #
   # mise cache keys: each job uses its own key (mise-ci-{job_id}) so parallel
   # jobs don't race on a single shared cache entry.
@@ -352,6 +354,8 @@ jobs:
       - uses: jdx/mise-action@v4
         with:
           cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Ensure nox is installed
+        run: mise install pipx:nox --force
       - name: Lint Python
         run: mise run lint:python
 
