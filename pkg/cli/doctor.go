@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,12 @@ import (
 	"github.com/replicate/cog/pkg/doctor"
 	"github.com/replicate/cog/pkg/util/console"
 )
+
+// errDoctorFoundIssues is returned by runDoctor when findings include at
+// least one unfixed error. It exists only to make the command exit non-zero;
+// all user-facing output was already printed by printDoctorResults, so we
+// configure cobra to suppress its own error printout via SilenceErrors.
+var errDoctorFoundIssues = errors.New("doctor found issues")
 
 func newDoctorCommand() *cobra.Command {
 	var fix bool
@@ -26,6 +33,10 @@ Pass --fix to automatically apply safe fixes.`,
 			return runDoctor(cmd.Context(), fix)
 		},
 		Args: cobra.NoArgs,
+		// printDoctorResults already prints findings to the user; suppress
+		// cobra's duplicate "Error: ..." line and usage noise on exit.
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 
 	addConfigFlag(cmd)
@@ -59,7 +70,7 @@ func runDoctor(ctx context.Context, fix bool) error {
 	printDoctorResults(result, fix)
 
 	if result.HasErrors() {
-		return fmt.Errorf("doctor found errors")
+		return errDoctorFoundIssues
 	}
 
 	return nil
