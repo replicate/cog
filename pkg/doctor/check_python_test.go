@@ -322,6 +322,132 @@ class Predictor(BasePredictor):
 	require.NotContains(t, string(content), "arbitrary_types_allowed")
 }
 
+// TestPydanticBaseModelCheck_Fix_PreservesUnrelatedPydanticClass verifies that
+// the narrow-scope AST fixer only rewrites classes that actually trigger the
+// check, leaving unrelated pydantic-derived classes intact.
+func TestPydanticBaseModelCheck_Fix_PreservesUnrelatedPydanticClass(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path
+from pydantic import BaseModel, ConfigDict
+
+# This class does NOT have arbitrary_types_allowed=True and should remain a plain
+# pydantic.BaseModel-derived class -- the fixer must not rewrite it.
+class UnrelatedConfig(BaseModel):
+    name: str
+
+class VoiceCloningOutputs(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    audio: Path
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> VoiceCloningOutputs:
+        return VoiceCloningOutputs(audio="a.wav")
+`)
+	ctx := &CheckContext{
+		ctx:         context.Background(),
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+
+	check := &PydanticBaseModelCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1,
+		"only VoiceCloningOutputs should be flagged; UnrelatedConfig has no arbitrary_types_allowed=True")
+
+	err = check.Fix(ctx, findings)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	src := string(content)
+
+	// BaseModel must still be imported from pydantic so UnrelatedConfig still works.
+	require.Contains(t, src, "from pydantic import BaseModel",
+		"BaseModel must still be imported from pydantic because UnrelatedConfig needs it")
+	// UnrelatedConfig must be untouched.
+	require.Contains(t, src, "class UnrelatedConfig(BaseModel):")
+	// VoiceCloningOutputs should no longer use pydantic.BaseModel — it should
+	// inherit from cog.BaseModel (aliased to avoid collision with pydantic's).
+	require.NotContains(t, src, "class VoiceCloningOutputs(BaseModel):")
+	require.NotContains(t, src, "model_config = ConfigDict",
+		"the arbitrary_types_allowed workaround should have been removed")
+}
+
+// TestPydanticBaseModelCheck_Fix_PreservesPydanticImportForField verifies that
+// `import pydantic` is preserved when other `pydantic.<attr>` references remain.
+func TestPydanticBaseModelCheck_Fix_PreservesPydanticImportForField(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path
+import pydantic
+
+class Output(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+    name: str = pydantic.Field(default="x")
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> Output:
+        return Output(name=text)
+`)
+	ctx := &CheckContext{
+		ctx:         context.Background(),
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+	check := &PydanticBaseModelCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+
+	err = check.Fix(ctx, findings)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	src := string(content)
+
+	// `import pydantic` must be preserved because pydantic.Field is still used.
+	require.Contains(t, src, "import pydantic",
+		"import pydantic must be preserved because pydantic.Field is still referenced")
+	require.Contains(t, src, "pydantic.Field")
+	// But the class should now inherit from bare BaseModel.
+	require.Contains(t, src, "class Output(BaseModel):")
+	require.NotContains(t, src, "arbitrary_types_allowed")
+}
+
+// TestPydanticBaseModelCheck_Fix_TrailingComma handles the edge case of
+// ConfigDict(arbitrary_types_allowed=True,) with a trailing comma.
+func TestPydanticBaseModelCheck_Fix_TrailingComma(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path
+from pydantic import BaseModel, ConfigDict
+
+class Output(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True,)
+    audio: Path
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> Output:
+        return Output(audio="a.wav")
+`)
+	ctx := &CheckContext{
+		ctx:         context.Background(),
+		ProjectDir:  dir,
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+	check := &PydanticBaseModelCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.NoError(t, check.Fix(ctx, findings))
+
+	content, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	src := string(content)
+	require.NotContains(t, src, "arbitrary_types_allowed")
+	require.NotContains(t, src, "model_config", "model_config should be dropped entirely (only arg was the removed one)")
+}
+
 func TestDeprecatedImportsCheck_Clean(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "predict.py", `from cog import BasePredictor
