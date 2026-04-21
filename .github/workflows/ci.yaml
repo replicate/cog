@@ -31,17 +31,8 @@ env:
   CARGO_TERM_COLOR: always
   # CGo required for go-tree-sitter (static Python schema parser)
   CGO_ENABLED: "1"
-  # Disable tools in mise that CI installs via dedicated GitHub Actions for
-  # better reliability (avoids transient GitHub Releases 502s from aqua downloads),
-  # better caching, and guaranteed tool ordering.
-  # - Rust toolchain: dtolnay/rust-toolchain
-  # - cargo-binstall: taiki-e/install-action
-  # - Python: astral-sh/setup-uv
-  # - golangci-lint: golangci/golangci-lint-action
-  # - gotestsum: go install (uses Go module proxy, not GitHub Releases)
-  # - cargo-deny, cargo-nextest: taiki-e/install-action
-  # - zig, cargo-zigbuild, maturin, cargo-insta: not needed in CI (maturin-action bundles zig)
-  MISE_DISABLE_TOOLS: rust,rustup,rustup-init,cargo-binstall,python,golangci-lint,gotestsum,cargo-deny,cargo-insta,cargo-nextest,cargo:cargo-nextest,zig,cargo-zigbuild,maturin,cargo:maturin
+  # Note: do NOT add rustup/rustup-init to MISE_DISABLE_TOOLS — mise needs
+  # them to install Rust components (rustfmt, clippy) specified in mise.toml.
 
 permissions: {}
 
@@ -130,15 +121,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v4
         with:
-          cache: false
+          cache_key_prefix: mise-v2
       - name: Build SDK
         run: mise run ci:build:sdk
       - name: Upload SDK package
@@ -155,19 +140,14 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # No mise needed - maturin-action bundles maturin and zig
-      # Explicitly request MINIMUM_PYTHON inside the manylinux container so
-      # maturin produces an ABI3 wheel (cp310-abi3). Without this, maturin
-      # picks up the container's default Python (3.8), which doesn't support
-      # ABI3, producing a cp38-cp38 wheel that the upload glob won't match.
+      # maturin-action bundles maturin and zig inside a manylinux container.
+      # Explicitly request MINIMUM_PYTHON inside the container so maturin
+      # produces an ABI3 wheel (cp310-abi3). Without this, maturin picks up
+      # the container's default Python (3.8), which doesn't support ABI3.
       - name: Build coglet wheel (ABI3)
         uses: PyO3/maturin-action@v1
         with:
@@ -193,13 +173,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v6
+      - uses: jdx/mise-action@v4
         with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
+          cache_key_prefix: mise-v2
       - name: Get version from VERSION.txt
         id: version
         run: echo "version=$(tr -d '[:space:]' < VERSION.txt)" >> "$GITHUB_OUTPUT"
@@ -228,12 +204,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v4
         with:
-          cache: false
+          cache_key_prefix: mise-v2
       - name: Check Go formatting
         run: mise run fmt:go
 
@@ -243,12 +216,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v4
         with:
-          components: rustfmt
-      # No mise needed - rustfmt comes with toolchain
+          cache_key_prefix: mise-v2
       - name: Check Rust formatting
-        run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
+        run: mise run fmt:rust
 
   fmt-python:
     name: Format Python
@@ -256,15 +228,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v4
         with:
-          cache: false
+          cache_key_prefix: mise-v2
       - name: Check Python formatting
         run: mise run fmt:python
 
@@ -274,12 +240,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v4
         with:
-          cache: false
+          cache_key_prefix: mise-v2
       - name: Check llms.txt is up to date
         run: mise run docs:llm:check
       - name: Check CLI docs are up to date
@@ -292,22 +255,18 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # setup-python provides a shared-library Python (libpython3.x.so) needed
-      # by stub_gen at runtime (PyO3 auto-initialize). setup-uv's
+      # by stub_gen at runtime (PyO3 auto-initialize). mise's
       # python-build-standalone is statically linked and doesn't ship the .so.
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - uses: astral-sh/setup-uv@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
-          cache: false
+          cache_key_prefix: mise-v2
       - name: Check stubs are up to date
         run: |
           # stub_gen links libpython dynamically; tell the linker where to find it
@@ -324,12 +283,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: jdx/mise-action@v4
         with:
-          go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.10.1
+          cache_key_prefix: mise-v2
+      - name: Lint Go
+        run: mise run lint:go
 
   lint-rust:
     name: Lint Rust
@@ -337,16 +295,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # No mise needed - clippy comes with toolchain
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-v2
       - name: Lint Rust (clippy)
-        run: cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
+        run: mise run lint:rust
 
   lint-rust-deny:
     name: Lint Rust (deny)
@@ -354,13 +311,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@v2
+      - uses: jdx/mise-action@v4
         with:
-          tool: cargo-deny@0.19.0
-      # No mise needed - cargo-deny installed via taiki-e
+          cache_key_prefix: mise-v2
       - name: Check licenses and advisories
-        run: cargo deny --manifest-path crates/Cargo.toml check
+        run: mise run lint:rust:deny
 
   lint-python:
     name: Lint Python
@@ -380,15 +335,9 @@ jobs:
           path: dist
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v4
         with:
-          cache: false
+          cache_key_prefix: mise-v2
       - name: Lint Python
         run: mise run lint:python
 
@@ -398,12 +347,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v4
         with:
-          cache: false
+          cache_key_prefix: mise-v2
       - name: Lint Markdown
         run: mise run lint:docs
 
@@ -421,12 +367,9 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: jdx/mise-action@v4
         with:
-          go-version-file: go.mod
-      # gotestsum via Go module proxy (not GitHub Releases) for reliability
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@v1.13.0
+          cache_key_prefix: mise-v2
       - name: Test Go
         shell: bash
         run: |
@@ -450,9 +393,9 @@ jobs:
       CGO_ENABLED: "1"
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: jdx/mise-action@v4
         with:
-          go-version-file: go.mod
+          cache_key_prefix: mise-v2
       - name: Fuzz schema type resolution
         run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime=30s
       - name: Fuzz JSON schema generation
@@ -468,17 +411,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest@0.9.120
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # No mise needed - cargo-nextest installed via taiki-e
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-v2
       - name: Test Rust
-        run: cargo nextest run --manifest-path crates/Cargo.toml --workspace --exclude coglet-python --no-tests=pass
+        run: mise run test:rust
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
@@ -497,13 +438,9 @@ jobs:
           merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-v2
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test Python
@@ -527,16 +464,13 @@ jobs:
         with:
           name: CogletRustWheel
           path: dist
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable  # Required for cargo-binstall to find cargo
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: astral-sh/setup-uv@v6
+      - uses: jdx/mise-action@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          cache_key_prefix: mise-v2
       - name: Test coglet-python bindings
         run: uvx nox -s coglet -p ${{ matrix.python-version }}
 
@@ -654,13 +588,9 @@ jobs:
         run: |
           cp dist/cog ./cog
           chmod +x ./cog
-      - uses: actions/setup-go@v6
+      - uses: jdx/mise-action@v4
         with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-      # gotestsum via Go module proxy (not GitHub Releases) for reliability
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@v1.13.0
+          cache_key_prefix: mise-v2
       - name: Set wheel environment
         run: |
           # Use locally-built wheels, not PyPI (version may not be published yet)
@@ -810,16 +740,15 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-v2
       - name: Check coglet crates.io publish
         run: cargo publish --dry-run -p coglet --manifest-path crates/Cargo.toml
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
