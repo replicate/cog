@@ -1,8 +1,6 @@
 package model
 
 import (
-	"time"
-
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
@@ -43,24 +41,22 @@ type WeightArtifact struct {
 	Target string
 	Layers []LayerResult
 
-	// Created is stamped into the manifest's org.opencontainers.image.created
-	// annotation. Carried on the artifact so the manifest digest recorded
-	// by the builder matches the one the pusher sends, given identical
-	// layer inputs. Pushers that also set a ReferenceDigest will still
-	// produce a different manifest digest — the builder's descriptor is
-	// the standalone-push (no-reference) shape.
-	Created time.Time
+	// SetDigest is the content-addressable weight set digest (§2.4).
+	SetDigest string
+	// ConfigBlob is the serialized config blob JSON (§2.3).
+	ConfigBlob []byte
 }
 
 // NewWeightArtifact creates a WeightArtifact. desc is the manifest
-// descriptor computed by the builder, matching the standalone (no
-// ReferenceDigest) manifest shape.
-func NewWeightArtifact(name string, desc v1.Descriptor, target string, layers []LayerResult) *WeightArtifact {
+// descriptor computed by the builder.
+func NewWeightArtifact(name string, desc v1.Descriptor, target string, layers []LayerResult, setDigest string, configBlob []byte) *WeightArtifact {
 	return &WeightArtifact{
 		name:       name,
 		descriptor: desc,
 		Target:     target,
 		Layers:     layers,
+		SetDigest:  setDigest,
+		ConfigBlob: configBlob,
 	}
 }
 

@@ -29,7 +29,7 @@ func TestIndexBuilder_BuildFromDescriptors(t *testing.T) {
 
 		builder := NewIndexBuilder()
 		builder.SetImageDescriptor(imgDesc, &v1.Platform{OS: "linux", Architecture: "amd64"})
-		builder.AddWeightDescriptor(weightDesc, imgDesc.Digest.String(), "model-v1", "/cache/model.safetensors")
+		builder.AddWeightDescriptor(weightDesc, "model-v1", "sha256:abcdef1234567890")
 
 		idx, err := builder.BuildFromDescriptors()
 		require.NoError(t, err)
@@ -49,10 +49,8 @@ func TestIndexBuilder_BuildFromDescriptors(t *testing.T) {
 		require.Equal(t, weightDesc.Size, idxManifest.Manifests[1].Size)
 		require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.OS)
 		require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.Architecture)
-		require.Equal(t, ReferenceTypeWeights, idxManifest.Manifests[1].Annotations[AnnotationV1ReferenceType])
-		require.Equal(t, imgDesc.Digest.String(), idxManifest.Manifests[1].Annotations[AnnotationV1ReferenceDigest])
 		require.Equal(t, "model-v1", idxManifest.Manifests[1].Annotations[AnnotationV1WeightName])
-		require.Equal(t, "/cache/model.safetensors", idxManifest.Manifests[1].Annotations[AnnotationV1WeightTarget])
+		require.Equal(t, "sha256:abcdef1234567890", idxManifest.Manifests[1].Annotations[AnnotationV1WeightSetDigest])
 	})
 
 	t.Run("builds index with multiple weight descriptors", func(t *testing.T) {
@@ -74,8 +72,8 @@ func TestIndexBuilder_BuildFromDescriptors(t *testing.T) {
 
 		builder := NewIndexBuilder()
 		builder.SetImageDescriptor(imgDesc, &v1.Platform{OS: "linux", Architecture: "amd64"})
-		builder.AddWeightDescriptor(weight1, imgDesc.Digest.String(), "weight-1", "/weights/w1.bin")
-		builder.AddWeightDescriptor(weight2, imgDesc.Digest.String(), "weight-2", "/weights/w2.bin")
+		builder.AddWeightDescriptor(weight1, "weight-1", "sha256:set1")
+		builder.AddWeightDescriptor(weight2, "weight-2", "sha256:set2")
 
 		idx, err := builder.BuildFromDescriptors()
 		require.NoError(t, err)

@@ -28,18 +28,11 @@ func NewWeightPusher(reg registry.Client) *WeightPusher {
 
 // WeightPushOptions configures a weight push.
 type WeightPushOptions struct {
-	// ReferenceDigest is the digest of the model image this weight belongs
-	// to. When set, it lands in the manifest's run.cog.reference.digest
-	// annotation (and becomes the tag seed). The BundlePusher sets this
-	// after the image has been pushed; callers pushing a standalone
-	// weight leave it empty.
-	ReferenceDigest string
 	// Concurrency is the maximum number of layers to upload in parallel.
 	// If <= 0, GetPushConcurrency() is used.
 	Concurrency int
 	// Tag overrides the manifest tag. Defaults to
-	// WeightTag(artifact.Name, tagSeed) where tagSeed is the reference
-	// digest when present and the artifact's manifest digest otherwise.
+	// WeightTag(artifact.Name, tagSeed) where tagSeed is the set digest.
 	Tag string
 	// ProgressFn is an optional callback for per-layer upload progress.
 	ProgressFn func(WeightLayerProgress)
@@ -103,10 +96,10 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 	}
 
 	img, err := BuildWeightManifestV1(artifact.Layers, WeightManifestV1Metadata{
-		Name:            artifact.Name(),
-		Target:          artifact.Target,
-		ReferenceDigest: opt.ReferenceDigest,
-		Created:         artifact.Created,
+		Name:       artifact.Name(),
+		Target:     artifact.Target,
+		SetDigest:  artifact.SetDigest,
+		ConfigBlob: artifact.ConfigBlob,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build weight manifest: %w", err)
@@ -118,11 +111,7 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 
 	tag := opt.Tag
 	if tag == "" {
-		seed := opt.ReferenceDigest
-		if seed == "" {
-			seed = artifact.Descriptor().Digest.String()
-		}
-		tag = WeightTag(artifact.Name(), seed)
+		tag = WeightTag(artifact.Name(), artifact.SetDigest)
 	}
 	ref := repo + ":" + tag
 	if err := p.registry.PushImage(ctx, ref, img); err != nil {

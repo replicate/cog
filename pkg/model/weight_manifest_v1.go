@@ -9,7 +9,6 @@ import (
 	"maps"
 	"os"
 	"sync"
-	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -17,34 +16,22 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
-// Manifest-level annotation keys per spec §2.3 (v1 "run.cog.*" namespace).
+// Manifest-level annotation keys per spec §2.5 (v1 "run.cog.*" namespace).
 const (
 	AnnotationV1WeightName      = "run.cog.weight.name"
 	AnnotationV1WeightTarget    = "run.cog.weight.target"
+	AnnotationV1WeightSetDigest = "run.cog.weight.set-digest"
+
+	// Deprecated: kept for index-descriptor backward compat during migration.
 	AnnotationV1ReferenceType   = "run.cog.reference.type"
 	AnnotationV1ReferenceDigest = "run.cog.reference.digest"
-	AnnotationOCIImageCreated   = "org.opencontainers.image.created"
 
 	// ReferenceTypeWeights is the value for run.cog.reference.type on weight manifests.
 	ReferenceTypeWeights = "weights"
 )
 
-// OCI empty descriptor (spec §2.2 config).
-//
-// The canonical "empty" JSON blob is `{}` (2 bytes). Its sha256 digest is the
-// well-known constant below. Per OCI 1.1, weight manifests use the empty
-// descriptor as their config rather than a typed blob.
-const (
-	// MediaTypeOCIEmpty is the media type for the OCI empty descriptor.
-	MediaTypeOCIEmpty = "application/vnd.oci.empty.v1+json"
-
-	// emptyBlobSHA256 is the sha256 digest of `{}`.
-	emptyBlobSHA256 = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
-)
-
-// emptyConfigBlob is the canonical empty JSON blob used as the config for
-// weight manifests.
-var emptyConfigBlob = []byte(`{}`)
+// MediaTypeWeightConfig is the config blob media type per spec §2.1.
+const MediaTypeWeightConfig = "application/vnd.cog.weight.config.v1+json"
 
 // WeightManifestV1Metadata describes the manifest-level metadata for a v1
 // weight manifest.
@@ -54,12 +41,11 @@ type WeightManifestV1Metadata struct {
 	// Target is the absolute mount path in the container (e.g.,
 	// "/src/weights"). Required.
 	Target string
-	// ReferenceDigest is the digest of the model image this weight belongs
-	// to. Optional.
-	ReferenceDigest string
-	// Created is the time the weight was imported. If zero, time.Now().UTC()
-	// is used.
-	Created time.Time
+	// SetDigest is the content-addressable weight set digest (§2.4).
+	// Required.
+	SetDigest string
+	// ConfigBlob is the serialized config JSON (§2.3). Required.
+	ConfigBlob []byte
 }
 
 func (m WeightManifestV1Metadata) validate() error {
@@ -69,25 +55,24 @@ func (m WeightManifestV1Metadata) validate() error {
 	if m.Target == "" {
 		return fmt.Errorf("weight target is required")
 	}
+	if m.SetDigest == "" {
+		return fmt.Errorf("weight set digest is required")
+	}
+	if len(m.ConfigBlob) == 0 {
+		return fmt.Errorf("weight config blob is required")
+	}
 	return nil
 }
 
 // annotations returns the manifest-level annotations for this metadata.
+// Per spec §2.2 the manifest is a pure function of content + packing +
+// config — no timestamps, source URIs, or producer metadata.
 func (m WeightManifestV1Metadata) annotations() map[string]string {
-	created := m.Created
-	if created.IsZero() {
-		created = time.Now().UTC()
+	return map[string]string{
+		AnnotationV1WeightName:      m.Name,
+		AnnotationV1WeightTarget:    m.Target,
+		AnnotationV1WeightSetDigest: m.SetDigest,
 	}
-	anns := map[string]string{
-		AnnotationV1WeightName:    m.Name,
-		AnnotationV1WeightTarget:  m.Target,
-		AnnotationV1ReferenceType: ReferenceTypeWeights,
-		AnnotationOCIImageCreated: created.UTC().Format(time.RFC3339),
-	}
-	if m.ReferenceDigest != "" {
-		anns[AnnotationV1ReferenceDigest] = m.ReferenceDigest
-	}
-	return anns
 }
 
 // BuildWeightManifestV1 assembles a v1.Image representing a v1 weight manifest
@@ -97,9 +82,9 @@ func (m WeightManifestV1Metadata) annotations() map[string]string {
 //
 // The returned image has:
 //   - artifactType: application/vnd.cog.weight.v1 (injected via RawManifest override)
-//   - config: OCI empty descriptor ({} blob, application/vnd.oci.empty.v1+json)
+//   - config: real config blob (application/vnd.cog.weight.config.v1+json, §2.3)
 //   - layers: one descriptor per LayerResult, preserving mediaType, digest, size, annotations
-//   - annotations: manifest-level weight annotations per spec §2.3
+//   - annotations: manifest-level weight annotations per spec §2.5
 func BuildWeightManifestV1(layers []LayerResult, meta WeightManifestV1Metadata) (v1.Image, error) {
 	if err := meta.validate(); err != nil {
 		return nil, err
@@ -147,11 +132,24 @@ func BuildWeightManifestV1(layers []LayerResult, meta WeightManifestV1Metadata) 
 		return nil, fmt.Errorf("append weight layers: %w", err)
 	}
 
-	// Wrap to inject artifactType, override config to the OCI empty
-	// descriptor, and attach manifest-level annotations.
+	// Compute config blob digest + size.
+	cfgSum := sha256.Sum256(meta.ConfigBlob)
+	cfgDigest := v1.Hash{
+		Algorithm: "sha256",
+		Hex:       hex.EncodeToString(cfgSum[:]),
+	}
+
+	// Wrap to inject artifactType, override config to the real config
+	// blob descriptor, and attach manifest-level annotations.
 	return &weightManifestV1Image{
 		Image:       img,
 		annotations: meta.annotations(),
+		configBlob:  meta.ConfigBlob,
+		configDesc: v1.Descriptor{
+			MediaType: types.MediaType(MediaTypeWeightConfig),
+			Size:      int64(len(meta.ConfigBlob)),
+			Digest:    cfgDigest,
+		},
 	}, nil
 }
 
@@ -169,8 +167,8 @@ type weightOCIManifest struct {
 
 // weightManifestV1Image wraps a v1.Image to produce a v1 weight manifest with:
 //   - artifactType set to application/vnd.cog.weight.v1
-//   - config pointing to the OCI empty descriptor
-//   - manifest-level annotations per spec §2.3
+//   - config pointing to the real config blob (§2.3)
+//   - manifest-level annotations per spec §2.5
 //
 // go-containerregistry's v1.Manifest struct has no ArtifactType field at the
 // top level (it lives only on Descriptor). This is a deliberate upstream design
@@ -182,15 +180,17 @@ type weightOCIManifest struct {
 type weightManifestV1Image struct {
 	v1.Image
 	annotations map[string]string
+	configBlob  []byte
+	configDesc  v1.Descriptor
 
 	rawOnce        sync.Once
 	rawManifest    []byte
 	rawManifestErr error
 }
 
-// RawConfigFile returns the OCI empty config blob (`{}`).
+// RawConfigFile returns the weight config blob (§2.3).
 func (w *weightManifestV1Image) RawConfigFile() ([]byte, error) {
-	return emptyConfigBlob, nil
+	return w.configBlob, nil
 }
 
 // ArtifactType implements the withArtifactType interface used by partial.Descriptor.
@@ -198,7 +198,7 @@ func (w *weightManifestV1Image) ArtifactType() (string, error) {
 	return MediaTypeWeightArtifact, nil
 }
 
-// Manifest returns the modified manifest with the empty config descriptor and
+// Manifest returns the modified manifest with the real config descriptor and
 // the v1 weight annotations merged in.
 func (w *weightManifestV1Image) Manifest() (*v1.Manifest, error) {
 	m, err := w.Image.Manifest()
@@ -207,15 +207,8 @@ func (w *weightManifestV1Image) Manifest() (*v1.Manifest, error) {
 	}
 	mCopy := m.DeepCopy()
 
-	// Override the config descriptor to point to the canonical OCI empty blob.
-	mCopy.Config = v1.Descriptor{
-		MediaType: types.MediaType(MediaTypeOCIEmpty),
-		Size:      int64(len(emptyConfigBlob)),
-		Digest: v1.Hash{
-			Algorithm: "sha256",
-			Hex:       emptyBlobSHA256,
-		},
-	}
+	// Override the config descriptor to point to the real config blob (§2.3).
+	mCopy.Config = w.configDesc
 
 	// Merge in manifest-level annotations. Our annotations win over any upstream.
 	if len(w.annotations) > 0 {
@@ -323,13 +316,3 @@ func (l *fileLayer) Size() (int64, error) { return l.size, nil }
 // MediaType returns the layer's OCI media type.
 func (l *fileLayer) MediaType() (types.MediaType, error) { return l.mediaType, nil }
 
-// init asserts at package load time that the hard-coded empty blob digest
-// matches the sha256 of the empty JSON blob. The OCI empty descriptor is a
-// well-known constant, but computing it here guards against typos.
-func init() {
-	sum := sha256.Sum256(emptyConfigBlob)
-	got := hex.EncodeToString(sum[:])
-	if got != emptyBlobSHA256 {
-		panic(fmt.Sprintf("emptyBlobSHA256 mismatch: constant=%s computed=%s", emptyBlobSHA256, got))
-	}
-}

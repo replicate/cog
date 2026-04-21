@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -19,9 +18,7 @@ import (
 
 // bundleWeightFixture creates a WeightArtifact with real packed layers and a
 // valid manifest descriptor, ready to hand to BundlePusher.Push. The
-// underlying tar files are cleaned up by t.TempDir(). Created is pinned so
-// the bundle pusher's re-computed manifest (now with ReferenceDigest) stays
-// deterministic relative to the artifact.
+// underlying tar files are cleaned up by t.TempDir().
 func bundleWeightFixture(t *testing.T, name, target string) *WeightArtifact {
 	t.Helper()
 	sourceDir := t.TempDir()
@@ -29,22 +26,23 @@ func bundleWeightFixture(t *testing.T, name, target string) *WeightArtifact {
 		[]byte(`{"name":"`+name+`"}`), 0o644))
 
 	cacheDir := t.TempDir()
-	layers, err := Pack(context.Background(), sourceDir, &PackOptions{TempDir: cacheDir})
+	pr, err := Pack(context.Background(), sourceDir, &PackOptions{TempDir: cacheDir})
 	require.NoError(t, err)
 
-	created := time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC)
-	img, err := BuildWeightManifestV1(layers, WeightManifestV1Metadata{
-		Name:    name,
-		Target:  target,
-		Created: created,
+	configJSON, setDigest, err := BuildWeightConfigBlob(name, target, pr.Files)
+	require.NoError(t, err)
+
+	img, err := BuildWeightManifestV1(pr.Layers, WeightManifestV1Metadata{
+		Name:       name,
+		Target:     target,
+		SetDigest:  setDigest,
+		ConfigBlob: configJSON,
 	})
 	require.NoError(t, err)
 	desc, err := descriptorFromImage(img)
 	require.NoError(t, err)
 
-	wa := NewWeightArtifact(name, desc, target, layers)
-	wa.Created = created
-	return wa
+	return NewWeightArtifact(name, desc, target, pr.Layers, setDigest, configJSON)
 }
 
 // =============================================================================
@@ -155,8 +153,8 @@ func TestBundlePusher_Push(t *testing.T) {
 
 				// Second manifest: weight with annotations
 				require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.OS)
-				require.Equal(t, ReferenceTypeWeights, idxManifest.Manifests[1].Annotations[AnnotationV1ReferenceType])
-				require.Equal(t, imgDesc.Digest.String(), idxManifest.Manifests[1].Annotations[AnnotationV1ReferenceDigest])
+				require.NotEmpty(t, idxManifest.Manifests[1].Annotations[AnnotationV1WeightName])
+				require.NotEmpty(t, idxManifest.Manifests[1].Annotations[AnnotationV1WeightSetDigest])
 
 				return nil
 			},
@@ -185,9 +183,9 @@ func TestBundlePusher_Push(t *testing.T) {
 		require.Len(t, callOrder, 4)
 		require.Equal(t, "docker:push:r8.im/user/model:latest", callOrder[0])
 		require.Equal(t, "registry:getDescriptor:r8.im/user/model:latest", callOrder[1])
-		// Tag derives from the reference (image) digest, not the weight's
-		// own descriptor — the image is the identity anchor for the bundle.
-		require.Equal(t, "registry:pushImage:r8.im/user/model:weights-model-v1-imgdigestabc", callOrder[2])
+		// Tag derives from the weight's set digest (§2.4).
+		expectedTag := WeightTag(wa.Name(), wa.SetDigest)
+		require.Equal(t, "registry:pushImage:r8.im/user/model:"+expectedTag, callOrder[2])
 		require.Equal(t, "registry:pushIndex:r8.im/user/model:latest", callOrder[3])
 	})
 

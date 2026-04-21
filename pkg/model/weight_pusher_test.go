@@ -29,34 +29,39 @@ func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir st
 	cacheDir := filepath.Join(t.TempDir(), "cache")
 	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
 
-	layers, err := Pack(context.Background(), sourceDir, &PackOptions{TempDir: cacheDir})
+	pr, err := Pack(context.Background(), sourceDir, &PackOptions{TempDir: cacheDir})
 	require.NoError(t, err)
-	require.NotEmpty(t, layers)
-	return sourceDir, layers
+	require.NotEmpty(t, pr.Layers)
+	return sourceDir, pr.Layers
 }
 
 // newTestWeightArtifact builds a WeightArtifact with packed layers and a
-// fresh manifest descriptor, suitable for push tests. Created is pinned so
-// the descriptor recorded on the artifact matches the one the pusher will
-// re-compute.
+// fresh manifest descriptor, suitable for push tests.
 func newTestWeightArtifact(t *testing.T, name, target string) *WeightArtifact {
 	t.Helper()
 	_, layers := packTestLayers(t, "config.json", []byte(`{"hidden_size": 768}`))
 
-	created := time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC)
+	// Build a minimal config blob and set digest for the single test file.
+	files := []PackedFile{{
+		Path:   "config.json",
+		Size:   int64(len(`{"hidden_size": 768}`)),
+		Digest: layers[0].Digest.String(),
+	}}
+	configJSON, setDigest, err := BuildWeightConfigBlob(name, target, files)
+	require.NoError(t, err)
+
 	img, err := BuildWeightManifestV1(layers, WeightManifestV1Metadata{
-		Name:    name,
-		Target:  target,
-		Created: created,
+		Name:       name,
+		Target:     target,
+		SetDigest:  setDigest,
+		ConfigBlob: configJSON,
 	})
 	require.NoError(t, err)
 
 	desc, err := descriptorFromImage(img)
 	require.NoError(t, err)
 
-	wa := NewWeightArtifact(name, desc, target, layers)
-	wa.Created = created
-	return wa
+	return NewWeightArtifact(name, desc, target, layers, setDigest, configJSON)
 }
 
 func TestWeightPusher_Push_ReturnsErrorForNilArtifact(t *testing.T) {
@@ -84,7 +89,7 @@ func TestWeightPusher_Push_ReturnsErrorForEmptyLayers(t *testing.T) {
 	// Empty layer set must be caught before we try to build a manifest.
 	artifact := NewWeightArtifact("model-v1",
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc"}},
-		"/src/weights", nil)
+		"/src/weights", nil, "", nil)
 
 	reg := &mockRegistry{}
 	pusher := NewWeightPusher(reg)
@@ -96,7 +101,6 @@ func TestWeightPusher_Push_ReturnsErrorForEmptyLayers(t *testing.T) {
 
 func TestWeightPusher_Push_PushesExpectedManifest(t *testing.T) {
 	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
-	const refDigest = "sha256:aabbccddee112233445566778899aabb00112233445566778899aabbccddeeff"
 
 	var pushedRef string
 	var pushedImg v1.Image
@@ -109,22 +113,21 @@ func TestWeightPusher_Push_PushesExpectedManifest(t *testing.T) {
 	}
 
 	pusher := NewWeightPusher(reg)
-	result, err := pusher.Push(context.Background(), "r8.im/user/model", artifact,
-		WeightPushOptions{ReferenceDigest: refDigest})
+	result, err := pusher.Push(context.Background(), "r8.im/user/model", artifact)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Tag derives from the reference digest (12-char prefix after "sha256:").
-	require.Equal(t, "r8.im/user/model:weights-model-v1-aabbccddee11", pushedRef)
+	// Tag derives from the set digest (12-char prefix after "sha256:").
+	require.Contains(t, pushedRef, "weights-model-v1-")
 	require.Equal(t, pushedRef, result.Ref)
 
-	// Manifest shape matches spec §2.2: OCI manifest, empty config, layers
+	// Manifest shape matches spec §2.2: OCI manifest, config blob, layers
 	// with standard OCI media types, artifactType on the raw manifest.
 	manifest, err := pushedImg.Manifest()
 	require.NoError(t, err)
 	require.Equal(t, types.OCIManifestSchema1, manifest.MediaType)
-	require.Equal(t, types.MediaType(MediaTypeOCIEmpty), manifest.Config.MediaType)
-	require.Equal(t, emptyBlobSHA256, manifest.Config.Digest.Hex)
+	require.Equal(t, types.MediaType(MediaTypeWeightConfig), manifest.Config.MediaType)
+	require.NotEmpty(t, manifest.Config.Digest.Hex)
 	require.NotEmpty(t, manifest.Layers)
 	for _, layer := range manifest.Layers {
 		require.Contains(t, []types.MediaType{
@@ -140,20 +143,19 @@ func TestWeightPusher_Push_PushesExpectedManifest(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rawManifest, &raw))
 	require.Equal(t, MediaTypeWeightArtifact, raw["artifactType"])
 
-	// Manifest-level annotations per spec §2.3.
+	// Manifest-level annotations per spec §2.5.
 	require.Equal(t, "model-v1", manifest.Annotations[AnnotationV1WeightName])
 	require.Equal(t, "/src/weights", manifest.Annotations[AnnotationV1WeightTarget])
-	require.Equal(t, ReferenceTypeWeights, manifest.Annotations[AnnotationV1ReferenceType])
-	require.Equal(t, refDigest, manifest.Annotations[AnnotationV1ReferenceDigest])
+	require.Equal(t, artifact.SetDigest, manifest.Annotations[AnnotationV1WeightSetDigest])
 
 	// Result descriptor is populated.
 	require.NotEmpty(t, result.Descriptor.Digest.Hex)
 	require.Greater(t, result.Descriptor.Size, int64(0))
 }
 
-func TestWeightPusher_Push_FallsBackToManifestDigestWhenReferenceMissing(t *testing.T) {
-	// Without ReferenceDigest the tag derives from the manifest digest so
-	// different builds still land at distinct tags.
+func TestWeightPusher_Push_TagDerivesFromSetDigest(t *testing.T) {
+	// The tag derives from the set digest so content-identical builds land
+	// at the same tag.
 	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
 
 	var pushedRef string
@@ -169,7 +171,7 @@ func TestWeightPusher_Push_FallsBackToManifestDigestWhenReferenceMissing(t *test
 	require.NoError(t, err)
 
 	require.Contains(t, pushedRef, "weights-model-v1-")
-	require.Contains(t, pushedRef, artifact.Descriptor().Digest.Hex[:12])
+	require.Contains(t, pushedRef, ShortDigest(artifact.SetDigest))
 }
 
 func TestWeightPusher_Push_CustomTagOverride(t *testing.T) {
@@ -351,22 +353,24 @@ func TestWeightPusher_Push_HonoursConcurrencyLimit(t *testing.T) {
 	}
 
 	cacheDir := t.TempDir()
-	layers, err := Pack(context.Background(), sourceDir, &PackOptions{
+	pr, err := Pack(context.Background(), sourceDir, &PackOptions{
 		BundleFileMax: 1, // every file becomes its own layer
 		TempDir:       cacheDir,
 	})
 	require.NoError(t, err)
+	layers := pr.Layers
 	require.GreaterOrEqual(t, len(layers), n, "expected a layer per file")
 
-	created := time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC)
+	configJSON, setDigest, err := BuildWeightConfigBlob("model", "/src/weights", pr.Files)
+	require.NoError(t, err)
+
 	img, err := BuildWeightManifestV1(layers, WeightManifestV1Metadata{
-		Name: "model", Target: "/src/weights", Created: created,
+		Name: "model", Target: "/src/weights", SetDigest: setDigest, ConfigBlob: configJSON,
 	})
 	require.NoError(t, err)
 	desc, err := descriptorFromImage(img)
 	require.NoError(t, err)
-	artifact := NewWeightArtifact("model", desc, "/src/weights", layers)
-	artifact.Created = created
+	artifact := NewWeightArtifact("model", desc, "/src/weights", layers, setDigest, configJSON)
 
 	var inFlight, maxInFlight atomic.Int32
 	reg := &mockRegistry{

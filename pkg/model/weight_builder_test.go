@@ -53,7 +53,8 @@ func TestWeightBuilder_HappyPath(t *testing.T) {
 	require.Equal(t, ArtifactTypeWeight, wa.Type())
 	require.Equal(t, "my-model", wa.Name())
 	require.Equal(t, "/src/weights/my-model", wa.Target)
-	require.False(t, wa.Created.IsZero(), "builder should stamp Created")
+	require.NotEmpty(t, wa.SetDigest, "builder should compute SetDigest")
+	require.NotEmpty(t, wa.ConfigBlob, "builder should compute ConfigBlob")
 
 	// At least one layer (the bundled small files).
 	require.NotEmpty(t, wa.Layers, "expected at least one layer")

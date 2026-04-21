@@ -419,7 +419,7 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 			}
 		}
 		// Determine manifest type
-		if pm.OS == PlatformUnknown && pm.Annotations != nil && pm.Annotations[AnnotationV1ReferenceType] == ReferenceTypeWeights {
+		if pm.OS == PlatformUnknown && isWeightDescriptor(pm) {
 			im.Type = ManifestTypeWeights
 		} else {
 			im.Type = ManifestTypeImage
@@ -440,11 +440,25 @@ func isOCIIndex(mr *registry.ManifestResult) bool {
 func findWeightsManifest(manifests []registry.PlatformManifest) *registry.PlatformManifest {
 	for i := range manifests {
 		m := &manifests[i]
-		if m.Annotations != nil && m.Annotations[AnnotationV1ReferenceType] == ReferenceTypeWeights {
+		if isWeightDescriptor(*m) {
 			return m
 		}
 	}
 	return nil
+}
+
+// isWeightDescriptor identifies a weight manifest descriptor in an OCI index.
+// Checks for the set-digest annotation (v1 format) or falls back to the
+// legacy reference-type annotation for backward compat.
+func isWeightDescriptor(pm registry.PlatformManifest) bool {
+	if pm.Annotations == nil {
+		return false
+	}
+	if _, ok := pm.Annotations[AnnotationV1WeightSetDigest]; ok {
+		return true
+	}
+	// Legacy: pre-v1 weight descriptors used run.cog.reference.type.
+	return pm.Annotations[AnnotationV1ReferenceType] == ReferenceTypeWeights
 }
 
 // findImageManifest finds the model image manifest in an index.

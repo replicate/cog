@@ -1,12 +1,16 @@
 package model
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,7 +30,7 @@ const WeightsCacheDir = ".cog/weights-cache"
 //
 // The builder is offline: it never talks to a registry. The manifest digest
 // it writes into the artifact descriptor is a sha256 of the serialized
-// manifest bytes in the standalone (no ReferenceDigest) shape.
+// manifest bytes.
 type WeightBuilder struct {
 	source   *Source
 	lockPath string
@@ -74,6 +78,8 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 
 	existing := lock.FindWeight(ws.Name())
 	layers, hit := cachedLayers(existing, cacheDir)
+
+	var packFiles []PackedFile
 	if !hit {
 		// Rebuild from scratch. os.RemoveAll + MkdirAll is simpler than
 		// walking entries, and always-fresh avoids stale tars leaking in
@@ -85,35 +91,48 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 			return nil, fmt.Errorf("recreate cache dir: %w", err)
 		}
 
-		packed, err := Pack(ctx, absSource, &PackOptions{TempDir: cacheDir})
+		pr, err := Pack(ctx, absSource, &PackOptions{TempDir: cacheDir})
 		if err != nil {
 			return nil, fmt.Errorf("pack weight %q: %w", ws.Name(), err)
 		}
 		// Rename each packer-produced tar to a content-addressed path so
 		// subsequent cache lookups can find it without extra bookkeeping.
-		// Pack uses os.CreateTemp, which picks random suffixes; without
-		// this the cache would miss every time.
-		for i, lr := range packed {
+		for i, lr := range pr.Layers {
 			target := layerCachePath(cacheDir, lr.Digest, lr.MediaType)
 			if target == lr.TarPath {
 				continue
 			}
 			if err := os.Rename(lr.TarPath, target); err != nil {
-				cleanupLayerResults(packed)
+				cleanupLayerResults(pr.Layers)
 				return nil, fmt.Errorf("move layer %s to cache: %w", lr.Digest, err)
 			}
-			packed[i].TarPath = target
+			pr.Layers[i].TarPath = target
 		}
-		layers = packed
+		layers = pr.Layers
+		packFiles = pr.Files
+	} else {
+		// Cache hit — we still need the file digests to compute the config
+		// blob and set digest. Walk and hash the source without repacking.
+		packFiles, err = walkAndHashFiles(absSource, existing, cacheDir)
+		if err != nil {
+			return nil, fmt.Errorf("compute file digests for %q: %w", ws.Name(), err)
+		}
+	}
+
+	// Build config blob (§2.3) and set digest (§2.4).
+	configJSON, setDigest, err := BuildWeightConfigBlob(ws.Name(), ws.Target, packFiles)
+	if err != nil {
+		cleanupLayerResults(layers)
+		return nil, fmt.Errorf("build config blob for %q: %w", ws.Name(), err)
 	}
 
 	// Assemble the manifest to record a descriptor. BuildWeightManifestV1 is
-	// deterministic given identical layers + metadata, including Created.
-	created := time.Now().UTC().Truncate(time.Second)
+	// deterministic given identical layers + metadata.
 	img, err := BuildWeightManifestV1(layers, WeightManifestV1Metadata{
-		Name:    ws.Name(),
-		Target:  ws.Target,
-		Created: created,
+		Name:       ws.Name(),
+		Target:     ws.Target,
+		SetDigest:  setDigest,
+		ConfigBlob: configJSON,
 	})
 	if err != nil {
 		cleanupLayerResults(layers)
@@ -126,10 +145,8 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 	}
 
 	// Only rewrite the lockfile if the entry actually changed. A
-	// cache-hit build with the same spec should be a no-op on disk —
-	// otherwise every `cog weights push` would gratuitously bump the
-	// Created timestamp and make the file look modified to git.
-	newEntry := NewWeightLockEntry(ws.Name(), ws.Target, desc.Digest.String(), layers)
+	// cache-hit build with the same spec should be a no-op on disk.
+	newEntry := NewWeightLockEntry(ws.Name(), ws.Target, desc.Digest.String(), setDigest, layers)
 	if !lockEntriesEqual(existing, &newEntry) {
 		lock.Upsert(newEntry)
 		if err := lock.Save(b.lockPath); err != nil {
@@ -138,9 +155,7 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		}
 	}
 
-	wa := NewWeightArtifact(ws.Name(), desc, ws.Target, layers)
-	wa.Created = created
-	return wa, nil
+	return NewWeightArtifact(ws.Name(), desc, ws.Target, layers, setDigest, configJSON), nil
 }
 
 // resolveSource resolves the weight source path against the project
@@ -208,6 +223,102 @@ func cachedLayers(entry *WeightLockEntry, cacheDir string) ([]LayerResult, bool)
 		})
 	}
 	return results, true
+}
+
+// walkAndHashFiles walks the source directory and computes per-file digests,
+// mapping each file to its containing layer using the cached lock entry.
+// This is the fast path for cache hits where we skip repacking but still
+// need file metadata for the config blob.
+func walkAndHashFiles(sourceDir string, entry *WeightLockEntry, cacheDir string) ([]PackedFile, error) {
+	entries, err := walkSourceDir(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("walk source directory: %w", err)
+	}
+
+	digests, err := computeFileDigests(entries)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build a file→layer mapping from the cached entry's layer annotations.
+	// Standalone layers have run.cog.weight.file = <relPath>.
+	// Bundle layers contain multiple files.
+	fileToLayer := make(map[string]string, len(entries))
+	for _, l := range entry.Layers {
+		switch l.Annotations[AnnotationV1WeightContent] {
+		case ContentFile:
+			fileToLayer[l.Annotations[AnnotationV1WeightFile]] = l.Digest
+		case ContentBundle:
+			// Read the cached tar to discover which files are in this bundle.
+			hash, err := v1.NewHash(l.Digest)
+			if err != nil {
+				return nil, fmt.Errorf("parse layer digest %s: %w", l.Digest, err)
+			}
+			tarPath := layerCachePath(cacheDir, hash, types.MediaType(l.MediaType))
+			paths, err := listBundleFiles(tarPath)
+			if err != nil {
+				return nil, fmt.Errorf("list bundle files %s: %w", l.Digest, err)
+			}
+			for _, p := range paths {
+				fileToLayer[p] = l.Digest
+			}
+		}
+	}
+
+	files := make([]PackedFile, 0, len(entries))
+	for _, e := range entries {
+		ld := fileToLayer[e.relPath]
+		if ld == "" {
+			// File exists on disk but wasn't in the cached layer set —
+			// source changed since last pack. Signal the caller to repack.
+			return nil, fmt.Errorf("file %s not found in cached layers", e.relPath)
+		}
+		files = append(files, PackedFile{
+			Path:        e.relPath,
+			Size:        e.size,
+			Digest:      digests[e.relPath],
+			LayerDigest: ld,
+		})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files, nil
+}
+
+// listBundleFiles reads a tar(.gz) and returns the regular file paths it
+// contains (skipping directory entries).
+func listBundleFiles(tarPath string) ([]string, error) {
+	f, err := os.Open(tarPath) //nolint:gosec // tarPath from layerCachePath
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var tr *tar.Reader
+	if strings.HasSuffix(tarPath, ".gz") {
+		gr, err := gzip.NewReader(f)
+		if err != nil {
+			return nil, err
+		}
+		defer gr.Close()
+		tr = tar.NewReader(gr)
+	} else {
+		tr = tar.NewReader(f)
+	}
+
+	var paths []string
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if hdr.Typeflag == tar.TypeReg {
+			paths = append(paths, hdr.Name)
+		}
+	}
+	return paths, nil
 }
 
 // loadLockfileOrEmpty loads the lockfile at path. A missing file is not an

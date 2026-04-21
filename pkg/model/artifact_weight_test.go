@@ -36,7 +36,7 @@ func TestWeightArtifact_ImplementsArtifact(t *testing.T) {
 			MediaType: MediaTypeOCILayerTarGzip,
 		},
 	}
-	artifact := NewWeightArtifact("my-weights", desc, "/src/weights", layers)
+	artifact := NewWeightArtifact("my-weights", desc, "/src/weights", layers, "", nil)
 
 	var _ Artifact = artifact // compile-time interface check
 
@@ -58,12 +58,12 @@ func TestWeightArtifact_Fields(t *testing.T) {
 			MediaType: MediaTypeOCILayerTar,
 		},
 	}
-	artifact := NewWeightArtifact("my-weights", desc, "/src/weights", layers)
+	artifact := NewWeightArtifact("my-weights", desc, "/src/weights", layers, "", nil)
 
 	require.Equal(t, "/src/weights", artifact.Target)
 	require.Equal(t, layers, artifact.Layers)
-	require.True(t, artifact.Created.IsZero(),
-		"Created is set by the builder, zero on a raw-constructed artifact")
+	require.Empty(t, artifact.SetDigest)
+	require.Nil(t, artifact.ConfigBlob)
 }
 
 func TestWeightMediaTypeConstants(t *testing.T) {

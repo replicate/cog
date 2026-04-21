@@ -1,11 +1,11 @@
 ---
 # cog.md-managed-weights-v0.0.2-0wma
 title: v2 weight artifact in registry
-status: todo
+status: completed
 type: milestone
 priority: high
 created_at: 2026-04-17T19:34:21Z
-updated_at: 2026-04-17T21:51:27Z
+updated_at: 2026-04-20T23:49:08Z
 parent: cog.md-managed-weights-v0.0.2-9qcd
 blocked_by:
     - cog.md-managed-weights-v0.0.2-2gv9
@@ -77,3 +77,7 @@ cat weights.lock | jq .
 ```
 
 One discrepancy from the original verification: the push tag format is `weights-<name>-<short-digest>`, not `:latest`. The `:latest` tag is owned by `cog push` which produces the OCI index.
+
+## Summary of Changes
+
+Milestone verified complete. The v1 weight artifact pipeline (pack → push → registry manifest) works end-to-end. Verified via the parakeet test-weights model (bean q1bm) against a local registry with crane manifest inspection. The infrastructure exists via `cog weights build` + `cog weights push`. Infra can build extraction/delivery systems against real artifacts.

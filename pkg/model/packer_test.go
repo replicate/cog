@@ -43,9 +43,9 @@ func TestPack_SingleSmallFile(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1)
+	require.Len(t, results.Layers, 1)
 
-	r := results[0]
+	r := results.Layers[0]
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), r.MediaType)
 	assert.Equal(t, ContentBundle, r.Annotations[AnnotationV1WeightContent])
 	assert.Equal(t, "100", r.Annotations[AnnotationV1WeightSizeUncomp])
@@ -67,9 +67,9 @@ func TestPack_SingleLargeFile_Incompressible(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1)
+	require.Len(t, results.Layers, 1)
 
-	r := results[0]
+	r := results.Layers[0]
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), r.MediaType)
 	assert.Equal(t, ContentFile, r.Annotations[AnnotationV1WeightContent])
 	assert.Equal(t, "model.safetensors", r.Annotations[AnnotationV1WeightFile])
@@ -82,9 +82,9 @@ func TestPack_SingleLargeFile_Compressible(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1)
+	require.Len(t, results.Layers, 1)
 
-	r := results[0]
+	r := results.Layers[0]
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), r.MediaType)
 	assert.Equal(t, ContentFile, r.Annotations[AnnotationV1WeightContent])
 	assert.Equal(t, "model.dat", r.Annotations[AnnotationV1WeightFile])
@@ -104,10 +104,10 @@ func TestPack_MixedFiles(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 3) // 1 bundle + 2 large files
+	require.Len(t, results.Layers, 3) // 1 bundle + 2 large files
 
 	// First result should be the bundle (small files come first in output).
-	bundle := results[0]
+	bundle := results.Layers[0]
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), bundle.MediaType)
 	assert.Equal(t, ContentBundle, bundle.Annotations[AnnotationV1WeightContent])
 
@@ -116,7 +116,7 @@ func TestPack_MixedFiles(t *testing.T) {
 	assert.Equal(t, []string{"config.json", "special_tokens_map.json", "tokenizer.json"}, bundleEntries)
 
 	// Large files should be uncompressed tars (safetensors is incompressible).
-	for _, r := range results[1:] {
+	for _, r := range results.Layers[1:] {
 		assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), r.MediaType)
 		assert.Equal(t, ContentFile, r.Annotations[AnnotationV1WeightContent])
 	}
@@ -130,9 +130,9 @@ func TestPack_NestedDirectories(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1) // All small, one bundle.
+	require.Len(t, results.Layers, 1) // All small, one bundle.
 
-	entries := readTarGzEntries(t, results[0].TarPath)
+	entries := readTarGzEntries(t, results.Layers[0].TarPath)
 	// Directories come first (sorted), then files (sorted).
 	expected := []string{
 		"text_encoder/",
@@ -150,9 +150,9 @@ func TestPack_LargeFileInSubdir(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1)
+	require.Len(t, results.Layers, 1)
 
-	r := results[0]
+	r := results.Layers[0]
 	assert.Equal(t, "text_encoder/model-00001.safetensors", r.Annotations[AnnotationV1WeightFile])
 
 	entries := readTarEntries(t, r.TarPath)
@@ -178,20 +178,20 @@ func TestPack_BundleSizeMaxSplits(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, opts)
 	require.NoError(t, err)
-	require.Len(t, results, 2)
+	require.Len(t, results.Layers, 2)
 
 	// Both should be gzipped bundles.
-	for _, r := range results {
+	for _, r := range results.Layers {
 		assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), r.MediaType)
 		assert.Equal(t, ContentBundle, r.Annotations[AnnotationV1WeightContent])
 	}
 
 	// First bundle should have a.txt and b.txt.
-	entries1 := readTarGzEntries(t, results[0].TarPath)
+	entries1 := readTarGzEntries(t, results.Layers[0].TarPath)
 	assert.Equal(t, []string{"a.txt", "b.txt"}, entries1)
 
 	// Second bundle should have c.txt.
-	entries2 := readTarGzEntries(t, results[1].TarPath)
+	entries2 := readTarGzEntries(t, results.Layers[1].TarPath)
 	assert.Equal(t, []string{"c.txt"}, entries2)
 }
 
@@ -206,13 +206,13 @@ func TestPack_CustomThresholds(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, opts)
 	require.NoError(t, err)
-	require.Len(t, results, 2)
+	require.Len(t, results.Layers, 2)
 
 	// Bundle for small file.
-	assert.Equal(t, ContentBundle, results[0].Annotations[AnnotationV1WeightContent])
+	assert.Equal(t, ContentBundle, results.Layers[0].Annotations[AnnotationV1WeightContent])
 	// Individual layer for large file (.bin is in incompressible set, so uncompressed).
-	assert.Equal(t, ContentFile, results[1].Annotations[AnnotationV1WeightContent])
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), results[1].MediaType)
+	assert.Equal(t, ContentFile, results.Layers[1].Annotations[AnnotationV1WeightContent])
+	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), results.Layers[1].MediaType)
 }
 
 func TestPack_SkipsDotCogDirectory(t *testing.T) {
@@ -223,9 +223,9 @@ func TestPack_SkipsDotCogDirectory(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1)
+	require.Len(t, results.Layers, 1)
 
-	entries := readTarGzEntries(t, results[0].TarPath)
+	entries := readTarGzEntries(t, results.Layers[0].TarPath)
 	assert.Equal(t, []string{"config.json"}, entries)
 }
 
@@ -235,10 +235,10 @@ func TestPack_DeterministicTarProperties(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1)
+	require.Len(t, results.Layers, 1)
 
 	// Read the tar and inspect headers.
-	f, err := os.Open(results[0].TarPath)
+	f, err := os.Open(results.Layers[0].TarPath)
 	require.NoError(t, err)
 	defer f.Close()
 
@@ -281,11 +281,11 @@ func TestPack_DigestDeterminism(t *testing.T) {
 	results2, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
 
-	require.Len(t, results1, len(results2))
-	for i := range results1 {
-		assert.Equal(t, results1[i].Digest, results2[i].Digest,
+	require.Len(t, results1.Layers, len(results2.Layers))
+	for i := range results1.Layers {
+		assert.Equal(t, results1.Layers[i].Digest, results2.Layers[i].Digest,
 			"digest mismatch for result %d", i)
-		assert.Equal(t, results1[i].Size, results2[i].Size,
+		assert.Equal(t, results1.Layers[i].Size, results2.Layers[i].Size,
 			"size mismatch for result %d", i)
 	}
 }
@@ -326,8 +326,8 @@ func TestPack_IncompressibleExtensions(t *testing.T) {
 
 			results, err := Pack(context.Background(), dir, nil)
 			require.NoError(t, err)
-			require.Len(t, results, 1)
-			assert.Equal(t, tt.mediaType, results[0].MediaType)
+			require.Len(t, results.Layers, 1)
+			assert.Equal(t, tt.mediaType, results.Layers[0].MediaType)
 		})
 	}
 }
@@ -339,8 +339,8 @@ func TestPack_FileAtExactThreshold(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, ContentFile, results[0].Annotations[AnnotationV1WeightContent])
+	require.Len(t, results.Layers, 1)
+	assert.Equal(t, ContentFile, results.Layers[0].Annotations[AnnotationV1WeightContent])
 }
 
 func TestPack_FileJustBelowThreshold(t *testing.T) {
@@ -350,8 +350,8 @@ func TestPack_FileJustBelowThreshold(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, ContentBundle, results[0].Annotations[AnnotationV1WeightContent])
+	require.Len(t, results.Layers, 1)
+	assert.Equal(t, ContentBundle, results.Layers[0].Annotations[AnnotationV1WeightContent])
 }
 
 func TestPack_CleanupTarFiles(t *testing.T) {
@@ -363,13 +363,13 @@ func TestPack_CleanupTarFiles(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify all tar files exist.
-	for _, r := range results {
+	for _, r := range results.Layers {
 		_, err := os.Stat(r.TarPath)
 		assert.NoError(t, err, "tar file should exist: %s", r.TarPath)
 	}
 
 	// Clean them up (as a caller would).
-	for _, r := range results {
+	for _, r := range results.Layers {
 		require.NoError(t, os.Remove(r.TarPath))
 	}
 }
@@ -471,9 +471,9 @@ func TestPack_DeepNestedDirsInLargeFile(t *testing.T) {
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1)
+	require.Len(t, results.Layers, 1)
 
-	entries := readTarEntries(t, results[0].TarPath)
+	entries := readTarEntries(t, results.Layers[0].TarPath)
 	expected := []string{
 		"a/",
 		"a/b/",
@@ -518,15 +518,15 @@ func TestPack_WorkedExample(t *testing.T) {
 	require.NoError(t, err)
 
 	// 1 bundle for small files + 7 individual layers for large files = 8 total.
-	require.Len(t, results, 8)
+	require.Len(t, results.Layers, 8)
 
 	// First result is the bundle.
-	assert.Equal(t, ContentBundle, results[0].Annotations[AnnotationV1WeightContent])
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), results[0].MediaType)
+	assert.Equal(t, ContentBundle, results.Layers[0].Annotations[AnnotationV1WeightContent])
+	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), results.Layers[0].MediaType)
 
 	// Remaining 7 are individual files.
 	for i := 1; i <= 7; i++ {
-		r := results[i]
+		r := results.Layers[i]
 		assert.Equal(t, ContentFile, r.Annotations[AnnotationV1WeightContent])
 		assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), r.MediaType)
 		assert.NotEmpty(t, r.Annotations[AnnotationV1WeightFile])
@@ -535,7 +535,7 @@ func TestPack_WorkedExample(t *testing.T) {
 
 	// Verify no path appears in more than one layer (order-independence).
 	allPaths := make(map[string]int)
-	for i, r := range results {
+	for i, r := range results.Layers {
 		var entries []string
 		if r.MediaType == MediaTypeOCILayerTarGzip {
 			entries = readTarGzEntries(t, r.TarPath)

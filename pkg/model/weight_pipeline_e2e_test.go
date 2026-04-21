@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -65,27 +64,29 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 	// Pack directly with a small bundle threshold so we don't need to
 	// write 64+ MiB of fixture content to cross the default cutoff.
 	packDir := t.TempDir()
-	layers, err := Pack(ctx, sourceDir, &PackOptions{
+	pr, err := Pack(ctx, sourceDir, &PackOptions{
 		BundleFileMax: 1024,
 		TempDir:       packDir,
 	})
 	require.NoError(t, err, "pack")
-	require.Len(t, layers, 3, "want 1 bundle + 2 single-file layers")
+	require.Len(t, pr.Layers, 3, "want 1 bundle + 2 single-file layers")
 
-	// Build the manifest and wrap it as an artifact the pusher accepts.
-	// Pinned Created so the manifest is deterministic across runs.
-	created := time.Date(2026, 4, 17, 0, 0, 0, 0, time.UTC)
-	img, err := BuildWeightManifestV1(layers, WeightManifestV1Metadata{
-		Name:    "my-model",
-		Target:  "/src/weights",
-		Created: created,
+	// Build the config blob and manifest, then wrap as an artifact the
+	// pusher accepts.
+	configJSON, setDigest, err := BuildWeightConfigBlob("my-model", "/src/weights", pr.Files)
+	require.NoError(t, err)
+
+	img, err := BuildWeightManifestV1(pr.Layers, WeightManifestV1Metadata{
+		Name:       "my-model",
+		Target:     "/src/weights",
+		SetDigest:  setDigest,
+		ConfigBlob: configJSON,
 	})
 	require.NoError(t, err)
 	desc, err := descriptorFromImage(img)
 	require.NoError(t, err)
 
-	artifact := NewWeightArtifact("my-model", desc, "/src/weights", layers)
-	artifact.Created = created
+	artifact := NewWeightArtifact("my-model", desc, "/src/weights", pr.Layers, setDigest, configJSON)
 
 	repo := regHost + "/test/my-model"
 	pusher := NewWeightPusher(registry.NewRegistryClient())
@@ -114,9 +115,7 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 
 	assert.Equal(t, "my-model", mf.Annotations[AnnotationV1WeightName])
 	assert.Equal(t, "/src/weights", mf.Annotations[AnnotationV1WeightTarget])
-	assert.Equal(t, ReferenceTypeWeights, mf.Annotations[AnnotationV1ReferenceType])
-	_, hasRefDigest := mf.Annotations[AnnotationV1ReferenceDigest]
-	assert.False(t, hasRefDigest, "standalone push should not set reference.digest")
+	assert.Equal(t, setDigest, mf.Annotations[AnnotationV1WeightSetDigest])
 
 	require.Len(t, mf.Layers, 3)
 

@@ -82,7 +82,7 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 
 	var weightResults []*WeightPushResult
 	if len(weightArtifacts) > 0 {
-		weightResults, err = p.pushWeights(ctx, repo, imgDesc.Digest.String(), weightArtifacts, opts.WeightProgressFn)
+		weightResults, err = p.pushWeights(ctx, repo, weightArtifacts, opts.WeightProgressFn)
 		if err != nil {
 			return err
 		}
@@ -100,8 +100,8 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 		Variant:      platform.Variant,
 	})
 	for i, wr := range weightResults {
-		builder.AddWeightDescriptor(wr.Descriptor, imgDesc.Digest.String(),
-			weightArtifacts[i].Name(), weightArtifacts[i].Target)
+		builder.AddWeightDescriptor(wr.Descriptor,
+			weightArtifacts[i].Name(), weightArtifacts[i].SetDigest)
 	}
 
 	idx, err := builder.BuildFromDescriptors()
@@ -121,7 +121,7 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 // GetPushConcurrency) and returns their results in input order.
 func (p *BundlePusher) pushWeights(
 	ctx context.Context,
-	repo, referenceDigest string,
+	repo string,
 	weights []*WeightArtifact,
 	progressFn func(WeightLayerProgress),
 ) ([]*WeightPushResult, error) {
@@ -133,8 +133,7 @@ func (p *BundlePusher) pushWeights(
 	for i, wa := range weights {
 		g.Go(func() error {
 			result, err := p.weightPusher.Push(ctx, repo, wa, WeightPushOptions{
-				ReferenceDigest: referenceDigest,
-				ProgressFn:      progressFn,
+				ProgressFn: progressFn,
 			})
 			if err != nil {
 				return fmt.Errorf("push weight %q: %w", wa.Name(), err)

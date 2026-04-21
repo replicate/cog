@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -27,11 +26,11 @@ func packDir(t *testing.T, sourceDir string, opts *PackOptions) []LayerResult {
 	results, err := Pack(context.Background(), sourceDir, opts)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		for _, r := range results {
+		for _, r := range results.Layers {
 			_ = os.Remove(r.TarPath)
 		}
 	})
-	return results
+	return results.Layers
 }
 
 // writeSrcFile writes size bytes at relPath under dir.
@@ -50,10 +49,10 @@ func writeSrcFile(t *testing.T, dir, relPath string, size int64) {
 // defaultMeta returns a minimal valid manifest metadata.
 func defaultMeta() WeightManifestV1Metadata {
 	return WeightManifestV1Metadata{
-		Name:            "z-image-turbo",
-		Target:          "/src/weights",
-		ReferenceDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-		Created:         time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC),
+		Name:      "z-image-turbo",
+		Target:    "/src/weights",
+		SetDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+		ConfigBlob: []byte(`{"name":"z-image-turbo","target":"/src/weights","setDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[]}`),
 	}
 }
 
@@ -71,14 +70,19 @@ func singleSmallFileLayers(t *testing.T) []LayerResult {
 // =============================================================================
 
 func TestWeightManifestV1Metadata_validate(t *testing.T) {
+	validSetDigest := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	validConfigBlob := []byte(`{"name":"n","target":"/x","setDigest":"sha256:0000","files":[]}`)
+
 	tests := []struct {
 		name    string
 		meta    WeightManifestV1Metadata
 		wantErr string
 	}{
-		{"missing name", WeightManifestV1Metadata{Target: "/x"}, "weight name is required"},
-		{"missing target", WeightManifestV1Metadata{Name: "n"}, "weight target is required"},
-		{"valid", WeightManifestV1Metadata{Name: "n", Target: "/x"}, ""},
+		{"missing name", WeightManifestV1Metadata{Target: "/x", SetDigest: validSetDigest, ConfigBlob: validConfigBlob}, "weight name is required"},
+		{"missing target", WeightManifestV1Metadata{Name: "n", SetDigest: validSetDigest, ConfigBlob: validConfigBlob}, "weight target is required"},
+		{"missing set digest", WeightManifestV1Metadata{Name: "n", Target: "/x", ConfigBlob: validConfigBlob}, "weight set digest is required"},
+		{"missing config blob", WeightManifestV1Metadata{Name: "n", Target: "/x", SetDigest: validSetDigest}, "weight config blob is required"},
+		{"valid", WeightManifestV1Metadata{Name: "n", Target: "/x", SetDigest: validSetDigest, ConfigBlob: validConfigBlob}, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -99,29 +103,13 @@ func TestWeightManifestV1Metadata_annotations(t *testing.T) {
 
 	assert.Equal(t, "z-image-turbo", anns[AnnotationV1WeightName])
 	assert.Equal(t, "/src/weights", anns[AnnotationV1WeightTarget])
-	assert.Equal(t, ReferenceTypeWeights, anns[AnnotationV1ReferenceType])
-	assert.Equal(t, "sha256:1111111111111111111111111111111111111111111111111111111111111111", anns[AnnotationV1ReferenceDigest])
-	assert.Equal(t, "2026-04-16T17:27:07Z", anns[AnnotationOCIImageCreated])
-}
+	assert.Equal(t, "sha256:0000000000000000000000000000000000000000000000000000000000000000", anns[AnnotationV1WeightSetDigest])
 
-func TestWeightManifestV1Metadata_annotations_OmitsBlankReferenceDigest(t *testing.T) {
-	meta := WeightManifestV1Metadata{Name: "n", Target: "/x"}
-	anns := meta.annotations()
-
-	_, present := anns[AnnotationV1ReferenceDigest]
-	assert.False(t, present, "reference.digest annotation should be omitted when empty")
-}
-
-func TestWeightManifestV1Metadata_annotations_DefaultsCreatedToNow(t *testing.T) {
-	meta := WeightManifestV1Metadata{Name: "n", Target: "/x"}
-	before := time.Now().UTC().Add(-time.Second)
-	anns := meta.annotations()
-	after := time.Now().UTC().Add(time.Second)
-
-	got, err := time.Parse(time.RFC3339, anns[AnnotationOCIImageCreated])
-	require.NoError(t, err)
-	assert.True(t, !got.Before(before) && !got.After(after),
-		"created annotation %s should be in [%s, %s]", got, before, after)
+	// Removed annotations should not be present.
+	_, hasRefType := anns[AnnotationV1ReferenceType]
+	assert.False(t, hasRefType, "reference type annotation should not be present")
+	_, hasRefDigest := anns[AnnotationV1ReferenceDigest]
+	assert.False(t, hasRefDigest, "reference digest annotation should not be present")
 }
 
 // =============================================================================
@@ -172,7 +160,8 @@ func TestBuildWeightManifestV1_RejectsInvalidLayer(t *testing.T) {
 
 func TestBuildWeightManifestV1_ManifestShape(t *testing.T) {
 	layers := singleSmallFileLayers(t)
-	img, err := BuildWeightManifestV1(layers, defaultMeta())
+	meta := defaultMeta()
+	img, err := BuildWeightManifestV1(layers, meta)
 	require.NoError(t, err)
 
 	// Manifest schema and media type.
@@ -181,16 +170,19 @@ func TestBuildWeightManifestV1_ManifestShape(t *testing.T) {
 	assert.EqualValues(t, 2, m.SchemaVersion)
 	assert.Equal(t, types.OCIManifestSchema1, m.MediaType)
 
-	// Config is the OCI empty descriptor.
-	assert.Equal(t, types.MediaType(MediaTypeOCIEmpty), m.Config.MediaType)
-	assert.Equal(t, int64(2), m.Config.Size)
-	assert.Equal(t, emptyBlobSHA256, m.Config.Digest.Hex)
+	// Config is the weight config descriptor.
+	assert.Equal(t, types.MediaType(MediaTypeWeightConfig), m.Config.MediaType)
+	assert.Equal(t, int64(len(meta.ConfigBlob)), m.Config.Size)
 	assert.Equal(t, "sha256", m.Config.Digest.Algorithm)
 
-	// Config blob is `{}` on the wire.
+	// Verify config digest matches the config blob.
+	cfgSum := sha256.Sum256(meta.ConfigBlob)
+	assert.Equal(t, hex.EncodeToString(cfgSum[:]), m.Config.Digest.Hex)
+
+	// Config blob is the serialized config JSON on the wire.
 	cfg, err := img.RawConfigFile()
 	require.NoError(t, err)
-	assert.Equal(t, []byte(`{}`), cfg)
+	assert.Equal(t, meta.ConfigBlob, cfg)
 
 	// Layers preserve per-layer media type + annotations from the packer.
 	require.Len(t, m.Layers, len(layers))
@@ -206,14 +198,13 @@ func TestBuildWeightManifestV1_ManifestShape(t *testing.T) {
 	// Manifest annotations carry the v1 spec keys.
 	assert.Equal(t, "z-image-turbo", m.Annotations[AnnotationV1WeightName])
 	assert.Equal(t, "/src/weights", m.Annotations[AnnotationV1WeightTarget])
-	assert.Equal(t, ReferenceTypeWeights, m.Annotations[AnnotationV1ReferenceType])
-	assert.Contains(t, m.Annotations[AnnotationV1ReferenceDigest], "sha256:")
-	assert.Equal(t, "2026-04-16T17:27:07Z", m.Annotations[AnnotationOCIImageCreated])
+	assert.Equal(t, "sha256:0000000000000000000000000000000000000000000000000000000000000000", m.Annotations[AnnotationV1WeightSetDigest])
 }
 
 func TestBuildWeightManifestV1_RawManifestContainsArtifactType(t *testing.T) {
 	layers := singleSmallFileLayers(t)
-	img, err := BuildWeightManifestV1(layers, defaultMeta())
+	meta := defaultMeta()
+	img, err := BuildWeightManifestV1(layers, meta)
 	require.NoError(t, err)
 
 	raw, err := img.RawManifest()
@@ -228,9 +219,11 @@ func TestBuildWeightManifestV1_RawManifestContainsArtifactType(t *testing.T) {
 
 	cfg, ok := parsed["config"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, MediaTypeOCIEmpty, cfg["mediaType"])
-	assert.Equal(t, "sha256:"+emptyBlobSHA256, cfg["digest"])
-	assert.EqualValues(t, 2, cfg["size"])
+	assert.Equal(t, MediaTypeWeightConfig, cfg["mediaType"])
+
+	cfgSum := sha256.Sum256(meta.ConfigBlob)
+	assert.Equal(t, "sha256:"+hex.EncodeToString(cfgSum[:]), cfg["digest"])
+	assert.EqualValues(t, len(meta.ConfigBlob), cfg["size"])
 
 	rawLayers, ok := parsed["layers"].([]any)
 	require.True(t, ok)

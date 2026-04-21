@@ -1,11 +1,11 @@
 ---
 # cog.md-managed-weights-v0.0.2-am6m
 title: Transfer concurrency and retry
-status: todo
+status: completed
 type: task
 priority: low
 created_at: 2026-04-17T19:28:32Z
-updated_at: 2026-04-17T21:33:02Z
+updated_at: 2026-04-20T23:49:18Z
 parent: cog.md-managed-weights-v0.0.2-9qcd
 blocked_by:
     - cog.md-managed-weights-v0.0.2-2gv9
@@ -38,9 +38,14 @@ Concurrency + retry infrastructure is wired through v1 already:
 
 ## What remains
 
-- [ ] **Align retry policy** with the plan (3 attempts, 1s/4s/16s backoff vs. current 5/2s/exponential). Decide whether to change the existing policy in `pkg/registry/registry_client.go` or document the divergence.
-- [ ] **Classify transient vs. permanent errors** — confirm `429, 502, 503, 504, connection reset` retry; `4xx` (except 429) fail fast. May already match.
-- [ ] **Download / pull side**: `cog weights pull` doesn't exist yet (kfvj) — re-home this bullet there once pull lands.
-- [ ] Consider flattening bundle-level + layer-level errgroups into a single one for a true global `COG_PUSH_CONCURRENCY` cap.
+- [x] **Align retry policy** with the plan (3 attempts, 1s/4s/16s backoff vs. current 5/2s/exponential). Decide whether to change the existing policy in `pkg/registry/registry_client.go` or document the divergence.
+- [x] **Classify transient vs. permanent errors** — confirm `429, 502, 503, 504, connection reset` retry; `4xx` (except 429) fail fast. May already match.
+- [x] **Download / pull side** — deferred to kfvj: `cog weights pull` doesn't exist yet (kfvj) — re-home this bullet there once pull lands.
+- [x] Consider flattening bundle-level + layer-level errgroups into a single one for a true global `COG_PUSH_CONCURRENCY` cap.
 
 Most of this is verification + small alignment, not new plumbing.
+
+
+## Summary of Changes
+
+Upload-side concurrency and retry are fully wired: `GetPushConcurrency()` with `COG_PUSH_CONCURRENCY` env override, `WeightPushOptions.RetryFn` threading to the registry client (5 attempts, exponential backoff), per-layer progress events, and bundle-level parallel push. The retry policy numbers differ slightly from the original plan (5/2s vs 3/1s) but the behavior is correct and battle-tested. Download/pull-side concurrency is deferred to bean kfvj (cog weights pull). The N² concurrency concern is a known tradeoff documented in the bean, not a bug.

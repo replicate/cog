@@ -5,10 +5,11 @@ status: todo
 type: task
 priority: normal
 created_at: 2026-04-17T19:28:15Z
-updated_at: 2026-04-17T21:30:50Z
+updated_at: 2026-04-21T00:01:21Z
 parent: cog.md-managed-weights-v0.0.2-9qcd
 blocked_by:
     - cog.md-managed-weights-v0.0.2-2gv9
+    - cog.md-managed-weights-v0.0.2-ez7g
 ---
 
 During cog build, write /.cog/weights.json into the model image when weights are configured.
@@ -46,3 +47,20 @@ Reference: specs/weights.md §3.6
 - [ ] `pkg/image/build.go`: hook the generation step before Docker build
 
 No translation layer needed. The `model.WeightLockEntry` type is the shape. Write a round-trip test against the spec §3.6 example to catch drift.
+
+
+## Spec update (2026-04-20)
+
+Per spec §3.3, the `/.cog/weights.json` schema now requires a `setDigest` field per weight entry — the weight set digest from §2.4. This field comes from the config blob work (tracked separately). The schema is:
+
+```json
+{
+  "weights": [{
+    "name": "z-image-turbo",
+    "target": "/src/weights",
+    "setDigest": "sha256:def456..."
+  }]
+}
+```
+
+This means the lockfile's `WeightLockEntry` must also carry `setDigest` before this bean can be completed — dependency on the config blob + set digest bean.

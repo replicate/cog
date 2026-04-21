@@ -98,7 +98,7 @@ func lockEntriesEqual(a, b *WeightLockEntry) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	if a.Name != b.Name || a.Target != b.Target || a.Digest != b.Digest {
+	if a.Name != b.Name || a.Target != b.Target || a.Digest != b.Digest || a.SetDigest != b.SetDigest {
 		return false
 	}
 	if len(a.Layers) != len(b.Layers) {

@@ -221,14 +221,21 @@ func resolveOutputDir(outputDir string) (string, error) {
 // matches what `cog weights build` would produce. cacheDir holds the tar
 // files produced by the packer; the caller owns its lifetime.
 func packDirectoryToEntry(ctx context.Context, name, target, sourceDir, cacheDir string) (model.WeightLockEntry, error) {
-	layers, err := model.Pack(ctx, sourceDir, &model.PackOptions{TempDir: cacheDir})
+	pr, err := model.Pack(ctx, sourceDir, &model.PackOptions{TempDir: cacheDir})
 	if err != nil {
 		return model.WeightLockEntry{}, fmt.Errorf("pack: %w", err)
 	}
 
-	img, err := model.BuildWeightManifestV1(layers, model.WeightManifestV1Metadata{
-		Name:   name,
-		Target: target,
+	configJSON, setDigest, err := model.BuildWeightConfigBlob(name, target, pr.Files)
+	if err != nil {
+		return model.WeightLockEntry{}, fmt.Errorf("build config blob: %w", err)
+	}
+
+	img, err := model.BuildWeightManifestV1(pr.Layers, model.WeightManifestV1Metadata{
+		Name:       name,
+		Target:     target,
+		SetDigest:  setDigest,
+		ConfigBlob: configJSON,
 	})
 	if err != nil {
 		return model.WeightLockEntry{}, fmt.Errorf("build manifest: %w", err)
@@ -239,7 +246,7 @@ func packDirectoryToEntry(ctx context.Context, name, target, sourceDir, cacheDir
 		return model.WeightLockEntry{}, fmt.Errorf("manifest digest: %w", err)
 	}
 
-	return model.NewWeightLockEntry(name, target, digest.String(), layers), nil
+	return model.NewWeightLockEntry(name, target, digest.String(), setDigest, pr.Layers), nil
 }
 
 // generateRandomFile creates a file filled with random bytes of the given size.

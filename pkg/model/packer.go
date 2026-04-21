@@ -18,6 +18,8 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"github.com/replicate/cog/pkg/util"
 )
 
 // Default packing thresholds per spec §1.2.
@@ -109,6 +111,29 @@ type LayerResult struct {
 	Annotations map[string]string
 }
 
+// PackResult is the output of Pack: tar layers and per-file content digests.
+type PackResult struct {
+	// Layers are the packed tar layers on disk.
+	Layers []LayerResult
+	// Files are per-file content digests, sorted by path.
+	Files []PackedFile
+}
+
+// PackedFile records a file's path, size, content digest, and which layer it
+// landed in. Used to build the config blob (§2.3) and set digest (§2.4).
+type PackedFile struct {
+	// Path is the file path relative to the weight target directory.
+	Path string
+	// Size is the uncompressed file size in bytes.
+	Size int64
+	// Digest is the SHA-256 content digest of the file (hex-encoded with
+	// "sha256:" prefix).
+	Digest string
+	// LayerDigest is the digest of the layer containing this file
+	// (populated after packing).
+	LayerDigest string
+}
+
 // fileEntry represents a single file discovered during directory walking.
 type fileEntry struct {
 	// relPath is the path relative to the source directory (no leading ./ or /).
@@ -122,11 +147,12 @@ type fileEntry struct {
 }
 
 // Pack walks sourceDir and produces tar layers according to the spec §1.2 packing strategy.
-// It returns a slice of LayerResult describing each tar file on disk, or an error.
+// It returns a PackResult containing the layers and per-file content digests, or an error.
 //
 // The caller is responsible for cleaning up the tar files in LayerResult.TarPath.
 // On error, Pack removes any temp files it created before returning.
-func Pack(ctx context.Context, sourceDir string, opts *PackOptions) (results []LayerResult, retErr error) {
+func Pack(ctx context.Context, sourceDir string, opts *PackOptions) (pr *PackResult, retErr error) {
+	var results []LayerResult
 	// On error, clean up any tar files we already wrote.
 	defer func() {
 		if retErr != nil {
@@ -142,6 +168,11 @@ func Pack(ctx context.Context, sourceDir string, opts *PackOptions) (results []L
 
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("no files found in %s", sourceDir)
+	}
+
+	fileDigests, err := computeFileDigests(entries)
+	if err != nil {
+		return nil, fmt.Errorf("compute file digests: %w", err)
 	}
 
 	// Classify files into small (bundleable) and large (own layer).
@@ -160,13 +191,20 @@ func Pack(ctx context.Context, sourceDir string, opts *PackOptions) (results []L
 		return smallFiles[i].relPath < smallFiles[j].relPath
 	})
 
+	fileLayerMap := make(map[string]string, len(entries))
+
 	// Pack small files into bundles.
 	if len(smallFiles) > 0 {
 		bundleResults, err := packBundles(ctx, smallFiles, opts)
 		if err != nil {
 			return nil, fmt.Errorf("pack bundles: %w", err)
 		}
-		results = append(results, bundleResults...)
+		for _, br := range bundleResults {
+			for _, f := range br.files {
+				fileLayerMap[f] = br.Digest.String()
+			}
+			results = append(results, br.LayerResult)
+		}
 	}
 
 	// Pack large files as individual layers.
@@ -181,10 +219,48 @@ func Pack(ctx context.Context, sourceDir string, opts *PackOptions) (results []L
 		if err != nil {
 			return nil, fmt.Errorf("pack large file %s: %w", f.relPath, err)
 		}
+		fileLayerMap[f.relPath] = result.Digest.String()
 		results = append(results, result)
 	}
 
-	return results, nil
+	packedFiles := buildPackedFiles(entries, fileDigests, fileLayerMap)
+
+	return &PackResult{Layers: results, Files: packedFiles}, nil
+}
+
+// computeFileDigests computes SHA-256 content digests for each file entry.
+// Returns a map from relPath → "sha256:<hex>".
+func computeFileDigests(entries []fileEntry) (map[string]string, error) {
+	digests := make(map[string]string, len(entries))
+	for _, e := range entries {
+		d, err := util.SHA256HashFile(e.absPath)
+		if err != nil {
+			return nil, fmt.Errorf("hash %s: %w", e.relPath, err)
+		}
+		digests[e.relPath] = "sha256:" + d
+	}
+	return digests, nil
+}
+
+// buildPackedFiles creates the sorted PackedFile slice by mapping each file
+// to its content digest and containing layer. fileLayerMap maps relPath →
+// layer digest string, populated during packing.
+func buildPackedFiles(
+	entries []fileEntry,
+	digests map[string]string,
+	fileLayerMap map[string]string,
+) []PackedFile {
+	all := make([]PackedFile, 0, len(entries))
+	for _, e := range entries {
+		all = append(all, PackedFile{
+			Path:        e.relPath,
+			Size:        e.size,
+			Digest:      digests[e.relPath],
+			LayerDigest: fileLayerMap[e.relPath],
+		})
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Path < all[j].Path })
+	return all
 }
 
 // cleanupLayerResults removes tar files from completed results. Best-effort; errors are ignored.
@@ -244,12 +320,18 @@ func walkSourceDir(sourceDir string) ([]fileEntry, error) {
 	return entries, err
 }
 
+// bundleResult pairs a LayerResult with the relPaths of files it contains.
+type bundleResult struct {
+	LayerResult
+	files []string // relPaths of files in this bundle
+}
+
 // packBundles packs small files into gzip-compressed tar bundles, each up to bundleSizeMax.
-func packBundles(ctx context.Context, files []fileEntry, opts *PackOptions) ([]LayerResult, error) {
+func packBundles(ctx context.Context, files []fileEntry, opts *PackOptions) ([]bundleResult, error) {
 	maxSize := opts.bundleSizeMax()
 	tempDir := opts.tempDir()
 
-	var results []LayerResult
+	var results []bundleResult
 
 	var currentFiles []fileEntry
 	var currentSize int64
@@ -259,11 +341,15 @@ func packBundles(ctx context.Context, files []fileEntry, opts *PackOptions) ([]L
 			return nil
 		}
 
-		result, err := writeBundleTar(currentFiles, tempDir)
+		lr, err := writeBundleTar(currentFiles, tempDir)
 		if err != nil {
 			return err
 		}
-		results = append(results, result)
+		paths := make([]string, len(currentFiles))
+		for i, f := range currentFiles {
+			paths[i] = f.relPath
+		}
+		results = append(results, bundleResult{LayerResult: lr, files: paths})
 		currentFiles = nil
 		currentSize = 0
 		return nil
