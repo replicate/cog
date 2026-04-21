@@ -60,6 +60,15 @@ func NewWeightArtifact(name string, desc v1.Descriptor, target string, layers []
 	}
 }
 
-func (a *WeightArtifact) Type() ArtifactType     { return ArtifactTypeWeight }
-func (a *WeightArtifact) Name() string           { return a.name }
+func (a *WeightArtifact) Type() ArtifactType        { return ArtifactTypeWeight }
+func (a *WeightArtifact) Name() string              { return a.name }
 func (a *WeightArtifact) Descriptor() v1.Descriptor { return a.descriptor }
+
+// TotalSize returns the sum of all layer blob sizes (bytes over the wire).
+func (a *WeightArtifact) TotalSize() int64 {
+	var total int64
+	for _, l := range a.Layers {
+		total += l.Size
+	}
+	return total
+}

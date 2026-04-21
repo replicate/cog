@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/model"
@@ -118,14 +117,10 @@ func weightsInspectCommand(cmd *cobra.Command, args []string, jsonOutput bool) e
 	}
 
 	// 2. Resolve remote state — accept repo only (tags are auto-generated for weights).
-	parsedRepo, err := name.NewRepository(args[0], name.Insecure)
+	repo, err := parseRepoOnly(args[0])
 	if err != nil {
-		if ref, refErr := name.ParseReference(args[0], name.Insecure); refErr == nil {
-			return fmt.Errorf("image reference %q includes a tag or digest — provide only the repository (e.g., %q)", args[0], ref.Context().Name())
-		}
-		return fmt.Errorf("invalid repository %q: %w", args[0], err)
+		return err
 	}
-	repo := parsedRepo.Name()
 
 	regClient := registry.NewRegistryClient()
 	remoteWeights := resolveWeightsByTag(ctx, repo, localWeights, regClient)
