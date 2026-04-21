@@ -114,7 +114,7 @@ jobs:
 
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-pub-${{ github.job }}
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
