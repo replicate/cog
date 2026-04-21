@@ -128,7 +128,7 @@ jobs:
 
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-rel-${{ github.job }}
 
       - name: Update coglet version constraint
         run: |
@@ -218,7 +218,7 @@ jobs:
 
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-rel-${{ github.job }}
 
       - name: Check for existing release
         run: |

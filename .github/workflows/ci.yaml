@@ -33,6 +33,16 @@ env:
   CGO_ENABLED: "1"
   # Note: do NOT add rustup/rustup-init to MISE_DISABLE_TOOLS — mise needs
   # them to install Rust components (rustfmt, clippy) specified in mise.toml.
+  #
+  # mise cache & Rust components:
+  #   mise-action caches ~/.local/share/mise but NOT ~/.rustup. On cache hit,
+  #   mise sees rust as "installed" (symlink exists) and skips reinstall, but
+  #   the actual rustup toolchain + components (rustfmt, clippy) are missing.
+  #   Rust jobs must run `rustup component add` after mise-action to ensure
+  #   components are present regardless of cache state.
+  #
+  # mise cache keys: each job uses its own key (mise-ci-{job_id}) so parallel
+  # jobs don't race on a single shared cache entry.
 
 permissions: {}
 
@@ -123,7 +133,7 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Build SDK
         run: mise run ci:build:sdk
       - name: Upload SDK package
@@ -175,7 +185,7 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Get version from VERSION.txt
         id: version
         run: echo "version=$(tr -d '[:space:]' < VERSION.txt)" >> "$GITHUB_OUTPUT"
@@ -206,7 +216,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check Go formatting
         run: mise run fmt:go
 
@@ -218,7 +228,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Ensure Rust components
+        run: rustup component add rustfmt clippy
       - name: Check Rust formatting
         run: mise run fmt:rust
 
@@ -230,7 +242,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check Python formatting
         run: mise run fmt:python
 
@@ -242,7 +254,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check llms.txt is up to date
         run: mise run docs:llm:check
       - name: Check CLI docs are up to date
@@ -266,7 +278,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check stubs are up to date
         run: |
           # stub_gen links libpython dynamically; tell the linker where to find it
@@ -285,7 +297,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Lint Go
         run: mise run lint:go
 
@@ -301,7 +313,9 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Ensure Rust components
+        run: rustup component add rustfmt clippy
       - name: Lint Rust (clippy)
         run: mise run lint:rust
 
@@ -313,7 +327,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check licenses and advisories
         run: mise run lint:rust:deny
 
@@ -337,7 +351,7 @@ jobs:
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Lint Python
         run: mise run lint:python
 
@@ -349,7 +363,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Lint Markdown
         run: mise run lint:docs
 
@@ -369,7 +383,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test Go
         shell: bash
         run: |
@@ -395,7 +409,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Fuzz schema type resolution
         run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime=30s
       - name: Fuzz JSON schema generation
@@ -417,7 +431,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test Rust
         run: mise run test:rust
 
@@ -440,7 +454,7 @@ jobs:
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test Python
@@ -470,7 +484,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test coglet-python bindings
         run: uvx nox -s coglet -p ${{ matrix.python-version }}
 
@@ -590,7 +604,7 @@ jobs:
           chmod +x ./cog
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Set wheel environment
         run: |
           # Use locally-built wheels, not PyPI (version may not be published yet)
@@ -746,7 +760,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
-          cache_key_prefix: mise-v2
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check coglet crates.io publish
         run: cargo publish --dry-run -p coglet --manifest-path crates/Cargo.toml
       - uses: goreleaser/goreleaser-action@v7

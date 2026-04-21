@@ -98,9 +98,14 @@ Runs CodeQL security scanning for Go, Python, and Rust.
 ## Caching Strategy
 
 ### Tool Cache (mise)
-- `jdx/mise-action@v4` with `cache: true` (default) caches all installed tools
+- `jdx/mise-action@v4` with `cache: true` (default) caches `~/.local/share/mise`
 - Tool versions are defined in `mise.toml` — CI and local dev use the same versions
-- Cache key includes platform, mise version, and config file hashes
+- **Per-job cache keys**: Each job uses `cache_key_prefix: mise-{workflow}-${{ github.job }}`
+  to avoid parallel save races (GitHub Actions cache is first-writer-wins)
+- Full cache key: `{prefix}-{os}-{arch}-{hash_of_mise_toml}`
+- **Rust components caveat**: `~/.rustup` is NOT included in the mise cache. On cache
+  hit, mise sees rust as "installed" (symlink exists) but rustfmt/clippy are missing.
+  Rust jobs run `rustup component add rustfmt clippy` after mise-action to fix this.
 
 ### Rust Target Cache
 - **Save**: Only on `main` branch pushes (to avoid PR cache pollution)
