@@ -45,140 +45,24 @@ env:
 
 permissions: {}
 
-# =============================================================================
-# Change Detection
-# =============================================================================
-
 jobs:
-  changes:
-    name: Detect changes
+  # Passthrough for SUPPORTED_PYTHONS — env context is unavailable in
+  # strategy.matrix, so matrix jobs reference this job's output instead.
+  setup:
+    name: Setup
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      go: ${{ steps.filter.outputs.go }}
-      rust: ${{ steps.filter.outputs.rust }}
-      python: ${{ steps.filter.outputs.python }}
-      integration: ${{ steps.filter.outputs.integration }}
-      docs: ${{ steps.filter.outputs.docs }}
-      version_only: ${{ steps.filter.outputs.version_only }}
-      version_changed: ${{ steps.filter.outputs.version_changed }}
-      # Pass through for matrix jobs (env context unavailable in strategy)
       supported_pythons: ${{ env.SUPPORTED_PYTHONS }}
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Detect changed paths
-        id: filter
-        run: |
-          # For PRs, compare against base; for pushes, compare against previous commit;
-          # for merge_group, compare against the merge group base.
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
-          elif [ "${{ github.event_name }}" = "merge_group" ]; then
-            BASE="${{ github.event.merge_group.base_sha }}"
-          else
-            BASE="${{ github.event.before }}"
-            # Handle initial push (no before)
-            if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-              BASE="HEAD~1"
-            fi
-          fi
-
-          echo "Comparing $BASE..HEAD"
-
-          # Get changed files
-          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
-          
-          # Check if version changed (VERSION.txt or Cargo.toml version line)
-          VERSION_CHANGED="false"
-          if echo "$CHANGED" | grep -qE '^VERSION\.txt$'; then
-            VERSION_CHANGED="true"
-            echo "VERSION.txt changed"
-          elif echo "$CHANGED" | grep -qE '^crates/Cargo\.toml$'; then
-            if git diff "$BASE" HEAD -- crates/Cargo.toml | grep -qE '^\+version = '; then
-              VERSION_CHANGED="true"
-              echo "Cargo.toml version changed"
-            fi
-          fi
-          echo "version_changed=$VERSION_CHANGED" >> $GITHUB_OUTPUT
-          
-          # Check if ONLY version files changed (version bump PR)
-          # These PRs only touch VERSION.txt, crates/Cargo.toml, and crates/Cargo.lock
-          VERSION_ONLY="false"
-          if [ "$VERSION_CHANGED" = "true" ]; then
-            NON_VERSION_FILES=$(echo "$CHANGED" | grep -vcE '^(VERSION\.txt|crates/Cargo\.(toml|lock))$' || echo "0")
-            if [ "$NON_VERSION_FILES" = "0" ]; then
-              VERSION_ONLY="true"
-              echo "Version-only change detected - skipping heavy CI"
-            fi
-          fi
-          echo "version_only=$VERSION_ONLY" >> $GITHUB_OUTPUT
-
-          # CI/tooling changes should run everything (unless version-only)
-          if [ "$VERSION_ONLY" = "true" ]; then
-            echo "go=false" >> $GITHUB_OUTPUT
-            echo "rust=false" >> $GITHUB_OUTPUT
-            echo "python=false" >> $GITHUB_OUTPUT
-            echo "integration=false" >> $GITHUB_OUTPUT
-            echo "docs=false" >> $GITHUB_OUTPUT
-          elif echo "$CHANGED" | grep -qE '^(\.github/workflows/|mise\.toml)'; then
-            echo "CI/tooling changed - running all jobs"
-            echo "go=true" >> $GITHUB_OUTPUT
-            echo "rust=true" >> $GITHUB_OUTPUT
-            echo "python=true" >> $GITHUB_OUTPUT
-            echo "integration=true" >> $GITHUB_OUTPUT
-            echo "docs=true" >> $GITHUB_OUTPUT
-          else
-            # Detect Go changes
-            if echo "$CHANGED" | grep -qE '^(cmd/|pkg/|go\.(mod|sum)|\.golangci\.yml|Makefile)'; then
-              echo "go=true" >> $GITHUB_OUTPUT
-            else
-              echo "go=false" >> $GITHUB_OUTPUT
-            fi
-
-            # Detect Rust changes
-            if echo "$CHANGED" | grep -qE '^(crates/|Cargo\.(toml|lock))'; then
-              echo "rust=true" >> $GITHUB_OUTPUT
-            else
-              echo "rust=false" >> $GITHUB_OUTPUT
-            fi
-
-            # Detect Python changes
-            if echo "$CHANGED" | grep -qE '^(python/|pyproject\.toml|uv\.lock|noxfile\.py|\.ruff\.toml)'; then
-              echo "python=true" >> $GITHUB_OUTPUT
-            else
-              echo "python=false" >> $GITHUB_OUTPUT
-            fi
-
-            # Detect integration test changes (or if any code changed)
-            if echo "$CHANGED" | grep -qE '^(integration-tests/|cmd/|pkg/|python/|crates/|go\.(mod|sum)|uv\.lock|pyproject\.toml)'; then
-              echo "integration=true" >> $GITHUB_OUTPUT
-            else
-              echo "integration=false" >> $GITHUB_OUTPUT
-            fi
-
-            # Detect docs changes (includes any Markdown file and CLI source which generates docs/cli.md)
-            if echo "$CHANGED" | grep -qE '^(docs/|README\.md|cmd/|pkg/cli/|.*\.md$)'; then
-              echo "docs=true" >> $GITHUB_OUTPUT
-            else
-              echo "docs=false" >> $GITHUB_OUTPUT
-            fi
-          fi
-
-          # Debug output
-          echo "Changed files:"
-          echo "$CHANGED" | head -50
+      - run: echo "supported_pythons=$SUPPORTED_PYTHONS"
 
 # =============================================================================
-# Version Check - Validates coglet version changes
+# Version Check - Validates VERSION.txt format and sync
 # =============================================================================
 
   version-check:
     name: Validate version
-    needs: changes
-    if: needs.changes.outputs.version_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -240,8 +124,6 @@ jobs:
 
   build-sdk:
     name: Build SDK
-    needs: changes
-    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -267,8 +149,6 @@ jobs:
 
   build-rust:
     name: Build coglet wheel
-    needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -307,8 +187,6 @@ jobs:
 
   build-cog:
     name: Build cog CLI
-    needs: changes
-    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -346,8 +224,6 @@ jobs:
 
   fmt-go:
     name: Format Go
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -363,8 +239,6 @@ jobs:
 
   fmt-rust:
     name: Format Rust
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -378,8 +252,6 @@ jobs:
 
   fmt-python:
     name: Format Python
-    needs: changes
-    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -398,8 +270,6 @@ jobs:
 
   check-llm-docs:
     name: Check LLM docs
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -417,8 +287,6 @@ jobs:
 
   check-stubs:
     name: Check stubs
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -426,7 +294,7 @@ jobs:
       # setup-python provides a shared-library Python (libpython3.x.so) needed
       # by stub_gen at runtime (PyO3 auto-initialize). setup-uv's
       # python-build-standalone is statically linked and doesn't ship the .so.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: astral-sh/setup-uv@v6
@@ -452,8 +320,6 @@ jobs:
 
   lint-go:
     name: Lint Go
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -467,8 +333,6 @@ jobs:
 
   lint-rust:
     name: Lint Rust
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -486,8 +350,6 @@ jobs:
 
   lint-rust-deny:
     name: Lint Rust (deny)
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -502,10 +364,7 @@ jobs:
 
   lint-python:
     name: Lint Python
-    needs: [changes, build-sdk, build-rust]
-    if: |
-      needs.changes.outputs.python == 'true' &&
-      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
+    needs: [build-sdk, build-rust]
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 15
     steps:
@@ -519,7 +378,6 @@ jobs:
         with:
           name: CogletRustWheel
           path: dist
-        if: needs.build-rust.result == 'success'
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: astral-sh/setup-uv@v6
@@ -536,8 +394,6 @@ jobs:
 
   lint-docs:
     name: Lint Markdown
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -557,8 +413,6 @@ jobs:
 
   test-go:
     name: "Test Go (${{ matrix.platform }})"
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -590,8 +444,6 @@ jobs:
 
   fuzz-go:
     name: Fuzz Go
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -612,8 +464,6 @@ jobs:
 
   test-rust:
     name: Test Rust
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -632,17 +482,13 @@ jobs:
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
-    needs: [changes, build-sdk, build-rust]
-    if: |
-      needs.changes.outputs.python == 'true' &&
-      needs.build-sdk.result == 'success' &&
-      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
+    needs: [setup, build-sdk, build-rust]
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{ fromJSON(needs.changes.outputs.supported_pythons) }}
+        python-version: ${{ fromJSON(needs.setup.outputs.supported_pythons) }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v8
@@ -665,17 +511,13 @@ jobs:
 
   test-coglet-python:
     name: "Test coglet-python (${{ matrix.python-version }})"
-    needs: [changes, build-rust]
-    if: |
-      always() &&
-      (needs.changes.outputs.rust == 'true' || needs.changes.outputs.python == 'true') &&
-      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
+    needs: [setup, build-rust]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{ fromJSON(needs.changes.outputs.supported_pythons) }}
+        python-version: ${{ fromJSON(needs.setup.outputs.supported_pythons) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -685,7 +527,6 @@ jobs:
         with:
           name: CogletRustWheel
           path: dist
-        if: needs.build-rust.result == 'success'
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup default stable  # Required for cargo-binstall to find cargo
       - uses: taiki-e/install-action@cargo-binstall
@@ -704,8 +545,6 @@ jobs:
   # then remaining tests fill in. This ensures slow tests don't pile up on one runner.
   integration-shards:
     name: Compute test shards
-    needs: changes
-    if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -788,14 +627,7 @@ jobs:
 
   test-integration:
     name: "Test integration (shard ${{ matrix.shard.index }})"
-    needs: [changes, build-cog, build-sdk, build-rust, integration-shards]
-    if: |
-      !cancelled() &&
-      needs.changes.outputs.integration == 'true' &&
-      needs.integration-shards.result == 'success' &&
-      (needs.build-cog.result == 'success' || needs.build-cog.result == 'skipped') &&
-      (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
-      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
+    needs: [build-cog, build-sdk, build-rust, integration-shards]
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
@@ -875,7 +707,7 @@ jobs:
   ci-complete:
     name: CI Complete
     needs:
-      - changes
+      - setup
       - version-check
       - build-cog
       - build-sdk
@@ -891,6 +723,7 @@ jobs:
       - lint-python
       - lint-docs
       - test-go
+      - fuzz-go
       - test-rust
       - test-python
       - test-coglet-python
@@ -903,7 +736,8 @@ jobs:
       - name: Check job results
         run: |
           echo "Job results:"
-          echo "  changes: ${{ needs.changes.result }}"
+          echo "  version-check: ${{ needs.version-check.result }}"
+          echo "  build-cog: ${{ needs.build-cog.result }}"
           echo "  build-sdk: ${{ needs.build-sdk.result }}"
           echo "  build-rust: ${{ needs.build-rust.result }}"
           echo "  fmt-go: ${{ needs.fmt-go.result }}"
@@ -917,16 +751,19 @@ jobs:
           echo "  lint-python: ${{ needs.lint-python.result }}"
           echo "  lint-docs: ${{ needs.lint-docs.result }}"
           echo "  test-go: ${{ needs.test-go.result }}"
+          echo "  fuzz-go: ${{ needs.fuzz-go.result }}"
           echo "  test-rust: ${{ needs.test-rust.result }}"
           echo "  test-python: ${{ needs.test-python.result }}"
           echo "  test-coglet-python: ${{ needs.test-coglet-python.result }}"
           echo "  integration-shards: ${{ needs.integration-shards.result }}"
           echo "  test-integration: ${{ needs.test-integration.result }}"
 
-          # Fail if any job failed (skipped is OK)
+          # Fail if any job failed
           FAILED=false
           for result in \
-            "${{ needs.changes.result }}" \
+            "${{ needs.setup.result }}" \
+            "${{ needs.version-check.result }}" \
+            "${{ needs.build-cog.result }}" \
             "${{ needs.build-sdk.result }}" \
             "${{ needs.build-rust.result }}" \
             "${{ needs.fmt-go.result }}" \
@@ -940,6 +777,7 @@ jobs:
             "${{ needs.lint-python.result }}" \
             "${{ needs.lint-docs.result }}" \
             "${{ needs.test-go.result }}" \
+            "${{ needs.fuzz-go.result }}" \
             "${{ needs.test-rust.result }}" \
             "${{ needs.test-python.result }}" \
             "${{ needs.test-coglet-python.result }}" \
