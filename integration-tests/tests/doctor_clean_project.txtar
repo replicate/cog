@@ -1,6 +1,7 @@
 # Test that cog doctor succeeds on a valid project with no issues.
 
 cog doctor
+stderr 'experimental'
 stderr 'no issues found'
 
 -- cog.yaml --

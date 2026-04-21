@@ -52,6 +52,31 @@ func (r *Result) HasErrors() bool {
 	return false
 }
 
+// HasFixableErrors returns true if any check produced unfixed error-severity
+// findings AND the check supports auto-fix. This helps the CLI decide whether
+// suggesting --fix would actually be useful.
+func (r *Result) HasFixableErrors() bool {
+	for _, cr := range r.Results {
+		if cr.Fixed || cr.Err != nil {
+			continue
+		}
+		hasError := false
+		for _, f := range cr.Findings {
+			if f.Severity == SeverityError {
+				hasError = true
+				break
+			}
+		}
+		if hasError {
+			// Probe whether the check supports auto-fix.
+			if err := cr.Check.Fix(nil, nil); !errors.Is(err, ErrNoAutoFix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Run executes all checks and optionally applies fixes.
 func Run(ctx context.Context, opts RunOptions, checks []Check) (*Result, error) {
 	configFilename := opts.ConfigFilename

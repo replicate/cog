@@ -218,14 +218,6 @@ func hasArbitraryTypesAllowed(classNode *sitter.Node, source []byte) bool {
 	return false
 }
 
-// byteEdit represents a single byte-range edit to a source buffer.
-// If Replacement is empty, it is a pure deletion.
-type byteEdit struct {
-	start       uint32
-	end         uint32
-	replacement []byte
-}
-
 // fixPydanticBaseModel rewrites Python source to replace pydantic.BaseModel
 // with cog.BaseModel for the specific classes that would trigger the check
 // (inherits pydantic.BaseModel AND has arbitrary_types_allowed=True).
@@ -901,32 +893,4 @@ func endOfLine(source []byte, pos uint32) uint32 {
 		pos++
 	}
 	return pos
-}
-
-// applyEdits applies a list of byte-range edits to `source` and returns the
-// resulting buffer. Edits must not overlap. They are sorted descending by
-// start so earlier byte offsets remain valid during application.
-func applyEdits(source []byte, edits []byteEdit) []byte {
-	if len(edits) == 0 {
-		return source
-	}
-	sorted := make([]byteEdit, len(edits))
-	copy(sorted, edits)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].start > sorted[j].start
-	})
-
-	result := make([]byte, len(source))
-	copy(result, source)
-	for _, e := range sorted {
-		if int(e.start) > len(result) {
-			continue
-		}
-		end := min(int(e.end), len(result))
-		// Replace result[e.start:end] with e.replacement.
-		tail := append([]byte{}, result[end:]...)
-		result = append(result[:e.start], e.replacement...)
-		result = append(result, tail...)
-	}
-	return result
 }

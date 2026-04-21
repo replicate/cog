@@ -36,8 +36,8 @@ func (c *ConfigPredictRefCheck) Check(ctx *CheckContext) ([]Finding, error) {
 		return []Finding{{
 			Severity:    SeverityError,
 			Message:     fmt.Sprintf("predict reference %q must be in the form 'file.py:ClassName'", predictRef),
-			Remediation: `Set predict to "predict.py:Predictor" in cog.yaml`,
-			File:        "cog.yaml",
+			Remediation: fmt.Sprintf(`Set predict to "predict.py:Predictor" in %s`, ctx.ConfigFilename),
+			File:        ctx.ConfigFilename,
 		}}, nil
 	}
 
@@ -47,8 +47,8 @@ func (c *ConfigPredictRefCheck) Check(ctx *CheckContext) ([]Finding, error) {
 		return []Finding{{
 			Severity:    SeverityError,
 			Message:     fmt.Sprintf("%s not found", pyFile),
-			Remediation: fmt.Sprintf("Create %s or update the predict field in cog.yaml", pyFile),
-			File:        "cog.yaml",
+			Remediation: fmt.Sprintf("Create %s or update the predict field in %s", pyFile, ctx.ConfigFilename),
+			File:        ctx.ConfigFilename,
 		}}, nil
 	}
 

@@ -48,7 +48,7 @@ Pass --fix to automatically apply safe fixes.`,
 }
 
 func runDoctor(ctx context.Context, fix bool) error {
-	console.Warnf("Note: cog doctor is experimental; behavior may change in future versions.")
+	console.Warnf("NOTE: cog doctor is experimental. Behavior and checks may change in future versions.")
 	console.Info("")
 
 	projectDir, err := config.GetProjectDir(configFilename)
@@ -72,7 +72,7 @@ func runDoctor(ctx context.Context, fix bool) error {
 		return err
 	}
 
-	printDoctorResults(result, fix)
+	printDoctorResults(result, fix, result.HasFixableErrors())
 
 	if result.HasErrors() {
 		return errDoctorFoundIssues
@@ -81,7 +81,7 @@ func runDoctor(ctx context.Context, fix bool) error {
 	return nil
 }
 
-func printDoctorResults(result *doctor.Result, fix bool) {
+func printDoctorResults(result *doctor.Result, fix bool, hasFixableErrors bool) {
 	var currentGroup doctor.Group
 	errorCount := 0
 	warningCount := 0
@@ -198,7 +198,7 @@ func printDoctorResults(result *doctor.Result, fix bool) {
 		}
 		summary := "Found " + strings.Join(parts, ", ") + "."
 
-		if !fix && errorCount > 0 {
+		if !fix && hasFixableErrors {
 			summary += ` Run "cog doctor --fix" to auto-fix.`
 		}
 		console.Infof("%s", summary)

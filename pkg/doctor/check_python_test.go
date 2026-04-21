@@ -673,6 +673,7 @@ func TestMissingTypeAnnotationsCheck_FixReturnsNoAutoFix(t *testing.T) {
 }
 
 // parsePythonFiles is a test helper that parses Python files into ParsedFile structs.
+// It registers a t.Cleanup to close tree-sitter trees, preventing C memory leaks.
 func parsePythonFiles(t *testing.T, dir string, filenames ...string) map[string]*ParsedFile {
 	t.Helper()
 	files := make(map[string]*ParsedFile)
@@ -693,5 +694,12 @@ func parsePythonFiles(t *testing.T, dir string, filenames ...string) map[string]
 			Imports: imports,
 		}
 	}
+	t.Cleanup(func() {
+		for _, pf := range files {
+			if pf != nil && pf.Tree != nil {
+				pf.Tree.Close()
+			}
+		}
+	})
 	return files
 }

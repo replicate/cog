@@ -122,13 +122,6 @@ func (c *DeprecatedImportsCheck) Fix(ctx *CheckContext, findings []Finding) erro
 	return nil
 }
 
-// byteRange represents a range of bytes to remove from source, corresponding
-// to a full line (including its trailing newline).
-type byteRange struct {
-	start uint32
-	end   uint32
-}
-
 // removeDeprecatedImportsAST uses tree-sitter to identify and remove:
 //  1. import_from_statement nodes that import deprecated names (or the
 //     deprecated names alone if other names in the import statement remain)
@@ -171,7 +164,7 @@ func removeDeprecatedImportsAST(ctx context.Context, source []byte, tree *sitter
 	// Step 2: Remove deprecated names from their import statements via AST.
 	//   - If it's the only imported name from that module, drop the whole line.
 	//   - Otherwise rewrite the import to omit the deprecated name.
-	var importEdits []byteRangeEdit
+	var importEdits []byteEdit
 	for _, child := range schemaPython.NamedChildren(root) {
 		if child.Type() != "import_from_statement" {
 			continue
@@ -189,7 +182,7 @@ func removeDeprecatedImportsAST(ctx context.Context, source []byte, tree *sitter
 			importEdits = append(importEdits, edit)
 		}
 	}
-	fixed := string(applyByteRangeEdits(source, importEdits))
+	fixed := string(applyEdits(source, importEdits))
 
 	// Step 3: Re-parse and use tree-sitter to find statements referencing
 	// the deprecated names, then remove them by byte range.
@@ -203,7 +196,7 @@ func removeDeprecatedImportsAST(ctx context.Context, source []byte, tree *sitter
 
 	newSource := []byte(fixed)
 	newRoot := newTree.RootNode()
-	var removals []byteRange
+	var removals []byteEdit
 	for _, child := range schemaPython.NamedChildren(newRoot) {
 		if child.Type() == "import_from_statement" || child.Type() == "import_statement" {
 			continue
@@ -237,7 +230,7 @@ func nodeReferencesAny(node *sitter.Node, source []byte, names map[string]bool) 
 
 // nodeLineRange returns a byte range covering the full line(s) of a node,
 // including the trailing newline.
-func nodeLineRange(node *sitter.Node, source []byte) byteRange {
+func nodeLineRange(node *sitter.Node, source []byte) byteEdit {
 	start := node.StartByte()
 	end := node.EndByte()
 
@@ -250,12 +243,12 @@ func nodeLineRange(node *sitter.Node, source []byte) byteRange {
 		end++
 	}
 
-	return byteRange{start: start, end: end}
+	return byteEdit{start: start, end: end}
 }
 
 // applyRemovals removes all byte ranges from source, handling overlaps.
 // Ranges are sorted descending by start so earlier indices remain valid.
-func applyRemovals(source []byte, ranges []byteRange) string {
+func applyRemovals(source []byte, ranges []byteEdit) string {
 	if len(ranges) == 0 {
 		return string(source)
 	}
@@ -279,23 +272,14 @@ func applyRemovals(source []byte, ranges []byteRange) string {
 	return string(result)
 }
 
-// byteRangeEdit represents a byte-range replacement. If replacement is nil,
-// it's a pure deletion. Used to rewrite import statements to drop specific
-// names without removing the whole line.
-type byteRangeEdit struct {
-	start       uint32
-	end         uint32
-	replacement []byte
-}
-
 // editDropFromImport returns an edit that rewrites a `from MODULE import ...`
 // statement to omit the given names. If all names are dropped, the edit
 // removes the entire statement line (including the trailing newline).
 // Returns ok=false if none of the target names are present.
-func editDropFromImport(importNode *sitter.Node, source []byte, toDrop map[string]bool) (byteRangeEdit, bool) {
+func editDropFromImport(importNode *sitter.Node, source []byte, toDrop map[string]bool) (byteEdit, bool) {
 	moduleNode := importNode.ChildByFieldName("module_name")
 	if moduleNode == nil {
-		return byteRangeEdit{}, false
+		return byteEdit{}, false
 	}
 	module := schemaPython.Content(moduleNode, source)
 
@@ -352,7 +336,7 @@ func editDropFromImport(importNode *sitter.Node, source []byte, toDrop map[strin
 		kept = append(kept, e.text)
 	}
 	if !dropped {
-		return byteRangeEdit{}, false
+		return byteEdit{}, false
 	}
 
 	// If nothing is left, remove the whole statement (and trailing newline).
@@ -365,42 +349,15 @@ func editDropFromImport(importNode *sitter.Node, source []byte, toDrop map[strin
 		if int(end) < len(source) && source[end] == '\n' {
 			end++
 		}
-		return byteRangeEdit{start: start, end: end}, true
+		return byteEdit{start: start, end: end}, true
 	}
 
 	newLine := []byte("from " + module + " import " + strings.Join(kept, ", "))
-	return byteRangeEdit{
+	return byteEdit{
 		start:       importNode.StartByte(),
 		end:         importNode.EndByte(),
 		replacement: newLine,
 	}, true
-}
-
-// applyByteRangeEdits applies edits to source. Edits must not overlap.
-// They are sorted descending by start so earlier offsets stay valid.
-func applyByteRangeEdits(source []byte, edits []byteRangeEdit) []byte {
-	if len(edits) == 0 {
-		return source
-	}
-	sorted := make([]byteRangeEdit, len(edits))
-	copy(sorted, edits)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].start > sorted[j].start
-	})
-
-	result := make([]byte, len(source))
-	copy(result, source)
-	for _, e := range sorted {
-		if int(e.start) > len(result) {
-			continue
-		}
-		end := min(int(e.end), len(result))
-		// Replace result[e.start:end] with e.replacement.
-		tail := append([]byte{}, result[end:]...)
-		result = append(result[:e.start], e.replacement...)
-		result = append(result, tail...)
-	}
-	return result
 }
 
 // removeOrphanedImportsAST re-parses source and removes "import X" statements
@@ -416,7 +373,7 @@ func removeOrphanedImportsAST(ctx context.Context, source string) string {
 
 	src := []byte(source)
 	root := tree.RootNode()
-	var removals []byteRange
+	var removals []byteEdit
 
 	for _, child := range schemaPython.NamedChildren(root) {
 		if child.Type() != "import_statement" {
