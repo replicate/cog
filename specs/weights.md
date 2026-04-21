@@ -220,8 +220,6 @@ Annotations use the `run.cog.*` namespace (reverse-domain of cog.run).
 
 All manifest-level annotations are deterministic from the weight content and cog.yaml config. No timestamps, source URIs, or producer metadata are included -- identical inputs always produce an identical manifest digest.
 
-Manifest-level annotations are duplicated on the corresponding descriptor in the OCI index (§2.6), so the index is inspectable without fetching child manifests.
-
 Layers carry no annotations. All file-level metadata (paths, sizes, layer mappings) is in the config blob (§2.3). Consumers process layers according to their media type.
 
 ### 2.6 OCI index (bundle)
@@ -247,7 +245,8 @@ When a model uses managed weights, the push operation produces an OCI image inde
       "platform": { "os": "unknown", "architecture": "unknown" },
       "annotations": {
         "run.cog.weight.name": "z-image-turbo",
-        "run.cog.weight.set-digest": "sha256:def456..."
+        "run.cog.weight.set-digest": "sha256:def456...",
+        "run.cog.weight.size.uncompressed": "32457803776"
       }
     }
   ]
@@ -259,7 +258,21 @@ The model image gets a real platform descriptor. Weight descriptors carry both `
 - **`artifactType`**: Set to `application/vnd.cog.weight.v1`. This is the OCI-standard mechanism ([image-spec descriptor](https://github.com/opencontainers/image-spec/blob/main/descriptor.md)) for identifying non-image content in an index. It enables tooling to distinguish weight manifests from runnable images without inspecting annotations.
 - **`platform`**: Set to `{"os": "unknown", "architecture": "unknown"}`. Weight data is not platform-specific, but the field is included for compatibility. This follows the precedent set by [Docker BuildKit attestations](https://docs.docker.com/build/metadata/attestations/attestation-storage/), which use the same convention to prevent container runtimes from accidentally pulling non-image entries. Omitting `platform` entirely is spec-valid (the field is OPTIONAL per the OCI image-spec) but risks being filtered out by containerd's platform matcher and other tools that assume its presence.
 
-The binding between a model image and its weights is structural: both appear as siblings in the same OCI index. No back-reference annotation from weight to model is needed. The index descriptor carries `run.cog.weight.name` and `run.cog.weight.set-digest` so the index is inspectable without fetching child manifests.
+**Index descriptor annotations:**
+
+| Key | Value | Description |
+|-----|-------|-------------|
+| `run.cog.weight.name` | string | Weight name. REQUIRED. |
+| `run.cog.weight.set-digest` | digest string | Weight set digest (§2.4). REQUIRED. |
+| `run.cog.weight.size.uncompressed` | integer string | Total uncompressed size of all layers in bytes. REQUIRED. |
+
+These annotations exist so the index is scannable without fetching child manifests. `name` and `set-digest` identify what the weight is and enable cache lookups. `size.uncompressed` enables scheduling decisions (e.g., whether a node has enough disk space) without downloading any weight data.
+
+Note that `run.cog.weight.target` is intentionally omitted from the index descriptor. The target path is operational detail available in the weight manifest annotations and config blob (§2.3); it is not needed for scanning or scheduling at the index level.
+
+The `size` field on the descriptor itself is the size of the weight manifest JSON (per the OCI spec, descriptor `size` is always the byte count of the referenced blob). It is NOT the size of the weight data. Use `run.cog.weight.size.uncompressed` for the actual weight size.
+
+The binding between a model image and its weights is structural: both appear as siblings in the same OCI index. No back-reference annotation from weight to model is needed.
 
 ### 2.7 Import behavior
 

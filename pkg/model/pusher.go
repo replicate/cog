@@ -100,8 +100,13 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 		Variant:      platform.Variant,
 	})
 	for i, wr := range weightResults {
+		wa := weightArtifacts[i]
+		var uncompressedSize int64
+		for _, l := range wa.Layers {
+			uncompressedSize += l.UncompressedSize
+		}
 		builder.AddWeightDescriptor(wr.Descriptor,
-			weightArtifacts[i].Name(), weightArtifacts[i].SetDigest)
+			wa.Name(), wa.SetDigest, uncompressedSize)
 	}
 
 	idx, err := builder.BuildFromDescriptors()
