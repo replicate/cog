@@ -117,68 +117,54 @@ checksum = "sha256:b0bb728ba068ee61342f40a2124b3d8d234af8f716dd416b7c1f794dfeb4e
 url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.windows-x64.zip"
 
 [[tools."aqua:rust-lang/rustup"]]
-version = "1.28.2"
+version = "1.29.0"
 backend = "aqua:rust-lang/rustup"
 
 [tools."aqua:rust-lang/rustup"."platforms.linux-arm64"]
-checksum = "sha256:e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-unknown-linux-gnu/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-unknown-linux-gnu/rustup-init"
 
 [tools."aqua:rust-lang/rustup"."platforms.linux-arm64-musl"]
-checksum = "sha256:e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-unknown-linux-gnu/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-unknown-linux-gnu/rustup-init"
 
 [tools."aqua:rust-lang/rustup"."platforms.linux-x64"]
-checksum = "sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/x86_64-unknown-linux-gnu/rustup-init"
 
 [tools."aqua:rust-lang/rustup"."platforms.linux-x64-musl"]
-checksum = "sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/x86_64-unknown-linux-gnu/rustup-init"
 
 [tools."aqua:rust-lang/rustup"."platforms.macos-arm64"]
-checksum = "sha256:20ef5516c31b1ac2290084199ba77dbbcaa1406c45c1d978ca68558ef5964ef5"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-apple-darwin/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-apple-darwin/rustup-init"
 
 [tools."aqua:rust-lang/rustup"."platforms.macos-x64"]
-checksum = "sha256:9c331076f62b4d0edeae63d9d1c9442d5fe39b37b05025ec8d41c5ed35486496"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-apple-darwin/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/x86_64-apple-darwin/rustup-init"
 
 [tools."aqua:rust-lang/rustup"."platforms.windows-x64"]
-checksum = "sha256:88d8258dcf6ae4f7a80c7d1088e1f36fa7025a1cfd1343731b4ee6f385121fc0"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-pc-windows-msvc/rustup-init.exe"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/x86_64-pc-windows-msvc/rustup-init.exe"
 
 [[tools."aqua:rust-lang/rustup/rustup-init"]]
-version = "1.28.2"
+version = "1.29.0"
 backend = "aqua:rust-lang/rustup/rustup-init"
 
 [tools."aqua:rust-lang/rustup/rustup-init"."platforms.linux-arm64"]
-checksum = "sha256:e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-unknown-linux-gnu/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-unknown-linux-gnu/rustup-init"
 
 [tools."aqua:rust-lang/rustup/rustup-init"."platforms.linux-arm64-musl"]
-checksum = "sha256:e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-unknown-linux-gnu/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-unknown-linux-gnu/rustup-init"
 
 [tools."aqua:rust-lang/rustup/rustup-init"."platforms.linux-x64"]
-checksum = "sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/x86_64-unknown-linux-gnu/rustup-init"
 
 [tools."aqua:rust-lang/rustup/rustup-init"."platforms.linux-x64-musl"]
-checksum = "sha256:20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/x86_64-unknown-linux-gnu/rustup-init"
 
 [tools."aqua:rust-lang/rustup/rustup-init"."platforms.macos-arm64"]
-checksum = "sha256:20ef5516c31b1ac2290084199ba77dbbcaa1406c45c1d978ca68558ef5964ef5"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-apple-darwin/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/aarch64-apple-darwin/rustup-init"
 
 [tools."aqua:rust-lang/rustup/rustup-init"."platforms.macos-x64"]
-checksum = "sha256:9c331076f62b4d0edeae63d9d1c9442d5fe39b37b05025ec8d41c5ed35486496"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-apple-darwin/rustup-init"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/x86_64-apple-darwin/rustup-init"
 
 [tools."aqua:rust-lang/rustup/rustup-init"."platforms.windows-x64"]
-checksum = "sha256:88d8258dcf6ae4f7a80c7d1088e1f36fa7025a1cfd1343731b4ee6f385121fc0"
-url = "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-pc-windows-msvc/rustup-init.exe"
+url = "https://static.rust-lang.org/rustup/archive/1.29.0/x86_64-pc-windows-msvc/rustup-init.exe"
 
 [[tools."aqua:ziglang/zig"]]
 version = "0.15.2"
@@ -245,36 +231,44 @@ version = "1.11.5"
 backend = "cargo:maturin"
 
 [[tools.go]]
-version = "1.25.6"
+version = "1.26.2"
 backend = "core:go"
 
 [tools.go."platforms.linux-arm64"]
-checksum = "sha256:738ef87d79c34272424ccdf83302b7b0300b8b096ed443896089306117943dd5"
-url = "https://dl.google.com/go/go1.25.6.linux-arm64.tar.gz"
+checksum = "sha256:c958a1fe1b361391db163a485e21f5f228142d6f8b584f6bef89b26f66dc5b23"
+url = "https://dl.google.com/go/go1.26.2.linux-arm64.tar.gz"
+
+[tools.go."platforms.linux-arm64-musl"]
+checksum = "sha256:c958a1fe1b361391db163a485e21f5f228142d6f8b584f6bef89b26f66dc5b23"
+url = "https://dl.google.com/go/go1.26.2.linux-arm64.tar.gz"
 
 [tools.go."platforms.linux-arm64-musl"]
 checksum = "sha256:738ef87d79c34272424ccdf83302b7b0300b8b096ed443896089306117943dd5"
 url = "https://dl.google.com/go/go1.25.6.linux-arm64.tar.gz"
 
 [tools.go."platforms.linux-x64"]
-checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a"
-url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"
+checksum = "sha256:990e6b4bbba816dc3ee129eaeaf4b42f17c2800b88a2166c265ac1a200262282"
+url = "https://dl.google.com/go/go1.26.2.linux-amd64.tar.gz"
+
+[tools.go."platforms.linux-x64-musl"]
+checksum = "sha256:990e6b4bbba816dc3ee129eaeaf4b42f17c2800b88a2166c265ac1a200262282"
+url = "https://dl.google.com/go/go1.26.2.linux-amd64.tar.gz"
 
 [tools.go."platforms.linux-x64-musl"]
 checksum = "sha256:f022b6aad78e362bcba9b0b94d09ad58c5a70c6ba3b7582905fababf5fe0181a"
 url = "https://dl.google.com/go/go1.25.6.linux-amd64.tar.gz"
 
 [tools.go."platforms.macos-arm64"]
-checksum = "sha256:984521ae978a5377c7d782fd2dd953291840d7d3d0bd95781a1f32f16d94a006"
-url = "https://dl.google.com/go/go1.25.6.darwin-arm64.tar.gz"
+checksum = "sha256:32af1522bf3e3ff3975864780a429cc0b41d190ec7bf90faa661d6d64566e7af"
+url = "https://dl.google.com/go/go1.26.2.darwin-arm64.tar.gz"
 
 [tools.go."platforms.macos-x64"]
-checksum = "sha256:e2b5b237f5c262931b8e280ac4b8363f156e19bfad5270c099998932819670b7"
-url = "https://dl.google.com/go/go1.25.6.darwin-amd64.tar.gz"
+checksum = "sha256:bc3f1500d9968c36d705442d90ba91addf9271665033748b82532682e90a7966"
+url = "https://dl.google.com/go/go1.26.2.darwin-amd64.tar.gz"
 
 [tools.go."platforms.windows-x64"]
-checksum = "sha256:19b4733b727ba5c611b5656187f3ac367d278d64c3d4199a845e39c0fdac5335"
-url = "https://dl.google.com/go/go1.25.6.windows-amd64.zip"
+checksum = "sha256:98eb3570bade15cb826b0909338df6cc6d2cf590bc39c471142002db3832b708"
+url = "https://dl.google.com/go/go1.26.2.windows-amd64.zip"
 
 [[tools."npm:markdownlint-cli2"]]
 version = "0.22.0"
