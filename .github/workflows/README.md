@@ -97,16 +97,15 @@ Runs CodeQL security scanning for Go, Python, and Rust.
 
 ## Caching Strategy
 
-### Rust Cache
+### Tool Cache (mise)
+- `jdx/mise-action@v4` with `cache: true` (default) caches all installed tools
+- Tool versions are defined in `mise.toml` — CI and local dev use the same versions
+- Cache key includes platform, mise version, and config file hashes
+
+### Rust Target Cache
 - **Save**: Only on `main` branch pushes (to avoid PR cache pollution)
 - **Restore**: On all runs (PRs restore from main's cache)
 - Uses `Swatinem/rust-cache@v2` with workspace path `crates -> target`
-
-### Go Cache
-- Built into `actions/setup-go` via `cache-dependency-path`
-
-### Python/uv Cache
-- Built into `jdx/mise-action` and `astral-sh/setup-uv`
 
 ## Artifacts
 

@@ -254,27 +254,19 @@ For comprehensive architecture documentation, see [`architecture/`](./architectu
 
 ## CI Tool Dependencies
 
-Development tools are managed in **two places** that must be kept in sync:
+Development tools are managed in **one place**: **`mise.toml`**. CI workflows use
+`jdx/mise-action@v4` (with caching enabled) to install the same tool versions that
+developers use locally. This eliminates version drift between local dev and CI.
 
-1. **`mise.toml`** — Tool versions for local development (uses aqua backend for prebuilt binaries)
-2. **`.github/workflows/ci.yaml`** — Tool installation for CI (uses dedicated GitHub Actions)
+**Exceptions:**
 
-CI deliberately avoids aqua downloads from GitHub Releases to prevent transient 502 failures. Instead, it uses:
+| Tool | CI method | Why |
+|------|-----------|-----|
+| coglet wheel (maturin+zig) | `PyO3/maturin-action` | Builds inside a manylinux container with bundled maturin and zig |
+| Rust target cache | `Swatinem/rust-cache` | Caches `crates/target/` directory (separate from tool caching) |
+| `check-stubs` Python | `actions/setup-python` | Needs shared-library Python (libpython3.x.so) for PyO3 auto-initialize |
 
-| Tool | CI installation method | Why |
-|------|----------------------|-----|
-| gotestsum | `go install` | Uses Go module proxy, not GitHub Releases |
-| cargo-deny | `taiki-e/install-action` | Prebuilt with checksum verification |
-| cargo-nextest | `taiki-e/install-action` | Prebuilt with checksum verification |
-| coglet wheel (maturin+zig) | `PyO3/maturin-action` | Bundles maturin and zig |
-| golangci-lint | `golangci/golangci-lint-action` | Built-in caching |
-| Rust toolchain | `dtolnay/rust-toolchain` | Guaranteed ordering |
-
-Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
-
-**When updating a tool version**, update both:
-- The version in `mise.toml` (for local dev)
-- The corresponding version pin in `.github/workflows/ci.yaml` (for CI)
+**When updating a tool version**, update `mise.toml` only. CI picks it up automatically.
 
 ## Important Files
 - `VERSION.txt` - Canonical version (single source of truth)
