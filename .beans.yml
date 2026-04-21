@@ -1,6 +1,6 @@
 beans:
     path: .beans
-    prefix: cog.md-managed-weights-v0.0.2-
+    prefix: cog-
     id_length: 4
     default_status: todo
     default_type: task
