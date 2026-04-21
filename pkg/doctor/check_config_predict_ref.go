@@ -80,6 +80,7 @@ func (c *ConfigPredictRefCheck) Check(ctx *CheckContext) ([]Finding, error) {
 				File:     pyFile,
 			}}, nil
 		}
+		defer tree.Close()
 		rootNode = tree.RootNode()
 	}
 

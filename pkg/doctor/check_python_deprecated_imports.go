@@ -199,6 +199,7 @@ func removeDeprecatedImportsAST(ctx context.Context, source []byte, tree *sitter
 	if err != nil {
 		return fixed
 	}
+	defer newTree.Close()
 
 	newSource := []byte(fixed)
 	newRoot := newTree.RootNode()
@@ -411,6 +412,7 @@ func removeOrphanedImportsAST(ctx context.Context, source string) string {
 	if err != nil {
 		return source
 	}
+	defer tree.Close()
 
 	src := []byte(source)
 	root := tree.RootNode()

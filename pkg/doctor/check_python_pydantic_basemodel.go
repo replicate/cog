@@ -242,6 +242,7 @@ func fixPydanticBaseModel(ctx context.Context, source []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
+	defer tree.Close()
 	root := tree.RootNode()
 	imports := schemaPython.CollectImports(root, source)
 
@@ -294,6 +295,7 @@ func fixPydanticBaseModel(ctx context.Context, source []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reparse: %w", err)
 	}
+	defer tree2.Close()
 	root2 := tree2.RootNode()
 
 	var edits2 []byteEdit
@@ -725,6 +727,7 @@ func addToCogImport(ctx context.Context, source []byte, localName string) []byte
 	if err != nil {
 		return source
 	}
+	defer tree.Close()
 	root := tree.RootNode()
 	imports := schemaPython.CollectImports(root, source)
 
