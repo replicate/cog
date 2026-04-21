@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 )
 
 // PythonVersionCheck verifies that Python is available and that the local
@@ -25,7 +24,7 @@ func (c *PythonVersionCheck) Check(ctx *CheckContext) ([]Finding, error) {
 		}}, nil
 	}
 
-	execCtx, cancel := context.WithTimeout(ctx.ctx, 5*time.Second)
+	execCtx, cancel := context.WithTimeout(ctx.ctx, envCheckTimeout)
 	defer cancel()
 
 	out, err := exec.CommandContext(execCtx, ctx.PythonPath, "--version").Output()

@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/replicate/cog/pkg/config"
@@ -28,7 +29,7 @@ func (c *ConfigSchemaCheck) Check(ctx *CheckContext) ([]Finding, error) {
 
 	// If this is a parse error, skip — ConfigParseCheck handles it
 	var parseErr *config.ParseError
-	if isParseError(ctx.LoadErr, &parseErr) {
+	if errors.As(ctx.LoadErr, &parseErr) {
 		return nil, nil
 	}
 

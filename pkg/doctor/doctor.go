@@ -14,6 +14,10 @@ import (
 var ErrNoAutoFix = errors.New("no auto-fix available for this check")
 
 // Severity of a finding.
+//
+// Values are ordered from most severe (Error = 0) to least severe (Info = 2),
+// so a smaller integer means "worse". Callers that aggregate findings by
+// severity compare with < rather than > to find the worst.
 type Severity int
 
 const (
@@ -73,6 +77,13 @@ type ParsedFile struct {
 
 // CheckContext provides checks with access to project state.
 // Built once by the runner and passed to every check.
+//
+// The ctx field deliberately stores a context.Context, which deviates from
+// the usual Go guidance of passing contexts as the first argument to every
+// function. It's kept unexported to discourage external callers from
+// constructing a CheckContext directly — all production construction goes
+// through buildCheckContext, which always populates ctx. Tests in this
+// package set ctx explicitly via struct literals.
 type CheckContext struct {
 	ctx            context.Context
 	ProjectDir     string

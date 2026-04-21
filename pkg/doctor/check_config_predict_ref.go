@@ -30,9 +30,7 @@ func (c *ConfigPredictRefCheck) Check(ctx *CheckContext) ([]Finding, error) {
 		return nil, nil // No predict field — nothing to check
 	}
 
-	parts := splitPredictRef(predictRef)
-	pyFile := parts[0]
-	className := parts[1]
+	pyFile, className := splitPredictRef(predictRef)
 
 	if pyFile == "" || className == "" {
 		return []Finding{{

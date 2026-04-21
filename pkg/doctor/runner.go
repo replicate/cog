@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
@@ -102,7 +103,7 @@ func Run(ctx context.Context, opts RunOptions, checks []Check) (*Result, error) 
 
 // buildCheckContext constructs the shared context for all checks.
 func buildCheckContext(ctx context.Context, projectDir string, configFilename string) (*CheckContext, error) {
-	ctxt := &CheckContext{
+	cc := &CheckContext{
 		ctx:            ctx,
 		ProjectDir:     projectDir,
 		ConfigFilename: configFilename,
@@ -113,44 +114,44 @@ func buildCheckContext(ctx context.Context, projectDir string, configFilename st
 	configPath := filepath.Join(projectDir, configFilename)
 	configBytes, err := os.ReadFile(configPath)
 	if err == nil {
-		ctxt.ConfigFile = configBytes
-		// Load and validate config once — checks use ctxt.LoadResult / ctxt.LoadErr
+		cc.ConfigFile = configBytes
+		// Load and validate config once — checks use cc.LoadResult / cc.LoadErr
 		loadResult, loadErr := config.Load(bytes.NewReader(configBytes), projectDir)
-		ctxt.LoadErr = loadErr
+		cc.LoadErr = loadErr
 		if loadResult != nil {
-			ctxt.LoadResult = loadResult
-			ctxt.Config = loadResult.Config
+			cc.LoadResult = loadResult
+			cc.Config = loadResult.Config
 		}
 	}
 
 	// Find python binary
 	if pythonPath, err := exec.LookPath("python3"); err == nil {
-		ctxt.PythonPath = pythonPath
+		cc.PythonPath = pythonPath
 	} else if pythonPath, err := exec.LookPath("python"); err == nil {
-		ctxt.PythonPath = pythonPath
+		cc.PythonPath = pythonPath
 	}
 
 	// Pre-parse Python files referenced in config
-	if ctxt.Config != nil {
-		parsePythonRef(ctxt, ctxt.Config.Predict)
-		parsePythonRef(ctxt, ctxt.Config.Train)
+	if cc.Config != nil {
+		parsePythonRef(cc, cc.Config.Predict)
+		parsePythonRef(cc, cc.Config.Train)
 	}
 
-	return ctxt, nil
+	return cc, nil
 }
 
 // parsePythonRef parses a predict/train reference like "predict.py:Predictor"
 // and adds the parsed file to ctx.PythonFiles.
-func parsePythonRef(ctxt *CheckContext, ref string) {
+func parsePythonRef(cc *CheckContext, ref string) {
 	if ref == "" {
 		return
 	}
-	parts := splitPredictRef(ref)
-	if parts[0] == "" {
+	pyFile, _ := splitPredictRef(ref)
+	if pyFile == "" {
 		return
 	}
 
-	fullPath := filepath.Join(ctxt.ProjectDir, parts[0])
+	fullPath := filepath.Join(cc.ProjectDir, pyFile)
 	source, err := os.ReadFile(fullPath)
 	if err != nil {
 		return
@@ -158,27 +159,27 @@ func parsePythonRef(ctxt *CheckContext, ref string) {
 
 	parser := sitter.NewParser()
 	parser.SetLanguage(python.GetLanguage())
-	tree, err := parser.ParseCtx(ctxt.ctx, nil, source)
+	tree, err := parser.ParseCtx(cc.ctx, nil, source)
 	if err != nil {
 		return
 	}
 
 	imports := schemaPython.CollectImports(tree.RootNode(), source)
 
-	ctxt.PythonFiles[parts[0]] = &ParsedFile{
-		Path:    parts[0],
+	cc.PythonFiles[pyFile] = &ParsedFile{
+		Path:    pyFile,
 		Source:  source,
 		Tree:    tree,
 		Imports: imports,
 	}
 }
 
-// splitPredictRef splits "predict.py:Predictor" into ["predict.py", "Predictor"].
-func splitPredictRef(ref string) [2]string {
-	for i := len(ref) - 1; i >= 0; i-- {
-		if ref[i] == ':' {
-			return [2]string{ref[:i], ref[i+1:]}
-		}
+// splitPredictRef splits "predict.py:Predictor" into ("predict.py", "Predictor").
+// If ref has no colon, class is "". Handles Windows-style refs by splitting at
+// the last colon (so "C:\path\predict.py:Predictor" → ("C:\path\predict.py", "Predictor")).
+func splitPredictRef(ref string) (file, class string) {
+	if i := strings.LastIndex(ref, ":"); i >= 0 {
+		return ref[:i], ref[i+1:]
 	}
-	return [2]string{ref, ""}
+	return ref, ""
 }

@@ -42,9 +42,7 @@ func (c *MissingTypeAnnotationsCheck) Fix(_ *CheckContext, _ []Finding) error {
 
 // checkMethodAnnotations checks that the given method has a return type annotation.
 func checkMethodAnnotations(ctx *CheckContext, ref string, methodName string) []Finding {
-	parts := splitPredictRef(ref)
-	fileName := parts[0]
-	className := parts[1]
+	fileName, className := splitPredictRef(ref)
 
 	if fileName == "" || className == "" {
 		return nil // Invalid ref — handled by ConfigPredictRefCheck
