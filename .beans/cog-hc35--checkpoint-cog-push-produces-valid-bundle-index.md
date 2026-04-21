@@ -1,11 +1,11 @@
 ---
 # cog-hc35
 title: cog push produces valid bundle index
-status: todo
+status: completed
 type: milestone
 priority: critical
 created_at: 2026-04-17T19:34:37Z
-updated_at: 2026-04-21T17:12:28Z
+updated_at: 2026-04-21T19:39:08Z
 parent: cog-9qcd
 blocked_by:
     - cog-m4e8
@@ -46,7 +46,7 @@ crane manifest <registry>/<model>:latest --platform unknown/unknown | jq .artifa
 
 ## Required tasks
 - [x] OCI index assembly (m4e8) -- remove COG_OCI_INDEX gate
-- [ ] Prepare example managed-weights model and push to registry (sspy)
+- [x] Prepare example managed-weights model and push to registry (sspy)
 
 ## Verification
 
@@ -63,3 +63,8 @@ crane manifest localhost:5000/managed-weights:latest --platform unknown/unknown 
 # Config blob: file-level index with path, layer, size, digest
 crane blob localhost:5000/managed-weights@$(crane manifest localhost:5000/managed-weights:latest --platform unknown/unknown | jq -r .config.digest) | jq .
 ```
+
+
+## Summary of Changes
+
+Milestone verified complete. `cog push` produces a valid OCI bundle index with model image + weight manifests. Verified end-to-end with the examples/managed-weights model against a local registry -- OCI index, weight manifest, config blob, and layer annotations all match the v1 spec. The example predictor validates delivered weights against a baked-in manifest and returns a structured diff from predict().
