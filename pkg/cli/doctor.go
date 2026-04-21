@@ -24,8 +24,10 @@ func newDoctorCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Check your project for common issues and fix them",
+		Short: "Check your project for common issues and fix them (experimental)",
 		Long: `Diagnose and fix common issues in your Cog project.
+
+NOTE: cog doctor is experimental. Behavior and checks may change in future versions.
 
 By default, cog doctor reports problems without modifying any files.
 Pass --fix to automatically apply safe fixes.`,
@@ -46,6 +48,9 @@ Pass --fix to automatically apply safe fixes.`,
 }
 
 func runDoctor(ctx context.Context, fix bool) error {
+	console.Warnf("Note: cog doctor is experimental; behavior may change in future versions.")
+	console.Info("")
+
 	projectDir, err := config.GetProjectDir(configFilename)
 	if err != nil {
 		return err
