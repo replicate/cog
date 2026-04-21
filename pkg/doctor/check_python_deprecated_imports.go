@@ -98,23 +98,21 @@ func (c *DeprecatedImportsCheck) Fix(ctx *CheckContext, findings []Finding) erro
 	sort.Strings(relPaths)
 
 	for _, relPath := range relPaths {
+		pf, ok := ctx.PythonFiles[relPath]
+		if !ok {
+			continue
+		}
+
 		fullPath := filepath.Join(ctx.ProjectDir, relPath)
 		info, err := os.Stat(fullPath)
 		if err != nil {
 			return fmt.Errorf("stat %s: %w", relPath, err)
 		}
 
-		source, err := os.ReadFile(fullPath)
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", relPath, err)
-		}
-
-		pf, ok := ctx.PythonFiles[relPath]
-		if !ok {
-			continue
-		}
-
-		fixed := removeDeprecatedImportsAST(ctx.ctx, source, pf.Tree)
+		// Use the cached source that the cached tree was parsed against.
+		// Re-reading from disk here would risk tree/source byte-offset
+		// mismatch if the file changed after the initial parse.
+		fixed := removeDeprecatedImportsAST(ctx.ctx, pf.Source, pf.Tree)
 
 		if err := os.WriteFile(fullPath, []byte(fixed), info.Mode()); err != nil {
 			return fmt.Errorf("writing %s: %w", relPath, err)
