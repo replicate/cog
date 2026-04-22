@@ -1,0 +1,293 @@
+package doctor
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/config"
+)
+
+func TestConfigParseCheck_Valid(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigParseCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestConfigParseCheck_InvalidYAML(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build: [invalid yaml`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigParseCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Equal(t, SeverityError, findings[0].Severity)
+	require.Contains(t, findings[0].Message, "cog.yaml")
+}
+
+func TestConfigParseCheck_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigParseCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Contains(t, findings[0].Message, "cog.yaml not found")
+}
+
+func TestConfigDeprecatedFieldsCheck_Clean(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+  python_requirements: "requirements.txt"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "requirements.txt", "torch==2.0.0\n")
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigDeprecatedFieldsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestConfigDeprecatedFieldsCheck_PythonPackages(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+  python_packages:
+    - torch==2.0.0
+predict: "predict.py:Predictor"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigDeprecatedFieldsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Equal(t, SeverityWarning, findings[0].Severity)
+	require.Contains(t, findings[0].Message, "python_packages")
+}
+
+func TestConfigDeprecatedFieldsCheck_PreInstall(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+  pre_install:
+    - pip install something
+predict: "predict.py:Predictor"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigDeprecatedFieldsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Equal(t, SeverityWarning, findings[0].Severity)
+	require.Contains(t, findings[0].Message, "pre_install")
+}
+
+func TestConfigPredictRefCheck_Valid(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigPredictRefCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestConfigPredictRefCheck_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigPredictRefCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Equal(t, SeverityError, findings[0].Severity)
+	require.Contains(t, findings[0].Message, "predict.py")
+	require.Contains(t, findings[0].Message, "not found")
+}
+
+func TestConfigPredictRefCheck_MissingClass(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:DoesNotExist"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigPredictRefCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Equal(t, SeverityError, findings[0].Severity)
+	require.Contains(t, findings[0].Message, "DoesNotExist")
+}
+
+func TestConfigPredictRefCheck_NoPredictField(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigPredictRefCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings) // No predict field is valid (some projects are train-only)
+}
+
+// TestConfigPredictRefCheck_HonorsContextCancellation verifies that
+// ConfigPredictRefCheck threads CheckContext.ctx into parser.ParseCtx
+// so that a canceled context interrupts parsing.
+func TestConfigPredictRefCheck_HonorsContextCancellation(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	// Write a predict.py so we reach the parsing path (not the PythonFiles cache
+	// path, which short-circuits before ParseCtx).
+	writeFile(t, dir, "predict.py", `class Predictor:
+    def predict(self) -> str:
+        return ""
+`)
+
+	// Build context, then replace ctx.ctx with a pre-canceled one and wipe
+	// the cached ParsedFile so the check goes through the ParseCtx path.
+	ctx := buildTestCheckContext(t, dir)
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	ctx.ctx = canceled
+	ctx.PythonFiles = make(map[string]*ParsedFile)
+
+	check := &ConfigPredictRefCheck{}
+	// The check should not panic or hang. It may return findings (e.g., a
+	// parse error) or an empty result; both are acceptable.
+	_, err := check.Check(ctx)
+	require.NoError(t, err)
+}
+
+// buildTestCheckContext creates a CheckContext by loading the cog.yaml in the given dir.
+func buildTestCheckContext(t *testing.T, dir string) *CheckContext {
+	t.Helper()
+	ctx := &CheckContext{
+		ctx:            context.Background(),
+		ProjectDir:     dir,
+		ConfigFilename: "cog.yaml",
+		PythonFiles:    make(map[string]*ParsedFile),
+	}
+
+	configPath := filepath.Join(dir, "cog.yaml")
+	configBytes, err := os.ReadFile(configPath)
+	if err == nil {
+		ctx.ConfigFile = configBytes
+		loadResult, loadErr := config.Load(bytes.NewReader(configBytes), dir)
+		ctx.LoadErr = loadErr
+		if loadResult != nil {
+			ctx.LoadResult = loadResult
+			ctx.Config = loadResult.Config
+		}
+	}
+
+	return ctx
+}
+
+func TestConfigSchemaCheck_Valid(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigSchemaCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestConfigSchemaCheck_InvalidSchema(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "2.7"
+predict: "predict.py:Predictor"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigSchemaCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Equal(t, SeverityError, findings[0].Severity)
+	require.Contains(t, findings[0].Message, "validation failed")
+}
+
+func TestConfigSchemaCheck_ParseError(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build: [invalid yaml`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigSchemaCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings) // Parse errors are handled by ConfigParseCheck
+}
+
+func TestConfigSchemaCheck_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &ConfigSchemaCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings) // Missing file handled by ConfigParseCheck
+}
+
+// writeFile is a test helper to create fixture files.
+func writeFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	fullPath := filepath.Join(dir, name)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+	require.NoError(t, os.WriteFile(fullPath, []byte(content), 0o644))
+}

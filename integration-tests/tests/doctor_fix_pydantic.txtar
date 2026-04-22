@@ -1,0 +1,41 @@
+# Test that cog doctor --fix rewrites pydantic.BaseModel to cog.BaseModel.
+# After fix, re-running cog doctor should pass.
+
+# First, doctor should detect the issue
+! cog doctor
+stderr 'pydantic.BaseModel'
+
+# Fix the issue
+cog doctor --fix
+stderr 'Fixed'
+
+# Verify the file was modified: pydantic.BaseModel replaced with cog.BaseModel
+exec cat predict.py
+stdout 'from cog import BasePredictor, Path, BaseModel'
+! stdout 'from pydantic import BaseModel'
+! stdout 'ConfigDict'
+! stdout 'arbitrary_types_allowed'
+
+# Re-running doctor should now pass
+cog doctor
+stderr 'no issues found'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Path
+from pydantic import BaseModel, ConfigDict
+
+
+class VoiceCloningOutputs(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    audio: Path
+    spectrogram: Path
+
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> VoiceCloningOutputs:
+        return VoiceCloningOutputs(audio="a.wav", spectrogram="s.png")

@@ -1,0 +1,26 @@
+# Test that cog doctor detects pydantic.BaseModel with arbitrary_types_allowed.
+# This is a common workaround that should use cog.BaseModel instead.
+
+! cog doctor
+stderr 'pydantic.BaseModel'
+stderr 'cog.BaseModel'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Path
+from pydantic import BaseModel, ConfigDict
+
+
+class VoiceCloningOutputs(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    audio: Path
+    spectrogram: Path
+
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> VoiceCloningOutputs:
+        return VoiceCloningOutputs(audio="a.wav", spectrogram="s.png")
