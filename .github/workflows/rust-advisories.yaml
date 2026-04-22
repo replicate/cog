@@ -1,0 +1,50 @@
+name: Rust Advisory Check
+
+on:
+  schedule:
+    # Monday 9am UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  check-advisories:
+    name: Check Rust advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Check advisories
+        id: advisories
+        continue-on-error: true
+        run: cargo deny --manifest-path crates/Cargo.toml check advisories 2>&1 | tee /tmp/deny-output.txt
+      - name: Open issue on failure
+        if: steps.advisories.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Don't open a duplicate if one already exists
+          EXISTING=$(gh issue list --label "security" --search "Rust security advisory" --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "Issue #$EXISTING already open, skipping"
+            exit 0
+          fi
+
+          SNIPPET=$(grep -A5 'error\[vulnerability\]' /tmp/deny-output.txt | head -30 || echo "See CI logs for details")
+
+          gh issue create \
+            --title "Rust security advisory detected" \
+            --label "security" \
+            --body "\`cargo deny check advisories\` found new security advisories in Rust dependencies.
+
+          \`\`\`
+          $SNIPPET
+          \`\`\`
+
+          Run \`cargo deny --manifest-path crates/Cargo.toml check advisories\` locally for full details.
+          Typically fixed with \`cargo update -p <crate>\` in \`crates/\`."

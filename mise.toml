@@ -437,8 +437,12 @@ description = "Lint Rust code (clippy)"
 run = "cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings"
 
 [tasks."lint:rust:deny"]
-description = "Check Rust licenses and advisories"
+description = "Check Rust licenses, bans, sources, and advisories"
 run = "cargo deny --manifest-path crates/Cargo.toml check"
+
+[tasks."lint:rust:deny:advisories"]
+description = "Check Rust advisory database (RUSTSEC)"
+run = "cargo deny --manifest-path crates/Cargo.toml check advisories"
 
 [tasks."lint:rust:fix"]
 description = "Fix Rust lint issues"

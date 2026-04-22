@@ -330,8 +330,25 @@ jobs:
       - uses: jdx/mise-action@v4
         with:
           cache_key_prefix: mise-ci-${{ github.job }}
-      - name: Check licenses and advisories
-        run: mise run lint:rust:deny
+      - name: Check licenses, bans, and sources
+        run: cargo deny --manifest-path crates/Cargo.toml check bans licenses sources
+
+  # Advisory checks run against a live database that can change at any time.
+  # A new RUSTSEC entry would break CI on every branch even though no code
+  # changed, so this job is informational only (continue-on-error).
+  # A weekly cron workflow (rust-advisories.yaml) opens issues for new advisories.
+  lint-rust-advisories:
+    name: Lint Rust (advisories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Check advisories (informational)
+        run: cargo deny --manifest-path crates/Cargo.toml check advisories
 
   lint-python:
     name: Lint Python
@@ -668,6 +685,7 @@ jobs:
       - lint-go
       - lint-rust
       - lint-rust-deny
+      - lint-rust-advisories
       - lint-python
       - lint-docs
       - test-go
@@ -696,6 +714,7 @@ jobs:
           echo "  lint-go: ${{ needs.lint-go.result }}"
           echo "  lint-rust: ${{ needs.lint-rust.result }}"
           echo "  lint-rust-deny: ${{ needs.lint-rust-deny.result }}"
+          echo "  lint-rust-advisories: ${{ needs.lint-rust-advisories.result }} (informational)"
           echo "  lint-python: ${{ needs.lint-python.result }}"
           echo "  lint-docs: ${{ needs.lint-docs.result }}"
           echo "  test-go: ${{ needs.test-go.result }}"
@@ -706,7 +725,9 @@ jobs:
           echo "  integration-shards: ${{ needs.integration-shards.result }}"
           echo "  test-integration: ${{ needs.test-integration.result }}"
 
-          # Fail if any job failed
+          # Fail if any required job failed.
+          # lint-rust-advisories is excluded: it uses continue-on-error because
+          # advisory DB updates shouldn't block unrelated PRs.
           FAILED=false
           for result in \
             "${{ needs.setup.result }}" \
