@@ -23,9 +23,6 @@ flag_file
 bin/*
 .beads/
 
-# Compiled test tools
-/weights-gen
-
 # Test directory for weights testing
 /test-weights/
 weights.lock
