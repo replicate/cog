@@ -1,7 +1,6 @@
 package model
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +13,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/model/weightsource"
 )
 
 // =============================================================================
@@ -23,7 +24,11 @@ import (
 // packDir runs Pack on sourceDir and registers cleanup of the produced tar files.
 func packDir(t *testing.T, sourceDir string, opts *PackOptions) []LayerResult {
 	t.Helper()
-	results, err := Pack(context.Background(), sourceDir, opts)
+	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
+	require.NoError(t, err)
+	inv, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+	results, err := NewPacker(opts).Pack(t.Context(), src, inv)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		for _, r := range results.Layers {

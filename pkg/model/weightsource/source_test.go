@@ -1,6 +1,8 @@
 package weightsource
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -8,32 +10,39 @@ import (
 )
 
 func TestFor(t *testing.T) {
+	// Prepare a real directory so file:// constructors succeed.
+	projectDir := t.TempDir()
+	weightsDir := filepath.Join(projectDir, "weights")
+	require.NoError(t, os.MkdirAll(weightsDir, 0o755))
+
+	absDir := t.TempDir()
+
 	tests := []struct {
 		name        string
 		uri         string
-		wantType    string // type name or "" for error
+		projectDir  string
+		wantFile    bool
 		wantErrSubs string
 	}{
-		{"file scheme", "file:///abs/path", "FileSource", ""},
-		{"file scheme relative", "file://./weights", "FileSource", ""},
-		{"bare absolute path", "/abs/path", "FileSource", ""},
-		{"bare relative path", "./weights", "FileSource", ""},
-		{"bare no prefix", "weights", "FileSource", ""},
-		{"hf scheme rejected", "hf://org/repo", "", "unsupported weight source scheme"},
-		{"s3 scheme rejected", "s3://bucket/key", "", "unsupported"},
-		{"http scheme rejected", "http://example.com/x", "", "unsupported"},
+		{"file scheme", "file://" + absDir, "", true, ""},
+		{"file scheme relative", "file://./weights", projectDir, true, ""},
+		{"bare absolute path", absDir, "", true, ""},
+		{"bare relative path", "./weights", projectDir, true, ""},
+		{"bare no prefix", "weights", projectDir, true, ""},
+		{"hf scheme rejected", "hf://org/repo", "", false, "unsupported weight source scheme"},
+		{"s3 scheme rejected", "s3://bucket/key", "", false, "unsupported"},
+		{"http scheme rejected", "http://example.com/x", "", false, "unsupported"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := For(tc.uri)
-			if tc.wantType == "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.wantErrSubs)
+			s, err := For(tc.uri, tc.projectDir)
+			if !tc.wantFile {
+				assert.ErrorContains(t, err, tc.wantErrSubs)
 				return
 			}
 			require.NoError(t, err)
-			_, ok := s.(FileSource)
-			assert.True(t, ok, "expected FileSource, got %T", s)
+			_, ok := s.(*FileSource)
+			assert.True(t, ok, "expected *FileSource, got %T", s)
 		})
 	}
 }

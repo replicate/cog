@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/registry_testhelpers"
 )
@@ -63,10 +64,14 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 	// Pack directly with a small bundle threshold so we don't need to
 	// write 64+ MiB of fixture content to cross the default cutoff.
 	packDir := t.TempDir()
-	pr, err := Pack(ctx, sourceDir, &PackOptions{
+	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
+	require.NoError(t, err, "source")
+	inv, err := src.Inventory(ctx)
+	require.NoError(t, err, "inventory")
+	pr, err := NewPacker(&PackOptions{
 		BundleFileMax: 1024,
 		TempDir:       packDir,
-	})
+	}).Pack(ctx, src, inv)
 	require.NoError(t, err, "pack")
 	require.Len(t, pr.Layers, 3, "want 1 bundle + 2 single-file layers")
 

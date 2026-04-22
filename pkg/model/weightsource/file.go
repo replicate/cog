@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,58 +24,69 @@ const FileScheme = "file"
 //	rel/path              — bare relative path, no ./ prefix (normalized)
 //
 // The lockfile stores only the normalized form (see NormalizeURI); the
-// absolute on-disk path is resolved on demand in Fetch so lockfiles remain
-// portable across machines and check-outs.
-type FileSource struct{}
+// absolute on-disk path is resolved once at construction time so the
+// Source methods do not re-resolve on every call.
+type FileSource struct {
+	// dir is the resolved absolute path to the source directory.
+	dir string
+}
 
-// Fetch validates the URI, resolves it against projectDir if relative, and
-// returns the absolute directory path. It does not copy or materialize
-// anything — file:// sources already live on disk.
-func (FileSource) Fetch(ctx context.Context, uri, projectDir string) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-
+// NewFileSource constructs a FileSource bound to uri, resolving relative
+// URIs against projectDir. It validates that the resolved path exists
+// and is a directory.
+func NewFileSource(uri, projectDir string) (*FileSource, error) {
 	path, err := resolvePath(uri, projectDir)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
 	fi, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("weight source not found: %s", uri)
+			return nil, fmt.Errorf("weight source not found: %s", uri)
 		}
-		return "", fmt.Errorf("stat weight source %s: %w", uri, err)
+		return nil, fmt.Errorf("stat weight source %s: %w", uri, err)
 	}
 	if !fi.IsDir() {
-		return "", fmt.Errorf("weight source %s is not a directory (file:// sources must be directories)", uri)
+		return nil, fmt.Errorf("weight source %s is not a directory (file:// sources must be directories)", uri)
 	}
-	return path, nil
+	return &FileSource{dir: path}, nil
 }
 
-// Fingerprint walks the source directory and computes sha256:<setDigest>
-// over the file set.
+// Dir returns the resolved absolute path of the source directory. Exposed
+// primarily for tests and diagnostics; the import pipeline should use
+// Inventory + Open rather than reaching for the on-disk path.
+func (s *FileSource) Dir() string { return s.dir }
+
+// Inventory walks the source directory and returns per-file path / size /
+// content digest plus the source fingerprint (sha256 of the sorted file
+// set, spec §2.4).
 //
-// Callers that already compute the set digest as part of packing (the
-// import path) may skip this call and construct the fingerprint directly
-// — for file:// sources the two are by definition identical. Fingerprint
-// exists to satisfy the Source interface contract for callers that only
-// want the version identity (e.g. a future `cog weights check` that
-// compares the source against the recorded fingerprint without repacking).
-func (FileSource) Fingerprint(ctx context.Context, uri, projectDir string) (Fingerprint, error) {
+// The .cog state directory is skipped. Non-regular entries (symlinks,
+// devices, etc.) are skipped — the spec defines packing over concrete
+// files only.
+func (s *FileSource) Inventory(ctx context.Context) (Inventory, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return Inventory{}, err
 	}
-	path, err := resolvePath(uri, projectDir)
+	return computeInventory(ctx, s.dir)
+}
+
+// Open returns a reader for a single file in the source, identified by
+// its inventory path (relative to the source root, using forward
+// slashes). The caller closes the returned reader.
+func (s *FileSource) Open(ctx context.Context, path string) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Inventory paths use forward slashes; filepath.Join on a path
+	// containing "/" works correctly on POSIX and is normalized on
+	// Windows.
+	abs := filepath.Join(s.dir, filepath.FromSlash(path))
+	f, err := os.Open(abs) //nolint:gosec // path is under the configured source dir
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
-	setDigest, err := computeDirSetDigest(ctx, path)
-	if err != nil {
-		return "", fmt.Errorf("fingerprint %s: %w", uri, err)
-	}
-	return Fingerprint(setDigest), nil
+	return f, nil
 }
 
 // NormalizeURI returns the canonical file:// form of a URI.

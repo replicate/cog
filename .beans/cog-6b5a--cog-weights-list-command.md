@@ -1,11 +1,11 @@
 ---
 # cog-6b5a
 title: cog weights status command
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-04-17T21:31:40Z
-updated_at: 2026-04-22T18:02:17Z
+updated_at: 2026-04-22T18:49:29Z
 parent: cog-66gt
 ---
 

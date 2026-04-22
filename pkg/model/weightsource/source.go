@@ -3,56 +3,84 @@ package weightsource
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 )
 
-// Source is the provider for a weight-source scheme.
+// Source is the provider for a weight-source scheme, bound at
+// construction time to a specific URI.
 //
 // Implementations translate a scheme-specific URI (file://, hf://, s3://,
-// http:// …) into (a) a local directory ready for the packer, and (b) a
-// version identity for the upstream state (Fingerprint).
+// http://, ...) into (a) an inventory of what the source contains, and
+// (b) an on-demand byte stream for any one file in that inventory. The
+// weights subsystem drives the import pipeline off these two capabilities
+// — there is deliberately no "materialize the whole source to disk" step,
+// so sources whose contents do not fit on local disk can still flow
+// through the packer one file at a time.
 //
-// Source is stateless with respect to individual imports — the same
-// instance may be used concurrently for many URIs of its scheme. Operations
-// are expected to be context-cancellable.
+// A Source instance is bound to one URI for its entire lifetime. Callers
+// construct a Source via For(uri, projectDir). Methods are expected to be
+// context-cancellable and safe to call concurrently for different paths.
 type Source interface {
-	// Fetch materializes the source as a local directory. For file://
-	// sources this validates and returns the source path on disk. For
-	// remote sources (future) it downloads to a caller-chosen or
-	// implementation-managed temporary directory.
-	//
-	// Callers pass a project directory (the directory containing
-	// cog.yaml) so that schemes using relative paths can resolve them
-	// without reaching for process-global state.
-	Fetch(ctx context.Context, uri, projectDir string) (localDir string, err error)
+	// Inventory returns the file list and version identity for the
+	// bound source. For file:// this walks and hashes (unavoidable for
+	// a local directory). For future remote sources it is expected to
+	// be cheap — HuggingFace Hub exposes per-file sha256 via its API,
+	// OCI sources read them from the source manifest's config blob.
+	Inventory(ctx context.Context) (Inventory, error)
 
-	// Fingerprint returns the source's version identity — a stable
-	// identifier for the upstream state. For file://, this is
-	// sha256:<setDigest> computed over the file set. For remote sources
-	// it is a scheme-native identifier (commit:<sha>, etag:<value>, etc.).
-	//
-	// Fingerprint is required to be deterministic: the same URI pointing
-	// at the same upstream state must always produce the same fingerprint
-	// on repeated calls.
-	Fingerprint(ctx context.Context, uri, projectDir string) (Fingerprint, error)
+	// Open returns a reader for a single file in the source, identified
+	// by its inventory path (relative to the source root). Called on
+	// demand during packing. The caller closes the returned reader.
+	Open(ctx context.Context, path string) (io.ReadCloser, error)
 }
 
-// For returns the Source implementation for the given URI's scheme.
+// Inventory is the result of Source.Inventory: everything needed to plan
+// an import without transferring payload bytes.
+//
+// Fingerprint is the source's version identity for the currently bound
+// URI. Files is the list of content-addressed entries that make up the
+// source; the packer consumes this list to produce tar layers.
+type Inventory struct {
+	Files       []InventoryFile
+	Fingerprint Fingerprint
+}
+
+// InventoryFile is one entry in an Inventory: a file's relative path,
+// size, and content digest. For file:// the digest is computed by
+// walking and hashing; for remote sources it is read from a source-side
+// index.
+type InventoryFile struct {
+	// Path is the file path relative to the source root, using forward
+	// slashes regardless of the host OS.
+	Path string
+	// Size is the uncompressed file size in bytes.
+	Size int64
+	// Digest is the SHA-256 content digest with the "sha256:" prefix.
+	Digest string
+}
+
+// For returns the Source implementation for the given URI's scheme,
+// bound to uri and projectDir.
 //
 // The scheme is the substring before the first "://". Bare paths (no
-// scheme) are treated as file:// — this accepts both absolute ("/data") and
-// relative ("./weights") forms as a convenience at the interface
+// scheme) are treated as file:// — this accepts both absolute ("/data")
+// and relative ("./weights") forms as a convenience at the interface
 // boundary.
 //
 // Unknown schemes return a clear error listing the currently supported
 // schemes. This is the only place where scheme → implementation dispatch
 // happens; adding hf:// or s3:// is a single case here plus the matching
 // Source implementation (cog-9vfd).
-func For(uri string) (Source, error) {
+//
+// For validates that the source exists and is usable. A file:// URI that
+// points at a missing path or at a non-directory returns an error here,
+// not at Inventory time.
+func For(uri, projectDir string) (Source, error) {
 	scheme := schemeOf(uri)
 	switch scheme {
 	case "file", "":
-		return FileSource{}, nil
+		return NewFileSource(uri, projectDir)
 	default:
 		return nil, fmt.Errorf("unsupported weight source scheme %q (supported: file)", scheme)
 	}

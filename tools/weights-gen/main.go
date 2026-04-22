@@ -221,7 +221,15 @@ func resolveOutputDir(outputDir string) (string, error) {
 // matches what `cog weights build` would produce. cacheDir holds the tar
 // files produced by the packer; the caller owns its lifetime.
 func packDirectoryToEntry(ctx context.Context, name, target, sourceDir, cacheDir string) (model.WeightLockEntry, error) {
-	pr, err := model.Pack(ctx, sourceDir, &model.PackOptions{TempDir: cacheDir})
+	source, err := weightsource.NewFileSource("file://"+sourceDir, "")
+	if err != nil {
+		return model.WeightLockEntry{}, fmt.Errorf("open source: %w", err)
+	}
+	inv, err := source.Inventory(ctx)
+	if err != nil {
+		return model.WeightLockEntry{}, fmt.Errorf("inventory: %w", err)
+	}
+	pr, err := model.NewPacker(&model.PackOptions{TempDir: cacheDir}).Pack(ctx, source, inv)
 	if err != nil {
 		return model.WeightLockEntry{}, fmt.Errorf("pack: %w", err)
 	}

@@ -17,8 +17,7 @@ import (
 
 // WeightsCacheDir is the project-relative directory where the builder
 // writes packed tar layers. Pack output survives across build → push so
-// the common two-step flow (`cog weights build` then `cog weights push`)
-// does not repack.
+// repeated imports without source changes skip the tar work.
 const WeightsCacheDir = ".cog/weights-cache"
 
 // WeightBuilder is the weight factory: given a WeightSpec (source URI +
@@ -64,11 +63,7 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 
 	projectDir := b.projectDir()
 
-	src, err := weightsource.For(ws.Source)
-	if err != nil {
-		return nil, fmt.Errorf("weight %q: %w", ws.Name(), err)
-	}
-	absSource, err := src.Fetch(ctx, ws.Source, projectDir)
+	src, err := weightsource.For(ws.Source, projectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -90,13 +85,27 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 	existing := lock.FindWeight(ws.Name())
 	layers, hit := cachedLayers(existing, cacheDir)
 
-	var packFiles []PackedFile
-	if !hit {
+	var (
+		packFiles   []PackedFile
+		fingerprint weightsource.Fingerprint
+	)
+	if hit {
+		// Cache hit: skip the source walk entirely. The lockfile carries
+		// the file index and the fingerprint; source-drift detection is a
+		// separate concern (see cog-wej9).
+		packFiles = packedFilesFromLockEntry(existing)
+		fingerprint = existing.Source.Fingerprint
+	} else {
+		inv, err := src.Inventory(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("inventory weight %q: %w", ws.Name(), err)
+		}
+		fingerprint = inv.Fingerprint
+
 		if err := resetCacheDir(cacheDir); err != nil {
 			return nil, err
 		}
-
-		pr, err := Pack(ctx, absSource, &PackOptions{TempDir: cacheDir})
+		pr, err := NewPacker(&PackOptions{TempDir: cacheDir}).Pack(ctx, src, inv)
 		if err != nil {
 			return nil, fmt.Errorf("pack weight %q: %w", ws.Name(), err)
 		}
@@ -115,9 +124,6 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		}
 		layers = pr.Layers
 		packFiles = pr.Files
-	} else {
-		// Cache hit — reuse the file index from the lockfile entry.
-		packFiles = packedFilesFromLockEntry(existing)
 	}
 
 	// Build config blob (§2.3) and set digest (§2.4).
@@ -145,12 +151,6 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		return nil, fmt.Errorf("compute manifest descriptor for %q: %w", ws.Name(), err)
 	}
 
-	// For file:// sources, setDigest == fingerprint (see fingerprintForSource).
-	fingerprint, err := fingerprintForSource(src, setDigest)
-	if err != nil {
-		cleanupLayerResults(layers)
-		return nil, fmt.Errorf("compute source fingerprint for %q: %w", ws.Name(), err)
-	}
 	newEntry := NewWeightLockEntry(
 		ws.Name(), ws.Target,
 		desc.Digest.String(), setDigest,
@@ -216,22 +216,6 @@ func resetCacheDir(dir string) error {
 		return fmt.Errorf("recreate cache dir: %w", err)
 	}
 	return nil
-}
-
-// fingerprintForSource returns the source fingerprint to record in the
-// lockfile. For file:// sources the set digest is exactly the fingerprint
-// (sha256 over the file set, spec §2.4), so we take it directly from
-// packing rather than re-walking the directory via Source.Fingerprint.
-//
-// TODO(cog-9vfd): when non-file:// sources land, call
-// src.Fingerprint(ctx, uri, projectDir) here instead of hard-failing.
-// The setDigest shortcut is only valid for file:// where fingerprint ==
-// content hash.
-func fingerprintForSource(src weightsource.Source, setDigest string) (weightsource.Fingerprint, error) {
-	if _, ok := src.(weightsource.FileSource); ok {
-		return weightsource.Fingerprint(setDigest), nil
-	}
-	return "", fmt.Errorf("unsupported source type %T: non-file:// fingerprinting requires cog-9vfd", src)
 }
 
 // cachedLayers returns the layer results for a weight if every tar

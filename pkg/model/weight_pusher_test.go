@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
 )
 
@@ -29,7 +30,11 @@ func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir st
 	cacheDir := filepath.Join(t.TempDir(), "cache")
 	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
 
-	pr, err := Pack(context.Background(), sourceDir, &PackOptions{TempDir: cacheDir})
+	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
+	require.NoError(t, err)
+	inv, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+	pr, err := NewPacker(&PackOptions{TempDir: cacheDir}).Pack(t.Context(), src, inv)
 	require.NoError(t, err)
 	require.NotEmpty(t, pr.Layers)
 	return sourceDir, pr.Layers
@@ -353,10 +358,14 @@ func TestWeightPusher_Push_HonoursConcurrencyLimit(t *testing.T) {
 	}
 
 	cacheDir := t.TempDir()
-	pr, err := Pack(context.Background(), sourceDir, &PackOptions{
+	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
+	require.NoError(t, err)
+	inv, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+	pr, err := NewPacker(&PackOptions{
 		BundleFileMax: 1, // every file becomes its own layer
 		TempDir:       cacheDir,
-	})
+	}).Pack(t.Context(), src, inv)
 	require.NoError(t, err)
 	layers := pr.Layers
 	require.GreaterOrEqual(t, len(layers), n, "expected a layer per file")

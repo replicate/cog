@@ -84,8 +84,9 @@ type WeightConfigFile struct {
 // sha256sum format). files must be sorted by path; the caller is
 // responsible for ordering (BuildWeightConfigBlob sorts before calling).
 //
-// SYNC: weightsource.computeDirSetDigest computes the same digest from
-// a raw directory walk. Changes to the formula must update both.
+// SYNC: weightsource.computeInventory computes the same digest from a
+// raw directory walk (producing an Inventory alongside). Changes to the
+// formula must update both.
 func ComputeWeightSetDigest(files []PackedFile) string {
 	entries := make([]string, len(files))
 	for i, f := range files {

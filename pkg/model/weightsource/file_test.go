@@ -2,6 +2,7 @@ package weightsource
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,8 +39,7 @@ func TestNormalizeURI(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := NormalizeURI(tc.in)
 			if tc.wantErrSubs != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.wantErrSubs)
+				assert.ErrorContains(t, err, tc.wantErrSubs)
 				return
 			}
 			require.NoError(t, err)
@@ -48,115 +48,170 @@ func TestNormalizeURI(t *testing.T) {
 	}
 }
 
-func TestFileSource_Fetch_Absolute(t *testing.T) {
+func TestNewFileSource_Absolute(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644))
 
 	// Absolute URI; projectDir is ignored.
 	uri := "file://" + dir
-	got, err := FileSource{}.Fetch(context.Background(), uri, "/unused")
+	src, err := NewFileSource(uri, "/unused")
 	require.NoError(t, err)
-	assert.Equal(t, dir, got)
+	assert.Equal(t, dir, src.Dir())
 }
 
-func TestFileSource_Fetch_BareAbsolutePath(t *testing.T) {
+func TestNewFileSource_BareAbsolutePath(t *testing.T) {
 	dir := t.TempDir()
-	got, err := FileSource{}.Fetch(context.Background(), dir, "")
+	src, err := NewFileSource(dir, "")
 	require.NoError(t, err)
-	assert.Equal(t, dir, got)
+	assert.Equal(t, dir, src.Dir())
 }
 
-func TestFileSource_Fetch_Relative(t *testing.T) {
+func TestNewFileSource_Relative(t *testing.T) {
 	projectDir := t.TempDir()
 	weightsDir := filepath.Join(projectDir, "weights")
 	require.NoError(t, os.MkdirAll(weightsDir, 0o755))
 
-	got, err := FileSource{}.Fetch(context.Background(), "file://./weights", projectDir)
+	src, err := NewFileSource("file://./weights", projectDir)
 	require.NoError(t, err)
-	assert.Equal(t, weightsDir, got)
+	assert.Equal(t, weightsDir, src.Dir())
 }
 
-func TestFileSource_Fetch_BareRelative(t *testing.T) {
+func TestNewFileSource_BareRelative(t *testing.T) {
 	projectDir := t.TempDir()
 	weightsDir := filepath.Join(projectDir, "weights")
 	require.NoError(t, os.MkdirAll(weightsDir, 0o755))
 
-	got, err := FileSource{}.Fetch(context.Background(), "weights", projectDir)
+	src, err := NewFileSource("weights", projectDir)
 	require.NoError(t, err)
-	assert.Equal(t, weightsDir, got)
+	assert.Equal(t, weightsDir, src.Dir())
 }
 
-func TestFileSource_Fetch_ErrorCases(t *testing.T) {
+func TestNewFileSource_ErrorCases(t *testing.T) {
 	projectDir := t.TempDir()
 
 	t.Run("missing", func(t *testing.T) {
-		_, err := FileSource{}.Fetch(context.Background(), "file://./missing", projectDir)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not found")
+		_, err := NewFileSource("file://./missing", projectDir)
+		assert.ErrorContains(t, err, "not found")
 	})
 
 	t.Run("is a file not a dir", func(t *testing.T) {
 		filePath := filepath.Join(projectDir, "oops.bin")
 		require.NoError(t, os.WriteFile(filePath, []byte("x"), 0o644))
-		_, err := FileSource{}.Fetch(context.Background(), "file://./oops.bin", projectDir)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "is not a directory")
-	})
-
-	t.Run("context canceled", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		_, err := FileSource{}.Fetch(ctx, "file://./missing", projectDir)
-		require.Error(t, err)
-		assert.ErrorIs(t, err, context.Canceled)
+		_, err := NewFileSource("file://./oops.bin", projectDir)
+		assert.ErrorContains(t, err, "is not a directory")
 	})
 
 	t.Run("relative uri without project dir", func(t *testing.T) {
-		_, err := FileSource{}.Fetch(context.Background(), "file://./weights", "")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "project directory")
+		_, err := NewFileSource("file://./weights", "")
+		assert.ErrorContains(t, err, "project directory")
 	})
 }
 
-func TestFileSource_Fingerprint(t *testing.T) {
+func TestFileSource_Open(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("world"), 0o644))
+
+	src, err := NewFileSource("file://"+dir, "")
+	require.NoError(t, err)
+
+	t.Run("top level", func(t *testing.T) {
+		rc, err := src.Open(t.Context(), "a.txt")
+		require.NoError(t, err)
+		defer rc.Close()
+		b, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		assert.Equal(t, "hello", string(b))
+	})
+
+	t.Run("nested", func(t *testing.T) {
+		rc, err := src.Open(t.Context(), "sub/b.txt")
+		require.NoError(t, err)
+		defer rc.Close()
+		b, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		assert.Equal(t, "world", string(b))
+	})
+
+	t.Run("missing file", func(t *testing.T) {
+		_, err := src.Open(t.Context(), "missing.txt")
+		require.Error(t, err)
+	})
+
+	t.Run("canceled context", func(t *testing.T) {
+		// Cancellation is tested with an independent context because
+		// t.Context() is tied to the test lifetime; we need a context
+		// we can cancel explicitly before the call.
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, err := src.Open(ctx, "a.txt")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+}
+
+func TestFileSource_Inventory(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
 
-	fp, err := FileSource{}.Fingerprint(context.Background(), "file://"+dir, "")
+	src, err := NewFileSource("file://"+dir, "")
 	require.NoError(t, err)
-	assert.Equal(t, "sha256", fp.Scheme())
-	assert.NotEmpty(t, fp.Value())
-	assert.Len(t, fp.Value(), 64, "sha256 hex is 64 chars")
+
+	inv, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+
+	require.Len(t, inv.Files, 2)
+	assert.Equal(t, "a.txt", inv.Files[0].Path)
+	assert.Equal(t, int64(5), inv.Files[0].Size)
+	assert.True(t, strings.HasPrefix(inv.Files[0].Digest, "sha256:"))
+	assert.Equal(t, "b.txt", inv.Files[1].Path)
+	assert.Equal(t, int64(5), inv.Files[1].Size)
+
+	assert.Equal(t, "sha256", inv.Fingerprint.Scheme())
+	assert.Len(t, inv.Fingerprint.Value(), 64, "sha256 hex is 64 chars")
 }
 
-func TestFileSource_Fingerprint_Stable(t *testing.T) {
+func TestFileSource_Inventory_Stable(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
 
-	fp1, err := FileSource{}.Fingerprint(context.Background(), "file://"+dir, "")
+	src, err := NewFileSource("file://"+dir, "")
 	require.NoError(t, err)
-	fp2, err := FileSource{}.Fingerprint(context.Background(), "file://"+dir, "")
+
+	inv1, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, fp1, fp2, "fingerprint must be stable across calls")
+	inv2, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, inv1.Fingerprint, inv2.Fingerprint,
+		"fingerprint must be stable across calls")
+	assert.Equal(t, inv1.Files, inv2.Files,
+		"file list must be stable across calls")
 }
 
-func TestFileSource_Fingerprint_DiffersOnChange(t *testing.T) {
+func TestFileSource_Inventory_DiffersOnChange(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
 
-	fp1, err := FileSource{}.Fingerprint(context.Background(), "file://"+dir, "")
+	src, err := NewFileSource("file://"+dir, "")
+	require.NoError(t, err)
+
+	inv1, err := src.Inventory(t.Context())
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed"), 0o644))
 
-	fp2, err := FileSource{}.Fingerprint(context.Background(), "file://"+dir, "")
+	inv2, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	assert.NotEqual(t, fp1, fp2, "fingerprint must change when content changes")
+	assert.NotEqual(t, inv1.Fingerprint, inv2.Fingerprint,
+		"fingerprint must change when content changes")
+	assert.NotEqual(t, inv1.Files[0].Digest, inv2.Files[0].Digest,
+		"per-file digest must change when content changes")
 }
 
-func TestFileSource_Fingerprint_SkipsDotCog(t *testing.T) {
+func TestFileSource_Inventory_SkipsDotCog(t *testing.T) {
 	withoutCog := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(withoutCog, "a.txt"), []byte("hello"), 0o644))
 
@@ -165,36 +220,49 @@ func TestFileSource_Fingerprint_SkipsDotCog(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(withCog, ".cog"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(withCog, ".cog", "state"), []byte("stuff"), 0o644))
 
-	fp1, err := FileSource{}.Fingerprint(context.Background(), "file://"+withoutCog, "")
+	src1, err := NewFileSource("file://"+withoutCog, "")
 	require.NoError(t, err)
-	fp2, err := FileSource{}.Fingerprint(context.Background(), "file://"+withCog, "")
+	src2, err := NewFileSource("file://"+withCog, "")
 	require.NoError(t, err)
-	assert.Equal(t, fp1, fp2, ".cog directory must be excluded from fingerprint")
+
+	inv1, err := src1.Inventory(t.Context())
+	require.NoError(t, err)
+	inv2, err := src2.Inventory(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, inv1.Fingerprint, inv2.Fingerprint,
+		".cog directory must be excluded from inventory")
+	assert.Len(t, inv2.Files, 1)
 }
 
-func TestFileSource_Fingerprint_ContextCancelled(t *testing.T) {
+func TestFileSource_Inventory_ContextCanceled(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	src, err := NewFileSource("file://"+dir, "")
+	require.NoError(t, err)
+
+	// Cancellation is tested with an independent context because
+	// t.Context() is tied to the test lifetime; we need a context we can
+	// cancel explicitly before the call.
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := FileSource{}.Fingerprint(ctx, "file://"+dir, "")
+	_, err = src.Inventory(ctx)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
-// Cross-check: the fingerprint helper produces the same value as the
-// published set-digest formula (sha256 of sorted "hex  path" lines).
-// This guards against the two computations drifting apart.
-func TestFileSource_Fingerprint_MatchesExplicitSetDigest(t *testing.T) {
+// Cross-check: the inventory fingerprint is the published set-digest
+// formula (sha256 of sorted "hex  path" lines). Guards against the two
+// computations drifting apart.
+func TestFileSource_Inventory_FingerprintMatchesExplicitSetDigest(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
 
-	// "hello" sha256 = 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
-	// "world" sha256 = 486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7
-	// set digest = sha256("2cf2...  a.txt\n486e...  b.txt")
-	fp, err := FileSource{}.Fingerprint(context.Background(), "file://"+dir, "")
+	src, err := NewFileSource("file://"+dir, "")
 	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(fp.String(), "sha256:"))
+
+	inv, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(inv.Fingerprint.String(), "sha256:"))
 }

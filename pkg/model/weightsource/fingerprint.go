@@ -1,11 +1,13 @@
 // Package weightsource is the pluggable source layer for weight imports.
 //
-// Each source scheme (file://, hf://, s3://, ...) implements the Source
-// interface to materialize its contents as a local directory (Fetch) and
-// to compute a version identity (Fingerprint).
+// A Source is a stateful provider bound at construction time to a specific
+// URI. It exposes two capabilities: Inventory lists the files the source
+// offers (with sizes, per-file digests, and a source-identity Fingerprint),
+// and Open streams one file's bytes. The packer drives the import one file
+// at a time so that sources larger than local disk can be imported without
+// full materialization.
 //
-// Today file:// is the only implementation; hf://, s3:// and http:// are
-// tracked in cog-9vfd.
+// Today file:// is the only implementation.
 package weightsource
 
 import (

@@ -15,7 +15,33 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/model/weightsource"
 )
+
+// packTestDir is a convenience test helper that wires a local directory
+// through the new Source/Inventory API and calls Pack. It hides the
+// boilerplate so test bodies can focus on Pack's behavior.
+func packTestDir(t *testing.T, dir string, opts *PackOptions) (*PackResult, error) {
+	t.Helper()
+	return packTestDirCtx(t, t.Context(), dir, opts)
+}
+
+// packTestDirCtx is the ctx-accepting variant of packTestDir for tests
+// that need a context independent of the test lifetime (typically for
+// cancellation tests).
+func packTestDirCtx(t *testing.T, ctx context.Context, dir string, opts *PackOptions) (*PackResult, error) {
+	t.Helper()
+	src, err := weightsource.NewFileSource("file://"+dir, "")
+	if err != nil {
+		return nil, err
+	}
+	inv, err := src.Inventory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return NewPacker(opts).Pack(ctx, src, inv)
+}
 
 // createTestFile creates a file at the given path (relative to dir) with the given size.
 func createTestFile(t *testing.T, dir, relPath string, size int64) {
@@ -54,16 +80,15 @@ func isBundleLayer(pr *PackResult, layerDigest string) bool {
 
 func TestPack_EmptyDirectory(t *testing.T) {
 	dir := t.TempDir()
-	_, err := Pack(context.Background(), dir, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no files found")
+	_, err := packTestDir(t, dir, nil)
+	assert.ErrorContains(t, err, "no files in inventory")
 }
 
 func TestPack_SingleSmallFile(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "config.json", 100)
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
@@ -87,7 +112,7 @@ func TestPack_SingleLargeFile_Incompressible(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "model.safetensors", 100*1024*1024) // 100 MB
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
@@ -101,7 +126,7 @@ func TestPack_SingleLargeFile_Compressible(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "model.dat", 100*1024*1024) // 100 MB, not in skip set
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
@@ -122,7 +147,7 @@ func TestPack_MixedFiles(t *testing.T) {
 	createTestFile(t, dir, "model-00001.safetensors", 100*1024*1024)
 	createTestFile(t, dir, "model-00002.safetensors", 100*1024*1024)
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 3) // 1 bundle + 2 large files
 
@@ -149,7 +174,7 @@ func TestPack_NestedDirectories(t *testing.T) {
 	createTestFile(t, dir, "text_encoder/tokenizer.json", 200)
 	createTestFile(t, dir, "vae/config.json", 150)
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1) // All small, one bundle.
 
@@ -169,7 +194,7 @@ func TestPack_LargeFileInSubdir(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "text_encoder/model-00001.safetensors", 100*1024*1024)
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
@@ -197,7 +222,7 @@ func TestPack_BundleSizeMaxSplits(t *testing.T) {
 		BundleSizeMax: 20,   // Forces split: a+b in one bundle, c in another.
 	}
 
-	results, err := Pack(context.Background(), dir, opts)
+	results, err := packTestDir(t, dir, opts)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 2)
 
@@ -224,7 +249,7 @@ func TestPack_CustomThresholds(t *testing.T) {
 		BundleFileMax: 100, // 50 is small, 200 is large
 	}
 
-	results, err := Pack(context.Background(), dir, opts)
+	results, err := packTestDir(t, dir, opts)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 2)
 
@@ -243,7 +268,7 @@ func TestPack_SkipsDotCogDirectory(t *testing.T) {
 	createTestFile(t, dir, ".cog/manifest.json", 50)
 	createTestFile(t, dir, ".cog/ready", 0)
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
@@ -255,7 +280,7 @@ func TestPack_DeterministicTarProperties(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "data.txt", 100)
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
@@ -297,10 +322,10 @@ func TestPack_DigestDeterminism(t *testing.T) {
 	createTestFile(t, dir, "a.txt", 100)
 	createTestFile(t, dir, "b.txt", 200)
 
-	results1, err := Pack(context.Background(), dir, nil)
+	results1, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 
-	results2, err := Pack(context.Background(), dir, nil)
+	results2, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 
 	require.Len(t, results1.Layers, len(results2.Layers))
@@ -316,10 +341,11 @@ func TestPack_ContextCancellation(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "file.txt", 100)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately.
+	// Independent cancellable context: we need to cancel before the call.
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
 
-	_, err := Pack(ctx, dir, nil)
+	_, err := packTestDirCtx(t, ctx, dir, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -346,7 +372,7 @@ func TestPack_IncompressibleExtensions(t *testing.T) {
 			dir := t.TempDir()
 			createTestFile(t, dir, "model"+tt.ext, 100*1024*1024)
 
-			results, err := Pack(context.Background(), dir, nil)
+			results, err := packTestDir(t, dir, nil)
 			require.NoError(t, err)
 			require.Len(t, results.Layers, 1)
 			assert.Equal(t, tt.mediaType, results.Layers[0].MediaType)
@@ -360,7 +386,7 @@ func TestPack_FileAtExactThreshold(t *testing.T) {
 	// and land in its own uncompressed-tar layer (.bin is incompressible).
 	createTestFile(t, dir, "model.bin", DefaultBundleFileMax)
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), results.Layers[0].MediaType,
@@ -373,7 +399,7 @@ func TestPack_FileJustBelowThreshold(t *testing.T) {
 	// File just below the threshold should be bundled (tar+gzip).
 	createTestFile(t, dir, "model.bin", DefaultBundleFileMax-1)
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), results.Layers[0].MediaType,
@@ -386,7 +412,7 @@ func TestPack_CleanupTarFiles(t *testing.T) {
 	createTestFile(t, dir, "a.txt", 100)
 	createTestFile(t, dir, "big.safetensors", 100*1024*1024)
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 
 	// Verify all tar files exist.
@@ -421,11 +447,11 @@ func TestCollectDirsForPath(t *testing.T) {
 }
 
 func TestCollectDirs(t *testing.T) {
-	files := []fileEntry{
-		{relPath: "b/c/file.txt"},
-		{relPath: "a/file.txt"},
-		{relPath: "b/file.txt"},
-		{relPath: "root.txt"},
+	files := []weightsource.InventoryFile{
+		{Path: "b/c/file.txt"},
+		{Path: "a/file.txt"},
+		{Path: "b/file.txt"},
+		{Path: "root.txt"},
 	}
 	got := collectDirs(files)
 	expected := []string{"a", "b", "b/c"}
@@ -473,21 +499,21 @@ func readTarNames(t *testing.T, tr *tar.Reader) []string {
 
 // Verify that sorting files produces stable, deterministic ordering.
 func TestSmallFileSortingStability(t *testing.T) {
-	files := []fileEntry{
-		{relPath: "z.txt", size: 10},
-		{relPath: "a.txt", size: 10},
-		{relPath: "m/b.txt", size: 10},
-		{relPath: "m/a.txt", size: 10},
+	files := []weightsource.InventoryFile{
+		{Path: "z.txt", Size: 10},
+		{Path: "a.txt", Size: 10},
+		{Path: "m/b.txt", Size: 10},
+		{Path: "m/a.txt", Size: 10},
 	}
 
 	sort.SliceStable(files, func(i, j int) bool {
-		return files[i].relPath < files[j].relPath
+		return files[i].Path < files[j].Path
 	})
 
 	expected := []string{"a.txt", "m/a.txt", "m/b.txt", "z.txt"}
 	var got []string
 	for _, f := range files {
-		got = append(got, f.relPath)
+		got = append(got, f.Path)
 	}
 	assert.Equal(t, expected, got)
 }
@@ -496,7 +522,7 @@ func TestPack_DeepNestedDirsInLargeFile(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "a/b/c/model.safetensors", 100*1024*1024)
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
@@ -541,7 +567,7 @@ func TestPack_WorkedExample(t *testing.T) {
 		createTestFile(t, dir, f, 100*1024*1024)
 	}
 
-	results, err := Pack(context.Background(), dir, nil)
+	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 
 	// 1 bundle for small files + 7 individual layers for large files = 8 total.

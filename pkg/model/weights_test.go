@@ -1,7 +1,6 @@
 package model
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -150,11 +149,11 @@ func TestSetDigest_StableAcrossRepacks(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
 
-	pr1, err := Pack(context.Background(), dir, &PackOptions{BundleFileMax: 1024, BundleSizeMax: 1024})
+	pr1, err := packTestDir(t, dir, &PackOptions{BundleFileMax: 1024, BundleSizeMax: 1024})
 	require.NoError(t, err)
 	t.Cleanup(func() { cleanupLayerResults(pr1.Layers) })
 
-	pr2, err := Pack(context.Background(), dir, &PackOptions{BundleFileMax: 1, BundleSizeMax: 1})
+	pr2, err := packTestDir(t, dir, &PackOptions{BundleFileMax: 1, BundleSizeMax: 1})
 	require.NoError(t, err)
 	t.Cleanup(func() { cleanupLayerResults(pr2.Layers) })
 
@@ -173,12 +172,12 @@ func TestConfigBlob_DiffersAcrossRepacks(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
 
-	pr1, err := Pack(context.Background(), dir, &PackOptions{BundleFileMax: 1024, BundleSizeMax: 1024})
+	pr1, err := packTestDir(t, dir, &PackOptions{BundleFileMax: 1024, BundleSizeMax: 1024})
 	require.NoError(t, err)
 	t.Cleanup(func() { cleanupLayerResults(pr1.Layers) })
 
 	// With BundleFileMax=1, all files are "large" (standalone layers).
-	pr2, err := Pack(context.Background(), dir, &PackOptions{BundleFileMax: 1, BundleSizeMax: 1})
+	pr2, err := packTestDir(t, dir, &PackOptions{BundleFileMax: 1, BundleSizeMax: 1})
 	require.NoError(t, err)
 	t.Cleanup(func() { cleanupLayerResults(pr2.Layers) })
 
@@ -240,7 +239,7 @@ func TestNewWeightLockEntry_PopulatesFromPackResult(t *testing.T) {
 
 // TestSetDigest_CrossPath verifies that the packer-based set digest
 // (ComputeWeightSetDigest over PackedFile) and the weightsource-based
-// digest (computeDirSetDigest via FileSource.Fingerprint) produce the
+// fingerprint (computeInventory via FileSource.Inventory) produce the
 // same value for the same directory. If either formula drifts, this
 // test catches it.
 func TestSetDigest_CrossPath(t *testing.T) {
@@ -249,15 +248,17 @@ func TestSetDigest_CrossPath(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
 
 	// Path 1: pack, compute from PackedFile slice (the builder path).
-	pr, err := Pack(context.Background(), dir, nil)
+	pr, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { cleanupLayerResults(pr.Layers) })
 	packerSetDigest := ComputeWeightSetDigest(pr.Files)
 
-	// Path 2: fingerprint from directory walk (the weightsource path).
-	fp, err := weightsource.FileSource{}.Fingerprint(context.Background(), "file://"+dir, "")
+	// Path 2: inventory fingerprint from directory walk (the weightsource path).
+	src, err := weightsource.NewFileSource("file://"+dir, "")
+	require.NoError(t, err)
+	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
 
-	assert.Equal(t, packerSetDigest, fp.String(),
+	assert.Equal(t, packerSetDigest, inv.Fingerprint.String(),
 		"packer and weightsource must produce the same set digest for the same directory")
 }
