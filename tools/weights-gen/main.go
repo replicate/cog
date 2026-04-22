@@ -17,18 +17,19 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/model/weightsource"
 )
 
 func main() {
 	var (
-		outputPath string
-		outputDir  string
-		count      int
-		minSize    string
-		maxSize    string
+		outputPath     string
+		outputDir      string
+		count          int
+		minSize        string
+		maxSize        string
 		filesPerWeight int
-		noLock     bool
-		destPrefix string
+		noLock         bool
+		destPrefix     string
 	)
 
 	cmd := &cobra.Command{
@@ -184,7 +185,6 @@ func generateWeights(ctx context.Context,
 	if generateLock {
 		lock := &model.WeightsLock{
 			Version: model.WeightsLockVersion,
-			Created: time.Now().UTC(),
 			Weights: entries,
 		}
 		if err := lock.Save(outputPath); err != nil {
@@ -246,7 +246,20 @@ func packDirectoryToEntry(ctx context.Context, name, target, sourceDir, cacheDir
 		return model.WeightLockEntry{}, fmt.Errorf("manifest digest: %w", err)
 	}
 
-	return model.NewWeightLockEntry(name, target, digest.String(), setDigest, pr.Layers), nil
+	// Generated lockfile uses the absolute sourceDir as the URI. The
+	// set digest doubles as the file:// fingerprint (spec §2.4).
+	uri, err := weightsource.NormalizeURI(sourceDir)
+	if err != nil {
+		return model.WeightLockEntry{}, fmt.Errorf("normalize source uri: %w", err)
+	}
+	src := model.WeightLockSource{
+		URI:         uri,
+		Fingerprint: weightsource.Fingerprint(setDigest),
+		Include:     []string{},
+		Exclude:     []string{},
+		ImportedAt:  time.Now().UTC(),
+	}
+	return model.NewWeightLockEntry(name, target, digest.String(), setDigest, src, pr.Files, pr.Layers), nil
 }
 
 // generateRandomFile creates a file filled with random bytes of the given size.
@@ -290,6 +303,3 @@ func formatSize(bytes int64) string {
 		return fmt.Sprintf("%dB", bytes)
 	}
 }
-
-
-

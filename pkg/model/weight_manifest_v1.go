@@ -94,8 +94,12 @@ func BuildWeightManifestV1(layers []LayerResult, meta WeightManifestV1Metadata) 
 	}
 
 	// Build mutate.Addendum entries. Each addendum wraps our file-backed
-	// layer and supplies the per-layer annotations and media type (used by
-	// mutate.Append to build the manifest's layer descriptors).
+	// layer and supplies the media type (used by mutate.Append to build
+	// the manifest's layer descriptors).
+	//
+	// Layer descriptors carry no annotations per spec §2.5 — callers that
+	// need per-file provenance read the config blob (files array) or the
+	// lockfile instead.
 	adds := make([]mutate.Addendum, 0, len(layers))
 	for i, lr := range layers {
 		if lr.TarPath == "" {
@@ -111,17 +115,9 @@ func BuildWeightManifestV1(layers []LayerResult, meta WeightManifestV1Metadata) 
 			return nil, fmt.Errorf("layer %d (%s): missing media type", i, lr.TarPath)
 		}
 
-		fl := newFileLayer(lr)
-		// Clone annotations so downstream mutations on the LayerResult do
-		// not bleed into the manifest.
-		var anns map[string]string
-		if len(lr.Annotations) > 0 {
-			anns = maps.Clone(lr.Annotations)
-		}
 		adds = append(adds, mutate.Addendum{
-			Layer:       fl,
-			Annotations: anns,
-			MediaType:   lr.MediaType,
+			Layer:     newFileLayer(lr),
+			MediaType: lr.MediaType,
 		})
 	}
 
@@ -315,4 +311,3 @@ func (l *fileLayer) Size() (int64, error) { return l.size, nil }
 
 // MediaType returns the layer's OCI media type.
 func (l *fileLayer) MediaType() (types.MediaType, error) { return l.mediaType, nil }
-

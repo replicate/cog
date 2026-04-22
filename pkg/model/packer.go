@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -34,18 +33,10 @@ const (
 	MediaTypeOCILayerTarGzip = "application/vnd.oci.image.layer.v1.tar+gzip"
 )
 
-// Annotation keys per spec §2.3 (v1 format, "run.cog.*" namespace).
-const (
-	AnnotationV1WeightContent    = "run.cog.weight.content"
-	AnnotationV1WeightFile       = "run.cog.weight.file"
-	AnnotationV1WeightSizeUncomp = "run.cog.weight.size.uncompressed"
-)
-
-// Annotation values for the content annotation.
-const (
-	ContentBundle = "bundle"
-	ContentFile   = "file"
-)
+// AnnotationV1WeightSizeUncomp is the spec §2.6 index-descriptor
+// annotation carrying the uncompressed size of a weight. Projected from
+// the lockfile at index-build time.
+const AnnotationV1WeightSizeUncomp = "run.cog.weight.size.uncompressed"
 
 // incompressibleExts lists extensions for dense binary formats that don't
 // benefit from gzip compression. Per spec §1.2.
@@ -95,7 +86,13 @@ func (o *PackOptions) tempDir() string {
 	return os.TempDir()
 }
 
-// LayerResult describes a packed tar layer on disk, ready for OCI manifest construction.
+// LayerResult describes a packed tar layer on disk, ready for OCI
+// manifest construction.
+//
+// Only intrinsic layer properties live here. Per-layer annotations are
+// not carried: spec §2.5 requires bare layer descriptors, and anything
+// the packer used to record in annotations (content type, contained
+// file) is now derivable from the lockfile Files index.
 type LayerResult struct {
 	// TarPath is the path to the tar file on disk.
 	TarPath string
@@ -107,8 +104,6 @@ type LayerResult struct {
 	UncompressedSize int64
 	// MediaType is the OCI media type for this layer.
 	MediaType types.MediaType
-	// Annotations are OCI descriptor annotations for this layer.
-	Annotations map[string]string
 }
 
 // PackResult is the output of Pack: tar layers and per-file content digests.
@@ -394,7 +389,7 @@ func writeBundleTar(files []fileEntry, tempDir string) (result LayerResult, retE
 	tarPath := tmpFile.Name()
 	defer func() {
 		if retErr != nil {
-			tmpFile.Close() //nolint:errcheck,gosec // best-effort cleanup on error path
+			tmpFile.Close()    //nolint:errcheck,gosec // best-effort cleanup on error path
 			os.Remove(tarPath) //nolint:errcheck,gosec // best-effort cleanup on error path
 		}
 	}()
@@ -446,18 +441,12 @@ func writeBundleTar(files []fileEntry, tempDir string) (result LayerResult, retE
 		Hex:       hex.EncodeToString(hasher.Sum(nil)),
 	}
 
-	annotations := map[string]string{
-		AnnotationV1WeightContent:    ContentBundle,
-		AnnotationV1WeightSizeUncomp: strconv.FormatInt(uncompressedSize, 10),
-	}
-
 	return LayerResult{
 		TarPath:          tarPath,
 		Digest:           digest,
 		Size:             countWriter.n,
 		UncompressedSize: uncompressedSize,
 		MediaType:        MediaTypeOCILayerTarGzip,
-		Annotations:      annotations,
 	}, nil
 }
 
@@ -483,7 +472,7 @@ func writeLargeFileTar(f fileEntry, tempDir string) (result LayerResult, retErr 
 	tarPath := tmpFile.Name()
 	defer func() {
 		if retErr != nil {
-			tmpFile.Close() //nolint:errcheck,gosec // best-effort cleanup on error path
+			tmpFile.Close()    //nolint:errcheck,gosec // best-effort cleanup on error path
 			os.Remove(tarPath) //nolint:errcheck,gosec // best-effort cleanup on error path
 		}
 	}()
@@ -517,19 +506,12 @@ func writeLargeFileTar(f fileEntry, tempDir string) (result LayerResult, retErr 
 		Hex:       hex.EncodeToString(hasher.Sum(nil)),
 	}
 
-	annotations := map[string]string{
-		AnnotationV1WeightContent:    ContentFile,
-		AnnotationV1WeightFile:       f.relPath,
-		AnnotationV1WeightSizeUncomp: strconv.FormatInt(f.size, 10),
-	}
-
 	return LayerResult{
 		TarPath:          tarPath,
 		Digest:           digest,
 		Size:             countWriter.n,
 		UncompressedSize: f.size,
 		MediaType:        MediaTypeOCILayerTar,
-		Annotations:      annotations,
 	}, nil
 }
 
@@ -542,7 +524,7 @@ func writeLargeFileTarGzip(f fileEntry, tempDir string) (result LayerResult, ret
 	tarPath := tmpFile.Name()
 	defer func() {
 		if retErr != nil {
-			tmpFile.Close() //nolint:errcheck,gosec // best-effort cleanup on error path
+			tmpFile.Close()    //nolint:errcheck,gosec // best-effort cleanup on error path
 			os.Remove(tarPath) //nolint:errcheck,gosec // best-effort cleanup on error path
 		}
 	}()
@@ -584,19 +566,12 @@ func writeLargeFileTarGzip(f fileEntry, tempDir string) (result LayerResult, ret
 		Hex:       hex.EncodeToString(hasher.Sum(nil)),
 	}
 
-	annotations := map[string]string{
-		AnnotationV1WeightContent:    ContentFile,
-		AnnotationV1WeightFile:       f.relPath,
-		AnnotationV1WeightSizeUncomp: strconv.FormatInt(f.size, 10),
-	}
-
 	return LayerResult{
 		TarPath:          tarPath,
 		Digest:           digest,
 		Size:             countWriter.n,
 		UncompressedSize: f.size,
 		MediaType:        MediaTypeOCILayerTarGzip,
-		Annotations:      annotations,
 	}, nil
 }
 

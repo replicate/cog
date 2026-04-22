@@ -6,35 +6,54 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/model/weightsource"
 )
 
 func TestWeightLockEntry_JSONFieldNames(t *testing.T) {
-	// Lockfile entries and the on-image /.cog/weights.json have the same
-	// shape per spec §3.6. Tests that want to lock that down inspect the
-	// JSON directly.
 	entry := WeightLockEntry{
 		Name:      "z-image-turbo",
 		Target:    "/src/weights",
 		Digest:    "sha256:abc",
 		SetDigest: "sha256:def",
+		Source: WeightLockSource{
+			URI:         "file://./weights",
+			Fingerprint: weightsource.Fingerprint("sha256:def"),
+			Include:     []string{},
+			Exclude:     []string{},
+		},
+		Files: []WeightLockFile{
+			{Path: "a.json", Size: 100, Digest: "sha256:f01", Layer: "sha256:aaa"},
+		},
 		Layers: []WeightLockLayer{
-			{Digest: "sha256:aaa", Size: 15000000, MediaType: MediaTypeOCILayerTarGzip},
+			{Digest: "sha256:aaa", MediaType: MediaTypeOCILayerTarGzip, Size: 110, SizeUncompressed: 100},
 		},
 	}
-	require.Equal(t, "z-image-turbo", entry.Name)
-	require.Equal(t, "/src/weights", entry.Target)
-	require.Equal(t, "sha256:abc", entry.Digest)
-	require.Equal(t, "sha256:def", entry.SetDigest)
-	require.Len(t, entry.Layers, 1)
-	require.Equal(t, MediaTypeOCILayerTarGzip, entry.Layers[0].MediaType)
 
-	// Verify setDigest appears in JSON output.
 	data, err := json.Marshal(entry)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), `"setDigest":"sha256:def"`)
+	s := string(data)
+
+	// Sanity-check that every documented field name is present.
+	for _, key := range []string{
+		`"name":"z-image-turbo"`,
+		`"target":"/src/weights"`,
+		`"digest":"sha256:abc"`,
+		`"setDigest":"sha256:def"`,
+		`"source":`,
+		`"uri":"file://./weights"`,
+		`"fingerprint":"sha256:def"`,
+		`"files":`,
+		`"layers":`,
+		`"sizeUncompressed":100`,
+	} {
+		assert.Contains(t, s, key, "expected field %q in JSON", key)
+	}
 }
 
 func TestMediaTypeArtifactConstant(t *testing.T) {
@@ -170,4 +189,75 @@ func TestConfigBlob_DiffersAcrossRepacks(t *testing.T) {
 
 	// Layer digests differ → config blobs differ.
 	assert.NotEqual(t, cfg1, cfg2, "config blobs should differ when packing strategy differs")
+}
+
+func TestNewWeightLockEntry_PopulatesFromPackResult(t *testing.T) {
+	layers := []LayerResult{
+		{
+			Digest:           v1.Hash{Algorithm: "sha256", Hex: "aaa"},
+			Size:             110,
+			UncompressedSize: 100,
+			MediaType:        MediaTypeOCILayerTarGzip,
+		},
+		{
+			Digest:           v1.Hash{Algorithm: "sha256", Hex: "bbb"},
+			Size:             2000,
+			UncompressedSize: 2000,
+			MediaType:        MediaTypeOCILayerTar,
+		},
+	}
+	files := []PackedFile{
+		{Path: "a.json", Size: 100, Digest: "sha256:f01", LayerDigest: "sha256:aaa"},
+		{Path: "b.bin", Size: 2000, Digest: "sha256:f02", LayerDigest: "sha256:bbb"},
+	}
+	src := WeightLockSource{
+		URI:         "file://./weights",
+		Fingerprint: weightsource.Fingerprint("sha256:setdigest"),
+		Include:     []string{},
+		Exclude:     []string{},
+		ImportedAt:  time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC),
+	}
+
+	entry := NewWeightLockEntry("w", "/src/w", "sha256:mfst", "sha256:setdigest", src, files, layers)
+
+	assert.Equal(t, "w", entry.Name)
+	assert.Equal(t, "/src/w", entry.Target)
+	assert.Equal(t, "sha256:mfst", entry.Digest)
+	assert.Equal(t, "sha256:setdigest", entry.SetDigest)
+
+	// Size = sum of uncompressed; SizeCompressed = sum of layer sizes.
+	assert.Equal(t, int64(100+2000), entry.Size)
+	assert.Equal(t, int64(110+2000), entry.SizeCompressed)
+
+	require.Len(t, entry.Files, 2)
+	require.Len(t, entry.Layers, 2)
+	assert.Equal(t, src, entry.Source)
+
+	// Files sorted by path, layers sorted by digest.
+	assert.Equal(t, "a.json", entry.Files[0].Path)
+	assert.Equal(t, "sha256:aaa", entry.Layers[0].Digest)
+}
+
+// TestSetDigest_CrossPath verifies that the packer-based set digest
+// (ComputeWeightSetDigest over PackedFile) and the weightsource-based
+// digest (computeDirSetDigest via FileSource.Fingerprint) produce the
+// same value for the same directory. If either formula drifts, this
+// test catches it.
+func TestSetDigest_CrossPath(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
+
+	// Path 1: pack, compute from PackedFile slice (the builder path).
+	pr, err := Pack(context.Background(), dir, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { cleanupLayerResults(pr.Layers) })
+	packerSetDigest := ComputeWeightSetDigest(pr.Files)
+
+	// Path 2: fingerprint from directory walk (the weightsource path).
+	fp, err := weightsource.FileSource{}.Fingerprint(context.Background(), "file://"+dir, "")
+	require.NoError(t, err)
+
+	assert.Equal(t, packerSetDigest, fp.String(),
+		"packer and weightsource must produce the same set digest for the same directory")
 }

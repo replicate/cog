@@ -49,9 +49,9 @@ func writeSrcFile(t *testing.T, dir, relPath string, size int64) {
 // defaultMeta returns a minimal valid manifest metadata.
 func defaultMeta() WeightManifestV1Metadata {
 	return WeightManifestV1Metadata{
-		Name:      "z-image-turbo",
-		Target:    "/src/weights",
-		SetDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+		Name:       "z-image-turbo",
+		Target:     "/src/weights",
+		SetDigest:  "sha256:0000000000000000000000000000000000000000000000000000000000000000",
 		ConfigBlob: []byte(`{"name":"z-image-turbo","target":"/src/weights","setDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[]}`),
 	}
 }
@@ -184,15 +184,14 @@ func TestBuildWeightManifestV1_ManifestShape(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, meta.ConfigBlob, cfg)
 
-	// Layers preserve per-layer media type + annotations from the packer.
+	// Layers preserve media type, size, and digest from the packer. They
+	// carry no annotations per spec §2.5.
 	require.Len(t, m.Layers, len(layers))
 	for i, layer := range m.Layers {
 		assert.Equal(t, layers[i].MediaType, layer.MediaType)
 		assert.Equal(t, layers[i].Size, layer.Size)
 		assert.Equal(t, layers[i].Digest, layer.Digest)
-		for k, v := range layers[i].Annotations {
-			assert.Equal(t, v, layer.Annotations[k], "layer %d annotation %s", i, k)
-		}
+		assert.Empty(t, layer.Annotations, "layer %d should have no descriptor annotations", i)
 	}
 
 	// Manifest annotations carry the v1 spec keys.
@@ -280,17 +279,19 @@ func TestBuildWeightManifestV1_MultiLayerPreservesOrder(t *testing.T) {
 	assert.True(t, sawGzip, "expected at least one .tar+gzip layer")
 }
 
-func TestBuildWeightManifestV1_AnnotationsAreClonedFromLayerResult(t *testing.T) {
+func TestBuildWeightManifestV1_LayerDescriptorsHaveNoAnnotations(t *testing.T) {
+	// Spec §2.5: layer descriptors on weight manifests MUST NOT carry
+	// annotations. Everything useful lives in the config blob or the
+	// lockfile.
 	layers := singleSmallFileLayers(t)
 	img, err := BuildWeightManifestV1(layers, defaultMeta())
 	require.NoError(t, err)
 
-	// Mutating the source layer's annotations after build must not affect the manifest.
-	layers[0].Annotations["run.cog.weight.content"] = "tampered"
-
 	m, err := img.Manifest()
 	require.NoError(t, err)
-	assert.Equal(t, ContentBundle, m.Layers[0].Annotations[AnnotationV1WeightContent])
+	for i, l := range m.Layers {
+		assert.Empty(t, l.Annotations, "layer %d should have no annotations", i)
+	}
 }
 
 // =============================================================================

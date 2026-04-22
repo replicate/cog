@@ -126,7 +126,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		imgDesc := v1.Descriptor{
 			MediaType: types.OCIManifestSchema1,
 			Size:      1234,
-			Digest: v1.Hash{Algorithm: "sha256", Hex: "imgdigestabc1234567"},
+			Digest:    v1.Hash{Algorithm: "sha256", Hex: "imgdigestabc1234567"},
 		}
 
 		reg := &mockRegistry{

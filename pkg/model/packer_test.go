@@ -30,6 +30,28 @@ func createTestFile(t *testing.T, dir, relPath string, size int64) {
 	}
 }
 
+// filesInLayer returns the relative paths packed into the given layer,
+// derived from a PackResult. The packer no longer tags layers with
+// content-type annotations — the file→layer mapping lives on the
+// PackedFile slice instead.
+func filesInLayer(pr *PackResult, layerDigest string) []string {
+	var out []string
+	for _, f := range pr.Files {
+		if f.LayerDigest == layerDigest {
+			out = append(out, f.Path)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// isBundleLayer reports whether a layer carries more than one file —
+// i.e. it is a "bundle" rather than a single-file layer. This replaces
+// the old run.cog.weight.content annotation check.
+func isBundleLayer(pr *PackResult, layerDigest string) bool {
+	return len(filesInLayer(pr, layerDigest)) > 1
+}
+
 func TestPack_EmptyDirectory(t *testing.T) {
 	dir := t.TempDir()
 	_, err := Pack(context.Background(), dir, nil)
@@ -47,13 +69,13 @@ func TestPack_SingleSmallFile(t *testing.T) {
 
 	r := results.Layers[0]
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), r.MediaType)
-	assert.Equal(t, ContentBundle, r.Annotations[AnnotationV1WeightContent])
-	assert.Equal(t, "100", r.Annotations[AnnotationV1WeightSizeUncomp])
-	assert.Empty(t, r.Annotations[AnnotationV1WeightFile]) // bundles don't have file annotation
 	assert.True(t, r.Size > 0)
 	assert.Equal(t, int64(100), r.UncompressedSize)
 	assert.NotEmpty(t, r.Digest.Hex)
 	assert.Equal(t, "sha256", r.Digest.Algorithm)
+
+	// Single small file is a single-entry bundle layer.
+	assert.Equal(t, []string{"config.json"}, filesInLayer(results, r.Digest.String()))
 
 	// Verify tar contents.
 	entries := readTarGzEntries(t, r.TarPath)
@@ -71,8 +93,7 @@ func TestPack_SingleLargeFile_Incompressible(t *testing.T) {
 
 	r := results.Layers[0]
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), r.MediaType)
-	assert.Equal(t, ContentFile, r.Annotations[AnnotationV1WeightContent])
-	assert.Equal(t, "model.safetensors", r.Annotations[AnnotationV1WeightFile])
+	assert.Equal(t, []string{"model.safetensors"}, filesInLayer(results, r.Digest.String()))
 	assert.Equal(t, int64(100*1024*1024), r.UncompressedSize)
 }
 
@@ -86,8 +107,7 @@ func TestPack_SingleLargeFile_Compressible(t *testing.T) {
 
 	r := results.Layers[0]
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), r.MediaType)
-	assert.Equal(t, ContentFile, r.Annotations[AnnotationV1WeightContent])
-	assert.Equal(t, "model.dat", r.Annotations[AnnotationV1WeightFile])
+	assert.Equal(t, []string{"model.dat"}, filesInLayer(results, r.Digest.String()))
 }
 
 func TestPack_MixedFiles(t *testing.T) {
@@ -109,16 +129,17 @@ func TestPack_MixedFiles(t *testing.T) {
 	// First result should be the bundle (small files come first in output).
 	bundle := results.Layers[0]
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), bundle.MediaType)
-	assert.Equal(t, ContentBundle, bundle.Annotations[AnnotationV1WeightContent])
+	assert.True(t, isBundleLayer(results, bundle.Digest.String()), "first layer should hold the bundled small files")
 
 	bundleEntries := readTarGzEntries(t, bundle.TarPath)
 	// Files should be sorted by path.
 	assert.Equal(t, []string{"config.json", "special_tokens_map.json", "tokenizer.json"}, bundleEntries)
 
-	// Large files should be uncompressed tars (safetensors is incompressible).
+	// Large files should be uncompressed tars (safetensors is incompressible)
+	// and carry exactly one file each.
 	for _, r := range results.Layers[1:] {
 		assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), r.MediaType)
-		assert.Equal(t, ContentFile, r.Annotations[AnnotationV1WeightContent])
+		assert.Len(t, filesInLayer(results, r.Digest.String()), 1, "single-file layer should contain exactly one file")
 	}
 }
 
@@ -153,7 +174,7 @@ func TestPack_LargeFileInSubdir(t *testing.T) {
 	require.Len(t, results.Layers, 1)
 
 	r := results.Layers[0]
-	assert.Equal(t, "text_encoder/model-00001.safetensors", r.Annotations[AnnotationV1WeightFile])
+	assert.Equal(t, []string{"text_encoder/model-00001.safetensors"}, filesInLayer(results, r.Digest.String()))
 
 	entries := readTarEntries(t, r.TarPath)
 	expected := []string{
@@ -183,7 +204,6 @@ func TestPack_BundleSizeMaxSplits(t *testing.T) {
 	// Both should be gzipped bundles.
 	for _, r := range results.Layers {
 		assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), r.MediaType)
-		assert.Equal(t, ContentBundle, r.Annotations[AnnotationV1WeightContent])
 	}
 
 	// First bundle should have a.txt and b.txt.
@@ -208,10 +228,12 @@ func TestPack_CustomThresholds(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 2)
 
-	// Bundle for small file.
-	assert.Equal(t, ContentBundle, results.Layers[0].Annotations[AnnotationV1WeightContent])
+	// Bundle for small file: single-entry bundle.
+	assert.Equal(t, []string{"small.txt"}, filesInLayer(results, results.Layers[0].Digest.String()))
+	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), results.Layers[0].MediaType)
+
 	// Individual layer for large file (.bin is in incompressible set, so uncompressed).
-	assert.Equal(t, ContentFile, results.Layers[1].Annotations[AnnotationV1WeightContent])
+	assert.Equal(t, []string{"large.bin"}, filesInLayer(results, results.Layers[1].Digest.String()))
 	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), results.Layers[1].MediaType)
 }
 
@@ -314,7 +336,7 @@ func TestPack_IncompressibleExtensions(t *testing.T) {
 		{".parquet", MediaTypeOCILayerTar},
 		{".pt", MediaTypeOCILayerTar},
 		{".pth", MediaTypeOCILayerTar},
-		{".dat", MediaTypeOCILayerTarGzip},   // compressible
+		{".dat", MediaTypeOCILayerTarGzip},    // compressible
 		{".json", MediaTypeOCILayerTarGzip},   // compressible
 		{".pickle", MediaTypeOCILayerTarGzip}, // compressible
 	}
@@ -334,24 +356,29 @@ func TestPack_IncompressibleExtensions(t *testing.T) {
 
 func TestPack_FileAtExactThreshold(t *testing.T) {
 	dir := t.TempDir()
-	// File exactly at the threshold should be "large" (>= bundle_file_max).
+	// File exactly at the threshold should be "large" (>= bundle_file_max)
+	// and land in its own uncompressed-tar layer (.bin is incompressible).
 	createTestFile(t, dir, "model.bin", DefaultBundleFileMax)
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
-	assert.Equal(t, ContentFile, results.Layers[0].Annotations[AnnotationV1WeightContent])
+	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), results.Layers[0].MediaType,
+		"at-threshold large file should be a single-file uncompressed tar layer")
+	assert.Equal(t, []string{"model.bin"}, filesInLayer(results, results.Layers[0].Digest.String()))
 }
 
 func TestPack_FileJustBelowThreshold(t *testing.T) {
 	dir := t.TempDir()
-	// File just below the threshold should be bundled.
+	// File just below the threshold should be bundled (tar+gzip).
 	createTestFile(t, dir, "model.bin", DefaultBundleFileMax-1)
 
 	results, err := Pack(context.Background(), dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
-	assert.Equal(t, ContentBundle, results.Layers[0].Annotations[AnnotationV1WeightContent])
+	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), results.Layers[0].MediaType,
+		"below-threshold file should land in a bundle (tar+gzip)")
+	assert.Equal(t, []string{"model.bin"}, filesInLayer(results, results.Layers[0].Digest.String()))
 }
 
 func TestPack_CleanupTarFiles(t *testing.T) {
@@ -520,17 +547,20 @@ func TestPack_WorkedExample(t *testing.T) {
 	// 1 bundle for small files + 7 individual layers for large files = 8 total.
 	require.Len(t, results.Layers, 8)
 
-	// First result is the bundle.
-	assert.Equal(t, ContentBundle, results.Layers[0].Annotations[AnnotationV1WeightContent])
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), results.Layers[0].MediaType)
+	// First result is the bundle (all small files landed in one layer).
+	bundle := results.Layers[0]
+	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), bundle.MediaType)
+	assert.True(t, isBundleLayer(results, bundle.Digest.String()), "first layer should be a bundle")
 
-	// Remaining 7 are individual files.
+	// Remaining 7 are individual files, each a standalone uncompressed
+	// .safetensors layer.
 	for i := 1; i <= 7; i++ {
 		r := results.Layers[i]
-		assert.Equal(t, ContentFile, r.Annotations[AnnotationV1WeightContent])
 		assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), r.MediaType)
-		assert.NotEmpty(t, r.Annotations[AnnotationV1WeightFile])
-		assert.True(t, strings.HasSuffix(r.Annotations[AnnotationV1WeightFile], ".safetensors"))
+		paths := filesInLayer(results, r.Digest.String())
+		require.Len(t, paths, 1, "layer %d should carry exactly one file", i)
+		assert.True(t, strings.HasSuffix(paths[0], ".safetensors"),
+			"layer %d file %q should be a .safetensors", i, paths[0])
 	}
 
 	// Verify no path appears in more than one layer (order-independence).

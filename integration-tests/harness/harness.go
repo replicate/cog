@@ -1067,28 +1067,47 @@ func (h *Harness) cmdDockerPush(ts *testscript.TestScript, neg bool, args []stri
 // Mock weights command
 // =============================================================================
 
-// mockWeightsLock mirrors pkg/model.WeightsLock (v1 schema, spec §3.6).
+// mockWeightsLock mirrors pkg/model.WeightsLock (v1 schema).
 // SYNC: If model.WeightsLock changes, update this copy.
-// We duplicate the types here to avoid importing pkg/model which transitively
-// imports pkg/wheels.
+// We duplicate the types here to avoid importing pkg/model which
+// transitively imports pkg/wheels.
 type mockWeightsLock struct {
-	Version string            `json:"version"`
-	Created time.Time         `json:"created"`
+	Version int               `json:"version"`
 	Weights []mockWeightEntry `json:"weights"`
 }
 
 type mockWeightEntry struct {
-	Name   string            `json:"name"`
-	Target string            `json:"target"`
-	Digest string            `json:"digest"`
-	Layers []mockWeightLayer `json:"layers"`
+	Name           string            `json:"name"`
+	Target         string            `json:"target"`
+	Source         mockWeightSource  `json:"source"`
+	Digest         string            `json:"digest"`
+	SetDigest      string            `json:"setDigest"`
+	Size           int64             `json:"size"`
+	SizeCompressed int64             `json:"sizeCompressed"`
+	Files          []mockWeightFile  `json:"files"`
+	Layers         []mockWeightLayer `json:"layers"`
+}
+
+type mockWeightSource struct {
+	URI         string    `json:"uri"`
+	Fingerprint string    `json:"fingerprint"`
+	Include     []string  `json:"include"`
+	Exclude     []string  `json:"exclude"`
+	ImportedAt  time.Time `json:"importedAt"`
+}
+
+type mockWeightFile struct {
+	Path   string `json:"path"`
+	Size   int64  `json:"size"`
+	Digest string `json:"digest"`
+	Layer  string `json:"layer"`
 }
 
 type mockWeightLayer struct {
-	Digest      string            `json:"digest"`
-	Size        int64             `json:"size"`
-	MediaType   string            `json:"mediaType"`
-	Annotations map[string]string `json:"annotations,omitempty"`
+	Digest           string `json:"digest"`
+	MediaType        string `json:"mediaType"`
+	Size             int64  `json:"size"`
+	SizeUncompressed int64  `json:"sizeUncompressed"`
 }
 
 // cmdMockWeights generates mock weight files and a weights.lock file.
@@ -1183,20 +1202,40 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 		manifestSeed := sha256.Sum256([]byte(weightName + "|" + layerDigest))
 		manifestDigest := "sha256:" + hex.EncodeToString(manifestSeed[:])
 
+		// setDigest stands in as both the content address and the
+		// file:// fingerprint — the mock doesn't actually run the packer,
+		// so we use the file's own content digest as the stand-in. That's
+		// still a valid sha256:<hex>.
+		setDigest := layerDigest
+
 		entries = append(entries, mockWeightEntry{
 			Name:   weightName,
 			Target: "/src/weights/" + weightName,
-			Digest: manifestDigest,
+			Source: mockWeightSource{
+				URI:         "file://./weights/" + weightName,
+				Fingerprint: setDigest,
+				Include:     []string{},
+				Exclude:     []string{},
+				ImportedAt:  time.Now().UTC(),
+			},
+			Digest:         manifestDigest,
+			SetDigest:      setDigest,
+			Size:           size,
+			SizeCompressed: size,
+			Files: []mockWeightFile{
+				{
+					Path:   filename,
+					Size:   size,
+					Digest: layerDigest,
+					Layer:  layerDigest,
+				},
+			},
 			Layers: []mockWeightLayer{
 				{
-					Digest:    layerDigest,
-					Size:      size,
-					MediaType: "application/vnd.oci.image.layer.v1.tar",
-					Annotations: map[string]string{
-						"run.cog.weight.content":           "file",
-						"run.cog.weight.file":              filename,
-						"run.cog.weight.size.uncompressed": strconv.FormatInt(size, 10),
-					},
+					Digest:           layerDigest,
+					MediaType:        "application/vnd.oci.image.layer.v1.tar",
+					Size:             size,
+					SizeUncompressed: size,
 				},
 			},
 		})
@@ -1204,8 +1243,7 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 
 	// Create weights.lock
 	lock := mockWeightsLock{
-		Version: "v1",
-		Created: time.Now().UTC(),
+		Version: 1,
 		Weights: entries,
 	}
 

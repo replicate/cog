@@ -1,11 +1,11 @@
 ---
 # cog-s5fy
 title: weights.lock v2 format and source fingerprinting
-status: todo
+status: completed
 type: task
 priority: critical
 created_at: 2026-04-17T19:27:20Z
-updated_at: 2026-04-22T01:57:34Z
+updated_at: 2026-04-22T02:56:24Z
 parent: cog-66gt
 blocked_by:
     - cog-2gv9
@@ -152,18 +152,18 @@ Broader rewiring of manifest/config-blob/index generation to consume the lockfil
 
 ## Tasks
 
-- [ ] New types: `WeightsLock` (version as int), `WeightLockEntry`, `WeightLockSource`, `WeightLockFile`, `WeightLockLayer`
-- [ ] `SourceFingerprint` type + parsing
-- [ ] `Source` interface + `SourceFor` scheme switch + `FileSource` implementation
-- [ ] `NewWeightLockEntry` redesigned to accept source metadata + file index + layers
-- [ ] Lockfile serializer: sort files by path, layers by digest, stable output
-- [ ] Split `lockEntriesEqual` into content + source equality
-- [ ] Wire `Source.Fetch` into `WeightBuilder.Build`; compute and record fingerprint + source block
-- [ ] Simplify cache-hit path: read `files` from lockfile, drop `listBundleFiles` + bundle tar scanning
-- [ ] Update manifest builder: layer descriptors emit no annotations (spec §2.5); manifest annotations unchanged
-- [ ] Update all call sites: `weights_inspect.go`, test helpers, `tools/weights-gen`
-- [ ] Tests: type round-trips, fingerprint parsing, URI normalization, FileSource, builder with new lockfile, serializer ordering, cache-hit idempotency
-- [ ] `mise run fmt:fix` → `mise run lint` → `mise run test:go` green
+- [x] New types: `WeightsLock` (version as int), `WeightLockEntry`, `WeightLockSource`, `WeightLockFile`, `WeightLockLayer`
+- [x] `SourceFingerprint` type + parsing (as `weightsource.Fingerprint`)
+- [x] `Source` interface + `SourceFor` scheme switch + `FileSource` implementation (in new `pkg/model/weightsource` package)
+- [x] `NewWeightLockEntry` redesigned to accept source metadata + file index + layers
+- [x] Lockfile serializer: sort files by path, layers by digest, stable output
+- [x] Split `lockEntriesEqual` into content + source equality
+- [x] Wire `Source.Fetch` into `WeightBuilder.Build`; compute and record fingerprint + source block
+- [x] Simplify cache-hit path: read `files` from lockfile, drop `listBundleFiles` + bundle tar scanning
+- [x] Update manifest builder: layer descriptors emit no annotations (spec §2.5); manifest annotations unchanged
+- [x] Update all call sites: `weights_inspect.go`, test helpers, `tools/weights-gen`
+- [x] Tests: type round-trips, fingerprint parsing, URI normalization, FileSource, builder with new lockfile, serializer ordering, cache-hit idempotency
+- [x] `mise run fmt:fix` → `mise run lint` → `mise run test:go` green
 
 ## Out of scope
 
@@ -171,3 +171,53 @@ Broader rewiring of manifest/config-blob/index generation to consume the lockfil
 - `cog weights check` command → cog-wej9
 - Include/exclude pattern application at import time → cog-6wm0 (this bean records patterns in the lockfile; 6wm0 implements filtering)
 - hf:// / s3:// / http:// Source implementations → cog-9vfd (implements the same `Source` interface established here)
+
+
+
+## Summary of Changes
+
+Delivered the v1 lockfile schema redesign and pluggable source layer in `pkg/model` + `pkg/model/weightsource`.
+
+**New package `pkg/model/weightsource`** (interface + file:// implementation):
+- `Fingerprint` type with scheme-prefixed string values (sha256:, commit:, etag:, …) plus `Scheme()`, `Value()`, `IsZero()`, and `ParseFingerprint()`.
+- `Source` interface with `Fetch(ctx, uri, projectDir)` and `Fingerprint(ctx, uri, projectDir)`.
+- `For(uri)` scheme dispatch — today only `file://` (and bare paths), unknown schemes give a clear error citing supported schemes.
+- `FileSource`: validates + resolves URIs, walks the directory for fingerprint. Canonical form is `file://./rel` (explicit dot-prefix) or `file:///abs`. Rejects empty, project-dir-itself, and parent-escape paths.
+- Dedicated set-digest walker matches the packer's formula so fingerprint can be computed without repacking.
+
+**New lockfile schema** (`pkg/model/weights_lock.go`, `pkg/model/weights.go`):
+- `WeightsLock.Version` is now `int` (`1`); `"v1"` strings are rejected.
+- Top-level `Created` timestamp removed; per-entry `importedAt` suffices.
+- `WeightLockEntry` carries `Source` (URI + fingerprint + include/exclude + importedAt), `Size`, `SizeCompressed`, and a `Files` index matching the config blob shape.
+- `WeightLockLayer` now has `SizeUncompressed` and no `Annotations`.
+- `Marshal()` / `Save()` are byte-deterministic: files sorted by path, layers by digest, empty include/exclude serialized as `[]`, two-space indent.
+- Equality split into `lockEntriesContentEqual` and `lockEntriesSourceEqual`; `lockEntriesEqual` requires both. `ImportedAt` is intentionally excluded.
+- `NewWeightLockEntry` now takes source metadata + file index + layer results and computes the compressed/uncompressed totals.
+
+**`WeightBuilder.Build` wiring**:
+- Uses `weightsource.For(uri)` + `Source.Fetch` to materialize the source directory.
+- Records the normalized URI, the file:// fingerprint (= set digest), empty include/exclude, and `time.Now().UTC()` on each import.
+- Cache-hit path reads the `Files` index straight from the lockfile — no more tar-archive scanning.
+- Lockfile is rewritten only when content or source metadata changes (pure cache hit is a no-op on disk).
+
+**Manifest/packer cleanup (spec §2.5)**:
+- `LayerResult.Annotations` removed. Layer descriptors on manifests carry no annotations.
+- Packer no longer emits `run.cog.weight.content` / `run.cog.weight.file` / per-layer `run.cog.weight.size.uncompressed`; those constants are gone.
+- Manifest-level annotations (`run.cog.weight.name`, `run.cog.weight.target`, `run.cog.weight.set-digest`) unchanged.
+- Index descriptor annotations (`run.cog.weight.name`, `run.cog.weight.set-digest`, `run.cog.weight.size.uncompressed`) unchanged — still derived from the entry at index-build time.
+
+**Dead code removed**:
+- `listBundleFiles` and the bundle-tar scanning branch in `walkAndHashFiles` — replaced by reading `Files` from the lockfile.
+- `walkAndHashFiles` itself — unused on the new cache-hit path.
+- The old `Source` resolution helper inside `WeightBuilder` — replaced by `weightsource.For`.
+
+**Call-site updates**:
+- `tools/weights-gen` populates the new `Source` block and `Files` index.
+- Integration harness's `mockWeightsLock` mirrors the v1 schema (source block, files, layers without annotations, integer version).
+- CLI `weights_inspect` needed no changes — it already reads only `Digest`, `Target`, and layer `Digest/Size/MediaType`.
+
+**Tests**:
+- `pkg/model/weightsource`: round-trip parsing, scheme dispatch, `NormalizeURI` (absolute/relative/file://, empty, parent-escape, project-dir-itself rejection), `FileSource.Fetch` (abs/rel + error cases), `FileSource.Fingerprint` (stable, content-sensitive, .cog-excluded, context-cancelled).
+- `pkg/model`: `WeightsLock` parse/round-trip, deterministic Save, Files-sort-by-path, Layers-sort-by-digest, empty include/exclude normalization, split content-vs-source equality, `NewWeightLockEntry` populating sizes/files/layers, URI normalization in `WeightBuilder.Build`, cache-hit reuses lockfile without rehashing source.
+
+**Verification**: `mise run fmt:go` ✓, `mise run lint:go` ✓ (no new issues in my files; pre-existing test-harness issues unchanged), `mise run test:go` ✓ (1231 tests, 5 skipped).

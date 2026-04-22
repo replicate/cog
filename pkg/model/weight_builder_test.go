@@ -74,7 +74,8 @@ func TestWeightBuilder_HappyPath(t *testing.T) {
 func TestWeightBuilder_WritesLockfile(t *testing.T) {
 	projectDir := t.TempDir()
 	makeWeightDir(t, projectDir, "weights/mw", map[string][]byte{
-		"config.json": []byte(`{"x": 1}`),
+		"config.json":    []byte(`{"x": 1}`),
+		"tokenizer.json": []byte(`{"y": 2}`),
 	})
 
 	wb := newTestBuilder(t, projectDir, []config.WeightSource{
@@ -97,13 +98,51 @@ func TestWeightBuilder_WritesLockfile(t *testing.T) {
 	require.Equal(t, "mw", entry.Name)
 	require.Equal(t, "/src/weights/mw", entry.Target)
 	require.Equal(t, wa.Descriptor().Digest.String(), entry.Digest)
+	require.Equal(t, wa.SetDigest, entry.SetDigest)
 	require.Len(t, entry.Layers, len(wa.Layers))
 
-	for i, lockLayer := range entry.Layers {
-		require.Equal(t, wa.Layers[i].Digest.String(), lockLayer.Digest)
-		require.Equal(t, wa.Layers[i].Size, lockLayer.Size)
-		require.Equal(t, string(wa.Layers[i].MediaType), lockLayer.MediaType)
+	// Source block is populated with the normalized URI, a sha256
+	// fingerprint, and empty include/exclude patterns.
+	require.Equal(t, "file://./weights/mw", entry.Source.URI)
+	require.Equal(t, "sha256", entry.Source.Fingerprint.Scheme())
+	require.Equal(t, wa.SetDigest, entry.Source.Fingerprint.String(),
+		"file:// fingerprint is the set digest")
+	require.NotNil(t, entry.Source.Include)
+	require.NotNil(t, entry.Source.Exclude)
+	require.Empty(t, entry.Source.Include)
+	require.Empty(t, entry.Source.Exclude)
+	require.False(t, entry.Source.ImportedAt.IsZero())
+
+	// File index is populated and sorted by path.
+	require.Len(t, entry.Files, 2)
+	require.Equal(t, "config.json", entry.Files[0].Path)
+	require.Equal(t, "tokenizer.json", entry.Files[1].Path)
+	for _, f := range entry.Files {
+		require.NotEmpty(t, f.Digest)
+		require.NotEmpty(t, f.Layer)
+		require.Greater(t, f.Size, int64(0))
 	}
+
+	// Layer descriptors sorted by digest, carry compressed + uncompressed sizes.
+	for i := 1; i < len(entry.Layers); i++ {
+		require.Less(t, entry.Layers[i-1].Digest, entry.Layers[i].Digest,
+			"layers must be sorted by digest")
+	}
+	for _, l := range entry.Layers {
+		require.NotEmpty(t, l.Digest)
+		require.NotEmpty(t, l.MediaType)
+		require.Greater(t, l.Size, int64(0))
+		require.Greater(t, l.SizeUncompressed, int64(0))
+	}
+
+	// Totals match sums.
+	var wantSize, wantCompressed int64
+	for _, l := range entry.Layers {
+		wantSize += l.SizeUncompressed
+		wantCompressed += l.Size
+	}
+	require.Equal(t, wantSize, entry.Size)
+	require.Equal(t, wantCompressed, entry.SizeCompressed)
 }
 
 func TestWeightBuilder_UpdatesExistingLockfile(t *testing.T) {
@@ -194,6 +233,50 @@ func TestWeightBuilder_CacheHit(t *testing.T) {
 	require.Len(t, lock.Weights, 1)
 }
 
+func TestWeightBuilder_CacheHit_DoesNotRehashSource(t *testing.T) {
+	// The cache-hit path reads the file index straight from the lockfile
+	// instead of re-walking and re-hashing the source directory. Prove it
+	// by corrupting the on-disk source after the first build: if the
+	// builder still rehashed on every call, the set digest would change
+	// and we'd rewrite the lockfile. It must not.
+	projectDir := t.TempDir()
+	weightDir := "w"
+	makeWeightDir(t, projectDir, weightDir, map[string][]byte{"a.json": []byte(`{"x":1}`)})
+
+	wb := newTestBuilder(t, projectDir, []config.WeightSource{
+		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: weightDir}},
+	})
+	spec := NewWeightSpec("w", weightDir, "/src/w")
+
+	first, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+	fa := first.(*WeightArtifact)
+
+	lockPath := filepath.Join(projectDir, "weights.lock")
+	lockInfoBefore, err := os.Stat(lockPath)
+	require.NoError(t, err)
+
+	// Replace the source file with different bytes. The cached tar is
+	// still valid (size-matches), so the cache-hit path should fire and
+	// reuse lockfile data without noticing the source drift. cog-wej9 is
+	// where we'll add explicit check-for-drift.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectDir, weightDir, "a.json"),
+		[]byte(`{"x":999}`), 0o644))
+
+	second, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+	sa := second.(*WeightArtifact)
+
+	require.Equal(t, fa.Descriptor().Digest, sa.Descriptor().Digest,
+		"cache-hit path must reuse lockfile data; manifest digest is unchanged")
+
+	lockInfoAfter, err := os.Stat(lockPath)
+	require.NoError(t, err)
+	require.Equal(t, lockInfoBefore.ModTime(), lockInfoAfter.ModTime(),
+		"cache-hit path must not rewrite the lockfile")
+}
+
 func TestWeightBuilder_CacheMiss_ContentsChanged(t *testing.T) {
 	projectDir := t.TempDir()
 	weightDir := "w"
@@ -281,4 +364,38 @@ func TestWeightBuilder_ImplementsBuilderInterface(t *testing.T) {
 	projectDir := t.TempDir()
 	wb := newTestBuilder(t, projectDir, nil)
 	var _ Builder = wb
+}
+
+func TestWeightBuilder_NormalizesSourceURI(t *testing.T) {
+	// Different bare-path spellings of the same directory should
+	// produce the same normalized URI in the lockfile.
+	tests := []struct {
+		name    string
+		rawURI  string
+		wantURI string
+	}{
+		{"bare relative", "weights/mw", "file://./weights/mw"},
+		{"dot prefix", "./weights/mw", "file://./weights/mw"},
+		{"file scheme", "file://./weights/mw", "file://./weights/mw"},
+		{"redundant slashes", "weights//mw", "file://./weights/mw"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			projectDir := t.TempDir()
+			makeWeightDir(t, projectDir, "weights/mw", map[string][]byte{"c.json": []byte(`{}`)})
+
+			wb := newTestBuilder(t, projectDir, []config.WeightSource{
+				{Name: "mw", Target: "/src/weights/mw", Source: &config.WeightSourceConfig{URI: tc.rawURI}},
+			})
+			spec := NewWeightSpec("mw", tc.rawURI, "/src/weights/mw")
+			_, err := wb.Build(context.Background(), spec)
+			require.NoError(t, err)
+
+			lock, err := LoadWeightsLock(filepath.Join(projectDir, "weights.lock"))
+			require.NoError(t, err)
+			require.Len(t, lock.Weights, 1)
+			require.Equal(t, tc.wantURI, lock.Weights[0].Source.URI)
+		})
+	}
 }

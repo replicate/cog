@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -119,34 +118,37 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 
 	require.Len(t, mf.Layers, 3)
 
-	// Partition manifest layers by content annotation so assertions
-	// don't depend on packer-emitted ordering.
-	var (
-		bundleLayer *v1.Descriptor
-		fileLayers  = map[string]*v1.Descriptor{}
-	)
-	for i, l := range mf.Layers {
+	// Layer descriptors carry no annotations (spec §2.5); partition by
+	// media type + extracted contents instead. The single uncompressed
+	// .tar layer is model.safetensors; the single .tar+gzip large-file
+	// layer is model.nemo; the remaining .tar+gzip layer is the bundle
+	// containing the JSON/PNG files.
+	var bundleCount int
+	var safetensorsLayer, nemoLayer *v1.Descriptor
+	for i := range mf.Layers {
 		d := &mf.Layers[i]
-		switch l.Annotations[AnnotationV1WeightContent] {
-		case ContentBundle:
-			require.Nil(t, bundleLayer, "manifest has multiple bundle layers")
-			bundleLayer = d
-		case ContentFile:
-			fname := l.Annotations[AnnotationV1WeightFile]
-			require.NotEmpty(t, fname, "file layer missing run.cog.weight.file annotation")
-			fileLayers[fname] = d
+		assert.Empty(t, d.Annotations, "layer descriptors must carry no annotations per spec §2.5")
+
+		paths := listFilesInPushedLayer(t, repo+"@"+d.Digest.String(), string(d.MediaType))
+		switch {
+		case len(paths) > 1:
+			bundleCount++
+		case len(paths) == 1 && paths[0] == "model.safetensors":
+			safetensorsLayer = d
+		case len(paths) == 1 && paths[0] == "model.nemo":
+			nemoLayer = d
 		default:
-			t.Fatalf("layer %d has unknown content annotation %q", i, l.Annotations[AnnotationV1WeightContent])
+			t.Fatalf("layer %s has unexpected file set %v", d.Digest, paths)
 		}
 	}
-	require.NotNil(t, bundleLayer, "manifest missing bundle layer")
-	require.Contains(t, fileLayers, "model.safetensors")
-	require.Contains(t, fileLayers, "model.nemo")
+	assert.Equal(t, 1, bundleCount, "expected exactly one bundle layer")
+	require.NotNil(t, safetensorsLayer)
+	require.NotNil(t, nemoLayer)
 
 	// .safetensors stays uncompressed per spec §1.2; .nemo gets gzipped.
-	assert.Equal(t, MediaTypeOCILayerTar, string(fileLayers["model.safetensors"].MediaType),
+	assert.Equal(t, MediaTypeOCILayerTar, string(safetensorsLayer.MediaType),
 		"model.safetensors should be uncompressed tar")
-	assert.Equal(t, MediaTypeOCILayerTarGzip, string(fileLayers["model.nemo"].MediaType),
+	assert.Equal(t, MediaTypeOCILayerTarGzip, string(nemoLayer.MediaType),
 		"model.nemo should be gzipped")
 
 	// Pull each layer, extract it, and assert the extracted tree
@@ -155,16 +157,6 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 	for _, l := range mf.Layers {
 		blobRef := repo + "@" + l.Digest.String()
 		extractLayerToDir(t, blobRef, string(l.MediaType), extractDir)
-
-		// run.cog.weight.size.uncompressed is defined as the sum of
-		// regular-file bytes in the layer (tar header overhead is
-		// excluded per packer.go). Verify.
-		want, err := strconv.ParseInt(l.Annotations[AnnotationV1WeightSizeUncomp], 10, 64)
-		require.NoError(t, err, "parse run.cog.weight.size.uncompressed on %s", l.Digest)
-		got := sumFileBytesInLayer(t, blobRef, string(l.MediaType))
-		assert.Equal(t, want, got,
-			"size.uncompressed annotation (%d) doesn't match extracted file bytes (%d) for %s",
-			want, got, l.Digest)
 	}
 
 	for relPath, want := range sources {
@@ -218,24 +210,25 @@ func extractLayerToDir(t *testing.T, blobRef, mediaType, destDir string) {
 	}
 }
 
-// sumFileBytesInLayer reads a layer tar and returns the sum of regular
-// file sizes, matching the semantics of run.cog.weight.size.uncompressed.
-func sumFileBytesInLayer(t *testing.T, blobRef, mediaType string) int64 {
+// listFilesInPushedLayer pulls a layer blob and returns the paths of
+// the regular files it contains. Used to classify layers by content
+// now that layer descriptors carry no content annotations.
+func listFilesInPushedLayer(t *testing.T, blobRef, mediaType string) []string {
 	t.Helper()
 
 	rc := openLayerStream(t, blobRef, mediaType)
 	defer rc.Close() //nolint:errcheck
 
-	var total int64
+	var paths []string
 	tr := tar.NewReader(rc)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
-			return total
+			return paths
 		}
 		require.NoError(t, err)
 		if hdr.Typeflag == tar.TypeReg {
-			total += hdr.Size
+			paths = append(paths, hdr.Name)
 		}
 	}
 }

@@ -5,72 +5,67 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"sort"
 	"strings"
 )
 
-// WeightLockLayer describes a single packed layer inside a WeightLockEntry.
-// The shape matches spec §3.6 (/.cog/weights.json) so this struct can be
-// written verbatim into the model image at build time.
-type WeightLockLayer struct {
-	// Digest is the sha256 digest of the layer blob on disk.
-	Digest string `json:"digest"`
-	// Size is the size of the layer blob in bytes.
-	Size int64 `json:"size"`
-	// MediaType is the OCI layer media type
-	// (application/vnd.oci.image.layer.v1.tar or .tar+gzip).
-	MediaType string `json:"mediaType"`
-	// Annotations are the descriptor annotations attached to this layer in
-	// the manifest (e.g. run.cog.weight.content, run.cog.weight.file).
-	Annotations map[string]string `json:"annotations,omitempty"`
-}
-
-// WeightLockEntry describes a single weight in a weights lockfile.
-// The manifest digest is the unit of identity — there is no per-file entry.
-type WeightLockEntry struct {
-	// Name is the weight's logical name (e.g. "z-image-turbo").
-	Name string `json:"name"`
-	// Target is the container mount path for this weight.
-	Target string `json:"target"`
-	// Digest is the sha256 digest of the assembled OCI manifest.
-	Digest string `json:"digest"`
-	// SetDigest is the weight set digest (§2.4): a content-addressable
-	// identifier for the file set, independent of packing strategy.
-	SetDigest string `json:"setDigest"`
-	// Layers are the descriptors of the tar layers making up this weight,
-	// in manifest order.
-	Layers []WeightLockLayer `json:"layers"`
-}
-
-// NewWeightLockEntry builds a WeightLockEntry from a set of packed tar
-// layers. Annotations are cloned so later mutations on the LayerResult do
-// not bleed into the entry.
-func NewWeightLockEntry(name, target, manifestDigest, setDigest string, layers []LayerResult) WeightLockEntry {
-	lockLayers := make([]WeightLockLayer, len(layers))
-	for i, l := range layers {
-		lockLayers[i] = WeightLockLayer{
-			Digest:      l.Digest.String(),
-			Size:        l.Size,
-			MediaType:   string(l.MediaType),
-			Annotations: maps.Clone(l.Annotations),
+// NewWeightLockEntry assembles a WeightLockEntry from a source description,
+// the packed file index, and the set of packed layers produced by Pack.
+//
+// The caller owns sort order — canonicalizeEntry sorts Files by path and
+// Layers by digest at Save time, so NewWeightLockEntry accepts whatever
+// order the packer happened to emit.
+func NewWeightLockEntry(
+	name, target string,
+	manifestDigest, setDigest string,
+	source WeightLockSource,
+	files []PackedFile,
+	layers []LayerResult,
+) WeightLockEntry {
+	lockFiles := make([]WeightLockFile, len(files))
+	for i, f := range files {
+		lockFiles[i] = WeightLockFile{
+			Path:   f.Path,
+			Size:   f.Size,
+			Digest: f.Digest,
+			Layer:  f.LayerDigest,
 		}
 	}
-	return WeightLockEntry{
-		Name:      name,
-		Target:    target,
-		Digest:    manifestDigest,
-		SetDigest: setDigest,
-		Layers:    lockLayers,
+
+	lockLayers := make([]WeightLockLayer, len(layers))
+	var totalSize, totalCompressed int64
+	for i, l := range layers {
+		lockLayers[i] = WeightLockLayer{
+			Digest:           l.Digest.String(),
+			MediaType:        string(l.MediaType),
+			Size:             l.Size,
+			SizeUncompressed: l.UncompressedSize,
+		}
+		totalSize += l.UncompressedSize
+		totalCompressed += l.Size
 	}
+
+	entry := WeightLockEntry{
+		Name:           name,
+		Target:         target,
+		Source:         source,
+		Digest:         manifestDigest,
+		SetDigest:      setDigest,
+		Size:           totalSize,
+		SizeCompressed: totalCompressed,
+		Files:          lockFiles,
+		Layers:         lockLayers,
+	}
+	canonicalizeEntry(&entry)
+	return entry
 }
 
 // WeightConfigBlob is the JSON structure for the config blob (§2.3).
 type WeightConfigBlob struct {
-	Name      string              `json:"name"`
-	Target    string              `json:"target"`
-	SetDigest string              `json:"setDigest"`
-	Files     []WeightConfigFile  `json:"files"`
+	Name      string             `json:"name"`
+	Target    string             `json:"target"`
+	SetDigest string             `json:"setDigest"`
+	Files     []WeightConfigFile `json:"files"`
 }
 
 // WeightConfigFile is one entry in the config blob's files array.
@@ -85,9 +80,12 @@ type WeightConfigFile struct {
 //
 //	sha256(join(sort(entries), "\n"))
 //
-// where each entry is "<hex-sha256>  <path>" (two spaces, matching sha256sum
-// format). files must be sorted by path; the caller is responsible for
-// ordering (BuildWeightConfigBlob sorts before calling).
+// where each entry is "<hex-sha256>  <path>" (two spaces, matching
+// sha256sum format). files must be sorted by path; the caller is
+// responsible for ordering (BuildWeightConfigBlob sorts before calling).
+//
+// SYNC: weightsource.computeDirSetDigest computes the same digest from
+// a raw directory walk. Changes to the formula must update both.
 func ComputeWeightSetDigest(files []PackedFile) string {
 	entries := make([]string, len(files))
 	for i, f := range files {
