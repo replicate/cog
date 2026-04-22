@@ -1,0 +1,33 @@
+# Test that --separate-weights works with r8.im image names.
+# Regression test for https://github.com/replicate/cog/issues/2953
+#
+# When the image name starts with "r8.im", cog uses a temporary tag
+# (cog-tmp:<hash>) for the intermediate build. The separate-weights code
+# path must tag its runner image with that temp tag so post-build schema
+# validation can find it.
+#
+# NOTE: Uses a hardcoded r8.im/... tag (not $TEST_IMAGE) to trigger the
+# cog-tmp code path. --use-cog-base-image=false avoids hitting the real
+# r8.im registry. Cleanup at the end won't run on build failure, but this
+# matches the pattern in build_image_option.txtar.
+
+cog build -t r8.im/test/separate-weights-r8im --separate-weights --use-cog-base-image=false
+
+# Verify schema label was set (proves post-build schema validation succeeded)
+exec docker inspect r8.im/test/separate-weights-r8im --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout '"openapi":"3.0.2"'
+
+# Cleanup images created by this test
+exec sh -c 'docker rmi -f r8.im/test/separate-weights-r8im r8.im/test/separate-weights-r8im-weights 2>/dev/null; true'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

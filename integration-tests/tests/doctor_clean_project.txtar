@@ -1,0 +1,18 @@
+# Test that cog doctor succeeds on a valid project with no issues.
+
+cog doctor
+stderr 'experimental'
+stderr 'no issues found'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return "hello " + text

@@ -225,7 +225,7 @@ func Build(
 				console.Info("Weights unchanged, skip rebuilding and use cached image...")
 			}
 
-			if err := buildRunnerImage(ctx, dockerCommand, dir, runnerDockerfile, dockerignore, imageName, secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
+			if err := buildRunnerImage(ctx, dockerCommand, dir, runnerDockerfile, dockerignore, tmpImageId, secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
 				return "", fmt.Errorf("Failed to build runner Docker image: %w", err)
 			}
 		} else {

@@ -66,6 +66,26 @@ cog build [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
+## `cog doctor`
+
+Diagnose and fix common issues in your Cog project.
+
+NOTE: cog doctor is experimental. Behavior and checks may change in future versions.
+
+By default, cog doctor reports problems without modifying any files.
+Pass --fix to automatically apply safe fixes.
+
+```
+cog doctor [flags]
+```
+
+**Options**
+
+```
+  -f, --file string   The name of the config file. (default "cog.yaml")
+      --fix           Automatically apply fixes
+  -h, --help          help for doctor
+```
 ## `cog exec`
 
 Execute a command inside a Docker environment defined by cog.yaml.
