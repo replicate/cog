@@ -1,11 +1,11 @@
 ---
 # cog-by3m
 title: Local weight mounting for cog predict
-status: todo
+status: scrapped
 type: task
 priority: normal
 created_at: 2026-04-17T19:28:06Z
-updated_at: 2026-04-21T17:11:44Z
+updated_at: 2026-04-22T20:25:47Z
 parent: cog-kgd7
 blocked_by:
     - cog-kfvj
@@ -39,3 +39,11 @@ Needs Docker Desktop (Mac) verification: MergedDir is inside the Linux VM, but b
 cog weights purge: remove weight containers and images.
 
 Reference: plans/2026-04-16-managed-weights-v2-design.md §5.5, §5.6
+
+
+
+## Scrapped in favor of cog-40ed
+
+Superseded by `plans/2026-04-22-managed-weights-import-and-local-run-design.md`. The v1 local-run backend is no longer overlay2 MergedDir; it's FileWeightStore with hardlinked assembled directories. The overlay2 spike moves into the future DockerWeightStore work (cog-pqtq).
+
+New bean: cog-40ed (Wire cog predict to WeightStore.Mount for managed weights).

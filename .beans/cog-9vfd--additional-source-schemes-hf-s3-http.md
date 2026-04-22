@@ -1,11 +1,11 @@
 ---
 # cog-9vfd
 title: Additional source schemes (hf://, s3://, http://)
-status: todo
+status: scrapped
 type: task
 priority: normal
 created_at: 2026-04-17T19:28:42Z
-updated_at: 2026-04-22T01:27:10Z
+updated_at: 2026-04-22T20:25:41Z
 parent: cog-66gt
 blocked_by:
     - cog-2gv9
@@ -43,3 +43,14 @@ The URI scheme supports `@<ref>` suffixes for pinning:
 - `hf://org/repo@abc123` → pinned to commit
 
 The packer and lockfile are unchanged — the `Source` abstraction means adding a new scheme only touches the source implementation and the scheme switch.
+
+
+
+## Scrapped in favor of split beans
+
+Superseded by the design update in `plans/2026-04-22-managed-weights-import-and-local-run-design.md`. This bean's original scope (hf + s3 + http) has been split:
+
+- hf:// → cog-gr3t (HuggingFace source)
+- s3:// + http(s):// → cog-kkfz (Additional source schemes)
+
+The interface shape also changed substantially: the new Source interface is Inventory + Open + NativeBlobRef (see cog-n2w1), not Fetch. The descriptions in the split beans reflect the new interface.
