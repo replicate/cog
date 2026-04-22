@@ -5,7 +5,7 @@ status: todo
 type: task
 priority: low
 created_at: 2026-04-17T23:12:10Z
-updated_at: 2026-04-21T19:49:29Z
+updated_at: 2026-04-22T17:32:19Z
 parent: cog-66gt
 ---
 
@@ -47,3 +47,21 @@ COG_OCI_INDEX=1 cog push localhost:5000/test-weights
 - [ ] Design local weight cache strategy that works across source schemes
 - [ ] Content-addressed cache so unchanged weights skip re-pack/re-upload
 - [ ] Tie cache invalidation to source fingerprinting (cog-s5fy)
+
+## Design note: lockfile vs working directory (from 6b5a discussion, 2026-04-22)
+
+The lockfile (`weights.lock`) should only contain fully resolved, complete state — it's a commit artifact. Intermediate/in-flight state belongs in a separate working directory (e.g. `.cog/weights/`), not git-tracked.
+
+Model:
+- `weights.lock` — clean, complete, git-tracked. Only written when an import fully succeeds for a given weight.
+- `.cog/weights/<name>/` — working directory for in-flight state. Partial downloads, packed layers that haven't been pushed, progress tracking. In `.gitignore`.
+
+Flow:
+1. `cog weights import` starts processing, writes progress to `.cog/weights/<name>/`
+2. If interrupted, `.cog/weights/<name>/` has partial state but `weights.lock` is untouched (or has the previous successful entry)
+3. Resume: import picks up from working dir, finishes, then atomically updates `weights.lock`
+4. The lockfile is never in a half-baked state
+
+This separation means `cog weights status` can cleanly determine state: lockfile entry present = build completed at some point. Registry check = push completed. Working dir state = in-flight (future scope for status).
+
+The existing `.cog/weights-cache/` packed-tar cache is a precursor to this pattern. This bean should formalize the working directory layout when implementing the cache strategy.

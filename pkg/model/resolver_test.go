@@ -149,6 +149,10 @@ func (m *mockRegistry) WriteLayer(ctx context.Context, opts registry.WriteLayerO
 	return nil
 }
 
+func (m *mockRegistry) BlobExists(_ context.Context, _ string, _ string) (bool, error) {
+	return false, nil
+}
+
 // mockFactory implements Factory for testing.
 type mockFactory struct {
 	name      string

@@ -197,7 +197,7 @@ func weightsInspectCommand(cmd *cobra.Command, args []string, jsonOutput bool) e
 // resolveWeightsByTag checks for each local weight's tag in the registry.
 // This is the fallback path when no OCI index exists (e.g., after
 // `cog weights push` but before `cog push`). The tag encodes the weight
-// name plus the short prefix of its manifest digest; a hit means the exact
+// name plus the short prefix of its set digest; a hit means the exact
 // content is synced.
 //
 // Each weight is an independent registry round-trip, so we fan them out
@@ -218,7 +218,7 @@ func resolveWeightsByTag(ctx context.Context, repo string, localWeights map[stri
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			results <- lookup{name: weightName, state: fetchRemoteWeight(ctx, reg, repo, weightName, lw.lockFile.Digest)}
+			results <- lookup{name: weightName, state: fetchRemoteWeight(ctx, reg, repo, weightName, lw.lockFile.SetDigest)}
 		})
 	}
 	wg.Wait()
@@ -239,8 +239,10 @@ func resolveWeightsByTag(ctx context.Context, repo string, localWeights map[stri
 // fetchRemoteWeight returns the remote state for a single weight, or nil if
 // the tag isn't present (or any other fetch error — the caller treats
 // missing-in-registry as "not synced", not as a hard failure).
-func fetchRemoteWeight(ctx context.Context, reg registry.Client, repo, weightName, manifestDigest string) *WeightRemoteState {
-	tag := model.WeightTag(weightName, manifestDigest)
+// setDigest is the weight set digest (lockfile SetDigest field) — this is
+// what the pusher uses to construct the tag, not the manifest digest.
+func fetchRemoteWeight(ctx context.Context, reg registry.Client, repo, weightName, setDigest string) *WeightRemoteState {
+	tag := model.WeightTag(weightName, setDigest)
 	tagRef := repo + ":" + tag
 
 	img, err := reg.GetImage(ctx, tagRef, nil)

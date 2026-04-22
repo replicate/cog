@@ -1,11 +1,11 @@
 ---
 # cog-wej9
 title: cog weights check command
-status: todo
+status: scrapped
 type: task
 priority: normal
 created_at: 2026-04-17T21:31:52Z
-updated_at: 2026-04-21T17:01:35Z
+updated_at: 2026-04-22T17:32:04Z
 parent: cog-66gt
 blocked_by:
     - cog-4fg4
@@ -29,3 +29,9 @@ Existing code to reuse:
 - `model.WeightTag(name, digest)` for tag construction
 
 Reference: plans/2026-04-16-managed-weights-v2-design.md §3 (User-facing commands)
+
+## Absorbed into cog-6b5a (cog weights status)
+
+The registry validation that `check` was going to do is now part of `cog weights status` (6b5a). Status always checks config + lockfile + registry in one pass. The exit-code contract (0 = all ready, non-zero = problems) is preserved in the status command.
+
+Scrapped because the job is the same command — showing where each weight stands across all tiers. Splitting local-state listing and remote-state checking into separate commands forces the user to run two things and merge results mentally.

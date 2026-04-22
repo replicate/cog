@@ -28,6 +28,7 @@ func newWeightsCommand() *cobra.Command {
 	cmd.AddCommand(newWeightsBuildCommand())
 	cmd.AddCommand(newWeightsInspectCommand())
 	cmd.AddCommand(newWeightsPushCommand())
+	cmd.AddCommand(newWeightsStatusCommand())
 	return cmd
 }
 
