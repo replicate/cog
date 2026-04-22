@@ -30,7 +30,7 @@ import (
 	"github.com/replicate/cog/pkg/schema/python"
 	"github.com/replicate/cog/pkg/util/console"
 	cogversion "github.com/replicate/cog/pkg/util/version"
-	"github.com/replicate/cog/pkg/weights"
+	"github.com/replicate/cog/pkg/weightslegacy"
 	"github.com/replicate/cog/pkg/wheels"
 )
 
@@ -211,7 +211,7 @@ func Build(
 			if err != nil {
 				return "", fmt.Errorf("Failed to generate weights manifest: %w", err)
 			}
-			cachedManifest, _ := weights.LoadManifest(weightsManifestPath)
+			cachedManifest, _ := weightslegacy.LoadManifest(weightsManifestPath)
 			changed := cachedManifest == nil || !weightsManifest.Equal(cachedManifest)
 			if changed {
 				if err := buildWeightsImage(ctx, dockerCommand, dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {

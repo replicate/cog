@@ -1,4 +1,4 @@
-package weights
+package weightslegacy
 
 import (
 	"encoding/binary"

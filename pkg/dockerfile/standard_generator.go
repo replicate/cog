@@ -16,7 +16,7 @@ import (
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/version"
-	"github.com/replicate/cog/pkg/weights"
+	"github.com/replicate/cog/pkg/weightslegacy"
 	"github.com/replicate/cog/pkg/wheels"
 )
 
@@ -70,7 +70,7 @@ type StandardGenerator struct {
 	// tmpDir relative to Dir
 	relativeTmpDir string
 
-	fileWalker weights.FileWalker
+	fileWalker weightslegacy.FileWalker
 
 	modelDirs  []string
 	modelFiles []string
@@ -350,7 +350,7 @@ func (g *StandardGenerator) cpCogYaml() string {
 }
 
 func (g *StandardGenerator) generateForWeights() (string, []string, []string, error) {
-	modelDirs, modelFiles, err := weights.FindWeights(g.fileWalker)
+	modelDirs, modelFiles, err := weightslegacy.FindWeights(g.fileWalker)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -1011,8 +1011,8 @@ func filterEmpty(list []string) []string {
 	return filtered
 }
 
-func (g *StandardGenerator) GenerateWeightsManifest(ctx context.Context) (*weights.Manifest, error) {
-	m := weights.NewManifest()
+func (g *StandardGenerator) GenerateWeightsManifest(ctx context.Context) (*weightslegacy.Manifest, error) {
+	m := weightslegacy.NewManifest()
 
 	for _, dir := range g.modelDirs {
 		err := g.fileWalker(dir, func(path string, info os.FileInfo, err error) error {
