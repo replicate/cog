@@ -25,9 +25,6 @@ func newWeightsCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newWeightsImportCommand())
-	cmd.AddCommand(newWeightsBuildCommand())
-	cmd.AddCommand(newWeightsInspectCommand())
-	cmd.AddCommand(newWeightsPushCommand())
 	cmd.AddCommand(newWeightsStatusCommand())
 	return cmd
 }
@@ -36,8 +33,8 @@ func newWeightsImportCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import [name...]",
 		Short: "Build and push weights to a registry",
-		Long: `Packages weight sources from cog.yaml into OCI layers and pushes them to a registry
-in a single step. Equivalent to running 'cog weights build' followed by 'cog weights push'.
+		Long: `Packages weight sources from cog.yaml into OCI layers, updates weights.lock,
+and pushes the layers to a registry.
 
 If weight names are provided, only those weights are imported. Otherwise all weights
 defined in cog.yaml are imported.
@@ -239,56 +236,6 @@ func pushWeightArtifacts(ctx context.Context, repo string, artifacts []*model.We
 	return nil
 }
 
-func newWeightsBuildCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "build",
-		Short: "Generate weights.lock from weight sources in cog.yaml",
-		Long: `Reads the weights section from cog.yaml, processes each weight source,
-and generates a weights.lock file containing metadata (digests, sizes) for each file.`,
-		Args: cobra.NoArgs,
-		RunE: weightsBuildCommand,
-	}
-
-	addConfigFlag(cmd)
-	return cmd
-}
-
-func weightsBuildCommand(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-
-	src, err := model.NewSource(configFilename)
-	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
-	}
-
-	weightSpecs, err := collectWeightSpecs(src, nil)
-	if err != nil {
-		return err
-	}
-
-	console.Infof("Processing %d weight source(s)...", len(weightSpecs))
-
-	lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
-	builder := model.NewWeightBuilder(src, lockPath)
-
-	artifacts, err := buildWeightArtifacts(ctx, builder, weightSpecs)
-	if err != nil {
-		return err
-	}
-
-	var totalSize int64
-	for _, wa := range artifacts {
-		totalSize += wa.TotalSize()
-		console.Infof("  %s -> %s (%d layer(s), %s)",
-			wa.Name(), wa.Target, len(wa.Layers), formatSize(wa.TotalSize()))
-	}
-
-	console.Infof("\nGenerated %s with %d file(s) (%s total)",
-		model.WeightsLockFilename, len(weightSpecs), formatSize(totalSize))
-
-	return nil
-}
-
 func formatSize(bytes int64) string {
 	const (
 		kb = 1024
@@ -308,61 +255,3 @@ func formatSize(bytes int64) string {
 	}
 }
 
-func newWeightsPushCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "push [IMAGE]",
-		Short: "Push weights to a registry",
-		Long: `Reads weights.lock and pushes weight files as an OCI artifact to a registry.
-
-The registry is determined from the image name, which can be:
-- Specified as an argument: cog weights push registry.example.com/user/model
-- Set in cog.yaml as the 'image' field`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: weightsPushCommand,
-	}
-
-	addConfigFlag(cmd)
-	return cmd
-}
-
-func weightsPushCommand(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-
-	src, err := model.NewSource(configFilename)
-	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
-	}
-
-	cfg := src.Config
-
-	// Determine image name
-	imageName := cfg.Image
-	if len(args) > 0 {
-		imageName = args[0]
-	}
-	if imageName == "" {
-		return fmt.Errorf("To push weights, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog weights push registry.example.com/your-username/model-name'")
-	}
-
-	repo, err := parseRepoOnly(imageName)
-	if err != nil {
-		return err
-	}
-
-	lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
-	builder := model.NewWeightBuilder(src, lockPath)
-
-	weightSpecs, err := collectWeightSpecs(src, nil)
-	if err != nil {
-		return err
-	}
-
-	artifacts, err := buildWeightArtifacts(ctx, builder, weightSpecs)
-	if err != nil {
-		return err
-	}
-
-	console.Infof("Pushing %d weight(s) to %s...", len(artifacts), repo)
-
-	return pushWeightArtifacts(ctx, repo, artifacts, "Pushed")
-}
