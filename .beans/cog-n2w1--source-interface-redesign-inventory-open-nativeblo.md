@@ -1,11 +1,11 @@
 ---
 # cog-n2w1
 title: 'Source interface redesign: Inventory + Open + NativeBlobRef'
-status: in-progress
+status: completed
 type: task
 priority: high
 created_at: 2026-04-22T20:21:35Z
-updated_at: 2026-04-22T22:25:38Z
+updated_at: 2026-04-22T22:27:14Z
 parent: cog-66gt
 ---
 
