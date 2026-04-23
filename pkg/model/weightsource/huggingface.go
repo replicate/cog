@@ -13,6 +13,8 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 // HFScheme is the short URI scheme for HuggingFace Hub sources.
@@ -172,18 +174,22 @@ func (s *HFSource) Inventory(ctx context.Context) (Inventory, error) {
 		return Inventory{}, err
 	}
 
+	console.Debugf("hf: resolving %s@%s", s.repo, s.ref)
+
 	// 1. Resolve ref → commit sha and pin for subsequent Open calls.
 	commitSHA, err := s.resolveRef(ctx)
 	if err != nil {
 		return Inventory{}, fmt.Errorf("resolve ref %q for %s: %w", s.ref, s.repo, err)
 	}
 	s.resolvedRef = commitSHA
+	console.Debugf("hf: resolved to commit %s", commitSHA[:12])
 
 	// 2. Fetch the recursive tree listing at the resolved commit.
 	entries, err := s.listTree(ctx, commitSHA)
 	if err != nil {
 		return Inventory{}, fmt.Errorf("list tree for %s@%s: %w", s.repo, commitSHA, err)
 	}
+	console.Debugf("hf: tree listing returned %d entries", len(entries))
 
 	// 3. Build inventory files. LFS entries have digests already;
 	//    inline entries need to be fetched and hashed.
@@ -194,6 +200,7 @@ func (s *HFSource) Inventory(ctx context.Context) (Inventory, error) {
 
 	sortInventoryFiles(files)
 
+	console.Debugf("hf: inventory complete — %d files, fingerprint commit:%s", len(files), commitSHA[:12])
 	return Inventory{
 		Files:       files,
 		Fingerprint: Fingerprint("commit:" + commitSHA),
@@ -216,6 +223,7 @@ func (s *HFSource) Open(ctx context.Context, path string) (io.ReadCloser, error)
 	if ref == "" {
 		ref = s.ref
 	}
+	console.Debugf("hf: open %s (ref %s)", path, ref[:min(12, len(ref))])
 	return s.fetchFile(ctx, ref, path)
 }
 
@@ -303,6 +311,8 @@ func (s *HFSource) buildInventoryFiles(ctx context.Context, commitSHA string, en
 			inlineEntries = append(inlineEntries, e)
 		}
 	}
+
+	console.Debugf("hf: %d LFS files (digest from API), %d inline files (need fetch+hash)", len(lfsFiles), len(inlineEntries))
 
 	// Hash inline files with bounded concurrency.
 	inlineFiles, err := s.hashInlineFiles(ctx, commitSHA, inlineEntries)
