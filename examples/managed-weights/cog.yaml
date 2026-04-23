@@ -1,15 +1,14 @@
 # Example model for testing the v1 managed-weights OCI artifact format.
 #
 # The weights/ directory is populated by a human (see README.md) with
-# nvidia/parakeet-tdt-0.6b-v3 from HuggingFace. It's listed in the root
-# .gitignore so the ~5GB payload never hits git.
+# nvidia/parakeet-tdt-0.6b-v3 from HuggingFace. It's listed in .gitignore
+# so the ~5GB payload never hits git.
 #
-# Build and push the full bundle with:
+# Import weights and generate the lockfile:
+#   cog weights import
+#
+# Build and push the full bundle:
 #   cog push localhost:5000/managed-weights
-#
-# Or run the weight pipeline in isolation:
-#   cog weights build
-#   cog weights push localhost:5000/managed-weights
 
 # image: registry.cloudflare.com/3515b24d58ec616d11f4ce4290a02ac4/md/examples/managed-weights
 image: localhost:5000/md/examples/managed-weights
@@ -26,4 +25,9 @@ weights:
   - name: parakeet
     source:
       uri: weights
-    target: /src/weights
+    target: /src/weights/parakeet
+  - name: minilm
+    source: 
+      uri: hf://sentence-transformers/all-MiniLM-L6-v2
+    target: /src/weights/minilm
+

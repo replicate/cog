@@ -3,7 +3,7 @@
   "weights": [
     {
       "name": "parakeet",
-      "target": "/src/weights",
+      "target": "/src/weights/parakeet",
       "source": {
         "uri": "file://./weights",
         "fingerprint": "sha256:2c7d12ce4b3dd8f9dbd3e8a5cd18cd2fd1ad9f710487ce5224beb15c15833538",
@@ -11,7 +11,7 @@
         "exclude": [],
         "importedAt": "2026-04-23T01:46:57.801501Z"
       },
-      "digest": "sha256:6eb7a7bed9e5b55792989f530877dba707be9ac2fdf60f64e1b017edeadf0b06",
+      "digest": "sha256:46a759c9c9dfe25adb639d6e29e7966e461e69571cc281cb23bbb7c65c6d127c",
       "setDigest": "sha256:2c7d12ce4b3dd8f9dbd3e8a5cd18cd2fd1ad9f710487ce5224beb15c15833538",
       "size": 5018959610,
       "sizeCompressed": 4838596319,
@@ -95,6 +95,265 @@
           "mediaType": "application/vnd.oci.image.layer.v1.tar",
           "size": 2508314112,
           "sizeUncompressed": 2508311120
+        }
+      ]
+    },
+    {
+      "name": "minilm",
+      "target": "/src/weights/minilm",
+      "source": {
+        "uri": "hf://sentence-transformers/all-MiniLM-L6-v2",
+        "fingerprint": "commit:c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+        "include": [],
+        "exclude": [],
+        "importedAt": "2026-04-23T16:40:01.20585Z"
+      },
+      "digest": "sha256:490c845bd52a65c062607a8fc5ae1cd26731ce5899914c7e4981907b9d121634",
+      "setDigest": "sha256:53178918df83470714bb64d689de0e542415bf3fb9a8b9573cfd40164eae5af6",
+      "size": 976948668,
+      "sizeCompressed": 929748841,
+      "files": [
+        {
+          "path": ".gitattributes",
+          "size": 1229,
+          "digest": "sha256:98ccb431c012ebfe976280fbd45aea4cec7409935868ccecf3954370f96732a1",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "1_Pooling/config.json",
+          "size": 190,
+          "digest": "sha256:4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "README.md",
+          "size": 10454,
+          "digest": "sha256:7dfc82496ec33f906b5b0d6750c1e2397da6530c74d1ae3568c55bc2739125e7",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "config.json",
+          "size": 612,
+          "digest": "sha256:953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "config_sentence_transformers.json",
+          "size": 116,
+          "digest": "sha256:061ca9d39661d6c6d6de5ba27f79a1cd5770ea247f8d46412a68a498dc5ac9f3",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "data_config.json",
+          "size": 39265,
+          "digest": "sha256:32edcb108fc2516b920734a862ae0692bcae1c5d45d5f8d972cb0d53434a4c54",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "model.safetensors",
+          "size": 90868376,
+          "digest": "sha256:53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db",
+          "layer": "sha256:69482828980bf1c74078f5a7bf0ba03bf719f525a60e2e32a5b369417d19bcef"
+        },
+        {
+          "path": "modules.json",
+          "size": 349,
+          "digest": "sha256:84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "onnx/model.onnx",
+          "size": 90405214,
+          "digest": "sha256:6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452",
+          "layer": "sha256:8c07ec0482e47e2157975a7e297d268240fd4bba39a3f77a722173fe11121f49"
+        },
+        {
+          "path": "onnx/model_O1.onnx",
+          "size": 90360328,
+          "digest": "sha256:1391c6fc20b5530250bc15cbe1f47578ffeca55ab0551d335cc668b6299a88ec",
+          "layer": "sha256:ce10042fe8c04ed183dcc12c673a72d2e7a4e6e6b9e030b2e61152ce28608225"
+        },
+        {
+          "path": "onnx/model_O2.onnx",
+          "size": 90326566,
+          "digest": "sha256:1de3905029190b398c7d300b530e320cf4b5e7d3dfb9af1429ebd73fd9a16faf",
+          "layer": "sha256:83573e5ea6d8128bd46ae1098992961b6bf68e3412f55a1b569c2442d58142ce"
+        },
+        {
+          "path": "onnx/model_O3.onnx",
+          "size": 90326497,
+          "digest": "sha256:a44f671e364dddbac31f203f07b91be6b0a35e51936e5ebfab65b6d9538b83ff",
+          "layer": "sha256:e2d0ae8341fc7f4031ba749123e25bd80e408e478aa8cf7ef6fd67fcd3713d0e"
+        },
+        {
+          "path": "onnx/model_O4.onnx",
+          "size": 45212349,
+          "digest": "sha256:1667d7f3ba669048b13a96ee3a44456d5e42c8f44588ae8b603430e16160c485",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "onnx/model_qint8_arm64.onnx",
+          "size": 23026053,
+          "digest": "sha256:4278337fd0ff3c68bfb6291042cad8ab363e1d9fbc43dcb499fe91c871902474",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "onnx/model_qint8_avx512.onnx",
+          "size": 23026053,
+          "digest": "sha256:4278337fd0ff3c68bfb6291042cad8ab363e1d9fbc43dcb499fe91c871902474",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "onnx/model_qint8_avx512_vnni.onnx",
+          "size": 23026053,
+          "digest": "sha256:4278337fd0ff3c68bfb6291042cad8ab363e1d9fbc43dcb499fe91c871902474",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "onnx/model_quint8_avx2.onnx",
+          "size": 23046789,
+          "digest": "sha256:b941bf19f1f1283680f449fa6a7336bb5600bdcd5f84d10ddc5cd72218a0fd21",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "openvino/openvino_model.bin",
+          "size": 90265744,
+          "digest": "sha256:8b86cab4722e2aefab310cf96d4d5a9eb3b187f7d9670a082afc55c7fa0d392a",
+          "layer": "sha256:bc52307e089c17075f22a146f7b036b7cf4e7d062e5392d2ffba2cd02a00b339"
+        },
+        {
+          "path": "openvino/openvino_model.xml",
+          "size": 211315,
+          "digest": "sha256:f87dd1482b2a745f8c699b81ddd9cbcad666a193be4693abcea44b7ac8c67c1e",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "openvino/openvino_model_qint8_quantized.bin",
+          "size": 22933664,
+          "digest": "sha256:c92ea4af3c6bc7b4a0f3b3d61b147c850f4dbdd7c9e7beee0c0c70dc12da289b",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "openvino/openvino_model_qint8_quantized.xml",
+          "size": 368006,
+          "digest": "sha256:a19425e3f56f7736f752923f0a0b5a8d61c7878017f02e1fc9086615391105dd",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "pytorch_model.bin",
+          "size": 90888945,
+          "digest": "sha256:c3a85f238711653950f6a79ece63eb0ea93d76f6a6284be04019c53733baf256",
+          "layer": "sha256:b4fb1a3cf829b020b85db1eda5132e3ffa1461ca7423ec93916f91e3cff73876"
+        },
+        {
+          "path": "rust_model.ot",
+          "size": 90887379,
+          "digest": "sha256:2d98d96d278348988f2744e6445b8bc16d921c3f6e17c667362f3cb353007aea",
+          "layer": "sha256:4d9a518c7d301f279944d4b5278f97bcdcc9401dec23acba997fc6e4bd7fc32b"
+        },
+        {
+          "path": "sentence_bert_config.json",
+          "size": 53,
+          "digest": "sha256:fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "special_tokens_map.json",
+          "size": 112,
+          "digest": "sha256:303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "tf_model.h5",
+          "size": 91005696,
+          "digest": "sha256:24c06a7429b843d46e40c6b167122053921bf94dce2e5550ea5c07fabc597646",
+          "layer": "sha256:f8c52d00619ba2ebcce0914e295eb4d17cc37d69c4a3f0204a9b3fe1d07ffdd5"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 466247,
+          "digest": "sha256:be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 350,
+          "digest": "sha256:acb92769e8195aabd29b7b2137a9e6d6e25c476a4f15aa4355c233426c61576b",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "train_script.py",
+          "size": 13156,
+          "digest": "sha256:f9b98b9d203d728cbf93ccdbae84131ab926541b56196f11d1385fed0b4d1a07",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        },
+        {
+          "path": "vocab.txt",
+          "size": 231508,
+          "digest": "sha256:07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+          "layer": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec"
+        }
+      ],
+      "layers": [
+        {
+          "digest": "sha256:4d9a518c7d301f279944d4b5278f97bcdcc9401dec23acba997fc6e4bd7fc32b",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+          "size": 83134298,
+          "sizeUncompressed": 90887379
+        },
+        {
+          "digest": "sha256:665aa18d0cbf61b67cf3263920113983b829b8b17fd3989e00d1356b4b4a79ec",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+          "size": 129998539,
+          "sizeUncompressed": 161613923
+        },
+        {
+          "digest": "sha256:69482828980bf1c74078f5a7bf0ba03bf719f525a60e2e32a5b369417d19bcef",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "size": 90871296,
+          "sizeUncompressed": 90868376
+        },
+        {
+          "digest": "sha256:83573e5ea6d8128bd46ae1098992961b6bf68e3412f55a1b569c2442d58142ce",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "size": 90331136,
+          "sizeUncompressed": 90326566
+        },
+        {
+          "digest": "sha256:8c07ec0482e47e2157975a7e297d268240fd4bba39a3f77a722173fe11121f49",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "size": 90409472,
+          "sizeUncompressed": 90405214
+        },
+        {
+          "digest": "sha256:b4fb1a3cf829b020b85db1eda5132e3ffa1461ca7423ec93916f91e3cff73876",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "size": 90891776,
+          "sizeUncompressed": 90888945
+        },
+        {
+          "digest": "sha256:bc52307e089c17075f22a146f7b036b7cf4e7d062e5392d2ffba2cd02a00b339",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "size": 90270208,
+          "sizeUncompressed": 90265744
+        },
+        {
+          "digest": "sha256:ce10042fe8c04ed183dcc12c673a72d2e7a4e6e6b9e030b2e61152ce28608225",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "size": 90364928,
+          "sizeUncompressed": 90360328
+        },
+        {
+          "digest": "sha256:e2d0ae8341fc7f4031ba749123e25bd80e408e478aa8cf7ef6fd67fcd3713d0e",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "size": 90330624,
+          "sizeUncompressed": 90326497
+        },
+        {
+          "digest": "sha256:f8c52d00619ba2ebcce0914e295eb4d17cc37d69c4a3f0204a9b3fe1d07ffdd5",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+          "size": 83146564,
+          "sizeUncompressed": 91005696
         }
       ]
     }

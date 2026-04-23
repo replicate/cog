@@ -1,12 +1,6 @@
-# Predictor for examples/managed-weights — serves as an infra verification
-# tool for the v1 managed-weights OCI pipeline.
-#
-# setup() validates weight files on disk against weights_manifest.json
-# (baked into the image) and errors if anything is missing or mismatched.
-# predict() returns a structured diff of expected vs actual files.
-#
-# The manifest check is a temporary hack until /.cog/weights.json is
-# embedded in the model image. See generate_manifest.py.
+# Infra verification predictor for the v1 managed-weights OCI pipeline.
+# Validates weight files on disk against weights.lock at setup; predict()
+# returns a per-weight status summary.
 
 import hashlib
 import json
@@ -16,8 +10,7 @@ from typing import Any
 
 from cog import BasePredictor
 
-WEIGHTS_DIR = Path("/src/weights")
-MANIFEST_PATH = Path("/src/weights_manifest.json")
+LOCK_PATH = Path("/src/weights.lock")
 
 
 def _file_sha256(path: Path) -> str:
@@ -28,116 +21,137 @@ def _file_sha256(path: Path) -> str:
     return f"sha256:{h.hexdigest()}"
 
 
-def _inventory(root: Path) -> list[dict[str, Any]]:
-    """Return sorted list of {path, size, digest} for all files under root."""
-    entries = []
-    for p in sorted(root.rglob("*")):
+def _validate_weight(
+    name: str, target: str, expected_files: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Validate a single weight entry from the lockfile.
+
+    Checks presence and size first (cheap), then hashes only files whose
+    size matches (expensive). This way missing or truncated files fail fast
+    without reading gigabytes of data.
+    """
+    target_dir = Path(target)
+
+    if not target_dir.is_dir():
+        return {
+            "name": name,
+            "target": target,
+            "errors": [f"weight directory {target} does not exist"],
+            "warnings": [],
+            "ok": [],
+            "missing": [f["path"] for f in expected_files],
+            "extra": [],
+            "mismatch": [],
+        }
+
+    # Walk the directory once — just stat, no hashing yet.
+    actual_by_path: dict[str, Path] = {}
+    actual_sizes: dict[str, int] = {}
+    for p in sorted(target_dir.rglob("*")):
         if not p.is_file():
             continue
-        entries.append(
-            {
-                "path": str(p.relative_to(root)),
-                "size": p.stat().st_size,
-                "digest": _file_sha256(p),
-            }
-        )
-    return entries
+        rel = str(p.relative_to(target_dir))
+        actual_by_path[rel] = p
+        actual_sizes[rel] = p.stat().st_size
 
-
-def _diff(
-    expected: list[dict[str, Any]], actual: list[dict[str, Any]]
-) -> dict[str, Any]:
-    """Compare expected manifest against actual inventory.
-
-    Returns a dict with:
-      ok:       list of files that match exactly
-      missing:  list of files expected but not on disk
-      extra:    list of files on disk but not in manifest
-      mismatch: list of files present but with wrong size/digest
-      errors:   flat list of human-readable error strings (for setup)
-    """
-    actual_by_path = {e["path"]: e for e in actual}
-    ok = []
-    missing = []
-    mismatch = []
+    ok: list[str] = []
+    missing: list[str] = []
+    mismatch: list[str] = []
     errors: list[str] = []
 
-    for entry in expected:
+    for entry in expected_files:
         path = entry["path"]
-        on_disk = actual_by_path.pop(path, None)
-        if on_disk is None:
-            missing.append(entry)
+
+        if path not in actual_by_path:
+            missing.append(path)
             errors.append(f"missing: {path}")
             continue
 
-        diffs = {}
-        if on_disk["size"] != entry["size"]:
-            diffs["size"] = {"expected": entry["size"], "actual": on_disk["size"]}
+        disk_size = actual_sizes[path]
+        if disk_size != entry["size"]:
+            mismatch.append(path)
             errors.append(
-                f"size mismatch: {path} (expected {entry['size']}, got {on_disk['size']})"
+                f"size mismatch: {path} (expected {entry['size']}, got {disk_size})"
             )
-        if on_disk["digest"] != entry["digest"]:
-            diffs["digest"] = {"expected": entry["digest"], "actual": on_disk["digest"]}
+            actual_by_path.pop(path)
+            continue
+
+        # Size matches — hash to confirm content.
+        digest = _file_sha256(actual_by_path.pop(path))
+        if digest != entry["digest"]:
+            mismatch.append(path)
             errors.append(f"digest mismatch: {path}")
-
-        if diffs:
-            mismatch.append({"path": path, **diffs})
         else:
-            ok.append(entry)
+            ok.append(path)
 
-    extra = [actual_by_path[p] for p in sorted(actual_by_path)]
-    for e in extra:
-        errors.append(f"unexpected: {e['path']}")
+    extra = sorted(actual_by_path.keys())
+    warnings = [f"extra file: {p}" for p in extra]
 
     return {
+        "name": name,
+        "target": target,
+        "errors": errors,
+        "warnings": warnings,
         "ok": ok,
         "missing": missing,
         "extra": extra,
         "mismatch": mismatch,
-        "errors": errors,
     }
 
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
-        if not WEIGHTS_DIR.is_dir():
-            raise RuntimeError(f"weight directory {WEIGHTS_DIR} does not exist")
+        if not LOCK_PATH.exists():
+            raise RuntimeError(f"{LOCK_PATH} not found — cannot validate weights")
 
-        self.inventory = _inventory(WEIGHTS_DIR)
-        for entry in self.inventory:
+        lock = json.loads(LOCK_PATH.read_text())
+
+        self.results: list[dict[str, Any]] = []
+        all_errors: list[str] = []
+
+        for entry in lock["weights"]:
+            name = entry["name"]
+            target = entry["target"]
+            expected_files = [
+                {"path": f["path"], "size": f["size"], "digest": f["digest"]}
+                for f in entry["files"]
+            ]
+
             print(
-                f"weight file: {entry['path']}  size={entry['size']}  digest={entry['digest']}",
+                f"validating weight '{name}' at {target} ({len(expected_files)} files)",
                 file=sys.stderr,
             )
-        print(f"total weight files: {len(self.inventory)}", file=sys.stderr)
+            result = _validate_weight(name, target, expected_files)
+            self.results.append(result)
 
-        if not MANIFEST_PATH.exists():
-            print(f"WARNING: {MANIFEST_PATH} not found, skipping validation", file=sys.stderr)
-            self.manifest = None
-            return
+            for w in result["warnings"]:
+                print(f"  WARNING: {w}", file=sys.stderr)
 
-        self.manifest = json.loads(MANIFEST_PATH.read_text())
-        result = _diff(self.manifest["files"], self.inventory)
-        if result["errors"]:
-            msg = "weight validation failed:\n" + "\n".join(f"  - {e}" for e in result["errors"])
+            if result["errors"]:
+                for e in result["errors"]:
+                    all_errors.append(f"[{name}] {e}")
+            else:
+                print(f"  OK ({len(result['ok'])} files)", file=sys.stderr)
+
+        if all_errors:
+            msg = "weight validation failed:\n" + "\n".join(
+                f"  - {e}" for e in all_errors
+            )
             raise RuntimeError(msg)
 
-        print("weight validation passed", file=sys.stderr)
+        print("all weights validated", file=sys.stderr)
 
     def predict(self) -> str:
-        if self.manifest is None:
-            return json.dumps({
-                "target": str(WEIGHTS_DIR),
-                "status": "no manifest",
-                "files": self.inventory,
-            })
-
-        result = _diff(self.manifest["files"], self.inventory)
-        return json.dumps({
-            "target": str(WEIGHTS_DIR),
-            "status": "ok" if not result["errors"] else "mismatch",
-            "ok": result["ok"],
-            "missing": result["missing"],
-            "extra": result["extra"],
-            "mismatch": result["mismatch"],
-        })
+        summary = []
+        for r in self.results:
+            entry: dict[str, Any] = {
+                "name": r["name"],
+                "target": r["target"],
+                "status": "ok" if not r["errors"] else "error",
+                "ok": len(r["ok"]),
+                "missing": r["missing"],
+                "extra": r["extra"],
+                "mismatch": r["mismatch"],
+            }
+            summary.append(entry)
+        return json.dumps(summary)
