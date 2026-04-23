@@ -86,8 +86,9 @@ func isGzip(mt types.MediaType) bool {
 }
 
 // packedLayer describes a packed tar layer on disk, ready for OCI
-// manifest construction. Per spec §2.5 layer descriptors carry no
-// annotations; file→layer mapping lives on packedFile.
+// manifest construction. Per spec §2.5 layer descriptors carry only
+// the uncompressed-size annotation; file→layer mapping lives on
+// packedFile (projected into the config blob).
 type packedLayer struct {
 	// TarPath is the path to the tar file on disk.
 	TarPath string

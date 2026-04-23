@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -112,16 +113,23 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 
 	require.Len(t, mf.Layers, 3)
 
-	// Layer descriptors carry no annotations (spec §2.5); partition by
-	// media type + extracted contents instead. The single uncompressed
-	// .tar layer is model.safetensors; the single .tar+gzip large-file
-	// layer is model.nemo; the remaining .tar+gzip layer is the bundle
+	// Per spec §2.5, each layer descriptor carries exactly the
+	// uncompressed-size annotation and nothing else. Partition layers by
+	// media type + extracted contents: the single uncompressed .tar
+	// layer is model.safetensors; the single .tar+gzip large-file layer
+	// is model.nemo; the remaining .tar+gzip layer is the bundle
 	// containing the JSON/PNG files.
 	var bundleCount int
 	var safetensorsLayer, nemoLayer *v1.Descriptor
 	for i := range mf.Layers {
 		d := &mf.Layers[i]
-		assert.Empty(t, d.Annotations, "layer descriptors must carry no annotations per spec §2.5")
+		require.Len(t, d.Annotations, 1,
+			"layer %d should carry exactly one annotation (uncompressed size) per spec §2.5", i)
+		uncompStr := d.Annotations[AnnotationV1WeightSizeUncomp]
+		require.NotEmpty(t, uncompStr, "layer %d uncompressed size annotation missing", i)
+		uncomp, err := strconv.ParseInt(uncompStr, 10, 64)
+		require.NoError(t, err, "layer %d uncompressed size annotation not an integer", i)
+		assert.Positive(t, uncomp, "layer %d uncompressed size should be positive", i)
 
 		paths := listFilesInPushedLayer(t, repo+"@"+d.Digest.String(), string(d.MediaType))
 		switch {
@@ -206,7 +214,8 @@ func extractLayerToDir(t *testing.T, blobRef, mediaType, destDir string) {
 
 // listFilesInPushedLayer pulls a layer blob and returns the paths of
 // the regular files it contains. Used to classify layers by content
-// now that layer descriptors carry no content annotations.
+// since layer descriptors carry only an uncompressed-size annotation
+// (spec §2.5), not file membership.
 func listFilesInPushedLayer(t *testing.T, blobRef, mediaType string) []string {
 	t.Helper()
 

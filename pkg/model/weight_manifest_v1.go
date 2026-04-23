@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -24,9 +25,15 @@ const (
 	AnnotationV1WeightTarget    = "run.cog.weight.target"
 	AnnotationV1WeightSetDigest = "run.cog.weight.set-digest"
 
-	// AnnotationV1WeightSizeUncomp is the spec §2.6 index-descriptor
-	// annotation carrying the uncompressed size of a weight. Projected
-	// from the lockfile at index-build time.
+	// AnnotationV1WeightSizeUncomp carries an uncompressed byte count.
+	// It appears in two places:
+	//   - On each layer descriptor inside the weight manifest (§2.5):
+	//     the uncompressed size of that single layer's contents. Set by
+	//     buildWeightManifestV1 from packedLayer.UncompressedSize.
+	//   - On the weight descriptor inside the outer OCI index (§2.6):
+	//     the sum across all layers — i.e. the total uncompressed size
+	//     of the weight. Set by IndexBuilder.AddWeightDescriptor from
+	//     the lockfile entry's Size field.
 	AnnotationV1WeightSizeUncomp = "run.cog.weight.size.uncompressed"
 )
 
@@ -85,12 +92,15 @@ func buildWeightManifestV1(entry WeightLockEntry, layers []packedLayer) (v1.Imag
 	})
 
 	// Build mutate.Addendum entries. Each addendum wraps our file-backed
-	// layer and supplies the media type (used by mutate.Append to build
-	// the manifest's layer descriptors).
+	// layer, supplies the media type (used by mutate.Append to build the
+	// manifest's layer descriptors), and carries the single layer-level
+	// annotation required by spec §2.5.
 	//
-	// Layer descriptors carry no annotations per spec §2.5 — callers that
-	// need per-file provenance read the config blob (files array) or the
-	// lockfile instead.
+	// Per spec §2.5 the layer descriptor carries one annotation —
+	// run.cog.weight.size.uncompressed — so consumers can make per-layer
+	// scheduling/disk decisions without fetching the config blob. All
+	// other file-level metadata (paths, per-file sizes, layer mappings)
+	// lives in the config blob.
 	adds := make([]mutate.Addendum, 0, len(sorted))
 	for i, lr := range sorted {
 		if lr.TarPath == "" {
@@ -102,6 +112,9 @@ func buildWeightManifestV1(entry WeightLockEntry, layers []packedLayer) (v1.Imag
 		if lr.Size <= 0 {
 			return nil, fmt.Errorf("layer %d (%s): invalid size %d", i, lr.TarPath, lr.Size)
 		}
+		if lr.UncompressedSize <= 0 {
+			return nil, fmt.Errorf("layer %d (%s): invalid uncompressed size %d", i, lr.TarPath, lr.UncompressedSize)
+		}
 		if lr.MediaType == "" {
 			return nil, fmt.Errorf("layer %d (%s): missing media type", i, lr.TarPath)
 		}
@@ -109,6 +122,9 @@ func buildWeightManifestV1(entry WeightLockEntry, layers []packedLayer) (v1.Imag
 		adds = append(adds, mutate.Addendum{
 			Layer:     newFileLayer(lr),
 			MediaType: lr.MediaType,
+			Annotations: map[string]string{
+				AnnotationV1WeightSizeUncomp: strconv.FormatInt(lr.UncompressedSize, 10),
+			},
 		})
 	}
 

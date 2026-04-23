@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -197,14 +198,17 @@ func TestBuildWeightManifestV1_ManifestShape(t *testing.T) {
 	assert.Equal(t, hex.EncodeToString(cfgSum[:]), m.Config.Digest.Hex)
 	assert.Equal(t, int64(len(cfgBytes)), m.Config.Size)
 
-	// Layers preserve media type, size, and digest from the packer. They
-	// carry no annotations per spec §2.5.
+	// Layers preserve media type, size, and digest from the packer, and
+	// carry the uncompressed size annotation per spec §2.5.
 	require.Len(t, m.Layers, len(layers))
 	for i, layer := range m.Layers {
 		assert.Equal(t, layers[i].MediaType, layer.MediaType)
 		assert.Equal(t, layers[i].Size, layer.Size)
 		assert.Equal(t, layers[i].Digest, layer.Digest)
-		assert.Empty(t, layer.Annotations, "layer %d should have no descriptor annotations", i)
+		assert.Equal(t,
+			strconv.FormatInt(layers[i].UncompressedSize, 10),
+			layer.Annotations[AnnotationV1WeightSizeUncomp],
+			"layer %d should carry uncompressed size annotation", i)
 	}
 
 	// Manifest annotations carry the v1 spec keys.
@@ -375,18 +379,25 @@ func TestBuildWeightManifestV1_DoesNotMutateInputSlice(t *testing.T) {
 	assert.Equal(t, before, layers, "buildWeightManifestV1 must not reorder the caller's slice")
 }
 
-func TestBuildWeightManifestV1_LayerDescriptorsHaveNoAnnotations(t *testing.T) {
-	// Spec §2.5: layer descriptors on weight manifests MUST NOT carry
-	// annotations. Everything useful lives in the config blob or the
-	// lockfile.
+func TestBuildWeightManifestV1_LayerDescriptorUncompressedSizeAnnotation(t *testing.T) {
+	// Spec §2.5: each layer descriptor carries
+	// run.cog.weight.size.uncompressed as the only layer-level
+	// annotation. All other file-level metadata lives in the config
+	// blob.
 	layers := singleSmallFileLayers(t)
 	img, err := buildWeightManifestV1(defaultEntry(), layers)
 	require.NoError(t, err)
 
 	m, err := img.Manifest()
 	require.NoError(t, err)
+	require.Len(t, m.Layers, len(layers))
 	for i, l := range m.Layers {
-		assert.Empty(t, l.Annotations, "layer %d should have no annotations", i)
+		require.Len(t, l.Annotations, 1,
+			"layer %d should carry exactly one annotation (uncompressed size)", i)
+		assert.Equal(t,
+			strconv.FormatInt(layers[i].UncompressedSize, 10),
+			l.Annotations[AnnotationV1WeightSizeUncomp],
+			"layer %d uncompressed size annotation", i)
 	}
 }
 

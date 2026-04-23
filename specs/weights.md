@@ -220,7 +220,15 @@ Annotations use the `run.cog.*` namespace (reverse-domain of cog.run).
 
 All manifest-level annotations are deterministic from the weight content and cog.yaml config. No timestamps, source URIs, or producer metadata are included -- identical inputs always produce an identical manifest digest.
 
-Layers carry no annotations. All file-level metadata (paths, sizes, layer mappings) is in the config blob (§2.3). Consumers process layers according to their media type.
+**Layer descriptor annotations:**
+
+| Key | Value | Description |
+|-----|-------|-------------|
+| `run.cog.weight.size.uncompressed` | integer string | Uncompressed size of the layer's contents in bytes (sum of regular-file bytes, excluding tar headers). REQUIRED. |
+
+This is the only annotation layer descriptors carry. All file-level metadata (paths, per-file sizes, layer mappings) lives in the config blob (§2.3); consumers that need it MUST read the config blob.
+
+The uncompressed size is present at the descriptor level so consumers can make per-layer decisions (disk allocation, parallel extraction progress, partial pulls) without fetching the config blob. For compressed layers (`tar+gzip`) the descriptor's `size` is the compressed byte count; this annotation carries the uncompressed count. For uncompressed layers (`tar`) the two are approximately equal (modulo tar headers).
 
 ### 2.6 OCI index (bundle)
 
