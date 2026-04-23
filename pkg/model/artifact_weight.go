@@ -47,15 +47,15 @@ type WeightArtifact struct {
 	// Layers are the packed tar layers on disk. The pusher reads from
 	// these to upload blobs; their metadata (digest, size, mediaType)
 	// matches Entry.Layers.
-	Layers []PackedLayer
+	Layers []packedLayer
 }
 
-// BuildWeightArtifact builds a WeightArtifact from a lockfile entry and
+// buildWeightArtifact builds a WeightArtifact from a lockfile entry and
 // packed layers. It assembles the manifest, computes the manifest
 // descriptor, and backfills entry.Digest — the full ceremony that every
 // call site previously did by hand.
-func BuildWeightArtifact(entry *WeightLockEntry, layers []PackedLayer) (*WeightArtifact, error) {
-	img, err := BuildWeightManifestV1(*entry, layers)
+func buildWeightArtifact(entry *WeightLockEntry, layers []packedLayer) (*WeightArtifact, error) {
+	img, err := buildWeightManifestV1(*entry, layers)
 	if err != nil {
 		return nil, fmt.Errorf("build weight manifest: %w", err)
 	}
@@ -72,10 +72,10 @@ func BuildWeightArtifact(entry *WeightLockEntry, layers []PackedLayer) (*WeightA
 	}, nil
 }
 
-// NewWeightArtifact creates a WeightArtifact with a pre-built manifest.
-// Prefer BuildWeightArtifact for production use; this is for tests that
+// newWeightArtifact creates a WeightArtifact with a pre-built manifest.
+// Prefer buildWeightArtifact for production use; this is for tests that
 // need a minimal artifact without a real manifest.
-func NewWeightArtifact(entry WeightLockEntry, desc v1.Descriptor, layers []PackedLayer) *WeightArtifact {
+func newWeightArtifact(entry WeightLockEntry, desc v1.Descriptor, layers []packedLayer) *WeightArtifact {
 	return &WeightArtifact{
 		descriptor: desc,
 		Entry:      entry,
@@ -89,7 +89,7 @@ func (a *WeightArtifact) Descriptor() v1.Descriptor { return a.descriptor }
 
 // Manifest returns the cached OCI manifest image built during
 // construction. Returns nil if the artifact was created via
-// NewWeightArtifact without a pre-built manifest.
+// newWeightArtifact without a pre-built manifest.
 func (a *WeightArtifact) Manifest() v1.Image { return a.manifest }
 
 // TotalSize returns the sum of all layer blob sizes (bytes over the wire).

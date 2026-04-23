@@ -68,16 +68,16 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 	require.NoError(t, err, "source")
 	inv, err := src.Inventory(ctx)
 	require.NoError(t, err, "inventory")
-	pr, err := NewPacker(&PackOptions{
+	pr, err := newPacker(&packOptions{
 		BundleFileMax: 1024,
 		TempDir:       packDir,
-	}).Pack(ctx, src, inv)
+	}).pack(ctx, src, inv)
 	require.NoError(t, err, "pack")
 	require.Len(t, pr.Layers, 3, "want 1 bundle + 2 single-file layers")
 
 	// Build a lock entry and artifact (manifest + descriptor + digest backfill).
-	entry := NewWeightLockEntry("my-model", "/src/weights", WeightLockSource{}, pr.Files, pr.Layers)
-	artifact, err := BuildWeightArtifact(&entry, pr.Layers)
+	entry := newWeightLockEntry("my-model", "/src/weights", WeightLockSource{}, pr.Files, pr.Layers)
+	artifact, err := buildWeightArtifact(&entry, pr.Layers)
 	require.NoError(t, err)
 	setDigest := entry.SetDigest
 
@@ -140,9 +140,9 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 	require.NotNil(t, nemoLayer)
 
 	// .safetensors stays uncompressed per spec §1.2; .nemo gets gzipped.
-	assert.Equal(t, MediaTypeOCILayerTar, string(safetensorsLayer.MediaType),
+	assert.Equal(t, mediaTypeOCILayerTar, string(safetensorsLayer.MediaType),
 		"model.safetensors should be uncompressed tar")
-	assert.Equal(t, MediaTypeOCILayerTarGzip, string(nemoLayer.MediaType),
+	assert.Equal(t, mediaTypeOCILayerTarGzip, string(nemoLayer.MediaType),
 		"model.nemo should be gzipped")
 
 	// Pull each layer, extract it, and assert the extracted tree
@@ -244,7 +244,7 @@ func openLayerStream(t *testing.T, blobRef, mediaType string) io.ReadCloser {
 	raw, err := layer.Compressed()
 	require.NoError(t, err)
 
-	if mediaType == MediaTypeOCILayerTarGzip {
+	if mediaType == mediaTypeOCILayerTarGzip {
 		gr, err := gzip.NewReader(raw)
 		require.NoError(t, err)
 		return &gzipReadCloser{Reader: gr, underlying: raw}

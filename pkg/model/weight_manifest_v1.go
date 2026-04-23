@@ -33,7 +33,7 @@ const (
 // MediaTypeWeightConfig is the config blob media type per spec §2.1.
 const MediaTypeWeightConfig = "application/vnd.cog.weight.config.v1+json"
 
-// BuildWeightManifestV1 assembles a v1.Image representing a v1 weight manifest
+// buildWeightManifestV1 assembles a v1.Image representing a v1 weight manifest
 // from a lockfile entry and the corresponding packed tar layers. The entry
 // provides all metadata (name, target, setDigest, file index for the config
 // blob); the packed layers provide the on-disk tar paths for lazy streaming
@@ -49,10 +49,10 @@ const MediaTypeWeightConfig = "application/vnd.cog.weight.config.v1+json"
 // The returned image has:
 //   - artifactType: application/vnd.cog.weight.v1 (injected via RawManifest override)
 //   - config: real config blob (application/vnd.cog.weight.config.v1+json, §2.3)
-//   - layers: one descriptor per PackedLayer, in digest-sorted order,
+//   - layers: one descriptor per packedLayer, in digest-sorted order,
 //     preserving mediaType, digest, size
 //   - annotations: manifest-level weight annotations per spec §2.5
-func BuildWeightManifestV1(entry WeightLockEntry, layers []PackedLayer) (v1.Image, error) {
+func buildWeightManifestV1(entry WeightLockEntry, layers []packedLayer) (v1.Image, error) {
 	if entry.Name == "" {
 		return nil, fmt.Errorf("weight name is required")
 	}
@@ -71,7 +71,7 @@ func BuildWeightManifestV1(entry WeightLockEntry, layers []PackedLayer) (v1.Imag
 
 	// Build config blob from the entry's file index. The lockfile is
 	// already a superset of the config blob shape (§2.3).
-	configBlob, err := BuildWeightConfigBlob(entry.Name, entry.Target, entry.SetDigest, entry.Files)
+	configBlob, err := buildWeightConfigBlob(entry.Name, entry.Target, entry.SetDigest, entry.Files)
 	if err != nil {
 		return nil, fmt.Errorf("build config blob: %w", err)
 	}
@@ -80,7 +80,7 @@ func BuildWeightManifestV1(entry WeightLockEntry, layers []PackedLayer) (v1.Imag
 	// side effect and the manifest layer order is a pure function of
 	// input content.
 	sorted := slices.Clone(layers)
-	slices.SortFunc(sorted, func(a, b PackedLayer) int {
+	slices.SortFunc(sorted, func(a, b packedLayer) int {
 		return strings.Compare(a.Digest.String(), b.Digest.String())
 	})
 
@@ -269,7 +269,7 @@ type fileLayer struct {
 	mediaType types.MediaType
 }
 
-func newFileLayer(lr PackedLayer) *fileLayer {
+func newFileLayer(lr packedLayer) *fileLayer {
 	return &fileLayer{
 		path:      lr.TarPath,
 		digest:    lr.Digest,
@@ -291,7 +291,7 @@ func (l *fileLayer) DiffID() (v1.Hash, error) { return l.digest, nil }
 // Compressed returns the file bytes. These are already in their on-wire form,
 // so no compression step is applied.
 func (l *fileLayer) Compressed() (io.ReadCloser, error) {
-	f, err := os.Open(l.path) //nolint:gosec // path is from PackedLayer.TarPath, produced by packer
+	f, err := os.Open(l.path) //nolint:gosec // path is from packedLayer.TarPath, produced by packer
 	if err != nil {
 		return nil, fmt.Errorf("open layer file %s: %w", l.path, err)
 	}

@@ -124,10 +124,10 @@ func TestModel_GetImageArtifact(t *testing.T) {
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc123"}, Size: 1024},
 		"r8.im/user/model@sha256:abc123",
 	)
-	weightArtifact := NewWeightArtifact(
+	weightArtifact := newWeightArtifact(
 		WeightLockEntry{Name: "weights", Target: "/src/weights"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "def456"}, Size: 4096},
-		[]PackedLayer{{TarPath: "/tmp/l.tar.gz", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: MediaTypeOCILayerTarGzip}},
+		[]packedLayer{{TarPath: "/tmp/l.tar.gz", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTarGzip}},
 	)
 
 	tests := []struct {
@@ -176,15 +176,15 @@ func TestModel_WeightArtifacts(t *testing.T) {
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc123"}, Size: 1024},
 		"r8.im/user/model@sha256:abc123",
 	)
-	w1 := NewWeightArtifact(
+	w1 := newWeightArtifact(
 		WeightLockEntry{Name: "llama", Target: "/src/weights/llama"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w1"}, Size: 4096},
-		[]PackedLayer{{TarPath: "/tmp/l1.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: MediaTypeOCILayerTar}},
+		[]packedLayer{{TarPath: "/tmp/l1.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
-	w2 := NewWeightArtifact(
+	w2 := newWeightArtifact(
 		WeightLockEntry{Name: "embeddings", Target: "/src/weights/embed"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w2"}, Size: 2048},
-		[]PackedLayer{{TarPath: "/tmp/l2.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "bbb"}, Size: 100, MediaType: MediaTypeOCILayerTar}},
+		[]packedLayer{{TarPath: "/tmp/l2.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "bbb"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
 
 	tests := []struct {
@@ -211,10 +211,10 @@ func TestModel_ArtifactsByType(t *testing.T) {
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc123"}, Size: 1024},
 		"r8.im/user/model@sha256:abc123",
 	)
-	w1 := NewWeightArtifact(
+	w1 := newWeightArtifact(
 		WeightLockEntry{Name: "llama", Target: "/src/weights/llama"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w1"}, Size: 4096},
-		[]PackedLayer{{TarPath: "/tmp/l.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: MediaTypeOCILayerTar}},
+		[]packedLayer{{TarPath: "/tmp/l.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
 
 	m := &Model{Artifacts: []Artifact{imgArtifact, w1}}

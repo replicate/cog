@@ -56,14 +56,14 @@ func TestNewFileSource_Absolute(t *testing.T) {
 	uri := "file://" + dir
 	src, err := NewFileSource(uri, "/unused")
 	require.NoError(t, err)
-	assert.Equal(t, dir, src.Dir())
+	assert.Equal(t, dir, src.sourceDir())
 }
 
 func TestNewFileSource_BareAbsolutePath(t *testing.T) {
 	dir := t.TempDir()
 	src, err := NewFileSource(dir, "")
 	require.NoError(t, err)
-	assert.Equal(t, dir, src.Dir())
+	assert.Equal(t, dir, src.sourceDir())
 }
 
 func TestNewFileSource_Relative(t *testing.T) {
@@ -73,7 +73,7 @@ func TestNewFileSource_Relative(t *testing.T) {
 
 	src, err := NewFileSource("file://./weights", projectDir)
 	require.NoError(t, err)
-	assert.Equal(t, weightsDir, src.Dir())
+	assert.Equal(t, weightsDir, src.sourceDir())
 }
 
 func TestNewFileSource_BareRelative(t *testing.T) {
@@ -83,7 +83,7 @@ func TestNewFileSource_BareRelative(t *testing.T) {
 
 	src, err := NewFileSource("weights", projectDir)
 	require.NoError(t, err)
-	assert.Equal(t, weightsDir, src.Dir())
+	assert.Equal(t, weightsDir, src.sourceDir())
 }
 
 func TestNewFileSource_ErrorCases(t *testing.T) {
@@ -170,7 +170,7 @@ func TestFileSource_Inventory(t *testing.T) {
 	assert.Equal(t, int64(5), inv.Files[1].Size)
 
 	assert.Equal(t, "sha256", inv.Fingerprint.Scheme())
-	assert.Len(t, inv.Fingerprint.Value(), 64, "sha256 hex is 64 chars")
+	assert.Len(t, inv.Fingerprint.value(), 64, "sha256 hex is 64 chars")
 }
 
 func TestFileSource_Inventory_Stable(t *testing.T) {

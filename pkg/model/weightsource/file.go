@@ -52,10 +52,10 @@ func NewFileSource(uri, projectDir string) (*FileSource, error) {
 	return &FileSource{dir: path}, nil
 }
 
-// Dir returns the resolved absolute path of the source directory. Exposed
-// primarily for tests and diagnostics; the import pipeline should use
-// Inventory + Open rather than reaching for the on-disk path.
-func (s *FileSource) Dir() string { return s.dir }
+// sourceDir returns the resolved absolute path of the source directory.
+// Exposed primarily for tests and diagnostics; the import pipeline should
+// use Inventory + Open rather than reaching for the on-disk path.
+func (s *FileSource) sourceDir() string { return s.dir }
 
 // Inventory walks the source directory and returns per-file path / size /
 // content digest plus the source fingerprint (sha256 of the sorted file

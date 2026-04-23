@@ -11,7 +11,6 @@
 package weightsource
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -44,9 +43,9 @@ func (f Fingerprint) Scheme() string {
 	return scheme
 }
 
-// Value returns the fingerprint's opaque value (the part after the first
+// value returns the fingerprint's opaque value (the part after the first
 // colon). Returns "" if the fingerprint is malformed.
-func (f Fingerprint) Value() string {
+func (f Fingerprint) value() string {
 	_, value, ok := strings.Cut(string(f), ":")
 	if !ok {
 		return ""
@@ -57,27 +56,7 @@ func (f Fingerprint) Value() string {
 // String returns the fingerprint in its canonical "<scheme>:<value>" form.
 func (f Fingerprint) String() string { return string(f) }
 
-// IsZero reports whether f is the zero value (empty string). Use this to
+// isZero reports whether f is the zero value (empty string). Use this to
 // distinguish "no fingerprint" from a real fingerprint whose scheme or
 // value happens to be empty.
-func (f Fingerprint) IsZero() bool { return f == "" }
-
-// ParseFingerprint validates a fingerprint string and returns it as a
-// Fingerprint. It rejects empty strings, values missing the scheme
-// separator, and scheme-only strings with no value.
-func ParseFingerprint(s string) (Fingerprint, error) {
-	if s == "" {
-		return "", fmt.Errorf("fingerprint is empty")
-	}
-	scheme, value, ok := strings.Cut(s, ":")
-	if !ok {
-		return "", fmt.Errorf("fingerprint %q missing scheme separator (want <scheme>:<value>)", s)
-	}
-	if scheme == "" {
-		return "", fmt.Errorf("fingerprint %q has empty scheme", s)
-	}
-	if value == "" {
-		return "", fmt.Errorf("fingerprint %q has empty value", s)
-	}
-	return Fingerprint(s), nil
-}
+func (f Fingerprint) isZero() bool { return f == "" }

@@ -14,7 +14,7 @@ import (
 // WeightsLockFilename is the default filename for the weights lock file.
 const WeightsLockFilename = "weights.lock"
 
-// WeightsLockVersion is the current lockfile schema version.
+// weightsLockVersion is the current lockfile schema version.
 //
 // The lockfile is Cog's source-of-truth for imported weights: it captures
 // the source (URI + fingerprint + include/exclude), the resulting content
@@ -24,7 +24,7 @@ const WeightsLockFilename = "weights.lock"
 //
 // Version is an integer; monotonic bumps (1 → 2) signal schema changes.
 // Pre-release "v1" string versions have no migration path.
-const WeightsLockVersion = 1
+const weightsLockVersion = 1
 
 // WeightsLock is the parsed representation of a weights.lock file.
 //
@@ -34,7 +34,7 @@ const WeightsLockVersion = 1
 // Regenerating the lockfile from the same source produces byte-identical
 // output, which is what makes weights.lock safe to check into git.
 type WeightsLock struct {
-	// Version is the lockfile format version. Always WeightsLockVersion.
+	// Version is the lockfile format version. Always weightsLockVersion.
 	Version int `json:"version"`
 	// Weights is one entry per declared weight.
 	Weights []WeightLockEntry `json:"weights"`
@@ -154,9 +154,9 @@ func ParseWeightsLock(data []byte) (*WeightsLock, error) {
 	if err := json.Unmarshal(data, &lock); err != nil {
 		return nil, fmt.Errorf("parse weights.lock: %w", err)
 	}
-	if lock.Version != WeightsLockVersion {
+	if lock.Version != weightsLockVersion {
 		return nil, fmt.Errorf("unsupported weights.lock version %d (want %d)",
-			lock.Version, WeightsLockVersion)
+			lock.Version, weightsLockVersion)
 	}
 	return &lock, nil
 }
@@ -193,7 +193,7 @@ func (wl *WeightsLock) Save(path string) error {
 // safe because the sort order is the canonical order.
 func (wl *WeightsLock) Marshal() ([]byte, error) {
 	if wl.Version == 0 {
-		wl.Version = WeightsLockVersion
+		wl.Version = weightsLockVersion
 	}
 	for i := range wl.Weights {
 		canonicalizeEntry(&wl.Weights[i])

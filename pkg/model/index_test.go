@@ -27,7 +27,7 @@ func TestModel_IsBundle(t *testing.T) {
 		m := &Model{
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact(WeightLockEntry{Name: "w1", Target: "/src/weights/w1"}, v1.Descriptor{}, nil),
+				newWeightArtifact(WeightLockEntry{Name: "w1", Target: "/src/weights/w1"}, v1.Descriptor{}, nil),
 			},
 		}
 		require.True(t, m.IsBundle())

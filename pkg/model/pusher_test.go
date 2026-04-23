@@ -31,11 +31,11 @@ func bundleWeightFixture(t *testing.T, name, target string) *WeightArtifact {
 	require.NoError(t, err)
 	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	pr, err := NewPacker(&PackOptions{TempDir: cacheDir}).Pack(t.Context(), src, inv)
+	pr, err := newPacker(&packOptions{TempDir: cacheDir}).pack(t.Context(), src, inv)
 	require.NoError(t, err)
 
-	entry := NewWeightLockEntry(name, target, WeightLockSource{}, pr.Files, pr.Layers)
-	artifact, err := BuildWeightArtifact(&entry, pr.Layers)
+	entry := newWeightLockEntry(name, target, WeightLockSource{}, pr.Files, pr.Layers)
+	artifact, err := buildWeightArtifact(&entry, pr.Layers)
 	require.NoError(t, err)
 	return artifact
 }

@@ -22,14 +22,14 @@ import (
 
 // Default packing thresholds per spec §1.2.
 const (
-	DefaultBundleFileMax = 64 * 1024 * 1024  // 64 MB
-	DefaultBundleSizeMax = 256 * 1024 * 1024 // 256 MB
+	defaultBundleFileMax = 64 * 1024 * 1024  // 64 MB
+	defaultBundleSizeMax = 256 * 1024 * 1024 // 256 MB
 )
 
 // OCI layer media types per spec §2.1.
 const (
-	MediaTypeOCILayerTar     = "application/vnd.oci.image.layer.v1.tar"
-	MediaTypeOCILayerTarGzip = "application/vnd.oci.image.layer.v1.tar+gzip"
+	mediaTypeOCILayerTar     = "application/vnd.oci.image.layer.v1.tar"
+	mediaTypeOCILayerTarGzip = "application/vnd.oci.image.layer.v1.tar+gzip"
 )
 
 // incompressibleExts lists extensions for dense binary formats that don't
@@ -44,36 +44,36 @@ var incompressibleExts = map[string]bool{
 	".pth":         true,
 }
 
-// PackOptions configures the packing algorithm.
-type PackOptions struct {
+// packOptions configures the packing algorithm.
+type packOptions struct {
 	// BundleFileMax is the size threshold separating small from large files.
 	// Files below this are bundled; files at or above get their own layer.
-	// Defaults to DefaultBundleFileMax (64 MB).
+	// Defaults to defaultBundleFileMax (64 MB).
 	BundleFileMax int64
 
 	// BundleSizeMax is the maximum cumulative size of a single bundle tar.
-	// Defaults to DefaultBundleSizeMax (256 MB).
+	// Defaults to defaultBundleSizeMax (256 MB).
 	BundleSizeMax int64
 
 	// TempDir is the directory for writing tar files. Defaults to os.TempDir().
 	TempDir string
 }
 
-func (o PackOptions) bundleFileMax() int64 {
+func (o packOptions) bundleFileMax() int64 {
 	if o.BundleFileMax > 0 {
 		return o.BundleFileMax
 	}
-	return DefaultBundleFileMax
+	return defaultBundleFileMax
 }
 
-func (o PackOptions) bundleSizeMax() int64 {
+func (o packOptions) bundleSizeMax() int64 {
 	if o.BundleSizeMax > 0 {
 		return o.BundleSizeMax
 	}
-	return DefaultBundleSizeMax
+	return defaultBundleSizeMax
 }
 
-func (o PackOptions) tempDir() string {
+func (o packOptions) tempDir() string {
 	if o.TempDir != "" {
 		return o.TempDir
 	}
@@ -82,13 +82,13 @@ func (o PackOptions) tempDir() string {
 
 // isGzip reports whether a layer media type is a gzip-compressed tar.
 func isGzip(mt types.MediaType) bool {
-	return mt == MediaTypeOCILayerTarGzip
+	return mt == mediaTypeOCILayerTarGzip
 }
 
-// PackedLayer describes a packed tar layer on disk, ready for OCI
+// packedLayer describes a packed tar layer on disk, ready for OCI
 // manifest construction. Per spec §2.5 layer descriptors carry no
-// annotations; file→layer mapping lives on PackedFile.
-type PackedLayer struct {
+// annotations; file→layer mapping lives on packedFile.
+type packedLayer struct {
 	// TarPath is the path to the tar file on disk.
 	TarPath string
 	// Digest is the SHA256 digest of the tar file (the OCI blob digest).
@@ -101,18 +101,18 @@ type PackedLayer struct {
 	MediaType types.MediaType
 }
 
-// PackResult is the output of Packer.Execute: tar layers and per-file
+// packResult is the output of packer.execute: tar layers and per-file
 // content digests.
-type PackResult struct {
+type packResult struct {
 	// Layers are the packed tar layers on disk.
-	Layers []PackedLayer
+	Layers []packedLayer
 	// Files are per-file content digests, sorted by path.
-	Files []PackedFile
+	Files []packedFile
 }
 
-// PackedFile records a file's path, size, content digest, and which layer it
+// packedFile records a file's path, size, content digest, and which layer it
 // landed in. Used to build the config blob (§2.3) and set digest (§2.4).
-type PackedFile struct {
+type packedFile struct {
 	// Path is the file path relative to the weight target directory.
 	Path string
 	// Size is the uncompressed file size in bytes.
@@ -125,18 +125,18 @@ type PackedFile struct {
 	LayerDigest string
 }
 
-// Plan describes the target layer layout for an inventory. It is a pure
+// plan describes the target layer layout for an inventory. It is a pure
 // function of the inventory plus packing thresholds, so layer-assignment
 // logic can be inspected and cache-probed without writing tar bytes.
-type Plan struct {
+type plan struct {
 	// Layers is the ordered set of layers to build. Order is
 	// deterministic: bundles first (sorted small files), then large
 	// files in inventory order.
-	Layers []LayerPlan
+	Layers []layerPlan
 }
 
-// LayerPlan describes a single planned layer.
-type LayerPlan struct {
+// layerPlan describes a single planned layer.
+type layerPlan struct {
 	// Files are the inventory entries packed into this layer, in the
 	// order they will appear in the tar stream. Small-file bundles
 	// sort by Path; large-file layers contain a single entry.
@@ -146,36 +146,36 @@ type LayerPlan struct {
 	MediaType types.MediaType
 }
 
-// Packer builds tar layers from a weight source inventory.
+// packer builds tar layers from a weight source inventory.
 //
-// Packer separates planning (pure, Plan method) from execution (I/O,
-// Execute method). Callers that want the full build just call Pack;
+// packer separates planning (pure, plan method) from execution (I/O,
+// execute method). Callers that want the full build just call pack;
 // callers that want to inspect or cache-probe the layer layout call
-// Plan first, then Execute with the same plan.
-type Packer struct {
-	opts PackOptions
+// plan first, then execute with the same plan.
+type packer struct {
+	opts packOptions
 }
 
-// NewPacker constructs a Packer. A nil opts yields spec-default
+// newPacker constructs a packer. A nil opts yields spec-default
 // thresholds and a temp dir rooted at os.TempDir().
-func NewPacker(opts *PackOptions) *Packer {
-	var o PackOptions
+func newPacker(opts *packOptions) *packer {
+	var o packOptions
 	if opts != nil {
 		o = *opts
 	}
-	return &Packer{opts: o}
+	return &packer{opts: o}
 }
 
-// Plan computes the target layer layout for inv. It performs no I/O
-// and does not read source bytes. The returned Plan is deterministic
+// planLayers computes the target layer layout for inv. It performs no I/O
+// and does not read source bytes. The returned plan is deterministic
 // for a given (inv, opts) pair.
 //
-// An empty inventory yields an empty Plan. Execute rejects empty
-// plans; Plan itself does not, so callers can reason about the empty
-// case without invoking Execute.
-func (p *Packer) Plan(inv weightsource.Inventory) Plan {
+// An empty inventory yields an empty plan. execute rejects empty
+// plans; planLayers itself does not, so callers can reason about the empty
+// case without invoking execute.
+func (p *packer) planLayers(inv weightsource.Inventory) plan {
 	if len(inv.Files) == 0 {
-		return Plan{}
+		return plan{}
 	}
 
 	threshold := p.opts.bundleFileMax()
@@ -195,7 +195,7 @@ func (p *Packer) Plan(inv weightsource.Inventory) Plan {
 		return smallFiles[i].Path < smallFiles[j].Path
 	})
 
-	var layers []LayerPlan
+	var layers []layerPlan
 
 	// Bundle small files, flushing whenever adding the next would
 	// exceed bundleMax. A lone small file larger than bundleMax still
@@ -206,9 +206,9 @@ func (p *Packer) Plan(inv weightsource.Inventory) Plan {
 		if len(current) == 0 {
 			return
 		}
-		layers = append(layers, LayerPlan{
+		layers = append(layers, layerPlan{
 			Files:     current,
-			MediaType: MediaTypeOCILayerTarGzip,
+			MediaType: mediaTypeOCILayerTarGzip,
 		})
 		current = nil
 		currentSize = 0
@@ -225,37 +225,37 @@ func (p *Packer) Plan(inv weightsource.Inventory) Plan {
 	// Large files: one layer each, compressed unless the extension
 	// marks the content as incompressible.
 	for _, f := range largeFiles {
-		mt := types.MediaType(MediaTypeOCILayerTarGzip)
+		mt := types.MediaType(mediaTypeOCILayerTarGzip)
 		if incompressibleExts[strings.ToLower(filepath.Ext(f.Path))] {
-			mt = MediaTypeOCILayerTar
+			mt = mediaTypeOCILayerTar
 		}
-		layers = append(layers, LayerPlan{
+		layers = append(layers, layerPlan{
 			Files:     []weightsource.InventoryFile{f},
 			MediaType: mt,
 		})
 	}
 
-	return Plan{Layers: layers}
+	return plan{Layers: layers}
 }
 
-// Execute builds the tar blobs described by plan, streaming file bytes
+// execute builds the tar blobs described by plan, streaming file bytes
 // from src. It writes one tar file per plan layer into p.opts.TempDir
-// (or os.TempDir() if unset) and returns a PackResult with per-layer and
+// (or os.TempDir() if unset) and returns a packResult with per-layer and
 // per-file metadata.
 //
 // The packer trusts the inventory digests carried on plan.Layers[i].Files;
 // it does not rehash file bytes while writing. Remote sources that already
 // know their digests avoid a second pass.
 //
-// On error Execute removes any tar files it already wrote. Successful
-// layers are owned by the caller, who must delete PackedLayer.TarPath.
-func (p *Packer) Execute(ctx context.Context, src weightsource.Source, plan Plan) (pr *PackResult, retErr error) {
-	if len(plan.Layers) == 0 {
+// On error execute removes any tar files it already wrote. Successful
+// layers are owned by the caller, who must delete packedLayer.TarPath.
+func (p *packer) execute(ctx context.Context, src weightsource.Source, pl plan) (pr *packResult, retErr error) {
+	if len(pl.Layers) == 0 {
 		return nil, fmt.Errorf("no layers in plan")
 	}
 
-	results := make([]PackedLayer, 0, len(plan.Layers))
-	var packed []PackedFile
+	results := make([]packedLayer, 0, len(pl.Layers))
+	var packed []packedFile
 
 	defer func() {
 		if retErr != nil {
@@ -263,7 +263,7 @@ func (p *Packer) Execute(ctx context.Context, src weightsource.Source, plan Plan
 		}
 	}()
 
-	for _, lp := range plan.Layers {
+	for _, lp := range pl.Layers {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -273,7 +273,7 @@ func (p *Packer) Execute(ctx context.Context, src weightsource.Source, plan Plan
 		}
 		layerDigest := lr.Digest.String()
 		for _, f := range lp.Files {
-			packed = append(packed, PackedFile{
+			packed = append(packed, packedFile{
 				Path:        f.Path,
 				Size:        f.Size,
 				Digest:      f.Digest,
@@ -284,22 +284,22 @@ func (p *Packer) Execute(ctx context.Context, src weightsource.Source, plan Plan
 	}
 
 	sort.Slice(packed, func(i, j int) bool { return packed[i].Path < packed[j].Path })
-	return &PackResult{Layers: results, Files: packed}, nil
+	return &packResult{Layers: results, Files: packed}, nil
 }
 
-// Pack plans and executes in one call.
-func (p *Packer) Pack(ctx context.Context, src weightsource.Source, inv weightsource.Inventory) (*PackResult, error) {
-	plan := p.Plan(inv)
-	if len(plan.Layers) == 0 {
+// pack plans and executes in one call.
+func (p *packer) pack(ctx context.Context, src weightsource.Source, inv weightsource.Inventory) (*packResult, error) {
+	pl := p.planLayers(inv)
+	if len(pl.Layers) == 0 {
 		// Distinguish "empty inventory" from "Execute on zero layers"
 		// so the error reads naturally at this call site.
 		return nil, fmt.Errorf("no files in inventory")
 	}
-	return p.Execute(ctx, src, plan)
+	return p.execute(ctx, src, pl)
 }
 
 // buildLayer writes a single planned layer to disk.
-func (p *Packer) buildLayer(ctx context.Context, src weightsource.Source, lp LayerPlan) (result PackedLayer, retErr error) {
+func (p *packer) buildLayer(ctx context.Context, src weightsource.Source, lp layerPlan) (result packedLayer, retErr error) {
 	gzipped := isGzip(lp.MediaType)
 
 	// Tmpfile prefix distinguishes bundles (many files) from single-file
@@ -315,7 +315,7 @@ func (p *Packer) buildLayer(ctx context.Context, src weightsource.Source, lp Lay
 
 	tmpFile, err := os.CreateTemp(p.opts.tempDir(), pattern)
 	if err != nil {
-		return PackedLayer{}, fmt.Errorf("create temp file: %w", err)
+		return packedLayer{}, fmt.Errorf("create temp file: %w", err)
 	}
 	tarPath := tmpFile.Name()
 	defer func() {
@@ -343,26 +343,26 @@ func (p *Packer) buildLayer(ctx context.Context, src weightsource.Source, lp Lay
 		}
 		gzw, err = gzip.NewWriterLevel(counter, level)
 		if err != nil {
-			return PackedLayer{}, fmt.Errorf("create gzip writer: %w", err)
+			return packedLayer{}, fmt.Errorf("create gzip writer: %w", err)
 		}
 		tarSink = gzw
 	}
 
 	tw := tar.NewWriter(tarSink)
 	if err := writeLayer(ctx, src, tw, lp.Files); err != nil {
-		return PackedLayer{}, err
+		return packedLayer{}, err
 	}
 
 	if err := tw.Close(); err != nil {
-		return PackedLayer{}, fmt.Errorf("close tar writer: %w", err)
+		return packedLayer{}, fmt.Errorf("close tar writer: %w", err)
 	}
 	if gzw != nil {
 		if err := gzw.Close(); err != nil {
-			return PackedLayer{}, fmt.Errorf("close gzip writer: %w", err)
+			return packedLayer{}, fmt.Errorf("close gzip writer: %w", err)
 		}
 	}
 	if err := tmpFile.Close(); err != nil {
-		return PackedLayer{}, fmt.Errorf("close temp file: %w", err)
+		return packedLayer{}, fmt.Errorf("close temp file: %w", err)
 	}
 
 	var uncompressed int64
@@ -370,7 +370,7 @@ func (p *Packer) buildLayer(ctx context.Context, src weightsource.Source, lp Lay
 		uncompressed += f.Size
 	}
 
-	return PackedLayer{
+	return packedLayer{
 		TarPath:          tarPath,
 		Digest:           v1.Hash{Algorithm: "sha256", Hex: hex.EncodeToString(hasher.Sum(nil))},
 		Size:             counter.n,
@@ -401,7 +401,7 @@ func writeLayer(ctx context.Context, src weightsource.Source, tw *tar.Writer, fi
 }
 
 // cleanupPackedLayers removes tar files from completed results. Best-effort; errors are ignored.
-func cleanupPackedLayers(results []PackedLayer) {
+func cleanupPackedLayers(results []packedLayer) {
 	for _, r := range results {
 		if r.TarPath != "" {
 			os.Remove(r.TarPath) //nolint:errcheck,gosec // best-effort cleanup

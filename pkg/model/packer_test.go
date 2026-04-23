@@ -22,7 +22,7 @@ import (
 // packTestDir is a convenience test helper that wires a local directory
 // through the new Source/Inventory API and calls Pack. It hides the
 // boilerplate so test bodies can focus on Pack's behavior.
-func packTestDir(t *testing.T, dir string, opts *PackOptions) (*PackResult, error) {
+func packTestDir(t *testing.T, dir string, opts *packOptions) (*packResult, error) {
 	t.Helper()
 	return packTestDirCtx(t, t.Context(), dir, opts)
 }
@@ -30,7 +30,7 @@ func packTestDir(t *testing.T, dir string, opts *PackOptions) (*PackResult, erro
 // packTestDirCtx is the ctx-accepting variant of packTestDir for tests
 // that need a context independent of the test lifetime (typically for
 // cancellation tests).
-func packTestDirCtx(t *testing.T, ctx context.Context, dir string, opts *PackOptions) (*PackResult, error) {
+func packTestDirCtx(t *testing.T, ctx context.Context, dir string, opts *packOptions) (*packResult, error) {
 	t.Helper()
 	src, err := weightsource.NewFileSource("file://"+dir, "")
 	if err != nil {
@@ -40,7 +40,7 @@ func packTestDirCtx(t *testing.T, ctx context.Context, dir string, opts *PackOpt
 	if err != nil {
 		return nil, err
 	}
-	return NewPacker(opts).Pack(ctx, src, inv)
+	return newPacker(opts).pack(ctx, src, inv)
 }
 
 // createTestFile creates a file at the given path (relative to dir) with the given size.
@@ -57,10 +57,10 @@ func createTestFile(t *testing.T, dir, relPath string, size int64) {
 }
 
 // filesInLayer returns the relative paths packed into the given layer,
-// derived from a PackResult. The packer no longer tags layers with
+// derived from a packResult. The packer no longer tags layers with
 // content-type annotations — the file→layer mapping lives on the
-// PackedFile slice instead.
-func filesInLayer(pr *PackResult, layerDigest string) []string {
+// packedFile slice instead.
+func filesInLayer(pr *packResult, layerDigest string) []string {
 	var out []string
 	for _, f := range pr.Files {
 		if f.LayerDigest == layerDigest {
@@ -74,7 +74,7 @@ func filesInLayer(pr *PackResult, layerDigest string) []string {
 // isBundleLayer reports whether a layer carries more than one file —
 // i.e. it is a "bundle" rather than a single-file layer. This replaces
 // the old run.cog.weight.content annotation check.
-func isBundleLayer(pr *PackResult, layerDigest string) bool {
+func isBundleLayer(pr *packResult, layerDigest string) bool {
 	return len(filesInLayer(pr, layerDigest)) > 1
 }
 
@@ -93,7 +93,7 @@ func TestPack_SingleSmallFile(t *testing.T) {
 	require.Len(t, results.Layers, 1)
 
 	r := results.Layers[0]
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), r.MediaType)
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), r.MediaType)
 	assert.True(t, r.Size > 0)
 	assert.Equal(t, int64(100), r.UncompressedSize)
 	assert.NotEmpty(t, r.Digest.Hex)
@@ -117,7 +117,7 @@ func TestPack_SingleLargeFile_Incompressible(t *testing.T) {
 	require.Len(t, results.Layers, 1)
 
 	r := results.Layers[0]
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), r.MediaType)
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTar), r.MediaType)
 	assert.Equal(t, []string{"model.safetensors"}, filesInLayer(results, r.Digest.String()))
 	assert.Equal(t, int64(100*1024*1024), r.UncompressedSize)
 }
@@ -131,7 +131,7 @@ func TestPack_SingleLargeFile_Compressible(t *testing.T) {
 	require.Len(t, results.Layers, 1)
 
 	r := results.Layers[0]
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), r.MediaType)
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), r.MediaType)
 	assert.Equal(t, []string{"model.dat"}, filesInLayer(results, r.Digest.String()))
 }
 
@@ -153,7 +153,7 @@ func TestPack_MixedFiles(t *testing.T) {
 
 	// First result should be the bundle (small files come first in output).
 	bundle := results.Layers[0]
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), bundle.MediaType)
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), bundle.MediaType)
 	assert.True(t, isBundleLayer(results, bundle.Digest.String()), "first layer should hold the bundled small files")
 
 	bundleEntries := readTarGzEntries(t, bundle.TarPath)
@@ -163,7 +163,7 @@ func TestPack_MixedFiles(t *testing.T) {
 	// Large files should be uncompressed tars (safetensors is incompressible)
 	// and carry exactly one file each.
 	for _, r := range results.Layers[1:] {
-		assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), r.MediaType)
+		assert.Equal(t, types.MediaType(mediaTypeOCILayerTar), r.MediaType)
 		assert.Len(t, filesInLayer(results, r.Digest.String()), 1, "single-file layer should contain exactly one file")
 	}
 }
@@ -217,7 +217,7 @@ func TestPack_BundleSizeMaxSplits(t *testing.T) {
 	createTestFile(t, dir, "b.txt", 10)
 	createTestFile(t, dir, "c.txt", 10)
 
-	opts := &PackOptions{
+	opts := &packOptions{
 		BundleFileMax: 1024, // Everything is "small".
 		BundleSizeMax: 20,   // Forces split: a+b in one bundle, c in another.
 	}
@@ -228,7 +228,7 @@ func TestPack_BundleSizeMaxSplits(t *testing.T) {
 
 	// Both should be gzipped bundles.
 	for _, r := range results.Layers {
-		assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), r.MediaType)
+		assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), r.MediaType)
 	}
 
 	// First bundle should have a.txt and b.txt.
@@ -245,7 +245,7 @@ func TestPack_CustomThresholds(t *testing.T) {
 	createTestFile(t, dir, "small.txt", 50)
 	createTestFile(t, dir, "large.bin", 200)
 
-	opts := &PackOptions{
+	opts := &packOptions{
 		BundleFileMax: 100, // 50 is small, 200 is large
 	}
 
@@ -255,11 +255,11 @@ func TestPack_CustomThresholds(t *testing.T) {
 
 	// Bundle for small file: single-entry bundle.
 	assert.Equal(t, []string{"small.txt"}, filesInLayer(results, results.Layers[0].Digest.String()))
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), results.Layers[0].MediaType)
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), results.Layers[0].MediaType)
 
 	// Individual layer for large file (.bin is in incompressible set, so uncompressed).
 	assert.Equal(t, []string{"large.bin"}, filesInLayer(results, results.Layers[1].Digest.String()))
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), results.Layers[1].MediaType)
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTar), results.Layers[1].MediaType)
 }
 
 func TestPack_SkipsDotCogDirectory(t *testing.T) {
@@ -355,16 +355,16 @@ func TestPack_IncompressibleExtensions(t *testing.T) {
 		ext       string
 		mediaType types.MediaType
 	}{
-		{".safetensors", MediaTypeOCILayerTar},
-		{".bin", MediaTypeOCILayerTar},
-		{".gguf", MediaTypeOCILayerTar},
-		{".onnx", MediaTypeOCILayerTar},
-		{".parquet", MediaTypeOCILayerTar},
-		{".pt", MediaTypeOCILayerTar},
-		{".pth", MediaTypeOCILayerTar},
-		{".dat", MediaTypeOCILayerTarGzip},    // compressible
-		{".json", MediaTypeOCILayerTarGzip},   // compressible
-		{".pickle", MediaTypeOCILayerTarGzip}, // compressible
+		{".safetensors", mediaTypeOCILayerTar},
+		{".bin", mediaTypeOCILayerTar},
+		{".gguf", mediaTypeOCILayerTar},
+		{".onnx", mediaTypeOCILayerTar},
+		{".parquet", mediaTypeOCILayerTar},
+		{".pt", mediaTypeOCILayerTar},
+		{".pth", mediaTypeOCILayerTar},
+		{".dat", mediaTypeOCILayerTarGzip},    // compressible
+		{".json", mediaTypeOCILayerTarGzip},   // compressible
+		{".pickle", mediaTypeOCILayerTarGzip}, // compressible
 	}
 
 	for _, tt := range tests {
@@ -384,12 +384,12 @@ func TestPack_FileAtExactThreshold(t *testing.T) {
 	dir := t.TempDir()
 	// File exactly at the threshold should be "large" (>= bundle_file_max)
 	// and land in its own uncompressed-tar layer (.bin is incompressible).
-	createTestFile(t, dir, "model.bin", DefaultBundleFileMax)
+	createTestFile(t, dir, "model.bin", defaultBundleFileMax)
 
 	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), results.Layers[0].MediaType,
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTar), results.Layers[0].MediaType,
 		"at-threshold large file should be a single-file uncompressed tar layer")
 	assert.Equal(t, []string{"model.bin"}, filesInLayer(results, results.Layers[0].Digest.String()))
 }
@@ -397,12 +397,12 @@ func TestPack_FileAtExactThreshold(t *testing.T) {
 func TestPack_FileJustBelowThreshold(t *testing.T) {
 	dir := t.TempDir()
 	// File just below the threshold should be bundled (tar+gzip).
-	createTestFile(t, dir, "model.bin", DefaultBundleFileMax-1)
+	createTestFile(t, dir, "model.bin", defaultBundleFileMax-1)
 
 	results, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), results.Layers[0].MediaType,
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), results.Layers[0].MediaType,
 		"below-threshold file should land in a bundle (tar+gzip)")
 	assert.Equal(t, []string{"model.bin"}, filesInLayer(results, results.Layers[0].Digest.String()))
 }
@@ -575,14 +575,14 @@ func TestPack_WorkedExample(t *testing.T) {
 
 	// First result is the bundle (all small files landed in one layer).
 	bundle := results.Layers[0]
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), bundle.MediaType)
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), bundle.MediaType)
 	assert.True(t, isBundleLayer(results, bundle.Digest.String()), "first layer should be a bundle")
 
 	// Remaining 7 are individual files, each a standalone uncompressed
 	// .safetensors layer.
 	for i := 1; i <= 7; i++ {
 		r := results.Layers[i]
-		assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), r.MediaType)
+		assert.Equal(t, types.MediaType(mediaTypeOCILayerTar), r.MediaType)
 		paths := filesInLayer(results, r.Digest.String())
 		require.Len(t, paths, 1, "layer %d should carry exactly one file", i)
 		assert.True(t, strings.HasSuffix(paths[0], ".safetensors"),
@@ -593,7 +593,7 @@ func TestPack_WorkedExample(t *testing.T) {
 	allPaths := make(map[string]int)
 	for i, r := range results.Layers {
 		var entries []string
-		if r.MediaType == MediaTypeOCILayerTarGzip {
+		if r.MediaType == mediaTypeOCILayerTarGzip {
 			entries = readTarGzEntries(t, r.TarPath)
 		} else {
 			entries = readTarEntries(t, r.TarPath)

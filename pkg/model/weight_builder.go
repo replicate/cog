@@ -21,7 +21,7 @@ const WeightsCacheDir = ".cog/weights-cache"
 
 // WeightBuilder is the weight factory: given a WeightSpec (source URI +
 // target), it resolves the source via the weightsource.Source interface,
-// packs the materialized directory into tar layers via packer.Pack,
+// packs the materialized directory into tar layers via packer.pack,
 // assembles the v1 OCI manifest, and returns a WeightArtifact carrying
 // the layer descriptors and manifest digest.
 //
@@ -45,7 +45,7 @@ func NewWeightBuilder(source *Source, lockPath string) *WeightBuilder {
 //
 // The lockfile serves as a build cache: if an entry with the same name +
 // layer set exists and every cached tar is still on disk at the expected
-// size, Pack is skipped. Any miss triggers a full repack.
+// size, pack is skipped. Any miss triggers a full repack.
 //
 // The lockfile is rewritten only when the new entry differs from the
 // existing one in either content or source metadata — a pure cache hit
@@ -99,7 +99,7 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		if err := resetCacheDir(cacheDir); err != nil {
 			return nil, err
 		}
-		pr, err := NewPacker(&PackOptions{TempDir: cacheDir}).Pack(ctx, src, inv)
+		pr, err := newPacker(&packOptions{TempDir: cacheDir}).pack(ctx, src, inv)
 		if err != nil {
 			return nil, fmt.Errorf("pack weight %q: %w", ws.Name(), err)
 		}
@@ -121,7 +121,7 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		// Build a preliminary entry so we can derive config blob and
 		// manifest from lockfile fields. The manifest digest is filled
 		// in below once we've assembled the manifest.
-		entry = NewWeightLockEntry(
+		entry = newWeightLockEntry(
 			ws.Name(), ws.Target,
 			WeightLockSource{
 				URI:         normalizedURI,
@@ -135,7 +135,7 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		)
 	}
 
-	artifact, err := BuildWeightArtifact(&entry, layers)
+	artifact, err := buildWeightArtifact(&entry, layers)
 	if err != nil {
 		cleanupPackedLayers(layers)
 		return nil, fmt.Errorf("weight %q: %w", ws.Name(), err)
@@ -200,11 +200,11 @@ func resetCacheDir(dir string) error {
 // content-addressed; a truncated file with the exact expected size would
 // also have to have a matching digest, which is effectively impossible.
 // Returns (nil, false) on any miss.
-func cachedLayers(entry *WeightLockEntry, cacheDir string) ([]PackedLayer, bool) {
+func cachedLayers(entry *WeightLockEntry, cacheDir string) ([]packedLayer, bool) {
 	if entry == nil || len(entry.Layers) == 0 {
 		return nil, false
 	}
-	results := make([]PackedLayer, 0, len(entry.Layers))
+	results := make([]packedLayer, 0, len(entry.Layers))
 	for _, l := range entry.Layers {
 		hash, err := v1.NewHash(l.Digest)
 		if err != nil {
@@ -216,7 +216,7 @@ func cachedLayers(entry *WeightLockEntry, cacheDir string) ([]PackedLayer, bool)
 		if err != nil || fi.Size() != l.Size {
 			return nil, false
 		}
-		results = append(results, PackedLayer{
+		results = append(results, packedLayer{
 			TarPath:          tarPath,
 			Digest:           hash,
 			Size:             l.Size,
@@ -235,7 +235,7 @@ func loadLockfileOrEmpty(path string) (*WeightsLock, error) {
 		return lock, nil
 	}
 	if errors.Is(err, os.ErrNotExist) {
-		return &WeightsLock{Version: WeightsLockVersion}, nil
+		return &WeightsLock{Version: weightsLockVersion}, nil
 	}
 	return nil, err
 }
@@ -249,7 +249,7 @@ func layerCachePath(cacheDir string, digest v1.Hash, mediaType types.MediaType) 
 	// `:` is not a safe path component on Windows or in tar archives.
 	safe := digestToFilename(digest)
 	ext := ".tar"
-	if mediaType == MediaTypeOCILayerTarGzip {
+	if mediaType == mediaTypeOCILayerTarGzip {
 		ext = ".tar.gz"
 	}
 	return filepath.Join(cacheDir, safe+ext)

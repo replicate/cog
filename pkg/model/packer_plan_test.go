@@ -10,46 +10,46 @@ import (
 	"github.com/replicate/cog/pkg/model/weightsource"
 )
 
-// Plan tests operate purely on Inventory — no disk, no source. They
-// exercise layer-assignment logic (classification, bundling, media-type
-// selection) that the Execute tests only observe indirectly through tar
-// output.
+// planLayers tests operate purely on Inventory — no disk, no source.
+// They exercise layer-assignment logic (classification, bundling,
+// media-type selection) that the execute tests only observe indirectly
+// through tar output.
 
 func invFile(path string, size int64) weightsource.InventoryFile {
 	return weightsource.InventoryFile{Path: path, Size: size, Digest: "sha256:deadbeef"}
 }
 
 func TestPacker_Plan_EmptyInventory(t *testing.T) {
-	plan := NewPacker(nil).Plan(weightsource.Inventory{})
+	plan := newPacker(nil).planLayers(weightsource.Inventory{})
 	assert.Empty(t, plan.Layers, "empty inventory should plan zero layers")
 }
 
 func TestPacker_Plan_SingleSmallFile(t *testing.T) {
-	plan := NewPacker(nil).Plan(weightsource.Inventory{
+	plan := newPacker(nil).planLayers(weightsource.Inventory{
 		Files: []weightsource.InventoryFile{invFile("config.json", 100)},
 	})
 	require.Len(t, plan.Layers, 1)
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), plan.Layers[0].MediaType,
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), plan.Layers[0].MediaType,
 		"small-file bundle should be gzipped")
 	require.Len(t, plan.Layers[0].Files, 1)
 	assert.Equal(t, "config.json", plan.Layers[0].Files[0].Path)
 }
 
 func TestPacker_Plan_SingleLargeFileIncompressible(t *testing.T) {
-	plan := NewPacker(nil).Plan(weightsource.Inventory{
+	plan := newPacker(nil).planLayers(weightsource.Inventory{
 		Files: []weightsource.InventoryFile{invFile("model.safetensors", 100*1024*1024)},
 	})
 	require.Len(t, plan.Layers, 1)
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), plan.Layers[0].MediaType,
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTar), plan.Layers[0].MediaType,
 		".safetensors should be uncompressed")
 }
 
 func TestPacker_Plan_SingleLargeFileCompressible(t *testing.T) {
-	plan := NewPacker(nil).Plan(weightsource.Inventory{
+	plan := newPacker(nil).planLayers(weightsource.Inventory{
 		Files: []weightsource.InventoryFile{invFile("model.dat", 100*1024*1024)},
 	})
 	require.Len(t, plan.Layers, 1)
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), plan.Layers[0].MediaType,
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), plan.Layers[0].MediaType,
 		".dat is not in the incompressible set")
 }
 
@@ -57,7 +57,7 @@ func TestPacker_Plan_MixedFilesOrdering(t *testing.T) {
 	// Small files arrive in unsorted order; the planner must sort
 	// them within the bundle for deterministic output. Large files
 	// follow in the order they appear in the inventory.
-	plan := NewPacker(nil).Plan(weightsource.Inventory{
+	plan := newPacker(nil).planLayers(weightsource.Inventory{
 		Files: []weightsource.InventoryFile{
 			invFile("z-small.json", 100),
 			invFile("large-01.safetensors", 100*1024*1024),
@@ -81,10 +81,10 @@ func TestPacker_Plan_BundleSplitsOnSizeMax(t *testing.T) {
 	// Everything is small (under BundleFileMax=1024), but bundle
 	// size is capped at 20 bytes. Expect a+b in one bundle, c in
 	// another.
-	plan := NewPacker(&PackOptions{
+	plan := newPacker(&packOptions{
 		BundleFileMax: 1024,
 		BundleSizeMax: 20,
-	}).Plan(weightsource.Inventory{
+	}).planLayers(weightsource.Inventory{
 		Files: []weightsource.InventoryFile{
 			invFile("a.txt", 10),
 			invFile("b.txt", 10),
@@ -101,21 +101,21 @@ func TestPacker_Plan_BundleSplitsOnSizeMax(t *testing.T) {
 
 func TestPacker_Plan_FileAtExactThreshold(t *testing.T) {
 	// A file equal to BundleFileMax is "large" (strict less-than).
-	plan := NewPacker(nil).Plan(weightsource.Inventory{
-		Files: []weightsource.InventoryFile{invFile("model.bin", DefaultBundleFileMax)},
+	plan := newPacker(nil).planLayers(weightsource.Inventory{
+		Files: []weightsource.InventoryFile{invFile("model.bin", defaultBundleFileMax)},
 	})
 	require.Len(t, plan.Layers, 1)
 	require.Len(t, plan.Layers[0].Files, 1)
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), plan.Layers[0].MediaType,
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTar), plan.Layers[0].MediaType,
 		"at-threshold large file should not be bundled")
 }
 
 func TestPacker_Plan_FileJustBelowThreshold(t *testing.T) {
-	plan := NewPacker(nil).Plan(weightsource.Inventory{
-		Files: []weightsource.InventoryFile{invFile("model.bin", DefaultBundleFileMax-1)},
+	plan := newPacker(nil).planLayers(weightsource.Inventory{
+		Files: []weightsource.InventoryFile{invFile("model.bin", defaultBundleFileMax-1)},
 	})
 	require.Len(t, plan.Layers, 1)
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), plan.Layers[0].MediaType,
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), plan.Layers[0].MediaType,
 		"below-threshold file should land in a bundle")
 }
 
@@ -124,20 +124,20 @@ func TestPacker_Plan_IncompressibleExtensions(t *testing.T) {
 		ext       string
 		mediaType types.MediaType
 	}{
-		{".safetensors", MediaTypeOCILayerTar},
-		{".bin", MediaTypeOCILayerTar},
-		{".gguf", MediaTypeOCILayerTar},
-		{".onnx", MediaTypeOCILayerTar},
-		{".parquet", MediaTypeOCILayerTar},
-		{".pt", MediaTypeOCILayerTar},
-		{".pth", MediaTypeOCILayerTar},
-		{".dat", MediaTypeOCILayerTarGzip},
-		{".json", MediaTypeOCILayerTarGzip},
-		{".pickle", MediaTypeOCILayerTarGzip},
+		{".safetensors", mediaTypeOCILayerTar},
+		{".bin", mediaTypeOCILayerTar},
+		{".gguf", mediaTypeOCILayerTar},
+		{".onnx", mediaTypeOCILayerTar},
+		{".parquet", mediaTypeOCILayerTar},
+		{".pt", mediaTypeOCILayerTar},
+		{".pth", mediaTypeOCILayerTar},
+		{".dat", mediaTypeOCILayerTarGzip},
+		{".json", mediaTypeOCILayerTarGzip},
+		{".pickle", mediaTypeOCILayerTarGzip},
 	}
 	for _, tt := range tests {
 		t.Run(tt.ext, func(t *testing.T) {
-			plan := NewPacker(nil).Plan(weightsource.Inventory{
+			plan := newPacker(nil).planLayers(weightsource.Inventory{
 				Files: []weightsource.InventoryFile{invFile("model"+tt.ext, 100*1024*1024)},
 			})
 			require.Len(t, plan.Layers, 1)
@@ -150,14 +150,14 @@ func TestPacker_Plan_SingleLargeFileExceedingBundleSizeMax(t *testing.T) {
 	// A small-classified file that still exceeds bundleMax gets its
 	// own bundle (the flush-before-add guard skips when currentSize
 	// is 0). This is unusual in practice but the documented behavior.
-	plan := NewPacker(&PackOptions{
+	plan := newPacker(&packOptions{
 		BundleFileMax: 1024,
 		BundleSizeMax: 20,
-	}).Plan(weightsource.Inventory{
+	}).planLayers(weightsource.Inventory{
 		Files: []weightsource.InventoryFile{invFile("big-small.txt", 100)},
 	})
 	require.Len(t, plan.Layers, 1)
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTarGzip), plan.Layers[0].MediaType)
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), plan.Layers[0].MediaType)
 	require.Len(t, plan.Layers[0].Files, 1)
 	assert.Equal(t, "big-small.txt", plan.Layers[0].Files[0].Path)
 }
@@ -171,13 +171,13 @@ func TestPacker_Plan_Deterministic(t *testing.T) {
 			invFile("model.safetensors", 100*1024*1024),
 		},
 	}
-	p := NewPacker(nil)
-	plan1 := p.Plan(inv)
-	plan2 := p.Plan(inv)
+	p := newPacker(nil)
+	plan1 := p.planLayers(inv)
+	plan2 := p.planLayers(inv)
 	assert.Equal(t, plan1, plan2)
 }
 
 func TestPacker_Execute_RejectsEmptyPlan(t *testing.T) {
-	_, err := NewPacker(nil).Execute(t.Context(), nil, Plan{})
+	_, err := newPacker(nil).execute(t.Context(), nil, plan{})
 	assert.ErrorContains(t, err, "no layers in plan")
 }

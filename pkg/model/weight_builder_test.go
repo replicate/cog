@@ -91,7 +91,7 @@ func TestWeightBuilder_WritesLockfile(t *testing.T) {
 	lockPath := filepath.Join(projectDir, "weights.lock")
 	lock, err := LoadWeightsLock(lockPath)
 	require.NoError(t, err)
-	require.Equal(t, WeightsLockVersion, lock.Version)
+	require.Equal(t, weightsLockVersion, lock.Version)
 	require.Len(t, lock.Weights, 1)
 
 	entry := lock.Weights[0]

@@ -9,21 +9,21 @@ import (
 	"strings"
 )
 
-// NewWeightLockEntry assembles a WeightLockEntry from a source description,
-// the packed file index, and the set of packed layers produced by Pack.
+// newWeightLockEntry assembles a WeightLockEntry from a source description,
+// the packed file index, and the set of packed layers produced by pack.
 //
 // The set digest (spec §2.4) is computed from the file index. The manifest
 // digest is left empty — it is filled in by the caller after
-// BuildWeightManifestV1 assembles the manifest from this entry.
+// buildWeightManifestV1 assembles the manifest from this entry.
 //
 // The caller owns sort order — canonicalizeEntry sorts Files by path and
-// Layers by digest at Save time, so NewWeightLockEntry accepts whatever
+// Layers by digest at Save time, so newWeightLockEntry accepts whatever
 // order the packer happened to emit.
-func NewWeightLockEntry(
+func newWeightLockEntry(
 	name, target string,
 	source WeightLockSource,
-	files []PackedFile,
-	layers []PackedLayer,
+	files []packedFile,
+	layers []packedLayer,
 ) WeightLockEntry {
 	lockFiles := make([]WeightLockFile, len(files))
 	for i, f := range files {
@@ -60,7 +60,7 @@ func NewWeightLockEntry(
 	canonicalizeEntry(&entry)
 
 	// Compute set digest from the canonical (sorted) file index.
-	entry.SetDigest = ComputeWeightSetDigest(entry.Files)
+	entry.SetDigest = computeWeightSetDigest(entry.Files)
 
 	return entry
 }
@@ -81,18 +81,18 @@ type WeightConfigFile struct {
 	Digest string `json:"digest"`
 }
 
-// ComputeWeightSetDigest computes the weight set digest per spec §2.4:
+// computeWeightSetDigest computes the weight set digest per spec §2.4:
 //
 //	sha256(join(sort(entries), "\n"))
 //
 // where each entry is "<hex-sha256>  <path>" (two spaces, matching
 // sha256sum format). files must be sorted by path; the caller is
-// responsible for ordering (BuildWeightConfigBlob sorts before calling).
+// responsible for ordering (buildWeightConfigBlob sorts before calling).
 //
 // SYNC: weightsource.computeInventory computes the same digest from a
 // raw directory walk (producing an Inventory alongside). Changes to the
 // formula must update both.
-func ComputeWeightSetDigest(files []WeightLockFile) string {
+func computeWeightSetDigest(files []WeightLockFile) string {
 	entries := make([]string, len(files))
 	for i, f := range files {
 		_, hexStr, _ := strings.Cut(f.Digest, ":")
@@ -103,10 +103,10 @@ func ComputeWeightSetDigest(files []WeightLockFile) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// BuildWeightConfigBlob builds the serialized config blob JSON (§2.3).
+// buildWeightConfigBlob builds the serialized config blob JSON (§2.3).
 // The setDigest and file index come from the lockfile entry — the
 // lockfile is the single source of truth for these values.
-func BuildWeightConfigBlob(name, target, setDigest string, files []WeightLockFile) ([]byte, error) {
+func buildWeightConfigBlob(name, target, setDigest string, files []WeightLockFile) ([]byte, error) {
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no files for config blob")
 	}

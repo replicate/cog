@@ -98,9 +98,9 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 	img := artifact.Manifest()
 	if img == nil {
 		// Rebuild if the artifact was constructed without a cached manifest
-		// (e.g. in tests via NewWeightArtifact).
+		// (e.g. in tests via newWeightArtifact).
 		var err error
-		img, err = BuildWeightManifestV1(artifact.Entry, artifact.Layers)
+		img, err = buildWeightManifestV1(artifact.Entry, artifact.Layers)
 		if err != nil {
 			return nil, fmt.Errorf("build weight manifest: %w", err)
 		}
@@ -131,7 +131,7 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 func (p *WeightPusher) pushLayersConcurrently(
 	ctx context.Context,
 	repo, weightName string,
-	layers []PackedLayer,
+	layers []packedLayer,
 	opt WeightPushOptions,
 ) error {
 	concurrency := opt.Concurrency
@@ -156,7 +156,7 @@ func (p *WeightPusher) pushLayersConcurrently(
 func (p *WeightPusher) pushSingleLayer(
 	ctx context.Context,
 	repo, weightName string,
-	lr PackedLayer,
+	lr packedLayer,
 	opt WeightPushOptions,
 ) error {
 	layer := newFileLayer(lr)

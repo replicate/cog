@@ -34,8 +34,8 @@ func sampleEntry() WeightLockEntry {
 			{Path: "b.bin", Size: 1400, Digest: "sha256:f02", Layer: "sha256:bbb"},
 		},
 		Layers: []WeightLockLayer{
-			{Digest: "sha256:aaa", MediaType: MediaTypeOCILayerTarGzip, Size: 110, SizeUncompressed: 100},
-			{Digest: "sha256:bbb", MediaType: MediaTypeOCILayerTar, Size: 1400, SizeUncompressed: 1400},
+			{Digest: "sha256:aaa", MediaType: mediaTypeOCILayerTarGzip, Size: 110, SizeUncompressed: 100},
+			{Digest: "sha256:bbb", MediaType: mediaTypeOCILayerTar, Size: 1400, SizeUncompressed: 1400},
 		},
 	}
 }
@@ -70,7 +70,7 @@ func TestWeightsLock_ParseValid(t *testing.T) {
 
 	lock, err := ParseWeightsLock([]byte(data))
 	require.NoError(t, err)
-	assert.Equal(t, WeightsLockVersion, lock.Version)
+	assert.Equal(t, weightsLockVersion, lock.Version)
 	require.Len(t, lock.Weights, 1)
 
 	w := lock.Weights[0]
@@ -91,7 +91,7 @@ func TestWeightsLock_ParseValid(t *testing.T) {
 
 	require.Len(t, w.Layers, 1)
 	assert.Equal(t, "sha256:aaa", w.Layers[0].Digest)
-	assert.Equal(t, MediaTypeOCILayerTarGzip, w.Layers[0].MediaType)
+	assert.Equal(t, mediaTypeOCILayerTarGzip, w.Layers[0].MediaType)
 	assert.Equal(t, int64(110), w.Layers[0].Size)
 	assert.Equal(t, int64(100), w.Layers[0].SizeUncompressed)
 }
@@ -117,7 +117,7 @@ func TestWeightsLock_LoadFromFile(t *testing.T) {
 
 	lock, err := LoadWeightsLock(lockPath)
 	require.NoError(t, err)
-	assert.Equal(t, WeightsLockVersion, lock.Version)
+	assert.Equal(t, weightsLockVersion, lock.Version)
 	assert.Empty(t, lock.Weights)
 }
 
@@ -129,11 +129,11 @@ func TestWeightsLock_Save_SetsMissingVersion(t *testing.T) {
 		Weights: []WeightLockEntry{sampleEntry()},
 	}
 	require.NoError(t, lock.Save(lockPath))
-	assert.Equal(t, WeightsLockVersion, lock.Version, "Save fills in the missing version")
+	assert.Equal(t, weightsLockVersion, lock.Version, "Save fills in the missing version")
 
 	loaded, err := LoadWeightsLock(lockPath)
 	require.NoError(t, err)
-	assert.Equal(t, WeightsLockVersion, loaded.Version)
+	assert.Equal(t, weightsLockVersion, loaded.Version)
 	require.Len(t, loaded.Weights, 1)
 	assert.Equal(t, "z-image-turbo", loaded.Weights[0].Name)
 }
@@ -143,8 +143,8 @@ func TestWeightsLock_Save_Deterministic(t *testing.T) {
 	path1 := filepath.Join(dir, "a.lock")
 	path2 := filepath.Join(dir, "b.lock")
 
-	lock1 := &WeightsLock{Version: WeightsLockVersion, Weights: []WeightLockEntry{sampleEntry()}}
-	lock2 := &WeightsLock{Version: WeightsLockVersion, Weights: []WeightLockEntry{sampleEntry()}}
+	lock1 := &WeightsLock{Version: weightsLockVersion, Weights: []WeightLockEntry{sampleEntry()}}
+	lock2 := &WeightsLock{Version: weightsLockVersion, Weights: []WeightLockEntry{sampleEntry()}}
 
 	require.NoError(t, lock1.Save(path1))
 	require.NoError(t, lock2.Save(path2))
@@ -158,7 +158,7 @@ func TestWeightsLock_Save_Deterministic(t *testing.T) {
 
 func TestWeightsLock_Marshal_SortsFilesByPath(t *testing.T) {
 	lock := &WeightsLock{
-		Version: WeightsLockVersion,
+		Version: weightsLockVersion,
 		Weights: []WeightLockEntry{
 			{
 				Name: "w",
@@ -168,7 +168,7 @@ func TestWeightsLock_Marshal_SortsFilesByPath(t *testing.T) {
 					{Path: "m.txt", Size: 1, Digest: "sha256:m", Layer: "sha256:a"},
 				},
 				Layers: []WeightLockLayer{
-					{Digest: "sha256:a", MediaType: MediaTypeOCILayerTar, Size: 1, SizeUncompressed: 1},
+					{Digest: "sha256:a", MediaType: mediaTypeOCILayerTar, Size: 1, SizeUncompressed: 1},
 				},
 			},
 		},
@@ -182,14 +182,14 @@ func TestWeightsLock_Marshal_SortsFilesByPath(t *testing.T) {
 
 func TestWeightsLock_Marshal_SortsLayersByDigest(t *testing.T) {
 	lock := &WeightsLock{
-		Version: WeightsLockVersion,
+		Version: weightsLockVersion,
 		Weights: []WeightLockEntry{
 			{
 				Name: "w",
 				Layers: []WeightLockLayer{
-					{Digest: "sha256:zzz", MediaType: MediaTypeOCILayerTar, Size: 1, SizeUncompressed: 1},
-					{Digest: "sha256:aaa", MediaType: MediaTypeOCILayerTar, Size: 1, SizeUncompressed: 1},
-					{Digest: "sha256:mmm", MediaType: MediaTypeOCILayerTar, Size: 1, SizeUncompressed: 1},
+					{Digest: "sha256:zzz", MediaType: mediaTypeOCILayerTar, Size: 1, SizeUncompressed: 1},
+					{Digest: "sha256:aaa", MediaType: mediaTypeOCILayerTar, Size: 1, SizeUncompressed: 1},
+					{Digest: "sha256:mmm", MediaType: mediaTypeOCILayerTar, Size: 1, SizeUncompressed: 1},
 				},
 			},
 		},
@@ -205,7 +205,7 @@ func TestWeightsLock_Marshal_NormalizesEmptyPatterns(t *testing.T) {
 	// Source.Include and Source.Exclude should serialize as [] (never
 	// omitted) when empty or nil, so the schema shape is stable.
 	lock := &WeightsLock{
-		Version: WeightsLockVersion,
+		Version: weightsLockVersion,
 		Weights: []WeightLockEntry{
 			{Name: "w", Source: WeightLockSource{URI: "file://./x"}},
 		},
@@ -219,7 +219,7 @@ func TestWeightsLock_Marshal_NormalizesEmptyPatterns(t *testing.T) {
 func TestWeightsLock_Upsert(t *testing.T) {
 	t.Run("replaces existing entry", func(t *testing.T) {
 		lock := &WeightsLock{
-			Version: WeightsLockVersion,
+			Version: weightsLockVersion,
 			Weights: []WeightLockEntry{
 				{Name: "a", Target: "/a", Digest: "sha256:aaa"},
 				{Name: "b", Target: "/b", Digest: "sha256:bbb"},
@@ -240,7 +240,7 @@ func TestWeightsLock_Upsert(t *testing.T) {
 	})
 
 	t.Run("appends new entry", func(t *testing.T) {
-		lock := &WeightsLock{Version: WeightsLockVersion}
+		lock := &WeightsLock{Version: weightsLockVersion}
 		lock.Upsert(WeightLockEntry{Name: "a", Target: "/a", Digest: "sha256:aaa"})
 		lock.Upsert(WeightLockEntry{Name: "b", Target: "/b", Digest: "sha256:bbb"})
 
@@ -252,7 +252,7 @@ func TestWeightsLock_Upsert(t *testing.T) {
 
 func TestWeightsLock_RoundTrip(t *testing.T) {
 	original := &WeightsLock{
-		Version: WeightsLockVersion,
+		Version: weightsLockVersion,
 		Weights: []WeightLockEntry{sampleEntry()},
 	}
 	data, err := original.Marshal()

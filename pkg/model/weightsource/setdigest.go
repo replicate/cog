@@ -17,8 +17,8 @@ import (
 // path/size/digest plus the source fingerprint (sha256 of the sorted
 // file set, spec §2.4).
 //
-// The set digest formula matches model.ComputeWeightSetDigest (which
-// computes the same digest from a []PackedFile slice produced by the
+// The set digest formula matches model.computeWeightSetDigest (which
+// computes the same digest from the packed file list produced by the
 // packer). Changes to the formula must update both.
 //
 // The .cog state directory is skipped to match the packer's behavior.
@@ -71,7 +71,7 @@ func computeInventory(ctx context.Context, dir string) (Inventory, error) {
 	// Set-digest input lines: "<hex>  <path>" (two spaces, matching
 	// coreutils sha256sum output). InventoryFile.Digest carries the
 	// "sha256:" prefix; strip it here to match the on-disk format the
-	// packer also reproduces in model.ComputeWeightSetDigest.
+	// packer also reproduces in model.computeWeightSetDigest.
 	entries := make([]string, len(files))
 	for i, f := range files {
 		entries[i] = strings.TrimPrefix(f.Digest, "sha256:") + "  " + f.Path

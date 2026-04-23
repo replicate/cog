@@ -24,13 +24,13 @@ import (
 // =============================================================================
 
 // packDir runs Pack on sourceDir and registers cleanup of the produced tar files.
-func packDir(t *testing.T, sourceDir string, opts *PackOptions) []PackedLayer {
+func packDir(t *testing.T, sourceDir string, opts *packOptions) []packedLayer {
 	t.Helper()
 	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
 	require.NoError(t, err)
 	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	results, err := NewPacker(opts).Pack(t.Context(), src, inv)
+	results, err := newPacker(opts).pack(t.Context(), src, inv)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		for _, r := range results.Layers {
@@ -67,7 +67,7 @@ func defaultEntry() WeightLockEntry {
 
 // singleSmallFileLayers produces a valid single-layer result set for tests that
 // only care about manifest shape, not layer contents.
-func singleSmallFileLayers(t *testing.T) []PackedLayer {
+func singleSmallFileLayers(t *testing.T) []packedLayer {
 	t.Helper()
 	dir := t.TempDir()
 	writeSrcFile(t, dir, "config.json", 128)
@@ -75,7 +75,7 @@ func singleSmallFileLayers(t *testing.T) []PackedLayer {
 }
 
 // =============================================================================
-// Entry validation via BuildWeightManifestV1
+// Entry validation via buildWeightManifestV1
 // =============================================================================
 
 func TestBuildWeightManifestV1_RejectsInvalidEntry(t *testing.T) {
@@ -96,7 +96,7 @@ func TestBuildWeightManifestV1_RejectsInvalidEntry(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := BuildWeightManifestV1(tc.entry, layers)
+			_, err := buildWeightManifestV1(tc.entry, layers)
 			if tc.wantErr == "" {
 				require.NoError(t, err)
 			} else {
@@ -110,7 +110,7 @@ func TestBuildWeightManifestV1_RejectsInvalidEntry(t *testing.T) {
 func TestBuildWeightManifestV1_ManifestAnnotations(t *testing.T) {
 	layers := singleSmallFileLayers(t)
 	entry := defaultEntry()
-	img, err := BuildWeightManifestV1(entry, layers)
+	img, err := buildWeightManifestV1(entry, layers)
 	require.NoError(t, err)
 
 	m, err := img.Manifest()
@@ -122,13 +122,13 @@ func TestBuildWeightManifestV1_ManifestAnnotations(t *testing.T) {
 }
 
 // =============================================================================
-// BuildWeightManifestV1 — validation
+// buildWeightManifestV1 — validation
 // =============================================================================
 
 func TestBuildWeightManifestV1_RejectsMissingName(t *testing.T) {
 	layers := singleSmallFileLayers(t)
 
-	_, err := BuildWeightManifestV1(WeightLockEntry{
+	_, err := buildWeightManifestV1(WeightLockEntry{
 		Target:    "/x",
 		SetDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
 		Files:     []WeightLockFile{{Path: "f", Size: 1, Digest: "sha256:a", Layer: "sha256:l"}},
@@ -138,7 +138,7 @@ func TestBuildWeightManifestV1_RejectsMissingName(t *testing.T) {
 }
 
 func TestBuildWeightManifestV1_RejectsEmptyLayers(t *testing.T) {
-	_, err := BuildWeightManifestV1(defaultEntry(), nil)
+	_, err := buildWeightManifestV1(defaultEntry(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least one layer")
 }
@@ -148,19 +148,19 @@ func TestBuildWeightManifestV1_RejectsInvalidLayer(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		mutate  func(lr *PackedLayer)
+		mutate  func(lr *packedLayer)
 		wantErr string
 	}{
-		{"missing TarPath", func(lr *PackedLayer) { lr.TarPath = "" }, "missing TarPath"},
-		{"missing digest", func(lr *PackedLayer) { lr.Digest = v1.Hash{} }, "missing digest"},
-		{"zero size", func(lr *PackedLayer) { lr.Size = 0 }, "invalid size"},
-		{"missing media type", func(lr *PackedLayer) { lr.MediaType = "" }, "missing media type"},
+		{"missing TarPath", func(lr *packedLayer) { lr.TarPath = "" }, "missing TarPath"},
+		{"missing digest", func(lr *packedLayer) { lr.Digest = v1.Hash{} }, "missing digest"},
+		{"zero size", func(lr *packedLayer) { lr.Size = 0 }, "invalid size"},
+		{"missing media type", func(lr *packedLayer) { lr.MediaType = "" }, "missing media type"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			lr := base[0]
 			tc.mutate(&lr)
-			_, err := BuildWeightManifestV1(defaultEntry(), []PackedLayer{lr})
+			_, err := buildWeightManifestV1(defaultEntry(), []packedLayer{lr})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
@@ -168,13 +168,13 @@ func TestBuildWeightManifestV1_RejectsInvalidLayer(t *testing.T) {
 }
 
 // =============================================================================
-// BuildWeightManifestV1 — manifest structure
+// buildWeightManifestV1 — manifest structure
 // =============================================================================
 
 func TestBuildWeightManifestV1_ManifestShape(t *testing.T) {
 	layers := singleSmallFileLayers(t)
 	entry := defaultEntry()
-	img, err := BuildWeightManifestV1(entry, layers)
+	img, err := buildWeightManifestV1(entry, layers)
 	require.NoError(t, err)
 
 	// Manifest schema and media type.
@@ -216,7 +216,7 @@ func TestBuildWeightManifestV1_ManifestShape(t *testing.T) {
 func TestBuildWeightManifestV1_RawManifestContainsArtifactType(t *testing.T) {
 	layers := singleSmallFileLayers(t)
 	entry := defaultEntry()
-	img, err := BuildWeightManifestV1(entry, layers)
+	img, err := buildWeightManifestV1(entry, layers)
 	require.NoError(t, err)
 
 	raw, err := img.RawManifest()
@@ -233,7 +233,7 @@ func TestBuildWeightManifestV1_RawManifestContainsArtifactType(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, MediaTypeWeightConfig, cfg["mediaType"])
 
-	// Verify config digest matches what BuildWeightManifestV1 produced.
+	// Verify config digest matches what buildWeightManifestV1 produced.
 	cfgBytes, err := img.RawConfigFile()
 	require.NoError(t, err)
 	cfgSum := sha256.Sum256(cfgBytes)
@@ -247,7 +247,7 @@ func TestBuildWeightManifestV1_RawManifestContainsArtifactType(t *testing.T) {
 
 func TestBuildWeightManifestV1_DigestMatchesRawManifest(t *testing.T) {
 	layers := singleSmallFileLayers(t)
-	img, err := BuildWeightManifestV1(defaultEntry(), layers)
+	img, err := buildWeightManifestV1(defaultEntry(), layers)
 	require.NoError(t, err)
 
 	raw, err := img.RawManifest()
@@ -278,19 +278,19 @@ func TestBuildWeightManifestV1_LayersCanonicallySortedByDigest(t *testing.T) {
 	writeSrcFile(t, dir, "model.safetensors", 1024) // incompressible .tar
 	writeSrcFile(t, dir, "aux.dat", 1024)           // compressible .tar.gz
 
-	layers := packDir(t, dir, &PackOptions{BundleFileMax: 512, BundleSizeMax: 1024})
+	layers := packDir(t, dir, &packOptions{BundleFileMax: 512, BundleSizeMax: 1024})
 	require.GreaterOrEqual(t, len(layers), 3, "expected bundle + 2 large layers")
 
 	// Pre-sort then reverse so the input is guaranteed to be in the
 	// opposite of the expected output order. If the builder forgets to
 	// sort, the assertion below will fail.
 	input := slices.Clone(layers)
-	slices.SortFunc(input, func(a, b PackedLayer) int {
+	slices.SortFunc(input, func(a, b packedLayer) int {
 		return strings.Compare(a.Digest.String(), b.Digest.String())
 	})
 	slices.Reverse(input)
 
-	img, err := BuildWeightManifestV1(defaultEntry(), input)
+	img, err := buildWeightManifestV1(defaultEntry(), input)
 	require.NoError(t, err)
 
 	m, err := img.Manifest()
@@ -309,9 +309,9 @@ func TestBuildWeightManifestV1_LayersCanonicallySortedByDigest(t *testing.T) {
 	var sawTar, sawGzip bool
 	for _, layer := range m.Layers {
 		switch layer.MediaType {
-		case types.MediaType(MediaTypeOCILayerTar):
+		case types.MediaType(mediaTypeOCILayerTar):
 			sawTar = true
-		case types.MediaType(MediaTypeOCILayerTarGzip):
+		case types.MediaType(mediaTypeOCILayerTarGzip):
 			sawGzip = true
 		}
 	}
@@ -327,20 +327,20 @@ func TestBuildWeightManifestV1_InputOrderDoesNotAffectDigest(t *testing.T) {
 	writeSrcFile(t, dir, "model.safetensors", 1024)
 	writeSrcFile(t, dir, "aux.dat", 1024)
 
-	layers := packDir(t, dir, &PackOptions{BundleFileMax: 512, BundleSizeMax: 1024})
+	layers := packDir(t, dir, &packOptions{BundleFileMax: 512, BundleSizeMax: 1024})
 	require.GreaterOrEqual(t, len(layers), 3, "expected bundle + 2 large layers for a meaningful permutation test")
 
-	imgOriginal, err := BuildWeightManifestV1(defaultEntry(), layers)
+	imgOriginal, err := buildWeightManifestV1(defaultEntry(), layers)
 	require.NoError(t, err)
 	originalDigest, err := imgOriginal.Digest()
 	require.NoError(t, err)
 
 	// Reverse order.
-	reversed := make([]PackedLayer, len(layers))
+	reversed := make([]packedLayer, len(layers))
 	for i, l := range layers {
 		reversed[len(layers)-1-i] = l
 	}
-	imgReversed, err := BuildWeightManifestV1(defaultEntry(), reversed)
+	imgReversed, err := buildWeightManifestV1(defaultEntry(), reversed)
 	require.NoError(t, err)
 	reversedDigest, err := imgReversed.Digest()
 	require.NoError(t, err)
@@ -350,7 +350,7 @@ func TestBuildWeightManifestV1_InputOrderDoesNotAffectDigest(t *testing.T) {
 	// Swap two adjacent layers.
 	swapped := slices.Clone(layers)
 	swapped[0], swapped[1] = swapped[1], swapped[0]
-	imgSwapped, err := BuildWeightManifestV1(defaultEntry(), swapped)
+	imgSwapped, err := buildWeightManifestV1(defaultEntry(), swapped)
 	require.NoError(t, err)
 	swappedDigest, err := imgSwapped.Digest()
 	require.NoError(t, err)
@@ -365,14 +365,14 @@ func TestBuildWeightManifestV1_DoesNotMutateInputSlice(t *testing.T) {
 	writeSrcFile(t, dir, "model.safetensors", 1024)
 	writeSrcFile(t, dir, "aux.dat", 1024)
 
-	layers := packDir(t, dir, &PackOptions{BundleFileMax: 512, BundleSizeMax: 1024})
+	layers := packDir(t, dir, &packOptions{BundleFileMax: 512, BundleSizeMax: 1024})
 	require.GreaterOrEqual(t, len(layers), 2, "need at least two layers to detect mutation")
 
 	before := slices.Clone(layers)
-	_, err := BuildWeightManifestV1(defaultEntry(), layers)
+	_, err := buildWeightManifestV1(defaultEntry(), layers)
 	require.NoError(t, err)
 
-	assert.Equal(t, before, layers, "BuildWeightManifestV1 must not reorder the caller's slice")
+	assert.Equal(t, before, layers, "buildWeightManifestV1 must not reorder the caller's slice")
 }
 
 func TestBuildWeightManifestV1_LayerDescriptorsHaveNoAnnotations(t *testing.T) {
@@ -380,7 +380,7 @@ func TestBuildWeightManifestV1_LayerDescriptorsHaveNoAnnotations(t *testing.T) {
 	// annotations. Everything useful lives in the config blob or the
 	// lockfile.
 	layers := singleSmallFileLayers(t)
-	img, err := BuildWeightManifestV1(defaultEntry(), layers)
+	img, err := buildWeightManifestV1(defaultEntry(), layers)
 	require.NoError(t, err)
 
 	m, err := img.Manifest()
@@ -400,14 +400,14 @@ func TestFileLayer_ReturnsFileBytes(t *testing.T) {
 	require.NoError(t, os.WriteFile(tmp, content, 0o644))
 
 	sum := sha256.Sum256(content)
-	lr := PackedLayer{
+	lr := packedLayer{
 		TarPath: tmp,
 		Digest: v1.Hash{
 			Algorithm: "sha256",
 			Hex:       hex.EncodeToString(sum[:]),
 		},
 		Size:      int64(len(content)),
-		MediaType: MediaTypeOCILayerTar,
+		MediaType: mediaTypeOCILayerTar,
 	}
 
 	l := newFileLayer(lr)
@@ -426,7 +426,7 @@ func TestFileLayer_ReturnsFileBytes(t *testing.T) {
 
 	mt, err := l.MediaType()
 	require.NoError(t, err)
-	assert.Equal(t, types.MediaType(MediaTypeOCILayerTar), mt)
+	assert.Equal(t, types.MediaType(mediaTypeOCILayerTar), mt)
 
 	// Compressed and Uncompressed both yield the raw file bytes (no re-encoding).
 	for _, name := range []string{"Compressed", "Uncompressed"} {
@@ -448,11 +448,11 @@ func TestFileLayer_ReturnsFileBytes(t *testing.T) {
 }
 
 func TestFileLayer_OpenMissingFile(t *testing.T) {
-	lr := PackedLayer{
+	lr := packedLayer{
 		TarPath:   filepath.Join(t.TempDir(), "does-not-exist.tar"),
 		Digest:    v1.Hash{Algorithm: "sha256", Hex: "deadbeef"},
 		Size:      1,
-		MediaType: MediaTypeOCILayerTar,
+		MediaType: mediaTypeOCILayerTar,
 	}
 	l := newFileLayer(lr)
 

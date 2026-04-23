@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestFingerprint_Scheme(t *testing.T) {
@@ -40,49 +39,18 @@ func TestFingerprint_Value(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, tc.fp.Value())
+			assert.Equal(t, tc.want, tc.fp.value())
 		})
 	}
 }
 
 func TestFingerprint_IsZero(t *testing.T) {
-	assert.True(t, Fingerprint("").IsZero())
-	assert.False(t, Fingerprint("sha256:abc").IsZero())
+	assert.True(t, Fingerprint("").isZero())
+	assert.False(t, Fingerprint("sha256:abc").isZero())
 }
 
 func TestFingerprint_String(t *testing.T) {
 	assert.Equal(t, "sha256:abc", Fingerprint("sha256:abc").String())
 }
 
-func TestParseFingerprint(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		fp, err := ParseFingerprint("sha256:abc123")
-		require.NoError(t, err)
-		assert.Equal(t, Fingerprint("sha256:abc123"), fp)
-	})
 
-	t.Run("preserves colons in value", func(t *testing.T) {
-		fp, err := ParseFingerprint("timestamp:2026-04-17T12:00:00Z")
-		require.NoError(t, err)
-		assert.Equal(t, "timestamp", fp.Scheme())
-		assert.Equal(t, "2026-04-17T12:00:00Z", fp.Value())
-	})
-
-	errorCases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{"empty", "", "empty"},
-		{"no separator", "bare", "missing scheme separator"},
-		{"empty scheme", ":abc", "empty scheme"},
-		{"empty value", "sha256:", "empty value"},
-	}
-	for _, tc := range errorCases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := ParseFingerprint(tc.in)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tc.want)
-		})
-	}
-}

@@ -22,7 +22,7 @@ import (
 // packTestLayers packs a directory containing a single file into tar
 // layers and returns the layer results. Used as a fixture builder so tests
 // don't each reimplement packing.
-func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir string, layers []PackedLayer) {
+func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir string, layers []packedLayer) {
 	t.Helper()
 	sourceDir = t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, filename), content, 0o644))
@@ -34,7 +34,7 @@ func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir st
 	require.NoError(t, err)
 	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	pr, err := NewPacker(&PackOptions{TempDir: cacheDir}).Pack(t.Context(), src, inv)
+	pr, err := newPacker(&packOptions{TempDir: cacheDir}).pack(t.Context(), src, inv)
 	require.NoError(t, err)
 	require.NotEmpty(t, pr.Layers)
 	return sourceDir, pr.Layers
@@ -47,14 +47,14 @@ func newTestWeightArtifact(t *testing.T, name, target string) *WeightArtifact {
 	_, layers := packTestLayers(t, "config.json", []byte(`{"hidden_size": 768}`))
 
 	// Build a lock entry from the pack result.
-	files := []PackedFile{{
+	files := []packedFile{{
 		Path:        "config.json",
 		Size:        int64(len(`{"hidden_size": 768}`)),
 		Digest:      layers[0].Digest.String(),
 		LayerDigest: layers[0].Digest.String(),
 	}}
-	entry := NewWeightLockEntry(name, target, WeightLockSource{}, files, layers)
-	artifact, err := BuildWeightArtifact(&entry, layers)
+	entry := newWeightLockEntry(name, target, WeightLockSource{}, files, layers)
+	artifact, err := buildWeightArtifact(&entry, layers)
 	require.NoError(t, err)
 	return artifact
 }
@@ -82,7 +82,7 @@ func TestWeightPusher_Push_ReturnsErrorForEmptyRepo(t *testing.T) {
 
 func TestWeightPusher_Push_ReturnsErrorForEmptyLayers(t *testing.T) {
 	// Empty layer set must be caught before we try to build a manifest.
-	artifact := NewWeightArtifact(
+	artifact := newWeightArtifact(
 		WeightLockEntry{Name: "model-v1", Target: "/src/weights"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc"}},
 		nil)
@@ -127,8 +127,8 @@ func TestWeightPusher_Push_PushesExpectedManifest(t *testing.T) {
 	require.NotEmpty(t, manifest.Layers)
 	for _, layer := range manifest.Layers {
 		require.Contains(t, []types.MediaType{
-			types.MediaType(MediaTypeOCILayerTar),
-			types.MediaType(MediaTypeOCILayerTarGzip),
+			types.MediaType(mediaTypeOCILayerTar),
+			types.MediaType(mediaTypeOCILayerTarGzip),
 		}, layer.MediaType)
 	}
 
@@ -353,16 +353,16 @@ func TestWeightPusher_Push_HonoursConcurrencyLimit(t *testing.T) {
 	require.NoError(t, err)
 	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	pr, err := NewPacker(&PackOptions{
+	pr, err := newPacker(&packOptions{
 		BundleFileMax: 1, // every file becomes its own layer
 		TempDir:       cacheDir,
-	}).Pack(t.Context(), src, inv)
+	}).pack(t.Context(), src, inv)
 	require.NoError(t, err)
 	layers := pr.Layers
 	require.GreaterOrEqual(t, len(layers), n, "expected a layer per file")
 
-	entry := NewWeightLockEntry("model", "/src/weights", WeightLockSource{}, pr.Files, pr.Layers)
-	artifact, err := BuildWeightArtifact(&entry, layers)
+	entry := newWeightLockEntry("model", "/src/weights", WeightLockSource{}, pr.Files, pr.Layers)
+	artifact, err := buildWeightArtifact(&entry, layers)
 	require.NoError(t, err)
 
 	var inFlight, maxInFlight atomic.Int32

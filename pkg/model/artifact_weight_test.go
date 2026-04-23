@@ -28,16 +28,16 @@ func TestWeightArtifact_ImplementsArtifact(t *testing.T) {
 		Digest: v1.Hash{Algorithm: "sha256", Hex: "def456"},
 		Size:   4096,
 	}
-	layers := []PackedLayer{
+	layers := []packedLayer{
 		{
 			TarPath:   "/tmp/layer-0.tar.gz",
 			Digest:    v1.Hash{Algorithm: "sha256", Hex: "aaa"},
 			Size:      15000,
-			MediaType: MediaTypeOCILayerTarGzip,
+			MediaType: mediaTypeOCILayerTarGzip,
 		},
 	}
 	entry := WeightLockEntry{Name: "my-weights", Target: "/src/weights"}
-	artifact := NewWeightArtifact(entry, desc, layers)
+	artifact := newWeightArtifact(entry, desc, layers)
 
 	var _ Artifact = artifact // compile-time interface check
 
@@ -51,16 +51,16 @@ func TestWeightArtifact_Fields(t *testing.T) {
 		Digest: v1.Hash{Algorithm: "sha256", Hex: "def456"},
 		Size:   4096,
 	}
-	layers := []PackedLayer{
+	layers := []packedLayer{
 		{
 			TarPath:   "/tmp/layer-0.tar",
 			Digest:    v1.Hash{Algorithm: "sha256", Hex: "bbb"},
 			Size:      2048,
-			MediaType: MediaTypeOCILayerTar,
+			MediaType: mediaTypeOCILayerTar,
 		},
 	}
 	entry := WeightLockEntry{Name: "my-weights", Target: "/src/weights"}
-	artifact := NewWeightArtifact(entry, desc, layers)
+	artifact := newWeightArtifact(entry, desc, layers)
 
 	require.Equal(t, "/src/weights", artifact.Entry.Target)
 	require.Equal(t, layers, artifact.Layers)
@@ -71,6 +71,6 @@ func TestWeightMediaTypeConstants(t *testing.T) {
 	// The artifactType on the manifest is the only v1 media type with a
 	// Cog-specific name; layers use standard OCI types.
 	require.Equal(t, "application/vnd.cog.weight.v1", MediaTypeWeightArtifact)
-	require.Equal(t, "application/vnd.oci.image.layer.v1.tar", MediaTypeOCILayerTar)
-	require.Equal(t, "application/vnd.oci.image.layer.v1.tar+gzip", MediaTypeOCILayerTarGzip)
+	require.Equal(t, "application/vnd.oci.image.layer.v1.tar", mediaTypeOCILayerTar)
+	require.Equal(t, "application/vnd.oci.image.layer.v1.tar+gzip", mediaTypeOCILayerTarGzip)
 }
