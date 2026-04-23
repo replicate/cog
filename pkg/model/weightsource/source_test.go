@@ -21,28 +21,35 @@ func TestFor(t *testing.T) {
 		name        string
 		uri         string
 		projectDir  string
-		wantFile    bool
+		wantType    string // "file", "hf", or "" for expected error
 		wantErrSubs string
 	}{
-		{"file scheme", "file://" + absDir, "", true, ""},
-		{"file scheme relative", "file://./weights", projectDir, true, ""},
-		{"bare absolute path", absDir, "", true, ""},
-		{"bare relative path", "./weights", projectDir, true, ""},
-		{"bare no prefix", "weights", projectDir, true, ""},
-		{"hf scheme rejected", "hf://org/repo", "", false, "unsupported weight source scheme"},
-		{"s3 scheme rejected", "s3://bucket/key", "", false, "unsupported"},
-		{"http scheme rejected", "http://example.com/x", "", false, "unsupported"},
+		{"file scheme", "file://" + absDir, "", "file", ""},
+		{"file scheme relative", "file://./weights", projectDir, "file", ""},
+		{"bare absolute path", absDir, "", "file", ""},
+		{"bare relative path", "./weights", projectDir, "file", ""},
+		{"bare no prefix", "weights", projectDir, "file", ""},
+		{"hf scheme", "hf://org/repo", "", "hf", ""},
+		{"huggingface scheme", "huggingface://org/repo", "", "hf", ""},
+		{"s3 scheme rejected", "s3://bucket/key", "", "", "unsupported"},
+		{"http scheme rejected", "http://example.com/x", "", "", "unsupported"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s, err := For(tc.uri, tc.projectDir)
-			if !tc.wantFile {
+			if tc.wantType == "" {
 				assert.ErrorContains(t, err, tc.wantErrSubs)
 				return
 			}
 			require.NoError(t, err)
-			_, ok := s.(*FileSource)
-			assert.True(t, ok, "expected *FileSource, got %T", s)
+			switch tc.wantType {
+			case "file":
+				_, ok := s.(*FileSource)
+				assert.True(t, ok, "expected *FileSource, got %T", s)
+			case "hf":
+				_, ok := s.(*HFSource)
+				assert.True(t, ok, "expected *HFSource, got %T", s)
+			}
 		})
 	}
 }
@@ -54,6 +61,7 @@ func TestSchemeOf(t *testing.T) {
 	}{
 		{"file:///abs", "file"},
 		{"hf://org/repo", "hf"},
+		{"huggingface://org/repo", "huggingface"},
 		{"s3://bucket/key", "s3"},
 		{"/abs", ""},
 		{"./rel", ""},

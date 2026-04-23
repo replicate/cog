@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: high
 created_at: 2026-04-22T01:57:04Z
-updated_at: 2026-04-23T04:05:26Z
+updated_at: 2026-04-23T14:27:02Z
 parent: cog-66gt
 blocked_by:
     - cog-s5fy
@@ -83,3 +83,7 @@ Rewired all downstream OCI generation to consume the lockfile exclusively. The l
 - `AnnotationV1WeightSizeUncomp` moved from packer.go to weight_manifest_v1.go with other annotation constants
 
 Verification: fmt ✓, lint ✓, 1293 tests pass (5 pre-existing skips).
+
+## Summary of Changes
+
+Superseded by the work that landed in cog-s5fy (lockfile v2 + canonicalizeEntry digest-sort of layers) and cog-qma1 (BuildWeightManifestV1 digest-sorts layers internally). The downstream OCI generation now consumes content that is already canonical regardless of which path produced it (cold pack, warm cache, or direct lockfile read).

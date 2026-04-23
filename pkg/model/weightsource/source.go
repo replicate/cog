@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -60,6 +61,12 @@ type InventoryFile struct {
 	Digest string
 }
 
+// sortInventoryFiles sorts files by path. Every Source implementation
+// must return a sorted inventory; this helper enforces the convention.
+func sortInventoryFiles(files []InventoryFile) {
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+}
+
 // For returns the Source implementation for the given URI's scheme,
 // bound to uri and projectDir.
 //
@@ -70,8 +77,8 @@ type InventoryFile struct {
 //
 // Unknown schemes return a clear error listing the currently supported
 // schemes. This is the only place where scheme → implementation dispatch
-// happens; adding hf:// or s3:// is a single case here plus the matching
-// Source implementation (cog-9vfd).
+// happens; adding s3:// or http:// is a single case here plus the
+// matching Source implementation.
 //
 // For validates that the source exists and is usable. A file:// URI that
 // points at a missing path or at a non-directory returns an error here,
@@ -81,8 +88,10 @@ func For(uri, projectDir string) (Source, error) {
 	switch scheme {
 	case "file", "":
 		return NewFileSource(uri, projectDir)
+	case HFScheme, HFSchemeLong:
+		return NewHFSource(uri)
 	default:
-		return nil, fmt.Errorf("unsupported weight source scheme %q (supported: file)", scheme)
+		return nil, fmt.Errorf("unsupported weight source scheme %q (supported: file, hf, huggingface)", scheme)
 	}
 }
 

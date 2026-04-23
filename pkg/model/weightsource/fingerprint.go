@@ -7,7 +7,8 @@
 // at a time so that sources larger than local disk can be imported without
 // full materialization.
 //
-// Today file:// is the only implementation.
+// Implementations exist for file:// (local directory) and hf://
+// (HuggingFace Hub).
 package weightsource
 
 import (

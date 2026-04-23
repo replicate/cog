@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/replicate/cog/pkg/util"
@@ -66,7 +65,7 @@ func computeInventory(ctx context.Context, dir string) (Inventory, error) {
 		return Inventory{}, err
 	}
 
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	sortInventoryFiles(files)
 
 	// Set-digest input lines: "<hex>  <path>" (two spaces, matching
 	// coreutils sha256sum output). InventoryFile.Digest carries the
