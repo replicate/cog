@@ -89,40 +89,9 @@ func (s *FileSource) Open(ctx context.Context, path string) (io.ReadCloser, erro
 	return f, nil
 }
 
-// NormalizeURI returns the canonical file:// form of a URI.
-//
-// Rules:
-//   - bare absolute paths become file://<path>
-//   - bare relative paths become file://./<path>, with filepath.Clean
-//     applied first so "weights/." normalizes to "file://./weights"
-//   - file:// URIs are returned unchanged apart from path cleaning
-//   - Empty strings and malformed URIs return an error
-//
-// The canonical relative form always uses the explicit ./ prefix. This
-// makes "file:// + relative path" visually distinct from an accidental
-// "file:/weights" (a scheme with an absolute path missing one slash).
-func NormalizeURI(uri string) (string, error) {
-	if uri == "" {
-		return "", fmt.Errorf("empty weight source uri")
-	}
-
-	scheme, rest, hasScheme := strings.Cut(uri, "://")
-	if !hasScheme {
-		// Bare path — treat as file://.
-		return normalizeFilePath(uri)
-	}
-
-	switch scheme {
-	case FileScheme:
-		return normalizeFilePath(rest)
-	default:
-		return "", fmt.Errorf("cannot normalize %q as file:// URI: scheme is %q", uri, scheme)
-	}
-}
-
-// normalizeFilePath produces the canonical file:// URI for a path value
+// normalizeFileURI produces the canonical file:// URI for a path value
 // that already has the file:// prefix stripped (or was never present).
-func normalizeFilePath(path string) (string, error) {
+func normalizeFileURI(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("empty weight source path")
 	}
@@ -148,17 +117,20 @@ func normalizeFilePath(path string) (string, error) {
 	return "file://./" + cleaned, nil
 }
 
-// resolvePath turns a URI into an absolute on-disk path, resolving
-// relative paths against projectDir. The URI must already be in canonical
-// form (see NormalizeURI), but this function also accepts bare paths as a
-// convenience.
+// resolvePath turns a file:// URI or bare path into an absolute on-disk
+// path, resolving relative paths against projectDir.
 func resolvePath(uri, projectDir string) (string, error) {
-	normalized, err := NormalizeURI(uri)
+	// Strip the file:// scheme if present; bare paths pass through.
+	path := uri
+	if rest, ok := strings.CutPrefix(uri, "file://"); ok {
+		path = rest
+	}
+	normalized, err := normalizeFileURI(path)
 	if err != nil {
 		return "", err
 	}
 	// normalized is always "file://<path>" at this point.
-	path := strings.TrimPrefix(normalized, "file://")
+	path = strings.TrimPrefix(normalized, "file://")
 	if filepath.IsAbs(path) {
 		return path, nil
 	}

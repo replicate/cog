@@ -33,7 +33,15 @@ func TestNormalizeURI(t *testing.T) {
 		{"empty file scheme", "file://", "", "empty weight source path"},
 		{"project dir itself rejected", ".", "", "project directory itself"},
 		{"parent escape rejected", "../sibling", "", "escapes the project directory"},
-		{"unknown scheme rejected", "hf://org/repo", "", "cannot normalize"},
+		{"unknown scheme rejected", "s3://bucket/key", "", "unsupported weight source scheme"},
+
+		{"hf basic", "hf://org/repo", "hf://org/repo", ""},
+		{"hf with ref", "hf://org/repo@v1.0", "hf://org/repo@v1.0", ""},
+		{"huggingface canonicalized", "huggingface://org/repo", "hf://org/repo", ""},
+		{"huggingface with ref canonicalized", "huggingface://org/repo@main", "hf://org/repo", ""},
+		{"hf explicit main ref stripped", "hf://org/repo@main", "hf://org/repo", ""},
+		{"hf sha ref preserved", "hf://org/repo@abc123", "hf://org/repo@abc123", ""},
+		{"hf invalid repo", "hf://justrepo", "", "expected org/repo"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -67,6 +67,36 @@ func sortInventoryFiles(files []InventoryFile) {
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 }
 
+// NormalizeURI returns the canonical form of a weight source URI.
+//
+// Each scheme has its own normalization rules:
+//   - file:// and bare paths → canonical file:// form (see normalizeFileURI)
+//   - hf:// and huggingface:// → canonical hf:// form (see normalizeHFURI)
+//
+// Empty strings and unsupported schemes return an error.
+func NormalizeURI(uri string) (string, error) {
+	if uri == "" {
+		return "", fmt.Errorf("empty weight source uri")
+	}
+
+	scheme := schemeOf(uri)
+	switch scheme {
+	case "file", "":
+		// Bare paths and file:// URIs. For bare paths the full URI is
+		// the path; for file:// we strip the scheme prefix before
+		// normalizing.
+		path := uri
+		if scheme == "file" {
+			path = strings.TrimPrefix(uri, "file://")
+		}
+		return normalizeFileURI(path)
+	case HFScheme, HFSchemeLong:
+		return normalizeHFURI(uri)
+	default:
+		return "", fmt.Errorf("unsupported weight source scheme %q in URI %q", scheme, uri)
+	}
+}
+
 // For returns the Source implementation for the given URI's scheme,
 // bound to uri and projectDir.
 //

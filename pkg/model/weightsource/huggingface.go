@@ -108,6 +108,21 @@ func hfCheckRetry(ctx context.Context, resp *http.Response, err error) (bool, er
 	return false, nil
 }
 
+// normalizeHFURI returns the canonical hf:// form of an HF URI. It
+// validates the URI, canonicalizes huggingface:// to hf://, and
+// preserves the @ref suffix if present. The default ref ("main") is
+// not appended — it is implied.
+func normalizeHFURI(uri string) (string, error) {
+	repo, ref, err := parseHFURI(uri)
+	if err != nil {
+		return "", err
+	}
+	if ref == "main" {
+		return "hf://" + repo, nil
+	}
+	return "hf://" + repo + "@" + ref, nil
+}
+
 // parseHFURI parses "hf://org/repo" or "huggingface://org/repo" (with
 // optional @ref suffix) and returns the repo and ref components.
 func parseHFURI(uri string) (repo, ref string, err error) {
