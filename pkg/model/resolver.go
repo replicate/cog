@@ -434,30 +434,14 @@ func isOCIIndex(mr *registry.ManifestResult) bool {
 	return mr.IsIndex()
 }
 
-// findWeightsManifest finds the weights manifest in an index.
-// Returns nil if no weights manifest is found.
-func findWeightsManifest(manifests []registry.PlatformManifest) *registry.PlatformManifest {
-	for i := range manifests {
-		m := &manifests[i]
-		if isWeightDescriptor(*m) {
-			return m
-		}
-	}
-	return nil
-}
-
-// isWeightDescriptor identifies a weight manifest descriptor in an OCI index.
-// Checks for the set-digest annotation (v1 format) or falls back to the
-// legacy reference-type annotation for backward compat.
+// isWeightDescriptor identifies a weight manifest descriptor in an OCI index
+// by the presence of the set-digest annotation (v1 format).
 func isWeightDescriptor(pm registry.PlatformManifest) bool {
 	if pm.Annotations == nil {
 		return false
 	}
-	if _, ok := pm.Annotations[AnnotationV1WeightSetDigest]; ok {
-		return true
-	}
-	// Legacy: pre-v1 weight descriptors used run.cog.reference.type.
-	return pm.Annotations[AnnotationV1ReferenceType] == ReferenceTypeWeights
+	_, ok := pm.Annotations[AnnotationV1WeightSetDigest]
+	return ok
 }
 
 // findImageManifest finds the model image manifest in an index.

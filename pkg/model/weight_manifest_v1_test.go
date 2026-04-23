@@ -119,12 +119,6 @@ func TestBuildWeightManifestV1_ManifestAnnotations(t *testing.T) {
 	assert.Equal(t, "z-image-turbo", m.Annotations[AnnotationV1WeightName])
 	assert.Equal(t, "/src/weights", m.Annotations[AnnotationV1WeightTarget])
 	assert.Equal(t, "sha256:0000000000000000000000000000000000000000000000000000000000000000", m.Annotations[AnnotationV1WeightSetDigest])
-
-	// Removed annotations should not be present.
-	_, hasRefType := m.Annotations[AnnotationV1ReferenceType]
-	assert.False(t, hasRefType, "reference type annotation should not be present")
-	_, hasRefDigest := m.Annotations[AnnotationV1ReferenceDigest]
-	assert.False(t, hasRefDigest, "reference digest annotation should not be present")
 }
 
 // =============================================================================

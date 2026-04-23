@@ -1,11 +1,11 @@
 ---
 # cog-861o
 title: Wire OCI generation to consume lockfile exclusively
-status: in-progress
+status: completed
 type: task
 priority: high
 created_at: 2026-04-22T01:57:04Z
-updated_at: 2026-04-23T03:31:46Z
+updated_at: 2026-04-23T04:05:26Z
 parent: cog-66gt
 blocked_by:
     - cog-s5fy

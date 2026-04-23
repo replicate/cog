@@ -24,13 +24,6 @@ const (
 	AnnotationV1WeightTarget    = "run.cog.weight.target"
 	AnnotationV1WeightSetDigest = "run.cog.weight.set-digest"
 
-	// Deprecated: kept for index-descriptor backward compat during migration.
-	AnnotationV1ReferenceType   = "run.cog.reference.type"
-	AnnotationV1ReferenceDigest = "run.cog.reference.digest"
-
-	// ReferenceTypeWeights is the value for run.cog.reference.type on weight manifests.
-	ReferenceTypeWeights = "weights"
-
 	// AnnotationV1WeightSizeUncomp is the spec §2.6 index-descriptor
 	// annotation carrying the uncompressed size of a weight. Projected
 	// from the lockfile at index-build time.

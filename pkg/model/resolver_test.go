@@ -1219,33 +1219,6 @@ func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
 }
 
 func TestIndexDetectionHelpers(t *testing.T) {
-	t.Run("findWeightsManifest", func(t *testing.T) {
-		manifests := []registry.PlatformManifest{
-			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},
-			{
-				Digest:       "sha256:weights456",
-				OS:           PlatformUnknown,
-				Architecture: PlatformUnknown,
-				Annotations: map[string]string{
-					AnnotationV1ReferenceType: ReferenceTypeWeights,
-				},
-			},
-		}
-
-		wm := findWeightsManifest(manifests)
-		require.NotNil(t, wm)
-		require.Equal(t, "sha256:weights456", wm.Digest)
-	})
-
-	t.Run("findWeightsManifest not found", func(t *testing.T) {
-		manifests := []registry.PlatformManifest{
-			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},
-		}
-
-		wm := findWeightsManifest(manifests)
-		require.Nil(t, wm)
-	})
-
 	t.Run("findImageManifest", func(t *testing.T) {
 		manifests := []registry.PlatformManifest{
 			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},
