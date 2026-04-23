@@ -62,13 +62,9 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 
 	projectDir := b.projectDir()
 
-	src, err := weightsource.For(ws.Source, projectDir)
+	src, err := weightsource.For(ws.URI, projectDir)
 	if err != nil {
 		return nil, err
-	}
-	normalizedURI, err := weightsource.NormalizeURI(ws.Source)
-	if err != nil {
-		return nil, fmt.Errorf("weight %q: %w", ws.Name(), err)
 	}
 
 	cacheDir, err := b.cacheDirFor(ws.Name())
@@ -91,10 +87,11 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		// separate concern (see cog-wej9).
 		entry = *existing
 		// Config-driven fields may have changed in cog.yaml since the
-		// last import. Stamp the current values so the lockfile stays in
-		// sync without requiring a full repack.
+		// last import. Update them without repacking.
 		entry.Target = ws.Target
-		entry.Source.URI = normalizedURI
+		entry.Source.URI = ws.URI
+		entry.Source.Include = ws.Include
+		entry.Source.Exclude = ws.Exclude
 	} else {
 		inv, err := src.Inventory(ctx)
 		if err != nil {
@@ -129,10 +126,10 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		entry = newWeightLockEntry(
 			ws.Name(), ws.Target,
 			WeightLockSource{
-				URI:         normalizedURI,
+				URI:         ws.URI,
 				Fingerprint: inv.Fingerprint,
-				Include:     []string{},
-				Exclude:     []string{},
+				Include:     ws.Include,
+				Exclude:     ws.Exclude,
 				ImportedAt:  time.Now().UTC(),
 			},
 			pr.Files,

@@ -2,12 +2,10 @@ package model
 
 import (
 	"context"
-	"slices"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
 )
 
@@ -201,60 +199,18 @@ func checkWeightLayers(ctx context.Context, r *WeightStatusResult, repo string, 
 }
 
 // isStale reports whether a config declaration has drifted from its
-// lockfile entry. Compares target and source fields (URI, include,
-// exclude). URIs are normalized before comparison so that bare paths
-// ("weights") match their canonical form ("file://./weights").
+// lockfile entry. An invalid config (URI that fails normalization) is
+// treated as stale: the user asked for something we can't represent, so
+// the safe answer is "out of sync".
 //
-// Source.Fingerprint and Source.ImportedAt are intentionally excluded —
-// they are lockfile-side metadata, not user-declared inputs.
+// Source.Fingerprint and Source.ImportedAt are lockfile-side metadata,
+// not user-declared inputs, and are excluded from the comparison.
 func isStale(w config.WeightSource, le *WeightLockEntry) bool {
-	if w.Target != le.Target {
-		return true
-	}
-
-	if normalizeConfigURI(w) != le.Source.URI {
-		return true
-	}
-
-	if !slices.Equal(normalizeInclude(w.Source), le.Source.Include) {
-		return true
-	}
-	if !slices.Equal(normalizeExclude(w.Source), le.Source.Exclude) {
-		return true
-	}
-
-	return false
-}
-
-// normalizeConfigURI returns the canonical URI for a config weight source.
-// For file:// and bare paths this runs weightsource.NormalizeURI. For
-// empty URIs (no source block) it returns "". If normalization fails
-// (shouldn't happen for valid configs) it returns the raw URI so the
-// comparison will correctly detect a mismatch.
-func normalizeConfigURI(w config.WeightSource) string {
-	raw := w.SourceURI()
-	if raw == "" {
-		return ""
-	}
-	normalized, err := weightsource.NormalizeURI(raw)
+	configSpec, err := WeightSpecFromConfig(w)
 	if err != nil {
-		return raw
+		return true
 	}
-	return normalized
-}
-
-func normalizeInclude(src *config.WeightSourceConfig) []string {
-	if src == nil || src.Include == nil {
-		return []string{}
-	}
-	return src.Include
-}
-
-func normalizeExclude(src *config.WeightSourceConfig) []string {
-	if src == nil || src.Exclude == nil {
-		return []string{}
-	}
-	return src.Exclude
+	return !configSpec.Equal(WeightSpecFromLock(*le))
 }
 
 // Results returns all weight status results in order: config-declared

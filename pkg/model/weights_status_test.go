@@ -260,6 +260,78 @@ func TestWeightStatuses_NotStaleWithMatchingPatterns(t *testing.T) {
 	assert.Equal(t, WeightStatusReady, ws.Results()[0].Status)
 }
 
+func TestWeightStatuses_CogYAMLReorderingNotStale(t *testing.T) {
+	// Patterns in cog.yaml can appear in any order; what matters is the
+	// set. The lockfile always stores them in canonical (sorted) form,
+	// so a cog.yaml reorder against a canonical lockfile reports ready.
+	cfg := &config.Config{
+		Weights: []config.WeightSource{
+			{Name: "base", Target: "/w", Source: &config.WeightSourceConfig{
+				URI:     "file://./weights",
+				Include: []string{"*.safetensors", "*.bin"},
+				Exclude: []string{"*.onnx", "*.tmp"},
+			}},
+		},
+	}
+	lock := &WeightsLock{
+		Version: 1,
+		Weights: []WeightLockEntry{
+			{
+				Name:   "base",
+				Target: "/w",
+				Source: WeightLockSource{
+					URI:     "file://./weights",
+					Include: []string{"*.bin", "*.safetensors"},
+					Exclude: []string{"*.onnx", "*.tmp"},
+				},
+				Digest: "sha256:abc", SetDigest: "sha256:abc",
+				Layers: []WeightLockLayer{layer("sha256:l1", 100)},
+			},
+		},
+	}
+
+	reg := newMockRegistry()
+	reg.addBlob("repo", "sha256:l1")
+
+	ws := computeStatus(t, cfg, lock, "repo", reg)
+	assert.Equal(t, WeightStatusReady, ws.Results()[0].Status)
+}
+
+func TestWeightStatuses_UnsortedLockfileIsStale(t *testing.T) {
+	// A lockfile whose on-disk form does not match the canonical form
+	// we would write today must report stale so the next build rewrites
+	// it. Here the lockfile has unsorted include patterns — a fresh
+	// build from this config would produce sorted patterns, so the
+	// lockfile is out of date.
+	cfg := &config.Config{
+		Weights: []config.WeightSource{
+			{Name: "base", Target: "/w", Source: &config.WeightSourceConfig{
+				URI:     "file://./weights",
+				Include: []string{"*.bin", "*.safetensors"},
+			}},
+		},
+	}
+	lock := &WeightsLock{
+		Version: 1,
+		Weights: []WeightLockEntry{
+			{
+				Name:   "base",
+				Target: "/w",
+				Source: WeightLockSource{
+					URI:     "file://./weights",
+					Include: []string{"*.safetensors", "*.bin"},
+					Exclude: []string{},
+				},
+				Digest: "sha256:abc", SetDigest: "sha256:abc",
+				Layers: []WeightLockLayer{layer("sha256:l1", 100)},
+			},
+		},
+	}
+
+	ws := computeStatus(t, cfg, lock, "repo", newMockRegistry())
+	assert.Equal(t, WeightStatusStale, ws.Results()[0].Status)
+}
+
 func TestWeightStatuses_Orphaned(t *testing.T) {
 	cfg := &config.Config{
 		Weights: []config.WeightSource{
@@ -310,7 +382,8 @@ func TestWeightStatuses_EmptyConfigWithOrphanedLockEntries(t *testing.T) {
 	assert.True(t, ws.HasProblems())
 }
 
-func TestWeightStatuses_NilSourceMatchesEmptyLockURI(t *testing.T) {
+func TestWeightStatuses_NilSourceIsStale(t *testing.T) {
+	// A weight declared without a source URI is malformed and reports stale.
 	cfg := &config.Config{
 		Weights: []config.WeightSource{
 			{Name: "base", Target: "/w"},
@@ -323,13 +396,12 @@ func TestWeightStatuses_NilSourceMatchesEmptyLockURI(t *testing.T) {
 				Name: "base", Target: "/w",
 				Source: WeightLockSource{URI: "", Include: []string{}, Exclude: []string{}},
 				Digest: "sha256:abc",
-				// No layers — edge case: ready without registry check.
 			},
 		},
 	}
 
 	ws := computeStatus(t, cfg, lock, "repo", newMockRegistry())
-	assert.Equal(t, WeightStatusReady, ws.Results()[0].Status)
+	assert.Equal(t, WeightStatusStale, ws.Results()[0].Status)
 }
 
 func TestWeightStatuses_FingerprintNotCompared(t *testing.T) {

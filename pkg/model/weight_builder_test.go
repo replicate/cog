@@ -32,6 +32,17 @@ func newTestBuilder(t *testing.T, projectDir string, weights []config.WeightSour
 	return NewWeightBuilder(src, lockPath)
 }
 
+func testWeightSpec(t *testing.T, name, uri, target string) *WeightSpec {
+	t.Helper()
+	spec, err := WeightSpecFromConfig(config.WeightSource{
+		Name:   name,
+		Target: target,
+		Source: &config.WeightSourceConfig{URI: uri},
+	})
+	require.NoError(t, err)
+	return spec
+}
+
 func TestWeightBuilder_HappyPath(t *testing.T) {
 	projectDir := t.TempDir()
 	makeWeightDir(t, projectDir, "weights/my-model", map[string][]byte{
@@ -43,7 +54,7 @@ func TestWeightBuilder_HappyPath(t *testing.T) {
 		{Name: "my-model", Target: "/src/weights/my-model", Source: &config.WeightSourceConfig{URI: "weights/my-model"}},
 	})
 
-	spec := NewWeightSpec("my-model", "weights/my-model", "/src/weights/my-model")
+	spec := testWeightSpec(t, "my-model", "weights/my-model", "/src/weights/my-model")
 	artifact, err := wb.Build(context.Background(), spec)
 	require.NoError(t, err)
 
@@ -82,7 +93,7 @@ func TestWeightBuilder_WritesLockfile(t *testing.T) {
 		{Name: "mw", Target: "/src/weights/mw", Source: &config.WeightSourceConfig{URI: "weights/mw"}},
 	})
 
-	spec := NewWeightSpec("mw", "weights/mw", "/src/weights/mw")
+	spec := testWeightSpec(t, "mw", "weights/mw", "/src/weights/mw")
 	artifact, err := wb.Build(context.Background(), spec)
 	require.NoError(t, err)
 
@@ -155,9 +166,9 @@ func TestWeightBuilder_UpdatesExistingLockfile(t *testing.T) {
 		{Name: "w2", Target: "/src/w2", Source: &config.WeightSourceConfig{URI: "w2"}},
 	})
 
-	_, err := wb.Build(context.Background(), NewWeightSpec("w1", "w1", "/src/w1"))
+	_, err := wb.Build(context.Background(), testWeightSpec(t, "w1", "w1", "/src/w1"))
 	require.NoError(t, err)
-	_, err = wb.Build(context.Background(), NewWeightSpec("w2", "w2", "/src/w2"))
+	_, err = wb.Build(context.Background(), testWeightSpec(t, "w2", "w2", "/src/w2"))
 	require.NoError(t, err)
 
 	lock, err := LoadWeightsLock(filepath.Join(projectDir, "weights.lock"))
@@ -180,7 +191,7 @@ func TestWeightBuilder_CacheHit(t *testing.T) {
 		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: "w"}},
 	})
 
-	spec := NewWeightSpec("w", "w", "/src/w")
+	spec := testWeightSpec(t, "w", "w", "/src/w")
 	first, err := wb.Build(context.Background(), spec)
 	require.NoError(t, err)
 	fa := first.(*WeightArtifact)
@@ -249,7 +260,7 @@ func TestWeightBuilder_CacheHit_UpdatesConfigFields(t *testing.T) {
 	})
 
 	// First build writes the lockfile with the old target.
-	spec := NewWeightSpec("w", "w", oldTarget)
+	spec := testWeightSpec(t, "w", "w", oldTarget)
 	first, err := wb.Build(context.Background(), spec)
 	require.NoError(t, err)
 	fa := first.(*WeightArtifact)
@@ -264,7 +275,7 @@ func TestWeightBuilder_CacheHit_UpdatesConfigFields(t *testing.T) {
 	// different URI spelling. The tars are still on disk so the builder
 	// should hit the cache and skip repacking, but it must update the
 	// config-driven fields in the lockfile.
-	spec2 := NewWeightSpec("w", "./w", newTarget)
+	spec2 := testWeightSpec(t, "w", "./w", newTarget)
 	second, err := wb.Build(context.Background(), spec2)
 	require.NoError(t, err)
 	sa := second.(*WeightArtifact)
@@ -302,7 +313,7 @@ func TestWeightBuilder_CacheHit_DoesNotRehashSource(t *testing.T) {
 	wb := newTestBuilder(t, projectDir, []config.WeightSource{
 		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: weightDir}},
 	})
-	spec := NewWeightSpec("w", weightDir, "/src/w")
+	spec := testWeightSpec(t, "w", weightDir, "/src/w")
 
 	first, err := wb.Build(context.Background(), spec)
 	require.NoError(t, err)
@@ -342,7 +353,7 @@ func TestWeightBuilder_CacheMiss_ContentsChanged(t *testing.T) {
 		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: weightDir}},
 	})
 
-	spec := NewWeightSpec("w", weightDir, "/src/w")
+	spec := testWeightSpec(t, "w", weightDir, "/src/w")
 	first, err := wb.Build(context.Background(), spec)
 	require.NoError(t, err)
 	fa := first.(*WeightArtifact)
@@ -383,7 +394,7 @@ func TestWeightBuilder_ErrorSourceNotFound(t *testing.T) {
 	projectDir := t.TempDir()
 	wb := newTestBuilder(t, projectDir, nil)
 
-	spec := NewWeightSpec("missing", "nonexistent-dir", "/src/missing")
+	spec := testWeightSpec(t, "missing", "nonexistent-dir", "/src/missing")
 	_, err := wb.Build(context.Background(), spec)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "weight source not found")
@@ -395,7 +406,7 @@ func TestWeightBuilder_ErrorSourceIsFile(t *testing.T) {
 
 	wb := newTestBuilder(t, projectDir, nil)
 
-	spec := NewWeightSpec("oops", "oops.bin", "/src/oops")
+	spec := testWeightSpec(t, "oops", "oops.bin", "/src/oops")
 	_, err := wb.Build(context.Background(), spec)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "is not a directory")
@@ -410,7 +421,7 @@ func TestWeightBuilder_ErrorContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	spec := NewWeightSpec("w", "w", "/src/w")
+	spec := testWeightSpec(t, "w", "w", "/src/w")
 	_, err := wb.Build(ctx, spec)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)
@@ -444,7 +455,7 @@ func TestWeightBuilder_NormalizesSourceURI(t *testing.T) {
 			wb := newTestBuilder(t, projectDir, []config.WeightSource{
 				{Name: "mw", Target: "/src/weights/mw", Source: &config.WeightSourceConfig{URI: tc.rawURI}},
 			})
-			spec := NewWeightSpec("mw", tc.rawURI, "/src/weights/mw")
+			spec := testWeightSpec(t, "mw", tc.rawURI, "/src/weights/mw")
 			_, err := wb.Build(context.Background(), spec)
 			require.NoError(t, err)
 

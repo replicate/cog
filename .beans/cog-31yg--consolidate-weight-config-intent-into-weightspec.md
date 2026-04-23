@@ -1,11 +1,11 @@
 ---
 # cog-31yg
 title: Consolidate weight config intent into WeightSpec
-status: todo
+status: completed
 type: task
 priority: high
 created_at: 2026-04-23T17:09:00Z
-updated_at: 2026-04-23T17:09:00Z
+updated_at: 2026-04-23T20:59:14Z
 parent: cog-66gt
 ---
 
@@ -79,12 +79,37 @@ No change. `WeightSpec` still satisfies `ArtifactSpec` via `Type()` + `Name()`.
 
 ## Todo
 
-- [ ] Expand `WeightSpec` type with `URI`, `Include`, `Exclude`
-- [ ] Add `WeightSpecFromConfig(config.WeightSource) (*WeightSpec, error)` constructor
-- [ ] Add `WeightSpecFromLock(WeightLockEntry) *WeightSpec` constructor
-- [ ] Add `Equal(other *WeightSpec) bool` method
-- [ ] Update `source.go` and `resolver.go` construction sites
-- [ ] Update `weight_builder.go` to use spec fields; simplify cache-hit stamping
-- [ ] Replace `isStale()` in `weights_status.go` with spec comparison
-- [ ] Update all affected tests
-- [ ] Verify `go test ./...` and `mise run lint:go` clean
+- [x] Expand `WeightSpec` type with `URI`, `Include`, `Exclude`
+- [x] Add `WeightSpecFromConfig(config.WeightSource) (*WeightSpec, error)` constructor
+- [x] Add `WeightSpecFromLock(WeightLockEntry) *WeightSpec` constructor
+- [x] Add `Equal(other *WeightSpec) bool` method
+- [x] Update `source.go` and `resolver.go` construction sites
+- [x] Update `weight_builder.go` to use spec fields; simplify cache-hit stamping
+- [x] Replace `isStale()` in `weights_status.go` with spec comparison
+- [x] Update all affected tests
+- [x] Verify `go test ./...` and `mise run lint:go` clean
+
+
+
+## Summary of Changes
+
+Consolidated weight config intent into a single `WeightSpec` type that is loadable from either cog.yaml (via `WeightSpecFromConfig`) or the lockfile (via `WeightSpecFromLock`) and directly comparable with `Equal`. This replaces scattered field-by-field drift detection across three representations.
+
+**Key decisions:**
+
+- **Include/Exclude are sets, not sequences.** `WeightSpecFromConfig` sorts them at construction; reordering patterns in cog.yaml is not drift.
+- **`WeightSpecFromLock` reads as-stored, no normalization.** Any deviation from canonical form on disk reports stale and triggers a rewrite on the next build.
+- **Malformed configs fail at spec construction** (empty or invalid-scheme URI). Previously malformed specs could propagate into the builder, status check, and lockfile.
+- **Fixed cache-hit bug**: the builder now stamps the full spec on cache hit (target, URI, include, exclude), not just target and URI. Include/exclude changes in cog.yaml are no longer silently swallowed.
+- **`ArtifactSpecs` now returns `(specs, error)`** so malformed weight URIs fail loudly instead of producing an incomplete artifact set.
+
+**Files changed:**
+- `pkg/model/artifact_weight.go`: expanded `WeightSpec`, added constructors + `Equal`, removed `NewWeightSpec`.
+- `pkg/model/source.go`, `pkg/model/resolver.go`: use `WeightSpecFromConfig`.
+- `pkg/model/weight_builder.go`: cache-hit stamps full spec; cache-miss consumes spec fields directly.
+- `pkg/model/weights_status.go`: `isStale` replaced with `WeightSpec.Equal` comparison; removed `normalizeConfigURI`, `normalizeInclude`, `normalizeExclude` helpers.
+- `pkg/model/weights_lock.go`: updated `WeightLockSource.Include`/`Exclude` doc to reflect sorted-set semantics.
+- `pkg/cli/weights.go`: handles new error return from `ArtifactSpecs`.
+- Tests: added coverage for `WeightSpecFromConfig`, `WeightSpecFromLock`, `Equal` (including URI normalization, reorder-ignoring, and stale-on-non-canonical-lockfile).
+
+Committed as e4a80533.

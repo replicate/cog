@@ -93,12 +93,13 @@ type WeightLockSource struct {
 	// Fingerprint is the source's version identity at import time.
 	// Scheme-prefixed (sha256:, commit:, etag:, …).
 	Fingerprint weightsource.Fingerprint `json:"fingerprint"`
-	// Include is the list of glob-style include patterns applied to the
-	// source, in the order they appear in cog.yaml. Empty patterns mean
-	// "include everything" and are still serialized as [] so the shape
-	// is stable.
+	// Include is the sorted list of glob-style include patterns applied
+	// to the source. Sorted because order is not semantically meaningful
+	// (the patterns are a set, not a sequence) and canonicalizing here
+	// keeps the lockfile stable across reorderings in cog.yaml. Empty
+	// patterns are serialized as [] so the shape is stable.
 	Include []string `json:"include"`
-	// Exclude is the list of exclude patterns, same shape as Include.
+	// Exclude is the sorted list of exclude patterns, same shape as Include.
 	Exclude []string `json:"exclude"`
 	// ImportedAt is the wall-clock time of the import that produced this
 	// entry. It is informational only — it never participates in
@@ -206,9 +207,10 @@ func (wl *WeightsLock) Marshal() ([]byte, error) {
 }
 
 // canonicalizeEntry applies the serialization rules to a single entry:
-// Files sorted by path, Layers sorted by digest, Include/Exclude
-// normalized to non-nil slices. Sort is idempotent so repeated calls
-// produce the same result.
+// Files sorted by path, Layers sorted by digest, nil Include/Exclude
+// normalized to [] so the shape is stable. Include/Exclude ordering is
+// already canonical — WeightSpec sorts at construction, and all writes
+// to WeightLockSource flow through a WeightSpec.
 func canonicalizeEntry(e *WeightLockEntry) {
 	sort.Slice(e.Files, func(i, j int) bool { return e.Files[i].Path < e.Files[j].Path })
 	sort.Slice(e.Layers, func(i, j int) bool { return e.Layers[i].Digest < e.Layers[j].Digest })

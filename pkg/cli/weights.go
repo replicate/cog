@@ -107,8 +107,12 @@ func collectWeightSpecs(src *model.Source, filterNames []string) ([]*model.Weigh
 		return nil, fmt.Errorf("no weights defined in %s", configFilename)
 	}
 
+	artifactSpecs, err := src.ArtifactSpecs()
+	if err != nil {
+		return nil, err
+	}
 	var allSpecs []*model.WeightSpec
-	for _, spec := range src.ArtifactSpecs() {
+	for _, spec := range artifactSpecs {
 		if ws, ok := spec.(*model.WeightSpec); ok {
 			allSpecs = append(allSpecs, ws)
 		}

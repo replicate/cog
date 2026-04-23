@@ -250,7 +250,10 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	if len(src.Config.Weights) > 0 {
 		wb := NewWeightBuilder(src, lockPath)
 		for _, ws := range src.Config.Weights {
-			spec := NewWeightSpec(ws.Name, ws.SourceURI(), ws.Target)
+			spec, specErr := WeightSpecFromConfig(ws)
+			if specErr != nil {
+				return nil, fmt.Errorf("build weight %q: %w", ws.Name, specErr)
+			}
 			artifact, buildErr := wb.Build(ctx, spec)
 			if buildErr != nil {
 				return nil, fmt.Errorf("build weight %q: %w", ws.Name, buildErr)

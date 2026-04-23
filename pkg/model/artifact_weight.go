@@ -2,8 +2,13 @@ package model
 
 import (
 	"fmt"
+	"slices"
+	"sort"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+
+	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/model/weightsource"
 )
 
 // MediaTypeWeightArtifact is the artifactType on a weight manifest. Layers
@@ -12,18 +17,76 @@ import (
 // without parsing annotations.
 const MediaTypeWeightArtifact = "application/vnd.cog.weight.v1"
 
-// WeightSpec declares a v1 weight artifact to be built from a source
-// directory. It implements ArtifactSpec.
+// WeightSpec is the normalized, user-declared description of a weight:
+// target mount path, source URI, and include/exclude filters. Construct
+// via WeightSpecFromConfig or WeightSpecFromLock; compare with Equal.
+//
+// Include and Exclude are sorted at construction time. They describe a
+// set of glob patterns applied by the packer, so order is not part of
+// the user's intent — reordering patterns in cog.yaml must not trigger
+// a rebuild.
 type WeightSpec struct {
-	name   string
-	Source string // source directory, relative to the project dir
-	Target string // container mount path
+	name    string
+	Target  string   // container mount path
+	URI     string   // normalized source URI (file://./weights, hf://org/repo)
+	Include []string // sorted glob patterns
+	Exclude []string // sorted glob patterns
 }
 
-// NewWeightSpec creates a WeightSpec with the given name, source directory,
-// and target mount path.
-func NewWeightSpec(name, source, target string) *WeightSpec {
-	return &WeightSpec{name: name, Source: source, Target: target}
+// WeightSpecFromConfig builds a WeightSpec from a cog.yaml weight entry,
+// normalizing the URI and cloning+sorting Include/Exclude. Returns an
+// error if the URI is empty or uses an unknown scheme.
+func WeightSpecFromConfig(w config.WeightSource) (*WeightSpec, error) {
+	uri, err := weightsource.NormalizeURI(w.SourceURI())
+	if err != nil {
+		return nil, fmt.Errorf("weight %q: %w", w.Name, err)
+	}
+	var include, exclude []string
+	if w.Source != nil {
+		include = sortedClone(w.Source.Include)
+		exclude = sortedClone(w.Source.Exclude)
+	}
+	return &WeightSpec{
+		name:    w.Name,
+		Target:  w.Target,
+		URI:     uri,
+		Include: include,
+		Exclude: exclude,
+	}, nil
+}
+
+// WeightSpecFromLock extracts the user-intent fields (target, URI,
+// include/exclude) from a lockfile entry. Fields are copied as stored:
+// no re-normalization. A lockfile whose on-disk form differs from what
+// we would write today — whether in URI form, include/exclude order, or
+// anything else — must report as drift so the next build rewrites it.
+func WeightSpecFromLock(e WeightLockEntry) *WeightSpec {
+	return &WeightSpec{
+		name:    e.Name,
+		Target:  e.Target,
+		URI:     e.Source.URI,
+		Include: slices.Clone(e.Source.Include),
+		Exclude: slices.Clone(e.Source.Exclude),
+	}
+}
+
+// sortedClone returns a sorted copy of s, or nil if s is nil.
+func sortedClone(s []string) []string {
+	if s == nil {
+		return nil
+	}
+	out := slices.Clone(s)
+	sort.Strings(out)
+	return out
+}
+
+// Equal reports whether two specs describe the same user intent.
+// Name is excluded: callers only compare specs for the same weight name.
+func (s *WeightSpec) Equal(other *WeightSpec) bool {
+	return s.Target == other.Target &&
+		s.URI == other.URI &&
+		slices.Equal(s.Include, other.Include) &&
+		slices.Equal(s.Exclude, other.Exclude)
 }
 
 func (s *WeightSpec) Type() ArtifactType { return ArtifactTypeWeight }
