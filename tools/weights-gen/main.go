@@ -234,40 +234,33 @@ func packDirectoryToEntry(ctx context.Context, name, target, sourceDir, cacheDir
 		return model.WeightLockEntry{}, fmt.Errorf("pack: %w", err)
 	}
 
-	configJSON, setDigest, err := model.BuildWeightConfigBlob(name, target, pr.Files)
-	if err != nil {
-		return model.WeightLockEntry{}, fmt.Errorf("build config blob: %w", err)
-	}
-
-	img, err := model.BuildWeightManifestV1(pr.Layers, model.WeightManifestV1Metadata{
-		Name:       name,
-		Target:     target,
-		SetDigest:  setDigest,
-		ConfigBlob: configJSON,
-	})
-	if err != nil {
-		return model.WeightLockEntry{}, fmt.Errorf("build manifest: %w", err)
-	}
-
-	digest, err := img.Digest()
-	if err != nil {
-		return model.WeightLockEntry{}, fmt.Errorf("manifest digest: %w", err)
-	}
-
 	// Generated lockfile uses the absolute sourceDir as the URI. The
 	// set digest doubles as the file:// fingerprint (spec §2.4).
 	uri, err := weightsource.NormalizeURI(sourceDir)
 	if err != nil {
 		return model.WeightLockEntry{}, fmt.Errorf("normalize source uri: %w", err)
 	}
-	src := model.WeightLockSource{
-		URI:         uri,
-		Fingerprint: weightsource.Fingerprint(setDigest),
-		Include:     []string{},
-		Exclude:     []string{},
-		ImportedAt:  time.Now().UTC(),
+
+	// Build the entry with a placeholder source first (we need the
+	// computed SetDigest for the fingerprint).
+	entry := model.NewWeightLockEntry(name, target,
+		model.WeightLockSource{
+			URI:     uri,
+			Include: []string{},
+			Exclude: []string{},
+		},
+		pr.Files,
+		pr.Layers,
+	)
+	entry.Source.Fingerprint = weightsource.Fingerprint(entry.SetDigest)
+	entry.Source.ImportedAt = time.Now().UTC()
+
+	// BuildWeightArtifact assembles the manifest and backfills entry.Digest.
+	if _, err := model.BuildWeightArtifact(&entry, pr.Layers); err != nil {
+		return model.WeightLockEntry{}, err
 	}
-	return model.NewWeightLockEntry(name, target, digest.String(), setDigest, src, pr.Files, pr.Layers), nil
+
+	return entry, nil
 }
 
 // generateRandomFile creates a file filled with random bytes of the given size.

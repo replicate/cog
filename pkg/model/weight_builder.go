@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -85,22 +84,17 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 	existing := lock.FindWeight(ws.Name())
 	layers, hit := cachedLayers(existing, cacheDir)
 
-	var (
-		packFiles   []PackedFile
-		fingerprint weightsource.Fingerprint
-	)
+	var entry WeightLockEntry
 	if hit {
 		// Cache hit: skip the source walk entirely. The lockfile carries
 		// the file index and the fingerprint; source-drift detection is a
 		// separate concern (see cog-wej9).
-		packFiles = packedFilesFromLockEntry(existing)
-		fingerprint = existing.Source.Fingerprint
+		entry = *existing
 	} else {
 		inv, err := src.Inventory(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("inventory weight %q: %w", ws.Name(), err)
 		}
-		fingerprint = inv.Fingerprint
 
 		if err := resetCacheDir(cacheDir); err != nil {
 			return nil, err
@@ -117,68 +111,50 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 				continue
 			}
 			if err := os.Rename(lr.TarPath, target); err != nil {
-				cleanupLayerResults(pr.Layers)
+				cleanupPackedLayers(pr.Layers)
 				return nil, fmt.Errorf("move layer %s to cache: %w", lr.Digest, err)
 			}
 			pr.Layers[i].TarPath = target
 		}
 		layers = pr.Layers
-		packFiles = pr.Files
+
+		// Build a preliminary entry so we can derive config blob and
+		// manifest from lockfile fields. The manifest digest is filled
+		// in below once we've assembled the manifest.
+		entry = NewWeightLockEntry(
+			ws.Name(), ws.Target,
+			WeightLockSource{
+				URI:         normalizedURI,
+				Fingerprint: inv.Fingerprint,
+				Include:     []string{},
+				Exclude:     []string{},
+				ImportedAt:  time.Now().UTC(),
+			},
+			pr.Files,
+			pr.Layers,
+		)
 	}
 
-	// Build config blob (§2.3) and set digest (§2.4).
-	configJSON, setDigest, err := BuildWeightConfigBlob(ws.Name(), ws.Target, packFiles)
+	artifact, err := BuildWeightArtifact(&entry, layers)
 	if err != nil {
-		cleanupLayerResults(layers)
-		return nil, fmt.Errorf("build config blob for %q: %w", ws.Name(), err)
+		cleanupPackedLayers(layers)
+		return nil, fmt.Errorf("weight %q: %w", ws.Name(), err)
 	}
 
-	// Assemble the manifest to record a descriptor. BuildWeightManifestV1
-	// is deterministic given identical layers + metadata.
-	img, err := BuildWeightManifestV1(layers, WeightManifestV1Metadata{
-		Name:       ws.Name(),
-		Target:     ws.Target,
-		SetDigest:  setDigest,
-		ConfigBlob: configJSON,
-	})
-	if err != nil {
-		cleanupLayerResults(layers)
-		return nil, fmt.Errorf("build weight manifest %q: %w", ws.Name(), err)
-	}
-	desc, err := descriptorFromImage(img)
-	if err != nil {
-		cleanupLayerResults(layers)
-		return nil, fmt.Errorf("compute manifest descriptor for %q: %w", ws.Name(), err)
-	}
-
-	newEntry := NewWeightLockEntry(
-		ws.Name(), ws.Target,
-		desc.Digest.String(), setDigest,
-		WeightLockSource{
-			URI:         normalizedURI,
-			Fingerprint: fingerprint,
-			Include:     []string{},
-			Exclude:     []string{},
-			ImportedAt:  time.Now().UTC(),
-		},
-		packFiles,
-		layers,
-	)
-
-	if !lockEntriesEqual(existing, &newEntry) {
+	if !lockEntriesEqual(existing, &entry) {
 		// Preserve ImportedAt across pure-content cache hits: if only
 		// ImportedAt would differ, the existing entry's content and
 		// source already match, and we shouldn't churn the timestamp.
 		// lockEntriesEqual ignores ImportedAt, so reaching here means
 		// something material changed — record the new timestamp.
-		lock.Upsert(newEntry)
+		lock.Upsert(entry)
 		if err := lock.Save(b.lockPath); err != nil {
-			cleanupLayerResults(layers)
+			cleanupPackedLayers(layers)
 			return nil, fmt.Errorf("update lockfile: %w", err)
 		}
 	}
 
-	return NewWeightArtifact(ws.Name(), desc, ws.Target, layers, setDigest, configJSON), nil
+	return artifact, nil
 }
 
 // projectDir returns the builder's project directory, or "" if the
@@ -224,11 +200,11 @@ func resetCacheDir(dir string) error {
 // content-addressed; a truncated file with the exact expected size would
 // also have to have a matching digest, which is effectively impossible.
 // Returns (nil, false) on any miss.
-func cachedLayers(entry *WeightLockEntry, cacheDir string) ([]LayerResult, bool) {
+func cachedLayers(entry *WeightLockEntry, cacheDir string) ([]PackedLayer, bool) {
 	if entry == nil || len(entry.Layers) == 0 {
 		return nil, false
 	}
-	results := make([]LayerResult, 0, len(entry.Layers))
+	results := make([]PackedLayer, 0, len(entry.Layers))
 	for _, l := range entry.Layers {
 		hash, err := v1.NewHash(l.Digest)
 		if err != nil {
@@ -240,7 +216,7 @@ func cachedLayers(entry *WeightLockEntry, cacheDir string) ([]LayerResult, bool)
 		if err != nil || fi.Size() != l.Size {
 			return nil, false
 		}
-		results = append(results, LayerResult{
+		results = append(results, PackedLayer{
 			TarPath:          tarPath,
 			Digest:           hash,
 			Size:             l.Size,
@@ -249,28 +225,6 @@ func cachedLayers(entry *WeightLockEntry, cacheDir string) ([]LayerResult, bool)
 		})
 	}
 	return results, true
-}
-
-// packedFilesFromLockEntry reconstructs a PackedFile slice from a
-// lockfile entry's Files index. Used on the cache-hit path where we
-// already have the full file→layer mapping and content digests without
-// needing to re-walk or rehash.
-//
-// The returned slice is sorted by path — the lockfile guarantees this
-// ordering via canonicalizeEntry, but we re-sort defensively so callers
-// (BuildWeightConfigBlob) don't depend on the entry being canonical.
-func packedFilesFromLockEntry(entry *WeightLockEntry) []PackedFile {
-	out := make([]PackedFile, len(entry.Files))
-	for i, f := range entry.Files {
-		out[i] = PackedFile{
-			Path:        f.Path,
-			Size:        f.Size,
-			Digest:      f.Digest,
-			LayerDigest: f.Layer,
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
-	return out
 }
 
 // loadLockfileOrEmpty loads the lockfile at path. A missing file is not

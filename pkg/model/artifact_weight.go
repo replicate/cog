@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
@@ -30,45 +32,65 @@ func (s *WeightSpec) Name() string       { return s.name }
 // WeightArtifact is a built weight artifact ready to push as an OCI manifest.
 // It implements Artifact.
 //
-// The packer has already written one tar file per layer to disk; Layers
-// carries the on-disk paths, digests, sizes, media types, and per-layer
-// annotations. The pusher consumes Layers to upload blobs and assemble the
-// manifest.
+// The lockfile entry (Entry) is the single source of truth for all
+// metadata. The packed layers provide on-disk tar paths for streaming
+// during push. The manifest image is cached from the build step so the
+// pusher doesn't need to rebuild it.
 type WeightArtifact struct {
-	name       string
 	descriptor v1.Descriptor
+	manifest   v1.Image
 
-	Target string
-	Layers []LayerResult
+	// Entry is the lockfile entry describing this weight's metadata.
+	// Must not be mutated after construction.
+	Entry WeightLockEntry
 
-	// SetDigest is the content-addressable weight set digest (§2.4).
-	SetDigest string
-	// ConfigBlob is the serialized config blob JSON (§2.3).
-	ConfigBlob []byte
+	// Layers are the packed tar layers on disk. The pusher reads from
+	// these to upload blobs; their metadata (digest, size, mediaType)
+	// matches Entry.Layers.
+	Layers []PackedLayer
 }
 
-// NewWeightArtifact creates a WeightArtifact. desc is the manifest
-// descriptor computed by the builder.
-func NewWeightArtifact(name string, desc v1.Descriptor, target string, layers []LayerResult, setDigest string, configBlob []byte) *WeightArtifact {
+// BuildWeightArtifact builds a WeightArtifact from a lockfile entry and
+// packed layers. It assembles the manifest, computes the manifest
+// descriptor, and backfills entry.Digest — the full ceremony that every
+// call site previously did by hand.
+func BuildWeightArtifact(entry *WeightLockEntry, layers []PackedLayer) (*WeightArtifact, error) {
+	img, err := BuildWeightManifestV1(*entry, layers)
+	if err != nil {
+		return nil, fmt.Errorf("build weight manifest: %w", err)
+	}
+	desc, err := descriptorFromImage(img)
+	if err != nil {
+		return nil, fmt.Errorf("compute manifest descriptor: %w", err)
+	}
+	entry.Digest = desc.Digest.String()
 	return &WeightArtifact{
-		name:       name,
 		descriptor: desc,
-		Target:     target,
+		manifest:   img,
+		Entry:      *entry,
 		Layers:     layers,
-		SetDigest:  setDigest,
-		ConfigBlob: configBlob,
+	}, nil
+}
+
+// NewWeightArtifact creates a WeightArtifact with a pre-built manifest.
+// Prefer BuildWeightArtifact for production use; this is for tests that
+// need a minimal artifact without a real manifest.
+func NewWeightArtifact(entry WeightLockEntry, desc v1.Descriptor, layers []PackedLayer) *WeightArtifact {
+	return &WeightArtifact{
+		descriptor: desc,
+		Entry:      entry,
+		Layers:     layers,
 	}
 }
 
 func (a *WeightArtifact) Type() ArtifactType        { return ArtifactTypeWeight }
-func (a *WeightArtifact) Name() string              { return a.name }
+func (a *WeightArtifact) Name() string              { return a.Entry.Name }
 func (a *WeightArtifact) Descriptor() v1.Descriptor { return a.descriptor }
 
+// Manifest returns the cached OCI manifest image built during
+// construction. Returns nil if the artifact was created via
+// NewWeightArtifact without a pre-built manifest.
+func (a *WeightArtifact) Manifest() v1.Image { return a.manifest }
+
 // TotalSize returns the sum of all layer blob sizes (bytes over the wire).
-func (a *WeightArtifact) TotalSize() int64 {
-	var total int64
-	for _, l := range a.Layers {
-		total += l.Size
-	}
-	return total
-}
+func (a *WeightArtifact) TotalSize() int64 { return a.Entry.SizeCompressed }

@@ -5,22 +5,25 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
 // NewWeightLockEntry assembles a WeightLockEntry from a source description,
 // the packed file index, and the set of packed layers produced by Pack.
 //
+// The set digest (spec §2.4) is computed from the file index. The manifest
+// digest is left empty — it is filled in by the caller after
+// BuildWeightManifestV1 assembles the manifest from this entry.
+//
 // The caller owns sort order — canonicalizeEntry sorts Files by path and
 // Layers by digest at Save time, so NewWeightLockEntry accepts whatever
 // order the packer happened to emit.
 func NewWeightLockEntry(
 	name, target string,
-	manifestDigest, setDigest string,
 	source WeightLockSource,
 	files []PackedFile,
-	layers []LayerResult,
+	layers []PackedLayer,
 ) WeightLockEntry {
 	lockFiles := make([]WeightLockFile, len(files))
 	for i, f := range files {
@@ -49,14 +52,16 @@ func NewWeightLockEntry(
 		Name:           name,
 		Target:         target,
 		Source:         source,
-		Digest:         manifestDigest,
-		SetDigest:      setDigest,
 		Size:           totalSize,
 		SizeCompressed: totalCompressed,
 		Files:          lockFiles,
 		Layers:         lockLayers,
 	}
 	canonicalizeEntry(&entry)
+
+	// Compute set digest from the canonical (sorted) file index.
+	entry.SetDigest = ComputeWeightSetDigest(entry.Files)
+
 	return entry
 }
 
@@ -87,7 +92,7 @@ type WeightConfigFile struct {
 // SYNC: weightsource.computeInventory computes the same digest from a
 // raw directory walk (producing an Inventory alongside). Changes to the
 // formula must update both.
-func ComputeWeightSetDigest(files []PackedFile) string {
+func ComputeWeightSetDigest(files []WeightLockFile) string {
 	entries := make([]string, len(files))
 	for i, f := range files {
 		_, hexStr, _ := strings.Cut(f.Digest, ":")
@@ -98,37 +103,40 @@ func ComputeWeightSetDigest(files []PackedFile) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// BuildWeightConfigBlob builds the serialized config blob JSON (§2.3) and
-// computes the weight set digest (§2.4).
-func BuildWeightConfigBlob(name, target string, files []PackedFile) (configJSON []byte, setDigest string, err error) {
+// BuildWeightConfigBlob builds the serialized config blob JSON (§2.3).
+// The setDigest and file index come from the lockfile entry — the
+// lockfile is the single source of truth for these values.
+func BuildWeightConfigBlob(name, target, setDigest string, files []WeightLockFile) ([]byte, error) {
 	if len(files) == 0 {
-		return nil, "", fmt.Errorf("no files for config blob")
+		return nil, fmt.Errorf("no files for config blob")
 	}
 
 	// Sort by path for deterministic output (§2.3: "files array MUST be
-	// sorted by path lexicographically").
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-
-	setDigest = ComputeWeightSetDigest(files)
+	// sorted by path lexicographically"). Clone to avoid mutating the
+	// caller's slice.
+	sorted := slices.Clone(files)
+	slices.SortFunc(sorted, func(a, b WeightLockFile) int {
+		return strings.Compare(a.Path, b.Path)
+	})
 
 	cfg := WeightConfigBlob{
 		Name:      name,
 		Target:    target,
 		SetDigest: setDigest,
-		Files:     make([]WeightConfigFile, len(files)),
+		Files:     make([]WeightConfigFile, len(sorted)),
 	}
-	for i, f := range files {
+	for i, f := range sorted {
 		cfg.Files[i] = WeightConfigFile{
 			Path:   f.Path,
-			Layer:  f.LayerDigest,
+			Layer:  f.Layer,
 			Size:   f.Size,
 			Digest: f.Digest,
 		}
 	}
 
-	configJSON, err = json.Marshal(cfg)
+	configJSON, err := json.Marshal(cfg)
 	if err != nil {
-		return nil, "", fmt.Errorf("marshal config blob: %w", err)
+		return nil, fmt.Errorf("marshal config blob: %w", err)
 	}
-	return configJSON, setDigest, nil
+	return configJSON, nil
 }

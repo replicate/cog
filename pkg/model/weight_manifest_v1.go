@@ -30,57 +30,21 @@ const (
 
 	// ReferenceTypeWeights is the value for run.cog.reference.type on weight manifests.
 	ReferenceTypeWeights = "weights"
+
+	// AnnotationV1WeightSizeUncomp is the spec §2.6 index-descriptor
+	// annotation carrying the uncompressed size of a weight. Projected
+	// from the lockfile at index-build time.
+	AnnotationV1WeightSizeUncomp = "run.cog.weight.size.uncompressed"
 )
 
 // MediaTypeWeightConfig is the config blob media type per spec §2.1.
 const MediaTypeWeightConfig = "application/vnd.cog.weight.config.v1+json"
 
-// WeightManifestV1Metadata describes the manifest-level metadata for a v1
-// weight manifest.
-type WeightManifestV1Metadata struct {
-	// Name is the weight name (e.g., "z-image-turbo"). Required.
-	Name string
-	// Target is the absolute mount path in the container (e.g.,
-	// "/src/weights"). Required.
-	Target string
-	// SetDigest is the content-addressable weight set digest (§2.4).
-	// Required.
-	SetDigest string
-	// ConfigBlob is the serialized config JSON (§2.3). Required.
-	ConfigBlob []byte
-}
-
-func (m WeightManifestV1Metadata) validate() error {
-	if m.Name == "" {
-		return fmt.Errorf("weight name is required")
-	}
-	if m.Target == "" {
-		return fmt.Errorf("weight target is required")
-	}
-	if m.SetDigest == "" {
-		return fmt.Errorf("weight set digest is required")
-	}
-	if len(m.ConfigBlob) == 0 {
-		return fmt.Errorf("weight config blob is required")
-	}
-	return nil
-}
-
-// annotations returns the manifest-level annotations for this metadata.
-// Per spec §2.2 the manifest is a pure function of content + packing +
-// config — no timestamps, source URIs, or producer metadata.
-func (m WeightManifestV1Metadata) annotations() map[string]string {
-	return map[string]string{
-		AnnotationV1WeightName:      m.Name,
-		AnnotationV1WeightTarget:    m.Target,
-		AnnotationV1WeightSetDigest: m.SetDigest,
-	}
-}
-
 // BuildWeightManifestV1 assembles a v1.Image representing a v1 weight manifest
-// from a set of packed tar layers and metadata. The layers are read lazily from
-// disk (via the TarPath field on each LayerResult), so very large layers do
-// not need to fit in memory.
+// from a lockfile entry and the corresponding packed tar layers. The entry
+// provides all metadata (name, target, setDigest, file index for the config
+// blob); the packed layers provide the on-disk tar paths for lazy streaming
+// during push.
 //
 // Layers are canonicalized: the manifest emits them in digest-sorted order,
 // regardless of input order. This makes the manifest digest a pure function
@@ -92,22 +56,38 @@ func (m WeightManifestV1Metadata) annotations() map[string]string {
 // The returned image has:
 //   - artifactType: application/vnd.cog.weight.v1 (injected via RawManifest override)
 //   - config: real config blob (application/vnd.cog.weight.config.v1+json, §2.3)
-//   - layers: one descriptor per LayerResult, in digest-sorted order,
+//   - layers: one descriptor per PackedLayer, in digest-sorted order,
 //     preserving mediaType, digest, size
 //   - annotations: manifest-level weight annotations per spec §2.5
-func BuildWeightManifestV1(layers []LayerResult, meta WeightManifestV1Metadata) (v1.Image, error) {
-	if err := meta.validate(); err != nil {
-		return nil, err
+func BuildWeightManifestV1(entry WeightLockEntry, layers []PackedLayer) (v1.Image, error) {
+	if entry.Name == "" {
+		return nil, fmt.Errorf("weight name is required")
+	}
+	if entry.Target == "" {
+		return nil, fmt.Errorf("weight target is required")
+	}
+	if entry.SetDigest == "" {
+		return nil, fmt.Errorf("weight set digest is required")
+	}
+	if len(entry.Files) == 0 {
+		return nil, fmt.Errorf("weight files are required for config blob")
 	}
 	if len(layers) == 0 {
 		return nil, fmt.Errorf("at least one layer is required")
+	}
+
+	// Build config blob from the entry's file index. The lockfile is
+	// already a superset of the config blob shape (§2.3).
+	configBlob, err := BuildWeightConfigBlob(entry.Name, entry.Target, entry.SetDigest, entry.Files)
+	if err != nil {
+		return nil, fmt.Errorf("build config blob: %w", err)
 	}
 
 	// Copy and sort by digest so callers' slices aren't reordered as a
 	// side effect and the manifest layer order is a pure function of
 	// input content.
 	sorted := slices.Clone(layers)
-	slices.SortFunc(sorted, func(a, b LayerResult) int {
+	slices.SortFunc(sorted, func(a, b PackedLayer) int {
 		return strings.Compare(a.Digest.String(), b.Digest.String())
 	})
 
@@ -141,27 +121,33 @@ func BuildWeightManifestV1(layers []LayerResult, meta WeightManifestV1Metadata) 
 
 	// Base on empty.Image, switched to OCI manifest media type.
 	img := mutate.MediaType(empty.Image, types.OCIManifestSchema1)
-	img, err := mutate.Append(img, adds...)
+	img, err = mutate.Append(img, adds...)
 	if err != nil {
 		return nil, fmt.Errorf("append weight layers: %w", err)
 	}
 
 	// Compute config blob digest + size.
-	cfgSum := sha256.Sum256(meta.ConfigBlob)
+	cfgSum := sha256.Sum256(configBlob)
 	cfgDigest := v1.Hash{
 		Algorithm: "sha256",
 		Hex:       hex.EncodeToString(cfgSum[:]),
+	}
+
+	annotations := map[string]string{
+		AnnotationV1WeightName:      entry.Name,
+		AnnotationV1WeightTarget:    entry.Target,
+		AnnotationV1WeightSetDigest: entry.SetDigest,
 	}
 
 	// Wrap to inject artifactType, override config to the real config
 	// blob descriptor, and attach manifest-level annotations.
 	return &weightManifestV1Image{
 		Image:       img,
-		annotations: meta.annotations(),
-		configBlob:  meta.ConfigBlob,
+		annotations: annotations,
+		configBlob:  configBlob,
 		configDesc: v1.Descriptor{
 			MediaType: types.MediaType(MediaTypeWeightConfig),
-			Size:      int64(len(meta.ConfigBlob)),
+			Size:      int64(len(configBlob)),
 			Digest:    cfgDigest,
 		},
 	}, nil
@@ -290,7 +276,7 @@ type fileLayer struct {
 	mediaType types.MediaType
 }
 
-func newFileLayer(lr LayerResult) *fileLayer {
+func newFileLayer(lr PackedLayer) *fileLayer {
 	return &fileLayer{
 		path:      lr.TarPath,
 		digest:    lr.Digest,
@@ -312,7 +298,7 @@ func (l *fileLayer) DiffID() (v1.Hash, error) { return l.digest, nil }
 // Compressed returns the file bytes. These are already in their on-wire form,
 // so no compression step is applied.
 func (l *fileLayer) Compressed() (io.ReadCloser, error) {
-	f, err := os.Open(l.path) //nolint:gosec // path is from LayerResult.TarPath, produced by packer
+	f, err := os.Open(l.path) //nolint:gosec // path is from PackedLayer.TarPath, produced by packer
 	if err != nil {
 		return nil, fmt.Errorf("open layer file %s: %w", l.path, err)
 	}

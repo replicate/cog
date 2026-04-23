@@ -32,11 +32,6 @@ const (
 	MediaTypeOCILayerTarGzip = "application/vnd.oci.image.layer.v1.tar+gzip"
 )
 
-// AnnotationV1WeightSizeUncomp is the spec §2.6 index-descriptor
-// annotation carrying the uncompressed size of a weight. Projected from
-// the lockfile at index-build time.
-const AnnotationV1WeightSizeUncomp = "run.cog.weight.size.uncompressed"
-
 // incompressibleExts lists extensions for dense binary formats that don't
 // benefit from gzip compression. Per spec §1.2.
 var incompressibleExts = map[string]bool{
@@ -90,10 +85,10 @@ func isGzip(mt types.MediaType) bool {
 	return mt == MediaTypeOCILayerTarGzip
 }
 
-// LayerResult describes a packed tar layer on disk, ready for OCI
+// PackedLayer describes a packed tar layer on disk, ready for OCI
 // manifest construction. Per spec §2.5 layer descriptors carry no
 // annotations; file→layer mapping lives on PackedFile.
-type LayerResult struct {
+type PackedLayer struct {
 	// TarPath is the path to the tar file on disk.
 	TarPath string
 	// Digest is the SHA256 digest of the tar file (the OCI blob digest).
@@ -110,7 +105,7 @@ type LayerResult struct {
 // content digests.
 type PackResult struct {
 	// Layers are the packed tar layers on disk.
-	Layers []LayerResult
+	Layers []PackedLayer
 	// Files are per-file content digests, sorted by path.
 	Files []PackedFile
 }
@@ -253,18 +248,18 @@ func (p *Packer) Plan(inv weightsource.Inventory) Plan {
 // know their digests avoid a second pass.
 //
 // On error Execute removes any tar files it already wrote. Successful
-// layers are owned by the caller, who must delete LayerResult.TarPath.
+// layers are owned by the caller, who must delete PackedLayer.TarPath.
 func (p *Packer) Execute(ctx context.Context, src weightsource.Source, plan Plan) (pr *PackResult, retErr error) {
 	if len(plan.Layers) == 0 {
 		return nil, fmt.Errorf("no layers in plan")
 	}
 
-	results := make([]LayerResult, 0, len(plan.Layers))
+	results := make([]PackedLayer, 0, len(plan.Layers))
 	var packed []PackedFile
 
 	defer func() {
 		if retErr != nil {
-			cleanupLayerResults(results)
+			cleanupPackedLayers(results)
 		}
 	}()
 
@@ -304,7 +299,7 @@ func (p *Packer) Pack(ctx context.Context, src weightsource.Source, inv weightso
 }
 
 // buildLayer writes a single planned layer to disk.
-func (p *Packer) buildLayer(ctx context.Context, src weightsource.Source, lp LayerPlan) (result LayerResult, retErr error) {
+func (p *Packer) buildLayer(ctx context.Context, src weightsource.Source, lp LayerPlan) (result PackedLayer, retErr error) {
 	gzipped := isGzip(lp.MediaType)
 
 	// Tmpfile prefix distinguishes bundles (many files) from single-file
@@ -320,7 +315,7 @@ func (p *Packer) buildLayer(ctx context.Context, src weightsource.Source, lp Lay
 
 	tmpFile, err := os.CreateTemp(p.opts.tempDir(), pattern)
 	if err != nil {
-		return LayerResult{}, fmt.Errorf("create temp file: %w", err)
+		return PackedLayer{}, fmt.Errorf("create temp file: %w", err)
 	}
 	tarPath := tmpFile.Name()
 	defer func() {
@@ -348,26 +343,26 @@ func (p *Packer) buildLayer(ctx context.Context, src weightsource.Source, lp Lay
 		}
 		gzw, err = gzip.NewWriterLevel(counter, level)
 		if err != nil {
-			return LayerResult{}, fmt.Errorf("create gzip writer: %w", err)
+			return PackedLayer{}, fmt.Errorf("create gzip writer: %w", err)
 		}
 		tarSink = gzw
 	}
 
 	tw := tar.NewWriter(tarSink)
 	if err := writeLayer(ctx, src, tw, lp.Files); err != nil {
-		return LayerResult{}, err
+		return PackedLayer{}, err
 	}
 
 	if err := tw.Close(); err != nil {
-		return LayerResult{}, fmt.Errorf("close tar writer: %w", err)
+		return PackedLayer{}, fmt.Errorf("close tar writer: %w", err)
 	}
 	if gzw != nil {
 		if err := gzw.Close(); err != nil {
-			return LayerResult{}, fmt.Errorf("close gzip writer: %w", err)
+			return PackedLayer{}, fmt.Errorf("close gzip writer: %w", err)
 		}
 	}
 	if err := tmpFile.Close(); err != nil {
-		return LayerResult{}, fmt.Errorf("close temp file: %w", err)
+		return PackedLayer{}, fmt.Errorf("close temp file: %w", err)
 	}
 
 	var uncompressed int64
@@ -375,7 +370,7 @@ func (p *Packer) buildLayer(ctx context.Context, src weightsource.Source, lp Lay
 		uncompressed += f.Size
 	}
 
-	return LayerResult{
+	return PackedLayer{
 		TarPath:          tarPath,
 		Digest:           v1.Hash{Algorithm: "sha256", Hex: hex.EncodeToString(hasher.Sum(nil))},
 		Size:             counter.n,
@@ -405,8 +400,8 @@ func writeLayer(ctx context.Context, src weightsource.Source, tw *tar.Writer, fi
 	return nil
 }
 
-// cleanupLayerResults removes tar files from completed results. Best-effort; errors are ignored.
-func cleanupLayerResults(results []LayerResult) {
+// cleanupPackedLayers removes tar files from completed results. Best-effort; errors are ignored.
+func cleanupPackedLayers(results []PackedLayer) {
 	for _, r := range results {
 		if r.TarPath != "" {
 			os.Remove(r.TarPath) //nolint:errcheck,gosec // best-effort cleanup

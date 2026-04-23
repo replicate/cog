@@ -117,7 +117,7 @@ func TestWeightStatuses_BarePathNormalization(t *testing.T) {
 			{
 				Name:   "parakeet",
 				Target: "/src/weights",
-				Source:  WeightLockSource{URI: "file://./weights", Include: []string{}, Exclude: []string{}},
+				Source: WeightLockSource{URI: "file://./weights", Include: []string{}, Exclude: []string{}},
 				Digest: "sha256:abc", SetDigest: "sha256:abc",
 				Layers: []WeightLockLayer{layer("sha256:l1", 1024)},
 			},

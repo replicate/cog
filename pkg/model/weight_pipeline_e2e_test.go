@@ -75,22 +75,11 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 	require.NoError(t, err, "pack")
 	require.Len(t, pr.Layers, 3, "want 1 bundle + 2 single-file layers")
 
-	// Build the config blob and manifest, then wrap as an artifact the
-	// pusher accepts.
-	configJSON, setDigest, err := BuildWeightConfigBlob("my-model", "/src/weights", pr.Files)
+	// Build a lock entry and artifact (manifest + descriptor + digest backfill).
+	entry := NewWeightLockEntry("my-model", "/src/weights", WeightLockSource{}, pr.Files, pr.Layers)
+	artifact, err := BuildWeightArtifact(&entry, pr.Layers)
 	require.NoError(t, err)
-
-	img, err := BuildWeightManifestV1(pr.Layers, WeightManifestV1Metadata{
-		Name:       "my-model",
-		Target:     "/src/weights",
-		SetDigest:  setDigest,
-		ConfigBlob: configJSON,
-	})
-	require.NoError(t, err)
-	desc, err := descriptorFromImage(img)
-	require.NoError(t, err)
-
-	artifact := NewWeightArtifact("my-model", desc, "/src/weights", pr.Layers, setDigest, configJSON)
+	setDigest := entry.SetDigest
 
 	repo := regHost + "/test/my-model"
 	pusher := NewWeightPusher(registry.NewRegistryClient())

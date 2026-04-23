@@ -34,20 +34,10 @@ func bundleWeightFixture(t *testing.T, name, target string) *WeightArtifact {
 	pr, err := NewPacker(&PackOptions{TempDir: cacheDir}).Pack(t.Context(), src, inv)
 	require.NoError(t, err)
 
-	configJSON, setDigest, err := BuildWeightConfigBlob(name, target, pr.Files)
+	entry := NewWeightLockEntry(name, target, WeightLockSource{}, pr.Files, pr.Layers)
+	artifact, err := BuildWeightArtifact(&entry, pr.Layers)
 	require.NoError(t, err)
-
-	img, err := BuildWeightManifestV1(pr.Layers, WeightManifestV1Metadata{
-		Name:       name,
-		Target:     target,
-		SetDigest:  setDigest,
-		ConfigBlob: configJSON,
-	})
-	require.NoError(t, err)
-	desc, err := descriptorFromImage(img)
-	require.NoError(t, err)
-
-	return NewWeightArtifact(name, desc, target, pr.Layers, setDigest, configJSON)
+	return artifact
 }
 
 // =============================================================================
@@ -189,7 +179,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		require.Equal(t, "docker:push:r8.im/user/model:latest", callOrder[0])
 		require.Equal(t, "registry:getDescriptor:r8.im/user/model:latest", callOrder[1])
 		// Tag derives from the weight's set digest (§2.4).
-		expectedTag := WeightTag(wa.Name(), wa.SetDigest)
+		expectedTag := WeightTag(wa.Name(), wa.Entry.SetDigest)
 		require.Equal(t, "registry:pushImage:r8.im/user/model:"+expectedTag, callOrder[2])
 		require.Equal(t, "registry:pushIndex:r8.im/user/model:latest", callOrder[3])
 	})

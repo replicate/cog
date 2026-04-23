@@ -28,7 +28,7 @@ func TestWeightArtifact_ImplementsArtifact(t *testing.T) {
 		Digest: v1.Hash{Algorithm: "sha256", Hex: "def456"},
 		Size:   4096,
 	}
-	layers := []LayerResult{
+	layers := []PackedLayer{
 		{
 			TarPath:   "/tmp/layer-0.tar.gz",
 			Digest:    v1.Hash{Algorithm: "sha256", Hex: "aaa"},
@@ -36,7 +36,8 @@ func TestWeightArtifact_ImplementsArtifact(t *testing.T) {
 			MediaType: MediaTypeOCILayerTarGzip,
 		},
 	}
-	artifact := NewWeightArtifact("my-weights", desc, "/src/weights", layers, "", nil)
+	entry := WeightLockEntry{Name: "my-weights", Target: "/src/weights"}
+	artifact := NewWeightArtifact(entry, desc, layers)
 
 	var _ Artifact = artifact // compile-time interface check
 
@@ -50,7 +51,7 @@ func TestWeightArtifact_Fields(t *testing.T) {
 		Digest: v1.Hash{Algorithm: "sha256", Hex: "def456"},
 		Size:   4096,
 	}
-	layers := []LayerResult{
+	layers := []PackedLayer{
 		{
 			TarPath:   "/tmp/layer-0.tar",
 			Digest:    v1.Hash{Algorithm: "sha256", Hex: "bbb"},
@@ -58,12 +59,12 @@ func TestWeightArtifact_Fields(t *testing.T) {
 			MediaType: MediaTypeOCILayerTar,
 		},
 	}
-	artifact := NewWeightArtifact("my-weights", desc, "/src/weights", layers, "", nil)
+	entry := WeightLockEntry{Name: "my-weights", Target: "/src/weights"}
+	artifact := NewWeightArtifact(entry, desc, layers)
 
-	require.Equal(t, "/src/weights", artifact.Target)
+	require.Equal(t, "/src/weights", artifact.Entry.Target)
 	require.Equal(t, layers, artifact.Layers)
-	require.Empty(t, artifact.SetDigest)
-	require.Nil(t, artifact.ConfigBlob)
+	require.Empty(t, artifact.Entry.SetDigest)
 }
 
 func TestWeightMediaTypeConstants(t *testing.T) {

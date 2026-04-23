@@ -64,9 +64,9 @@ func TestMediaTypeWeightConfigConstant(t *testing.T) {
 }
 
 func TestComputeWeightSetDigest_Deterministic(t *testing.T) {
-	files := []PackedFile{
-		{Path: "config.json", Size: 100, Digest: "sha256:aaa111", LayerDigest: "sha256:layer1"},
-		{Path: "model.safetensors", Size: 9999, Digest: "sha256:bbb222", LayerDigest: "sha256:layer2"},
+	files := []WeightLockFile{
+		{Path: "config.json", Size: 100, Digest: "sha256:aaa111", Layer: "sha256:layer1"},
+		{Path: "model.safetensors", Size: 9999, Digest: "sha256:bbb222", Layer: "sha256:layer2"},
 	}
 	d1 := ComputeWeightSetDigest(files)
 	d2 := ComputeWeightSetDigest(files)
@@ -76,23 +76,23 @@ func TestComputeWeightSetDigest_Deterministic(t *testing.T) {
 
 func TestComputeWeightSetDigest_PackingIndependent(t *testing.T) {
 	// Same files, different layer assignments → same set digest.
-	files1 := []PackedFile{
-		{Path: "a.txt", Size: 10, Digest: "sha256:aaa", LayerDigest: "sha256:layer1"},
-		{Path: "b.txt", Size: 20, Digest: "sha256:bbb", LayerDigest: "sha256:layer1"},
+	files1 := []WeightLockFile{
+		{Path: "a.txt", Size: 10, Digest: "sha256:aaa", Layer: "sha256:layer1"},
+		{Path: "b.txt", Size: 20, Digest: "sha256:bbb", Layer: "sha256:layer1"},
 	}
-	files2 := []PackedFile{
-		{Path: "a.txt", Size: 10, Digest: "sha256:aaa", LayerDigest: "sha256:layerX"},
-		{Path: "b.txt", Size: 20, Digest: "sha256:bbb", LayerDigest: "sha256:layerY"},
+	files2 := []WeightLockFile{
+		{Path: "a.txt", Size: 10, Digest: "sha256:aaa", Layer: "sha256:layerX"},
+		{Path: "b.txt", Size: 20, Digest: "sha256:bbb", Layer: "sha256:layerY"},
 	}
 	assert.Equal(t, ComputeWeightSetDigest(files1), ComputeWeightSetDigest(files2),
 		"set digest must be independent of layer assignment")
 }
 
 func TestComputeWeightSetDigest_DiffersForDifferentContent(t *testing.T) {
-	files1 := []PackedFile{
+	files1 := []WeightLockFile{
 		{Path: "a.txt", Size: 10, Digest: "sha256:aaa"},
 	}
-	files2 := []PackedFile{
+	files2 := []WeightLockFile{
 		{Path: "a.txt", Size: 10, Digest: "sha256:bbb"},
 	}
 	assert.NotEqual(t, ComputeWeightSetDigest(files1), ComputeWeightSetDigest(files2),
@@ -100,24 +100,25 @@ func TestComputeWeightSetDigest_DiffersForDifferentContent(t *testing.T) {
 }
 
 func TestBuildWeightConfigBlob_Deterministic(t *testing.T) {
-	files := []PackedFile{
-		{Path: "config.json", Size: 100, Digest: "sha256:aaa", LayerDigest: "sha256:l1"},
-		{Path: "model.bin", Size: 9999, Digest: "sha256:bbb", LayerDigest: "sha256:l2"},
+	files := []WeightLockFile{
+		{Path: "config.json", Size: 100, Digest: "sha256:aaa", Layer: "sha256:l1"},
+		{Path: "model.bin", Size: 9999, Digest: "sha256:bbb", Layer: "sha256:l2"},
 	}
-	cfg1, sd1, err := BuildWeightConfigBlob("test-weight", "/src/weights", files)
+	sd := ComputeWeightSetDigest(files)
+	cfg1, err := BuildWeightConfigBlob("test-weight", "/src/weights", sd, files)
 	require.NoError(t, err)
-	cfg2, sd2, err := BuildWeightConfigBlob("test-weight", "/src/weights", files)
+	cfg2, err := BuildWeightConfigBlob("test-weight", "/src/weights", sd, files)
 	require.NoError(t, err)
 	assert.Equal(t, cfg1, cfg2, "config blob must be deterministic")
-	assert.Equal(t, sd1, sd2, "set digest must be deterministic")
 }
 
 func TestBuildWeightConfigBlob_Structure(t *testing.T) {
-	files := []PackedFile{
-		{Path: "config.json", Size: 100, Digest: "sha256:aaa", LayerDigest: "sha256:l1"},
-		{Path: "model.bin", Size: 9999, Digest: "sha256:bbb", LayerDigest: "sha256:l2"},
+	files := []WeightLockFile{
+		{Path: "config.json", Size: 100, Digest: "sha256:aaa", Layer: "sha256:l1"},
+		{Path: "model.bin", Size: 9999, Digest: "sha256:bbb", Layer: "sha256:l2"},
 	}
-	configJSON, setDigest, err := BuildWeightConfigBlob("z-image-turbo", "/src/weights", files)
+	setDigest := ComputeWeightSetDigest(files)
+	configJSON, err := BuildWeightConfigBlob("z-image-turbo", "/src/weights", setDigest, files)
 	require.NoError(t, err)
 
 	var cfg WeightConfigBlob
@@ -137,7 +138,7 @@ func TestBuildWeightConfigBlob_Structure(t *testing.T) {
 }
 
 func TestBuildWeightConfigBlob_RejectsEmptyFiles(t *testing.T) {
-	_, _, err := BuildWeightConfigBlob("name", "/target", nil)
+	_, err := BuildWeightConfigBlob("name", "/target", "sha256:000", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no files")
 }
@@ -151,18 +152,17 @@ func TestSetDigest_StableAcrossRepacks(t *testing.T) {
 
 	pr1, err := packTestDir(t, dir, &PackOptions{BundleFileMax: 1024, BundleSizeMax: 1024})
 	require.NoError(t, err)
-	t.Cleanup(func() { cleanupLayerResults(pr1.Layers) })
+	t.Cleanup(func() { cleanupPackedLayers(pr1.Layers) })
 
 	pr2, err := packTestDir(t, dir, &PackOptions{BundleFileMax: 1, BundleSizeMax: 1})
 	require.NoError(t, err)
-	t.Cleanup(func() { cleanupLayerResults(pr2.Layers) })
+	t.Cleanup(func() { cleanupPackedLayers(pr2.Layers) })
 
-	_, sd1, err := BuildWeightConfigBlob("w", "/w", pr1.Files)
-	require.NoError(t, err)
-	_, sd2, err := BuildWeightConfigBlob("w", "/w", pr2.Files)
-	require.NoError(t, err)
+	entry1 := NewWeightLockEntry("w", "/w", WeightLockSource{}, pr1.Files, pr1.Layers)
+	entry2 := NewWeightLockEntry("w", "/w", WeightLockSource{}, pr2.Files, pr2.Layers)
 
-	assert.Equal(t, sd1, sd2, "set digest must be stable across different packing strategies")
+	assert.Equal(t, entry1.SetDigest, entry2.SetDigest,
+		"set digest must be stable across different packing strategies")
 }
 
 func TestConfigBlob_DiffersAcrossRepacks(t *testing.T) {
@@ -174,16 +174,19 @@ func TestConfigBlob_DiffersAcrossRepacks(t *testing.T) {
 
 	pr1, err := packTestDir(t, dir, &PackOptions{BundleFileMax: 1024, BundleSizeMax: 1024})
 	require.NoError(t, err)
-	t.Cleanup(func() { cleanupLayerResults(pr1.Layers) })
+	t.Cleanup(func() { cleanupPackedLayers(pr1.Layers) })
 
 	// With BundleFileMax=1, all files are "large" (standalone layers).
 	pr2, err := packTestDir(t, dir, &PackOptions{BundleFileMax: 1, BundleSizeMax: 1})
 	require.NoError(t, err)
-	t.Cleanup(func() { cleanupLayerResults(pr2.Layers) })
+	t.Cleanup(func() { cleanupPackedLayers(pr2.Layers) })
 
-	cfg1, _, err := BuildWeightConfigBlob("w", "/w", pr1.Files)
+	entry1 := NewWeightLockEntry("w", "/w", WeightLockSource{}, pr1.Files, pr1.Layers)
+	entry2 := NewWeightLockEntry("w", "/w", WeightLockSource{}, pr2.Files, pr2.Layers)
+
+	cfg1, err := BuildWeightConfigBlob("w", "/w", entry1.SetDigest, entry1.Files)
 	require.NoError(t, err)
-	cfg2, _, err := BuildWeightConfigBlob("w", "/w", pr2.Files)
+	cfg2, err := BuildWeightConfigBlob("w", "/w", entry2.SetDigest, entry2.Files)
 	require.NoError(t, err)
 
 	// Layer digests differ → config blobs differ.
@@ -191,7 +194,7 @@ func TestConfigBlob_DiffersAcrossRepacks(t *testing.T) {
 }
 
 func TestNewWeightLockEntry_PopulatesFromPackResult(t *testing.T) {
-	layers := []LayerResult{
+	layers := []PackedLayer{
 		{
 			Digest:           v1.Hash{Algorithm: "sha256", Hex: "aaa"},
 			Size:             110,
@@ -217,12 +220,12 @@ func TestNewWeightLockEntry_PopulatesFromPackResult(t *testing.T) {
 		ImportedAt:  time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC),
 	}
 
-	entry := NewWeightLockEntry("w", "/src/w", "sha256:mfst", "sha256:setdigest", src, files, layers)
+	entry := NewWeightLockEntry("w", "/src/w", src, files, layers)
 
 	assert.Equal(t, "w", entry.Name)
 	assert.Equal(t, "/src/w", entry.Target)
-	assert.Equal(t, "sha256:mfst", entry.Digest)
-	assert.Equal(t, "sha256:setdigest", entry.SetDigest)
+	assert.Empty(t, entry.Digest, "Digest should be empty (filled by caller after manifest build)")
+	assert.NotEmpty(t, entry.SetDigest, "SetDigest should be computed internally")
 
 	// Size = sum of uncompressed; SizeCompressed = sum of layer sizes.
 	assert.Equal(t, int64(100+2000), entry.Size)
@@ -238,7 +241,7 @@ func TestNewWeightLockEntry_PopulatesFromPackResult(t *testing.T) {
 }
 
 // TestSetDigest_CrossPath verifies that the packer-based set digest
-// (ComputeWeightSetDigest over PackedFile) and the weightsource-based
+// (ComputeWeightSetDigest over WeightLockFile) and the weightsource-based
 // fingerprint (computeInventory via FileSource.Inventory) produce the
 // same value for the same directory. If either formula drifts, this
 // test catches it.
@@ -247,11 +250,12 @@ func TestSetDigest_CrossPath(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
 
-	// Path 1: pack, compute from PackedFile slice (the builder path).
+	// Path 1: pack, convert to lock entry, compute from WeightLockFile slice.
 	pr, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
-	t.Cleanup(func() { cleanupLayerResults(pr.Layers) })
-	packerSetDigest := ComputeWeightSetDigest(pr.Files)
+	t.Cleanup(func() { cleanupPackedLayers(pr.Layers) })
+	entry := NewWeightLockEntry("w", "/w", WeightLockSource{}, pr.Files, pr.Layers)
+	packerSetDigest := ComputeWeightSetDigest(entry.Files)
 
 	// Path 2: inventory fingerprint from directory walk (the weightsource path).
 	src, err := weightsource.NewFileSource("file://"+dir, "")

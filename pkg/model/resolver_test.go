@@ -1144,7 +1144,7 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 	wa := weightArtifacts[0]
 	require.Equal(t, "my-model", wa.Name())
 	require.Equal(t, ArtifactTypeWeight, wa.Type())
-	require.Equal(t, "/srv/weights/model", wa.Target)
+	require.Equal(t, "/srv/weights/model", wa.Entry.Target)
 
 	// v1 artifacts carry packed tar layers and a valid manifest descriptor.
 	require.NotEmpty(t, wa.Layers, "expected at least one packed layer")

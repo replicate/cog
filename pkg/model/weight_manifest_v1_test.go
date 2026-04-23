@@ -24,7 +24,7 @@ import (
 // =============================================================================
 
 // packDir runs Pack on sourceDir and registers cleanup of the produced tar files.
-func packDir(t *testing.T, sourceDir string, opts *PackOptions) []LayerResult {
+func packDir(t *testing.T, sourceDir string, opts *PackOptions) []PackedLayer {
 	t.Helper()
 	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
 	require.NoError(t, err)
@@ -53,19 +53,21 @@ func writeSrcFile(t *testing.T, dir, relPath string, size int64) {
 	}
 }
 
-// defaultMeta returns a minimal valid manifest metadata.
-func defaultMeta() WeightManifestV1Metadata {
-	return WeightManifestV1Metadata{
-		Name:       "z-image-turbo",
-		Target:     "/src/weights",
-		SetDigest:  "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-		ConfigBlob: []byte(`{"name":"z-image-turbo","target":"/src/weights","setDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","files":[]}`),
+// defaultEntry returns a minimal valid WeightLockEntry for manifest tests.
+func defaultEntry() WeightLockEntry {
+	return WeightLockEntry{
+		Name:      "z-image-turbo",
+		Target:    "/src/weights",
+		SetDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+		Files: []WeightLockFile{
+			{Path: "config.json", Size: 128, Digest: "sha256:aaa", Layer: "sha256:layer1"},
+		},
 	}
 }
 
 // singleSmallFileLayers produces a valid single-layer result set for tests that
 // only care about manifest shape, not layer contents.
-func singleSmallFileLayers(t *testing.T) []LayerResult {
+func singleSmallFileLayers(t *testing.T) []PackedLayer {
 	t.Helper()
 	dir := t.TempDir()
 	writeSrcFile(t, dir, "config.json", 128)
@@ -73,27 +75,28 @@ func singleSmallFileLayers(t *testing.T) []LayerResult {
 }
 
 // =============================================================================
-// Metadata validation
+// Entry validation via BuildWeightManifestV1
 // =============================================================================
 
-func TestWeightManifestV1Metadata_validate(t *testing.T) {
+func TestBuildWeightManifestV1_RejectsInvalidEntry(t *testing.T) {
 	validSetDigest := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-	validConfigBlob := []byte(`{"name":"n","target":"/x","setDigest":"sha256:0000","files":[]}`)
+	validFiles := []WeightLockFile{{Path: "f.bin", Size: 1, Digest: "sha256:aaa", Layer: "sha256:l1"}}
+	layers := singleSmallFileLayers(t)
 
 	tests := []struct {
 		name    string
-		meta    WeightManifestV1Metadata
+		entry   WeightLockEntry
 		wantErr string
 	}{
-		{"missing name", WeightManifestV1Metadata{Target: "/x", SetDigest: validSetDigest, ConfigBlob: validConfigBlob}, "weight name is required"},
-		{"missing target", WeightManifestV1Metadata{Name: "n", SetDigest: validSetDigest, ConfigBlob: validConfigBlob}, "weight target is required"},
-		{"missing set digest", WeightManifestV1Metadata{Name: "n", Target: "/x", ConfigBlob: validConfigBlob}, "weight set digest is required"},
-		{"missing config blob", WeightManifestV1Metadata{Name: "n", Target: "/x", SetDigest: validSetDigest}, "weight config blob is required"},
-		{"valid", WeightManifestV1Metadata{Name: "n", Target: "/x", SetDigest: validSetDigest, ConfigBlob: validConfigBlob}, ""},
+		{"missing name", WeightLockEntry{Target: "/x", SetDigest: validSetDigest, Files: validFiles}, "weight name is required"},
+		{"missing target", WeightLockEntry{Name: "n", SetDigest: validSetDigest, Files: validFiles}, "weight target is required"},
+		{"missing set digest", WeightLockEntry{Name: "n", Target: "/x", Files: validFiles}, "weight set digest is required"},
+		{"missing files", WeightLockEntry{Name: "n", Target: "/x", SetDigest: validSetDigest}, "weight files are required"},
+		{"valid", WeightLockEntry{Name: "n", Target: "/x", SetDigest: validSetDigest, Files: validFiles}, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.meta.validate()
+			_, err := BuildWeightManifestV1(tc.entry, layers)
 			if tc.wantErr == "" {
 				require.NoError(t, err)
 			} else {
@@ -104,18 +107,23 @@ func TestWeightManifestV1Metadata_validate(t *testing.T) {
 	}
 }
 
-func TestWeightManifestV1Metadata_annotations(t *testing.T) {
-	meta := defaultMeta()
-	anns := meta.annotations()
+func TestBuildWeightManifestV1_ManifestAnnotations(t *testing.T) {
+	layers := singleSmallFileLayers(t)
+	entry := defaultEntry()
+	img, err := BuildWeightManifestV1(entry, layers)
+	require.NoError(t, err)
 
-	assert.Equal(t, "z-image-turbo", anns[AnnotationV1WeightName])
-	assert.Equal(t, "/src/weights", anns[AnnotationV1WeightTarget])
-	assert.Equal(t, "sha256:0000000000000000000000000000000000000000000000000000000000000000", anns[AnnotationV1WeightSetDigest])
+	m, err := img.Manifest()
+	require.NoError(t, err)
+
+	assert.Equal(t, "z-image-turbo", m.Annotations[AnnotationV1WeightName])
+	assert.Equal(t, "/src/weights", m.Annotations[AnnotationV1WeightTarget])
+	assert.Equal(t, "sha256:0000000000000000000000000000000000000000000000000000000000000000", m.Annotations[AnnotationV1WeightSetDigest])
 
 	// Removed annotations should not be present.
-	_, hasRefType := anns[AnnotationV1ReferenceType]
+	_, hasRefType := m.Annotations[AnnotationV1ReferenceType]
 	assert.False(t, hasRefType, "reference type annotation should not be present")
-	_, hasRefDigest := anns[AnnotationV1ReferenceDigest]
+	_, hasRefDigest := m.Annotations[AnnotationV1ReferenceDigest]
 	assert.False(t, hasRefDigest, "reference digest annotation should not be present")
 }
 
@@ -123,16 +131,20 @@ func TestWeightManifestV1Metadata_annotations(t *testing.T) {
 // BuildWeightManifestV1 — validation
 // =============================================================================
 
-func TestBuildWeightManifestV1_RejectsMissingMetadata(t *testing.T) {
+func TestBuildWeightManifestV1_RejectsMissingName(t *testing.T) {
 	layers := singleSmallFileLayers(t)
 
-	_, err := BuildWeightManifestV1(layers, WeightManifestV1Metadata{Target: "/x"})
+	_, err := BuildWeightManifestV1(WeightLockEntry{
+		Target:    "/x",
+		SetDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+		Files:     []WeightLockFile{{Path: "f", Size: 1, Digest: "sha256:a", Layer: "sha256:l"}},
+	}, layers)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "name")
 }
 
 func TestBuildWeightManifestV1_RejectsEmptyLayers(t *testing.T) {
-	_, err := BuildWeightManifestV1(nil, defaultMeta())
+	_, err := BuildWeightManifestV1(defaultEntry(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least one layer")
 }
@@ -142,19 +154,19 @@ func TestBuildWeightManifestV1_RejectsInvalidLayer(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		mutate  func(lr *LayerResult)
+		mutate  func(lr *PackedLayer)
 		wantErr string
 	}{
-		{"missing TarPath", func(lr *LayerResult) { lr.TarPath = "" }, "missing TarPath"},
-		{"missing digest", func(lr *LayerResult) { lr.Digest = v1.Hash{} }, "missing digest"},
-		{"zero size", func(lr *LayerResult) { lr.Size = 0 }, "invalid size"},
-		{"missing media type", func(lr *LayerResult) { lr.MediaType = "" }, "missing media type"},
+		{"missing TarPath", func(lr *PackedLayer) { lr.TarPath = "" }, "missing TarPath"},
+		{"missing digest", func(lr *PackedLayer) { lr.Digest = v1.Hash{} }, "missing digest"},
+		{"zero size", func(lr *PackedLayer) { lr.Size = 0 }, "invalid size"},
+		{"missing media type", func(lr *PackedLayer) { lr.MediaType = "" }, "missing media type"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			lr := base[0]
 			tc.mutate(&lr)
-			_, err := BuildWeightManifestV1([]LayerResult{lr}, defaultMeta())
+			_, err := BuildWeightManifestV1(defaultEntry(), []PackedLayer{lr})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
@@ -167,8 +179,8 @@ func TestBuildWeightManifestV1_RejectsInvalidLayer(t *testing.T) {
 
 func TestBuildWeightManifestV1_ManifestShape(t *testing.T) {
 	layers := singleSmallFileLayers(t)
-	meta := defaultMeta()
-	img, err := BuildWeightManifestV1(layers, meta)
+	entry := defaultEntry()
+	img, err := BuildWeightManifestV1(entry, layers)
 	require.NoError(t, err)
 
 	// Manifest schema and media type.
@@ -179,17 +191,17 @@ func TestBuildWeightManifestV1_ManifestShape(t *testing.T) {
 
 	// Config is the weight config descriptor.
 	assert.Equal(t, types.MediaType(MediaTypeWeightConfig), m.Config.MediaType)
-	assert.Equal(t, int64(len(meta.ConfigBlob)), m.Config.Size)
 	assert.Equal(t, "sha256", m.Config.Digest.Algorithm)
+	assert.Greater(t, m.Config.Size, int64(0))
 
-	// Verify config digest matches the config blob.
-	cfgSum := sha256.Sum256(meta.ConfigBlob)
-	assert.Equal(t, hex.EncodeToString(cfgSum[:]), m.Config.Digest.Hex)
-
-	// Config blob is the serialized config JSON on the wire.
-	cfg, err := img.RawConfigFile()
+	// Config blob is valid JSON containing the expected fields.
+	cfgBytes, err := img.RawConfigFile()
 	require.NoError(t, err)
-	assert.Equal(t, meta.ConfigBlob, cfg)
+
+	// Verify config digest matches the config blob bytes.
+	cfgSum := sha256.Sum256(cfgBytes)
+	assert.Equal(t, hex.EncodeToString(cfgSum[:]), m.Config.Digest.Hex)
+	assert.Equal(t, int64(len(cfgBytes)), m.Config.Size)
 
 	// Layers preserve media type, size, and digest from the packer. They
 	// carry no annotations per spec §2.5.
@@ -209,8 +221,8 @@ func TestBuildWeightManifestV1_ManifestShape(t *testing.T) {
 
 func TestBuildWeightManifestV1_RawManifestContainsArtifactType(t *testing.T) {
 	layers := singleSmallFileLayers(t)
-	meta := defaultMeta()
-	img, err := BuildWeightManifestV1(layers, meta)
+	entry := defaultEntry()
+	img, err := BuildWeightManifestV1(entry, layers)
 	require.NoError(t, err)
 
 	raw, err := img.RawManifest()
@@ -227,9 +239,12 @@ func TestBuildWeightManifestV1_RawManifestContainsArtifactType(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, MediaTypeWeightConfig, cfg["mediaType"])
 
-	cfgSum := sha256.Sum256(meta.ConfigBlob)
+	// Verify config digest matches what BuildWeightManifestV1 produced.
+	cfgBytes, err := img.RawConfigFile()
+	require.NoError(t, err)
+	cfgSum := sha256.Sum256(cfgBytes)
 	assert.Equal(t, "sha256:"+hex.EncodeToString(cfgSum[:]), cfg["digest"])
-	assert.EqualValues(t, len(meta.ConfigBlob), cfg["size"])
+	assert.EqualValues(t, len(cfgBytes), cfg["size"])
 
 	rawLayers, ok := parsed["layers"].([]any)
 	require.True(t, ok)
@@ -238,7 +253,7 @@ func TestBuildWeightManifestV1_RawManifestContainsArtifactType(t *testing.T) {
 
 func TestBuildWeightManifestV1_DigestMatchesRawManifest(t *testing.T) {
 	layers := singleSmallFileLayers(t)
-	img, err := BuildWeightManifestV1(layers, defaultMeta())
+	img, err := BuildWeightManifestV1(defaultEntry(), layers)
 	require.NoError(t, err)
 
 	raw, err := img.RawManifest()
@@ -276,12 +291,12 @@ func TestBuildWeightManifestV1_LayersCanonicallySortedByDigest(t *testing.T) {
 	// opposite of the expected output order. If the builder forgets to
 	// sort, the assertion below will fail.
 	input := slices.Clone(layers)
-	slices.SortFunc(input, func(a, b LayerResult) int {
+	slices.SortFunc(input, func(a, b PackedLayer) int {
 		return strings.Compare(a.Digest.String(), b.Digest.String())
 	})
 	slices.Reverse(input)
 
-	img, err := BuildWeightManifestV1(input, defaultMeta())
+	img, err := BuildWeightManifestV1(defaultEntry(), input)
 	require.NoError(t, err)
 
 	m, err := img.Manifest()
@@ -321,17 +336,17 @@ func TestBuildWeightManifestV1_InputOrderDoesNotAffectDigest(t *testing.T) {
 	layers := packDir(t, dir, &PackOptions{BundleFileMax: 512, BundleSizeMax: 1024})
 	require.GreaterOrEqual(t, len(layers), 3, "expected bundle + 2 large layers for a meaningful permutation test")
 
-	imgOriginal, err := BuildWeightManifestV1(layers, defaultMeta())
+	imgOriginal, err := BuildWeightManifestV1(defaultEntry(), layers)
 	require.NoError(t, err)
 	originalDigest, err := imgOriginal.Digest()
 	require.NoError(t, err)
 
 	// Reverse order.
-	reversed := make([]LayerResult, len(layers))
+	reversed := make([]PackedLayer, len(layers))
 	for i, l := range layers {
 		reversed[len(layers)-1-i] = l
 	}
-	imgReversed, err := BuildWeightManifestV1(reversed, defaultMeta())
+	imgReversed, err := BuildWeightManifestV1(defaultEntry(), reversed)
 	require.NoError(t, err)
 	reversedDigest, err := imgReversed.Digest()
 	require.NoError(t, err)
@@ -341,7 +356,7 @@ func TestBuildWeightManifestV1_InputOrderDoesNotAffectDigest(t *testing.T) {
 	// Swap two adjacent layers.
 	swapped := slices.Clone(layers)
 	swapped[0], swapped[1] = swapped[1], swapped[0]
-	imgSwapped, err := BuildWeightManifestV1(swapped, defaultMeta())
+	imgSwapped, err := BuildWeightManifestV1(defaultEntry(), swapped)
 	require.NoError(t, err)
 	swappedDigest, err := imgSwapped.Digest()
 	require.NoError(t, err)
@@ -360,7 +375,7 @@ func TestBuildWeightManifestV1_DoesNotMutateInputSlice(t *testing.T) {
 	require.GreaterOrEqual(t, len(layers), 2, "need at least two layers to detect mutation")
 
 	before := slices.Clone(layers)
-	_, err := BuildWeightManifestV1(layers, defaultMeta())
+	_, err := BuildWeightManifestV1(defaultEntry(), layers)
 	require.NoError(t, err)
 
 	assert.Equal(t, before, layers, "BuildWeightManifestV1 must not reorder the caller's slice")
@@ -371,7 +386,7 @@ func TestBuildWeightManifestV1_LayerDescriptorsHaveNoAnnotations(t *testing.T) {
 	// annotations. Everything useful lives in the config blob or the
 	// lockfile.
 	layers := singleSmallFileLayers(t)
-	img, err := BuildWeightManifestV1(layers, defaultMeta())
+	img, err := BuildWeightManifestV1(defaultEntry(), layers)
 	require.NoError(t, err)
 
 	m, err := img.Manifest()
@@ -391,7 +406,7 @@ func TestFileLayer_ReturnsFileBytes(t *testing.T) {
 	require.NoError(t, os.WriteFile(tmp, content, 0o644))
 
 	sum := sha256.Sum256(content)
-	lr := LayerResult{
+	lr := PackedLayer{
 		TarPath: tmp,
 		Digest: v1.Hash{
 			Algorithm: "sha256",
@@ -439,7 +454,7 @@ func TestFileLayer_ReturnsFileBytes(t *testing.T) {
 }
 
 func TestFileLayer_OpenMissingFile(t *testing.T) {
-	lr := LayerResult{
+	lr := PackedLayer{
 		TarPath:   filepath.Join(t.TempDir(), "does-not-exist.tar"),
 		Digest:    v1.Hash{Algorithm: "sha256", Hex: "deadbeef"},
 		Size:      1,

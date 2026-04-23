@@ -91,7 +91,7 @@ func weightsImportCommand(cmd *cobra.Command, args []string) error {
 
 	for _, wa := range artifacts {
 		console.Infof("  %s -> %s (%d layer(s), %s)",
-			wa.Name(), wa.Target, len(wa.Layers), formatSize(wa.TotalSize()))
+			wa.Name(), wa.Entry.Target, len(wa.Layers), formatSize(wa.TotalSize()))
 	}
 
 	console.Infof("\nPushing %d weight(s) to %s...", len(artifacts), repo)
@@ -254,4 +254,3 @@ func formatSize(bytes int64) string {
 		return fmt.Sprintf("%dB", bytes)
 	}
 }
-

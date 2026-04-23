@@ -22,7 +22,7 @@ import (
 // packTestLayers packs a directory containing a single file into tar
 // layers and returns the layer results. Used as a fixture builder so tests
 // don't each reimplement packing.
-func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir string, layers []LayerResult) {
+func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir string, layers []PackedLayer) {
 	t.Helper()
 	sourceDir = t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, filename), content, 0o644))
@@ -46,27 +46,17 @@ func newTestWeightArtifact(t *testing.T, name, target string) *WeightArtifact {
 	t.Helper()
 	_, layers := packTestLayers(t, "config.json", []byte(`{"hidden_size": 768}`))
 
-	// Build a minimal config blob and set digest for the single test file.
+	// Build a lock entry from the pack result.
 	files := []PackedFile{{
-		Path:   "config.json",
-		Size:   int64(len(`{"hidden_size": 768}`)),
-		Digest: layers[0].Digest.String(),
+		Path:        "config.json",
+		Size:        int64(len(`{"hidden_size": 768}`)),
+		Digest:      layers[0].Digest.String(),
+		LayerDigest: layers[0].Digest.String(),
 	}}
-	configJSON, setDigest, err := BuildWeightConfigBlob(name, target, files)
+	entry := NewWeightLockEntry(name, target, WeightLockSource{}, files, layers)
+	artifact, err := BuildWeightArtifact(&entry, layers)
 	require.NoError(t, err)
-
-	img, err := BuildWeightManifestV1(layers, WeightManifestV1Metadata{
-		Name:       name,
-		Target:     target,
-		SetDigest:  setDigest,
-		ConfigBlob: configJSON,
-	})
-	require.NoError(t, err)
-
-	desc, err := descriptorFromImage(img)
-	require.NoError(t, err)
-
-	return NewWeightArtifact(name, desc, target, layers, setDigest, configJSON)
+	return artifact
 }
 
 func TestWeightPusher_Push_ReturnsErrorForNilArtifact(t *testing.T) {
@@ -92,9 +82,10 @@ func TestWeightPusher_Push_ReturnsErrorForEmptyRepo(t *testing.T) {
 
 func TestWeightPusher_Push_ReturnsErrorForEmptyLayers(t *testing.T) {
 	// Empty layer set must be caught before we try to build a manifest.
-	artifact := NewWeightArtifact("model-v1",
+	artifact := NewWeightArtifact(
+		WeightLockEntry{Name: "model-v1", Target: "/src/weights"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc"}},
-		"/src/weights", nil, "", nil)
+		nil)
 
 	reg := &mockRegistry{}
 	pusher := NewWeightPusher(reg)
@@ -151,7 +142,7 @@ func TestWeightPusher_Push_PushesExpectedManifest(t *testing.T) {
 	// Manifest-level annotations per spec §2.5.
 	require.Equal(t, "model-v1", manifest.Annotations[AnnotationV1WeightName])
 	require.Equal(t, "/src/weights", manifest.Annotations[AnnotationV1WeightTarget])
-	require.Equal(t, artifact.SetDigest, manifest.Annotations[AnnotationV1WeightSetDigest])
+	require.Equal(t, artifact.Entry.SetDigest, manifest.Annotations[AnnotationV1WeightSetDigest])
 
 	// Result descriptor is populated.
 	require.NotEmpty(t, result.Descriptor.Digest.Hex)
@@ -176,7 +167,7 @@ func TestWeightPusher_Push_TagDerivesFromSetDigest(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Contains(t, pushedRef, "weights-model-v1-")
-	require.Contains(t, pushedRef, ShortDigest(artifact.SetDigest))
+	require.Contains(t, pushedRef, ShortDigest(artifact.Entry.SetDigest))
 }
 
 func TestWeightPusher_Push_CustomTagOverride(t *testing.T) {
@@ -370,16 +361,9 @@ func TestWeightPusher_Push_HonoursConcurrencyLimit(t *testing.T) {
 	layers := pr.Layers
 	require.GreaterOrEqual(t, len(layers), n, "expected a layer per file")
 
-	configJSON, setDigest, err := BuildWeightConfigBlob("model", "/src/weights", pr.Files)
+	entry := NewWeightLockEntry("model", "/src/weights", WeightLockSource{}, pr.Files, pr.Layers)
+	artifact, err := BuildWeightArtifact(&entry, layers)
 	require.NoError(t, err)
-
-	img, err := BuildWeightManifestV1(layers, WeightManifestV1Metadata{
-		Name: "model", Target: "/src/weights", SetDigest: setDigest, ConfigBlob: configJSON,
-	})
-	require.NoError(t, err)
-	desc, err := descriptorFromImage(img)
-	require.NoError(t, err)
-	artifact := NewWeightArtifact("model", desc, "/src/weights", layers, setDigest, configJSON)
 
 	var inFlight, maxInFlight atomic.Int32
 	reg := &mockRegistry{

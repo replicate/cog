@@ -52,9 +52,9 @@ func TestWeightBuilder_HappyPath(t *testing.T) {
 
 	require.Equal(t, ArtifactTypeWeight, wa.Type())
 	require.Equal(t, "my-model", wa.Name())
-	require.Equal(t, "/src/weights/my-model", wa.Target)
-	require.NotEmpty(t, wa.SetDigest, "builder should compute SetDigest")
-	require.NotEmpty(t, wa.ConfigBlob, "builder should compute ConfigBlob")
+	require.Equal(t, "/src/weights/my-model", wa.Entry.Target)
+	require.NotEmpty(t, wa.Entry.SetDigest, "builder should compute SetDigest")
+	require.NotEmpty(t, wa.Entry.Files, "builder should populate Files")
 
 	// At least one layer (the bundled small files).
 	require.NotEmpty(t, wa.Layers, "expected at least one layer")
@@ -98,14 +98,14 @@ func TestWeightBuilder_WritesLockfile(t *testing.T) {
 	require.Equal(t, "mw", entry.Name)
 	require.Equal(t, "/src/weights/mw", entry.Target)
 	require.Equal(t, wa.Descriptor().Digest.String(), entry.Digest)
-	require.Equal(t, wa.SetDigest, entry.SetDigest)
+	require.Equal(t, wa.Entry.SetDigest, entry.SetDigest)
 	require.Len(t, entry.Layers, len(wa.Layers))
 
 	// Source block is populated with the normalized URI, a sha256
 	// fingerprint, and empty include/exclude patterns.
 	require.Equal(t, "file://./weights/mw", entry.Source.URI)
 	require.Equal(t, "sha256", entry.Source.Fingerprint.Scheme())
-	require.Equal(t, wa.SetDigest, entry.Source.Fingerprint.String(),
+	require.Equal(t, wa.Entry.SetDigest, entry.Source.Fingerprint.String(),
 		"file:// fingerprint is the set digest")
 	require.NotNil(t, entry.Source.Include)
 	require.NotNil(t, entry.Source.Exclude)
