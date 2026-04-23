@@ -90,6 +90,11 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		// the file index and the fingerprint; source-drift detection is a
 		// separate concern (see cog-wej9).
 		entry = *existing
+		// Config-driven fields may have changed in cog.yaml since the
+		// last import. Stamp the current values so the lockfile stays in
+		// sync without requiring a full repack.
+		entry.Target = ws.Target
+		entry.Source.URI = normalizedURI
 	} else {
 		inv, err := src.Inventory(ctx)
 		if err != nil {

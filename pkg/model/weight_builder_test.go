@@ -233,6 +233,62 @@ func TestWeightBuilder_CacheHit(t *testing.T) {
 	require.Len(t, lock.Weights, 1)
 }
 
+func TestWeightBuilder_CacheHit_UpdatesConfigFields(t *testing.T) {
+	// Config-driven fields (target, source URI) can change in cog.yaml
+	// without the source content changing. The cache-hit path must stamp
+	// the current values into the lockfile so `weights status` doesn't
+	// report the weight as stale.
+	projectDir := t.TempDir()
+	makeWeightDir(t, projectDir, "w", map[string][]byte{"a.json": []byte(`{"x":1}`)})
+
+	oldTarget := "/src/w"
+	newTarget := "/src/w-moved"
+
+	wb := newTestBuilder(t, projectDir, []config.WeightSource{
+		{Name: "w", Target: oldTarget, Source: &config.WeightSourceConfig{URI: "w"}},
+	})
+
+	// First build writes the lockfile with the old target.
+	spec := NewWeightSpec("w", "w", oldTarget)
+	first, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+	fa := first.(*WeightArtifact)
+
+	lockPath := filepath.Join(projectDir, "weights.lock")
+	lock, err := LoadWeightsLock(lockPath)
+	require.NoError(t, err)
+	require.Equal(t, oldTarget, lock.Weights[0].Target)
+	require.Equal(t, "file://./w", lock.Weights[0].Source.URI)
+
+	// Second build: same name, same source dir, different target and
+	// different URI spelling. The tars are still on disk so the builder
+	// should hit the cache and skip repacking, but it must update the
+	// config-driven fields in the lockfile.
+	spec2 := NewWeightSpec("w", "./w", newTarget)
+	second, err := wb.Build(context.Background(), spec2)
+	require.NoError(t, err)
+	sa := second.(*WeightArtifact)
+
+	// Layers should be reused (cache hit, no repack).
+	require.Equal(t, fa.Layers[0].Digest, sa.Layers[0].Digest,
+		"cache hit should reuse the same layers")
+
+	// The lockfile must have the new target.
+	lock2, err := LoadWeightsLock(lockPath)
+	require.NoError(t, err)
+	require.Len(t, lock2.Weights, 1)
+	require.Equal(t, newTarget, lock2.Weights[0].Target,
+		"cache-hit path must update the target in the lockfile")
+
+	// The source URI normalizes identically for "w" and "./w", so it
+	// should remain "file://./w". Verify it wasn't corrupted.
+	require.Equal(t, "file://./w", lock2.Weights[0].Source.URI,
+		"source URI must remain the normalized form")
+
+	// Artifact should also carry the new target.
+	require.Equal(t, newTarget, sa.Entry.Target)
+}
+
 func TestWeightBuilder_CacheHit_DoesNotRehashSource(t *testing.T) {
 	// The cache-hit path reads the file index straight from the lockfile
 	// instead of re-walking and re-hashing the source directory. Prove it
