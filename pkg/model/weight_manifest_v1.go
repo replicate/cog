@@ -8,6 +8,8 @@ import (
 	"io"
 	"maps"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -80,10 +82,18 @@ func (m WeightManifestV1Metadata) annotations() map[string]string {
 // disk (via the TarPath field on each LayerResult), so very large layers do
 // not need to fit in memory.
 //
+// Layers are canonicalized: the manifest emits them in digest-sorted order,
+// regardless of input order. This makes the manifest digest a pure function
+// of the layer *set* plus metadata, so cold-pack and warm-cache paths
+// (which can produce layers in different orders) produce identical
+// manifests. The lockfile is also digest-sorted (see canonicalizeEntry),
+// so the two canonical forms agree.
+//
 // The returned image has:
 //   - artifactType: application/vnd.cog.weight.v1 (injected via RawManifest override)
 //   - config: real config blob (application/vnd.cog.weight.config.v1+json, §2.3)
-//   - layers: one descriptor per LayerResult, preserving mediaType, digest, size, annotations
+//   - layers: one descriptor per LayerResult, in digest-sorted order,
+//     preserving mediaType, digest, size
 //   - annotations: manifest-level weight annotations per spec §2.5
 func BuildWeightManifestV1(layers []LayerResult, meta WeightManifestV1Metadata) (v1.Image, error) {
 	if err := meta.validate(); err != nil {
@@ -93,6 +103,14 @@ func BuildWeightManifestV1(layers []LayerResult, meta WeightManifestV1Metadata) 
 		return nil, fmt.Errorf("at least one layer is required")
 	}
 
+	// Copy and sort by digest so callers' slices aren't reordered as a
+	// side effect and the manifest layer order is a pure function of
+	// input content.
+	sorted := slices.Clone(layers)
+	slices.SortFunc(sorted, func(a, b LayerResult) int {
+		return strings.Compare(a.Digest.String(), b.Digest.String())
+	})
+
 	// Build mutate.Addendum entries. Each addendum wraps our file-backed
 	// layer and supplies the media type (used by mutate.Append to build
 	// the manifest's layer descriptors).
@@ -100,8 +118,8 @@ func BuildWeightManifestV1(layers []LayerResult, meta WeightManifestV1Metadata) 
 	// Layer descriptors carry no annotations per spec §2.5 — callers that
 	// need per-file provenance read the config blob (files array) or the
 	// lockfile instead.
-	adds := make([]mutate.Addendum, 0, len(layers))
-	for i, lr := range layers {
+	adds := make([]mutate.Addendum, 0, len(sorted))
+	for i, lr := range sorted {
 		if lr.TarPath == "" {
 			return nil, fmt.Errorf("layer %d: missing TarPath", i)
 		}

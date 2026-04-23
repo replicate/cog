@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -251,28 +253,52 @@ func TestBuildWeightManifestV1_DigestMatchesRawManifest(t *testing.T) {
 	assert.Equal(t, "sha256", got.Algorithm)
 }
 
-func TestBuildWeightManifestV1_MultiLayerPreservesOrder(t *testing.T) {
-	// Mix a small bundle and two large files with different media types.
+func TestBuildWeightManifestV1_LayersCanonicallySortedByDigest(t *testing.T) {
+	// The manifest emits layers in digest-sorted order regardless of input
+	// order, so that different paths producing the same layer set produce
+	// identical manifests. Mix a small bundle and two "large" files with
+	// different media types to make sure the sort is by digest, not by
+	// media type or size — and feed the builder the reverse of the
+	// already-sorted order so a no-op pass-through can't spuriously pass.
+	//
+	// BundleFileMax is set tiny so ~1 KB files qualify as "large" and get
+	// their own layer; avoids writing hundreds of MB per test.
 	dir := t.TempDir()
-	writeSrcFile(t, dir, "config.json", 128)
+	writeSrcFile(t, dir, "config.json", 64)
 	writeSrcFile(t, dir, "tokenizer.json", 64)
-	writeSrcFile(t, dir, "model.safetensors", 100*1024*1024) // incompressible .tar
-	writeSrcFile(t, dir, "aux.dat", 100*1024*1024)           // compressible .tar.gz
+	writeSrcFile(t, dir, "model.safetensors", 1024) // incompressible .tar
+	writeSrcFile(t, dir, "aux.dat", 1024)           // compressible .tar.gz
 
-	layers := packDir(t, dir, nil)
+	layers := packDir(t, dir, &PackOptions{BundleFileMax: 512, BundleSizeMax: 1024})
 	require.GreaterOrEqual(t, len(layers), 3, "expected bundle + 2 large layers")
 
-	img, err := BuildWeightManifestV1(layers, defaultMeta())
+	// Pre-sort then reverse so the input is guaranteed to be in the
+	// opposite of the expected output order. If the builder forgets to
+	// sort, the assertion below will fail.
+	input := slices.Clone(layers)
+	slices.SortFunc(input, func(a, b LayerResult) int {
+		return strings.Compare(a.Digest.String(), b.Digest.String())
+	})
+	slices.Reverse(input)
+
+	img, err := BuildWeightManifestV1(input, defaultMeta())
 	require.NoError(t, err)
 
 	m, err := img.Manifest()
 	require.NoError(t, err)
 	require.Len(t, m.Layers, len(layers))
 
-	// At least one .tar and one .tar+gzip layer should be present.
+	// Layers are digest-sorted; assert strict ascending order on the
+	// serialized digest string.
+	for i := 1; i < len(m.Layers); i++ {
+		assert.Less(t, m.Layers[i-1].Digest.String(), m.Layers[i].Digest.String(),
+			"layer %d digest should sort before layer %d (manifest must be digest-sorted)", i-1, i)
+	}
+
+	// At least one .tar and one .tar+gzip layer should be present — a
+	// sanity check that the mixed media types didn't collapse.
 	var sawTar, sawGzip bool
-	for i, layer := range m.Layers {
-		assert.Equal(t, layers[i].MediaType, layer.MediaType)
+	for _, layer := range m.Layers {
 		switch layer.MediaType {
 		case types.MediaType(MediaTypeOCILayerTar):
 			sawTar = true
@@ -282,6 +308,62 @@ func TestBuildWeightManifestV1_MultiLayerPreservesOrder(t *testing.T) {
 	}
 	assert.True(t, sawTar, "expected at least one .tar layer")
 	assert.True(t, sawGzip, "expected at least one .tar+gzip layer")
+}
+
+func TestBuildWeightManifestV1_InputOrderDoesNotAffectDigest(t *testing.T) {
+	// Manifest digest must be a pure function of the layer set plus
+	// metadata — permuting the input slice must not change the digest.
+	dir := t.TempDir()
+	writeSrcFile(t, dir, "config.json", 64)
+	writeSrcFile(t, dir, "model.safetensors", 1024)
+	writeSrcFile(t, dir, "aux.dat", 1024)
+
+	layers := packDir(t, dir, &PackOptions{BundleFileMax: 512, BundleSizeMax: 1024})
+	require.GreaterOrEqual(t, len(layers), 3, "expected bundle + 2 large layers for a meaningful permutation test")
+
+	imgOriginal, err := BuildWeightManifestV1(layers, defaultMeta())
+	require.NoError(t, err)
+	originalDigest, err := imgOriginal.Digest()
+	require.NoError(t, err)
+
+	// Reverse order.
+	reversed := make([]LayerResult, len(layers))
+	for i, l := range layers {
+		reversed[len(layers)-1-i] = l
+	}
+	imgReversed, err := BuildWeightManifestV1(reversed, defaultMeta())
+	require.NoError(t, err)
+	reversedDigest, err := imgReversed.Digest()
+	require.NoError(t, err)
+
+	assert.Equal(t, originalDigest, reversedDigest, "manifest digest must be order-invariant")
+
+	// Swap two adjacent layers.
+	swapped := slices.Clone(layers)
+	swapped[0], swapped[1] = swapped[1], swapped[0]
+	imgSwapped, err := BuildWeightManifestV1(swapped, defaultMeta())
+	require.NoError(t, err)
+	swappedDigest, err := imgSwapped.Digest()
+	require.NoError(t, err)
+	assert.Equal(t, originalDigest, swappedDigest, "manifest digest must be invariant under adjacent swap")
+}
+
+func TestBuildWeightManifestV1_DoesNotMutateInputSlice(t *testing.T) {
+	// Callers keep the packer's or lockfile's layer order; the manifest
+	// builder copies before sorting so that side effect is invisible.
+	dir := t.TempDir()
+	writeSrcFile(t, dir, "config.json", 64)
+	writeSrcFile(t, dir, "model.safetensors", 1024)
+	writeSrcFile(t, dir, "aux.dat", 1024)
+
+	layers := packDir(t, dir, &PackOptions{BundleFileMax: 512, BundleSizeMax: 1024})
+	require.GreaterOrEqual(t, len(layers), 2, "need at least two layers to detect mutation")
+
+	before := slices.Clone(layers)
+	_, err := BuildWeightManifestV1(layers, defaultMeta())
+	require.NoError(t, err)
+
+	assert.Equal(t, before, layers, "BuildWeightManifestV1 must not reorder the caller's slice")
 }
 
 func TestBuildWeightManifestV1_LayerDescriptorsHaveNoAnnotations(t *testing.T) {
