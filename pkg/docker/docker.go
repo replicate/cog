@@ -448,7 +448,11 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	if len(options.Volumes) > 0 {
 		hostCfg.Binds = make([]string, len(options.Volumes))
 		for i, volume := range options.Volumes {
-			hostCfg.Binds[i] = fmt.Sprintf("%s:%s", volume.Source, volume.Destination)
+			bind := fmt.Sprintf("%s:%s", volume.Source, volume.Destination)
+			if volume.ReadOnly {
+				bind += ":ro"
+			}
+			hostCfg.Binds[i] = bind
 		}
 	}
 

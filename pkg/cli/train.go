@@ -15,6 +15,7 @@ import (
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 var (
@@ -66,6 +67,9 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	volumes := []command.Volume{}
 	gpus := gpusFlag
 
+	// Managed-weight mounts only apply when we have cog.yaml in scope.
+	var wm *weights.Manager
+
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
 	if len(args) == 0 {
@@ -92,6 +96,11 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		if gpus == "" && m.HasGPU() {
 			gpus = "all"
 		}
+
+		wm, err = newWeightManager(src, "")
+		if err != nil {
+			return err
+		}
 	} else {
 		// Use existing image
 		imageName = args[0]
@@ -114,13 +123,18 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Info("Starting Docker image and running setup()...")
 
-	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
-		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: volumes,
-		Env:     trainEnvFlags,
-		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	}, true, dockerClient)
+	predictor, err := predict.NewPredictor(ctx, predict.PredictorOptions{
+		RunOptions: command.RunOptions{
+			GPUs:    gpus,
+			Image:   imageName,
+			Volumes: volumes,
+			Env:     trainEnvFlags,
+			Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
+		},
+		IsTrain:       true,
+		Docker:        dockerClient,
+		WeightManager: wm,
+	})
 	if err != nil {
 		return err
 	}

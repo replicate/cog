@@ -74,4 +74,5 @@ type Port struct {
 type Volume struct {
 	Source      string
 	Destination string
+	ReadOnly    bool
 }

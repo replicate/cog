@@ -16,6 +16,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 type status string
@@ -49,40 +50,87 @@ type ValidationErrorResponse struct {
 	} `json:"detail"`
 }
 
+// PredictorOptions configures a Predictor.
+//
+// RunOptions carries everything the user supplied (image, volumes,
+// env, GPUs, ports). If WeightManager is non-nil, Predictor.Start
+// will call Prepare and merge the resulting read-only mounts into
+// RunOptions.Volumes before launching the container; Stop will
+// Release them afterwards. A nil WeightManager preserves the
+// historical behavior for callers that don't deal with managed
+// weights.
+type PredictorOptions struct {
+	RunOptions    command.RunOptions
+	IsTrain       bool
+	Docker        command.Command
+	WeightManager *weights.Manager
+}
+
 type Predictor struct {
 	runOptions   command.RunOptions
 	isTrain      bool
 	dockerClient command.Command
+
+	weightManager *weights.Manager
+	mounts        *weights.Mounts // populated by Start when weightManager != nil
 
 	// Running state
 	containerID string
 	port        int
 }
 
-func NewPredictor(ctx context.Context, runOptions command.RunOptions, isTrain bool, dockerCommand command.Command) (*Predictor, error) {
+// NewPredictor constructs a Predictor. See PredictorOptions for the
+// meaning of each field.
+func NewPredictor(_ context.Context, opts PredictorOptions) (*Predictor, error) {
 	if global.Debug {
-		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=debug")
+		opts.RunOptions.Env = append(opts.RunOptions.Env, "COG_LOG_LEVEL=debug")
 	} else {
-		runOptions.Env = append(runOptions.Env, "COG_LOG_LEVEL=warning")
+		opts.RunOptions.Env = append(opts.RunOptions.Env, "COG_LOG_LEVEL=warning")
 	}
 
 	return &Predictor{
-		runOptions:   runOptions,
-		isTrain:      isTrain,
-		dockerClient: dockerCommand,
+		runOptions:    opts.RunOptions,
+		isTrain:       opts.IsTrain,
+		dockerClient:  opts.Docker,
+		weightManager: opts.WeightManager,
 	}, nil
 }
 
-func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout time.Duration) error {
-	var err error
+func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout time.Duration) (retErr error) {
 	containerPort := 5000
+
+	if p.weightManager != nil {
+		mounts, err := p.weightManager.Prepare(ctx)
+		if err != nil {
+			return fmt.Errorf("prepare weights: %w", err)
+		}
+		p.mounts = mounts
+		// Mount dirs are hardlinks from the store; on any Start
+		// failure we release them immediately so the caller (whose
+		// defer Stop is only registered on successful Start) doesn't
+		// orphan <projectDir>/.cog/mounts/<id>.
+		defer func() {
+			if retErr != nil {
+				_ = p.mounts.Release()
+				p.mounts = nil
+			}
+		}()
+		for _, spec := range mounts.Specs {
+			p.runOptions.Volumes = append(p.runOptions.Volumes, command.Volume{
+				Source:      spec.Source,
+				Destination: spec.Target,
+				ReadOnly:    true,
+			})
+		}
+	}
 
 	p.runOptions.Ports = append(p.runOptions.Ports, command.Port{HostPort: 0, ContainerPort: containerPort})
 
-	p.containerID, err = docker.RunDaemon(ctx, p.dockerClient, p.runOptions, logsWriter)
+	containerID, err := docker.RunDaemon(ctx, p.dockerClient, p.runOptions, logsWriter)
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
+	p.containerID = containerID
 
 	p.port, err = docker.GetHostPortForContainer(ctx, p.dockerClient, p.containerID, containerPort)
 	if err != nil {
@@ -164,7 +212,20 @@ func (p *Predictor) waitForContainerReady(ctx context.Context, timeout time.Dura
 }
 
 func (p *Predictor) Stop(ctx context.Context) error {
-	return p.dockerClient.ContainerStop(ctx, p.containerID)
+	stopErr := p.dockerClient.ContainerStop(ctx, p.containerID)
+
+	// Always attempt mount cleanup, even if ContainerStop failed — a
+	// leftover bind source is worth logging over silently orphaning.
+	// Mount removal after container stop is safe on Linux: bind mounts
+	// don't prevent source-side removal.
+	if p.mounts != nil {
+		if err := p.mounts.Release(); err != nil {
+			console.Warnf("Failed to clean up weight mounts: %s", err)
+		}
+		p.mounts = nil
+	}
+
+	return stopErr
 }
 
 func (p *Predictor) Predict(inputs Inputs, context RequestContext) (*Response, error) {

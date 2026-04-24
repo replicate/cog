@@ -30,6 +30,7 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/util/mime"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 const StdinPath = "-"
@@ -189,6 +190,11 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	volumes := []command.Volume{}
 	gpus := gpusFlag
 
+	// The Manager is built only when we have cog.yaml in scope (the
+	// build-from-source path). Pre-built images are opaque to Cog and
+	// may grow their own weight-metadata signal later.
+	var wm *weights.Manager
+
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
 	if len(args) == 0 {
@@ -214,6 +220,11 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		if gpus == "" && m.HasGPU() {
 			gpus = "all"
+		}
+
+		wm, err = newWeightManager(src, "")
+		if err != nil {
+			return err
 		}
 	} else {
 		// Use existing image
@@ -248,12 +259,17 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		env = append(env, "RUST_LOG="+rustLog)
 	}
 
-	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
-		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: volumes,
-		Env:     env,
-	}, false, dockerClient)
+	predictor, err := predict.NewPredictor(ctx, predict.PredictorOptions{
+		RunOptions: command.RunOptions{
+			GPUs:    gpus,
+			Image:   imageName,
+			Volumes: volumes,
+			Env:     env,
+		},
+		IsTrain:       false,
+		Docker:        dockerClient,
+		WeightManager: wm,
+	})
 	if err != nil {
 		return err
 	}
@@ -266,11 +282,16 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			console.Info("Missing device driver, re-trying without GPU")
 
 			_ = predictor.Stop(ctx)
-			predictor, err = predict.NewPredictor(ctx, command.RunOptions{
-				Image:   imageName,
-				Volumes: volumes,
-				Env:     env,
-			}, false, dockerClient)
+			predictor, err = predict.NewPredictor(ctx, predict.PredictorOptions{
+				RunOptions: command.RunOptions{
+					Image:   imageName,
+					Volumes: volumes,
+					Env:     env,
+				},
+				IsTrain:       false,
+				Docker:        dockerClient,
+				WeightManager: wm,
+			})
 			if err != nil {
 				return err
 			}
