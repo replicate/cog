@@ -2,7 +2,9 @@
 version = "0.19.0"
 backend = "aqua:EmbarkStudios/cargo-deny"
 "platforms.linux-arm64" = { checksum = "sha256:2b3567a60b7491c159d1cef8b7d8479d1ad2a31e29ef49462634ad4552fcc77d", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:2b3567a60b7491c159d1cef8b7d8479d1ad2a31e29ef49462634ad4552fcc77d", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-aarch64-unknown-linux-musl.tar.gz"}
 "platforms.linux-x64" = { checksum = "sha256:0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:0e8c2aa59128612c90d9e09c02204e912f29a5b8d9a64671b94608cbe09e064f", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-unknown-linux-musl.tar.gz"}
 "platforms.macos-arm64" = { checksum = "sha256:a22f2023c06f3eefd099a5d42dd828fd4fa74d1e1c167bd1dbc3cf59ad62ded0", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-aarch64-apple-darwin.tar.gz"}
 "platforms.macos-x64" = { checksum = "sha256:c42163655413f7e872638cd8c4345a327b512ef0ab99109e9cced691b95af5fb", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-apple-darwin.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:413f0e2ce780d0d14ba8e9339f9fb033419a8a971ec7714faec518e4a664bdb0", url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.0/cargo-deny-0.19.0-x86_64-pc-windows-msvc.tar.gz"}
@@ -11,7 +13,9 @@ backend = "aqua:EmbarkStudios/cargo-deny"
 version = "2.10.1"
 backend = "aqua:golangci/golangci-lint"
 "platforms.linux-arm64" = { checksum = "sha256:6652b42ae02915eb2f9cb2a2e0cac99514c8eded8388d88ae3e06e1a52c00de8", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-linux-arm64.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:6652b42ae02915eb2f9cb2a2e0cac99514c8eded8388d88ae3e06e1a52c00de8", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-linux-arm64.tar.gz"}
 "platforms.linux-x64" = { checksum = "sha256:dfa775874cf0561b404a02a8f4481fc69b28091da95aa697259820d429b09c99", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-linux-amd64.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:dfa775874cf0561b404a02a8f4481fc69b28091da95aa697259820d429b09c99", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-linux-amd64.tar.gz"}
 "platforms.macos-arm64" = { checksum = "sha256:03bfadf67e52b441b7ec21305e501c717df93c959836d66c7f97312654acb297", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-darwin-arm64.tar.gz"}
 "platforms.macos-x64" = { checksum = "sha256:66fb0da81b8033b477f97eea420d4b46b230ca172b8bb87c6610109f3772b6b6", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-darwin-amd64.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:c60c87695e79db8e320f0e5be885059859de52bb5ee5f11be5577828570bc2a3", url = "https://github.com/golangci/golangci-lint/releases/download/v2.10.1/golangci-lint-2.10.1-windows-amd64.zip"}
@@ -20,7 +24,9 @@ backend = "aqua:golangci/golangci-lint"
 version = "1.13.0"
 backend = "aqua:gotestyourself/gotestsum"
 "platforms.linux-arm64" = { checksum = "sha256:7644a4c5cd1bb978d56245aeab25a586ac5ac62adebed20a399548867c13499d", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_linux_arm64.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:7644a4c5cd1bb978d56245aeab25a586ac5ac62adebed20a399548867c13499d", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_linux_arm64.tar.gz"}
 "platforms.linux-x64" = { checksum = "sha256:11ccddeaf708ef228889f9fe2f68291a75b27013ddfc3b18156e094f5f40e8ee", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:11ccddeaf708ef228889f9fe2f68291a75b27013ddfc3b18156e094f5f40e8ee", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_linux_amd64.tar.gz"}
 "platforms.macos-arm64" = { checksum = "sha256:509cb27aef747f48faf9bce424f59dcf79572c905204b990ee935bbfcc7fa0e9", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_darwin_arm64.tar.gz"}
 "platforms.macos-x64" = { checksum = "sha256:99529350f4c7b780b1efc543ca0d9721b09f0a4228f0efa9281261f58fefa05a", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_darwin_amd64.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:fd5a6dc69e46a0970593e70d85a7e75f16714e9c61d6d72ccc324eb82df5bb8a", url = "https://github.com/gotestyourself/gotestsum/releases/download/v1.13.0/gotestsum_1.13.0_windows_amd64.tar.gz"}
@@ -29,6 +35,7 @@ backend = "aqua:gotestyourself/gotestsum"
 version = "1.46.0"
 backend = "aqua:mitsuhiko/insta"
 "platforms.linux-x64" = { checksum = "sha256:592f7f8ddd465f0b8f2e7121bbe6bace97b475330b7f3c0ac62e504c1de6b967", url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:592f7f8ddd465f0b8f2e7121bbe6bace97b475330b7f3c0ac62e504c1de6b967", url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-unknown-linux-musl.tar.xz"}
 "platforms.macos-arm64" = { checksum = "sha256:c32a785806a7b329330fefced808c0ba7017416c8a7ea24c0a8363ad66d1aeed", url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-aarch64-apple-darwin.tar.xz"}
 "platforms.macos-x64" = { checksum = "sha256:4a2e8bc9b3e7591fd96580cbb4c79cae062060f9482719bb32bc3932eff08fba", url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-apple-darwin.tar.xz"}
 "platforms.windows-x64" = { checksum = "sha256:d13a207264e10644d6995bdb332d7cc7353ffc53a0199f4e20376923016247ab", url = "https://github.com/mitsuhiko/insta/releases/download/1.46.0/cargo-insta-x86_64-pc-windows-msvc.zip"}
@@ -37,7 +44,9 @@ backend = "aqua:mitsuhiko/insta"
 version = "0.20.1"
 backend = "aqua:rust-cross/cargo-zigbuild"
 "platforms.linux-arm64" = { checksum = "sha256:e9631045cc5f33ef0d6d9186196192d70b8018bf7633626c3a7c1384e81b7f67", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:e9631045cc5f33ef0d6d9186196192d70b8018bf7633626c3a7c1384e81b7f67", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.aarch64-unknown-linux-musl.tar.gz"}
 "platforms.linux-x64" = { checksum = "sha256:742ed281f15fef6eaf49535ac10ffe98fb57913d0c4c88d6888d794043c05618", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.x86_64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:742ed281f15fef6eaf49535ac10ffe98fb57913d0c4c88d6888d794043c05618", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.x86_64-unknown-linux-musl.tar.gz"}
 "platforms.macos-arm64" = { checksum = "sha256:d5c7ac2e6f25fb76083dff84640cdf679c5da858b9c97631555c3185be2fbf35", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.apple-darwin.tar.gz"}
 "platforms.macos-x64" = { checksum = "sha256:d5c7ac2e6f25fb76083dff84640cdf679c5da858b9c97631555c3185be2fbf35", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.apple-darwin.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:b0bb728ba068ee61342f40a2124b3d8d234af8f716dd416b7c1f794dfeb4e478", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.windows-x64.zip"}
@@ -68,7 +77,9 @@ backend = "aqua:rust-lang/rustup/rustup-init"
 version = "0.15.2"
 backend = "aqua:ziglang/zig"
 "platforms.linux-arm64" = { url = "https://ziglang.org/download/0.15.2/zig-aarch64-linux-0.15.2.tar.xz"}
+"platforms.linux-arm64-musl" = { url = "https://ziglang.org/download/0.15.2/zig-aarch64-linux-0.15.2.tar.xz"}
 "platforms.linux-x64" = { url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"}
+"platforms.linux-x64-musl" = { url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"}
 "platforms.macos-arm64" = { checksum = "blake3:c7d2fb746701fea2c070f66c29a0300ba42a0d5d2c09c493462b8c0f4f0bd604", url = "https://ziglang.org/download/0.15.2/zig-aarch64-macos-0.15.2.tar.xz"}
 "platforms.macos-x64" = { url = "https://ziglang.org/download/0.15.2/zig-x86_64-macos-0.15.2.tar.xz"}
 "platforms.windows-x64" = { url = "https://ziglang.org/download/0.15.2/zig-x86_64-windows-0.15.2.zip"}
@@ -137,7 +148,9 @@ backend = "core:python"
 version = "0.14.13"
 backend = "aqua:astral-sh/ruff"
 "platforms.linux-arm64" = { checksum = "sha256:25941b777ff712f4d9473d26c1b875034214a3d5de20ea99b2add939dcd0b367", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:25941b777ff712f4d9473d26c1b875034214a3d5de20ea99b2add939dcd0b367", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-aarch64-unknown-linux-musl.tar.gz"}
 "platforms.linux-x64" = { checksum = "sha256:2fe394f493318551f271277a2228e56b31ca69a4842483e5709af4548f342bc3", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:2fe394f493318551f271277a2228e56b31ca69a4842483e5709af4548f342bc3", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-unknown-linux-musl.tar.gz"}
 "platforms.macos-arm64" = { checksum = "sha256:067d1a90da8add55614eff91990425883a092d8279d9e503258ff8be0f8e9c18", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-aarch64-apple-darwin.tar.gz"}
 "platforms.macos-x64" = { checksum = "sha256:69e424a42ac3a7c6c7032ad96deb757c35c93c848b6ea329a3f4c605e6d89ef9", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-apple-darwin.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:d2af4376053458f283d74980b49dc0d61d3ef9d9b8684c5b25bd64b73e11634a", url = "https://github.com/astral-sh/ruff/releases/download/0.14.13/ruff-x86_64-pc-windows-msvc.zip"}
@@ -150,7 +163,9 @@ backend = "core:rust"
 version = "0.0.10"
 backend = "aqua:astral-sh/ty"
 "platforms.linux-arm64" = { checksum = "sha256:43b3ceb655a8f6362733c3e3097aadba21b0077cb8ccc4873b6e187c083bd605", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:43b3ceb655a8f6362733c3e3097aadba21b0077cb8ccc4873b6e187c083bd605", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-aarch64-unknown-linux-musl.tar.gz"}
 "platforms.linux-x64" = { checksum = "sha256:870e0f634d740df2a543dc977d68cae9bb073f1e70da93278b78622962a51189", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:870e0f634d740df2a543dc977d68cae9bb073f1e70da93278b78622962a51189", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-unknown-linux-musl.tar.gz"}
 "platforms.macos-arm64" = { checksum = "sha256:5c256844da0401534908535d3c744ffb28db823e2e21ebc2aa45fa4b0599f6f5", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-aarch64-apple-darwin.tar.gz"}
 "platforms.macos-x64" = { checksum = "sha256:eb839e72d317e381ad7c5804d61a6098b041b0b7bd0a207f429b8bfe9f445be0", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-apple-darwin.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:d7cd33adf0113decee579fbf31f58b55e44195571043b22ed0e653bf60062d4a", url = "https://github.com/astral-sh/ty/releases/download/0.0.10/ty-x86_64-pc-windows-msvc.zip"}
@@ -159,7 +174,9 @@ backend = "aqua:astral-sh/ty"
 version = "0.9.26"
 backend = "aqua:astral-sh/uv"
 "platforms.linux-arm64" = { checksum = "sha256:ba8698c36c00c22efed4bd3506339b03c95604d001f02eaf6fbc814c9224d801", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:ba8698c36c00c22efed4bd3506339b03c95604d001f02eaf6fbc814c9224d801", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-aarch64-unknown-linux-musl.tar.gz"}
 "platforms.linux-x64" = { checksum = "sha256:708b752876aeeb753257e1d55470569789e465684c1d3bc1760db26360b6c28b", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:708b752876aeeb753257e1d55470569789e465684c1d3bc1760db26360b6c28b", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-unknown-linux-musl.tar.gz"}
 "platforms.macos-arm64" = { checksum = "sha256:fcf0a9ea6599c6ae28a4c854ac6da76f2c889354d7c36ce136ef071f7ab9721f", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-aarch64-apple-darwin.tar.gz"}
 "platforms.macos-x64" = { checksum = "sha256:171eb8c518313e157c5b4cec7b4f743bc6bab1bd23e09b646679a02d096a047f", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-apple-darwin.tar.gz"}
 "platforms.windows-x64" = { checksum = "sha256:eb02fd95d8e0eed462b4a67ecdd320d865b38c560bffcda9a0b87ec944bdf036", url = "https://github.com/astral-sh/uv/releases/download/0.9.26/uv-x86_64-pc-windows-msvc.zip"}
