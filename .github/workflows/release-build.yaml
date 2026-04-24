@@ -220,6 +220,25 @@ jobs:
         with:
           cache_key_prefix: mise-rel-${{ github.job }}
 
+      - name: Keep release tree clean after mise
+        run: |
+          CHANGED_FILES=$(git status --porcelain)
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "Working tree is clean"
+            exit 0
+          fi
+
+          NON_MISE_CHANGES=$(git status --porcelain | grep -vE "^[[:space:]]*[MARCDU?!]{1,2}[[:space:]]+mise\.lock$" || true)
+          if [ -n "$NON_MISE_CHANGES" ]; then
+            echo "::error::Unexpected file changes after tool setup"
+            git status --short
+            exit 1
+          fi
+
+          echo "Resetting mise.lock changes introduced during setup"
+          git checkout -- mise.lock
+          git status --short
+
       - name: Check for existing release
         run: |
           TAG="${{ github.ref_name }}"
