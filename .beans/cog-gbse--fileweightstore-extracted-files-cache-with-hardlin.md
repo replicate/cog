@@ -1,155 +1,133 @@
 ---
 # cog-gbse
-title: 'FileWeightStore: extracted-files cache with hardlinked assembly'
-status: todo
+title: 'FileWeightStore: content-addressed file cache'
+status: completed
 type: task
-priority: high
+priority: critical
 created_at: 2026-04-22T20:23:05Z
-updated_at: 2026-04-22T20:38:24Z
+updated_at: 2026-04-24T00:18:47Z
 parent: cog-kgd7
 blocked_by:
     - cog-p76s
 ---
 
-Implement `WeightStore` against a local directory (`~/.cache/cog/weights/`) using content-addressed extracted files and hardlink-based assembly. Zero duplication across weight sets that share files.
+Implement `WeightStore` against a local directory under `$XDG_CACHE_HOME/cog/weights/` using content-addressed file storage. Zero duplication across weight sets that share files — hardlink assembly happens outside the store (in `WeightManager`).
 
 ## Why
 
-The v1 backend. No Docker dependency for weight storage. Cross-model dedup is automatic. Source-drift detection falls out naturally (reconstructed file digests get verified). Works offline if source is a local directory.
+The v1 backend. No Docker dependency. Cross-model dedup is automatic (shared files collapse to one on-disk blob). Swappable with a future `DockerWeightStore` without changing callers.
 
-## Scope
-
-### Layout
+## On-disk layout
 
 ```
-~/.cache/cog/weights/
-  files/sha256/<ab>/<abcdef...>         # content-addressed file blobs
-  layers/sha256/<ab>/<abcdef...>.list   # contentsDigest → sorted "<file-digest>  <path>" lines
-  assembled/<set-digest>/               # hardlinks into files/, bind-mount target
+$XDG_CACHE_HOME/cog/weights/
+    files/sha256/<ab>/<abcdef...>    # content-addressed file blobs
 ```
 
-### Operations
+One directory, two-char prefix bucketing for filesystem sanity on large stores. Resolved via `pkg/paths.WeightsStoreDir()` which wraps `os.UserCacheDir()` + `COG_CACHE_DIR` override.
 
-- `HasLayer(contentsDigest)`: read the `.list` sidecar; confirm every referenced file exists under `files/`.
-- `HasSet(setDigest)`: stat `assembled/<setDigest>/.cog/ready` (spec §3.2 readiness marker, atomically written last).
-- `Fetch`, per missing layer, in priority order:
-  1. `HasLayer` already → skip.
-  2. `means.Source != nil` → reconstruct: `Source.Open` each file, stream to `files/<digest>` (write via tmp + rename, hash as we go, verify against expected digest), write `.list` atomically last.
-  3. `means.Registry != nil` → fall back: stream blob, decompress, extract into `files/`, verify each file's digest, write `.list`.
-  4. Neither → error with clear message.
-- `Mount`: if `HasSet`, return existing path. Otherwise build `assembled/<setDigest>/` by hardlinking each file from `files/` into the weight target tree, write `.cog/ready` atomically last, return the path.
+## Method implementations
 
-### Constraints
+**`Exists(ctx, digest)`**
+- Parse `digest` into algorithm + hex; reject non-sha256 for v1.
+- `os.Stat(files/sha256/<ab>/<abcdef...>)`.
+- `(true, nil)` on success, `(false, nil)` on `os.ErrNotExist`, `(false, err)` otherwise.
 
-- `files/` and `assembled/` must be on the same filesystem (for hardlinks). Error if violated; don't silent-fallback to copy — bind mounts inside containers don't follow symlinks reliably.
-- Atomic writes everywhere: tmp + rename for files, `.list`, `.cog/ready`.
-- Per-`setDigest` ref counting for `Mount`/`Release`: multiple concurrent `cog predict` runs share the same assembled dir; `Release` decrements; last release can trigger cleanup (or defer to `cog weights purge`).
+**`PutFile(ctx, expectedDigest, size, r)`**
+- Parse digest. Reject non-sha256.
+- Fast path: if `Exists(digest)` → discard reader via `io.Copy(io.Discard, r)`, return nil. Idempotent.
+- Slow path:
+    1. Create temp file in `files/sha256/<ab>/` (same dir as final so rename is atomic).
+    2. Wrap reader with `io.TeeReader` into `sha256.New()` hasher; copy to temp file.
+    3. Honor `ctx.Err()` (periodic check or cancelable reader).
+    4. After copy: compare computed digest to `expectedDigest`. On mismatch: `os.Remove(tempfile)`, return error with both digests.
+    5. On match: `os.Rename(tempfile, final)`.
+- Atomic rename. Concurrent PutFile of the same digest: both succeed, bytes are identical, last rename wins.
 
-### GC
+**`Open(ctx, digest)`**
+- `os.Open(files/sha256/<ab>/<abcdef...>)`. Wraps `fs.ErrNotExist` on not-found.
 
-- `cog weights purge` removes specified assembled dirs, then files with zero remaining hardlinks.
-- LRU / size-budget eviction is a future enhancement; v1 is purge-on-demand.
+**`Path(ctx, digest)`**
+- `Exists` check first; return computed path on success, `fs.ErrNotExist` otherwise.
+
+**`List(ctx)`**
+- Walk `files/sha256/` two levels deep (prefix dir → file).
+- Yield `FileInfo{Digest, Size}` per entry.
+- Respect `ctx.Done()` between yields.
+
+**`Delete(ctx, digest)`**
+- `os.Remove(files/sha256/<ab>/<abcdef...>)`.
+- Treat `os.ErrNotExist` as success.
+
+## Constructor
+
+```go
+func NewFileStore(root string) (*FileStore, error) {
+    if err := os.MkdirAll(filepath.Join(root, "files", "sha256"), 0o755); err != nil {
+        return nil, fmt.Errorf("create store: %w", err)
+    }
+    return &FileStore{root: root}, nil
+}
+```
+
+Prefix dir (`files/sha256/<ab>/`) created lazily in `PutFile`.
+
+## Edge cases
+
+- **Concurrent writers of same digest**: atomic rename; both succeed.
+- **Interrupted write**: temp file left in `files/sha256/<ab>/`. Deferred cleanup to future `cog weights gc`.
+- **Filesystem full**: `io.Copy` errors, temp file removed, PutFile returns error.
+- **Digest collision (modulo SHA-256)**: idempotent Put discards reader; no corruption possible.
+
+## Pruning (future)
+
+Not in this bean. Documented approach: when we need pruning, touch-on-link in the Manager side (assembly step), then a periodic `cog weights gc` walks the store using `List` and deletes entries older than N or beyond a size budget.
 
 ## Scope (code)
 
-- `pkg/model/weightstore/filestore.go` (or similar): implementation.
-- Helpers: open-and-verify reader wrapper (hashes while streaming), atomic `.list` writer, hardlink assembly.
-- Tests: cache hit, cache miss → source fetch, source → registry fallback, source drift (wrong digest in source), concurrent `Mount` ref counting, same-filesystem check, `HasSet` / `HasLayer`.
+- `pkg/weights/store/file.go`: `FileStore` type + six method impls.
+- `pkg/paths/` helper (new pkg): `WeightsStoreDir()` wraps `os.UserCacheDir()` with `COG_CACHE_DIR` env override.
+- Unit tests in `pkg/weights/store/file_test.go`:
+    - Round-trip Put/Exists/Open/Path
+    - Digest mismatch rejection + temp file cleanup
+    - Idempotent PutFile on existing digest
+    - Open/Path/Delete on non-existent digest → `fs.ErrNotExist` / no error
+    - List yields all entries, respects context cancel
+    - Concurrent PutFile (two goroutines, same digest) both succeed
+    - Interrupted write leaves no visible final file
 
 ## Out of scope
 
-- `cog weights pull` wiring (separate bean).
-- `cog predict` wiring (separate bean).
-- LRU eviction.
-- Cross-filesystem copy fallback.
-
-## Dependencies
-
-Blocked by:
-- WeightStore interface
-- Lockfile v2 (ContentsDigest)
+- WeightManager orchestrator (cog-xhpw / cog-40ed)
+- `cog weights pull` wiring (cog-xhpw)
+- `cog predict` wiring (cog-40ed)
+- Pruning / GC
+- Cross-filesystem hardlink fallback (Manager-level concern, not store)
 
 ## Todo
 
-- [ ] Create `pkg/model/weightstore/filestore.go`
-- [ ] Implement `HasLayer` (read `.list`, check files exist)
-- [ ] Implement `HasSet` (stat `.cog/ready`)
-- [ ] Implement `Fetch` priority chain (cache → source → registry)
-- [ ] Implement streaming file verification (hash while writing)
-- [ ] Implement atomic `.list` writer
-- [ ] Implement `Mount` hardlink assembly
-- [ ] Implement `MountHandle` with `Release` / ref counting
-- [ ] Same-filesystem check for `files/` + `assembled/`
-- [ ] `Purge(setDigest)` or equivalent for `cog weights purge`
-- [ ] Unit tests covering all paths
-- [ ] Doc comments
+- [x] New `pkg/paths/` package with `WeightsStoreDir()` and `COG_CACHE_DIR` override
+- [x] `pkg/weights/store/file.go` with `FileStore` type
+- [x] Implement `Exists`
+- [x] Implement `PutFile` (streaming hash-verify, atomic rename, idempotent)
+- [x] Implement `Open`
+- [x] Implement `Path`
+- [x] Implement `List` (iter.Seq2)
+- [x] Implement `Delete`
+- [x] Unit tests covering all paths + edge cases
+- [x] Doc comments
 
 ## Reference
 
-- `plans/2026-04-22-managed-weights-import-and-local-run-design.md` §4 (FileWeightStore layout and operations)
+- cog-p76s (interface)
+- Session design discussion: 2026-04-23 (chat log)
 
+## Summary of Changes
 
+- `pkg/paths/paths.go` — `WeightsStoreDir()` with `COG_CACHE_DIR` override, falling back to `os.UserCacheDir`/cog/weights. Unit tests for both paths.
+- `pkg/weights/store/file.go` — `FileStore` implementing `WeightStore` against `<root>/files/sha256/<ab>/<hex>`. `PutFile` is streaming-hash-verified, atomic-rename, idempotent (drains the reader on cache hit so tar iteration stays in sync). Digests are validated at the boundary — only `sha256:<64 lowercase hex>` is accepted.
+- `pkg/weights/store/file_test.go` — round-trip, digest-mismatch rejection + temp cleanup, idempotency, Open/Path/Delete on absent digests, List (populated/empty/cancel/stray-temp skip), concurrent writers of the same digest, interrupted write leaves no final file, invalid digest rejection.
 
-## Update 2026-04-22: PutFile + PutLayerMembership for the push path
+Interface conformance asserted via `var _ WeightStore = (*FileStore)(nil)`.
 
-FileWeightStore also serves import (not just pull/predict). Implementation additions:
-
-- `PutFile(ctx, expectedDigest, size, r)`: stream reader → tmp file, hash while writing, verify digest matches, rename to `files/sha256/<digest>`. Idempotent: if `files/sha256/<digest>` already exists, discard the reader and return nil.
-- `PutLayerMembership(ctx, contentsDigest, files)`: atomic write of `layers/sha256/<contentsDigest>.list` with sorted `<file-digest>  <path>` lines, same format Fetch produces.
-
-Tests:
-- PutFile happy path
-- PutFile with digest mismatch (reject, clean up tmp)
-- PutFile idempotent (second call no-ops)
-- PutLayerMembership atomic replace
-- Concurrent PutFile of the same digest doesn't corrupt
-
-The tar packer in import now reads from `files/sha256/<digest>` rather than from source directly — files are guaranteed local and verified by the time we pack. Packing becomes deterministic and cache-friendly: if we ran the import before for this setDigest, every file is already in the store and packing is pure local I/O.
-
-
-
-## Update 2026-04-22 (ContentsDigest dropped)
-
-Following cog-vs3r / cog-p76s updates:
-
-- Remove `layers/sha256/<contentsDigest>.list` sidecar from the on-disk layout.
-- Remove `HasLayer` and `PutLayerMembership` from the implementation.
-- `HasFiles` replaces `HasLayer`: iterate `files` argument, `stat` each `files/sha256/<digest>` under the cache root.
-
-### Revised on-disk layout
-
-```
-~/.cache/cog/weights/
-  files/sha256/<ab>/<abcdef...>    # content-addressed file blobs (unchanged)
-  assembled/sha256/<set-digest>/    # hardlinks into files/, bind-mount target (unchanged)
-```
-
-Only two dirs. Cleaner.
-
-### Revised `Fetch` per-layer flow
-
-For each layer in the request:
-
-1. For each file in `layer.Files`:
-   - `stat files/sha256/<file.Digest>` → if present, skip.
-   - `means.Source != nil`: `Source.Open(uri, file.Path)` → `PutFile(ctx, file.Digest, file.Size, reader)`.
-   - `means.Registry != nil` (fallback, layer already missed per-file cache): stream the layer blob from the registry, decompress, extract tar, for each entry `PutFile(...)`.
-   - Neither available → error.
-
-Consequences:
-- Registry fallback operates per-layer (can't do per-file from the registry — layers are the transport unit). Source reconstruction operates per-file.
-- Per-file cache hit skips registry pulls entirely when any prior import populated the file (cross-model dedup is automatic).
-
-### Revised todo
-
-- [ ] `files/sha256/<ab>/<abcdef...>` layout
-- [ ] `assembled/<set-digest>/` layout with `.cog/ready` marker
-- [ ] `HasSet` (stat `.cog/ready`)
-- [ ] `HasFiles` (stat each file in the list)
-- [ ] `Fetch`: per-file check → source-reconstruct → registry-layer-fallback
-- [ ] `PutFile` (streaming hash-verify, idempotent, tmp + rename)
-- [ ] `Mount` (hardlink files/ → assembled/; atomic .cog/ready last)
-- [ ] `MountHandle` with `Release` / ref counting
-- [ ] Same-filesystem check for files/ + assembled/
-- [ ] `Purge(setDigest)` for `cog weights purge`
-- [ ] Unit tests covering all paths
+`mise run lint:go` → 0 issues; `go test ./...` → all green.
