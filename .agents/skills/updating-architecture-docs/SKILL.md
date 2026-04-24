@@ -10,6 +10,7 @@ description: "Use this skill when updating, reviewing, or creating architecture 
 The `architecture/` directory is a bridge. It takes someone who already knows what Cog does and how to use it (that's what `docs/` is for) to the point where they can navigate the source code with confidence. It answers "how does this work and why is it shaped this way" -- the 10,000 foot view of the project and its ecosystem.
 
 The goal is to move a reader from fuzzy concepts to clarity:
+
 - What are the components and what do they own?
 - What's the vocabulary? (What does "slot" mean? What's the "envelope"?)
 - Where are the boundaries between systems?
@@ -69,6 +70,7 @@ These facts should be reflected consistently across all docs. If the code change
 **Wheels aren't embedded:** SDK and coglet wheels are resolved at Docker build time from PyPI, env vars, or local `dist/` directory. They're not compiled into the Go binary.
 
 **Three codebases:**
+
 - `cmd/cog/` + `pkg/` -- Go CLI and build tooling
 - `python/cog/` -- Python SDK (type definitions, predictor base class, thin server launcher)
 - `crates/coglet/` + `crates/coglet-python/` -- Rust prediction server with PyO3 bindings
@@ -80,6 +82,7 @@ These facts should be reflected consistently across all docs. If the code change
 After code changes, ask: **did a boundary or interface change?**
 
 Needs doc updates:
+
 - New or removed IPC message types
 - New or changed HTTP endpoints
 - New CLI commands
@@ -89,6 +92,7 @@ Needs doc updates:
 - New design decisions or changed rationale for existing ones
 
 Doesn't need doc updates:
+
 - Bug fixes within a component
 - Internal refactors that don't change interfaces
 - Performance improvements

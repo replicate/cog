@@ -52,24 +52,24 @@ The primary CI workflow that runs on all PRs and pushes to main.
 
 #### Jobs
 
-| Job | Runs when | Depends on | Purpose |
-|-----|-----------|------------|---------|
-| `changes` | Always | - | Detect which components changed |
-| `build-sdk` | python changed | changes | Build cog SDK wheel |
-| `build-rust` | rust changed | changes | Build coglet ABI3 wheel |
-| `fmt-go` | go changed | changes | Check Go formatting |
-| `fmt-rust` | rust changed | changes | Check Rust formatting |
-| `fmt-python` | python changed | changes | Check Python formatting |
-| `lint-go` | go changed | changes | Lint Go code |
-| `lint-rust` | rust changed | changes | Run clippy |
-| `lint-rust-deny` | rust changed | changes | Check licenses/advisories |
-| `lint-python` | python changed | build-sdk | Lint Python code |
-| `test-go` | go changed | build-sdk | Run Go tests (matrix: ubuntu, macos) |
-| `test-rust` | rust changed | changes | Run Rust tests |
-| `test-python` | python changed | build-sdk | Run Python tests (matrix: 3.10-3.13) |
-| `test-coglet-python` | rust or python changed | build-rust | Test coglet bindings (matrix: 3.10-3.13) |
-| `test-integration` | any changed | build-sdk, build-rust | Integration tests (matrix: cog, cog-rust) |
-| `ci-complete` | Always | all jobs | Gate job for branch protection |
+| Job                  | Runs when              | Depends on            | Purpose                                   |
+| -------------------- | ---------------------- | --------------------- | ----------------------------------------- |
+| `changes`            | Always                 | -                     | Detect which components changed           |
+| `build-sdk`          | python changed         | changes               | Build cog SDK wheel                       |
+| `build-rust`         | rust changed           | changes               | Build coglet ABI3 wheel                   |
+| `fmt-go`             | go changed             | changes               | Check Go formatting                       |
+| `fmt-rust`           | rust changed           | changes               | Check Rust formatting                     |
+| `fmt-python`         | python changed         | changes               | Check Python formatting                   |
+| `lint-go`            | go changed             | changes               | Lint Go code                              |
+| `lint-rust`          | rust changed           | changes               | Run clippy                                |
+| `lint-rust-deny`     | rust changed           | changes               | Check licenses/advisories                 |
+| `lint-python`        | python changed         | build-sdk             | Lint Python code                          |
+| `test-go`            | go changed             | build-sdk             | Run Go tests (matrix: ubuntu, macos)      |
+| `test-rust`          | rust changed           | changes               | Run Rust tests                            |
+| `test-python`        | python changed         | build-sdk             | Run Python tests (matrix: 3.10-3.13)      |
+| `test-coglet-python` | rust or python changed | build-rust            | Test coglet bindings (matrix: 3.10-3.13)  |
+| `test-integration`   | any changed            | build-sdk, build-rust | Integration tests (matrix: cog, cog-rust) |
+| `ci-complete`        | Always                 | all jobs              | Gate job for branch protection            |
 
 #### Python Version Matrix
 
@@ -98,6 +98,7 @@ Runs CodeQL security scanning for Go, Python, and Rust.
 ## Caching Strategy
 
 ### Tool Cache (mise)
+
 - `jdx/mise-action@v4` with `cache: true` (default) caches `~/.local/share/mise`
 - Tool versions are defined in `mise.toml` — CI and local dev use the same versions
 - **Per-job cache keys**: Each job uses `cache_key_prefix: mise-{workflow}-${{ github.job }}`
@@ -108,16 +109,17 @@ Runs CodeQL security scanning for Go, Python, and Rust.
   Rust jobs run `rustup component add rustfmt clippy` after mise-action to fix this.
 
 ### Rust Target Cache
+
 - **Save**: Only on `main` branch pushes (to avoid PR cache pollution)
 - **Restore**: On all runs (PRs restore from main's cache)
 - Uses `Swatinem/rust-cache@v2` with workspace path `crates -> target`
 
 ## Artifacts
 
-| Artifact | Contents | Retention |
-|----------|----------|-----------|
-| `CogPackage` | cog-*.whl, cog-*.tar.gz | Default (90 days) |
-| `CogletRustWheel` | coglet-*-cp310-abi3-*.whl | Default (90 days) |
+| Artifact          | Contents                  | Retention         |
+| ----------------- | ------------------------- | ----------------- |
+| `CogPackage`      | cog-_.whl, cog-_.tar.gz   | Default (90 days) |
+| `CogletRustWheel` | coglet-_-cp310-abi3-_.whl | Default (90 days) |
 
 The ABI3 wheel is built with Python 3.10 minimum but works on all 3.10+ versions.
 
@@ -168,11 +170,11 @@ Skipped jobs (from path filtering) are treated as passing by the gate job.
 
 Releases use a two-workflow system. There are three release types:
 
-| Type | Example tag | Branch rule | Draft? | PyPI/crates.io? |
-|------|-------------|-------------|--------|-----------------|
-| **Stable** | `v0.17.0` | Must be on main | Yes (manual publish) | Yes |
-| **Pre-release** | `v0.17.0-alpha3` | Must be on main | Yes (manual publish) | Yes |
-| **Dev** | `v0.17.0-dev1` | Any branch | No (immediate) | No |
+| Type            | Example tag      | Branch rule     | Draft?               | PyPI/crates.io? |
+| --------------- | ---------------- | --------------- | -------------------- | --------------- |
+| **Stable**      | `v0.17.0`        | Must be on main | Yes (manual publish) | Yes             |
+| **Pre-release** | `v0.17.0-alpha3` | Must be on main | Yes (manual publish) | Yes             |
+| **Dev**         | `v0.17.0-dev1`   | Any branch      | No (immediate)       | No              |
 
 ### Stable / Pre-release Flow
 
@@ -223,12 +225,12 @@ Releases use a two-workflow system. There are three release types:
 
 Triggered by version tags (`v*.*.*`). Builds all artifacts and creates a GitHub release.
 
-| Job | Purpose |
-|-----|---------|
-| `verify-tag` | VERSION.txt + Cargo.toml version match + branch rules (main for stable/pre-release, any for dev) |
-| `build-sdk` | Build cog SDK wheel and sdist |
-| `build-coglet-wheels` | Build coglet wheels (3 platforms via zig cross-compile) |
-| `create-release` | Goreleaser builds CLI + creates release, then appends wheels. Dev releases are immediately published as pre-release; stable/pre-release remain as draft. |
+| Job                   | Purpose                                                                                                                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verify-tag`          | VERSION.txt + Cargo.toml version match + branch rules (main for stable/pre-release, any for dev)                                                         |
+| `build-sdk`           | Build cog SDK wheel and sdist                                                                                                                            |
+| `build-coglet-wheels` | Build coglet wheels (3 platforms via zig cross-compile)                                                                                                  |
+| `create-release`      | Goreleaser builds CLI + creates release, then appends wheels. Dev releases are immediately published as pre-release; stable/pre-release remain as draft. |
 
 **Security**: No secrets needed for dev. Stable/pre-release require maintainer to publish draft.
 
@@ -237,26 +239,27 @@ Triggered by version tags (`v*.*.*`). Builds all artifacts and creates a GitHub 
 Triggered when a release is published. Publishes to PyPI and crates.io.
 **Skips entirely for dev releases** (all jobs gated on `is_dev != true`).
 
-| Job | Depends on | Purpose |
-|-----|------------|---------|
-| `verify-release` | - | Validate tag format, classify release type |
-| `publish-pypi-coglet` | verify-release | Publish coglet to PyPI (trusted publishing) |
-| `publish-pypi-sdk` | publish-pypi-coglet | Publish SDK to PyPI (waits for coglet) |
-| `publish-crates-io` | verify-release | Publish coglet crate (OIDC) |
+| Job                   | Depends on                          | Purpose                                                               |
+| --------------------- | ----------------------------------- | --------------------------------------------------------------------- |
+| `verify-release`      | -                                   | Validate tag format, classify release type                            |
+| `publish-pypi-coglet` | verify-release                      | Publish coglet to PyPI (trusted publishing)                           |
+| `publish-pypi-sdk`    | publish-pypi-coglet                 | Publish SDK to PyPI (waits for coglet)                                |
+| `publish-crates-io`   | verify-release                      | Publish coglet crate (OIDC)                                           |
 | `update-homebrew-tap` | publish-pypi-sdk, publish-crates-io | Update `replicate/homebrew-tap` cask (stable only, macOS, via GH App) |
 
 ### Package Versioning
 
 All packages use **lockstep versioning** from `VERSION.txt` (propagated to `crates/Cargo.toml` by `mise run version:bump`).
 
-| Package | Registry | Version format | Example |
-|---------|----------|----------------|---------|
-| cog SDK | PyPI | PEP 440 | `cog==0.17.0`, `cog==0.17.0a3`, `cog==0.17.0.dev1` |
-| coglet | PyPI | PEP 440 | `coglet==0.17.0`, `coglet==0.17.0a3` |
-| coglet | crates.io | semver | `coglet@0.17.0`, `coglet@0.17.0-alpha3` |
-| CLI | GitHub Release | semver | `cog v0.17.0`, `cog v0.17.0-dev1` |
+| Package | Registry       | Version format | Example                                            |
+| ------- | -------------- | -------------- | -------------------------------------------------- |
+| cog SDK | PyPI           | PEP 440        | `cog==0.17.0`, `cog==0.17.0a3`, `cog==0.17.0.dev1` |
+| coglet  | PyPI           | PEP 440        | `coglet==0.17.0`, `coglet==0.17.0a3`               |
+| coglet  | crates.io      | semver         | `coglet@0.17.0`, `coglet@0.17.0-alpha3`            |
+| CLI     | GitHub Release | semver         | `cog v0.17.0`, `cog v0.17.0-dev1`                  |
 
 **Version conversion** (semver -> PEP 440):
+
 - `0.17.0-alpha3` -> `0.17.0a3`
 - `0.17.0-beta1` -> `0.17.0b1`
 - `0.17.0-rc1` -> `0.17.0rc1`
@@ -267,14 +270,14 @@ All packages use **lockstep versioning** from `VERSION.txt` (propagated to `crat
 
 The CLI installs the cog SDK from PyPI at container build time:
 
-| Scenario | COG_SDK_WHEEL env var | Behavior |
-|----------|-----------------------|----------|
-| Released CLI | (unset) | Install latest `cog` from PyPI |
-| Dev CLI (in repo) | (unset) | Auto-detect `dist/cog-*.whl` if present, else PyPI |
-| Force PyPI | `pypi` | Install latest from PyPI |
-| Specific version | `pypi:0.12.0` | Install `cog==0.12.0` from PyPI |
-| Local wheel | `/path/to/cog.whl` | Install from local file |
-| Force dist | `dist` | Install from `dist/` (error if missing) |
+| Scenario          | COG_SDK_WHEEL env var | Behavior                                           |
+| ----------------- | --------------------- | -------------------------------------------------- |
+| Released CLI      | (unset)               | Install latest `cog` from PyPI                     |
+| Dev CLI (in repo) | (unset)               | Auto-detect `dist/cog-*.whl` if present, else PyPI |
+| Force PyPI        | `pypi`                | Install latest from PyPI                           |
+| Specific version  | `pypi:0.12.0`         | Install `cog==0.12.0` from PyPI                    |
+| Local wheel       | `/path/to/cog.whl`    | Install from local file                            |
+| Force dist        | `dist`                | Install from `dist/` (error if missing)            |
 
 Same pattern for `COGLET_WHEEL` (but coglet is optional by default).
 

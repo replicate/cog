@@ -100,6 +100,7 @@ asyncio event loop (Python)
 ```
 
 **Why single loop?**
+
 - Python asyncio has one event loop per thread
 - We use `run_coroutine_threadsafe` to submit from Rust/Tokio
 - Multiple slots can have concurrent predictions (up to `max_concurrency`)
@@ -107,6 +108,7 @@ asyncio event loop (Python)
 ### Prediction Execution
 
 **Sync Predictors:**
+
 ```
 SlotRequest::Predict arrives
     │
@@ -118,6 +120,7 @@ SlotRequest::Predict arrives
 ```
 
 **Async Predictors:**
+
 ```
 SlotRequest::Predict arrives
     │
@@ -138,6 +141,7 @@ SlotRequest::Predict arrives
 All output from user code must be captured and routed through the slot socket.
 
 **Architecture:**
+
 ```
 sys.stdout = SlotLogWriter(stdout)
 sys.stderr = SlotLogWriter(stderr)
@@ -163,6 +167,7 @@ which does separate writes for content and `\n`.
 ### Audit Hook Protection
 
 User code might replace `sys.stdout`:
+
 ```python
 sys.stdout = open("mylog.txt", "w")
 ```
@@ -170,6 +175,7 @@ sys.stdout = open("mylog.txt", "w")
 We can't prevent this, but we can intercept it with a Python audit hook.
 
 **Strategy: TeeWriter**
+
 ```
 User replaces sys.stdout
     │
@@ -194,6 +200,7 @@ TeeWriter.write(data)
 ### Cancellation
 
 **Sync Predictors:**
+
 ```
 Parent: ControlRequest::Cancel { slot }
     │
@@ -211,6 +218,7 @@ Prediction code:
 ```
 
 **Async Predictors:**
+
 ```
 Parent: ControlRequest::Cancel { slot }
     │
@@ -246,6 +254,7 @@ worker_bridge.setup()
 ### Behaviors
 
 **Worker Startup:**
+
 1. `set_active()` - Mark as worker subprocess
 2. `init_tracing()` - Configure logging (stderr, COG_LOG_LEVEL env)
 3. `install_slot_log_writers()` - Replace sys.stdout/stderr
@@ -258,11 +267,13 @@ worker_bridge.setup()
 10. Enter event loop
 
 **Shutdown:**
+
 - ControlRequest::Shutdown → Send ShuttingDown, exit
 - stdin closes (parent died) → Exit immediately
 - All slots poisoned → Exit
 
 **Error Handling:**
+
 - SetupError::Load - Failed to import/instantiate predictor
 - SetupError::Setup - setup() raised exception
 - PredictionError - Prediction failed, slot stays healthy

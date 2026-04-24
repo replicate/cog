@@ -20,15 +20,17 @@ import "github.com/replicate/cog/pkg/registry_testhelpers"
 func TestMyFunction(t *testing.T) {
 	registryContainer := registry_testhelpers.StartTestRegistry(ctx)
   image := registryContainer.ImageRef("alpine:latest")
-	
+
   // use image as a real image reference
 }
 ```
+
 ### Inspect the current images in the registry:
 
 ```bash
 go run ./tools/test-registry-util catalog
 ```
+
 will print something like:
 
 ```
@@ -46,7 +48,6 @@ You can then use these images in your tests using references like:
 - `localhost:<port>/alpine:latest` with platform `linux/amd64` to get a single image from a multi-platform index
 - `localhost:<port>/alpine:latest@sha256:1c4eef651f65e2f7daee7ee785882ac164b02b78fb74503052a26dc061c90474` to get a specific image
 - `localhost:<port>/python:3.10` to get a single-platform image
-
 
 ### Initialize a new registry storage
 

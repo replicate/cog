@@ -8,10 +8,10 @@ Most integration tests use the txtar format (`.txtar` files in `tests/`), which 
 
 However, some tests require capabilities that don't fit txtar's sequential execution model and are written as standard Go test functions instead:
 
-| Test | Location | Why Go instead of txtar |
-|------|----------|-------------------------|
+| Test                        | Location      | Why Go instead of txtar                                          |
+| --------------------------- | ------------- | ---------------------------------------------------------------- |
 | `TestConcurrentPredictions` | `concurrent/` | Requires parallel HTTP requests with precise timing coordination |
-| `TestLogin*` | `login/` | Login requires interactive PTY input and mock HTTP servers |
+| `TestLogin*`                | `login/`      | Login requires interactive PTY input and mock HTTP servers       |
 
 Note: PTY/TTY tests now use the `pty-run` command in txtar format (see Custom Commands below).
 
@@ -62,20 +62,24 @@ Tests are `.txtar` files in the `tests/` directory. Each file is a self-containe
 For syntax highlighting of `.txtar` files:
 
 **VS Code:**
+
 - [testscript](https://marketplace.visualstudio.com/items?itemName=twpayne.vscode-testscript) by twpayne - Syntax highlighting with embedded file support
 - [txtar](https://github.com/brody715/vscode-txtar) by brody715 - Alternative txtar extension
 
 Install via VS Code:
+
 ```
 ext install twpayne.vscode-testscript
 ```
 
 **Zed:**
+
 - [zed-txtar](https://github.com/FollowTheProcess/zed-txtar) - Syntax highlighting for txtar files
 
 Install via Zed extensions panel or add to your extensions.
 
 **Vim/Neovim:**
+
 - Use [tree-sitter-go-template](https://github.com/ngalaiko/tree-sitter-go-template) for basic support
 - Or set filetype manually: `:set ft=conf` for basic highlighting
 
@@ -121,19 +125,19 @@ class Predictor(BasePredictor):
 
 The harness automatically sets these environment variables:
 
-| Variable | Description |
-|----------|-------------|
-| `$TEST_IMAGE` | Unique Docker image name for test isolation |
-| `$WORK` | Test's temporary working directory |
+| Variable      | Description                                   |
+| ------------- | --------------------------------------------- |
+| `$TEST_IMAGE` | Unique Docker image name for test isolation   |
+| `$WORK`       | Test's temporary working directory            |
 | `$SERVER_URL` | URL of running cog server (after `cog serve`) |
-| `$HOME` | Real home directory (for Docker credentials) |
+| `$HOME`       | Real home directory (for Docker credentials)  |
 
 You can also use:
 
-| Variable | Description |
-|----------|-------------|
-| `COG_BINARY` | Path to cog binary (defaults to auto-build) |
-| `TEST_PARALLEL` | Number of parallel tests (default: 4) |
+| Variable        | Description                                 |
+| --------------- | ------------------------------------------- |
+| `COG_BINARY`    | Path to cog binary (defaults to auto-build) |
+| `TEST_PARALLEL` | Number of parallel tests (default: 4)       |
 
 Use `go test -short` to skip slow tests.
 
@@ -148,6 +152,7 @@ cog predict $TEST_IMAGE -i name=value
 ```
 
 Special handling for `cog serve`:
+
 - Runs in background automatically
 - Allocates a random port
 - Waits for health check before continuing
@@ -211,12 +216,12 @@ Use conditions to control when tests run based on environment. Conditions are ev
 
 ### Available Conditions
 
-| Condition | Evaluates to True When | Negated | Example Use Case |
-|-----------|------------------------|---------|------------------|
-| `[short]` | `go test -short` is used | `[!short]` | Use `[short] skip` to skip GPU tests, long builds, or slow framework installs when running in short mode |
-| `[linux]` | Running on Linux | `[!linux]` | Tests requiring Linux-specific features |
-| `[amd64]` | Running on amd64/x86_64 architecture | `[!amd64]` | Tests requiring specific CPU architecture |
-| `[linux_amd64]` | Running on Linux AND amd64 | `[!linux_amd64]` | Tests requiring both Linux and amd64 (e.g., `--use-cog-base-image` builds) |
+| Condition       | Evaluates to True When               | Negated          | Example Use Case                                                                                         |
+| --------------- | ------------------------------------ | ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `[short]`       | `go test -short` is used             | `[!short]`       | Use `[short] skip` to skip GPU tests, long builds, or slow framework installs when running in short mode |
+| `[linux]`       | Running on Linux                     | `[!linux]`       | Tests requiring Linux-specific features                                                                  |
+| `[amd64]`       | Running on amd64/x86_64 architecture | `[!amd64]`       | Tests requiring specific CPU architecture                                                                |
+| `[linux_amd64]` | Running on Linux AND amd64           | `[!linux_amd64]` | Tests requiring both Linux and amd64 (e.g., `--use-cog-base-image` builds)                               |
 
 ### Usage Examples
 
@@ -261,6 +266,7 @@ cog build -t $TEST_IMAGE --use-cog-base-image
 ### Condition Logic
 
 Conditions can be negated with `!`:
+
 - `[short]` - True when `go test -short` is used
   - Use `[short] skip` to skip a slow test when running in short mode
 - `[!short]` - True when NOT running with `-short` flag
@@ -284,20 +290,20 @@ cog build -t $TEST_IMAGE
 
 These are provided by testscript itself:
 
-| Command | Description |
-|---------|-------------|
-| `exec` | Run an arbitrary command |
+| Command          | Description                 |
+| ---------------- | --------------------------- |
+| `exec`           | Run an arbitrary command    |
 | `stdout PATTERN` | Assert stdout matches regex |
 | `stderr PATTERN` | Assert stderr matches regex |
-| `exists FILE` | Assert file exists |
-| `! exists FILE` | Assert file does not exist |
-| `cp SRC DST` | Copy file |
-| `rm FILE` | Remove file |
-| `mkdir DIR` | Create directory |
-| `cd DIR` | Change directory |
-| `env KEY=VALUE` | Set environment variable |
-| `skip MESSAGE` | Skip the test |
-| `stop MESSAGE` | Stop test early (success) |
+| `exists FILE`    | Assert file exists          |
+| `! exists FILE`  | Assert file does not exist  |
+| `cp SRC DST`     | Copy file                   |
+| `rm FILE`        | Remove file                 |
+| `mkdir DIR`      | Create directory            |
+| `cd DIR`         | Change directory            |
+| `env KEY=VALUE`  | Set environment variable    |
+| `skip MESSAGE`   | Skip the test               |
+| `stop MESSAGE`   | Stop test early (success)   |
 
 See [testscript documentation](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript) for the full list.
 
@@ -350,7 +356,7 @@ from cog import BasePredictor
 class Predictor(BasePredictor):
     def setup(self):
         self.bg = subprocess.Popen(["./background.sh"])
-    
+
     def predict(self, s: str) -> str:
         return "hello " + s
 ```
@@ -426,6 +432,7 @@ docker images | grep cog-test
 ### Test times out waiting for server
 
 The server health check has a 30-second timeout. If your model takes longer to load:
+
 - Consider if it should be a `[slow]` test
 - Check for errors in the predictor's `setup()` method
 

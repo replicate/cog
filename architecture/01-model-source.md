@@ -35,15 +35,15 @@ concurrency:
   max: 1
 ```
 
-| Field | Purpose |
-|-------|---------|
-| `build.python_version` | Python interpreter version (3.10-3.13) |
-| `build.gpu` | Enable CUDA support |
-| `build.python_packages` | pip packages to install |
-| `build.system_packages` | apt packages to install |
-| `build.run` | Arbitrary shell commands during build |
-| `predict` | Path to predictor class (`module:ClassName`) |
-| `concurrency.max` | Max concurrent predictions (requires async) |
+| Field                   | Purpose                                      |
+| ----------------------- | -------------------------------------------- |
+| `build.python_version`  | Python interpreter version (3.10-3.13)       |
+| `build.gpu`             | Enable CUDA support                          |
+| `build.python_packages` | pip packages to install                      |
+| `build.system_packages` | apt packages to install                      |
+| `build.run`             | Arbitrary shell commands during build        |
+| `predict`               | Path to predictor class (`module:ClassName`) |
+| `concurrency.max`       | Max concurrent predictions (requires async)  |
 
 The [Build System](./05-build-system.md) uses this configuration to produce an image containing all necessary dependencies, libraries, and the correct Python/CUDA versions.
 
@@ -58,7 +58,7 @@ class Predictor(BasePredictor):
     def setup(self):
         """Load model into memory. Called once at container start."""
         self.model = load_model("./weights")
-    
+
     def predict(self, prompt: str, steps: int = 50) -> Path:
         """Run inference. Called for each prediction request."""
         output = self.model.generate(prompt, steps=steps)
@@ -113,6 +113,7 @@ def predict(self, image: Path) -> Path:
 ```
 
 `cog.Path` extends `pathlib.Path`. At runtime:
+
 - HTTP/HTTPS URLs are downloaded to temp files
 - Data URLs are decoded
 - The predictor receives a local filesystem path
@@ -145,13 +146,13 @@ def predict(
 ) -> str:
 ```
 
-| Parameter | Effect |
-|-----------|--------|
-| `description` | Shown in UI and schema |
-| `default` | Default value if not provided |
-| `ge`, `le` | Numeric bounds (greater/less than or equal) |
-| `min_length`, `max_length` | String length bounds |
-| `choices` | Enum values (deprecated: prefer `Literal`) |
+| Parameter                  | Effect                                      |
+| -------------------------- | ------------------------------------------- |
+| `description`              | Shown in UI and schema                      |
+| `default`                  | Default value if not provided               |
+| `ge`, `le`                 | Numeric bounds (greater/less than or equal) |
+| `min_length`, `max_length` | String length bounds                        |
+| `choices`                  | Enum values (deprecated: prefer `Literal`)  |
 
 ### Enums with Literal
 
@@ -315,12 +316,13 @@ For concurrent predictions, use async:
 class Predictor(BasePredictor):
     async def setup(self):
         self.model = await load_model_async()
-    
+
     async def predict(self, prompt: str) -> str:
         return await self.model.generate(prompt)
 ```
 
 Requires:
+
 - Python 3.11+
 - `concurrency.max > 1` in cog.yaml
 
@@ -328,10 +330,10 @@ See [Container Runtime](./04-container-runtime.md) for concurrency details.
 
 ## Code References
 
-| File | Purpose |
-|------|---------|
-| `python/cog/__init__.py` | Public API exports |
+| File                      | Purpose                                                   |
+| ------------------------- | --------------------------------------------------------- |
+| `python/cog/__init__.py`  | Public API exports                                        |
 | `python/cog/predictor.py` | BasePredictor class, type introspection, weights handling |
-| `python/cog/types.py` | Path, Secret, ConcatenateIterator |
-| `python/cog/input.py` | `Input()` function and field metadata |
-| `pkg/config/config.go` | cog.yaml parsing |
+| `python/cog/types.py`     | Path, Secret, ConcatenateIterator                         |
+| `python/cog/input.py`     | `Input()` function and field metadata                     |
+| `pkg/config/config.go`    | cog.yaml parsing                                          |
