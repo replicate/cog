@@ -268,6 +268,12 @@ developers use locally. This eliminates version drift between local dev and CI.
 
 **When updating a tool version**, update `mise.toml` only. CI picks it up automatically.
 
+## Agent Skills
+
+The `.agents/skills/` directory contains shared skill definitions that provide specialized instructions and workflows for coding agents. Each skill is a subdirectory with a `SKILL.md` file that agents load on demand when the task matches.
+
+Skills are invoked automatically by agents when a matching task is detected. See individual `SKILL.md` files for details on when and how each skill applies.
+
 ## Important Files
 - `VERSION.txt` - Canonical version (single source of truth)
 - `cog.yaml` - User-facing model configuration

@@ -51,6 +51,7 @@ cargo-binstall = "1.16.6"
 "aqua:golangci/golangci-lint" = "2.10.1"
 ruff = "0.14.13"
 ty = "0.0.10"
+"npm:prettier" = "3.6.2"
 "npm:markdownlint-cli2" = "0.22.0"
 
 [env]
@@ -387,11 +388,41 @@ run = "ruff format ."
 [tasks."fmt:docs"]
 alias = "fmt:docs:check"
 description = "Check Markdown formatting"
-run = "markdownlint-cli2"
+run = [
+  '''
+#!/usr/bin/env bash
+set -euo pipefail
+files=()
+while IFS= read -r -d '' file; do
+  if [ -f "$file" ] && [ ! -L "$file" ]; then
+    files+=("$file")
+  fi
+done < <(git ls-files -z -- '*.md')
+if [ -n "${files[*]-}" ]; then
+  prettier --check "${files[@]}"
+fi
+''',
+  "markdownlint-cli2",
+]
 
 [tasks."fmt:docs:fix"]
 description = "Fix Markdown formatting"
-run = "markdownlint-cli2 --fix"
+run = [
+  '''
+#!/usr/bin/env bash
+set -euo pipefail
+files=()
+while IFS= read -r -d '' file; do
+  if [ -f "$file" ] && [ ! -L "$file" ]; then
+    files+=("$file")
+  fi
+done < <(git ls-files -z -- '*.md')
+if [ -n "${files[*]-}" ]; then
+  prettier --write "${files[@]}"
+fi
+''',
+  "markdownlint-cli2 --fix",
+]
 
 # =============================================================================
 # Lint tasks
