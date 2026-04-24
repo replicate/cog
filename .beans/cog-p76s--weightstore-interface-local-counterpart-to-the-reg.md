@@ -1,167 +1,93 @@
 ---
 # cog-p76s
-title: 'WeightStore interface: local counterpart to the registry'
-status: todo
+title: 'WeightStore interface: content-addressed file store'
+status: completed
 type: task
-priority: high
+priority: critical
 created_at: 2026-04-22T20:22:41Z
-updated_at: 2026-04-22T20:38:09Z
+updated_at: 2026-04-24T00:04:29Z
 parent: cog-kgd7
 ---
 
-Define the `WeightStore` interface that abstracts local-side layer storage and weight assembly. Enables swapping backends (file cache now, Docker daemon later) without changing callers in `cog weights pull` / `cog predict`.
+Define a narrow `WeightStore` interface: a content-addressed store for individual weight files. The store knows only digests; filenames, layers, URIs, and orchestration live elsewhere.
 
 ## Why
 
-We want the "remote Docker daemon with GPUs and huge disks" workflow to drop in later without rewriting `cog predict` or `cog weights pull`. Locking the shape of the abstraction now means every WeightStore backend talks the same contract: "tell me what you have, fetch what you don't, give me a path to bind-mount."
+We need a swappable local backend for weight bytes. v1 is a file-system cache (cog-gbse); a future `DockerWeightStore` can drop in without changing callers. Keeping the store narrow and digest-only prevents it from accumulating orchestration concerns — that belongs in the `WeightManager` (cog-wmgr or folded into cog-40ed / cog-xhpw).
 
-## Scope
-
-This bean is interface + types + docs only. Implementations are separate beans.
+## Interface
 
 ```go
+// Package pkg/weights/store
+
 type WeightStore interface {
-    HasSet(ctx context.Context, setDigest string) (bool, error)
-    HasLayer(ctx context.Context, contentsDigest string) (bool, error)
-    Fetch(ctx context.Context, setDigest string, layers []LayerRef, means FetchMeans) error
-    Mount(ctx context.Context, setDigest string, layers []LayerRef) (MountHandle, error)
+    // Exists reports whether a file with the given digest is in the store.
+    Exists(ctx context.Context, digest string) (bool, error)
+
+    // PutFile stores r under its content-addressed digest. The reader is
+    // consumed and verified against expectedDigest as it streams; a
+    // mismatch returns an error and leaves the store unchanged.
+    // Idempotent: if a file already exists at the digest, the reader is
+    // discarded and no error is returned.
+    PutFile(ctx context.Context, expectedDigest string, size int64, r io.Reader) error
+
+    // Open returns a reader for the file at the given digest. Caller closes.
+    // Returns fs.ErrNotExist if the digest is not in the store.
+    Open(ctx context.Context, digest string) (io.ReadCloser, error)
+
+    // Path returns an on-disk path for the file, suitable for hardlinking.
+    // Returns fs.ErrNotExist if the digest is not in the store.
+    Path(ctx context.Context, digest string) (string, error)
+
+    // List iterates all files in the store.
+    List(ctx context.Context) iter.Seq2[FileInfo, error]
+
+    // Delete removes a file. Idempotent on already-missing digests.
+    Delete(ctx context.Context, digest string) error
 }
 
-type LayerRef struct {
-    ContentsDigest string
-    BlobDigest     string
-    MediaType      string
-    Size           int64
-    Files          []LayerFileRef // path + size + digest, from lockfile.Files
-}
-
-type LayerFileRef struct {
-    Path   string
+type FileInfo struct {
+    Digest string
     Size   int64
-    Digest string // sha256:<hex>
-}
-
-type FetchMeans struct {
-    Source   weightsource.Source // nil if source unavailable
-    URI      string
-    Registry registry.Client     // nil if offline
-    Repo     string
-}
-
-type MountHandle interface {
-    Path() string       // bind-mount source (read-only)
-    Release() error     // decrement ref count / cleanup
 }
 ```
 
-### Key contract points
+Six methods, all digest-keyed. No layer concept. No fetching. No knowledge of source URIs, registries, or lockfiles — those are Manager-level concerns.
 
-- `HasLayer` is keyed on `ContentsDigest`, not `BlobDigest`, because the store operates on extracted files (v1) or tars (v2); `BlobDigest` is only meaningful for the registry-fetch fallback.
-- `Fetch` is provider-driven: the store decides whether to use `means.Source`, `means.Registry`, or delegate (e.g. `DockerWeightStore` may ignore both and ask its daemon to `docker pull`).
-- `Mount` returns a path that can be bind-mounted `:ro` into a container. Caller must `Release` the handle when the container exits.
+## Design decisions
+
+- **No `Fetch` method.** Pulling bytes from a registry or source is orchestration, not storage. Lives in `WeightManager.Pull` (cog-xhpw).
+- **No `HasSet` / set digest awareness.** Store operates at file granularity. "Is this weight set fully present?" is computed by the Manager iterating `entry.Files` and calling `Exists` per digest.
+- **No layer awareness.** Layers are a registry-transport concept; the store doesn't model them.
+- **`Open` and `Path` both.** `Open` for stream-through-another-store use cases; `Path` for hardlink assembly. FileWeightStore supports both natively.
+- **`iter.Seq2` for List.** Modern Go; cheap for large stores.
 
 ## Scope (code)
 
-- New package: `pkg/model/weightstore/` (or similar).
-- Interface + types in one file.
-- Doc comments on every exported symbol. These are the contract.
-- No implementations in this bean — subsequent beans provide `FileWeightStore` (v1) and `DockerWeightStore` (v2, deferred).
+- New package: `pkg/weights/store/`
+- `store.go`: interface + `FileInfo` type + doc comments
+- Sibling file: implementation (cog-gbse)
 
 ## Out of scope
 
-- `FileWeightStore` implementation (separate bean).
-- Wiring into `cog weights pull` or `cog predict` (separate beans).
-- `DockerWeightStore` (deferred, separate bean).
+- `FileWeightStore` implementation (cog-gbse)
+- `WeightManager` orchestrator (folded into cog-xhpw / cog-40ed — the Manager type lives in `pkg/weights/` and wraps this interface)
+- BulkFetcher / remote-Docker optimization (deferred; would add a type-assertable optional interface once `DockerWeightStore` is designed)
+- `DockerWeightStore` (deferred)
 
 ## Todo
 
-- [ ] Create `pkg/model/weightstore/` package
-- [ ] Define `WeightStore` interface
-- [ ] Define `LayerRef`, `LayerFileRef`, `FetchMeans`, `MountHandle`
-- [ ] Doc comments explaining the contract (especially `ContentsDigest` vs `BlobDigest`)
-- [ ] Helper: `LayerRefsFromLockEntry(entry *WeightLockEntry) []LayerRef` — bridges the lockfile and the store
+- [x] Create `pkg/weights/store/` package
+- [x] Define `WeightStore` interface with the six methods above
+- [x] Define `FileInfo` type
+- [x] Doc comments explaining each method's contract
+- [x] Document that `Open` / `Path` return `fs.ErrNotExist` on missing digests
 
 ## Reference
 
-- `plans/2026-04-22-managed-weights-import-and-local-run-design.md` §4
+- `plans/2026-04-22-managed-weights-import-and-local-run-design.md` §4 (historical; this bean supersedes the layered design)
+- Session design discussion: 2026-04-23 (chat log)
 
+## Summary of Changes
 
-
-## Update 2026-04-22: WeightStore also serves the push path
-
-Import populates the WeightStore as a side effect of packing — so after a successful import, `cog weights pull` is a no-op and `cog predict` can assemble immediately.
-
-This requires the interface to support producer writes, not just consumer reads. Add:
-
-```go
-// PutFile stores a file's bytes in the store under its content-addressed
-// digest. The reader is consumed and verified against expected-digest
-// as it streams. Size is informational (for progress / preallocation).
-//
-// PutFile is idempotent: if the file already exists at the digest, the
-// reader is discarded and no error is returned.
-PutFile(ctx context.Context, expectedDigest string, size int64, r io.Reader) error
-
-// PutLayerMembership records which files belong to a layer (the .list
-// sidecar in FileWeightStore). Called after all files in a layer have
-// been PutFile'd.
-PutLayerMembership(ctx context.Context, contentsDigest string, files []LayerFileRef) error
-```
-
-The import executor calls `PutFile` as it reads from `Source.Open` (single-pass streaming: source → hash/verify → write to WeightStore), then packs the tar from the stored files (which are now known-good and local), then pushes the tar. No re-read of the source, no orphan tars.
-
-This means cog-gbse (FileWeightStore) has to land before cog-3p4a (plan/execute split), not just before cog-xhpw/cog-40ed. Updated dependencies reflect this.
-
-
-
-## Update 2026-04-22 (ContentsDigest dropped)
-
-Following cog-vs3r being scrapped, the interface simplifies:
-
-- Remove `HasLayer(contentsDigest)` — no contentsDigest exists; use `HasFiles([]LayerFileRef)` (or collapse it into `Fetch`'s internal cache check).
-- Remove `PutLayerMembership` — no `.list` sidecar needed; layer membership is in the lockfile's `Files[]`.
-- `LayerRef` drops `ContentsDigest`. Layers are referenced by `BlobDigest` (for registry operations) and their `Files []LayerFileRef` (for store operations).
-
-### Revised interface
-
-```go
-type WeightStore interface {
-    HasSet(ctx context.Context, setDigest string) (bool, error)
-
-    // HasFiles reports whether all referenced files are present in the store.
-    // Store inspects each file's content digest against its local index.
-    HasFiles(ctx context.Context, files []LayerFileRef) (bool, error)
-
-    // Fetch makes the store self-populate with whatever it's missing for
-    // (setDigest, layers). Provider-driven: store may use means.Source,
-    // means.Registry, or delegate entirely.
-    Fetch(ctx context.Context, setDigest string, layers []LayerRef, means FetchMeans) error
-
-    // PutFile stores a file under its content-addressed digest.
-    // Streams + verifies. Idempotent.
-    PutFile(ctx context.Context, expectedDigest string, size int64, r io.Reader) error
-
-    // Mount returns a path bindable into a container at the weight's target.
-    Mount(ctx context.Context, setDigest string, layers []LayerRef) (MountHandle, error)
-}
-
-type LayerRef struct {
-    BlobDigest string          // registry-facing, from lockfile.Layers[].Digest
-    MediaType  string
-    Size       int64
-    Files      []LayerFileRef  // from lockfile.Files filtered by this layer
-}
-
-type LayerFileRef struct {
-    Path   string
-    Size   int64
-    Digest string // sha256:<hex>
-}
-```
-
-### Revised todo
-
-- [ ] `WeightStore` interface with `HasSet`, `HasFiles`, `Fetch`, `PutFile`, `Mount`
-- [ ] `LayerRef`, `LayerFileRef`, `FetchMeans`, `MountHandle` types
-- [ ] Doc comments (especially: store operates on file granularity; layers are a lockfile view)
-- [ ] Helper: `LayerRefsFromLockEntry(entry *WeightLockEntry) []LayerRef` — splits `entry.Files` by `entry.Files[i].Layer`, builds one `LayerRef` per distinct `BlobDigest`
+Added `pkg/weights/store/` with `store.go` defining the `WeightStore` interface (six methods: Exists, PutFile, Open, Path, List, Delete) and the `FileInfo` struct. Doc comments spell out the not-found-wraps-fs.ErrNotExist contract and note that Path may not be supported by every backend (e.g. a future containerd-backed store). No implementation in this bean — FileWeightStore lands in cog-gbse.
