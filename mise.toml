@@ -389,38 +389,14 @@ run = "ruff format ."
 alias = "fmt:docs:check"
 description = "Check Markdown formatting"
 run = [
-  '''
-#!/usr/bin/env bash
-set -euo pipefail
-files=()
-while IFS= read -r -d '' file; do
-  if [ -f "$file" ] && [ ! -L "$file" ]; then
-    files+=("$file")
-  fi
-done < <(git ls-files -z -- '*.md')
-if [ "${files[0]+x}" ]; then
-  prettier --check "${files[@]}"
-fi
-''',
+  "bash ./tools/format-markdown.sh --check",
   "markdownlint-cli2",
 ]
 
 [tasks."fmt:docs:fix"]
 description = "Fix Markdown formatting"
 run = [
-  '''
-#!/usr/bin/env bash
-set -euo pipefail
-files=()
-while IFS= read -r -d '' file; do
-  if [ -f "$file" ] && [ ! -L "$file" ]; then
-    files+=("$file")
-  fi
-done < <(git ls-files -z -- '*.md')
-if [ "${files[0]+x}" ]; then
-  prettier --write "${files[@]}"
-fi
-''',
+  "bash ./tools/format-markdown.sh --write",
   "markdownlint-cli2 --fix",
 ]
 
@@ -701,7 +677,10 @@ echo "docs/llms.txt is up to date"
 description = "Generate CLI reference documentation"
 sources = ["pkg/cli/*.go", "cmd/cog/*.go"]
 outputs = ["docs/cli.md"]
-run = "go run ./tools/gendocs/main.go -o docs/cli.md"
+run = [
+  "go run ./tools/gendocs/main.go -o docs/cli.md",
+  "prettier --write docs/cli.md",
+]
 
 [tasks."docs:cli:check"]
 description = "Check that CLI docs are up to date"
@@ -709,9 +688,12 @@ run = """
 #!/usr/bin/env bash
 set -e
 tmpfile=$(mktemp)
+mv "$tmpfile" "$tmpfile.md"
+tmpfile="$tmpfile.md"
 trap 'rm -f "$tmpfile"' EXIT
 # Generate to temp file and compare
 go run ./tools/gendocs/main.go -o "$tmpfile"
+prettier --write "$tmpfile"
 if ! diff -q "$tmpfile" docs/cli.md > /dev/null 2>&1; then
   echo "ERROR: docs/cli.md is out of date. Run 'mise run docs:cli' to update."
   exit 1
