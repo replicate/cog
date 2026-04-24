@@ -25,6 +25,7 @@ func newWeightsCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newWeightsImportCommand())
+	cmd.AddCommand(newWeightsPullCommand())
 	cmd.AddCommand(newWeightsStatusCommand())
 	return cmd
 }

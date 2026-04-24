@@ -1,88 +1,155 @@
 ---
 # cog-xhpw
-title: Wire cog weights pull to WeightStore.Fetch
-status: todo
+title: WeightManager + cog weights pull command
+status: completed
 type: task
-priority: high
+priority: critical
 created_at: 2026-04-22T20:23:52Z
-updated_at: 2026-04-22T20:43:46Z
+updated_at: 2026-04-24T00:30:43Z
 parent: cog-kgd7
 blocked_by:
     - cog-gbse
-    - cog-3p4a
 ---
 
-Rewire `cog weights pull` to synthesize runnable weights via `WeightStore.Fetch` instead of being a thin `docker pull` wrapper. The store's `Fetch` priority chain handles cache-hit / source-reconstruct / registry-fallback transparently.
+Introduce the `WeightManager` orchestrator and wire it to a new `cog weights pull` subcommand that populates the local `WeightStore` from the registry.
 
 ## Why
 
-`cog weights pull` after `cog weights import` should be a no-op (cache warm from the import). `cog predict` after `git clone` on a file:// weight should reconstruct from source, never touching the registry. Only cold-cache + no-source should fall back to the registry.
+After `cog weights import`, a user on a fresh machine needs a way to populate the local store from the registry so `cog predict` can run. The importer doesn't warm the store yet (cog-3p4a, future); v1 requires an explicit `cog weights pull` step.
 
-The store already implements this priority order via `Fetch`; this bean wires the CLI to delegate.
+The Manager is where weight-level orchestration lives: knowing which files a weight needs, checking the store, fetching from the registry, assembling mounts. `cog predict` (cog-40ed) and `cog weights pull` (this bean) both go through it. The store stays narrow (cog-p76s); the Manager holds the refs to registry, lockfile, store, and project dir.
 
-## Scope
+## WeightManager
 
-### Flow
+New package: `pkg/weights/`
 
-1. Load `cog.yaml` + `weights.lock` + (optionally) pending state.
-2. For each weight in the lockfile (or the names passed as args):
-   - Build `LayerRef`s from the lockfile entry.
-   - Build `FetchMeans`:
-     - `Source` + `URI` from the lockfile entry's source block (nil if URI can't be resolved, e.g. relative path from a different checkout).
-     - `Registry` + `Repo` from config.
-   - Call `store.Fetch(ctx, setDigest, layers, means)`.
-3. Progress UX delegated to the store (or a callback passed in via `FetchMeans`).
+```go
+type Manager struct {
+    store      store.WeightStore
+    registry   registry.Client
+    repo       string              // from cog.yaml Image field
+    lock       *model.WeightsLock
+    projectDir string               // mounts live under <projectDir>/.cog/mounts
+}
 
-### CLI
+type ManagerOptions struct {
+    Store      store.WeightStore
+    Registry   registry.Client
+    Repo       string
+    Lock       *model.WeightsLock
+    ProjectDir string
+}
 
-- `cog weights pull [name...]` — pulls specified weights or all.
-- `--from-registry` flag (optional): skip source reconstruction, always pull from registry. For explicit "I want the canonical bits" use case.
-- `--from-source` flag (optional): error if source is unavailable instead of falling back to registry. For debugging / CI.
+func NewManager(opts ManagerOptions) (*Manager, error)
+```
 
-### Error handling
+Three public operations for v1:
 
-- Source drift (reconstructed file digest mismatch): log at warn, fall through to registry.
-- No source and no registry: error clearly, suggest `--from-registry` or checking credentials.
-- Partial failure (some weights succeed, some fail): report per-weight status, non-zero exit.
+- **`Pull(ctx, names []string) error`** — this bean.
+- **`Prepare(ctx) (Mounts, error)`** — cog-40ed.
+- **`Status(ctx) (*model.WeightsStatus, error)`** — thin wrapper over existing `model.ComputeWeightsStatus`; enhancement to consider local store as a "ready" source is a follow-up.
+
+## Pull implementation
+
+For each named weight (all weights if names is empty):
+
+1. Find the lockfile entry by name.
+2. Collect needed digests from `entry.Files`.
+3. For each file, check `store.Exists(digest)`. Skip if present.
+4. Group remaining-needed files by layer (via `entry.Files[i].Layer`).
+5. For each layer with outstanding files:
+    - Fetch layer blob from registry: `<repo>@<entry.Digest>` for the manifest, then the individual layer blob digest.
+    - Stream blob → gunzip → tar reader.
+    - For each tar entry: look up expected file in the lockfile by path. If it's one of our outstanding files, `store.PutFile(expectedDigest, entry.Size, tarEntryReader)`. Otherwise skip the entry body.
+    - Error if a tar entry's path isn't in the lockfile (the registry content should be fully described by the lockfile — the lockfile is authoritative).
+6. Error if, after processing the layer, any expected file is still missing.
+
+Registry is **always** the source. We don't fall back to source URI reconstruction in v1 — the registry is authoritative once import has run, per the design.
+
+## CLI: `cog weights pull`
+
+`pkg/cli/weights.go` gets a new subcommand:
+
+```
+cog weights pull [NAME...]
+```
+
+- No NAMEs → pull all weights.
+- NAMEs → validate each against cog.yaml, error on unknown names.
+- No flags in v1.
+- Exit codes:
+    - 0 all pulled (including already-cached)
+    - 1 any weight failed
+    - 2 config error
+
+CLI is thin: parse args, load config + lockfile, build store + registry client, construct Manager, call `mgr.Pull(ctx, names)`. No logic.
+
+Idempotency: per-file `Exists` check via `store.Exists`. Running pull twice in a row is cheap.
+
+## Output
+
+v1 keeps output minimal:
+```
+Pulling parakeet... done (4.5 GB, 3 layers)
+Pulling minilm... cached
+```
+
+Progress bars and per-layer reporting deferred.
+
+## Unhiding
+
+The `cog weights` command group is currently `Hidden: true` (cog-gxqs tracks unhiding). This bean does **not** unhide. Users who know about the command can use it; general rollout happens when cog-gxqs lands.
 
 ## Scope (code)
 
-- Update `pkg/cli/weights.go` (or new `weights_pull.go`) with the pull command.
-- Register under `cog weights` group.
-- Tests: cache hit, source reconstruct path, registry fallback, `--from-registry`, `--from-source` without source.
+- `pkg/weights/manager.go`: `Manager`, `ManagerOptions`, `NewManager`.
+- `pkg/weights/pull.go`: `Manager.Pull` implementation (layer fetch + tar extract + PutFile loop).
+- `pkg/cli/weights.go`: new `pullCmd` subcommand, registered under the existing `weights` group.
+- Tests:
+    - `Pull` happy path with mock registry client (layer-by-layer, streams to store)
+    - `Pull` with cached files (per-file Exists skips already-present digests)
+    - `Pull` idempotent (second call is no-op)
+    - `Pull` digest mismatch in tar entry (corrupt bytes → error, store unchanged)
+    - `Pull` unexpected file path in tar (not in lockfile → error)
+    - `Pull` with NAME filter (only named weights pulled, unknown name errors)
 
 ## Out of scope
 
-- Auto-pull on `cog predict` (separate bean, deferred).
-- `cog weights purge` (separate follow-up, not blocking this).
+- `Prepare` / mount assembly (cog-40ed)
+- `Status` local-store awareness (follow-up)
+- Source-reconstruction fallback (future; registry is authoritative for v1)
+- Progress UI
+- Auto-pull on `cog predict` (deferred to v2)
+- Unhiding `cog weights` group (cog-gxqs)
 
 ## Dependencies
 
-Blocked by:
-- WeightStore interface
-- FileWeightStore implementation
-- Lockfile v2
+- cog-gbse (FileWeightStore)
 
 ## Todo
 
-- [ ] New `cog weights pull` command in `pkg/cli/weights.go`
-- [ ] Build `LayerRef`s from lockfile entries
-- [ ] Build `FetchMeans` from config + lockfile source block
-- [ ] Call `store.Fetch` per weight
-- [ ] `--from-registry` / `--from-source` flags
-- [ ] Progress reporting (delegates to store or callback)
-- [ ] Per-weight error aggregation + clear final status
-- [ ] Tests
+- [x] Create `pkg/weights/` package
+- [x] `Manager`, `ManagerOptions`, `NewManager`
+- [x] `Manager.Pull(ctx, names)`: per-weight → per-layer → tar-extract → PutFile
+- [x] `Manager.Status` thin wrapper over existing `ComputeWeightsStatus`
+- [x] `pkg/cli/weights.go` gains `pullCmd` subcommand
+- [x] CLI constructs store + registry + Manager, delegates
+- [x] Error messages for missing config (no image, no weights)
+- [x] Tests for all paths
 
 ## Reference
 
-- `plans/2026-04-22-managed-weights-import-and-local-run-design.md` §5
-- Supersedes / updates existing `cog-kfvj` (this is the actual work; cog-kfvj will be retitled to match).
+- cog-p76s (interface)
+- cog-gbse (FileWeightStore)
+- Session design discussion: 2026-04-23 (chat log)
 
+## Summary of Changes
 
+- `pkg/weights/manager.go` — `Manager` type + `ManagerOptions` + `NewManager`. Carries the store, registry client, repo, lockfile, and project dir. `Status` is a thin wrapper over existing `model.ComputeWeightsStatus`. `selectEntries` resolves name filters against the lockfile and reports every unknown name at once.
+- `pkg/weights/pull.go` — `Manager.Pull`. Per-weight: compute missing-file set (skips fully-cached weights with zero registry I/O), group remaining files by layer, fetch the weight manifest by digest via `registry.GetImage`, stream each needed layer's uncompressed tar, `PutFile` every regular-file entry. Unexpected tar paths error out (lockfile is authoritative). Post-pull existence check catches the case where a layer silently lacks an expected file. Returns `[]PullResult` so callers can render progress.
+- `pkg/cli/weights_pull.go` — new `cog weights pull [NAME...]` subcommand wired in `weights.go`. Thin: loads config + lockfile, resolves repo (cog.yaml `image` or `--image`), constructs `FileStore`/`registry.Client`/`Manager`, delegates to `mgr.Pull`.
+- `pkg/weights/pull_test.go` — happy path (multi-layer), all-cached (no registry I/O), idempotent re-pull, digest mismatch in tar (store unchanged), unexpected file in tar, NAME filter, unknown name, `NewManager` required-opts validation. Tests use an in-memory `rawTarLayer` + `empty.Image` + `mutate.Append` + a tiny `stubRegistry` implementing only `GetImage` — the other `registry.Client` methods return errors so misuse is loud.
 
-## Update 2026-04-22: Post-import pull is cache-hit, not registry round-trip
+No new methods added to `registry.Client`: Pull uses the existing `GetImage` → `v1.Image.LayerByDigest` → `layer.Uncompressed` path.
 
-Clarification following the push-path update to cog-p76s / cog-gbse / cog-3p4a: after a successful `cog weights import`, the WeightStore is already populated (import calls `PutFile` as it packs). So `cog weights pull` following an import hits the cache-hit branch for every layer and returns immediately without touching the registry.
-
-No change to the Fetch priority order or this bean's scope — just noting that "cache warm" is the expected common case, not an edge case.
+`mise run lint:go` → 0 issues; `go test ./...` → all green. `cog weights pull --help` renders.
