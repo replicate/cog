@@ -1,0 +1,96 @@
+# Test the `cog weights pull` flow against a local registry.
+# Verifies: import -> pull (cold cache) -> pull (warm cache) -> verbose
+# output -> unknown-name error handling.
+
+[short] skip 'requires local registry'
+
+# Isolate the weight cache under $WORK so the test doesn't touch
+# $XDG_CACHE_HOME/cog and so assertions about cache state are reliable
+# across runs.
+env COG_CACHE_DIR=$WORK/cache
+
+registry-start
+
+# Build deterministic weight directories (file:// sources must be directories).
+mkdir weights-alpha
+mkdir weights-beta
+exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "A" > weights-alpha/model.bin'
+exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "B" > weights-beta/model.bin'
+
+# Step 1: import weights to the local registry. This populates
+# weights.lock and pushes the layers.
+cog weights import --image $TEST_REGISTRY/test/pull-model
+stderr 'Pushing 2 weight'
+exists weights.lock
+
+# Cache starts empty.
+! exists $WORK/cache/weights/files/sha256
+
+# Step 2: pull from a cold cache. Expect both weights to be fetched.
+cog weights pull --image $TEST_REGISTRY/test/pull-model
+stderr 'Pulling alpha'
+stderr 'Pulling beta'
+stderr 'done'
+stderr 'Pulled'
+
+# Cache now has files under the sha256 prefix layout.
+exists $WORK/cache/weights/files/sha256
+
+# Step 3: pull again — everything is cached, no registry I/O needed.
+cog weights pull --image $TEST_REGISTRY/test/pull-model
+stderr 'cached'
+stderr 'All 2 weight\(s\) already cached'
+
+# Step 4: verbose mode surfaces cache dir, manifest ref, and per-file
+# lines.
+cog weights pull --image $TEST_REGISTRY/test/pull-model --verbose
+stderr 'Cache:'
+stderr 'Lockfile:'
+# Everything is cached so we only see the per-weight "cached" lines
+# plus the summary — not layer/file detail.
+stderr 'cached \(1/1 files\)'
+
+# Step 5: delete one blob from the cache and verify pull restores just
+# it. We pick any file under the sha256 tree.
+exec sh -c 'find $WORK/cache/weights/files/sha256 -type f | head -1 | xargs rm'
+cog weights pull --image $TEST_REGISTRY/test/pull-model --verbose
+# The weight with the missing file reports 1 missing / 1 total; the
+# other reports as cached. Verbose mode also prints per-layer detail
+# (short digest + size).
+stderr 'missing / 1 total'
+stderr '  layer [0-9a-f]+'
+
+# Step 6: unknown weight name errors with every missing name listed,
+# and the cache is unchanged.
+! cog weights pull --image $TEST_REGISTRY/test/pull-model alpha nope typo
+stderr 'nope'
+stderr 'typo'
+
+# Step 7: named filter pulls only the requested weight. Delete both
+# cache trees and re-pull only alpha.
+exec sh -c 'rm -rf $WORK/cache/weights/files'
+cog weights pull --image $TEST_REGISTRY/test/pull-model alpha
+stderr 'Pulling alpha'
+! stderr 'Pulling beta'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+model: test/pull-model
+weights:
+  - name: alpha
+    target: /src/weights/alpha
+    source:
+      uri: file://./weights-alpha
+  - name: beta
+    target: /src/weights/beta
+    source:
+      uri: file://./weights-beta
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

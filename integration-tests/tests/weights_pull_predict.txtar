@@ -1,0 +1,66 @@
+# End-to-end test of the managed-weights local-run flow.
+# Verifies: cog weights import -> cog weights pull -> cog predict, where
+# the predictor container sees the weight files at the configured target
+# path. Also verifies mount cleanup after predict exits.
+
+[short] skip 'requires local registry'
+
+env COG_CACHE_DIR=$WORK/cache
+
+registry-start
+
+# Build a deterministic weight directory.
+mkdir weights-src
+exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "X" > weights-src/greeting.txt'
+
+# Patch cog.yaml to set image: to the ephemeral test registry. This
+# makes the `cog predict` path (which has no --image flag) resolve
+# the repo via src.Config.Image when constructing the WeightManager.
+exec sh -c 'printf "image: %s/test/pull-predict-model\n" "$TEST_REGISTRY" >> cog.yaml'
+
+# Step 1: import to the local registry.
+cog weights import
+exists weights.lock
+
+# Step 2: pull into the isolated cache.
+cog weights pull
+stderr 'Pulled'
+
+# Step 3: predict. The predictor opens the file at the configured
+# target path and returns its size, proving the mount is visible
+# and readable inside the container.
+cog predict -i s=world
+stdout 'hello world \(weight-size=1024\)'
+
+# Step 4: the per-invocation mount dir must be cleaned up after
+# predict exits. .cog/mounts/ either doesn't exist (everything
+# cleaned) or is empty.
+exec sh -c 'test ! -d .cog/mounts || test -z "$(ls -A .cog/mounts)"'
+
+-- cog.yaml --
+# image is set dynamically by the test (TEST_REGISTRY varies per run).
+# We substitute it in via `sh -c` before `cog weights import`.
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+model: test/pull-predict-model
+weights:
+  - name: greeting
+    target: /src/mounted-weights/greeting
+    source:
+      uri: file://./weights-src
+
+-- predict.py --
+import os
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        # Prove the weight was mounted at the target path by reading
+        # its size. Any failure to mount would raise FileNotFoundError
+        # here and the prediction would fail.
+        path = "/src/mounted-weights/greeting/greeting.txt"
+        size = os.path.getsize(path)
+        return f"hello {s} (weight-size={size})"
