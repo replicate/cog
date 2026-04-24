@@ -327,6 +327,10 @@ url = "https://dl.google.com/go/go1.26.2.darwin-amd64.tar.gz"
 checksum = "sha256:98eb3570bade15cb826b0909338df6cc6d2cf590bc39c471142002db3832b708"
 url = "https://dl.google.com/go/go1.26.2.windows-amd64.zip"
 
+[[tools."go:golang.org/x/tools/cmd/goimports"]]
+version = "0.44.0"
+backend = "go:golang.org/x/tools/cmd/goimports"
+
 [[tools."npm:markdownlint-cli2"]]
 version = "0.22.0"
 backend = "npm:markdownlint-cli2"

@@ -52,6 +52,7 @@ cargo-binstall = "1.16.6"
 ruff = "0.14.13"
 ty = "0.0.10"
 "npm:markdownlint-cli2" = "0.22.0"
+"go:golang.org/x/tools/cmd/goimports" = "latest"
 
 [env]
 _.path = "./bin"
