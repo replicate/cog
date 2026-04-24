@@ -1,11 +1,11 @@
 ---
 # cog-4lgn
 title: Index descriptor missing run.cog.weight.size.uncompressed
-status: todo
+status: completed
 type: bug
 priority: normal
 created_at: 2026-04-21T23:40:31Z
-updated_at: 2026-04-21T23:41:04Z
+updated_at: 2026-04-24T06:02:28Z
 parent: cog-66gt
 blocked_by:
     - cog-s5fy

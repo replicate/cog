@@ -3,9 +3,9 @@
 title: coglet readiness protocol works in container
 status: todo
 type: task
-priority: normal
+priority: low
 created_at: 2026-04-17T19:35:01Z
-updated_at: 2026-04-21T17:11:44Z
+updated_at: 2026-04-23T22:23:15Z
 parent: cog-kgd7
 blocked_by:
     - cog-7sne

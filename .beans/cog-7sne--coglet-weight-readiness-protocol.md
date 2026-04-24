@@ -3,9 +3,9 @@
 title: 'Coglet: weight readiness protocol'
 status: todo
 type: task
-priority: normal
+priority: low
 created_at: 2026-04-17T19:28:23Z
-updated_at: 2026-04-21T17:11:38Z
+updated_at: 2026-04-23T22:23:25Z
 parent: cog-kgd7
 blocked_by:
     - cog-1pm2
