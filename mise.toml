@@ -398,7 +398,7 @@ while IFS= read -r -d '' file; do
     files+=("$file")
   fi
 done < <(git ls-files -z -- '*.md')
-if [ -n "${files[*]-}" ]; then
+if [ "${files[0]+x}" ]; then
   prettier --check "${files[@]}"
 fi
 ''',
@@ -417,7 +417,7 @@ while IFS= read -r -d '' file; do
     files+=("$file")
   fi
 done < <(git ls-files -z -- '*.md')
-if [ -n "${files[*]-}" ]; then
+if [ "${files[0]+x}" ]; then
   prettier --write "${files[@]}"
 fi
 ''',
