@@ -22,6 +22,7 @@ import (
 	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/registry_testhelpers"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // TestWeightPipeline_EndToEnd exercises Pack → WeightPusher against a
@@ -77,7 +78,7 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 	require.Len(t, pr.Layers, 3, "want 1 bundle + 2 single-file layers")
 
 	// Build a lock entry and artifact (manifest + descriptor + digest backfill).
-	entry := newWeightLockEntry("my-model", "/src/weights", WeightLockSource{}, pr.Files, pr.Layers)
+	entry := newWeightLockEntry("my-model", "/src/weights", lockfile.WeightLockSource{}, pr.Files, pr.Layers)
 	artifact, err := buildWeightArtifact(&entry, pr.Layers)
 	require.NoError(t, err)
 	setDigest := entry.SetDigest

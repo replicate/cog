@@ -17,6 +17,7 @@ import (
 
 	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // packTestLayers packs a directory containing a single file into tar
@@ -53,7 +54,7 @@ func newTestWeightArtifact(t *testing.T, name, target string) *WeightArtifact {
 		Digest:      layers[0].Digest.String(),
 		LayerDigest: layers[0].Digest.String(),
 	}}
-	entry := newWeightLockEntry(name, target, WeightLockSource{}, files, layers)
+	entry := newWeightLockEntry(name, target, lockfile.WeightLockSource{}, files, layers)
 	artifact, err := buildWeightArtifact(&entry, layers)
 	require.NoError(t, err)
 	return artifact
@@ -83,7 +84,7 @@ func TestWeightPusher_Push_ReturnsErrorForEmptyRepo(t *testing.T) {
 func TestWeightPusher_Push_ReturnsErrorForEmptyLayers(t *testing.T) {
 	// Empty layer set must be caught before we try to build a manifest.
 	artifact := newWeightArtifact(
-		WeightLockEntry{Name: "model-v1", Target: "/src/weights"},
+		lockfile.WeightLockEntry{Name: "model-v1", Target: "/src/weights"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc"}},
 		nil)
 
@@ -361,7 +362,7 @@ func TestWeightPusher_Push_HonoursConcurrencyLimit(t *testing.T) {
 	layers := pr.Layers
 	require.GreaterOrEqual(t, len(layers), n, "expected a layer per file")
 
-	entry := newWeightLockEntry("model", "/src/weights", WeightLockSource{}, pr.Files, pr.Layers)
+	entry := newWeightLockEntry("model", "/src/weights", lockfile.WeightLockSource{}, pr.Files, pr.Layers)
 	artifact, err := buildWeightArtifact(&entry, layers)
 	require.NoError(t, err)
 

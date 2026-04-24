@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // WeightsCacheDir is the project-relative directory where the builder
@@ -80,7 +81,7 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 	existing := lock.FindWeight(ws.Name())
 	layers, hit := cachedLayers(existing, cacheDir)
 
-	var entry WeightLockEntry
+	var entry lockfile.WeightLockEntry
 	if hit {
 		// Cache hit: skip the source walk entirely. The lockfile carries
 		// the file index and the fingerprint; source-drift detection is a
@@ -125,7 +126,7 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		// in below once we've assembled the manifest.
 		entry = newWeightLockEntry(
 			ws.Name(), ws.Target,
-			WeightLockSource{
+			lockfile.WeightLockSource{
 				URI:         ws.URI,
 				Fingerprint: inv.Fingerprint,
 				Include:     ws.Include,
@@ -143,12 +144,12 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		return nil, fmt.Errorf("weight %q: %w", ws.Name(), err)
 	}
 
-	if !lockEntriesEqual(existing, &entry) {
-		// Preserve ImportedAt across pure-content cache hits: if only
-		// ImportedAt would differ, the existing entry's content and
-		// source already match, and we shouldn't churn the timestamp.
-		// lockEntriesEqual ignores ImportedAt, so reaching here means
-		// something material changed — record the new timestamp.
+	if !lockfile.EntriesEqual(existing, &entry) {
+		// EntriesEqual ignores ImportedAt, so reaching here means
+		// content or source actually changed — record the new timestamp.
+		// A pure cache hit where only ImportedAt would differ takes the
+		// else branch and leaves the lockfile untouched, preserving the
+		// original import time.
 		lock.Upsert(entry)
 		if err := lock.Save(b.lockPath); err != nil {
 			cleanupPackedLayers(layers)
@@ -202,7 +203,7 @@ func resetCacheDir(dir string) error {
 // content-addressed; a truncated file with the exact expected size would
 // also have to have a matching digest, which is effectively impossible.
 // Returns (nil, false) on any miss.
-func cachedLayers(entry *WeightLockEntry, cacheDir string) ([]packedLayer, bool) {
+func cachedLayers(entry *lockfile.WeightLockEntry, cacheDir string) ([]packedLayer, bool) {
 	if entry == nil || len(entry.Layers) == 0 {
 		return nil, false
 	}
@@ -231,13 +232,13 @@ func cachedLayers(entry *WeightLockEntry, cacheDir string) ([]packedLayer, bool)
 
 // loadLockfileOrEmpty loads the lockfile at path. A missing file is not
 // an error — it yields a fresh empty lockfile.
-func loadLockfileOrEmpty(path string) (*WeightsLock, error) {
-	lock, err := LoadWeightsLock(path)
+func loadLockfileOrEmpty(path string) (*lockfile.WeightsLock, error) {
+	lock, err := lockfile.LoadWeightsLock(path)
 	if err == nil {
 		return lock, nil
 	}
 	if errors.Is(err, os.ErrNotExist) {
-		return &WeightsLock{Version: weightsLockVersion}, nil
+		return &lockfile.WeightsLock{Version: lockfile.Version}, nil
 	}
 	return nil, err
 }

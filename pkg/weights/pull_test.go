@@ -18,9 +18,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/registry/registrytest"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weights/store"
 )
 
@@ -44,9 +44,9 @@ func newRawTarLayer(data []byte) *rawTarLayer {
 	}
 }
 
-func (l *rawTarLayer) Digest() (v1.Hash, error)          { return l.hash, nil }
-func (l *rawTarLayer) DiffID() (v1.Hash, error)          { return l.hash, nil }
-func (l *rawTarLayer) Size() (int64, error)              { return int64(len(l.bytes)), nil }
+func (l *rawTarLayer) Digest() (v1.Hash, error) { return l.hash, nil }
+func (l *rawTarLayer) DiffID() (v1.Hash, error) { return l.hash, nil }
+func (l *rawTarLayer) Size() (int64, error)     { return int64(len(l.bytes)), nil }
 func (l *rawTarLayer) MediaType() (types.MediaType, error) {
 	return types.OCILayer, nil // uncompressed tar
 }
@@ -85,11 +85,11 @@ func (r errReader) Read(_ []byte) (int, error) { return 0, r.err }
 
 // buildLayer returns (tarBytes, []WeightLockFile describing its content).
 // Each file's Layer field is filled with layerDigest once known.
-func buildLayer(t *testing.T, files map[string][]byte) ([]byte, []model.WeightLockFile) {
+func buildLayer(t *testing.T, files map[string][]byte) ([]byte, []lockfile.WeightLockFile) {
 	t.Helper()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	lockFiles := make([]model.WeightLockFile, 0, len(files))
+	lockFiles := make([]lockfile.WeightLockFile, 0, len(files))
 
 	// Stable iteration order so digests are deterministic across runs.
 	paths := make([]string, 0, len(files))
@@ -114,7 +114,7 @@ func buildLayer(t *testing.T, files map[string][]byte) ([]byte, []model.WeightLo
 		require.NoError(t, err)
 
 		sum := sha256.Sum256(data)
-		lockFiles = append(lockFiles, model.WeightLockFile{
+		lockFiles = append(lockFiles, lockfile.WeightLockFile{
 			Path:   p,
 			Size:   int64(len(data)),
 			Digest: "sha256:" + hex.EncodeToString(sum[:]),
@@ -127,14 +127,14 @@ func buildLayer(t *testing.T, files map[string][]byte) ([]byte, []model.WeightLo
 // buildWeightImage returns a v1.Image + the manifest digest + the final
 // lockfile entry for a weight whose layers contain the given per-layer
 // file maps.
-func buildWeightImage(t *testing.T, name, target string, layerFiles []map[string][]byte) (v1.Image, *model.WeightLockEntry) {
+func buildWeightImage(t *testing.T, name, target string, layerFiles []map[string][]byte) (v1.Image, *lockfile.WeightLockEntry) {
 	t.Helper()
 
 	img := empty.Image
 	img = mutate.MediaType(img, types.OCIManifestSchema1)
 
-	var allFiles []model.WeightLockFile
-	var lockLayers []model.WeightLockLayer
+	var allFiles []lockfile.WeightLockFile
+	var lockLayers []lockfile.WeightLockLayer
 
 	for _, files := range layerFiles {
 		tarBytes, fs := buildLayer(t, files)
@@ -148,7 +148,7 @@ func buildWeightImage(t *testing.T, name, target string, layerFiles []map[string
 			fs[i].Layer = digest.String()
 		}
 		allFiles = append(allFiles, fs...)
-		lockLayers = append(lockLayers, model.WeightLockLayer{
+		lockLayers = append(lockLayers, lockfile.WeightLockLayer{
 			Digest:           digest.String(),
 			MediaType:        string(types.OCILayer),
 			Size:             size,
@@ -162,7 +162,7 @@ func buildWeightImage(t *testing.T, name, target string, layerFiles []map[string
 	manifestDigest, err := img.Digest()
 	require.NoError(t, err)
 
-	return img, &model.WeightLockEntry{
+	return img, &lockfile.WeightLockEntry{
 		Name:   name,
 		Target: target,
 		Digest: manifestDigest.String(),
@@ -203,7 +203,7 @@ func (s *stubRegistry) GetImage(_ context.Context, ref string, _ *registry.Platf
 
 const testRepo = "example.com/me/model"
 
-func newTestManager(t *testing.T, reg registry.Client, lock *model.WeightsLock) (*Manager, store.Store) {
+func newTestManager(t *testing.T, reg registry.Client, lock *lockfile.WeightsLock) (*Manager, store.Store) {
 	t.Helper()
 	fs, err := store.NewFileStore(t.TempDir())
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestManager_Pull_HappyPath(t *testing.T) {
 	})
 	reg.put(testRepo+"@"+entry.Digest, img)
 
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{*entry}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{*entry}}
 	mgr, fs := newTestManager(t, reg, lock)
 
 	results, err := mgr.Pull(ctx, nil, nil)
@@ -258,7 +258,7 @@ func TestManager_Pull_AllCached(t *testing.T) {
 	})
 	reg.put(testRepo+"@"+entry.Digest, img)
 
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{*entry}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{*entry}}
 	mgr, fs := newTestManager(t, reg, lock)
 
 	// Pre-populate the store.
@@ -287,7 +287,7 @@ func TestManager_Pull_Idempotent(t *testing.T) {
 	})
 	reg.put(testRepo+"@"+entry.Digest, img)
 
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{*entry}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{*entry}}
 	mgr, _ := newTestManager(t, reg, lock)
 
 	// First pull populates.
@@ -315,7 +315,7 @@ func TestManager_Pull_DigestMismatchInTar(t *testing.T) {
 	entry.Files[0].Digest = "sha256:" + hex.EncodeToString(make([]byte, 32))
 	reg.put(testRepo+"@"+entry.Digest, img)
 
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{*entry}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{*entry}}
 	mgr, fs := newTestManager(t, reg, lock)
 
 	_, err := mgr.Pull(ctx, nil, nil)
@@ -352,19 +352,19 @@ func TestManager_Pull_UnexpectedFileInTar(t *testing.T) {
 	require.NoError(t, err)
 
 	// Keep only the "a" entry in the lockfile.
-	var keep model.WeightLockFile
+	var keep lockfile.WeightLockFile
 	for _, f := range lockFiles {
 		if f.Path == "a" {
 			keep = f
 			keep.Layer = layerDigest.String()
 		}
 	}
-	entry := model.WeightLockEntry{
+	entry := lockfile.WeightLockEntry{
 		Name:   "m1",
 		Target: "/w",
 		Digest: manifestDigest.String(),
-		Files:  []model.WeightLockFile{keep},
-		Layers: []model.WeightLockLayer{{
+		Files:  []lockfile.WeightLockFile{keep},
+		Layers: []lockfile.WeightLockLayer{{
 			Digest:           layerDigest.String(),
 			MediaType:        string(types.OCILayer),
 			Size:             layerSize,
@@ -373,7 +373,7 @@ func TestManager_Pull_UnexpectedFileInTar(t *testing.T) {
 	}
 
 	reg.put(testRepo+"@"+entry.Digest, img)
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{entry}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{entry}}
 	mgr, _ := newTestManager(t, reg, lock)
 
 	_, err = mgr.Pull(ctx, nil, nil)
@@ -418,12 +418,12 @@ func TestManager_Pull_LayerReadError(t *testing.T) {
 	manifestDigest, err := img.Digest()
 	require.NoError(t, err)
 
-	entry := model.WeightLockEntry{
+	entry := lockfile.WeightLockEntry{
 		Name:   "m1",
 		Target: "/w",
 		Digest: manifestDigest.String(),
 		Files:  lockFiles,
-		Layers: []model.WeightLockLayer{{
+		Layers: []lockfile.WeightLockLayer{{
 			Digest:           layerDigest.String(),
 			MediaType:        string(types.OCILayer),
 			Size:             layerSize,
@@ -432,7 +432,7 @@ func TestManager_Pull_LayerReadError(t *testing.T) {
 	}
 	reg.put(testRepo+"@"+entry.Digest, img)
 
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{entry}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{entry}}
 	mgr, fs := newTestManager(t, reg, lock)
 
 	_, err = mgr.Pull(ctx, nil, nil)
@@ -483,19 +483,19 @@ func TestManager_Pull_LayerMissingExpectedFile(t *testing.T) {
 	// fabricated to trigger the post-walk missing-file check.
 	aFile := lockFiles[0]
 	aFile.Layer = layerDigest.String()
-	fakeB := model.WeightLockFile{
+	fakeB := lockfile.WeightLockFile{
 		Path:   "b",
 		Size:   5,
 		Digest: sha256Of([]byte("bravo")),
 		Layer:  layerDigest.String(),
 	}
 
-	entry := model.WeightLockEntry{
+	entry := lockfile.WeightLockEntry{
 		Name:   "m1",
 		Target: "/w",
 		Digest: manifestDigest.String(),
-		Files:  []model.WeightLockFile{aFile, fakeB},
-		Layers: []model.WeightLockLayer{{
+		Files:  []lockfile.WeightLockFile{aFile, fakeB},
+		Layers: []lockfile.WeightLockLayer{{
 			Digest:           layerDigest.String(),
 			MediaType:        string(types.OCILayer),
 			Size:             layerSize,
@@ -504,7 +504,7 @@ func TestManager_Pull_LayerMissingExpectedFile(t *testing.T) {
 	}
 	reg.put(testRepo+"@"+entry.Digest, img)
 
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{entry}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{entry}}
 	mgr, _ := newTestManager(t, reg, lock)
 
 	_, err = mgr.Pull(ctx, nil, nil)
@@ -523,7 +523,7 @@ func TestManager_Pull_NameFilter(t *testing.T) {
 	reg.put(testRepo+"@"+e1.Digest, img1)
 	reg.put(testRepo+"@"+e2.Digest, img2)
 
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{*e1, *e2}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{*e1, *e2}}
 	mgr, fs := newTestManager(t, reg, lock)
 
 	results, err := mgr.Pull(ctx, []string{"keep"}, nil)
@@ -547,7 +547,7 @@ func TestManager_Pull_UnknownName(t *testing.T) {
 	reg := newStubRegistry()
 
 	_, e1 := buildWeightImage(t, "known", "/k", []map[string][]byte{{"x": []byte("1")}})
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{*e1}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{*e1}}
 	mgr, _ := newTestManager(t, reg, lock)
 
 	_, err := mgr.Pull(ctx, []string{"known", "nope"}, nil)
@@ -565,7 +565,7 @@ func TestManager_Pull_EmitsEvents(t *testing.T) {
 	})
 	reg.put(testRepo+"@"+entry.Digest, img)
 
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{*entry}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{*entry}}
 	mgr, _ := newTestManager(t, reg, lock)
 
 	var events []PullEvent
@@ -613,7 +613,7 @@ func TestManager_Pull_EmitsFullyCachedEvent(t *testing.T) {
 	})
 	reg.put(testRepo+"@"+entry.Digest, img)
 
-	lock := &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{*entry}}
+	lock := &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{*entry}}
 	mgr, fs := newTestManager(t, reg, lock)
 
 	// Pre-populate.
@@ -639,7 +639,7 @@ func TestNewManager_RequiresStore(t *testing.T) {
 	_, err := NewManager(ManagerOptions{
 		Registry: newStubRegistry(),
 		Repo:     "r",
-		Lock:     &model.WeightsLock{},
+		Lock:     &lockfile.WeightsLock{},
 	})
 	require.Error(t, err)
 }
@@ -651,7 +651,7 @@ func TestNewManager_RequiresRegistry(t *testing.T) {
 	_, err = NewManager(ManagerOptions{
 		Store: fs,
 		Repo:  "r",
-		Lock:  &model.WeightsLock{},
+		Lock:  &lockfile.WeightsLock{},
 	})
 	require.Error(t, err)
 }
@@ -664,9 +664,9 @@ func TestNewManager_RequiresRepoWhenLockHasWeights(t *testing.T) {
 	_, err = NewManager(ManagerOptions{
 		Store:    fs,
 		Registry: newStubRegistry(),
-		Lock: &model.WeightsLock{
+		Lock: &lockfile.WeightsLock{
 			Version: 1,
-			Weights: []model.WeightLockEntry{{Name: "w", Target: "/t"}},
+			Weights: []lockfile.WeightLockEntry{{Name: "w", Target: "/t"}},
 		},
 	})
 	require.Error(t, err)

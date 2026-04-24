@@ -14,6 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // The root command has SilenceErrors: true, so Cobra exits 1 without
@@ -99,10 +100,10 @@ func weightsStatusCommand(cmd *cobra.Command, jsonOutput, verbose bool) error {
 
 	// Load lockfile — missing is fine (weights may not be built yet), but
 	// a present-but-corrupt file gets a warning so it doesn't fail silently.
-	lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
-	lock, lockErr := model.LoadWeightsLock(lockPath)
+	lockPath := filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
+	lock, lockErr := lockfile.LoadWeightsLock(lockPath)
 	if lockErr != nil && !errors.Is(lockErr, os.ErrNotExist) {
-		console.Warnf("Failed to load %s: %s", model.WeightsLockFilename, lockErr)
+		console.Warnf("Failed to load %s: %s", lockfile.WeightsLockFilename, lockErr)
 	}
 
 	// Resolve registry repo — required for status checks.
@@ -169,7 +170,7 @@ func statusResultsToEntries(results []model.WeightStatusResult) []WeightStatusEn
 	return entries
 }
 
-func lockSourceToStatus(s model.WeightLockSource) *WeightStatusSource {
+func lockSourceToStatus(s lockfile.WeightLockSource) *WeightStatusSource {
 	fp := string(s.Fingerprint)
 	if s.URI == "" && fp == "" {
 		return nil

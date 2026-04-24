@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // =============================================================================
@@ -54,13 +55,13 @@ func writeSrcFile(t *testing.T, dir, relPath string, size int64) {
 	}
 }
 
-// defaultEntry returns a minimal valid WeightLockEntry for manifest tests.
-func defaultEntry() WeightLockEntry {
-	return WeightLockEntry{
+// defaultEntry returns a minimal valid lockfile.WeightLockEntry for manifest tests.
+func defaultEntry() lockfile.WeightLockEntry {
+	return lockfile.WeightLockEntry{
 		Name:      "z-image-turbo",
 		Target:    "/src/weights",
 		SetDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-		Files: []WeightLockFile{
+		Files: []lockfile.WeightLockFile{
 			{Path: "config.json", Size: 128, Digest: "sha256:aaa", Layer: "sha256:layer1"},
 		},
 	}
@@ -81,19 +82,19 @@ func singleSmallFileLayers(t *testing.T) []packedLayer {
 
 func TestBuildWeightManifestV1_RejectsInvalidEntry(t *testing.T) {
 	validSetDigest := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-	validFiles := []WeightLockFile{{Path: "f.bin", Size: 1, Digest: "sha256:aaa", Layer: "sha256:l1"}}
+	validFiles := []lockfile.WeightLockFile{{Path: "f.bin", Size: 1, Digest: "sha256:aaa", Layer: "sha256:l1"}}
 	layers := singleSmallFileLayers(t)
 
 	tests := []struct {
 		name    string
-		entry   WeightLockEntry
+		entry   lockfile.WeightLockEntry
 		wantErr string
 	}{
-		{"missing name", WeightLockEntry{Target: "/x", SetDigest: validSetDigest, Files: validFiles}, "weight name is required"},
-		{"missing target", WeightLockEntry{Name: "n", SetDigest: validSetDigest, Files: validFiles}, "weight target is required"},
-		{"missing set digest", WeightLockEntry{Name: "n", Target: "/x", Files: validFiles}, "weight set digest is required"},
-		{"missing files", WeightLockEntry{Name: "n", Target: "/x", SetDigest: validSetDigest}, "weight files are required"},
-		{"valid", WeightLockEntry{Name: "n", Target: "/x", SetDigest: validSetDigest, Files: validFiles}, ""},
+		{"missing name", lockfile.WeightLockEntry{Target: "/x", SetDigest: validSetDigest, Files: validFiles}, "weight name is required"},
+		{"missing target", lockfile.WeightLockEntry{Name: "n", SetDigest: validSetDigest, Files: validFiles}, "weight target is required"},
+		{"missing set digest", lockfile.WeightLockEntry{Name: "n", Target: "/x", Files: validFiles}, "weight set digest is required"},
+		{"missing files", lockfile.WeightLockEntry{Name: "n", Target: "/x", SetDigest: validSetDigest}, "weight files are required"},
+		{"valid", lockfile.WeightLockEntry{Name: "n", Target: "/x", SetDigest: validSetDigest, Files: validFiles}, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,10 +130,10 @@ func TestBuildWeightManifestV1_ManifestAnnotations(t *testing.T) {
 func TestBuildWeightManifestV1_RejectsMissingName(t *testing.T) {
 	layers := singleSmallFileLayers(t)
 
-	_, err := buildWeightManifestV1(WeightLockEntry{
+	_, err := buildWeightManifestV1(lockfile.WeightLockEntry{
 		Target:    "/x",
 		SetDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-		Files:     []WeightLockFile{{Path: "f", Size: 1, Digest: "sha256:a", Layer: "sha256:l"}},
+		Files:     []lockfile.WeightLockFile{{Path: "f", Size: 1, Digest: "sha256:a", Layer: "sha256:l"}},
 	}, layers)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "name")

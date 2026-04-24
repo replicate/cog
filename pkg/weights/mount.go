@@ -13,7 +13,7 @@ import (
 	"syscall"
 
 	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // MountSpec describes one bind mount from host to container. Managed-
@@ -127,7 +127,7 @@ func safeJoin(base, rel string) (string, error) {
 	return joined, nil
 }
 
-func (m *Manager) assembleWeightDir(ctx context.Context, entry *model.WeightLockEntry, weightDir string) error {
+func (m *Manager) assembleWeightDir(ctx context.Context, entry *lockfile.WeightLockEntry, weightDir string) error {
 	if err := os.MkdirAll(weightDir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", weightDir, err)
 	}

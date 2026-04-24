@@ -9,6 +9,7 @@ import (
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/paths"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weights/store"
 )
 
@@ -34,18 +35,18 @@ func NewFromSource(src *model.Source, repo string) (*Manager, error) {
 		return nil, fmt.Errorf("open weights cache: %w", err)
 	}
 
-	var lock *model.WeightsLock
+	var lock *lockfile.WeightsLock
 	if len(src.Config.Weights) > 0 {
 		if repo == "" {
 			return nil, errors.New("cog.yaml declares weights but no repository was resolved; set 'image:' in cog.yaml or pass --image")
 		}
-		lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
-		loaded, err := model.LoadWeightsLock(lockPath)
+		lockPath := filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
+		loaded, err := lockfile.LoadWeightsLock(lockPath)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				return nil, fmt.Errorf("%s not found (run 'cog weights import' first)", model.WeightsLockFilename)
+				return nil, fmt.Errorf("%s not found (run 'cog weights import' first)", lockfile.WeightsLockFilename)
 			}
-			return nil, fmt.Errorf("load %s: %w", model.WeightsLockFilename, err)
+			return nil, fmt.Errorf("load %s: %w", lockfile.WeightsLockFilename, err)
 		}
 		lock = loaded
 	}

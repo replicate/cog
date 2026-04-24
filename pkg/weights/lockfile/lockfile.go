@@ -1,4 +1,13 @@
-package model
+// Package lockfile defines the on-disk weights.lock format and operations
+// on it: parsing, loading, canonical serialization, and entry-level
+// equality checks.
+//
+// The lockfile is Cog's source-of-truth for imported weights. It captures
+// the source (URI + fingerprint + include/exclude), the resulting content
+// (setDigest, files, layers), and the assembled OCI manifest digest.
+// Everything downstream — OCI manifests, the runtime /.cog/weights.json,
+// registry state validation — is a projection of these fields.
+package lockfile
 
 import (
 	"encoding/json"
@@ -14,17 +23,11 @@ import (
 // WeightsLockFilename is the default filename for the weights lock file.
 const WeightsLockFilename = "weights.lock"
 
-// weightsLockVersion is the current lockfile schema version.
+// Version is the current lockfile format version.
 //
-// The lockfile is Cog's source-of-truth for imported weights: it captures
-// the source (URI + fingerprint + include/exclude), the resulting content
-// (setDigest, files, layers), and the assembled OCI manifest digest.
-// Everything downstream — OCI manifests, the runtime /.cog/weights.json,
-// registry state validation — is a projection of these fields.
-//
-// Version is an integer; monotonic bumps (1 → 2) signal schema changes.
+// It is an integer; monotonic bumps (1 → 2) signal schema changes.
 // Pre-release "v1" string versions have no migration path.
-const weightsLockVersion = 1
+const Version = 1
 
 // WeightsLock is the parsed representation of a weights.lock file.
 //
@@ -34,9 +37,7 @@ const weightsLockVersion = 1
 // Regenerating the lockfile from the same source produces byte-identical
 // output, which is what makes weights.lock safe to check into git.
 type WeightsLock struct {
-	// Version is the lockfile format version. Always weightsLockVersion.
-	Version int `json:"version"`
-	// Weights is one entry per declared weight.
+	Version int               `json:"version"`
 	Weights []WeightLockEntry `json:"weights"`
 }
 
@@ -103,7 +104,7 @@ type WeightLockSource struct {
 	Exclude []string `json:"exclude"`
 	// ImportedAt is the wall-clock time of the import that produced this
 	// entry. It is informational only — it never participates in
-	// equality checks (see lockEntriesContentEqual / lockEntriesSourceEqual).
+	// equality checks (see EntriesEqual).
 	ImportedAt time.Time `json:"importedAt"`
 }
 
@@ -123,6 +124,12 @@ type WeightLockFile struct {
 	Digest string `json:"digest"`
 	// Layer is the digest of the layer containing this file.
 	Layer string `json:"layer"`
+}
+
+// DirhashParts implements weightsource.Dirhashable so WeightLockFile
+// slices can be passed directly to weightsource.DirHash.
+func (f WeightLockFile) DirhashParts() weightsource.DirhashPart {
+	return weightsource.DirhashPart{Path: f.Path, Digest: f.Digest}
 }
 
 // WeightLockLayer is an intrinsic description of a single packed tar layer.
@@ -155,9 +162,9 @@ func ParseWeightsLock(data []byte) (*WeightsLock, error) {
 	if err := json.Unmarshal(data, &lock); err != nil {
 		return nil, fmt.Errorf("parse weights.lock: %w", err)
 	}
-	if lock.Version != weightsLockVersion {
+	if lock.Version != Version {
 		return nil, fmt.Errorf("unsupported weights.lock version %d (want %d)",
-			lock.Version, weightsLockVersion)
+			lock.Version, Version)
 	}
 	return &lock, nil
 }
@@ -194,10 +201,10 @@ func (wl *WeightsLock) Save(path string) error {
 // safe because the sort order is the canonical order.
 func (wl *WeightsLock) Marshal() ([]byte, error) {
 	if wl.Version == 0 {
-		wl.Version = weightsLockVersion
+		wl.Version = Version
 	}
 	for i := range wl.Weights {
-		canonicalizeEntry(&wl.Weights[i])
+		canonicalize(&wl.Weights[i])
 	}
 	data, err := json.MarshalIndent(wl, "", "  ")
 	if err != nil {
@@ -206,12 +213,21 @@ func (wl *WeightsLock) Marshal() ([]byte, error) {
 	return data, nil
 }
 
-// canonicalizeEntry applies the serialization rules to a single entry:
+// ComputeSetDigest returns the weight set digest (spec §2.4): the dirhash
+// of the entry's file set. ComputeSetDigest canonicalizes the entry
+// in place before hashing, so Files order at call time does not affect
+// the result.
+func (e *WeightLockEntry) ComputeSetDigest() string {
+	canonicalize(e)
+	return weightsource.DirHash(e.Files)
+}
+
+// canonicalize applies the serialization rules to a single entry:
 // Files sorted by path, Layers sorted by digest, nil Include/Exclude
 // normalized to [] so the shape is stable. Include/Exclude ordering is
 // already canonical — WeightSpec sorts at construction, and all writes
 // to WeightLockSource flow through a WeightSpec.
-func canonicalizeEntry(e *WeightLockEntry) {
+func canonicalize(e *WeightLockEntry) {
 	sort.Slice(e.Files, func(i, j int) bool { return e.Files[i].Path < e.Files[j].Path })
 	sort.Slice(e.Layers, func(i, j int) bool { return e.Layers[i].Digest < e.Layers[j].Digest })
 	if e.Source.Include == nil {
@@ -245,15 +261,20 @@ func (wl *WeightsLock) Upsert(entry WeightLockEntry) {
 	wl.Weights = append(wl.Weights, entry)
 }
 
-// lockEntriesContentEqual reports whether two entries describe identical
+// EntriesEqual reports whether two entries are identical in both content
+// and source. ImportedAt is intentionally excluded — it is a consequence
+// of an import being written, not an input to the equality check.
+//
+// A lockfile entry is safe to leave unchanged only when both a and b are
+// non-nil and every field (besides ImportedAt) agrees.
+func EntriesEqual(a, b *WeightLockEntry) bool {
+	return entriesContentEqual(a, b) && entriesSourceEqual(a, b)
+}
+
+// entriesContentEqual reports whether two entries describe identical
 // on-registry content: same manifest digest, same set digest, same total
 // sizes, same file index, same layer descriptors.
-//
-// This is separate from source equality because identical source can
-// produce identical content (no rewrite needed) even when the source's
-// upstream fingerprint has moved forward — the filtered content just
-// happens to be the same.
-func lockEntriesContentEqual(a, b *WeightLockEntry) bool {
+func entriesContentEqual(a, b *WeightLockEntry) bool {
 	if a == nil || b == nil {
 		return false
 	}
@@ -281,11 +302,10 @@ func lockEntriesContentEqual(a, b *WeightLockEntry) bool {
 	return true
 }
 
-// lockEntriesSourceEqual reports whether two entries have identical
-// source metadata: same URI, same fingerprint, same include/exclude
-// patterns. ImportedAt is intentionally excluded — it is a consequence of
-// an import being written, not an input to the equality check.
-func lockEntriesSourceEqual(a, b *WeightLockEntry) bool {
+// entriesSourceEqual reports whether two entries have identical source
+// metadata: same URI, same fingerprint, same include/exclude patterns.
+// ImportedAt is intentionally excluded.
+func entriesSourceEqual(a, b *WeightLockEntry) bool {
 	if a == nil || b == nil {
 		return false
 	}
@@ -299,11 +319,4 @@ func lockEntriesSourceEqual(a, b *WeightLockEntry) bool {
 		return false
 	}
 	return true
-}
-
-// lockEntriesEqual reports whether two entries are identical in both
-// content and source. The lockfile is safe to leave unchanged only when
-// both checks pass; otherwise a rewrite is required.
-func lockEntriesEqual(a, b *WeightLockEntry) bool {
-	return lockEntriesContentEqual(a, b) && lockEntriesSourceEqual(a, b)
 }

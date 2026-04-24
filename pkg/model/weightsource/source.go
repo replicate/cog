@@ -61,6 +61,12 @@ type InventoryFile struct {
 	Digest string
 }
 
+// DirhashParts implements Dirhashable so InventoryFile slices can be
+// passed directly to DirHash.
+func (f InventoryFile) DirhashParts() DirhashPart {
+	return DirhashPart{Path: f.Path, Digest: f.Digest}
+}
+
 // sortInventoryFiles sorts files by path. Every Source implementation
 // must return a sorted inventory; this helper enforces the convention.
 func sortInventoryFiles(files []InventoryFile) {

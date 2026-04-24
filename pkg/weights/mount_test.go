@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weights/store"
 )
 
@@ -26,7 +26,7 @@ func sha256Of(data []byte) string {
 // primedManager returns a Manager whose store is pre-populated with
 // every digest in bytesByDigest. The store is returned so tests can
 // inspect it without reaching into unexported Manager fields.
-func primedManager(t *testing.T, lock *model.WeightsLock, bytesByDigest map[string][]byte) (*Manager, *store.FileStore) {
+func primedManager(t *testing.T, lock *lockfile.WeightsLock, bytesByDigest map[string][]byte) (*Manager, *store.FileStore) {
 	t.Helper()
 	fs, err := store.NewFileStore(t.TempDir())
 	require.NoError(t, err)
@@ -44,21 +44,21 @@ func primedManager(t *testing.T, lock *model.WeightsLock, bytesByDigest map[stri
 	return mgr, fs
 }
 
-func buildSimpleLock() (*model.WeightsLock, map[string][]byte) {
+func buildSimpleLock() (*lockfile.WeightsLock, map[string][]byte) {
 	fileA := []byte("alpha content")
 	fileB := []byte("bravo content")
 	dA := sha256Of(fileA)
 	dB := sha256Of(fileB)
 
-	entry := model.WeightLockEntry{
+	entry := lockfile.WeightLockEntry{
 		Name:   "parakeet",
 		Target: "/src/weights/parakeet",
-		Files: []model.WeightLockFile{
+		Files: []lockfile.WeightLockFile{
 			{Path: "config.json", Size: int64(len(fileA)), Digest: dA, Layer: "sha256:deadbeef"},
 			{Path: "model/weights.bin", Size: int64(len(fileB)), Digest: dB, Layer: "sha256:deadbeef"},
 		},
 	}
-	return &model.WeightsLock{Version: 1, Weights: []model.WeightLockEntry{entry}},
+	return &lockfile.WeightsLock{Version: 1, Weights: []lockfile.WeightLockEntry{entry}},
 		map[string][]byte{dA: fileA, dB: fileB}
 }
 
@@ -134,16 +134,16 @@ func TestPrepare_CleansUpOnFailure(t *testing.T) {
 	dA := sha256Of(dataA)
 	dB := sha256Of(dataB)
 
-	lock := &model.WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []model.WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			{
 				Name: "present", Target: "/w1",
-				Files: []model.WeightLockFile{{Path: "f", Size: 1, Digest: dA, Layer: "sha256:x"}},
+				Files: []lockfile.WeightLockFile{{Path: "f", Size: 1, Digest: dA, Layer: "sha256:x"}},
 			},
 			{
 				Name: "absent", Target: "/w2",
-				Files: []model.WeightLockFile{{Path: "f", Size: 1, Digest: dB, Layer: "sha256:y"}},
+				Files: []lockfile.WeightLockFile{{Path: "f", Size: 1, Digest: dB, Layer: "sha256:y"}},
 			},
 		},
 	}
@@ -191,12 +191,12 @@ func TestPrepare_RejectsPathTraversalInWeightName(t *testing.T) {
 	ctx := context.Background()
 	data := []byte("x")
 	d := sha256Of(data)
-	lock := &model.WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []model.WeightLockEntry{{
+		Weights: []lockfile.WeightLockEntry{{
 			Name:   "../escape",
 			Target: "/w",
-			Files:  []model.WeightLockFile{{Path: "f", Size: 1, Digest: d, Layer: "sha256:x"}},
+			Files:  []lockfile.WeightLockFile{{Path: "f", Size: 1, Digest: d, Layer: "sha256:x"}},
 		}},
 	}
 	mgr, _ := primedManager(t, lock, map[string][]byte{d: data})
@@ -211,12 +211,12 @@ func TestPrepare_RejectsPathTraversalInFilePath(t *testing.T) {
 	ctx := context.Background()
 	data := []byte("x")
 	d := sha256Of(data)
-	lock := &model.WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []model.WeightLockEntry{{
+		Weights: []lockfile.WeightLockEntry{{
 			Name:   "m1",
 			Target: "/w",
-			Files: []model.WeightLockFile{{
+			Files: []lockfile.WeightLockFile{{
 				Path: "../../etc/passwd", Size: 1, Digest: d, Layer: "sha256:x",
 			}},
 		}},
@@ -300,9 +300,9 @@ func TestPrepare_NoProjectDirWithWeights(t *testing.T) {
 		Store:    fs,
 		Registry: newStubRegistry(),
 		Repo:     "r",
-		Lock: &model.WeightsLock{
+		Lock: &lockfile.WeightsLock{
 			Version: 1,
-			Weights: []model.WeightLockEntry{{Name: "w", Target: "/t"}},
+			Weights: []lockfile.WeightLockEntry{{Name: "w", Target: "/t"}},
 		},
 	})
 	require.NoError(t, err)

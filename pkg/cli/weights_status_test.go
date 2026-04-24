@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 func TestStatusResultsToEntries(t *testing.T) {
@@ -17,13 +18,13 @@ func TestStatusResultsToEntries(t *testing.T) {
 			Name:   "base",
 			Target: "/weights/base",
 			Status: model.WeightStatusReady,
-			LockEntry: &model.WeightLockEntry{
+			LockEntry: &lockfile.WeightLockEntry{
 				Size:           4096,
 				SizeCompressed: 2048,
-				Layers:         []model.WeightLockLayer{{Digest: "sha256:l1"}, {Digest: "sha256:l2"}},
-				Files:          []model.WeightLockFile{{Path: "a.bin"}, {Path: "b.bin"}, {Path: "c.bin"}},
+				Layers:         []lockfile.WeightLockLayer{{Digest: "sha256:l1"}, {Digest: "sha256:l2"}},
+				Files:          []lockfile.WeightLockFile{{Path: "a.bin"}, {Path: "b.bin"}, {Path: "c.bin"}},
 				Digest:         "sha256:manifest123",
-				Source:         model.WeightLockSource{URI: "file://./weights"},
+				Source:         lockfile.WeightLockSource{URI: "file://./weights"},
 			},
 			Layers: []model.LayerStatusResult{
 				{Digest: "sha256:l1", Size: 2048, Status: model.LayerStatusReady},

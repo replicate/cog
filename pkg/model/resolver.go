@@ -12,6 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // Option configures how Resolver methods behave.
@@ -244,7 +245,7 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	// Build weight artifacts when weights are declared in cog.yaml.
 	lockPath := opts.WeightsLockPath
 	if lockPath == "" {
-		lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
+		lockPath = filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
 	}
 
 	if len(src.Config.Weights) > 0 {

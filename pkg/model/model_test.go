@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 func TestModel_HasGPU(t *testing.T) {
@@ -125,7 +126,7 @@ func TestModel_GetImageArtifact(t *testing.T) {
 		"r8.im/user/model@sha256:abc123",
 	)
 	weightArtifact := newWeightArtifact(
-		WeightLockEntry{Name: "weights", Target: "/src/weights"},
+		lockfile.WeightLockEntry{Name: "weights", Target: "/src/weights"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "def456"}, Size: 4096},
 		[]packedLayer{{TarPath: "/tmp/l.tar.gz", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTarGzip}},
 	)
@@ -177,12 +178,12 @@ func TestModel_WeightArtifacts(t *testing.T) {
 		"r8.im/user/model@sha256:abc123",
 	)
 	w1 := newWeightArtifact(
-		WeightLockEntry{Name: "llama", Target: "/src/weights/llama"},
+		lockfile.WeightLockEntry{Name: "llama", Target: "/src/weights/llama"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w1"}, Size: 4096},
 		[]packedLayer{{TarPath: "/tmp/l1.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
 	w2 := newWeightArtifact(
-		WeightLockEntry{Name: "embeddings", Target: "/src/weights/embed"},
+		lockfile.WeightLockEntry{Name: "embeddings", Target: "/src/weights/embed"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w2"}, Size: 2048},
 		[]packedLayer{{TarPath: "/tmp/l2.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "bbb"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
@@ -212,7 +213,7 @@ func TestModel_ArtifactsByType(t *testing.T) {
 		"r8.im/user/model@sha256:abc123",
 	)
 	w1 := newWeightArtifact(
-		WeightLockEntry{Name: "llama", Target: "/src/weights/llama"},
+		lockfile.WeightLockEntry{Name: "llama", Target: "/src/weights/llama"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w1"}, Size: 4096},
 		[]packedLayer{{TarPath: "/tmp/l.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)

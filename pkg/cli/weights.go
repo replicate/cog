@@ -14,6 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 func newWeightsCommand() *cobra.Command {
@@ -82,7 +83,7 @@ func weightsImportCommand(cmd *cobra.Command, args []string) error {
 
 	console.Infof("Building %d weight(s)...", len(weightSpecs))
 
-	lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
+	lockPath := filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
 	builder := model.NewWeightBuilder(src, lockPath)
 
 	artifacts, err := buildWeightArtifacts(ctx, builder, weightSpecs)

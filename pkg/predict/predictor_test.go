@@ -16,10 +16,10 @@ import (
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/docker/dockertest"
-	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/registry/registrytest"
 	"github.com/replicate/cog/pkg/weights"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weights/store"
 )
 
@@ -35,12 +35,12 @@ func TestPredictor_Start_CleansUpMountsOnContainerStartFailure(t *testing.T) {
 	data := []byte("x")
 	sum := sha256.Sum256(data)
 	digest := "sha256:" + hex.EncodeToString(sum[:])
-	lock := &model.WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []model.WeightLockEntry{{
+		Weights: []lockfile.WeightLockEntry{{
 			Name:   "w1",
 			Target: "/src/weights/w1",
-			Files:  []model.WeightLockFile{{Path: "f", Size: int64(len(data)), Digest: digest, Layer: "sha256:x"}},
+			Files:  []lockfile.WeightLockFile{{Path: "f", Size: int64(len(data)), Digest: digest, Layer: "sha256:x"}},
 		}},
 	}
 

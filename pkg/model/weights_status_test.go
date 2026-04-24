@@ -12,6 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // --- mock registry ---
@@ -60,22 +61,22 @@ func (m *statusMockRegistry) WriteLayer(_ context.Context, _ registry.WriteLayer
 
 // --- helpers ---
 
-func lockEntry(name, target, uri, digest string, layers ...WeightLockLayer) WeightLockEntry {
-	return WeightLockEntry{
+func lockEntry(name, target, uri, digest string, layers ...lockfile.WeightLockLayer) lockfile.WeightLockEntry {
+	return lockfile.WeightLockEntry{
 		Name:      name,
 		Target:    target,
-		Source:    WeightLockSource{URI: uri, Include: []string{}, Exclude: []string{}},
+		Source:    lockfile.WeightLockSource{URI: uri, Include: []string{}, Exclude: []string{}},
 		Digest:    digest,
 		SetDigest: digest,
 		Layers:    layers,
 	}
 }
 
-func layer(digest string, size int64) WeightLockLayer {
-	return WeightLockLayer{Digest: digest, Size: size}
+func layer(digest string, size int64) lockfile.WeightLockLayer {
+	return lockfile.WeightLockLayer{Digest: digest, Size: size}
 }
 
-func computeStatus(t *testing.T, cfg *config.Config, lock *WeightsLock, repo string, reg registry.Client) *WeightsStatus {
+func computeStatus(t *testing.T, cfg *config.Config, lock *lockfile.WeightsLock, repo string, reg registry.Client) *WeightsStatus {
 	t.Helper()
 	ws, err := ComputeWeightsStatus(context.Background(), cfg, lock, repo, reg)
 	require.NoError(t, err)
@@ -111,15 +112,15 @@ func TestWeightStatuses_BarePathNormalization(t *testing.T) {
 			{Name: "parakeet", Target: "/src/weights", Source: &config.WeightSourceConfig{URI: "weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			{
 				Name:   "parakeet",
 				Target: "/src/weights",
-				Source: WeightLockSource{URI: "file://./weights", Include: []string{}, Exclude: []string{}},
+				Source: lockfile.WeightLockSource{URI: "file://./weights", Include: []string{}, Exclude: []string{}},
 				Digest: "sha256:abc", SetDigest: "sha256:abc",
-				Layers: []WeightLockLayer{layer("sha256:l1", 1024)},
+				Layers: []lockfile.WeightLockLayer{layer("sha256:l1", 1024)},
 			},
 		},
 	}
@@ -138,9 +139,9 @@ func TestWeightStatuses_DotSlashPathNormalization(t *testing.T) {
 			{Name: "w", Target: "/w", Source: &config.WeightSourceConfig{URI: "./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("w", "/w", "file://./weights", "sha256:abc", layer("sha256:l1", 100)),
 		},
 	}
@@ -158,9 +159,9 @@ func TestWeightStatuses_StaleTarget(t *testing.T) {
 			{Name: "base", Target: "/weights/v2", Source: &config.WeightSourceConfig{URI: "file://./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/weights/base", "file://./weights", "sha256:abc", layer("sha256:l1", 100)),
 		},
 	}
@@ -175,9 +176,9 @@ func TestWeightStatuses_StaleSourceURI(t *testing.T) {
 			{Name: "base", Target: "/w", Source: &config.WeightSourceConfig{URI: "file://./new-weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/w", "file://./weights", "sha256:abc", layer("sha256:l1", 100)),
 		},
 	}
@@ -195,9 +196,9 @@ func TestWeightStatuses_StaleIncludePatterns(t *testing.T) {
 			}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/w", "file://./weights", "sha256:abc", layer("sha256:l1", 100)),
 		},
 	}
@@ -215,9 +216,9 @@ func TestWeightStatuses_StaleExcludePatterns(t *testing.T) {
 			}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/w", "file://./weights", "sha256:abc", layer("sha256:l1", 100)),
 		},
 	}
@@ -236,19 +237,19 @@ func TestWeightStatuses_NotStaleWithMatchingPatterns(t *testing.T) {
 			}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			{
 				Name:   "base",
 				Target: "/w",
-				Source: WeightLockSource{
+				Source: lockfile.WeightLockSource{
 					URI:     "file://./weights",
 					Include: []string{"*.bin", "*.safetensors"},
 					Exclude: []string{"*.tmp"},
 				},
 				Digest: "sha256:abc", SetDigest: "sha256:abc",
-				Layers: []WeightLockLayer{layer("sha256:l1", 100)},
+				Layers: []lockfile.WeightLockLayer{layer("sha256:l1", 100)},
 			},
 		},
 	}
@@ -273,19 +274,19 @@ func TestWeightStatuses_CogYAMLReorderingNotStale(t *testing.T) {
 			}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			{
 				Name:   "base",
 				Target: "/w",
-				Source: WeightLockSource{
+				Source: lockfile.WeightLockSource{
 					URI:     "file://./weights",
 					Include: []string{"*.bin", "*.safetensors"},
 					Exclude: []string{"*.onnx", "*.tmp"},
 				},
 				Digest: "sha256:abc", SetDigest: "sha256:abc",
-				Layers: []WeightLockLayer{layer("sha256:l1", 100)},
+				Layers: []lockfile.WeightLockLayer{layer("sha256:l1", 100)},
 			},
 		},
 	}
@@ -311,19 +312,19 @@ func TestWeightStatuses_UnsortedLockfileIsStale(t *testing.T) {
 			}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			{
 				Name:   "base",
 				Target: "/w",
-				Source: WeightLockSource{
+				Source: lockfile.WeightLockSource{
 					URI:     "file://./weights",
 					Include: []string{"*.safetensors", "*.bin"},
 					Exclude: []string{},
 				},
 				Digest: "sha256:abc", SetDigest: "sha256:abc",
-				Layers: []WeightLockLayer{layer("sha256:l1", 100)},
+				Layers: []lockfile.WeightLockLayer{layer("sha256:l1", 100)},
 			},
 		},
 	}
@@ -338,13 +339,13 @@ func TestWeightStatuses_Orphaned(t *testing.T) {
 			{Name: "base", Target: "/weights/base", Source: &config.WeightSourceConfig{URI: "file://./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/weights/base", "file://./weights", "sha256:abc", layer("sha256:l1", 100)),
 			{
 				Name: "old-weight", Target: "/weights/old",
-				Source: WeightLockSource{URI: "file://./old", Include: []string{}, Exclude: []string{}},
+				Source: lockfile.WeightLockSource{URI: "file://./old", Include: []string{}, Exclude: []string{}},
 				Digest: "sha256:def", Size: 2048,
 			},
 		},
@@ -369,9 +370,9 @@ func TestWeightStatuses_EmptyConfig(t *testing.T) {
 }
 
 func TestWeightStatuses_EmptyConfigWithOrphanedLockEntries(t *testing.T) {
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			{Name: "orphan", Target: "/w", Digest: "sha256:abc"},
 		},
 	}
@@ -389,12 +390,12 @@ func TestWeightStatuses_NilSourceIsStale(t *testing.T) {
 			{Name: "base", Target: "/w"},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			{
 				Name: "base", Target: "/w",
-				Source: WeightLockSource{URI: "", Include: []string{}, Exclude: []string{}},
+				Source: lockfile.WeightLockSource{URI: "", Include: []string{}, Exclude: []string{}},
 				Digest: "sha256:abc",
 			},
 		},
@@ -410,17 +411,17 @@ func TestWeightStatuses_FingerprintNotCompared(t *testing.T) {
 			{Name: "base", Target: "/w", Source: &config.WeightSourceConfig{URI: "file://./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			{
 				Name: "base", Target: "/w",
-				Source: WeightLockSource{
+				Source: lockfile.WeightLockSource{
 					URI: "file://./weights", Include: []string{}, Exclude: []string{},
 					Fingerprint: weightsource.Fingerprint("sha256:anything"),
 				},
 				Digest: "sha256:abc", SetDigest: "sha256:abc",
-				Layers: []WeightLockLayer{layer("sha256:l1", 100)},
+				Layers: []lockfile.WeightLockLayer{layer("sha256:l1", 100)},
 			},
 		},
 	}
@@ -458,9 +459,9 @@ func TestWeightStatuses_AllLayersPresent(t *testing.T) {
 			{Name: "base", Target: "/w", Source: &config.WeightSourceConfig{URI: "file://./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/w", "file://./weights", "sha256:abc",
 				layer("sha256:l1", 1000),
 				layer("sha256:l2", 2000),
@@ -490,9 +491,9 @@ func TestWeightStatuses_SomeLayersMissing(t *testing.T) {
 			{Name: "base", Target: "/w", Source: &config.WeightSourceConfig{URI: "file://./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/w", "file://./weights", "sha256:abc",
 				layer("sha256:l1", 1000),
 				layer("sha256:l2", 2000),
@@ -522,9 +523,9 @@ func TestWeightStatuses_AllLayersMissing(t *testing.T) {
 			{Name: "base", Target: "/w", Source: &config.WeightSourceConfig{URI: "file://./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/w", "file://./weights", "sha256:abc",
 				layer("sha256:l1", 1000),
 				layer("sha256:l2", 2000),
@@ -547,9 +548,9 @@ func TestWeightStatuses_LayerSizesPreserved(t *testing.T) {
 			{Name: "base", Target: "/w", Source: &config.WeightSourceConfig{URI: "file://./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/w", "file://./weights", "sha256:abc",
 				layer("sha256:l1", 4200000000),
 				layer("sha256:l2", 800000000),
@@ -571,9 +572,9 @@ func TestWeightStatuses_RegistryErrorIsIncomplete(t *testing.T) {
 			{Name: "base", Target: "/w", Source: &config.WeightSourceConfig{URI: "file://./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/w", "file://./weights", "sha256:abc",
 				layer("sha256:l1", 100),
 			),
@@ -594,9 +595,9 @@ func TestWeightStatuses_StaleSkipsRegistryCheck(t *testing.T) {
 			{Name: "base", Target: "/w/new", Source: &config.WeightSourceConfig{URI: "file://./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/w/old", "file://./weights", "sha256:abc",
 				layer("sha256:l1", 100),
 			),
@@ -627,9 +628,9 @@ func TestWeightStatuses_ContextCancellation(t *testing.T) {
 			{Name: "base", Target: "/w", Source: &config.WeightSourceConfig{URI: "file://./weights"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("base", "/w", "file://./weights", "sha256:abc",
 				layer("sha256:l1", 100),
 			),
@@ -652,9 +653,9 @@ func TestWeightStatuses_MixedWithAllStatuses(t *testing.T) {
 			{Name: "pending", Target: "/d"},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("ready", "/a", "file://./a", "sha256:aaa", layer("sha256:la", 100)),
 			lockEntry("incomplete", "/b", "file://./b", "sha256:bbb", layer("sha256:lb", 100)),
 			lockEntry("stale", "/c/old", "file://./c", "sha256:ccc", layer("sha256:lc", 100)),
@@ -687,9 +688,9 @@ func TestWeightsStatus_ByStatus(t *testing.T) {
 			{Name: "c", Target: "/c", Source: &config.WeightSourceConfig{URI: "file://./c"}},
 		},
 	}
-	lock := &WeightsLock{
+	lock := &lockfile.WeightsLock{
 		Version: 1,
-		Weights: []WeightLockEntry{
+		Weights: []lockfile.WeightLockEntry{
 			lockEntry("a", "/a", "file://./a", "sha256:aaa", layer("sha256:la", 100)),
 			lockEntry("c", "/c", "file://./c", "sha256:ccc", layer("sha256:lc", 100)),
 		},

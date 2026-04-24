@@ -9,7 +9,7 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
-	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // PullResult summarizes what happened for a single weight during Pull.
@@ -114,10 +114,10 @@ func (m *Manager) Pull(ctx context.Context, names []string, onEvent func(PullEve
 	return results, nil
 }
 
-func (m *Manager) pullEntry(ctx context.Context, entry *model.WeightLockEntry, emit func(PullEvent)) (PullResult, error) {
+func (m *Manager) pullEntry(ctx context.Context, entry *lockfile.WeightLockEntry, emit func(PullEvent)) (PullResult, error) {
 	result := PullResult{Name: entry.Name}
 
-	missingByLayer := map[string][]model.WeightLockFile{}
+	missingByLayer := map[string][]lockfile.WeightLockFile{}
 	var missingCount int
 	for _, f := range entry.Files {
 		ok, err := m.store.Exists(ctx, f.Digest)
@@ -155,7 +155,7 @@ func (m *Manager) pullEntry(ctx context.Context, entry *model.WeightLockEntry, e
 		return result, fmt.Errorf("fetch weight manifest %s: %w", manifestRef, err)
 	}
 
-	fileByPath := make(map[string]model.WeightLockFile, len(entry.Files))
+	fileByPath := make(map[string]lockfile.WeightLockFile, len(entry.Files))
 	for _, f := range entry.Files {
 		fileByPath[f.Path] = f
 	}
@@ -191,8 +191,8 @@ func (m *Manager) pullLayer(
 	weightName string,
 	img v1.Image,
 	layerDigest string,
-	needed []model.WeightLockFile,
-	fileByPath map[string]model.WeightLockFile,
+	needed []lockfile.WeightLockFile,
+	fileByPath map[string]lockfile.WeightLockFile,
 	emit func(PullEvent),
 ) error {
 	hash, err := v1.NewHash(layerDigest)

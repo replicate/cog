@@ -10,6 +10,7 @@ import (
 	"github.com/replicate/cog/pkg/paths"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/weights"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 func newWeightsPullCommand() *cobra.Command {
@@ -67,7 +68,7 @@ func weightsPullCommand(cmd *cobra.Command, args []string, verbose bool, imageOv
 		// already resolved it; ignore the error to keep the log block
 		// simple.
 		storeDir, _ := paths.WeightsStoreDir() //nolint:errcheck // see comment above
-		lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
+		lockPath := filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
 		console.Infof("Cache:    %s", storeDir)
 		console.Infof("Lockfile: %s", lockPath)
 		console.Info("")

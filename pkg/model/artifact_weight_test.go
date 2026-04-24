@@ -9,6 +9,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 func TestWeightSpecFromConfig_ImplementsArtifactSpec(t *testing.T) {
@@ -74,10 +75,10 @@ func TestWeightSpecFromConfig_InvalidSchemeError(t *testing.T) {
 }
 
 func TestWeightSpecFromLock_ExtractsIntent(t *testing.T) {
-	entry := WeightLockEntry{
+	entry := lockfile.WeightLockEntry{
 		Name:   "w",
 		Target: "/src/w",
-		Source: WeightLockSource{
+		Source: lockfile.WeightLockSource{
 			URI:         "file://./w",
 			Fingerprint: weightsource.Fingerprint("sha256:abc"),
 			Include:     []string{"*.safetensors"},
@@ -200,7 +201,7 @@ func TestWeightArtifact_ImplementsArtifact(t *testing.T) {
 			MediaType: mediaTypeOCILayerTarGzip,
 		},
 	}
-	entry := WeightLockEntry{Name: "my-weights", Target: "/src/weights"}
+	entry := lockfile.WeightLockEntry{Name: "my-weights", Target: "/src/weights"}
 	artifact := newWeightArtifact(entry, desc, layers)
 
 	var _ Artifact = artifact // compile-time interface check
@@ -223,7 +224,7 @@ func TestWeightArtifact_Fields(t *testing.T) {
 			MediaType: mediaTypeOCILayerTar,
 		},
 	}
-	entry := WeightLockEntry{Name: "my-weights", Target: "/src/weights"}
+	entry := lockfile.WeightLockEntry{Name: "my-weights", Target: "/src/weights"}
 	artifact := newWeightArtifact(entry, desc, layers)
 
 	require.Equal(t, "/src/weights", artifact.Entry.Target)

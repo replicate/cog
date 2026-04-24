@@ -17,6 +17,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // Manifest-level annotation keys per spec §2.5 (v1 "run.cog.*" namespace).
@@ -50,8 +52,8 @@ const MediaTypeWeightConfig = "application/vnd.cog.weight.config.v1+json"
 // regardless of input order. This makes the manifest digest a pure function
 // of the layer *set* plus metadata, so cold-pack and warm-cache paths
 // (which can produce layers in different orders) produce identical
-// manifests. The lockfile is also digest-sorted (see canonicalizeEntry),
-// so the two canonical forms agree.
+// manifests. The lockfile is also digest-sorted when serialized, so the
+// two canonical forms agree.
 //
 // The returned image has:
 //   - artifactType: application/vnd.cog.weight.v1 (injected via RawManifest override)
@@ -59,7 +61,7 @@ const MediaTypeWeightConfig = "application/vnd.cog.weight.config.v1+json"
 //   - layers: one descriptor per packedLayer, in digest-sorted order,
 //     preserving mediaType, digest, size
 //   - annotations: manifest-level weight annotations per spec §2.5
-func buildWeightManifestV1(entry WeightLockEntry, layers []packedLayer) (v1.Image, error) {
+func buildWeightManifestV1(entry lockfile.WeightLockEntry, layers []packedLayer) (v1.Image, error) {
 	if entry.Name == "" {
 		return nil, fmt.Errorf("weight name is required")
 	}

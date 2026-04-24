@@ -21,10 +21,13 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/rogpeppe/go-internal/testscript"
 
+	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/registry_testhelpers"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // propagatedEnvVars lists host environment variables that should be propagated
@@ -1067,49 +1070,6 @@ func (h *Harness) cmdDockerPush(ts *testscript.TestScript, neg bool, args []stri
 // Mock weights command
 // =============================================================================
 
-// mockWeightsLock mirrors pkg/model.WeightsLock (v1 schema).
-// SYNC: If model.WeightsLock changes, update this copy.
-// We duplicate the types here to avoid importing pkg/model which
-// transitively imports pkg/wheels.
-type mockWeightsLock struct {
-	Version int               `json:"version"`
-	Weights []mockWeightEntry `json:"weights"`
-}
-
-type mockWeightEntry struct {
-	Name           string            `json:"name"`
-	Target         string            `json:"target"`
-	Source         mockWeightSource  `json:"source"`
-	Digest         string            `json:"digest"`
-	SetDigest      string            `json:"setDigest"`
-	Size           int64             `json:"size"`
-	SizeCompressed int64             `json:"sizeCompressed"`
-	Files          []mockWeightFile  `json:"files"`
-	Layers         []mockWeightLayer `json:"layers"`
-}
-
-type mockWeightSource struct {
-	URI         string    `json:"uri"`
-	Fingerprint string    `json:"fingerprint"`
-	Include     []string  `json:"include"`
-	Exclude     []string  `json:"exclude"`
-	ImportedAt  time.Time `json:"importedAt"`
-}
-
-type mockWeightFile struct {
-	Path   string `json:"path"`
-	Size   int64  `json:"size"`
-	Digest string `json:"digest"`
-	Layer  string `json:"layer"`
-}
-
-type mockWeightLayer struct {
-	Digest           string `json:"digest"`
-	MediaType        string `json:"mediaType"`
-	Size             int64  `json:"size"`
-	SizeUncompressed int64  `json:"sizeUncompressed"`
-}
-
 // cmdMockWeights generates mock weight files and a weights.lock file.
 // Usage: mock-weights [--count N] [--min-size S] [--max-size S]
 // Defaults:
@@ -1163,7 +1123,7 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 		ts.Fatalf("mock-weights: failed to create weights dir: %v", err)
 	}
 
-	var entries []mockWeightEntry
+	var entries []lockfile.WeightLockEntry
 
 	for i := 1; i <= count; i++ {
 		// Random size between min and max
@@ -1208,12 +1168,12 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 		// still a valid sha256:<hex>.
 		setDigest := layerDigest
 
-		entries = append(entries, mockWeightEntry{
+		entries = append(entries, lockfile.WeightLockEntry{
 			Name:   weightName,
 			Target: "/src/weights/" + weightName,
-			Source: mockWeightSource{
+			Source: lockfile.WeightLockSource{
 				URI:         "file://./weights/" + weightName,
-				Fingerprint: setDigest,
+				Fingerprint: weightsource.Fingerprint(setDigest),
 				Include:     []string{},
 				Exclude:     []string{},
 				ImportedAt:  time.Now().UTC(),
@@ -1222,7 +1182,7 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 			SetDigest:      setDigest,
 			Size:           size,
 			SizeCompressed: size,
-			Files: []mockWeightFile{
+			Files: []lockfile.WeightLockFile{
 				{
 					Path:   filename,
 					Size:   size,
@@ -1230,10 +1190,10 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 					Layer:  layerDigest,
 				},
 			},
-			Layers: []mockWeightLayer{
+			Layers: []lockfile.WeightLockLayer{
 				{
 					Digest:           layerDigest,
-					MediaType:        "application/vnd.oci.image.layer.v1.tar",
+					MediaType:        string(types.OCIUncompressedLayer),
 					Size:             size,
 					SizeUncompressed: size,
 				},
@@ -1242,17 +1202,12 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 	}
 
 	// Create weights.lock
-	lock := mockWeightsLock{
-		Version: 1,
+	lock := lockfile.WeightsLock{
+		Version: lockfile.Version,
 		Weights: entries,
 	}
 
-	lockData, err := json.MarshalIndent(lock, "", "  ")
-	if err != nil {
-		ts.Fatalf("mock-weights: failed to marshal weights.lock: %v", err)
-	}
-
-	if err := os.WriteFile(lockPath, lockData, 0o644); err != nil {
+	if err := lock.Save(lockPath); err != nil {
 		ts.Fatalf("mock-weights: failed to write weights.lock: %v", err)
 	}
 

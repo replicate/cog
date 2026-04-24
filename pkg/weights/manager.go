@@ -14,8 +14,8 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
-	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weights/store"
 )
 
@@ -33,7 +33,7 @@ type Manager struct {
 	store      store.Store
 	registry   imageFetcher
 	repo       string
-	lock       *model.WeightsLock
+	lock       *lockfile.WeightsLock
 	projectDir string
 }
 
@@ -47,7 +47,7 @@ type ManagerOptions struct {
 	Store      store.Store
 	Registry   registry.Client
 	Repo       string
-	Lock       *model.WeightsLock
+	Lock       *lockfile.WeightsLock
 	ProjectDir string
 }
 
@@ -81,7 +81,7 @@ func (m *Manager) ProjectDir() string { return m.projectDir }
 // order. Empty names means every entry in lockfile order. Unknown
 // names are reported in a single error so the user sees all typos in
 // one shot.
-func (m *Manager) selectEntries(names []string) ([]*model.WeightLockEntry, error) {
+func (m *Manager) selectEntries(names []string) ([]*lockfile.WeightLockEntry, error) {
 	if m.lock == nil {
 		if len(names) > 0 {
 			return nil, fmt.Errorf("unknown weight(s): %v (model has no weights)", names)
@@ -89,14 +89,14 @@ func (m *Manager) selectEntries(names []string) ([]*model.WeightLockEntry, error
 		return nil, nil
 	}
 	if len(names) == 0 {
-		out := make([]*model.WeightLockEntry, len(m.lock.Weights))
+		out := make([]*lockfile.WeightLockEntry, len(m.lock.Weights))
 		for i := range m.lock.Weights {
 			out[i] = &m.lock.Weights[i]
 		}
 		return out, nil
 	}
 
-	out := make([]*model.WeightLockEntry, 0, len(names))
+	out := make([]*lockfile.WeightLockEntry, 0, len(names))
 	var missing []string
 	for _, n := range names {
 		entry := m.lock.FindWeight(n)

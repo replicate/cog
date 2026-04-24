@@ -1,4 +1,4 @@
-package model
+package lockfile
 
 import (
 	"encoding/json"
@@ -7,10 +7,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
+)
+
+// OCI layer media types used in fixtures.
+var (
+	mediaTypeOCILayerTar     = string(types.OCIUncompressedLayer)
+	mediaTypeOCILayerTarGzip = string(types.OCILayer)
 )
 
 // sampleEntry returns a fully-populated WeightLockEntry for tests.
@@ -70,7 +77,7 @@ func TestWeightsLock_ParseValid(t *testing.T) {
 
 	lock, err := ParseWeightsLock([]byte(data))
 	require.NoError(t, err)
-	assert.Equal(t, weightsLockVersion, lock.Version)
+	assert.Equal(t, Version, lock.Version)
 	require.Len(t, lock.Weights, 1)
 
 	w := lock.Weights[0]
@@ -117,7 +124,7 @@ func TestWeightsLock_LoadFromFile(t *testing.T) {
 
 	lock, err := LoadWeightsLock(lockPath)
 	require.NoError(t, err)
-	assert.Equal(t, weightsLockVersion, lock.Version)
+	assert.Equal(t, Version, lock.Version)
 	assert.Empty(t, lock.Weights)
 }
 
@@ -129,11 +136,11 @@ func TestWeightsLock_Save_SetsMissingVersion(t *testing.T) {
 		Weights: []WeightLockEntry{sampleEntry()},
 	}
 	require.NoError(t, lock.Save(lockPath))
-	assert.Equal(t, weightsLockVersion, lock.Version, "Save fills in the missing version")
+	assert.Equal(t, Version, lock.Version, "Save fills in the missing version")
 
 	loaded, err := LoadWeightsLock(lockPath)
 	require.NoError(t, err)
-	assert.Equal(t, weightsLockVersion, loaded.Version)
+	assert.Equal(t, Version, loaded.Version)
 	require.Len(t, loaded.Weights, 1)
 	assert.Equal(t, "z-image-turbo", loaded.Weights[0].Name)
 }
@@ -143,8 +150,8 @@ func TestWeightsLock_Save_Deterministic(t *testing.T) {
 	path1 := filepath.Join(dir, "a.lock")
 	path2 := filepath.Join(dir, "b.lock")
 
-	lock1 := &WeightsLock{Version: weightsLockVersion, Weights: []WeightLockEntry{sampleEntry()}}
-	lock2 := &WeightsLock{Version: weightsLockVersion, Weights: []WeightLockEntry{sampleEntry()}}
+	lock1 := &WeightsLock{Version: Version, Weights: []WeightLockEntry{sampleEntry()}}
+	lock2 := &WeightsLock{Version: Version, Weights: []WeightLockEntry{sampleEntry()}}
 
 	require.NoError(t, lock1.Save(path1))
 	require.NoError(t, lock2.Save(path2))
@@ -158,7 +165,7 @@ func TestWeightsLock_Save_Deterministic(t *testing.T) {
 
 func TestWeightsLock_Marshal_SortsFilesByPath(t *testing.T) {
 	lock := &WeightsLock{
-		Version: weightsLockVersion,
+		Version: Version,
 		Weights: []WeightLockEntry{
 			{
 				Name: "w",
@@ -182,7 +189,7 @@ func TestWeightsLock_Marshal_SortsFilesByPath(t *testing.T) {
 
 func TestWeightsLock_Marshal_SortsLayersByDigest(t *testing.T) {
 	lock := &WeightsLock{
-		Version: weightsLockVersion,
+		Version: Version,
 		Weights: []WeightLockEntry{
 			{
 				Name: "w",
@@ -205,7 +212,7 @@ func TestWeightsLock_Marshal_NormalizesEmptyPatterns(t *testing.T) {
 	// Source.Include and Source.Exclude should serialize as [] (never
 	// omitted) when empty or nil, so the schema shape is stable.
 	lock := &WeightsLock{
-		Version: weightsLockVersion,
+		Version: Version,
 		Weights: []WeightLockEntry{
 			{Name: "w", Source: WeightLockSource{URI: "file://./x"}},
 		},
@@ -219,7 +226,7 @@ func TestWeightsLock_Marshal_NormalizesEmptyPatterns(t *testing.T) {
 func TestWeightsLock_Upsert(t *testing.T) {
 	t.Run("replaces existing entry", func(t *testing.T) {
 		lock := &WeightsLock{
-			Version: weightsLockVersion,
+			Version: Version,
 			Weights: []WeightLockEntry{
 				{Name: "a", Target: "/a", Digest: "sha256:aaa"},
 				{Name: "b", Target: "/b", Digest: "sha256:bbb"},
@@ -240,7 +247,7 @@ func TestWeightsLock_Upsert(t *testing.T) {
 	})
 
 	t.Run("appends new entry", func(t *testing.T) {
-		lock := &WeightsLock{Version: weightsLockVersion}
+		lock := &WeightsLock{Version: Version}
 		lock.Upsert(WeightLockEntry{Name: "a", Target: "/a", Digest: "sha256:aaa"})
 		lock.Upsert(WeightLockEntry{Name: "b", Target: "/b", Digest: "sha256:bbb"})
 
@@ -252,7 +259,7 @@ func TestWeightsLock_Upsert(t *testing.T) {
 
 func TestWeightsLock_RoundTrip(t *testing.T) {
 	original := &WeightsLock{
-		Version: weightsLockVersion,
+		Version: Version,
 		Weights: []WeightLockEntry{sampleEntry()},
 	}
 	data, err := original.Marshal()
@@ -267,64 +274,123 @@ func TestWeightsLock_RoundTrip(t *testing.T) {
 	assert.Equal(t, original.Weights[0].Layers, decoded.Weights[0].Layers)
 }
 
-func TestLockEntriesContentEqual(t *testing.T) {
+func TestEntriesContentEqual(t *testing.T) {
 	a := sampleEntry()
 	b := sampleEntry()
-	assert.True(t, lockEntriesContentEqual(&a, &b), "identical entries are content-equal")
+	assert.True(t, entriesContentEqual(&a, &b), "identical entries are content-equal")
 
 	c := sampleEntry()
 	c.Digest = "sha256:different"
-	assert.False(t, lockEntriesContentEqual(&a, &c), "differing manifest digest breaks equality")
+	assert.False(t, entriesContentEqual(&a, &c), "differing manifest digest breaks equality")
 
 	d := sampleEntry()
 	d.SetDigest = "sha256:different"
-	assert.False(t, lockEntriesContentEqual(&a, &d), "differing set digest breaks equality")
+	assert.False(t, entriesContentEqual(&a, &d), "differing set digest breaks equality")
 
 	e := sampleEntry()
 	e.Files[0].Digest = "sha256:tampered"
-	assert.False(t, lockEntriesContentEqual(&a, &e), "differing file digest breaks equality")
+	assert.False(t, entriesContentEqual(&a, &e), "differing file digest breaks equality")
 
 	f := sampleEntry()
 	f.Size = 99999
-	assert.False(t, lockEntriesContentEqual(&a, &f), "differing size breaks equality")
+	assert.False(t, entriesContentEqual(&a, &f), "differing size breaks equality")
 }
 
-func TestLockEntriesSourceEqual(t *testing.T) {
+func TestEntriesSourceEqual(t *testing.T) {
 	a := sampleEntry()
 	b := sampleEntry()
 	// Different importedAt must still be source-equal.
 	b.Source.ImportedAt = a.Source.ImportedAt.Add(1 * time.Hour)
-	assert.True(t, lockEntriesSourceEqual(&a, &b), "importedAt must not affect source equality")
+	assert.True(t, entriesSourceEqual(&a, &b), "importedAt must not affect source equality")
 
 	c := sampleEntry()
 	c.Source.URI = "file://./different"
-	assert.False(t, lockEntriesSourceEqual(&a, &c), "differing URI breaks source equality")
+	assert.False(t, entriesSourceEqual(&a, &c), "differing URI breaks source equality")
 
 	d := sampleEntry()
 	d.Source.Fingerprint = "sha256:different"
-	assert.False(t, lockEntriesSourceEqual(&a, &d), "differing fingerprint breaks source equality")
+	assert.False(t, entriesSourceEqual(&a, &d), "differing fingerprint breaks source equality")
 
 	e := sampleEntry()
 	e.Source.Include = []string{"*.safetensors"}
-	assert.False(t, lockEntriesSourceEqual(&a, &e), "differing include patterns break source equality")
+	assert.False(t, entriesSourceEqual(&a, &e), "differing include patterns break source equality")
 
 	f := sampleEntry()
 	f.Source.Exclude = []string{"README*"}
-	assert.False(t, lockEntriesSourceEqual(&a, &f), "differing exclude patterns break source equality")
+	assert.False(t, entriesSourceEqual(&a, &f), "differing exclude patterns break source equality")
 }
 
-func TestLockEntriesEqual_RequiresBothContentAndSource(t *testing.T) {
+func TestEntriesEqual_RequiresBothContentAndSource(t *testing.T) {
 	a := sampleEntry()
 	b := sampleEntry()
-	assert.True(t, lockEntriesEqual(&a, &b))
+	assert.True(t, EntriesEqual(&a, &b))
 
 	// Same content, different source — not equal.
 	c := sampleEntry()
 	c.Source.URI = "file://./other"
-	assert.False(t, lockEntriesEqual(&a, &c))
+	assert.False(t, EntriesEqual(&a, &c))
 
 	// Same source, different content — not equal.
 	d := sampleEntry()
 	d.Digest = "sha256:different"
-	assert.False(t, lockEntriesEqual(&a, &d))
+	assert.False(t, EntriesEqual(&a, &d))
+}
+
+// setDigestOf returns the set digest for a file set by wrapping it in a
+// throwaway entry. Used by the ComputeSetDigest tests below where the
+// caller only cares about the files, not the rest of the entry fields.
+func setDigestOf(files []WeightLockFile) string {
+	e := WeightLockEntry{Files: files}
+	return e.ComputeSetDigest()
+}
+
+func TestComputeSetDigest_Deterministic(t *testing.T) {
+	files := []WeightLockFile{
+		{Path: "config.json", Size: 100, Digest: "sha256:aaa111", Layer: "sha256:layer1"},
+		{Path: "model.safetensors", Size: 9999, Digest: "sha256:bbb222", Layer: "sha256:layer2"},
+	}
+	d1 := setDigestOf(files)
+	d2 := setDigestOf(files)
+	require.Equal(t, d1, d2, "same inputs must produce same digest")
+	assert.Greater(t, len(d1), len("sha256:"), "digest must be non-trivial")
+}
+
+func TestComputeSetDigest_PackingIndependent(t *testing.T) {
+	// Same files, different layer assignments → same set digest.
+	files1 := []WeightLockFile{
+		{Path: "a.txt", Size: 10, Digest: "sha256:aaa", Layer: "sha256:layer1"},
+		{Path: "b.txt", Size: 20, Digest: "sha256:bbb", Layer: "sha256:layer1"},
+	}
+	files2 := []WeightLockFile{
+		{Path: "a.txt", Size: 10, Digest: "sha256:aaa", Layer: "sha256:layerX"},
+		{Path: "b.txt", Size: 20, Digest: "sha256:bbb", Layer: "sha256:layerY"},
+	}
+	assert.Equal(t, setDigestOf(files1), setDigestOf(files2),
+		"set digest must be independent of layer assignment")
+}
+
+func TestComputeSetDigest_DiffersForDifferentContent(t *testing.T) {
+	files1 := []WeightLockFile{
+		{Path: "a.txt", Size: 10, Digest: "sha256:aaa"},
+	}
+	files2 := []WeightLockFile{
+		{Path: "a.txt", Size: 10, Digest: "sha256:bbb"},
+	}
+	assert.NotEqual(t, setDigestOf(files1), setDigestOf(files2),
+		"different content must produce different set digest")
+}
+
+func TestComputeSetDigest_FileOrderIndependent(t *testing.T) {
+	// ComputeSetDigest canonicalizes in place, so the caller's input
+	// order doesn't affect the result.
+	ordered := []WeightLockFile{
+		{Path: "a.txt", Size: 10, Digest: "sha256:aaa"},
+		{Path: "b.txt", Size: 20, Digest: "sha256:bbb"},
+	}
+	reversed := []WeightLockFile{
+		{Path: "b.txt", Size: 20, Digest: "sha256:bbb"},
+		{Path: "a.txt", Size: 10, Digest: "sha256:aaa"},
+	}
+	assert.Equal(t, setDigestOf(ordered), setDigestOf(reversed),
+		"set digest must be independent of file input order")
 }

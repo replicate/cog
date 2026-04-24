@@ -7,6 +7,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 const (
@@ -29,7 +30,7 @@ type WeightStatusResult struct {
 	Name      string
 	Target    string
 	Status    string
-	LockEntry *WeightLockEntry
+	LockEntry *lockfile.WeightLockEntry
 	Layers    []LayerStatusResult
 }
 
@@ -55,8 +56,8 @@ type WeightsStatus struct {
 // Per-weight registry errors are soft: the weight is marked "incomplete"
 // and layers are marked "missing".
 // Context cancellation is propagated via errgroup and returns an error.
-func ComputeWeightsStatus(ctx context.Context, cfg *config.Config, lock *WeightsLock, repo string, reg registry.Client) (*WeightsStatus, error) {
-	lockByName := make(map[string]*WeightLockEntry)
+func ComputeWeightsStatus(ctx context.Context, cfg *config.Config, lock *lockfile.WeightsLock, repo string, reg registry.Client) (*WeightsStatus, error) {
+	lockByName := make(map[string]*lockfile.WeightLockEntry)
 	if lock != nil {
 		for i := range lock.Weights {
 			lockByName[lock.Weights[i].Name] = &lock.Weights[i]
@@ -205,7 +206,7 @@ func checkWeightLayers(ctx context.Context, r *WeightStatusResult, repo string, 
 //
 // Source.Fingerprint and Source.ImportedAt are lockfile-side metadata,
 // not user-declared inputs, and are excluded from the comparison.
-func isStale(w config.WeightSource, le *WeightLockEntry) bool {
+func isStale(w config.WeightSource, le *lockfile.WeightLockEntry) bool {
 	configSpec, err := WeightSpecFromConfig(w)
 	if err != nil {
 		return true

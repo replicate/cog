@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // makeWeightDir writes files into <projectDir>/<relDir> and returns both
@@ -100,9 +101,9 @@ func TestWeightBuilder_WritesLockfile(t *testing.T) {
 	wa := artifact.(*WeightArtifact)
 
 	lockPath := filepath.Join(projectDir, "weights.lock")
-	lock, err := LoadWeightsLock(lockPath)
+	lock, err := lockfile.LoadWeightsLock(lockPath)
 	require.NoError(t, err)
-	require.Equal(t, weightsLockVersion, lock.Version)
+	require.Equal(t, lockfile.Version, lock.Version)
 	require.Len(t, lock.Weights, 1)
 
 	entry := lock.Weights[0]
@@ -171,7 +172,7 @@ func TestWeightBuilder_UpdatesExistingLockfile(t *testing.T) {
 	_, err = wb.Build(context.Background(), testWeightSpec(t, "w2", "w2", "/src/w2"))
 	require.NoError(t, err)
 
-	lock, err := LoadWeightsLock(filepath.Join(projectDir, "weights.lock"))
+	lock, err := lockfile.LoadWeightsLock(filepath.Join(projectDir, "weights.lock"))
 	require.NoError(t, err)
 	require.Len(t, lock.Weights, 2)
 
@@ -239,7 +240,7 @@ func TestWeightBuilder_CacheHit(t *testing.T) {
 	require.Equal(t, lockInfo.ModTime(), newLockInfo.ModTime(),
 		"cache hit should not rewrite weights.lock")
 
-	lock, err := LoadWeightsLock(lockPath)
+	lock, err := lockfile.LoadWeightsLock(lockPath)
 	require.NoError(t, err)
 	require.Len(t, lock.Weights, 1)
 }
@@ -266,7 +267,7 @@ func TestWeightBuilder_CacheHit_UpdatesConfigFields(t *testing.T) {
 	fa := first.(*WeightArtifact)
 
 	lockPath := filepath.Join(projectDir, "weights.lock")
-	lock, err := LoadWeightsLock(lockPath)
+	lock, err := lockfile.LoadWeightsLock(lockPath)
 	require.NoError(t, err)
 	require.Equal(t, oldTarget, lock.Weights[0].Target)
 	require.Equal(t, "file://./w", lock.Weights[0].Source.URI)
@@ -285,7 +286,7 @@ func TestWeightBuilder_CacheHit_UpdatesConfigFields(t *testing.T) {
 		"cache hit should reuse the same layers")
 
 	// The lockfile must have the new target.
-	lock2, err := LoadWeightsLock(lockPath)
+	lock2, err := lockfile.LoadWeightsLock(lockPath)
 	require.NoError(t, err)
 	require.Len(t, lock2.Weights, 1)
 	require.Equal(t, newTarget, lock2.Weights[0].Target,
@@ -459,7 +460,7 @@ func TestWeightBuilder_NormalizesSourceURI(t *testing.T) {
 			_, err := wb.Build(context.Background(), spec)
 			require.NoError(t, err)
 
-			lock, err := LoadWeightsLock(filepath.Join(projectDir, "weights.lock"))
+			lock, err := lockfile.LoadWeightsLock(filepath.Join(projectDir, "weights.lock"))
 			require.NoError(t, err)
 			require.Len(t, lock.Weights, 1)
 			require.Equal(t, tc.wantURI, lock.Weights[0].Source.URI)

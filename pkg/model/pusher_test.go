@@ -15,6 +15,7 @@ import (
 
 	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // bundleWeightFixture creates a WeightArtifact with real packed layers and a
@@ -34,7 +35,7 @@ func bundleWeightFixture(t *testing.T, name, target string) *WeightArtifact {
 	pr, err := newPacker(&packOptions{TempDir: cacheDir}).pack(t.Context(), src, inv)
 	require.NoError(t, err)
 
-	entry := newWeightLockEntry(name, target, WeightLockSource{}, pr.Files, pr.Layers)
+	entry := newWeightLockEntry(name, target, lockfile.WeightLockSource{}, pr.Files, pr.Layers)
 	artifact, err := buildWeightArtifact(&entry, pr.Layers)
 	require.NoError(t, err)
 	return artifact

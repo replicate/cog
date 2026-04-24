@@ -9,6 +9,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // MediaTypeWeightArtifact is the artifactType on a weight manifest. Layers
@@ -60,7 +61,7 @@ func WeightSpecFromConfig(w config.WeightSource) (*WeightSpec, error) {
 // no re-normalization. A lockfile whose on-disk form differs from what
 // we would write today — whether in URI form, include/exclude order, or
 // anything else — must report as drift so the next build rewrites it.
-func WeightSpecFromLock(e WeightLockEntry) *WeightSpec {
+func WeightSpecFromLock(e lockfile.WeightLockEntry) *WeightSpec {
 	return &WeightSpec{
 		name:    e.Name,
 		Target:  e.Target,
@@ -105,7 +106,7 @@ type WeightArtifact struct {
 
 	// Entry is the lockfile entry describing this weight's metadata.
 	// Must not be mutated after construction.
-	Entry WeightLockEntry
+	Entry lockfile.WeightLockEntry
 
 	// Layers are the packed tar layers on disk. The pusher reads from
 	// these to upload blobs; their metadata (digest, size, mediaType)
@@ -117,7 +118,7 @@ type WeightArtifact struct {
 // packed layers. It assembles the manifest, computes the manifest
 // descriptor, and backfills entry.Digest — the full ceremony that every
 // call site previously did by hand.
-func buildWeightArtifact(entry *WeightLockEntry, layers []packedLayer) (*WeightArtifact, error) {
+func buildWeightArtifact(entry *lockfile.WeightLockEntry, layers []packedLayer) (*WeightArtifact, error) {
 	img, err := buildWeightManifestV1(*entry, layers)
 	if err != nil {
 		return nil, fmt.Errorf("build weight manifest: %w", err)
@@ -138,7 +139,7 @@ func buildWeightArtifact(entry *WeightLockEntry, layers []packedLayer) (*WeightA
 // newWeightArtifact creates a WeightArtifact with a pre-built manifest.
 // Prefer buildWeightArtifact for production use; this is for tests that
 // need a minimal artifact without a real manifest.
-func newWeightArtifact(entry WeightLockEntry, desc v1.Descriptor, layers []packedLayer) *WeightArtifact {
+func newWeightArtifact(entry lockfile.WeightLockEntry, desc v1.Descriptor, layers []packedLayer) *WeightArtifact {
 	return &WeightArtifact{
 		descriptor: desc,
 		Entry:      entry,
