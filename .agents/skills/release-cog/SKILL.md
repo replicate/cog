@@ -10,6 +10,7 @@ This skill helps you release new versions of Cog. Cog is a multi-language, multi
 ## Overview
 
 Cog releases include:
+
 - **CLI binaries** (Go) - macOS and Linux, x86_64 and ARM64
 - **coglet Python wheels** (Rust/PyO3) - Linux x86_64/ARM64, macOS ARM64
 - **cog SDK Python wheel** (Python) - Universal
@@ -17,11 +18,11 @@ Cog releases include:
 
 ## Release Types
 
-| Type | Format | Example | Branch | PyPI | crates.io | Homebrew |
-|------|--------|---------|--------|------|-----------|----------|
-| **Stable** | `v0.17.0` | v0.18.0 | main | ✓ | ✓ | ✓ |
-| **Pre-release** | `v0.17.0-alpha3`, `v0.17.0-rc1` | v0.18.0-rc1 | main | ✓ | ✓ | ✗ |
-| **Dev** | `v0.17.0-dev1` | v0.18.0-dev2 | any | ✗ | ✗ | ✗ |
+| Type            | Format                          | Example      | Branch | PyPI | crates.io | Homebrew |
+| --------------- | ------------------------------- | ------------ | ------ | ---- | --------- | -------- |
+| **Stable**      | `v0.17.0`                       | v0.18.0      | main   | ✓    | ✓         | ✓        |
+| **Pre-release** | `v0.17.0-alpha3`, `v0.17.0-rc1` | v0.18.0-rc1  | main   | ✓    | ✓         | ✗        |
+| **Dev**         | `v0.17.0-dev1`                  | v0.18.0-dev2 | any    | ✗    | ✗         | ✗        |
 
 ## Quick Release Commands
 
@@ -110,20 +111,22 @@ gh run watch
 
 ### Version Files
 
-| File | Purpose |
-|------|---------|
-| `VERSION.txt` | Canonical version (single source of truth) |
-| `crates/Cargo.toml` | Rust workspace version |
-| `crates/Cargo.lock` | Locked dependency versions |
+| File                | Purpose                                    |
+| ------------------- | ------------------------------------------ |
+| `VERSION.txt`       | Canonical version (single source of truth) |
+| `crates/Cargo.toml` | Rust workspace version                     |
+| `crates/Cargo.lock` | Locked dependency versions                 |
 
 ### Version Constraints
 
 The SDK (`pyproject.toml`) has a dependency on coglet:
+
 ```toml
 coglet>=0.1.0,<1.0
 ```
 
 During release build, this is updated to:
+
 ```toml
 coglet>=0.18.0,<1.0
 ```
@@ -145,25 +148,32 @@ Before creating a release tag:
 ## Troubleshooting
 
 ### Version mismatch error
+
 ```
 Version mismatch! VERSION.txt has X but tag is vY
 ```
+
 Fix: Run `mise run version:bump Y`, push, then re-tag.
 
 ### Tag not on main
+
 ```
 Release tags must be on the main branch
 ```
+
 Fix: Merge your changes to main, then tag from main.
 
 ### Rebuilding a failed release
+
 1. Delete the GitHub release if it was created: `gh release delete v0.18.0 --yes`
 2. Delete the tag: `git push --delete origin v0.18.0 && git tag -d v0.18.0`
 3. Fix the issue
 4. Re-create and push the tag
 
 ### Manual PyPI publish (emergency)
+
 If the automated publish fails:
+
 ```bash
 # Download wheels from GitHub release
 gh release download v0.18.0 -p "coglet-*.whl" -D dist

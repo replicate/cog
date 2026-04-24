@@ -31,7 +31,7 @@ You have write access to PR comments via the `gh` CLI. **Prefer the batch review
 
 Write a JSON file and submit it as a review:
 
-```
+````
 cat > /tmp/review.json << 'REVIEW'
 {
   "event": "COMMENT",
@@ -47,7 +47,7 @@ cat > /tmp/review.json << 'REVIEW'
 }
 REVIEW
 gh api repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews --input /tmp/review.json
-```
+````
 
 Each comment needs `path`, `line`, `side`, and `body`. Use `suggestion` fences in `body` for applicable changes.
 

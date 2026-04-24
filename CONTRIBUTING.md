@@ -27,7 +27,7 @@ uv sync --all-groups
 mise run build
 
 # symlink the binary to /usr/local/bin
-sudo mise run install                     
+sudo mise run install
 ```
 
 After making changes, run `mise run build` to rebuild and it will get picked up by the symlink.
@@ -90,6 +90,7 @@ mise run generate:compat tensorflow
 ```
 
 The generated files are:
+
 - `pkg/config/cuda_base_images.json` - Available NVIDIA CUDA base images
 - `pkg/config/torch_compatibility_matrix.json` - PyTorch/CUDA/Python compatibility
 - `pkg/config/tf_compatibility_matrix.json` - TensorFlow/CUDA/Python compatibility
@@ -106,6 +107,7 @@ CI deliberately avoids aqua downloads from GitHub Releases to prevent transient 
 Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
 
 **When updating a tool version**, update both:
+
 - The version in `mise.toml` (for local dev)
 - The corresponding version pin in `.github/workflows/ci.yaml` (for CI)
 
@@ -169,6 +171,7 @@ COG_BINARY=/path/to/cog mise run test:integration
 ### Writing Integration Tests
 
 When adding new functionality, add integration tests in `integration-tests/tests/`. They are:
+
 - Self-contained (embedded fixtures in `.txtar` files)
 - Faster to run (parallel execution with automatic cleanup)
 - Easier to read and write (simple command script format)
@@ -230,7 +233,7 @@ stdout '"output":"hello test"'
 class Predictor(BasePredictor):
     def setup(self):
         self.process = subprocess.Popen(["./background.sh"])
-    
+
     def predict(self, s: str) -> str:
         return "hello " + s
 ```
@@ -280,6 +283,7 @@ cog build -t $TEST_IMAGE
 **Combining conditions:**
 
 Conditions can be negated with `!`. Examples:
+
 - `[short]` - True when `go test -short` is used (skip this test in short mode)
 - `[!short]` - True when NOT running with `-short` flag (only run this in full test mode)
 - `[!linux]` - True when NOT on Linux
@@ -301,11 +305,11 @@ Releases are managed by GitHub Actions workflows. See [`.github/workflows/README
 
 All packages use **lockstep versioning** from `crates/Cargo.toml`. There are three release types:
 
-| Type | Example tag | Branch rule | PyPI/crates.io? |
-|------|-------------|-------------|-----------------|
-| **Stable** | `v0.17.0` | Must be on main | Yes |
-| **Pre-release** | `v0.17.0-alpha3` | Must be on main | Yes |
-| **Dev** | `v0.17.0-dev1` | Any branch | No |
+| Type            | Example tag      | Branch rule     | PyPI/crates.io? |
+| --------------- | ---------------- | --------------- | --------------- |
+| **Stable**      | `v0.17.0`        | Must be on main | Yes             |
+| **Pre-release** | `v0.17.0-alpha3` | Must be on main | Yes             |
+| **Dev**         | `v0.17.0-dev1`   | Any branch      | No              |
 
 ### Stable / Pre-release
 
@@ -332,7 +336,6 @@ git push origin v0.17.0-dev1
 # 4. Done. Artifacts are built and published as a GH pre-release.
 #    No PyPI/crates.io. No manual approval.
 ```
-
 
 ## Troubleshooting
 

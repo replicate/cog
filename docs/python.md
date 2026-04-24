@@ -485,15 +485,15 @@ Each parameter of the `predict()` method must be annotated with a type. The meth
 
 These types can be used directly as input parameter types and output return types:
 
-| Type | Description | JSON Schema |
-|------|-------------|-------------|
-| `str` | A string | `string` |
-| `int` | An integer | `integer` |
-| `float` | A floating-point number | `number` |
-| `bool` | A boolean | `boolean` |
-| [`cog.Path`](#cogpath) | A path to a file on disk | `string` (format: `uri`) |
-| [`cog.File`](#cogfile-deprecated) | A file-like object (deprecated) | `string` (format: `uri`) |
-| [`cog.Secret`](#cogsecret) | A string containing sensitive information | `string` (format: `password`) |
+| Type                              | Description                               | JSON Schema                   |
+| --------------------------------- | ----------------------------------------- | ----------------------------- |
+| `str`                             | A string                                  | `string`                      |
+| `int`                             | An integer                                | `integer`                     |
+| `float`                           | A floating-point number                   | `number`                      |
+| `bool`                            | A boolean                                 | `boolean`                     |
+| [`cog.Path`](#cogpath)            | A path to a file on disk                  | `string` (format: `uri`)      |
+| [`cog.File`](#cogfile-deprecated) | A file-like object (deprecated)           | `string` (format: `uri`)      |
+| [`cog.Secret`](#cogsecret)        | A string containing sensitive information | `string` (format: `password`) |
 
 ### `cog.Path`
 
@@ -733,14 +733,14 @@ class Predictor(BasePredictor):
 
 Fields in a `BaseModel` output support these types:
 
-| Type | Example |
-|------|---------|
-| `str`, `int`, `float`, `bool` | `score: float` |
-| `cog.Path` | `image: Path` |
-| `cog.File` | `data: File` (deprecated) |
-| `cog.Secret` | `token: Secret` |
-| `Optional[T]` | `error: Optional[str]` |
-| `list[T]` | `tags: list[str]` |
+| Type                          | Example                   |
+| ----------------------------- | ------------------------- |
+| `str`, `int`, `float`, `bool` | `score: float`            |
+| `cog.Path`                    | `image: Path`             |
+| `cog.File`                    | `data: File` (deprecated) |
+| `cog.Secret`                  | `token: Secret`           |
+| `Optional[T]`                 | `error: Optional[str]`    |
+| `list[T]`                     | `tags: list[str]`         |
 
 ### Type limitations
 
