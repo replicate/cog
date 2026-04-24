@@ -177,17 +177,17 @@ func TestValidateConfigFileNilBuildSkipsPythonVersionCheck(t *testing.T) {
 }
 
 func TestValidateWeights(t *testing.T) {
-	model := ptr("registry.example.com/acme/my-model")
+	image := ptr("registry.example.com/acme/my-model")
 
 	tests := []struct {
 		name    string
-		model   *string
+		image   *string
 		weights []weightFile
 		wantErr string // empty means expect no error
 	}{
 		{
 			name:  "valid with two weights",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights"},
 				{Name: "lora", Target: "/src/lora"},
@@ -195,28 +195,28 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "valid with source",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model", Exclude: []string{"*.onnx"}}},
 			},
 		},
 		{
 			name:  "valid without source",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights"},
 			},
 		},
 		{
-			name: "missing model",
+			name: "weights without image",
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights"},
 			},
-			wantErr: "model is required when weights are configured",
+			wantErr: "image is required when weights are configured",
 		},
 		{
 			name:  "missing name",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "", Target: "/src/weights"},
 			},
@@ -224,7 +224,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "uppercase name",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "MyModel", Target: "/src/weights"},
 			},
@@ -232,7 +232,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "name with spaces",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "my model", Target: "/src/weights"},
 			},
@@ -240,7 +240,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "name starting with hyphen",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "-base", Target: "/src/weights"},
 			},
@@ -248,14 +248,14 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "valid name with separators",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "z-image.turbo_v1", Target: "/src/weights"},
 			},
 		},
 		{
 			name:  "duplicate name",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights"},
 				{Name: "base", Target: "/src/other"},
@@ -264,7 +264,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "missing target",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "base", Target: ""},
 			},
@@ -272,7 +272,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "relative target",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "base", Target: "src/weights"},
 			},
@@ -280,7 +280,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "duplicate target",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights"},
 				{Name: "lora", Target: "/src/weights"},
@@ -289,7 +289,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "overlapping targets parent then child",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights"},
 				{Name: "lora", Target: "/src/weights/lora"},
@@ -298,7 +298,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "overlapping targets child then parent",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "lora", Target: "/src/weights/lora"},
 				{Name: "base", Target: "/src/weights"},
@@ -307,7 +307,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "disjoint targets no false positive",
-			model: model,
+			image: image,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights"},
 				{Name: "lora", Target: "/src/weights2"},
@@ -319,7 +319,7 @@ func TestValidateWeights(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &configFile{
 				Build:   &buildFile{PythonVersion: ptr("3.12")},
-				Model:   tt.model,
+				Image:   tt.image,
 				Weights: tt.weights,
 			}
 			result := ValidateConfigFile(cfg)

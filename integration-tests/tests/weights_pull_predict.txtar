@@ -43,7 +43,7 @@ exec sh -c 'test ! -d .cog/mounts || test -z "$(ls -A .cog/mounts)"'
 build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
-model: test/pull-predict-model
+image: test/pull-predict-model
 weights:
   - name: greeting
     target: /src/mounted-weights/greeting

@@ -148,9 +148,6 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 	if cfg.Image != nil {
 		config.Image = *cfg.Image
 	}
-	if cfg.Model != nil {
-		config.Model = *cfg.Model
-	}
 	if cfg.Predict != nil {
 		config.Predict = *cfg.Predict
 	}

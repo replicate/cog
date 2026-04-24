@@ -14,7 +14,6 @@ import (
 type configFile struct {
 	Build       *buildFile       `json:"build,omitempty" yaml:"build,omitempty"`
 	Image       *string          `json:"image,omitempty" yaml:"image,omitempty"`
-	Model       *string          `json:"model,omitempty" yaml:"model,omitempty"`
 	Predict     *string          `json:"predict,omitempty" yaml:"predict,omitempty"`
 	Train       *string          `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *concurrencyFile `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`

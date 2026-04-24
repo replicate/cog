@@ -205,11 +205,6 @@
         "pattern": "^[A-Za-z_][A-Za-z0-9_]*=.*$"
       }
     },
-    "model": {
-      "$id": "#/properties/model",
-      "type": "string",
-      "description": "The registry namespace for this model. Used to derive registry paths for images and weights."
-    },
     "weights": {
       "$id": "#/properties/weights",
       "type": [
@@ -224,7 +219,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "A unique identifier for this weight entry. Maps to <model>/weights/<name> in the registry.",
+            "description": "A unique identifier for this weight entry. Maps to <image>/weights/<name> in the registry.",
             "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$"
           },
           "target": {

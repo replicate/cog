@@ -77,7 +77,7 @@ stderr 'Pulling alpha'
 build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
-model: test/pull-model
+image: test/pull-model
 weights:
   - name: alpha
     target: /src/weights/alpha

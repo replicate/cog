@@ -459,7 +459,7 @@ func validateConcurrency(cfg *configFile, result *ValidationResult) {
 
 // weightNameRegex matches OCI-safe path components: lowercase alphanumeric,
 // separated by hyphens, dots, or underscores. Weight names become registry
-// path components (<model>/weights/<name>), so they must follow OCI rules.
+// path components (<image>/weights/<name>), so they must follow OCI rules.
 var weightNameRegex = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
 
 // validateWeights validates the weights stanza.
@@ -468,11 +468,11 @@ func validateWeights(cfg *configFile, result *ValidationResult) {
 		return
 	}
 
-	// Weights require a model field.
-	if cfg.Model == nil || *cfg.Model == "" {
+	// Weights require an image field.
+	if cfg.Image == nil || *cfg.Image == "" {
 		result.AddError(&ValidationError{
-			Field:   "model",
-			Message: "model is required when weights are configured",
+			Field:   "image",
+			Message: "image is required when weights are configured",
 		})
 	}
 

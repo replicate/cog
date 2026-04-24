@@ -679,7 +679,7 @@ func TestAbsolutePathInPythonRequirements(t *testing.T) {
 func TestWeightsWithSourceYAML(t *testing.T) {
 	yamlString := `build:
   python_version: "3.12"
-model: "registry.example.com/acme/my-model"
+image: "registry.example.com/acme/my-model"
 predict: "predict.py:Predictor"
 
 weights:
@@ -697,7 +697,7 @@ weights:
 	config, err := FromYAML([]byte(yamlString))
 	require.NoError(t, err)
 	require.Len(t, config.Weights, 2)
-	require.Equal(t, "registry.example.com/acme/my-model", config.Model)
+	require.Equal(t, "registry.example.com/acme/my-model", config.Image)
 
 	require.Equal(t, "model-v1", config.Weights[0].Name)
 	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
@@ -716,7 +716,7 @@ weights:
 func TestWeightsWithoutSourceYAML(t *testing.T) {
 	yamlString := `build:
   python_version: "3.12"
-model: "registry.example.com/acme/my-model"
+image: "registry.example.com/acme/my-model"
 predict: "predict.py:Predictor"
 
 weights:
@@ -739,7 +739,7 @@ func TestWeightsWithSourceJSON(t *testing.T) {
 	"build": {
 		"python_version": "3.12"
 	},
-	"model": "registry.example.com/acme/my-model",
+	"image": "registry.example.com/acme/my-model",
 	"predict": "predict.py:Predictor",
 	"weights": [
 		{
@@ -764,7 +764,7 @@ func TestWeightsWithSourceJSON(t *testing.T) {
 	err := json.Unmarshal([]byte(jsonString), &config)
 	require.NoError(t, err)
 	require.Len(t, config.Weights, 2)
-	require.Equal(t, "registry.example.com/acme/my-model", config.Model)
+	require.Equal(t, "registry.example.com/acme/my-model", config.Image)
 
 	require.Equal(t, "model-v1", config.Weights[0].Name)
 	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)

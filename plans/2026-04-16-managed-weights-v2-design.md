@@ -1,5 +1,7 @@
 # Managed Weights v2 Design
 
+> **Update (2026-04-24):** The separate `model` field described below was never implemented. During implementation we collapsed it back into `image`, which now serves as the single registry namespace for bundles, weights, and the local Docker tag. Read `<model>` in this doc as `<image>`. The override hierarchy (`COG_MODEL` env var, CLI flag, etc.) was dropped with it.
+
 Iteration on the v0 prototype based on real-world testing with z-image-turbo, kimi-k2.5, and other models. Addresses format limitations, broken local dev workflow, and UX friction from the first pass.
 
 ## Context
