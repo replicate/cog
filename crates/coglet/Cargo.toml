@@ -43,7 +43,7 @@ thiserror.workspace = true
 anyhow.workspace = true
 
 # Input validation
-jsonschema = "0.29"
+jsonschema = "0.46"
 
 # Concurrent collections
 dashmap = "6"
