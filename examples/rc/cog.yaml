@@ -1,0 +1,9 @@
+build:
+  python_version: "3.14"
+  python_requirements: requirements.txt
+
+  # Pin to the 0.17.0 RC SDK. Remove this line to use the default
+  # SDK version bundled with your cog CLI.
+  sdk_version: "0.17.0rc2"
+
+predict: "predict.py:Predictor"
