@@ -5,7 +5,7 @@ status: todo
 type: task
 priority: high
 created_at: 2026-04-22T20:22:18Z
-updated_at: 2026-04-22T20:38:33Z
+updated_at: 2026-04-27T19:01:48Z
 parent: cog-66gt
 blocked_by:
     - cog-n2w1
@@ -168,3 +168,54 @@ Revised per-layer execute flow (final):
 No sidecar writes. No per-layer membership recording. Lockfile's `Files[]` remains the source of truth for layer membership.
 
 Simpler pending state: just the plan + per-layer state machine + resulting blob digest.
+
+
+
+## Update 2026-04-27: scope narrowed by cog-i12u
+
+cog-i12u (Warm local WeightStore during cog weights import) supersedes the parts of this bean that handled WeightStore population, the `.cog/weights-cache/` removal, and the streaming-tar-to-registry shape. Specifically subsumed:
+
+- "Import populates WeightStore during packing" — landed in cog-i12u.
+- "Remove `.cog/weights-cache/` code paths entirely" — landed in cog-i12u.
+- "Replace persistent tar scratch with streaming `v1.Layer` (tarball.LayerFromOpener) reading from WeightStore" — landed in cog-i12u (both for the digest-only path via `io.Discard` and the push path via streaming opener).
+- "PutFile each member file into WeightStore (streaming source → hash-verify → files/sha256/<digest>)" — landed in cog-i12u.
+
+The lockfile gained an `envelopeFormat` digest in cog-i12u, which provides a coarser cache-bust mechanism than per-layer pending state. Combined with `BlobExists`-gated push, the "no-op import is fast" property is achieved without per-layer resumability.
+
+### What's left for this bean
+
+The remaining scope is purely about resumable imports for disk-constrained or interruption-prone scenarios:
+
+- Plan/execute phase split (planner writes pending state; executor iterates)
+- Pending state file (cog-4rmi prerequisite)
+- Per-layer state machine: planned → packing → pushing → pushed
+- Resumption from pending state (skip re-planning if compatible, discard + re-plan if drifted)
+- `--purge-after` flag for CI use cases (delete WeightStore files for the just-imported weight after push)
+- `--dry-run` (plan-only, prints plan, writes pending state, exits)
+
+### Status
+
+Marking with a note rather than scrapping: the resumability story is genuinely valuable for very large weights (Kimi K2.5–class, ~600GB) on disk-constrained machines. But:
+
+- v2 (BuildKit + DockerStore) has its own resumability story via cache mounts and content-addressed exec, which would obviate this bean.
+- For the v1 lifecycle, no production users today need resumable imports.
+- The cog-i12u envelopeFormat + BlobExists shape covers the common "I ran import, it pushed half my layers, my laptop died" recovery — re-running import streams already-pushed layers' digests via local recompute and skips push for them.
+
+Recommend: revisit at v2 plan time. If v1 ships without users hitting Kimi-K2.5–class problems, scrap. If a real user hits it, do this work.
+
+### Updated todo
+
+- [ ] (subsumed by cog-i12u) ~~Refactor `WeightBuilder` into `Planner` + `Executor`~~ — partial, comparison-first flow already split planning from layer-digest computation
+- [ ] Planner writes pending state on completion
+- [ ] Executor reads pending state, processes layers in bounded pool
+- [ ] Per-layer state transitions write pending state atomically
+- [ ] Manifest phase gated on all `pushed`
+- [ ] Lockfile promotion deletes pending state on success
+- [ ] Resumption path: detect compatible pending state, skip re-planning
+- [ ] Resumption path: detect incompatible pending state, discard + re-plan
+- [ ] (subsumed by cog-i12u) ~~Remove `.cog/weights-cache/` code paths entirely~~
+- [ ] (subsumed by cog-i12u) ~~Replace with streaming `v1.Layer` (tarball.LayerFromOpener) that reads from WeightStore~~
+- [ ] `--dry-run` flag on `cog weights import`
+- [ ] `--purge-after` flag (delete WeightStore files for this weight after push)
+- [ ] Update `pkg/cli/weights.go` import command
+- [ ] Tests: plan → execute → manifest path, resumption, source drift during execute, `--dry-run`

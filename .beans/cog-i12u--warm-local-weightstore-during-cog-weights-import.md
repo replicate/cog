@@ -1,11 +1,11 @@
 ---
 # cog-i12u
 title: Warm local WeightStore during cog weights import
-status: in-progress
+status: completed
 type: task
 priority: high
 created_at: 2026-04-27T19:01:19Z
-updated_at: 2026-04-27T20:00:37Z
+updated_at: 2026-04-27T21:40:36Z
 parent: cog-66gt
 ---
 

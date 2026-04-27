@@ -1,11 +1,11 @@
 ---
 # cog-vovc
 title: Remove redundant model field from cog.yaml config
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-04-24T06:05:17Z
-updated_at: 2026-04-24T20:15:16Z
+updated_at: 2026-04-24T20:41:59Z
 ---
 
 The `model` config field is redundant with `image` and should be removed.

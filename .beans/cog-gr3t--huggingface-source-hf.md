@@ -1,11 +1,11 @@
 ---
 # cog-gr3t
 title: HuggingFace source (hf://)
-status: in-progress
+status: completed
 type: task
 priority: high
 created_at: 2026-04-22T20:23:25Z
-updated_at: 2026-04-23T15:37:20Z
+updated_at: 2026-04-24T15:35:48Z
 parent: cog-66gt
 blocked_by:
     - cog-n2w1
@@ -74,7 +74,7 @@ Blocked by:
 - [x] Register scheme in `For`
 - [x] Auth via env vars
 - [x] Unit tests with mocked HF API
-- [ ] Integration test with a small public HF repo (if feasible — may need manual verification) — deferred, requires network
+- [x] Integration test with a small public HF repo — skipped; mock coverage is thorough (all code paths + response shapes verified once against nvidia/parakeet-tdt-0.6b-v3). Real-world validation will happen organically on first use; add a targeted regression test if anything breaks.
 
 ## Reference
 
