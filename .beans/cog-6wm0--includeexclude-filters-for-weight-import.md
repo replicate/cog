@@ -1,11 +1,11 @@
 ---
 # cog-6wm0
 title: Include/exclude filters for weight import
-status: todo
+status: in-progress
 type: task
 priority: high
 created_at: 2026-04-17T19:27:37Z
-updated_at: 2026-04-23T21:29:58Z
+updated_at: 2026-04-27T22:07:26Z
 parent: cog-66gt
 ---
 
@@ -121,15 +121,15 @@ direction and rarely trips anyone up in practice.
 
 ## Todo
 
-- [ ] Write filterInventory + table-driven tests
-- [ ] Add Include/Exclude to WeightSpec
-- [ ] Thread patterns from config through Source.ArtifactSpecs → WeightSpec → builder
-- [ ] Apply filter in weight_builder.Build after Inventory, before pack
-- [ ] Record applied patterns in WeightLockSource (replace hardcoded []string{})
-- [ ] Config-time validation: reject empty/!-prefixed patterns, trim whitespace
-- [ ] Zero-survivor error with actionable message
-- [ ] Docs: cog.yaml reference section on include/exclude semantics + HF compatibility note
-- [ ] Integration test: hf:// source with include/exclude producing a smaller, correct weight set
+- [x] Write filterInventory + table-driven tests
+- [x] Add Include/Exclude to WeightSpec (already done by s5fy)
+- [x] Thread patterns from config through Source.ArtifactSpecs → WeightSpec → builder (already done by s5fy)
+- [x] Apply filter in weight_builder.Build after Inventory, before pack
+- [x] Record applied patterns in WeightLockSource (already done by s5fy)
+- [x] Config-time validation: reject empty/!-prefixed patterns, trim whitespace
+- [x] Zero-survivor error with actionable message
+- [x] Docs: cog.yaml reference section on include/exclude semantics + HF compatibility note
+- [x] Integration test: file:// source with include/exclude producing a smaller, correct weight set
 
 ## Dependency on s5fy (2026-04-21)
 
@@ -144,3 +144,23 @@ Original bean asked: "whether we need both include AND exclude, or just exclude 
 **Resolved: both include AND exclude, no negation.**
 
 Reasoning: matches HF's `allow_patterns`/`ignore_patterns`, matches dockerignore's include/exclude pairs, and keeps semantics tractable. Negation (`!` re-include on top of exclude) is a power-user feature with confusing ordering rules; we can add it later if users ask.
+
+
+## Summary of Changes
+
+Implemented include/exclude glob filtering for the weight import pipeline.
+
+**New files:**
+- `pkg/model/weightsource/filter.go` — `FilterInventory` pure function + `ZeroSurvivorsError` type
+- `pkg/model/weightsource/filter_test.go` — 17 table-driven tests
+- `integration-tests/tests/weights_filter.txtar` — end-to-end test with file:// source
+
+**Modified files:**
+- `pkg/model/weight_builder.go` — Apply filter between Inventory and ingress
+- `pkg/model/artifact_weight.go` — Whitespace trimming in `sortedClone`
+- `pkg/config/validate.go` — `validateWeightPatterns`: reject empty, `!`-prefixed, and backslash patterns
+- `pkg/config/validate_test.go` — 7 new test cases for pattern validation
+- `docs/yaml.md` — Added `weights` section with include/exclude semantics and HF compatibility note
+- `docs/llms.txt` — Regenerated
+
+**Code review caught:** in-place mutation of caller slice in validation, missing backslash rejection. Fixed.

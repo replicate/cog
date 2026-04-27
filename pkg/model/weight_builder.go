@@ -17,6 +17,41 @@ import (
 	"github.com/replicate/cog/pkg/weights/store"
 )
 
+// resolvedInventory holds the results of walking a weight source and
+// applying include/exclude filters. Both PlanImport and Build share
+// this step; caching the result avoids re-walking the source when the
+// CLI plans first and then builds.
+type resolvedInventory struct {
+	source   weightsource.Source
+	full     weightsource.Inventory // before filtering (carries fingerprint)
+	filtered weightsource.Inventory // after include/exclude
+}
+
+// resolveInventory walks the source, applies filters, and returns the
+// resolved inventory. This is the shared preamble for PlanImport and Build.
+func (b *WeightBuilder) resolveInventory(ctx context.Context, ws *WeightSpec) (*resolvedInventory, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	src, err := weightsource.For(ws.URI, b.projectDir())
+	if err != nil {
+		return nil, err
+	}
+
+	full, err := src.Inventory(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("inventory weight %q: %w", ws.Name(), err)
+	}
+
+	filtered, err := weightsource.FilterInventory(full, ws.Include, ws.Exclude)
+	if err != nil {
+		return nil, fmt.Errorf("filter weight %q: %w", ws.Name(), err)
+	}
+
+	return &resolvedInventory{source: src, full: full, filtered: filtered}, nil
+}
+
 // WeightBuilder is the weight factory: given a WeightSpec (source URI +
 // target), it ingresses the source files into the local
 // content-addressed store, plans tar layers, derives layer digests
@@ -61,6 +96,16 @@ func NewWeightBuilder(source *Source, st store.Store, lockPath string) *WeightBu
 // for handing the returned artifact to the pusher (which checks
 // per-layer with BlobExists before uploading).
 func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact, error) {
+	return b.buildWithResolved(ctx, spec, nil)
+}
+
+// BuildFromPlan is like Build but reuses a pre-computed inventory from
+// PlanImport, avoiding a second walk/hash of the source.
+func (b *WeightBuilder) BuildFromPlan(ctx context.Context, spec ArtifactSpec, plan *WeightImportPlan) (Artifact, error) {
+	return b.buildWithResolved(ctx, spec, plan.Resolved)
+}
+
+func (b *WeightBuilder) buildWithResolved(ctx context.Context, spec ArtifactSpec, cached *resolvedInventory) (Artifact, error) {
 	ws, ok := spec.(*WeightSpec)
 	if !ok {
 		return nil, fmt.Errorf("weight builder: expected *WeightSpec, got %T", spec)
@@ -73,22 +118,19 @@ func (b *WeightBuilder) Build(ctx context.Context, spec ArtifactSpec) (Artifact,
 		return nil, err
 	}
 
-	projectDir := b.projectDir()
-
-	src, err := weightsource.For(ws.URI, projectDir)
-	if err != nil {
-		return nil, err
+	// Step 1: resolve inventory (reuse cached if available).
+	resolved := cached
+	if resolved == nil {
+		var err error
+		resolved, err = b.resolveInventory(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
 	}
+	inv := resolved.filtered
 
-	// Step 1+2: inventory + ingress. Always. Import is a source read
-	// by definition; the store gets warmed as a side effect, which is
-	// the whole point of this code.
-	inv, err := src.Inventory(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("inventory weight %q: %w", ws.Name(), err)
-	}
-
-	if err := ingressFromInventory(ctx, src, b.store, inv); err != nil {
+	// Step 2: ingress the filtered files into the local store.
+	if err := ingressFromInventory(ctx, resolved.source, b.store, inv); err != nil {
 		return nil, fmt.Errorf("populate store for weight %q: %w", ws.Name(), err)
 	}
 

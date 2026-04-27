@@ -506,6 +506,12 @@ func validateWeights(cfg *configFile, result *ValidationResult) {
 			seenNames[w.Name] = true
 		}
 
+		// Validate include/exclude patterns if source is present.
+		if w.Source != nil {
+			validateWeightPatterns(idx+".source.include", w.Source.Include, result)
+			validateWeightPatterns(idx+".source.exclude", w.Source.Exclude, result)
+		}
+
 		// Target is required, must be absolute, and must be unique.
 		if w.Target == "" {
 			result.AddError(&ValidationError{
@@ -545,6 +551,39 @@ func validateWeights(cfg *configFile, result *ValidationResult) {
 				}
 				cleanedTargets = append(cleanedTargets, cleaned)
 			}
+		}
+	}
+}
+
+// validateWeightPatterns validates a list of include or exclude glob patterns.
+// It rejects empty-string patterns (including whitespace-only), !-prefixed
+// patterns (gitignore negation), and patterns containing backslashes.
+// Patterns are checked after trimming whitespace, but the input slice is
+// not mutated — the caller must normalize patterns separately.
+func validateWeightPatterns(field string, patterns []string, result *ValidationResult) {
+	for i, raw := range patterns {
+		p := strings.TrimSpace(raw)
+
+		if p == "" {
+			result.AddError(&ValidationError{
+				Field:   fmt.Sprintf("%s[%d]", field, i),
+				Message: "pattern must not be empty",
+			})
+			continue
+		}
+		if strings.HasPrefix(p, "!") {
+			result.AddError(&ValidationError{
+				Field:   fmt.Sprintf("%s[%d]", field, i),
+				Value:   p,
+				Message: "negation patterns (starting with '!') are not supported",
+			})
+		}
+		if strings.Contains(p, `\`) {
+			result.AddError(&ValidationError{
+				Field:   fmt.Sprintf("%s[%d]", field, i),
+				Value:   p,
+				Message: "patterns must use forward slashes, not backslashes",
+			})
 		}
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
+	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
@@ -73,13 +73,19 @@ func WeightSpecFromLock(e lockfile.WeightLockEntry) *WeightSpec {
 	}
 }
 
-// sortedClone returns a sorted copy of s, or nil if s is nil.
+// sortedClone returns a sorted copy of s with whitespace-trimmed elements,
+// or nil if s is nil. Trimming normalizes patterns that may have stray
+// whitespace from YAML parsing; sorting removes order-dependence so
+// reordering patterns in cog.yaml does not trigger a rebuild.
 func sortedClone(s []string) []string {
 	if s == nil {
 		return nil
 	}
-	out := slices.Clone(s)
-	sort.Strings(out)
+	out := make([]string, len(s))
+	for i, v := range s {
+		out[i] = strings.TrimSpace(v)
+	}
+	slices.Sort(out)
 	return out
 }
 

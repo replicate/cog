@@ -313,6 +313,83 @@ func TestValidateWeights(t *testing.T) {
 				{Name: "lora", Target: "/src/weights2"},
 			},
 		},
+		{
+			name:  "valid include and exclude patterns",
+			image: image,
+			weights: []weightFile{
+				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+					URI:     "hf://acme/model",
+					Include: []string{"*.safetensors", "*.json"},
+					Exclude: []string{"*.onnx", "*.bin"},
+				}},
+			},
+		},
+		{
+			name:  "empty string in include pattern",
+			image: image,
+			weights: []weightFile{
+				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+					URI:     "hf://acme/model",
+					Include: []string{"*.safetensors", ""},
+				}},
+			},
+			wantErr: "pattern must not be empty",
+		},
+		{
+			name:  "empty string in exclude pattern",
+			image: image,
+			weights: []weightFile{
+				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+					URI:     "hf://acme/model",
+					Exclude: []string{""},
+				}},
+			},
+			wantErr: "pattern must not be empty",
+		},
+		{
+			name:  "negation pattern in include",
+			image: image,
+			weights: []weightFile{
+				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+					URI:     "hf://acme/model",
+					Include: []string{"!*.bin"},
+				}},
+			},
+			wantErr: "negation patterns",
+		},
+		{
+			name:  "negation pattern in exclude",
+			image: image,
+			weights: []weightFile{
+				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+					URI:     "hf://acme/model",
+					Exclude: []string{"!*.safetensors"},
+				}},
+			},
+			wantErr: "negation patterns",
+		},
+		{
+			name:  "whitespace-only pattern rejected after trim",
+			image: image,
+			weights: []weightFile{
+				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+					URI:     "hf://acme/model",
+					Include: []string{"  "},
+				}},
+			},
+			wantErr: "pattern must not be empty",
+		},
+		{
+			name:  "backslash in pattern rejected",
+			image: image,
+			weights: []weightFile{
+				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+					URI:     "hf://acme/model",
+					Exclude: []string{`onnx\*.bin`},
+				}},
+			},
+			wantErr: "must use forward slashes",
+		},
 	}
 
 	for _, tt := range tests {
