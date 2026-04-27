@@ -23,6 +23,7 @@ import (
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/registry_testhelpers"
 	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
 // TestWeightPipeline_EndToEnd exercises Pack → WeightPusher against a
@@ -65,21 +66,24 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 
 	// Pack directly with a small bundle threshold so we don't need to
 	// write 64+ MiB of fixture content to cross the default cutoff.
-	packDir := t.TempDir()
+	st, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
 	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
 	require.NoError(t, err, "source")
 	inv, err := src.Inventory(ctx)
 	require.NoError(t, err, "inventory")
-	pr, err := newPacker(&packOptions{
-		BundleFileMax: 1024,
-		TempDir:       packDir,
-	}).pack(ctx, src, inv)
-	require.NoError(t, err, "pack")
-	require.Len(t, pr.Layers, 3, "want 1 bundle + 2 single-file layers")
+	require.NoError(t, ingressFromInventory(ctx, src, st, inv))
+
+	pkr := newPacker(&packOptions{BundleFileMax: 1024})
+	pl := pkr.planLayers(inv)
+	layers, err := pkr.computeLayerDigests(ctx, st, pl)
+	require.NoError(t, err, "computeLayerDigests")
+	require.Len(t, layers, 3, "want 1 bundle + 2 single-file layers")
+	files := packedFilesFromPlan(layers)
 
 	// Build a lock entry and artifact (manifest + descriptor + digest backfill).
-	entry := newWeightLockEntry("my-model", "/src/weights", lockfile.WeightLockSource{}, pr.Files, pr.Layers)
-	artifact, err := buildWeightArtifact(&entry, pr.Layers)
+	entry := newWeightLockEntry("my-model", "/src/weights", lockfile.WeightLockSource{}, files, layers)
+	artifact, err := buildWeightArtifact(&entry, layers, st)
 	require.NoError(t, err)
 	setDigest := entry.SetDigest
 

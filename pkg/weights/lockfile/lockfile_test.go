@@ -257,6 +257,39 @@ func TestWeightsLock_Upsert(t *testing.T) {
 	})
 }
 
+func TestWeightsLock_EnvelopeFormat_RoundTrip(t *testing.T) {
+	// EnvelopeFormat is a top-level lockfile field, persisted across
+	// Save/Load so a subsequent import can detect packer-config
+	// drift across cog versions.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "weights.lock")
+
+	want := "sha256:abcd1234"
+	lock := &WeightsLock{
+		Version:        Version,
+		EnvelopeFormat: want,
+		Weights:        []WeightLockEntry{sampleEntry()},
+	}
+	require.NoError(t, lock.Save(path))
+
+	loaded, err := LoadWeightsLock(path)
+	require.NoError(t, err)
+	assert.Equal(t, want, loaded.EnvelopeFormat,
+		"EnvelopeFormat must survive round-trip through disk")
+}
+
+func TestWeightsLock_EnvelopeFormat_OmittedReadsAsEmpty(t *testing.T) {
+	// Older lockfiles written before the EnvelopeFormat field
+	// existed simply lack the JSON key. This must parse and produce
+	// an empty string — the "force a recompute on next import"
+	// signal — not error out.
+	data := `{"version": 1, "weights": []}`
+	lock, err := ParseWeightsLock([]byte(data))
+	require.NoError(t, err)
+	assert.Empty(t, lock.EnvelopeFormat,
+		"missing envelopeFormat must parse as empty string")
+}
+
 func TestWeightsLock_RoundTrip(t *testing.T) {
 	original := &WeightsLock{
 		Version: Version,

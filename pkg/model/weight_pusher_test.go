@@ -18,34 +18,40 @@ import (
 	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
 // packTestLayers packs a directory containing a single file into tar
 // layers and returns the layer results. Used as a fixture builder so tests
 // don't each reimplement packing.
-func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir string, layers []packedLayer) {
+func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir string, layers []packedLayer, st store.Store) {
 	t.Helper()
 	sourceDir = t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, filename), content, 0o644))
 
-	cacheDir := filepath.Join(t.TempDir(), "cache")
-	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	st, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
 
 	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
 	require.NoError(t, err)
 	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	pr, err := newPacker(&packOptions{TempDir: cacheDir}).pack(t.Context(), src, inv)
+	require.NoError(t, ingressFromInventory(t.Context(), src, st, inv))
+
+	pkr := newPacker(nil)
+	pl := pkr.planLayers(inv)
+	require.NotEmpty(t, pl.Layers)
+	layers, err = pkr.computeLayerDigests(t.Context(), st, pl)
 	require.NoError(t, err)
-	require.NotEmpty(t, pr.Layers)
-	return sourceDir, pr.Layers
+	require.NotEmpty(t, layers)
+	return sourceDir, layers, st
 }
 
 // newTestWeightArtifact builds a WeightArtifact with packed layers and a
 // fresh manifest descriptor, suitable for push tests.
 func newTestWeightArtifact(t *testing.T, name, target string) *WeightArtifact {
 	t.Helper()
-	_, layers := packTestLayers(t, "config.json", []byte(`{"hidden_size": 768}`))
+	_, layers, st := packTestLayers(t, "config.json", []byte(`{"hidden_size": 768}`))
 
 	// Build a lock entry from the pack result.
 	files := []packedFile{{
@@ -55,7 +61,7 @@ func newTestWeightArtifact(t *testing.T, name, target string) *WeightArtifact {
 		LayerDigest: layers[0].Digest.String(),
 	}}
 	entry := newWeightLockEntry(name, target, lockfile.WeightLockSource{}, files, layers)
-	artifact, err := buildWeightArtifact(&entry, layers)
+	artifact, err := buildWeightArtifact(&entry, layers, st)
 	require.NoError(t, err)
 	return artifact
 }
@@ -349,21 +355,24 @@ func TestWeightPusher_Push_HonoursConcurrencyLimit(t *testing.T) {
 		))
 	}
 
-	cacheDir := t.TempDir()
+	st, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
 	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
 	require.NoError(t, err)
 	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	pr, err := newPacker(&packOptions{
+	require.NoError(t, ingressFromInventory(t.Context(), src, st, inv))
+	pkr := newPacker(&packOptions{
 		BundleFileMax: 1, // every file becomes its own layer
-		TempDir:       cacheDir,
-	}).pack(t.Context(), src, inv)
+	})
+	pl := pkr.planLayers(inv)
+	layers, err := pkr.computeLayerDigests(t.Context(), st, pl)
 	require.NoError(t, err)
-	layers := pr.Layers
+	files := packedFilesFromPlan(layers)
 	require.GreaterOrEqual(t, len(layers), n, "expected a layer per file")
 
-	entry := newWeightLockEntry("model", "/src/weights", lockfile.WeightLockSource{}, pr.Files, pr.Layers)
-	artifact, err := buildWeightArtifact(&entry, layers)
+	entry := newWeightLockEntry("model", "/src/weights", lockfile.WeightLockSource{}, files, layers)
+	artifact, err := buildWeightArtifact(&entry, layers, st)
 	require.NoError(t, err)
 
 	var inFlight, maxInFlight atomic.Int32

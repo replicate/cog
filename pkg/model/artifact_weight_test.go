@@ -195,7 +195,6 @@ func TestWeightArtifact_ImplementsArtifact(t *testing.T) {
 	}
 	layers := []packedLayer{
 		{
-			TarPath:   "/tmp/layer-0.tar.gz",
 			Digest:    v1.Hash{Algorithm: "sha256", Hex: "aaa"},
 			Size:      15000,
 			MediaType: mediaTypeOCILayerTarGzip,
@@ -218,7 +217,6 @@ func TestWeightArtifact_Fields(t *testing.T) {
 	}
 	layers := []packedLayer{
 		{
-			TarPath:   "/tmp/layer-0.tar",
 			Digest:    v1.Hash{Algorithm: "sha256", Hex: "bbb"},
 			Size:      2048,
 			MediaType: mediaTypeOCILayerTar,

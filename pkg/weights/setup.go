@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/replicate/cog/pkg/model"
-	"github.com/replicate/cog/pkg/paths"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weights/store"
@@ -26,11 +25,7 @@ import (
 // Missing lockfiles error out with an actionable message pointing at
 // `cog weights import` when the model actually has weights.
 func NewFromSource(src *model.Source, repo string) (*Manager, error) {
-	storeDir, err := paths.WeightsStoreDir()
-	if err != nil {
-		return nil, fmt.Errorf("resolve weights cache dir: %w", err)
-	}
-	fileStore, err := store.NewFileStore(storeDir)
+	fileStore, err := store.OpenDefault()
 	if err != nil {
 		return nil, fmt.Errorf("open weights cache: %w", err)
 	}

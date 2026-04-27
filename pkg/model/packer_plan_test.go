@@ -177,7 +177,7 @@ func TestPacker_Plan_Deterministic(t *testing.T) {
 	assert.Equal(t, plan1, plan2)
 }
 
-func TestPacker_Execute_RejectsEmptyPlan(t *testing.T) {
-	_, err := newPacker(nil).execute(t.Context(), nil, plan{})
+func TestPacker_ComputeLayerDigests_RejectsEmptyPlan(t *testing.T) {
+	_, err := newPacker(nil).computeLayerDigests(t.Context(), nil, plan{})
 	assert.ErrorContains(t, err, "no layers in plan")
 }

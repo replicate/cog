@@ -16,27 +16,34 @@ import (
 	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
-// bundleWeightFixture creates a WeightArtifact with real packed layers and a
-// valid manifest descriptor, ready to hand to BundlePusher.Push. The
-// underlying tar files are cleaned up by t.TempDir().
+// bundleWeightFixture creates a WeightArtifact with real packed
+// layers and a valid manifest descriptor, ready to hand to
+// BundlePusher.Push.
 func bundleWeightFixture(t *testing.T, name, target string) *WeightArtifact {
 	t.Helper()
 	sourceDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "config.json"),
 		[]byte(`{"name":"`+name+`"}`), 0o644))
 
-	cacheDir := t.TempDir()
+	st, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
 	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
 	require.NoError(t, err)
 	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	pr, err := newPacker(&packOptions{TempDir: cacheDir}).pack(t.Context(), src, inv)
-	require.NoError(t, err)
+	require.NoError(t, ingressFromInventory(t.Context(), src, st, inv))
 
-	entry := newWeightLockEntry(name, target, lockfile.WeightLockSource{}, pr.Files, pr.Layers)
-	artifact, err := buildWeightArtifact(&entry, pr.Layers)
+	pkr := newPacker(nil)
+	pl := pkr.planLayers(inv)
+	layers, err := pkr.computeLayerDigests(t.Context(), st, pl)
+	require.NoError(t, err)
+	files := packedFilesFromPlan(layers)
+
+	entry := newWeightLockEntry(name, target, lockfile.WeightLockSource{}, files, layers)
+	artifact, err := buildWeightArtifact(&entry, layers, st)
 	require.NoError(t, err)
 	return artifact
 }

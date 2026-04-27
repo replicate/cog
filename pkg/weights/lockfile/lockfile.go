@@ -37,8 +37,24 @@ const Version = 1
 // Regenerating the lockfile from the same source produces byte-identical
 // output, which is what makes weights.lock safe to check into git.
 type WeightsLock struct {
-	Version int               `json:"version"`
-	Weights []WeightLockEntry `json:"weights"`
+	Version int `json:"version"`
+	// EnvelopeFormat is the sha256 digest (with "sha256:" prefix)
+	// identifying the packer configuration that produced — or, on
+	// the next import, will produce — the recorded layer digests.
+	//
+	// Cog stamps the current envelope digest into the lockfile on
+	// every rewrite. On a subsequent import a mismatch (including a
+	// missing/empty value, treated as "no match") forces the builder
+	// to recompute layer digests from the local content store
+	// instead of trusting the cached entry. See
+	// pkg/model/envelope.go for what feeds into the digest.
+	//
+	// Empty when the lockfile has never been written by a
+	// version of cog that knows about this field — that empty
+	// value compares unequal to any current envelope digest, which
+	// is exactly the "force a recompute" behavior we want.
+	EnvelopeFormat string            `json:"envelopeFormat"`
+	Weights        []WeightLockEntry `json:"weights"`
 }
 
 // WeightLockEntry is one declared weight in the lockfile.

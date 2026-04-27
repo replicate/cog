@@ -18,12 +18,23 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
 // Default packing thresholds per spec §1.2.
 const (
 	defaultBundleFileMax = 64 * 1024 * 1024  // 64 MB
 	defaultBundleSizeMax = 256 * 1024 * 1024 // 256 MB
+)
+
+// gzip compression levels. Bundles use BestCompression (small
+// text-heavy files reward extra CPU); large compressible files use
+// DefaultCompression (marginal savings rarely justify the cost).
+// Named constants so envelope.go references them by symbol and
+// changes reach the envelope digest automatically.
+const (
+	gzipLevelBundle = gzip.BestCompression
+	gzipLevelLarge  = gzip.DefaultCompression
 )
 
 // OCI layer media types per spec §2.1.
@@ -54,9 +65,6 @@ type packOptions struct {
 	// BundleSizeMax is the maximum cumulative size of a single bundle tar.
 	// Defaults to defaultBundleSizeMax (256 MB).
 	BundleSizeMax int64
-
-	// TempDir is the directory for writing tar files. Defaults to os.TempDir().
-	TempDir string
 }
 
 func (o packOptions) bundleFileMax() int64 {
@@ -73,39 +81,41 @@ func (o packOptions) bundleSizeMax() int64 {
 	return defaultBundleSizeMax
 }
 
-func (o packOptions) tempDir() string {
-	if o.TempDir != "" {
-		return o.TempDir
-	}
-	return os.TempDir()
-}
-
 // isGzip reports whether a layer media type is a gzip-compressed tar.
 func isGzip(mt types.MediaType) bool {
 	return mt == mediaTypeOCILayerTarGzip
 }
 
-// packedLayer describes a packed tar layer on disk, ready for OCI
-// manifest construction. Per spec §2.5 layer descriptors carry only
-// the uncompressed-size annotation; file→layer mapping lives on
-// packedFile (projected into the config blob).
+// packedLayer describes one packed tar layer: enough metadata to write
+// an OCI manifest descriptor, plus the layerPlan needed to re-stream
+// the layer bytes on demand from a content-addressed store.
+//
+// There is no on-disk tar file. Layer bytes are produced by streaming
+// from the store every time something asks for them — once during
+// digest computation, again during push. Determinism rests on the
+// store contents being immutable and the tar/compressor framing being
+// byte-stable for a given (plan, store) pair.
 type packedLayer struct {
-	// TarPath is the path to the tar file on disk.
-	TarPath string
-	// Digest is the SHA256 digest of the tar file (the OCI blob digest).
+	// Plan is the layerPlan that produced this layer's bytes. Held so
+	// fileLayer.Compressed() can reconstruct the bytes by re-running
+	// the same packing pipeline against the store.
+	Plan layerPlan
+	// Digest is the SHA256 digest of the tar bytes (the OCI blob digest).
 	Digest v1.Hash
-	// Size is the size of the tar file on disk in bytes.
+	// Size is the size of the tar bytes in bytes (post-compression for
+	// gzip layers).
 	Size int64
-	// UncompressedSize is the total uncompressed size of the files in this layer.
+	// UncompressedSize is the total uncompressed size of the files in
+	// this layer.
 	UncompressedSize int64
 	// MediaType is the OCI media type for this layer.
 	MediaType types.MediaType
 }
 
-// packResult is the output of packer.execute: tar layers and per-file
-// content digests.
+// packResult is the output of packer.execute: layer descriptors and
+// per-file content digests.
 type packResult struct {
-	// Layers are the packed tar layers on disk.
+	// Layers are the packed layer descriptors.
 	Layers []packedLayer
 	// Files are per-file content digests, sorted by path.
 	Files []packedFile
@@ -147,18 +157,20 @@ type layerPlan struct {
 	MediaType types.MediaType
 }
 
-// packer builds tar layers from a weight source inventory.
+// packer plans and executes the build of tar layers from a weight
+// source inventory.
 //
-// packer separates planning (pure, plan method) from execution (I/O,
-// execute method). Callers that want the full build just call pack;
-// callers that want to inspect or cache-probe the layer layout call
-// plan first, then execute with the same plan.
+// Planning (planLayers) is pure and inspectable. Execution streams
+// file bytes from a content-addressed store through the tar+gzip
+// pipeline to compute layer digests; no on-disk scratch is written.
+// The same plan can later be replayed against the same store to
+// reproduce the layer bytes for push (see fileLayer).
 type packer struct {
 	opts packOptions
 }
 
 // newPacker constructs a packer. A nil opts yields spec-default
-// thresholds and a temp dir rooted at os.TempDir().
+// thresholds.
 func newPacker(opts *packOptions) *packer {
 	var o packOptions
 	if opts != nil {
@@ -239,109 +251,61 @@ func (p *packer) planLayers(inv weightsource.Inventory) plan {
 	return plan{Layers: layers}
 }
 
-// execute builds the tar blobs described by plan, streaming file bytes
-// from src. It writes one tar file per plan layer into p.opts.TempDir
-// (or os.TempDir() if unset) and returns a packResult with per-layer and
-// per-file metadata.
+// computeLayerDigests builds each planned layer in memory by streaming
+// file bytes from store through the tar+gzip pipeline into a sha256
+// hasher and a byte counter. No bytes are written to disk.
 //
-// The packer trusts the inventory digests carried on plan.Layers[i].Files;
-// it does not rehash file bytes while writing. Remote sources that already
-// know their digests avoid a second pass.
+// The store MUST already contain every file referenced by the plan;
+// callers ingressFromInventory before calling this.
 //
-// On error execute removes any tar files it already wrote. Successful
-// layers are owned by the caller, who must delete packedLayer.TarPath.
-func (p *packer) execute(ctx context.Context, src weightsource.Source, pl plan) (pr *packResult, retErr error) {
+// On success returns one packedLayer per layerPlan, with Digest, Size,
+// UncompressedSize, MediaType, and the originating Plan filled in.
+// The Plan field lets callers later reconstruct the layer bytes for
+// push without re-walking the inventory or recomputing digests.
+func (p *packer) computeLayerDigests(ctx context.Context, st store.Store, pl plan) ([]packedLayer, error) {
 	if len(pl.Layers) == 0 {
 		return nil, fmt.Errorf("no layers in plan")
 	}
 
 	results := make([]packedLayer, 0, len(pl.Layers))
-	var packed []packedFile
-
-	defer func() {
-		if retErr != nil {
-			cleanupPackedLayers(results)
-		}
-	}()
-
 	for _, lp := range pl.Layers {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		lr, err := p.buildLayer(ctx, src, lp)
+		lr, err := p.streamLayer(ctx, st, lp, io.Discard)
 		if err != nil {
 			return nil, err
 		}
-		layerDigest := lr.Digest.String()
-		for _, f := range lp.Files {
-			packed = append(packed, packedFile{
-				Path:        f.Path,
-				Size:        f.Size,
-				Digest:      f.Digest,
-				LayerDigest: layerDigest,
-			})
-		}
 		results = append(results, lr)
 	}
-
-	sort.Slice(packed, func(i, j int) bool { return packed[i].Path < packed[j].Path })
-	return &packResult{Layers: results, Files: packed}, nil
+	return results, nil
 }
 
-// pack plans and executes in one call.
-func (p *packer) pack(ctx context.Context, src weightsource.Source, inv weightsource.Inventory) (*packResult, error) {
-	pl := p.planLayers(inv)
-	if len(pl.Layers) == 0 {
-		// Distinguish "empty inventory" from "Execute on zero layers"
-		// so the error reads naturally at this call site.
-		return nil, fmt.Errorf("no files in inventory")
-	}
-	return p.execute(ctx, src, pl)
-}
-
-// buildLayer writes a single planned layer to disk.
-func (p *packer) buildLayer(ctx context.Context, src weightsource.Source, lp layerPlan) (result packedLayer, retErr error) {
+// streamLayer writes the tar bytes for one layer through the
+// tar+(gzip?)+sha256+counter pipeline into sink. Used by both digest
+// computation (sink = io.Discard) and push (sink = registry uploader,
+// via fileLayer.Compressed()).
+//
+// The returned packedLayer carries the layer's Plan so callers that
+// only need to compute the digest can later replay the same stream
+// for push without holding tar bytes in memory.
+func (p *packer) streamLayer(ctx context.Context, st store.Store, lp layerPlan, sink io.Writer) (packedLayer, error) {
 	gzipped := isGzip(lp.MediaType)
 
-	// Tmpfile prefix distinguishes bundles (many files) from single-file
-	// layers when poking around tmpdirs during debugging.
-	prefix := "cog-layer"
-	if len(lp.Files) > 1 {
-		prefix = "cog-bundle"
-	}
-	pattern := prefix + "-*.tar"
-	if gzipped {
-		pattern += ".gz"
-	}
-
-	tmpFile, err := os.CreateTemp(p.opts.tempDir(), pattern)
-	if err != nil {
-		return packedLayer{}, fmt.Errorf("create temp file: %w", err)
-	}
-	tarPath := tmpFile.Name()
-	defer func() {
-		if retErr != nil {
-			tmpFile.Close()    //nolint:errcheck,gosec // best-effort cleanup on error path
-			os.Remove(tarPath) //nolint:errcheck,gosec // best-effort cleanup on error path
-		}
-	}()
-
-	// Writer sandwich: tar → (compressor?) → counter → (tmpFile + hasher).
-	// The counter reports on-disk (compressed) bytes; the hasher feeds
-	// the OCI blob digest.
+	// Writer sandwich: tar → (compressor?) → counter → (sink + hasher).
+	// counter reports on-wire (compressed) bytes; hasher feeds the
+	// OCI blob digest.
 	hasher := sha256.New()
-	counter := &countingWriter{w: io.MultiWriter(tmpFile, hasher)}
+	counter := &countingWriter{w: io.MultiWriter(sink, hasher)}
 
 	var gzw *gzip.Writer
 	var tarSink io.Writer = counter
 	if gzipped {
-		// BestCompression for bundles (small text-heavy files benefit
-		// from tighter gzip); DefaultCompression for large compressible
-		// files where the extra CPU buys little.
-		level := gzip.DefaultCompression
+		level := gzipLevelLarge
 		if len(lp.Files) > 1 {
-			level = gzip.BestCompression
+			level = gzipLevelBundle
 		}
+		var err error
 		gzw, err = gzip.NewWriterLevel(counter, level)
 		if err != nil {
 			return packedLayer{}, fmt.Errorf("create gzip writer: %w", err)
@@ -350,7 +314,7 @@ func (p *packer) buildLayer(ctx context.Context, src weightsource.Source, lp lay
 	}
 
 	tw := tar.NewWriter(tarSink)
-	if err := writeLayer(ctx, src, tw, lp.Files); err != nil {
+	if err := writeLayer(ctx, st, tw, lp.Files); err != nil {
 		return packedLayer{}, err
 	}
 
@@ -362,9 +326,6 @@ func (p *packer) buildLayer(ctx context.Context, src weightsource.Source, lp lay
 			return packedLayer{}, fmt.Errorf("close gzip writer: %w", err)
 		}
 	}
-	if err := tmpFile.Close(); err != nil {
-		return packedLayer{}, fmt.Errorf("close temp file: %w", err)
-	}
 
 	var uncompressed int64
 	for _, f := range lp.Files {
@@ -372,7 +333,7 @@ func (p *packer) buildLayer(ctx context.Context, src weightsource.Source, lp lay
 	}
 
 	return packedLayer{
-		TarPath:          tarPath,
+		Plan:             lp,
 		Digest:           v1.Hash{Algorithm: "sha256", Hex: hex.EncodeToString(hasher.Sum(nil))},
 		Size:             counter.n,
 		UncompressedSize: uncompressed,
@@ -380,10 +341,71 @@ func (p *packer) buildLayer(ctx context.Context, src weightsource.Source, lp lay
 	}, nil
 }
 
-// writeLayer writes the in-tar layout for a layer: deterministic directory
-// entries for every parent directory referenced by any file, followed by
-// the files themselves in supplied order.
-func writeLayer(ctx context.Context, src weightsource.Source, tw *tar.Writer, files []weightsource.InventoryFile) error {
+// packedFilesFromPlan returns the per-file index for a fully-built set
+// of layers. Each file in each layerPlan gets a packedFile pointing at
+// the layer's computed digest. Output is sorted by path.
+//
+// Not a method on packer: this is bookkeeping over the plan + computed
+// layer digests, not part of the planning or streaming logic.
+func packedFilesFromPlan(layers []packedLayer) []packedFile {
+	var out []packedFile
+	for _, lr := range layers {
+		layerDigest := lr.Digest.String()
+		for _, f := range lr.Plan.Files {
+			out = append(out, packedFile{
+				Path:        f.Path,
+				Size:        f.Size,
+				Digest:      f.Digest,
+				LayerDigest: layerDigest,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
+}
+
+// ingressFromInventory streams each file in inv from src into st,
+// hash-verifying as bytes flow through. Files already present in the
+// store are skipped — store.PutFile is idempotent and drains the
+// reader to io.Discard for already-stored digests, but we don't even
+// open the source for those. Open() on remote sources is expensive
+// (HTTP round trip); the cheap Exists() probe avoids it.
+//
+// Hash mismatches surface here, loudly, instead of silently producing
+// a tar whose member digest disagrees with the inventory.
+func ingressFromInventory(ctx context.Context, src weightsource.Source, st store.Store, inv weightsource.Inventory) error {
+	for _, f := range inv.Files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		ok, err := st.Exists(ctx, f.Digest)
+		if err != nil {
+			return fmt.Errorf("check store for %s: %w", f.Path, err)
+		}
+		if ok {
+			continue
+		}
+		if err := ingressOne(ctx, src, st, f); err != nil {
+			return fmt.Errorf("ingress %s: %w", f.Path, err)
+		}
+	}
+	return nil
+}
+
+func ingressOne(ctx context.Context, src weightsource.Source, st store.Store, f weightsource.InventoryFile) error {
+	rc, err := src.Open(ctx, f.Path)
+	if err != nil {
+		return fmt.Errorf("open source: %w", err)
+	}
+	defer rc.Close() //nolint:errcheck // best-effort close on read path
+	return st.PutFile(ctx, f.Digest, f.Size, rc)
+}
+
+// writeLayer writes the in-tar layout for a layer: deterministic
+// directory entries for every parent directory referenced by any
+// file, followed by the files themselves in supplied order. File
+// bytes come from the content-addressed store, keyed by digest.
+func writeLayer(ctx context.Context, st store.Store, tw *tar.Writer, files []weightsource.InventoryFile) error {
 	for _, dir := range collectDirs(files) {
 		if err := tw.WriteHeader(deterministicDirHeader(dir)); err != nil {
 			return fmt.Errorf("write dir header %s: %w", dir, err)
@@ -394,20 +416,11 @@ func writeLayer(ctx context.Context, src weightsource.Source, tw *tar.Writer, fi
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := writeFileToTar(ctx, src, tw, f); err != nil {
+		if err := writeFileToTar(ctx, st, tw, f); err != nil {
 			return fmt.Errorf("write file %s: %w", f.Path, err)
 		}
 	}
 	return nil
-}
-
-// cleanupPackedLayers removes tar files from completed results. Best-effort; errors are ignored.
-func cleanupPackedLayers(results []packedLayer) {
-	for _, r := range results {
-		if r.TarPath != "" {
-			os.Remove(r.TarPath) //nolint:errcheck,gosec // best-effort cleanup
-		}
-	}
 }
 
 // unixEpoch is the Unix epoch time, used for deterministic tar headers.
@@ -427,9 +440,10 @@ func deterministicDirHeader(name string) *tar.Header {
 }
 
 // writeFileToTar writes a single file entry to a tar writer with
-// deterministic headers (spec §1.3: PAX format, zero timestamps, uid/gid 0,
-// 0644 perms). File bytes are pulled from src on demand.
-func writeFileToTar(ctx context.Context, src weightsource.Source, tw *tar.Writer, f weightsource.InventoryFile) error {
+// deterministic headers (spec §1.3: PAX format, zero timestamps,
+// uid/gid 0, 0644 perms). File bytes come from the store, opened by
+// digest.
+func writeFileToTar(ctx context.Context, st store.Store, tw *tar.Writer, f weightsource.InventoryFile) error {
 	hdr := &tar.Header{
 		Typeflag:   tar.TypeReg,
 		Name:       f.Path,
@@ -446,9 +460,9 @@ func writeFileToTar(ctx context.Context, src weightsource.Source, tw *tar.Writer
 		return fmt.Errorf("write header: %w", err)
 	}
 
-	rc, err := src.Open(ctx, f.Path)
+	rc, err := openFromStore(ctx, st, f.Digest)
 	if err != nil {
-		return fmt.Errorf("open file: %w", err)
+		return fmt.Errorf("open from store: %w", err)
 	}
 	defer rc.Close() //nolint:errcheck // best-effort close on read path
 
@@ -457,6 +471,25 @@ func writeFileToTar(ctx context.Context, src weightsource.Source, tw *tar.Writer
 	}
 
 	return nil
+}
+
+// openFromStore returns a ReadCloser for the file at digest, resolved
+// through the store's path. Wrapping store.Path + os.Open here keeps
+// the tar-write loop short and gives the store a single read-time
+// hook in case backends grow more elaborate (network-attached
+// containerd content store, for example).
+func openFromStore(ctx context.Context, st store.Store, digest string) (io.ReadCloser, error) {
+	path, err := st.Path(ctx, digest)
+	if err != nil {
+		return nil, fmt.Errorf("resolve store path for %s: %w", digest, err)
+	}
+	// gosec G304: path comes from store.Path, which validates the
+	// digest and composes the path inside the store root.
+	f, err := os.Open(path) //nolint:gosec // see comment above
+	if err != nil {
+		return nil, fmt.Errorf("open store file %s: %w", path, err)
+	}
+	return f, nil
 }
 
 // collectDirs returns the sorted, deduplicated set of directory paths

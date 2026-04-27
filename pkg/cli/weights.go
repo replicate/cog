@@ -15,6 +15,7 @@ import (
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
 func newWeightsCommand() *cobra.Command {
@@ -37,6 +38,11 @@ func newWeightsImportCommand() *cobra.Command {
 		Short: "Build and push weights to a registry",
 		Long: `Packages weight sources from cog.yaml into OCI layers, updates weights.lock,
 and pushes the layers to a registry.
+
+Import also warms the local content-addressed weight store as a side
+effect, so 'cog predict' can mount the weights immediately without a
+separate 'cog weights pull'. Pull is still useful when someone clones
+a repo with a checked-in weights.lock but a cold local cache.
 
 If weight names are provided, only those weights are imported. Otherwise all weights
 defined in cog.yaml are imported.
@@ -83,8 +89,13 @@ func weightsImportCommand(cmd *cobra.Command, args []string) error {
 
 	console.Infof("Building %d weight(s)...", len(weightSpecs))
 
+	fileStore, err := store.OpenDefault()
+	if err != nil {
+		return fmt.Errorf("open weights store: %w", err)
+	}
+
 	lockPath := filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
-	builder := model.NewWeightBuilder(src, lockPath)
+	builder := model.NewWeightBuilder(src, fileStore, lockPath)
 
 	artifacts, err := buildWeightArtifacts(ctx, builder, weightSpecs)
 	if err != nil {

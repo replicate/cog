@@ -123,13 +123,11 @@ func TestSetDigest_StableAcrossRepacks(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
 
-	pr1, err := packTestDir(t, dir, &packOptions{BundleFileMax: 1024, BundleSizeMax: 1024})
+	pr1, _, err := packTestDir(t, dir, &packOptions{BundleFileMax: 1024, BundleSizeMax: 1024})
 	require.NoError(t, err)
-	t.Cleanup(func() { cleanupPackedLayers(pr1.Layers) })
 
-	pr2, err := packTestDir(t, dir, &packOptions{BundleFileMax: 1, BundleSizeMax: 1})
+	pr2, _, err := packTestDir(t, dir, &packOptions{BundleFileMax: 1, BundleSizeMax: 1})
 	require.NoError(t, err)
-	t.Cleanup(func() { cleanupPackedLayers(pr2.Layers) })
 
 	entry1 := newWeightLockEntry("w", "/w", lockfile.WeightLockSource{}, pr1.Files, pr1.Layers)
 	entry2 := newWeightLockEntry("w", "/w", lockfile.WeightLockSource{}, pr2.Files, pr2.Layers)
@@ -145,14 +143,12 @@ func TestConfigBlob_DiffersAcrossRepacks(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
 
-	pr1, err := packTestDir(t, dir, &packOptions{BundleFileMax: 1024, BundleSizeMax: 1024})
+	pr1, _, err := packTestDir(t, dir, &packOptions{BundleFileMax: 1024, BundleSizeMax: 1024})
 	require.NoError(t, err)
-	t.Cleanup(func() { cleanupPackedLayers(pr1.Layers) })
 
 	// With BundleFileMax=1, all files are "large" (standalone layers).
-	pr2, err := packTestDir(t, dir, &packOptions{BundleFileMax: 1, BundleSizeMax: 1})
+	pr2, _, err := packTestDir(t, dir, &packOptions{BundleFileMax: 1, BundleSizeMax: 1})
 	require.NoError(t, err)
-	t.Cleanup(func() { cleanupPackedLayers(pr2.Layers) })
 
 	entry1 := newWeightLockEntry("w", "/w", lockfile.WeightLockSource{}, pr1.Files, pr1.Layers)
 	entry2 := newWeightLockEntry("w", "/w", lockfile.WeightLockSource{}, pr2.Files, pr2.Layers)
@@ -226,9 +222,8 @@ func TestSetDigest_CrossPath(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world"), 0o644))
 
 	// Path 1: pack, convert to lock entry, compute from the entry.
-	pr, err := packTestDir(t, dir, nil)
+	pr, _, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
-	t.Cleanup(func() { cleanupPackedLayers(pr.Layers) })
 	entry := newWeightLockEntry("w", "/w", lockfile.WeightLockSource{}, pr.Files, pr.Layers)
 	packerSetDigest := entry.ComputeSetDigest()
 

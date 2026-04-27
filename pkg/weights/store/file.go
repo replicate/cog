@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/replicate/cog/pkg/paths"
 )
 
 const (
@@ -28,6 +30,18 @@ const (
 // reads are stateless.
 type FileStore struct {
 	root string
+}
+
+// OpenDefault opens the per-user weights FileStore at the path
+// returned by paths.WeightsStoreDir. Use this whenever you'd
+// otherwise pair WeightsStoreDir + NewFileStore — same intent, less
+// boilerplate, one error message style across call sites.
+func OpenDefault() (*FileStore, error) {
+	dir, err := paths.WeightsStoreDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolve weights store dir: %w", err)
+	}
+	return NewFileStore(dir)
 }
 
 // NewFileStore returns a FileStore rooted at dir. The root and the

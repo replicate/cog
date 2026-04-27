@@ -1,13 +1,13 @@
 package model
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,6 +19,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
 // Manifest-level annotation keys per spec §2.5 (v1 "run.cog.*" namespace).
@@ -42,11 +43,21 @@ const (
 // MediaTypeWeightConfig is the config blob media type per spec §2.1.
 const MediaTypeWeightConfig = "application/vnd.cog.weight.config.v1+json"
 
-// buildWeightManifestV1 assembles a v1.Image representing a v1 weight manifest
-// from a lockfile entry and the corresponding packed tar layers. The entry
-// provides all metadata (name, target, setDigest, file index for the config
-// blob); the packed layers provide the on-disk tar paths for lazy streaming
-// during push.
+// buildWeightManifestV1 assembles a v1.Image representing a v1 weight
+// manifest from a lockfile entry and the corresponding packed layer
+// descriptors. The entry provides all metadata (name, target,
+// setDigest, file index for the config blob); the packed layers
+// carry their layer plans, which the wrapped fileLayer replays
+// against st to produce the on-wire tar bytes during push.
+//
+// ctx scopes any byte-streaming the manifest's layers do later
+// (Compressed/Uncompressed). Pass the push context here so a
+// canceled push tears down its layer-streaming goroutines
+// promptly. nil is fine for callers that only need manifest digest
+// + descriptor without ever reading layer bytes.
+//
+// st may be nil for callers that only need the manifest digest (no
+// blob upload). Push paths must supply a real store.
 //
 // Layers are canonicalized: the manifest emits them in digest-sorted order,
 // regardless of input order. This makes the manifest digest a pure function
@@ -61,7 +72,7 @@ const MediaTypeWeightConfig = "application/vnd.cog.weight.config.v1+json"
 //   - layers: one descriptor per packedLayer, in digest-sorted order,
 //     preserving mediaType, digest, size
 //   - annotations: manifest-level weight annotations per spec §2.5
-func buildWeightManifestV1(entry lockfile.WeightLockEntry, layers []packedLayer) (v1.Image, error) {
+func buildWeightManifestV1(ctx context.Context, entry lockfile.WeightLockEntry, layers []packedLayer, st store.Store) (v1.Image, error) {
 	if entry.Name == "" {
 		return nil, fmt.Errorf("weight name is required")
 	}
@@ -105,24 +116,21 @@ func buildWeightManifestV1(entry lockfile.WeightLockEntry, layers []packedLayer)
 	// lives in the config blob.
 	adds := make([]mutate.Addendum, 0, len(sorted))
 	for i, lr := range sorted {
-		if lr.TarPath == "" {
-			return nil, fmt.Errorf("layer %d: missing TarPath", i)
-		}
 		if lr.Digest.Algorithm == "" || lr.Digest.Hex == "" {
-			return nil, fmt.Errorf("layer %d (%s): missing digest", i, lr.TarPath)
+			return nil, fmt.Errorf("layer %d: missing digest", i)
 		}
 		if lr.Size <= 0 {
-			return nil, fmt.Errorf("layer %d (%s): invalid size %d", i, lr.TarPath, lr.Size)
+			return nil, fmt.Errorf("layer %d (%s): invalid size %d", i, lr.Digest, lr.Size)
 		}
 		if lr.UncompressedSize <= 0 {
-			return nil, fmt.Errorf("layer %d (%s): invalid uncompressed size %d", i, lr.TarPath, lr.UncompressedSize)
+			return nil, fmt.Errorf("layer %d (%s): invalid uncompressed size %d", i, lr.Digest, lr.UncompressedSize)
 		}
 		if lr.MediaType == "" {
-			return nil, fmt.Errorf("layer %d (%s): missing media type", i, lr.TarPath)
+			return nil, fmt.Errorf("layer %d (%s): missing media type", i, lr.Digest)
 		}
 
 		adds = append(adds, mutate.Addendum{
-			Layer:     newFileLayer(lr),
+			Layer:     newFileLayer(ctx, lr, st),
 			MediaType: lr.MediaType,
 			Annotations: map[string]string{
 				AnnotationV1WeightSizeUncomp: strconv.FormatInt(lr.UncompressedSize, 10),
@@ -270,33 +278,55 @@ func (w *weightManifestV1Image) RawManifest() ([]byte, error) {
 	return w.rawManifest, w.rawManifestErr
 }
 
-// fileLayer is a v1.Layer backed by a tar file on disk whose contents are
-// already in their final on-wire form (uncompressed tar or gzipped tar).
+// fileLayer is a v1.Layer that streams its on-wire bytes by re-running
+// the packer pipeline against a content-addressed store. There is no
+// on-disk tar; the layer reproduces its bytes on demand.
 //
-// Unlike tarball.LayerFromFile, fileLayer does not re-compress: it treats the
-// file bytes as both the compressed and uncompressed representation for the
-// purposes of the OCI layer blob. This is correct for OCI "artifact" layers
-// where the blob is whatever the registry stores, regardless of the MIME type.
+// The bytes are deterministic for a given (layerPlan, store) pair, so
+// repeated Compressed() calls — once during digest verification, again
+// during upload, again during retry — observe identical content.
 //
-// The digest and size are supplied by the caller (from the packer) rather
-// than re-computed, since the file is immutable.
+// Unlike tarball.LayerFromFile, fileLayer does not re-compress its
+// input: the byte stream IS the on-wire blob. This matches OCI
+// "artifact" layers where the blob is whatever the registry stores,
+// regardless of the MIME type.
+//
+// The digest and size are supplied by the packer, not recomputed.
+// Recomputing would require streaming the whole tar a third time per
+// layer.
 type fileLayer struct {
-	path      string
+	plan      layerPlan
 	digest    v1.Hash
 	size      int64
 	mediaType types.MediaType
+	store     store.Store
+	// ctx scopes the streaming goroutine in Compressed(); see
+	// newFileLayer for why it lives on the struct.
+	ctx context.Context
 }
 
-func newFileLayer(lr packedLayer) *fileLayer {
+// newFileLayer constructs a fileLayer that streams its bytes from st
+// when Compressed/Uncompressed is called.
+//
+// ctx scopes the streaming goroutine. The v1.Layer interface
+// doesn't accept a context (Compressed and Uncompressed are
+// zero-arg), so the canonical workaround — also used by
+// go-containerregistry's own remote.Layer — is to stash one on the
+// struct. When the caller cancels (e.g. user interrupt mid-push),
+// streamLayer observes ctx.Err at its next loop boundary and tears
+// down the pipe instead of grinding through more bytes for nobody.
+func newFileLayer(ctx context.Context, lr packedLayer, st store.Store) *fileLayer {
 	return &fileLayer{
-		path:      lr.TarPath,
+		plan:      lr.Plan,
 		digest:    lr.Digest,
 		size:      lr.Size,
 		mediaType: lr.MediaType,
+		store:     st,
+		ctx:       ctx,
 	}
 }
 
-// Digest returns the blob digest (sha256 of the file bytes on disk).
+// Digest returns the blob digest.
 func (l *fileLayer) Digest() (v1.Hash, error) { return l.digest, nil }
 
 // DiffID returns the diff ID for the layer.
@@ -306,17 +336,32 @@ func (l *fileLayer) Digest() (v1.Hash, error) { return l.digest, nil }
 // value. We return the blob digest, matching the pattern used by static.NewLayer.
 func (l *fileLayer) DiffID() (v1.Hash, error) { return l.digest, nil }
 
-// Compressed returns the file bytes. These are already in their on-wire form,
-// so no compression step is applied.
+// Compressed returns the on-wire layer bytes by re-streaming the
+// packer pipeline against the store. The store must contain every
+// file in l.plan; otherwise the read fails partway through with an
+// fs.ErrNotExist-wrapped error.
 func (l *fileLayer) Compressed() (io.ReadCloser, error) {
-	f, err := os.Open(l.path) //nolint:gosec // path is from packedLayer.TarPath, produced by packer
-	if err != nil {
-		return nil, fmt.Errorf("open layer file %s: %w", l.path, err)
+	if l.store == nil {
+		return nil, fmt.Errorf("fileLayer: store is nil; cannot stream layer %s", l.digest)
 	}
-	return f, nil
+	ctx := l.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	pr, pw := io.Pipe()
+	go func() {
+		// Errors propagate through pw.CloseWithError so the consumer's
+		// next Read returns them. The consumer also controls lifetime
+		// from its end: closing the reader makes pw.Write return
+		// io.ErrClosedPipe, which streamLayer surfaces as an error.
+		_, err := newPacker(nil).streamLayer(ctx, l.store, l.plan, pw)
+		_ = pw.CloseWithError(err) //nolint:errcheck // returned err is the only one possible
+	}()
+	return pr, nil
 }
 
-// Uncompressed returns the file bytes (same as Compressed for weight layers).
+// Uncompressed returns the on-wire layer bytes (same as Compressed for
+// weight layers — see fileLayer doc).
 func (l *fileLayer) Uncompressed() (io.ReadCloser, error) {
 	return l.Compressed()
 }

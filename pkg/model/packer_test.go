@@ -2,8 +2,10 @@ package model
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,12 +19,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
-// packTestDir is a convenience test helper that wires a local directory
-// through the new Source/Inventory API and calls Pack. It hides the
-// boilerplate so test bodies can focus on Pack's behavior.
-func packTestDir(t *testing.T, dir string, opts *packOptions) (*packResult, error) {
+// packTestDir is a convenience test helper that wires a local
+// directory through the new Source/Inventory + ingress +
+// computeLayerDigests pipeline. It hides the boilerplate so test
+// bodies can focus on packer behavior.
+//
+// Returns the packResult plus the store the layers reference, so
+// callers can stream layer bytes back out via readLayerEntries
+// (mirrors the path push uses).
+func packTestDir(t *testing.T, dir string, opts *packOptions) (*packResult, *store.FileStore, error) {
 	t.Helper()
 	return packTestDirCtx(t, t.Context(), dir, opts)
 }
@@ -30,17 +38,36 @@ func packTestDir(t *testing.T, dir string, opts *packOptions) (*packResult, erro
 // packTestDirCtx is the ctx-accepting variant of packTestDir for tests
 // that need a context independent of the test lifetime (typically for
 // cancellation tests).
-func packTestDirCtx(t *testing.T, ctx context.Context, dir string, opts *packOptions) (*packResult, error) {
+func packTestDirCtx(t *testing.T, ctx context.Context, dir string, opts *packOptions) (*packResult, *store.FileStore, error) {
 	t.Helper()
+	st, err := store.NewFileStore(t.TempDir())
+	if err != nil {
+		return nil, nil, err
+	}
 	src, err := weightsource.NewFileSource("file://"+dir, "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	inv, err := src.Inventory(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return newPacker(opts).pack(ctx, src, inv)
+	if err := ingressFromInventory(ctx, src, st, inv); err != nil {
+		return nil, nil, err
+	}
+	pkr := newPacker(opts)
+	pl := pkr.planLayers(inv)
+	if len(pl.Layers) == 0 {
+		return nil, nil, fmt.Errorf("no files in inventory")
+	}
+	layers, err := pkr.computeLayerDigests(ctx, st, pl)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &packResult{
+		Layers: layers,
+		Files:  packedFilesFromPlan(layers),
+	}, st, nil
 }
 
 // createTestFile creates a file at the given path (relative to dir) with the given size.
@@ -80,7 +107,7 @@ func isBundleLayer(pr *packResult, layerDigest string) bool {
 
 func TestPack_EmptyDirectory(t *testing.T) {
 	dir := t.TempDir()
-	_, err := packTestDir(t, dir, nil)
+	_, _, err := packTestDir(t, dir, nil)
 	assert.ErrorContains(t, err, "no files in inventory")
 }
 
@@ -88,7 +115,7 @@ func TestPack_SingleSmallFile(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "config.json", 100)
 
-	results, err := packTestDir(t, dir, nil)
+	results, st, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
@@ -103,7 +130,7 @@ func TestPack_SingleSmallFile(t *testing.T) {
 	assert.Equal(t, []string{"config.json"}, filesInLayer(results, r.Digest.String()))
 
 	// Verify tar contents.
-	entries := readTarGzEntries(t, r.TarPath)
+	entries := readLayerEntries(t, r, st)
 	require.Len(t, entries, 1)
 	assert.Equal(t, "config.json", entries[0])
 }
@@ -112,7 +139,7 @@ func TestPack_SingleLargeFile_Incompressible(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "model.safetensors", 100*1024*1024) // 100 MB
 
-	results, err := packTestDir(t, dir, nil)
+	results, _, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
@@ -126,7 +153,7 @@ func TestPack_SingleLargeFile_Compressible(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "model.dat", 100*1024*1024) // 100 MB, not in skip set
 
-	results, err := packTestDir(t, dir, nil)
+	results, _, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
@@ -147,7 +174,7 @@ func TestPack_MixedFiles(t *testing.T) {
 	createTestFile(t, dir, "model-00001.safetensors", 100*1024*1024)
 	createTestFile(t, dir, "model-00002.safetensors", 100*1024*1024)
 
-	results, err := packTestDir(t, dir, nil)
+	results, st, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 3) // 1 bundle + 2 large files
 
@@ -156,7 +183,7 @@ func TestPack_MixedFiles(t *testing.T) {
 	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), bundle.MediaType)
 	assert.True(t, isBundleLayer(results, bundle.Digest.String()), "first layer should hold the bundled small files")
 
-	bundleEntries := readTarGzEntries(t, bundle.TarPath)
+	bundleEntries := readLayerEntries(t, bundle, st)
 	// Files should be sorted by path.
 	assert.Equal(t, []string{"config.json", "special_tokens_map.json", "tokenizer.json"}, bundleEntries)
 
@@ -174,11 +201,11 @@ func TestPack_NestedDirectories(t *testing.T) {
 	createTestFile(t, dir, "text_encoder/tokenizer.json", 200)
 	createTestFile(t, dir, "vae/config.json", 150)
 
-	results, err := packTestDir(t, dir, nil)
+	results, st, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1) // All small, one bundle.
 
-	entries := readTarGzEntries(t, results.Layers[0].TarPath)
+	entries := readLayerEntries(t, results.Layers[0], st)
 	// Directories come first (sorted), then files (sorted).
 	expected := []string{
 		"text_encoder/",
@@ -194,14 +221,14 @@ func TestPack_LargeFileInSubdir(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "text_encoder/model-00001.safetensors", 100*1024*1024)
 
-	results, err := packTestDir(t, dir, nil)
+	results, st, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
 	r := results.Layers[0]
 	assert.Equal(t, []string{"text_encoder/model-00001.safetensors"}, filesInLayer(results, r.Digest.String()))
 
-	entries := readTarEntries(t, r.TarPath)
+	entries := readLayerEntries(t, r, st)
 	expected := []string{
 		"text_encoder/",
 		"text_encoder/model-00001.safetensors",
@@ -222,7 +249,7 @@ func TestPack_BundleSizeMaxSplits(t *testing.T) {
 		BundleSizeMax: 20,   // Forces split: a+b in one bundle, c in another.
 	}
 
-	results, err := packTestDir(t, dir, opts)
+	results, st, err := packTestDir(t, dir, opts)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 2)
 
@@ -232,11 +259,11 @@ func TestPack_BundleSizeMaxSplits(t *testing.T) {
 	}
 
 	// First bundle should have a.txt and b.txt.
-	entries1 := readTarGzEntries(t, results.Layers[0].TarPath)
+	entries1 := readLayerEntries(t, results.Layers[0], st)
 	assert.Equal(t, []string{"a.txt", "b.txt"}, entries1)
 
 	// Second bundle should have c.txt.
-	entries2 := readTarGzEntries(t, results.Layers[1].TarPath)
+	entries2 := readLayerEntries(t, results.Layers[1], st)
 	assert.Equal(t, []string{"c.txt"}, entries2)
 }
 
@@ -249,7 +276,7 @@ func TestPack_CustomThresholds(t *testing.T) {
 		BundleFileMax: 100, // 50 is small, 200 is large
 	}
 
-	results, err := packTestDir(t, dir, opts)
+	results, _, err := packTestDir(t, dir, opts)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 2)
 
@@ -268,11 +295,11 @@ func TestPack_SkipsDotCogDirectory(t *testing.T) {
 	createTestFile(t, dir, ".cog/manifest.json", 50)
 	createTestFile(t, dir, ".cog/ready", 0)
 
-	results, err := packTestDir(t, dir, nil)
+	results, st, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
-	entries := readTarGzEntries(t, results.Layers[0].TarPath)
+	entries := readLayerEntries(t, results.Layers[0], st)
 	assert.Equal(t, []string{"config.json"}, entries)
 }
 
@@ -280,18 +307,20 @@ func TestPack_DeterministicTarProperties(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "data.txt", 100)
 
-	results, err := packTestDir(t, dir, nil)
+	results, st, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
-	// Read the tar and inspect headers.
-	f, err := os.Open(results.Layers[0].TarPath)
+	// Stream the layer back out via fileLayer (the same path push
+	// uses) and inspect tar headers.
+	l := newFileLayer(t.Context(), results.Layers[0], st)
+	rc, err := l.Compressed()
 	require.NoError(t, err)
-	defer f.Close()
+	defer rc.Close() //nolint:errcheck
 
-	gr, err := gzip.NewReader(f)
+	gr, err := gzip.NewReader(rc)
 	require.NoError(t, err)
-	defer gr.Close()
+	defer gr.Close() //nolint:errcheck
 
 	epoch := time.Unix(0, 0)
 
@@ -322,10 +351,10 @@ func TestPack_DigestDeterminism(t *testing.T) {
 	createTestFile(t, dir, "a.txt", 100)
 	createTestFile(t, dir, "b.txt", 200)
 
-	results1, err := packTestDir(t, dir, nil)
+	results1, _, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 
-	results2, err := packTestDir(t, dir, nil)
+	results2, _, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 
 	require.Len(t, results1.Layers, len(results2.Layers))
@@ -345,7 +374,7 @@ func TestPack_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	_, err := packTestDirCtx(t, ctx, dir, nil)
+	_, _, err := packTestDirCtx(t, ctx, dir, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -372,7 +401,7 @@ func TestPack_IncompressibleExtensions(t *testing.T) {
 			dir := t.TempDir()
 			createTestFile(t, dir, "model"+tt.ext, 100*1024*1024)
 
-			results, err := packTestDir(t, dir, nil)
+			results, _, err := packTestDir(t, dir, nil)
 			require.NoError(t, err)
 			require.Len(t, results.Layers, 1)
 			assert.Equal(t, tt.mediaType, results.Layers[0].MediaType)
@@ -386,7 +415,7 @@ func TestPack_FileAtExactThreshold(t *testing.T) {
 	// and land in its own uncompressed-tar layer (.bin is incompressible).
 	createTestFile(t, dir, "model.bin", defaultBundleFileMax)
 
-	results, err := packTestDir(t, dir, nil)
+	results, _, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 	assert.Equal(t, types.MediaType(mediaTypeOCILayerTar), results.Layers[0].MediaType,
@@ -399,7 +428,7 @@ func TestPack_FileJustBelowThreshold(t *testing.T) {
 	// File just below the threshold should be bundled (tar+gzip).
 	createTestFile(t, dir, "model.bin", defaultBundleFileMax-1)
 
-	results, err := packTestDir(t, dir, nil)
+	results, _, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 	assert.Equal(t, types.MediaType(mediaTypeOCILayerTarGzip), results.Layers[0].MediaType,
@@ -407,24 +436,40 @@ func TestPack_FileJustBelowThreshold(t *testing.T) {
 	assert.Equal(t, []string{"model.bin"}, filesInLayer(results, results.Layers[0].Digest.String()))
 }
 
-func TestPack_CleanupTarFiles(t *testing.T) {
+func TestPack_LayerBytesAreReproducible(t *testing.T) {
+	// After cog-i12u there are no tar files on disk — layer bytes
+	// are streamed on demand. Verify that streaming the same layer
+	// twice produces byte-identical output (deterministic from the
+	// (plan, store) pair).
 	dir := t.TempDir()
 	createTestFile(t, dir, "a.txt", 100)
 	createTestFile(t, dir, "big.safetensors", 100*1024*1024)
 
-	results, err := packTestDir(t, dir, nil)
+	results, st, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 
-	// Verify all tar files exist.
 	for _, r := range results.Layers {
-		_, err := os.Stat(r.TarPath)
-		assert.NoError(t, err, "tar file should exist: %s", r.TarPath)
-	}
+		first := readLayerTar(t, r, st)
+		second := readLayerTar(t, r, st)
+		assert.Equal(t, first, second,
+			"streaming layer %s twice must yield identical bytes", r.Digest)
 
-	// Clean them up (as a caller would).
-	for _, r := range results.Layers {
-		require.NoError(t, os.Remove(r.TarPath))
+		// And the byte length matches what the packer recorded.
+		assert.Equal(t, r.Size, int64(len(first)),
+			"streamed layer %s size must match recorded Size", r.Digest)
 	}
+}
+
+// readLayerTar streams a layer's full byte stream and returns it.
+func readLayerTar(t *testing.T, lr packedLayer, st store.Store) []byte {
+	t.Helper()
+	l := newFileLayer(t.Context(), lr, st)
+	rc, err := l.Compressed()
+	require.NoError(t, err)
+	defer rc.Close() //nolint:errcheck
+	data, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	return data
 }
 
 func TestCollectDirsForPath(t *testing.T) {
@@ -458,28 +503,30 @@ func TestCollectDirs(t *testing.T) {
 	assert.Equal(t, expected, got, "dirs should be sorted and deduplicated")
 }
 
-// readTarGzEntries reads a .tar.gz file and returns entry names in tar order.
-func readTarGzEntries(t *testing.T, path string) []string {
+// readLayerEntries streams a packedLayer's tar bytes back out via
+// fileLayer (the same code path push uses) and returns the entry
+// names in emission order. Handles both compressed and uncompressed
+// tars based on lr.MediaType.
+//
+// This replaces the old readTarGzEntries/readTarEntries that took a
+// path: layers no longer have on-disk paths post-cog-i12u.
+func readLayerEntries(t *testing.T, lr packedLayer, st store.Store) []string {
 	t.Helper()
-	f, err := os.Open(path)
+	l := newFileLayer(t.Context(), lr, st)
+	rc, err := l.Compressed()
 	require.NoError(t, err)
-	defer f.Close()
-
-	gr, err := gzip.NewReader(f)
+	defer rc.Close() //nolint:errcheck // best-effort
+	data, err := io.ReadAll(rc)
 	require.NoError(t, err)
-	defer gr.Close()
 
-	return readTarNames(t, tar.NewReader(gr))
-}
-
-// readTarEntries reads a .tar file and returns file names in order.
-func readTarEntries(t *testing.T, path string) []string {
-	t.Helper()
-	f, err := os.Open(path)
-	require.NoError(t, err)
-	defer f.Close()
-
-	return readTarNames(t, tar.NewReader(f))
+	var r io.Reader = bytes.NewReader(data)
+	if lr.MediaType == mediaTypeOCILayerTarGzip {
+		gr, err := gzip.NewReader(r)
+		require.NoError(t, err)
+		defer gr.Close() //nolint:errcheck // best-effort
+		r = gr
+	}
+	return readTarNames(t, tar.NewReader(r))
 }
 
 // readTarNames reads all entry names from a tar reader.
@@ -522,11 +569,11 @@ func TestPack_DeepNestedDirsInLargeFile(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "a/b/c/model.safetensors", 100*1024*1024)
 
-	results, err := packTestDir(t, dir, nil)
+	results, st, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 	require.Len(t, results.Layers, 1)
 
-	entries := readTarEntries(t, results.Layers[0].TarPath)
+	entries := readLayerEntries(t, results.Layers[0], st)
 	expected := []string{
 		"a/",
 		"a/b/",
@@ -567,7 +614,7 @@ func TestPack_WorkedExample(t *testing.T) {
 		createTestFile(t, dir, f, 100*1024*1024)
 	}
 
-	results, err := packTestDir(t, dir, nil)
+	results, st, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
 
 	// 1 bundle for small files + 7 individual layers for large files = 8 total.
@@ -592,12 +639,9 @@ func TestPack_WorkedExample(t *testing.T) {
 	// Verify no path appears in more than one layer (order-independence).
 	allPaths := make(map[string]int)
 	for i, r := range results.Layers {
-		var entries []string
-		if r.MediaType == mediaTypeOCILayerTarGzip {
-			entries = readTarGzEntries(t, r.TarPath)
-		} else {
-			entries = readTarEntries(t, r.TarPath)
-		}
+		// readLayerEntries handles both compressed and
+		// uncompressed media types.
+		entries := readLayerEntries(t, r, st)
 		for _, e := range entries {
 			if strings.HasSuffix(e, "/") {
 				continue // Skip directory entries for this check.

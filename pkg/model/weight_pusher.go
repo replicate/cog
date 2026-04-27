@@ -74,11 +74,12 @@ type WeightPushResult struct {
 // Push pushes a WeightArtifact to the registry as a v1 OCI weight manifest.
 // Layers upload concurrently; the manifest goes up last.
 //
-// The caller owns the tar files referenced by artifact.Layers[i].TarPath —
-// Push reads them but does not delete them, so the caller can push the same
-// artifact to multiple registries or retry after a transient failure. On
-// layer-upload failure the manifest is not attempted, but any
-// already-uploaded layers remain in the registry (garbage-collectable).
+// The artifact owns the content-addressed store from which layer
+// bytes are streamed; Push reads through that store on each upload
+// (and on retry) without keeping any tar bytes in memory or on
+// disk. On layer-upload failure the manifest is not attempted, but
+// any already-uploaded layers remain in the registry
+// (garbage-collectable).
 func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightArtifact, opts ...WeightPushOptions) (*WeightPushResult, error) {
 	if artifact == nil {
 		return nil, fmt.Errorf("artifact is nil")
@@ -95,18 +96,19 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 		opt = opts[0]
 	}
 
-	img := artifact.Manifest()
-	if img == nil {
-		// Rebuild if the artifact was constructed without a cached manifest
-		// (e.g. in tests via newWeightArtifact).
-		var err error
-		img, err = buildWeightManifestV1(artifact.Entry, artifact.Layers)
-		if err != nil {
-			return nil, fmt.Errorf("build weight manifest: %w", err)
-		}
+	// Build the manifest fresh inside Push so the embedded fileLayers
+	// inherit ctx, not the Background context from artifact build
+	// time. go-containerregistry's remote.Write may call
+	// layer.Compressed() during PushImage if the registry returns a
+	// HEAD miss for a layer we just uploaded (GC race, replication
+	// lag); without this the streaming goroutine would be deaf to
+	// user cancellation.
+	img, err := buildWeightManifestV1(ctx, artifact.Entry, artifact.Layers, artifact.store)
+	if err != nil {
+		return nil, fmt.Errorf("build weight manifest: %w", err)
 	}
 
-	if err := p.pushLayersConcurrently(ctx, repo, artifact.Name(), artifact.Layers, opt); err != nil {
+	if err := p.pushLayersConcurrently(ctx, repo, artifact, opt); err != nil {
 		return nil, fmt.Errorf("push weight layers: %w", err)
 	}
 
@@ -130,8 +132,8 @@ func (p *WeightPusher) Push(ctx context.Context, repo string, artifact *WeightAr
 // returning the first error (if any).
 func (p *WeightPusher) pushLayersConcurrently(
 	ctx context.Context,
-	repo, weightName string,
-	layers []packedLayer,
+	repo string,
+	artifact *WeightArtifact,
 	opt WeightPushOptions,
 ) error {
 	concurrency := opt.Concurrency
@@ -142,9 +144,9 @@ func (p *WeightPusher) pushLayersConcurrently(
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
 
-	for _, lr := range layers {
+	for _, lr := range artifact.Layers {
 		g.Go(func() error {
-			return p.pushSingleLayer(ctx, repo, weightName, lr, opt)
+			return p.pushSingleLayer(ctx, repo, artifact, lr, opt)
 		})
 	}
 
@@ -155,11 +157,13 @@ func (p *WeightPusher) pushLayersConcurrently(
 // up progress and retry callbacks if configured.
 func (p *WeightPusher) pushSingleLayer(
 	ctx context.Context,
-	repo, weightName string,
+	repo string,
+	artifact *WeightArtifact,
 	lr packedLayer,
 	opt WeightPushOptions,
 ) error {
-	layer := newFileLayer(lr)
+	layer := newFileLayer(ctx, lr, artifact.store)
+	weightName := artifact.Name()
 	digestStr := lr.Digest.String()
 
 	var onProgress func(v1.Update)

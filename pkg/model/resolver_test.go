@@ -1146,11 +1146,13 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 	require.Equal(t, ArtifactTypeWeight, wa.Type())
 	require.Equal(t, "/srv/weights/model", wa.Entry.Target)
 
-	// v1 artifacts carry packed tar layers and a valid manifest descriptor.
+	// v1 artifacts carry packed layer descriptors that can be
+	// streamed back from the store, plus a valid manifest descriptor.
 	require.NotEmpty(t, wa.Layers, "expected at least one packed layer")
 	for _, l := range wa.Layers {
-		require.NotEmpty(t, l.TarPath)
-		require.FileExists(t, l.TarPath)
+		require.NotEmpty(t, l.Digest.Hex)
+		require.NotEmpty(t, l.Plan.Files,
+			"layer plan should record which files belong to this layer")
 	}
 	require.NotEmpty(t, wa.Descriptor().Digest.Hex)
 }

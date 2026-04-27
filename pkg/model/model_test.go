@@ -128,7 +128,7 @@ func TestModel_GetImageArtifact(t *testing.T) {
 	weightArtifact := newWeightArtifact(
 		lockfile.WeightLockEntry{Name: "weights", Target: "/src/weights"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "def456"}, Size: 4096},
-		[]packedLayer{{TarPath: "/tmp/l.tar.gz", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTarGzip}},
+		[]packedLayer{{Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTarGzip}},
 	)
 
 	tests := []struct {
@@ -180,12 +180,12 @@ func TestModel_WeightArtifacts(t *testing.T) {
 	w1 := newWeightArtifact(
 		lockfile.WeightLockEntry{Name: "llama", Target: "/src/weights/llama"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w1"}, Size: 4096},
-		[]packedLayer{{TarPath: "/tmp/l1.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
+		[]packedLayer{{Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
 	w2 := newWeightArtifact(
 		lockfile.WeightLockEntry{Name: "embeddings", Target: "/src/weights/embed"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w2"}, Size: 2048},
-		[]packedLayer{{TarPath: "/tmp/l2.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "bbb"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
+		[]packedLayer{{Digest: v1.Hash{Algorithm: "sha256", Hex: "bbb"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
 
 	tests := []struct {
@@ -215,7 +215,7 @@ func TestModel_ArtifactsByType(t *testing.T) {
 	w1 := newWeightArtifact(
 		lockfile.WeightLockEntry{Name: "llama", Target: "/src/weights/llama"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w1"}, Size: 4096},
-		[]packedLayer{{TarPath: "/tmp/l.tar", Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
+		[]packedLayer{{Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
 
 	m := &Model{Artifacts: []Artifact{imgArtifact, w1}}

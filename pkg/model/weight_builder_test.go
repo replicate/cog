@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
 // makeWeightDir writes files into <projectDir>/<relDir> and returns both
@@ -26,11 +28,17 @@ func makeWeightDir(t *testing.T, projectDir, relDir string, files map[string][]b
 	}
 }
 
-func newTestBuilder(t *testing.T, projectDir string, weights []config.WeightSource) *WeightBuilder {
+// newTestBuilder constructs a WeightBuilder rooted in projectDir with a
+// fresh FileStore in t.TempDir() — the canonical fixture for builder
+// tests. Returns the builder and the store so tests that need to
+// inspect or pre-populate the store can reach it.
+func newTestBuilder(t *testing.T, projectDir string, weights []config.WeightSource) (*WeightBuilder, *store.FileStore) {
 	t.Helper()
 	src := NewSourceFromConfig(&config.Config{Weights: weights}, projectDir)
+	st, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
 	lockPath := filepath.Join(projectDir, "weights.lock")
-	return NewWeightBuilder(src, lockPath)
+	return NewWeightBuilder(src, st, lockPath), st
 }
 
 func testWeightSpec(t *testing.T, name, uri, target string) *WeightSpec {
@@ -51,7 +59,7 @@ func TestWeightBuilder_HappyPath(t *testing.T) {
 		"tokenizer.json": []byte(`{"vocab_size": 50257}`),
 	})
 
-	wb := newTestBuilder(t, projectDir, []config.WeightSource{
+	wb, _ := newTestBuilder(t, projectDir, []config.WeightSource{
 		{Name: "my-model", Target: "/src/weights/my-model", Source: &config.WeightSourceConfig{URI: "weights/my-model"}},
 	})
 
@@ -71,16 +79,183 @@ func TestWeightBuilder_HappyPath(t *testing.T) {
 	// At least one layer (the bundled small files).
 	require.NotEmpty(t, wa.Layers, "expected at least one layer")
 	for _, l := range wa.Layers {
-		require.NotEmpty(t, l.TarPath, "layer should have a tar path")
-		require.FileExists(t, l.TarPath, "layer tar should exist on disk")
 		require.NotEmpty(t, l.Digest.Hex)
 		require.Greater(t, l.Size, int64(0))
+		require.NotEmpty(t, l.Plan.Files,
+			"layer should retain its plan for streaming on push")
 	}
 
 	// Manifest descriptor should be populated without needing a registry.
 	desc := wa.Descriptor()
 	require.NotEmpty(t, desc.Digest.Hex)
 	require.Greater(t, desc.Size, int64(0))
+}
+
+func TestWeightBuilder_PopulatesStore(t *testing.T) {
+	// Core promise of cog-i12u: after Build, every file from the
+	// inventory exists in the local content store. cog predict can
+	// then hardlink-assemble without a separate `cog weights pull`.
+	projectDir := t.TempDir()
+	makeWeightDir(t, projectDir, "w", map[string][]byte{
+		"a.json": []byte(`{"x":1}`),
+		"b.json": []byte(`{"y":2}`),
+	})
+
+	wb, st := newTestBuilder(t, projectDir, []config.WeightSource{
+		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: "w"}},
+	})
+
+	spec := testWeightSpec(t, "w", "w", "/src/w")
+	art, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+	wa := art.(*WeightArtifact)
+
+	for _, f := range wa.Entry.Files {
+		ok, err := st.Exists(context.Background(), f.Digest)
+		require.NoError(t, err)
+		assert.True(t, ok, "file %s (%s) should be in the store after Build", f.Path, f.Digest)
+	}
+}
+
+func TestWeightBuilder_FastPath_PopulatesEmptyStore(t *testing.T) {
+	// Scenario: the lockfile is present (e.g. checked into git) but
+	// the local store is cold (e.g. fresh clone, or a brand-new
+	// machine). Build must still ingress every file into the store
+	// — so `cog predict` works without a separate `cog weights
+	// pull` even on the fast path.
+	projectDir := t.TempDir()
+	makeWeightDir(t, projectDir, "w", map[string][]byte{
+		"a.json": []byte(`{"x":1}`),
+		"b.json": []byte(`{"y":2}`),
+	})
+
+	// First, do a normal build to write the lockfile.
+	wb1, _ := newTestBuilder(t, projectDir, []config.WeightSource{
+		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: "w"}},
+	})
+	spec := testWeightSpec(t, "w", "w", "/src/w")
+	_, err := wb1.Build(context.Background(), spec)
+	require.NoError(t, err)
+
+	// Now: same project, same lockfile on disk, but a brand-new
+	// (empty) store. This is the "fresh clone" scenario.
+	src := NewSourceFromConfig(&config.Config{
+		Weights: []config.WeightSource{
+			{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: "w"}},
+		},
+	}, projectDir)
+	freshStore, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
+	wb2 := NewWeightBuilder(src, freshStore, filepath.Join(projectDir, "weights.lock"))
+	art, err := wb2.Build(context.Background(), spec)
+	require.NoError(t, err)
+	wa := art.(*WeightArtifact)
+
+	// Every file in the lockfile must now be in the cold store too.
+	for _, f := range wa.Entry.Files {
+		ok, err := freshStore.Exists(context.Background(), f.Digest)
+		require.NoError(t, err)
+		assert.True(t, ok,
+			"fast-path build with cold store must populate file %s (%s)",
+			f.Path, f.Digest)
+	}
+}
+
+func TestWeightBuilder_StampsEnvelopeFormat(t *testing.T) {
+	// Every successful Build must stamp the current envelope format
+	// into the lockfile. This is the field that lets future imports
+	// detect cog-version drift in packer behavior.
+	projectDir := t.TempDir()
+	makeWeightDir(t, projectDir, "w", map[string][]byte{"a.json": []byte(`{"x":1}`)})
+
+	wb, _ := newTestBuilder(t, projectDir, []config.WeightSource{
+		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: "w"}},
+	})
+
+	spec := testWeightSpec(t, "w", "w", "/src/w")
+	_, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+
+	lock, err := lockfile.LoadWeightsLock(filepath.Join(projectDir, "weights.lock"))
+	require.NoError(t, err)
+
+	want, err := computeEnvelopeFormat(envelopeFromOptions(packOptions{}))
+	require.NoError(t, err)
+	assert.Equal(t, want, lock.EnvelopeFormat,
+		"lockfile must stamp the current envelope format")
+}
+
+func TestWeightBuilder_EnvelopeFormatMismatch_TriggersRecompute(t *testing.T) {
+	// If the lockfile's recorded EnvelopeFormat doesn't match the
+	// current envelope (e.g. after a cog upgrade with a packer
+	// behavior change), Build must recompute layer digests rather
+	// than trust the lockfile's recorded values. Simulate the drift
+	// by writing a stale envelopeFormat into the lockfile and
+	// confirm Build rewrites it to the current value.
+	projectDir := t.TempDir()
+	makeWeightDir(t, projectDir, "w", map[string][]byte{"a.json": []byte(`{"x":1}`)})
+
+	wb, _ := newTestBuilder(t, projectDir, []config.WeightSource{
+		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: "w"}},
+	})
+	spec := testWeightSpec(t, "w", "w", "/src/w")
+	_, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+
+	lockPath := filepath.Join(projectDir, "weights.lock")
+
+	// Corrupt the recorded EnvelopeFormat on disk.
+	lock, err := lockfile.LoadWeightsLock(lockPath)
+	require.NoError(t, err)
+	lock.EnvelopeFormat = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	require.NoError(t, lock.Save(lockPath))
+
+	// Rebuild — recompute path should fire and stamp the correct
+	// envelope.
+	_, err = wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+
+	lock, err = lockfile.LoadWeightsLock(lockPath)
+	require.NoError(t, err)
+	want, err := computeEnvelopeFormat(envelopeFromOptions(packOptions{}))
+	require.NoError(t, err)
+	assert.Equal(t, want, lock.EnvelopeFormat,
+		"recompute path must stamp the current envelope format")
+}
+
+func TestWeightBuilder_FastPath_NoOpRebuild(t *testing.T) {
+	// Build the same source twice. Second build's source fingerprint
+	// matches the lockfile's recorded fingerprint, so canFastPath
+	// returns true and Build trusts the recorded layer digests
+	// without recomputing. The lockfile's mtime stays put (no write
+	// since EntriesEqual returns true), and the manifest digest is
+	// identical to the first build's.
+	projectDir := t.TempDir()
+	makeWeightDir(t, projectDir, "w", map[string][]byte{"a.json": []byte(`{"x":1}`)})
+
+	wb, _ := newTestBuilder(t, projectDir, []config.WeightSource{
+		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: "w"}},
+	})
+	spec := testWeightSpec(t, "w", "w", "/src/w")
+	first, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+	fa := first.(*WeightArtifact)
+
+	lockPath := filepath.Join(projectDir, "weights.lock")
+	infoBefore, err := os.Stat(lockPath)
+	require.NoError(t, err)
+
+	second, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+	sa := second.(*WeightArtifact)
+
+	assert.Equal(t, fa.Descriptor().Digest, sa.Descriptor().Digest,
+		"unchanged source must produce identical manifest digest")
+
+	infoAfter, err := os.Stat(lockPath)
+	require.NoError(t, err)
+	assert.Equal(t, infoBefore.ModTime(), infoAfter.ModTime(),
+		"unchanged-source rebuild must not rewrite weights.lock")
 }
 
 func TestWeightBuilder_WritesLockfile(t *testing.T) {
@@ -90,7 +265,7 @@ func TestWeightBuilder_WritesLockfile(t *testing.T) {
 		"tokenizer.json": []byte(`{"y": 2}`),
 	})
 
-	wb := newTestBuilder(t, projectDir, []config.WeightSource{
+	wb, _ := newTestBuilder(t, projectDir, []config.WeightSource{
 		{Name: "mw", Target: "/src/weights/mw", Source: &config.WeightSourceConfig{URI: "weights/mw"}},
 	})
 
@@ -162,7 +337,7 @@ func TestWeightBuilder_UpdatesExistingLockfile(t *testing.T) {
 	makeWeightDir(t, projectDir, "w1", map[string][]byte{"a.json": []byte(`{"w":1}`)})
 	makeWeightDir(t, projectDir, "w2", map[string][]byte{"b.json": []byte(`{"w":2}`)})
 
-	wb := newTestBuilder(t, projectDir, []config.WeightSource{
+	wb, _ := newTestBuilder(t, projectDir, []config.WeightSource{
 		{Name: "w1", Target: "/src/w1", Source: &config.WeightSourceConfig{URI: "w1"}},
 		{Name: "w2", Target: "/src/w2", Source: &config.WeightSourceConfig{URI: "w2"}},
 	})
@@ -184,79 +359,18 @@ func TestWeightBuilder_UpdatesExistingLockfile(t *testing.T) {
 	require.True(t, names["w2"])
 }
 
-func TestWeightBuilder_CacheHit(t *testing.T) {
-	projectDir := t.TempDir()
-	makeWeightDir(t, projectDir, "w", map[string][]byte{"a.json": []byte(`{"x":1}`)})
-
-	wb := newTestBuilder(t, projectDir, []config.WeightSource{
-		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: "w"}},
-	})
-
-	spec := testWeightSpec(t, "w", "w", "/src/w")
-	first, err := wb.Build(context.Background(), spec)
-	require.NoError(t, err)
-	fa := first.(*WeightArtifact)
-
-	// Record the mtime of the first layer's tar file. Cache hits must not
-	// rewrite the file, so the mtime should stay identical on the second
-	// build.
-	firstLayer := fa.Layers[0]
-	originalInfo, err := os.Stat(firstLayer.TarPath)
-	require.NoError(t, err)
-	originalModTime := originalInfo.ModTime()
-
-	second, err := wb.Build(context.Background(), spec)
-	require.NoError(t, err)
-	sa := second.(*WeightArtifact)
-
-	require.Equal(t, fa.Descriptor().Digest, sa.Descriptor().Digest,
-		"cache hit should produce the same manifest digest")
-	require.Len(t, sa.Layers, len(fa.Layers))
-	for i, l := range sa.Layers {
-		require.Equal(t, fa.Layers[i].Digest, l.Digest)
-		require.Equal(t, fa.Layers[i].TarPath, l.TarPath,
-			"cache hit should reuse the tar file on disk")
-	}
-
-	// Tar file should not have been rewritten.
-	newInfo, err := os.Stat(firstLayer.TarPath)
-	require.NoError(t, err)
-	require.Equal(t, originalModTime, newInfo.ModTime(),
-		"cache hit should not repack the layer")
-
-	// Lockfile should not have been rewritten either — an unchanged entry
-	// means no-op on disk. This matters for `cog weights push`, which
-	// calls Build() and would otherwise churn the file every time.
-	lockPath := filepath.Join(projectDir, "weights.lock")
-	lockInfo, err := os.Stat(lockPath)
-	require.NoError(t, err)
-
-	thirdTime, err := wb.Build(context.Background(), spec)
-	require.NoError(t, err)
-	_ = thirdTime
-
-	newLockInfo, err := os.Stat(lockPath)
-	require.NoError(t, err)
-	require.Equal(t, lockInfo.ModTime(), newLockInfo.ModTime(),
-		"cache hit should not rewrite weights.lock")
-
-	lock, err := lockfile.LoadWeightsLock(lockPath)
-	require.NoError(t, err)
-	require.Len(t, lock.Weights, 1)
-}
-
-func TestWeightBuilder_CacheHit_UpdatesConfigFields(t *testing.T) {
-	// Config-driven fields (target, source URI) can change in cog.yaml
-	// without the source content changing. The cache-hit path must stamp
-	// the current values into the lockfile so `weights status` doesn't
-	// report the weight as stale.
+func TestWeightBuilder_FastPath_UpdatesConfigFields(t *testing.T) {
+	// Config-driven fields (target, source URI) can change in
+	// cog.yaml without the source content changing. The fast path
+	// must stamp the current values into the lockfile so weights
+	// status doesn't report the weight as stale.
 	projectDir := t.TempDir()
 	makeWeightDir(t, projectDir, "w", map[string][]byte{"a.json": []byte(`{"x":1}`)})
 
 	oldTarget := "/src/w"
 	newTarget := "/src/w-moved"
 
-	wb := newTestBuilder(t, projectDir, []config.WeightSource{
+	wb, _ := newTestBuilder(t, projectDir, []config.WeightSource{
 		{Name: "w", Target: oldTarget, Source: &config.WeightSourceConfig{URI: "w"}},
 	})
 
@@ -272,77 +386,27 @@ func TestWeightBuilder_CacheHit_UpdatesConfigFields(t *testing.T) {
 	require.Equal(t, oldTarget, lock.Weights[0].Target)
 	require.Equal(t, "file://./w", lock.Weights[0].Source.URI)
 
-	// Second build: same name, same source dir, different target and
-	// different URI spelling. The tars are still on disk so the builder
-	// should hit the cache and skip repacking, but it must update the
-	// config-driven fields in the lockfile.
+	// Second build: same name, same source dir, different target.
+	// Layers should be reused (fast path) but the target must be
+	// stamped into the lockfile.
 	spec2 := testWeightSpec(t, "w", "./w", newTarget)
 	second, err := wb.Build(context.Background(), spec2)
 	require.NoError(t, err)
 	sa := second.(*WeightArtifact)
 
-	// Layers should be reused (cache hit, no repack).
+	// Layers reused via fast path.
 	require.Equal(t, fa.Layers[0].Digest, sa.Layers[0].Digest,
-		"cache hit should reuse the same layers")
+		"fast path should reuse the same layers")
 
-	// The lockfile must have the new target.
 	lock2, err := lockfile.LoadWeightsLock(lockPath)
 	require.NoError(t, err)
 	require.Len(t, lock2.Weights, 1)
 	require.Equal(t, newTarget, lock2.Weights[0].Target,
-		"cache-hit path must update the target in the lockfile")
+		"fast-path rebuild must update the target in the lockfile")
 
-	// The source URI normalizes identically for "w" and "./w", so it
-	// should remain "file://./w". Verify it wasn't corrupted.
 	require.Equal(t, "file://./w", lock2.Weights[0].Source.URI,
-		"source URI must remain the normalized form")
-
-	// Artifact should also carry the new target.
+		"normalized source URI must be preserved")
 	require.Equal(t, newTarget, sa.Entry.Target)
-}
-
-func TestWeightBuilder_CacheHit_DoesNotRehashSource(t *testing.T) {
-	// The cache-hit path reads the file index straight from the lockfile
-	// instead of re-walking and re-hashing the source directory. Prove it
-	// by corrupting the on-disk source after the first build: if the
-	// builder still rehashed on every call, the set digest would change
-	// and we'd rewrite the lockfile. It must not.
-	projectDir := t.TempDir()
-	weightDir := "w"
-	makeWeightDir(t, projectDir, weightDir, map[string][]byte{"a.json": []byte(`{"x":1}`)})
-
-	wb := newTestBuilder(t, projectDir, []config.WeightSource{
-		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: weightDir}},
-	})
-	spec := testWeightSpec(t, "w", weightDir, "/src/w")
-
-	first, err := wb.Build(context.Background(), spec)
-	require.NoError(t, err)
-	fa := first.(*WeightArtifact)
-
-	lockPath := filepath.Join(projectDir, "weights.lock")
-	lockInfoBefore, err := os.Stat(lockPath)
-	require.NoError(t, err)
-
-	// Replace the source file with different bytes. The cached tar is
-	// still valid (size-matches), so the cache-hit path should fire and
-	// reuse lockfile data without noticing the source drift. cog-wej9 is
-	// where we'll add explicit check-for-drift.
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectDir, weightDir, "a.json"),
-		[]byte(`{"x":999}`), 0o644))
-
-	second, err := wb.Build(context.Background(), spec)
-	require.NoError(t, err)
-	sa := second.(*WeightArtifact)
-
-	require.Equal(t, fa.Descriptor().Digest, sa.Descriptor().Digest,
-		"cache-hit path must reuse lockfile data; manifest digest is unchanged")
-
-	lockInfoAfter, err := os.Stat(lockPath)
-	require.NoError(t, err)
-	require.Equal(t, lockInfoBefore.ModTime(), lockInfoAfter.ModTime(),
-		"cache-hit path must not rewrite the lockfile")
 }
 
 func TestWeightBuilder_CacheMiss_ContentsChanged(t *testing.T) {
@@ -350,7 +414,7 @@ func TestWeightBuilder_CacheMiss_ContentsChanged(t *testing.T) {
 	weightDir := "w"
 	makeWeightDir(t, projectDir, weightDir, map[string][]byte{"a.json": []byte(`{"x":1}`)})
 
-	wb := newTestBuilder(t, projectDir, []config.WeightSource{
+	wb, _ := newTestBuilder(t, projectDir, []config.WeightSource{
 		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: weightDir}},
 	})
 
@@ -360,30 +424,24 @@ func TestWeightBuilder_CacheMiss_ContentsChanged(t *testing.T) {
 	fa := first.(*WeightArtifact)
 
 	// Change the file content (different bytes => different digest).
+	// canFastPath detects this through Source.Fingerprint mismatch
+	// (fingerprint is the dirhash of the file set for file://) and
+	// falls back to recompute.
 	require.NoError(t, os.WriteFile(
 		filepath.Join(projectDir, weightDir, "a.json"),
 		[]byte(`{"x":2,"y":3}`), 0o644))
-
-	// Manually simulate cache invalidation: tar on disk has old contents so
-	// its digest in the lockfile still matches the file. We need a way for
-	// the builder to detect this. In the current simple implementation the
-	// lockfile digest still matches the tar on disk, so the cache hits.
-	// That's acceptable: changes to source files after a build require
-	// either removing weights.lock or clearing the cache directory. Mimic
-	// the latter and repack.
-	require.NoError(t, os.RemoveAll(filepath.Join(projectDir, WeightsCacheDir)))
 
 	second, err := wb.Build(context.Background(), spec)
 	require.NoError(t, err)
 	sa := second.(*WeightArtifact)
 
 	require.NotEqual(t, fa.Descriptor().Digest, sa.Descriptor().Digest,
-		"repacked content should yield a different manifest digest")
+		"changed content should yield a different manifest digest")
 }
 
 func TestWeightBuilder_ErrorWrongSpecType(t *testing.T) {
 	projectDir := t.TempDir()
-	wb := newTestBuilder(t, projectDir, nil)
+	wb, _ := newTestBuilder(t, projectDir, nil)
 
 	imageSpec := NewImageSpec("model", "test-image")
 	_, err := wb.Build(context.Background(), imageSpec)
@@ -393,7 +451,7 @@ func TestWeightBuilder_ErrorWrongSpecType(t *testing.T) {
 
 func TestWeightBuilder_ErrorSourceNotFound(t *testing.T) {
 	projectDir := t.TempDir()
-	wb := newTestBuilder(t, projectDir, nil)
+	wb, _ := newTestBuilder(t, projectDir, nil)
 
 	spec := testWeightSpec(t, "missing", "nonexistent-dir", "/src/missing")
 	_, err := wb.Build(context.Background(), spec)
@@ -405,7 +463,7 @@ func TestWeightBuilder_ErrorSourceIsFile(t *testing.T) {
 	projectDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "oops.bin"), []byte("data"), 0o644))
 
-	wb := newTestBuilder(t, projectDir, nil)
+	wb, _ := newTestBuilder(t, projectDir, nil)
 
 	spec := testWeightSpec(t, "oops", "oops.bin", "/src/oops")
 	_, err := wb.Build(context.Background(), spec)
@@ -417,7 +475,7 @@ func TestWeightBuilder_ErrorContextCancelled(t *testing.T) {
 	projectDir := t.TempDir()
 	makeWeightDir(t, projectDir, "w", map[string][]byte{"a.json": []byte(`{"x":1}`)})
 
-	wb := newTestBuilder(t, projectDir, nil)
+	wb, _ := newTestBuilder(t, projectDir, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -430,7 +488,7 @@ func TestWeightBuilder_ErrorContextCancelled(t *testing.T) {
 
 func TestWeightBuilder_ImplementsBuilderInterface(t *testing.T) {
 	projectDir := t.TempDir()
-	wb := newTestBuilder(t, projectDir, nil)
+	wb, _ := newTestBuilder(t, projectDir, nil)
 	var _ Builder = wb
 }
 
@@ -453,7 +511,7 @@ func TestWeightBuilder_NormalizesSourceURI(t *testing.T) {
 			projectDir := t.TempDir()
 			makeWeightDir(t, projectDir, "weights/mw", map[string][]byte{"c.json": []byte(`{}`)})
 
-			wb := newTestBuilder(t, projectDir, []config.WeightSource{
+			wb, _ := newTestBuilder(t, projectDir, []config.WeightSource{
 				{Name: "mw", Target: "/src/weights/mw", Source: &config.WeightSourceConfig{URI: tc.rawURI}},
 			})
 			spec := testWeightSpec(t, "mw", tc.rawURI, "/src/weights/mw")

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"sort"
@@ -10,6 +11,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
 // MediaTypeWeightArtifact is the artifactType on a weight manifest. Layers
@@ -97,29 +99,36 @@ func (s *WeightSpec) Name() string       { return s.name }
 // It implements Artifact.
 //
 // The lockfile entry (Entry) is the single source of truth for all
-// metadata. The packed layers provide on-disk tar paths for streaming
-// during push. The manifest image is cached from the build step so the
-// pusher doesn't need to rebuild it.
+// metadata. Each layer carries its layerPlan; layer bytes are
+// reproduced on demand by streaming from store at push time.
 type WeightArtifact struct {
 	descriptor v1.Descriptor
-	manifest   v1.Image
 
 	// Entry is the lockfile entry describing this weight's metadata.
 	// Must not be mutated after construction.
 	Entry lockfile.WeightLockEntry
 
-	// Layers are the packed tar layers on disk. The pusher reads from
-	// these to upload blobs; their metadata (digest, size, mediaType)
-	// matches Entry.Layers.
+	// Layers are the packed layer descriptors. The pusher reads bytes
+	// for each layer by replaying its layerPlan against store; their
+	// metadata (digest, size, mediaType) matches Entry.Layers.
 	Layers []packedLayer
+
+	// store is the content-addressed store from which layer bytes are
+	// re-streamed during push. Required for any path that reads
+	// layer bytes; tests that only inspect Entry/Layers metadata may
+	// leave it nil.
+	store store.Store
 }
 
-// buildWeightArtifact builds a WeightArtifact from a lockfile entry and
-// packed layers. It assembles the manifest, computes the manifest
-// descriptor, and backfills entry.Digest — the full ceremony that every
-// call site previously did by hand.
-func buildWeightArtifact(entry *lockfile.WeightLockEntry, layers []packedLayer) (*WeightArtifact, error) {
-	img, err := buildWeightManifestV1(*entry, layers)
+// buildWeightArtifact builds a WeightArtifact from a lockfile entry,
+// packed layer descriptors, and the store from which the layers can
+// be re-streamed during push. It assembles the manifest *for digest
+// computation only* (so entry.Digest can be backfilled), then
+// discards it: the manifest carries fileLayers wired to a particular
+// context, so reusing it across Push calls would defeat
+// cancellation. Push rebuilds the manifest with the push context.
+func buildWeightArtifact(entry *lockfile.WeightLockEntry, layers []packedLayer, st store.Store) (*WeightArtifact, error) {
+	img, err := buildWeightManifestV1(context.Background(), *entry, layers, st)
 	if err != nil {
 		return nil, fmt.Errorf("build weight manifest: %w", err)
 	}
@@ -130,9 +139,9 @@ func buildWeightArtifact(entry *lockfile.WeightLockEntry, layers []packedLayer) 
 	entry.Digest = desc.Digest.String()
 	return &WeightArtifact{
 		descriptor: desc,
-		manifest:   img,
 		Entry:      *entry,
 		Layers:     layers,
+		store:      st,
 	}, nil
 }
 
@@ -150,11 +159,6 @@ func newWeightArtifact(entry lockfile.WeightLockEntry, desc v1.Descriptor, layer
 func (a *WeightArtifact) Type() ArtifactType        { return ArtifactTypeWeight }
 func (a *WeightArtifact) Name() string              { return a.Entry.Name }
 func (a *WeightArtifact) Descriptor() v1.Descriptor { return a.descriptor }
-
-// Manifest returns the cached OCI manifest image built during
-// construction. Returns nil if the artifact was created via
-// newWeightArtifact without a pre-built manifest.
-func (a *WeightArtifact) Manifest() v1.Image { return a.manifest }
 
 // TotalSize returns the sum of all layer blob sizes (bytes over the wire).
 func (a *WeightArtifact) TotalSize() int64 { return a.Entry.SizeCompressed }

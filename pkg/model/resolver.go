@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
 // Option configures how Resolver methods behave.
@@ -249,7 +250,11 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 
 	if len(src.Config.Weights) > 0 {
-		wb := NewWeightBuilder(src, lockPath)
+		st, storeErr := store.OpenDefault()
+		if storeErr != nil {
+			return nil, fmt.Errorf("open weights store: %w", storeErr)
+		}
+		wb := NewWeightBuilder(src, st, lockPath)
 		for _, ws := range src.Config.Weights {
 			spec, specErr := WeightSpecFromConfig(ws)
 			if specErr != nil {
