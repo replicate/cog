@@ -33,6 +33,11 @@ func newWeightsCommand() *cobra.Command {
 }
 
 func newWeightsImportCommand() *cobra.Command {
+	var (
+		dryRun  bool
+		verbose bool
+	)
+
 	cmd := &cobra.Command{
 		Use:   "import [name...]",
 		Short: "Build and push weights to a registry",
@@ -49,17 +54,24 @@ defined in cog.yaml are imported.
 
 The registry is determined from the image name, which can be:
 - Set in cog.yaml as the 'image' field
-- Overridden with the --image flag`,
+- Overridden with the --image flag
+
+Use --dry-run to preview what would change without importing anything.
+Add --verbose to see per-file details including which files pass the filter.`,
 		Args: cobra.ArbitraryArgs,
-		RunE: weightsImportCommand,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return weightsImportCommand(cmd, args, dryRun, verbose)
+		},
 	}
 
 	addConfigFlag(cmd)
 	cmd.Flags().String("image", "", "Registry repository (overrides cog.yaml image field)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be imported without making changes")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show per-file details")
 	return cmd
 }
 
-func weightsImportCommand(cmd *cobra.Command, args []string) error {
+func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose bool) error {
 	ctx := cmd.Context()
 
 	src, err := model.NewSource(configFilename)
@@ -87,17 +99,34 @@ func weightsImportCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	console.Infof("Building %d weight(s)...", len(weightSpecs))
+	// Always plan first to show the user what would happen.
+	lockPath := filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
+	builder := model.NewWeightBuilder(src, nil, lockPath)
 
+	plans, err := planWeightImports(ctx, builder, weightSpecs)
+	if err != nil {
+		return err
+	}
+
+	printImportPlan(plans, verbose)
+
+	if dryRun {
+		return nil
+	}
+
+	// Proceed with the real import. We create a new builder with a real
+	// store but reuse each plan's resolvedInventory (which captures the
+	// Source and filtered file list, independent of the builder).
 	fileStore, err := store.OpenDefault()
 	if err != nil {
 		return fmt.Errorf("open weights store: %w", err)
 	}
 
-	lockPath := filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
-	builder := model.NewWeightBuilder(src, fileStore, lockPath)
+	builder = model.NewWeightBuilder(src, fileStore, lockPath)
 
-	artifacts, err := buildWeightArtifacts(ctx, builder, weightSpecs)
+	console.Infof("Building %d weight(s)...", len(weightSpecs))
+
+	artifacts, err := buildWeightArtifactsFromPlans(ctx, builder, weightSpecs, plans)
 	if err != nil {
 		return err
 	}
@@ -110,6 +139,86 @@ func weightsImportCommand(cmd *cobra.Command, args []string) error {
 	console.Infof("\nPushing %d weight(s) to %s...", len(artifacts), repo)
 
 	return pushWeightArtifacts(ctx, repo, artifacts, "Imported")
+}
+
+// planWeightImports runs PlanImport for each spec without side effects.
+func planWeightImports(ctx context.Context, builder *model.WeightBuilder, specs []*model.WeightSpec) ([]*model.WeightImportPlan, error) {
+	plans := make([]*model.WeightImportPlan, 0, len(specs))
+	for _, ws := range specs {
+		plan, err := builder.PlanImport(ctx, ws)
+		if err != nil {
+			return nil, fmt.Errorf("plan weight %q: %w", ws.Name(), err)
+		}
+		plans = append(plans, plan)
+	}
+	return plans, nil
+}
+
+// buildWeightArtifactsFromPlans builds each weight spec, reusing the
+// pre-computed inventories from planning to avoid re-walking sources.
+func buildWeightArtifactsFromPlans(ctx context.Context, builder *model.WeightBuilder, specs []*model.WeightSpec, plans []*model.WeightImportPlan) ([]*model.WeightArtifact, error) {
+	artifacts := make([]*model.WeightArtifact, 0, len(specs))
+	for i, ws := range specs {
+		artifact, err := builder.BuildFromPlan(ctx, ws, plans[i])
+		if err != nil {
+			return nil, fmt.Errorf("failed to build weight %q: %w", ws.Name(), err)
+		}
+		wa, ok := artifact.(*model.WeightArtifact)
+		if !ok {
+			return nil, fmt.Errorf("unexpected artifact type %T for weight %q", artifact, ws.Name())
+		}
+		artifacts = append(artifacts, wa)
+	}
+	return artifacts, nil
+}
+
+// printImportPlan prints a human-readable summary of what would happen.
+func printImportPlan(plans []*model.WeightImportPlan, verbose bool) {
+	for _, p := range plans {
+		statusIcon := planStatusIcon(p.Status)
+		console.Infof("%s %s  %s → %s", statusIcon, p.Spec.Name(), p.Spec.URI, p.Spec.Target)
+		console.Infof("  status: %s", p.Status)
+
+		if len(p.Changes) > 0 {
+			for _, c := range p.Changes {
+				console.Infof("  changed: %s", c)
+			}
+		}
+
+		filtered := p.FilteredFiles()
+		console.Infof("  files: %d  size: %s", len(filtered), formatSize(p.TotalSize()))
+
+		if verbose {
+			excluded := p.ExcludedFiles()
+			if len(excluded) > 0 {
+				console.Infof("  excluded (%d files):", len(excluded))
+				for _, f := range excluded {
+					console.Infof("    - %s (%s)", f.Path, formatSize(f.Size))
+				}
+			}
+			if len(filtered) > 0 {
+				console.Infof("  included (%d files):", len(filtered))
+				for _, f := range filtered {
+					console.Infof("    + %s (%s)", f.Path, formatSize(f.Size))
+				}
+			}
+		}
+
+		console.Infof("") // blank line between weights
+	}
+}
+
+func planStatusIcon(status model.WeightImportPlanStatus) string {
+	switch status {
+	case model.PlanStatusNew:
+		return "+"
+	case model.PlanStatusUnchanged:
+		return "="
+	case model.PlanStatusConfigChanged, model.PlanStatusUpstreamChanged:
+		return "~"
+	default:
+		return "?"
+	}
 }
 
 // collectWeightSpecs extracts WeightSpecs from the source, optionally
@@ -155,24 +264,6 @@ func collectWeightSpecs(src *model.Source, filterNames []string) ([]*model.Weigh
 		filtered = append(filtered, ws)
 	}
 	return filtered, nil
-}
-
-// buildWeightArtifacts builds each weight spec into a WeightArtifact via
-// the builder, returning the results in the same order as the input specs.
-func buildWeightArtifacts(ctx context.Context, builder *model.WeightBuilder, specs []*model.WeightSpec) ([]*model.WeightArtifact, error) {
-	artifacts := make([]*model.WeightArtifact, 0, len(specs))
-	for _, ws := range specs {
-		artifact, err := builder.Build(ctx, ws)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build weight %q: %w", ws.Name(), err)
-		}
-		wa, ok := artifact.(*model.WeightArtifact)
-		if !ok {
-			return nil, fmt.Errorf("unexpected artifact type %T for weight %q", artifact, ws.Name())
-		}
-		artifacts = append(artifacts, wa)
-	}
-	return artifacts, nil
 }
 
 // parseRepoOnly parses an image string as a bare repository, rejecting
