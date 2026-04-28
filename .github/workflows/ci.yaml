@@ -13,6 +13,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # Strict lockfile mode: fail if mise.lock is missing entries for the current
+  # platform instead of silently resolving and rewriting the lockfile.
+  MISE_LOCKED: "1"
   # Single source of truth for supported Python versions
   SUPPORTED_PYTHONS: '["3.10", "3.11", "3.12", "3.13"]'
   # Default Python version for non-matrix jobs
