@@ -21,10 +21,13 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/rogpeppe/go-internal/testscript"
 
+	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/registry_testhelpers"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // propagatedEnvVars lists host environment variables that should be propagated
@@ -1067,28 +1070,6 @@ func (h *Harness) cmdDockerPush(ts *testscript.TestScript, neg bool, args []stri
 // Mock weights command
 // =============================================================================
 
-// mockWeightsLock mirrors the structure from pkg/model/weights_lock.go
-// SYNC: If pkg/model/WeightsLock changes, update this copy.
-// We duplicate it here to avoid importing pkg/model which transitively imports pkg/wheels.
-type mockWeightsLock struct {
-	Version string           `json:"version"`
-	Created time.Time        `json:"created"`
-	Files   []mockWeightFile `json:"files"`
-}
-
-// mockWeightFile mirrors WeightFile from pkg/model/weights.go
-// SYNC: If pkg/model/WeightFile changes, update this copy.
-type mockWeightFile struct {
-	Name             string `json:"name"`
-	Dest             string `json:"dest"`
-	DigestOriginal   string `json:"digestOriginal"`
-	Digest           string `json:"digest"`
-	Size             int64  `json:"size"`
-	SizeUncompressed int64  `json:"sizeUncompressed"`
-	MediaType        string `json:"mediaType"`
-	ContentType      string `json:"contentType,omitempty"`
-}
-
 // cmdMockWeights generates mock weight files and a weights.lock file.
 // Usage: mock-weights [--count N] [--min-size S] [--max-size S]
 // Defaults:
@@ -1142,7 +1123,7 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 		ts.Fatalf("mock-weights: failed to create weights dir: %v", err)
 	}
 
-	var files []mockWeightFile
+	var entries []lockfile.WeightLockEntry
 
 	for i := 1; i <= count; i++ {
 		// Random size between min and max
@@ -1151,10 +1132,16 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 			size = minSize + mathrand.Int64N(maxSize-minSize+1) //nolint:gosec // test data, not security-sensitive
 		}
 
-		// Generate identifier (e.g., "weights-001")
+		// Each weight is a directory containing a single random file.
+		// That's the smallest thing that still exercises the v1
+		// directory-per-weight contract.
 		weightName := fmt.Sprintf("weights-%03d", i)
-		filename := weightName + ".bin"
-		filePath := filepath.Join(weightsDir, filename)
+		weightDir := filepath.Join(weightsDir, weightName)
+		if err := os.MkdirAll(weightDir, 0o755); err != nil {
+			ts.Fatalf("mock-weights: failed to create weight dir: %v", err)
+		}
+		filename := "data.bin"
+		filePath := filepath.Join(weightDir, filename)
 
 		// Generate random data
 		data := make([]byte, size)
@@ -1162,41 +1149,65 @@ func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []str
 			ts.Fatalf("mock-weights: failed to generate random data: %v", err)
 		}
 
-		// Write file
 		if err := os.WriteFile(filePath, data, 0o644); err != nil {
 			ts.Fatalf("mock-weights: failed to write %s: %v", filename, err)
 		}
 
-		// Compute digest (uncompressed, since we're not actually compressing for tests)
-		hash := sha256.Sum256(data)
-		digest := "sha256:" + hex.EncodeToString(hash[:])
+		// Layer digest stands in for the content digest (no actual packing
+		// happens here — this is a mock). The manifest digest is derived
+		// from name+layerDigest for determinism.
+		layerHash := sha256.Sum256(data)
+		layerDigest := "sha256:" + hex.EncodeToString(layerHash[:])
 
-		files = append(files, mockWeightFile{
-			Name:             weightName,
-			Dest:             "/cache/" + filename,
-			DigestOriginal:   digest,
-			Digest:           digest, // Same as original since we're not compressing
-			Size:             size,
-			SizeUncompressed: size,
-			// MediaType matches production WeightBuilder output (uncompressed).
-			MediaType:   "application/vnd.cog.weight.layer.v1",
-			ContentType: "application/octet-stream",
+		manifestSeed := sha256.Sum256([]byte(weightName + "|" + layerDigest))
+		manifestDigest := "sha256:" + hex.EncodeToString(manifestSeed[:])
+
+		// setDigest stands in as both the content address and the
+		// file:// fingerprint — the mock doesn't actually run the packer,
+		// so we use the file's own content digest as the stand-in. That's
+		// still a valid sha256:<hex>.
+		setDigest := layerDigest
+
+		entries = append(entries, lockfile.WeightLockEntry{
+			Name:   weightName,
+			Target: "/src/weights/" + weightName,
+			Source: lockfile.WeightLockSource{
+				URI:         "file://./weights/" + weightName,
+				Fingerprint: weightsource.Fingerprint(setDigest),
+				Include:     []string{},
+				Exclude:     []string{},
+				ImportedAt:  time.Now().UTC(),
+			},
+			Digest:         manifestDigest,
+			SetDigest:      setDigest,
+			Size:           size,
+			SizeCompressed: size,
+			Files: []lockfile.WeightLockFile{
+				{
+					Path:   filename,
+					Size:   size,
+					Digest: layerDigest,
+					Layer:  layerDigest,
+				},
+			},
+			Layers: []lockfile.WeightLockLayer{
+				{
+					Digest:           layerDigest,
+					MediaType:        string(types.OCIUncompressedLayer),
+					Size:             size,
+					SizeUncompressed: size,
+				},
+			},
 		})
 	}
 
 	// Create weights.lock
-	lock := mockWeightsLock{
-		Version: "1.0",
-		Created: time.Now().UTC(),
-		Files:   files,
+	lock := lockfile.WeightsLock{
+		Version: lockfile.Version,
+		Weights: entries,
 	}
 
-	lockData, err := json.MarshalIndent(lock, "", "  ")
-	if err != nil {
-		ts.Fatalf("mock-weights: failed to marshal weights.lock: %v", err)
-	}
-
-	if err := os.WriteFile(lockPath, lockData, 0o644); err != nil {
+	if err := lock.Save(lockPath); err != nil {
 		ts.Fatalf("mock-weights: failed to write weights.lock: %v", err)
 	}
 

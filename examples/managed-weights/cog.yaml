@@ -1,0 +1,48 @@
+# Example model for testing the v1 managed-weights OCI artifact format.
+#
+# The weights/ directory is populated by a human (see README.md) with
+# nvidia/parakeet-tdt-0.6b-v3 from HuggingFace. It's listed in .gitignore
+# so the ~5GB payload never hits git.
+#
+# Import weights and generate the lockfile:
+#   cog weights import
+#
+# Build and push the full bundle:
+#   cog push localhost:5000/managed-weights
+
+image: registry.cloudflare.com/3515b24d58ec616d11f4ce4290a02ac4/md/examples/managed-weights
+# image: localhost:5000/md/examples/managed-weights
+
+build:
+  gpu: false
+  python_version: "3.12"
+  python_requirements: requirements.txt
+
+predict: "predict.py:Predictor"
+
+weights:
+  - name: parakeet
+    source:
+      uri: weights
+      include:
+        - "*.safetensors"    # HF-format weights (skip the .nemo bundle)
+        - "*.json"           # model + tokenizer configs
+    target: /src/weights/parakeet
+  - name: minilm
+    source: 
+      uri: hf://sentence-transformers/all-MiniLM-L6-v2
+      exclude:
+        - "onnx/"            # ONNX runtime variants (~474 MB)
+        - "openvino/"        # OpenVINO runtime variants (~113 MB)
+        - "pytorch_model.bin"  # legacy format, redundant with model.safetensors
+        - "tf_model.h5"      # TensorFlow weights
+        - "rust_model.ot"    # Rust (tch-rs) weights
+        - "train_script.py"  # training artifact
+        - "data_config.json" # training data config
+        - "README.md"
+        - ".gitattributes"
+    target: /src/weights/minilm
+  # - name: qwen3.6-27b-fp8
+  #   source:
+  #     uri: hf://Qwen/Qwen3.6-27B-FP8
+  #   target: /src/weights/qwen

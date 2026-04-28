@@ -1,0 +1,68 @@
+# Test that include/exclude patterns in cog.yaml filter the weight set
+# during import. A file:// source with mixed file types is created,
+# then imported with include/exclude patterns. The resulting lockfile
+# and predict output verify that only the matching files were included.
+
+[short] skip 'requires local registry'
+
+env COG_CACHE_DIR=$WORK/cache
+
+registry-start
+
+# Build a weight directory with multiple file types.
+mkdir weights-src
+exec sh -c 'echo "safetensor-data" > weights-src/model.safetensors'
+exec sh -c 'echo "config-data" > weights-src/config.json'
+exec sh -c 'echo "tokenizer-data" > weights-src/tokenizer.json'
+exec sh -c 'echo "onnx-data" > weights-src/model.onnx'
+exec sh -c 'echo "pytorch-bin-data" > weights-src/pytorch_model.bin'
+exec sh -c 'echo "readme-text" > weights-src/README.md'
+
+# Patch image to use ephemeral test registry.
+exec sh -c 'printf "image: %s/test/filter-model\n" "$TEST_REGISTRY" >> cog.yaml'
+
+# Import with include/exclude filters.
+cog weights import
+exists weights.lock
+
+# The lockfile must contain the included files.
+exec sh -c 'grep "model.safetensors" weights.lock'
+exec sh -c 'grep "config.json" weights.lock'
+exec sh -c 'grep "tokenizer.json" weights.lock'
+
+# The lockfile must NOT contain excluded / non-included files.
+! exec sh -c 'grep "model.onnx" weights.lock'
+! exec sh -c 'grep "pytorch_model.bin" weights.lock'
+! exec sh -c 'grep "README.md" weights.lock'
+
+# Predict verifies that only filtered files are mounted.
+cog predict -i s=check
+stdout 'files=config.json,model.safetensors,tokenizer.json'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+image: test/filter-model
+weights:
+  - name: filtered
+    target: /src/weights/filtered
+    source:
+      uri: file://./weights-src
+      include:
+        - "*.safetensors"
+        - "*.json"
+      exclude:
+        - "README*"
+
+-- predict.py --
+import os
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        weight_dir = "/src/weights/filtered"
+        files = sorted(os.listdir(weight_dir))
+        return f"files={','.join(files)}"
