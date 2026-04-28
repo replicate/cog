@@ -134,7 +134,7 @@ func weightsStatusCommand(cmd *cobra.Command, jsonOutput, verbose bool) error {
 
 	printWeightsStatusText(out, verbose)
 
-	if ws.HasProblems() {
+	if !ws.AllReady() {
 		return errWeightsNotReady
 	}
 
@@ -148,7 +148,7 @@ func statusResultsToEntries(results []model.WeightStatusResult) []WeightStatusEn
 		entries[i] = WeightStatusEntry{
 			Name:   r.Name,
 			Target: r.Target,
-			Status: r.Status,
+			Status: string(r.Status),
 		}
 		if r.LockEntry != nil {
 			le := r.LockEntry
@@ -163,7 +163,7 @@ func statusResultsToEntries(results []model.WeightStatusResult) []WeightStatusEn
 			entries[i].Layers = append(entries[i].Layers, LayerStatusEntry{
 				Digest: l.Digest,
 				Size:   l.Size,
-				Status: l.Status,
+				Status: string(l.Status),
 			})
 		}
 	}
@@ -226,12 +226,10 @@ func printWeightsStatusText(out *WeightsStatusOutput, verbose bool) {
 
 // formatDigestShort returns a human-friendly short digest like "sha256:a1b2c3d4e5f6".
 func formatDigestShort(digest string) string {
-	algo, hex, ok := strings.Cut(digest, ":")
-	if !ok {
+	short := model.ShortDigest(digest)
+	if short == "" {
 		return digest
 	}
-	if len(hex) > 12 {
-		hex = hex[:12]
-	}
-	return algo + ":" + hex
+	algo, _, _ := strings.Cut(digest, ":")
+	return algo + ":" + short
 }

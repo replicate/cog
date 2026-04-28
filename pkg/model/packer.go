@@ -10,12 +10,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/weights/store"
@@ -258,6 +260,9 @@ func (p *packer) planLayers(inv weightsource.Inventory) plan {
 // The store MUST already contain every file referenced by the plan;
 // callers ingressFromInventory before calling this.
 //
+// Layers are processed concurrently (bounded by GOMAXPROCS) since each
+// layer reads independent files from the store and writes to io.Discard.
+//
 // On success returns one packedLayer per layerPlan, with Digest, Size,
 // UncompressedSize, MediaType, and the originating Plan filled in.
 // The Plan field lets callers later reconstruct the layer bytes for
@@ -267,16 +272,23 @@ func (p *packer) computeLayerDigests(ctx context.Context, st store.Store, pl pla
 		return nil, fmt.Errorf("no layers in plan")
 	}
 
-	results := make([]packedLayer, 0, len(pl.Layers))
-	for _, lp := range pl.Layers {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		lr, err := p.streamLayer(ctx, st, lp, io.Discard)
-		if err != nil {
-			return nil, err
-		}
-		results = append(results, lr)
+	results := make([]packedLayer, len(pl.Layers))
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(runtime.GOMAXPROCS(0))
+
+	for i, lp := range pl.Layers {
+		g.Go(func() error {
+			lr, err := p.streamLayer(ctx, st, lp, io.Discard)
+			if err != nil {
+				return err
+			}
+			results[i] = lr
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 	return results, nil
 }

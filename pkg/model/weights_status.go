@@ -10,17 +10,23 @@ import (
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
-const (
-	WeightStatusReady      = "ready"
-	WeightStatusIncomplete = "incomplete"
-	WeightStatusStale      = "stale"
-	WeightStatusPending    = "pending"
-	WeightStatusOrphaned   = "orphaned"
-)
+// WeightStatus describes the resolved status of a weight.
+type WeightStatus string
 
 const (
-	LayerStatusReady   = "ready"
-	LayerStatusMissing = "missing"
+	WeightStatusReady      WeightStatus = "ready"
+	WeightStatusIncomplete WeightStatus = "incomplete"
+	WeightStatusStale      WeightStatus = "stale"
+	WeightStatusPending    WeightStatus = "pending"
+	WeightStatusOrphaned   WeightStatus = "orphaned"
+)
+
+// LayerStatus describes the registry presence of a single layer.
+type LayerStatus string
+
+const (
+	LayerStatusReady   LayerStatus = "ready"
+	LayerStatusMissing LayerStatus = "missing"
 )
 
 // WeightStatusResult is one weight's resolved status. The LockEntry pointer
@@ -29,7 +35,7 @@ const (
 type WeightStatusResult struct {
 	Name      string
 	Target    string
-	Status    string
+	Status    WeightStatus
 	LockEntry *lockfile.WeightLockEntry
 	Layers    []LayerStatusResult
 }
@@ -38,7 +44,7 @@ type WeightStatusResult struct {
 type LayerStatusResult struct {
 	Digest string
 	Size   int64
-	Status string
+	Status LayerStatus
 }
 
 // WeightsStatus is the computed status of all weights for a model.
@@ -232,13 +238,8 @@ func (ws *WeightsStatus) AllReady() bool {
 	return true
 }
 
-// HasProblems reports whether any weight is not ready.
-func (ws *WeightsStatus) HasProblems() bool {
-	return !ws.AllReady()
-}
-
 // ByStatus returns all results with the given status.
-func (ws *WeightsStatus) ByStatus(status string) []WeightStatusResult {
+func (ws *WeightsStatus) ByStatus(status WeightStatus) []WeightStatusResult {
 	var out []WeightStatusResult
 	for _, r := range ws.results {
 		if r.Status == status {

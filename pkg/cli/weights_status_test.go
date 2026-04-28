@@ -43,7 +43,7 @@ func TestStatusResultsToEntries(t *testing.T) {
 	require.Len(t, entries, 2)
 
 	assert.Equal(t, "base", entries[0].Name)
-	assert.Equal(t, model.WeightStatusReady, entries[0].Status)
+	assert.EqualValues(t, model.WeightStatusReady, entries[0].Status)
 	assert.Equal(t, int64(4096), entries[0].Size)
 	assert.Equal(t, int64(2048), entries[0].SizeCompressed)
 	assert.Equal(t, 2, entries[0].LayerCount)
@@ -52,10 +52,10 @@ func TestStatusResultsToEntries(t *testing.T) {
 	require.NotNil(t, entries[0].Source)
 	assert.Equal(t, "file://./weights", entries[0].Source.URI)
 	require.Len(t, entries[0].Layers, 2)
-	assert.Equal(t, model.LayerStatusReady, entries[0].Layers[0].Status)
+	assert.EqualValues(t, model.LayerStatusReady, entries[0].Layers[0].Status)
 
 	assert.Equal(t, "pending", entries[1].Name)
-	assert.Equal(t, model.WeightStatusPending, entries[1].Status)
+	assert.EqualValues(t, model.WeightStatusPending, entries[1].Status)
 	assert.Equal(t, int64(0), entries[1].Size)
 	assert.Nil(t, entries[1].Source)
 	assert.Empty(t, entries[1].Layers)
@@ -67,7 +67,7 @@ func TestWeightsStatusJSONOutput(t *testing.T) {
 			{
 				Name:           "base",
 				Target:         "/weights/base",
-				Status:         model.WeightStatusReady,
+				Status:         "ready",
 				Size:           4096,
 				SizeCompressed: 2048,
 				LayerCount:     2,
@@ -82,7 +82,7 @@ func TestWeightsStatusJSONOutput(t *testing.T) {
 			{
 				Name:   "pending-weight",
 				Target: "/weights/new",
-				Status: model.WeightStatusPending,
+				Status: "pending",
 			},
 		},
 	}
@@ -99,12 +99,12 @@ func TestWeightsStatusJSONOutput(t *testing.T) {
 
 	ready := decoded.Weights[0]
 	assert.Equal(t, "base", ready.Name)
-	assert.Equal(t, "ready", ready.Status)
+	assert.EqualValues(t, model.WeightStatusReady, ready.Status)
 	assert.Len(t, ready.Layers, 2)
 
 	pending := decoded.Weights[1]
 	assert.Equal(t, "pending-weight", pending.Name)
-	assert.Equal(t, "pending", pending.Status)
+	assert.EqualValues(t, model.WeightStatusPending, pending.Status)
 	assert.Empty(t, pending.Layers)
 }
 

@@ -380,7 +380,7 @@ func TestWeightStatuses_EmptyConfigWithOrphanedLockEntries(t *testing.T) {
 	ws := computeStatus(t, &config.Config{}, lock, "repo", newMockRegistry())
 	require.Len(t, ws.Results(), 1)
 	assert.Equal(t, WeightStatusOrphaned, ws.Results()[0].Status)
-	assert.True(t, ws.HasProblems())
+	assert.False(t, ws.AllReady())
 }
 
 func TestWeightStatuses_NilSourceIsStale(t *testing.T) {
