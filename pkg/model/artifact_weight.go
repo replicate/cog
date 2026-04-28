@@ -1,99 +1,170 @@
 package model
 
 import (
-	"time"
+	"context"
+	"fmt"
+	"slices"
+	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+
+	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
-// Media types for weight artifacts (OCI 1.1 conventions).
-const (
-	// MediaTypeWeightArtifact is the artifactType for weight manifests.
-	MediaTypeWeightArtifact = "application/vnd.cog.weight.v1"
-	// MediaTypeWeightConfig is the media type for weight config blobs.
-	MediaTypeWeightConfig = "application/vnd.cog.weight.config.v1+json"
-	// MediaTypeWeightLayer is the media type for uncompressed weight layers.
-	MediaTypeWeightLayer = "application/vnd.cog.weight.layer.v1"
-	// MediaTypeWeightLayerGzip is the media type for gzip-compressed weight layers.
-	MediaTypeWeightLayerGzip = "application/vnd.cog.weight.layer.v1+gzip"
-	// MediaTypeWeightLayerZstd is the media type for zstd-compressed weight layers (future).
-	MediaTypeWeightLayerZstd = "application/vnd.cog.weight.layer.v1+zstd"
-)
+// MediaTypeWeightArtifact is the artifactType on a weight manifest. Layers
+// use standard OCI layer media types; this constant lives on the manifest
+// itself so clients can distinguish weight manifests from image manifests
+// without parsing annotations.
+const MediaTypeWeightArtifact = "application/vnd.cog.weight.v1"
 
-// Annotation keys for weight file layers in OCI manifests.
-const (
-	AnnotationWeightName             = "vnd.cog.weight.name"
-	AnnotationWeightDest             = "vnd.cog.weight.dest"
-	AnnotationWeightDigestOriginal   = "vnd.cog.weight.digest.original"
-	AnnotationWeightSizeUncompressed = "vnd.cog.weight.size.uncompressed"
-)
-
-// WeightSpec declares a weight artifact to be built.
-// It implements ArtifactSpec.
+// WeightSpec is the normalized, user-declared description of a weight:
+// target mount path, source URI, and include/exclude filters. Construct
+// via WeightSpecFromConfig or WeightSpecFromLock; compare with Equal.
+//
+// Include and Exclude are sorted at construction time. They describe a
+// set of glob patterns applied by the packer, so order is not part of
+// the user's intent — reordering patterns in cog.yaml must not trigger
+// a rebuild.
 type WeightSpec struct {
-	name string
-	// Source is the local file path to the weight file.
-	Source string
-	// Target is the container mount path for this weight.
-	Target string
+	name    string
+	Target  string   // container mount path
+	URI     string   // normalized source URI (file://./weights, hf://org/repo)
+	Include []string // sorted glob patterns
+	Exclude []string // sorted glob patterns
 }
 
-// NewWeightSpec creates a WeightSpec with the given name, source path, and target mount path.
-func NewWeightSpec(name, source, target string) *WeightSpec {
+// WeightSpecFromConfig builds a WeightSpec from a cog.yaml weight entry,
+// normalizing the URI and cloning+sorting Include/Exclude. Returns an
+// error if the URI is empty or uses an unknown scheme.
+func WeightSpecFromConfig(w config.WeightSource) (*WeightSpec, error) {
+	uri, err := weightsource.NormalizeURI(w.SourceURI())
+	if err != nil {
+		return nil, fmt.Errorf("weight %q: %w", w.Name, err)
+	}
+	var include, exclude []string
+	if w.Source != nil {
+		include = sortedClone(w.Source.Include)
+		exclude = sortedClone(w.Source.Exclude)
+	}
 	return &WeightSpec{
-		name:   name,
-		Source: source,
-		Target: target,
+		name:    w.Name,
+		Target:  w.Target,
+		URI:     uri,
+		Include: include,
+		Exclude: exclude,
+	}, nil
+}
+
+// WeightSpecFromLock extracts the user-intent fields (target, URI,
+// include/exclude) from a lockfile entry. Fields are copied as stored:
+// no re-normalization. A lockfile whose on-disk form differs from what
+// we would write today — whether in URI form, include/exclude order, or
+// anything else — must report as drift so the next build rewrites it.
+func WeightSpecFromLock(e lockfile.WeightLockEntry) *WeightSpec {
+	return &WeightSpec{
+		name:    e.Name,
+		Target:  e.Target,
+		URI:     e.Source.URI,
+		Include: slices.Clone(e.Source.Include),
+		Exclude: slices.Clone(e.Source.Exclude),
 	}
 }
 
-// Type returns ArtifactTypeWeight.
+// sortedClone returns a sorted copy of s with whitespace-trimmed elements,
+// or nil if s is nil. Trimming normalizes patterns that may have stray
+// whitespace from YAML parsing; sorting removes order-dependence so
+// reordering patterns in cog.yaml does not trigger a rebuild.
+func sortedClone(s []string) []string {
+	if s == nil {
+		return nil
+	}
+	out := make([]string, len(s))
+	for i, v := range s {
+		out[i] = strings.TrimSpace(v)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// Equal reports whether two specs describe the same user intent.
+// Name is excluded: callers only compare specs for the same weight name.
+func (s *WeightSpec) Equal(other *WeightSpec) bool {
+	return s.Target == other.Target &&
+		s.URI == other.URI &&
+		slices.Equal(s.Include, other.Include) &&
+		slices.Equal(s.Exclude, other.Exclude)
+}
+
 func (s *WeightSpec) Type() ArtifactType { return ArtifactTypeWeight }
+func (s *WeightSpec) Name() string       { return s.name }
 
-// Name returns the spec's logical name.
-func (s *WeightSpec) Name() string { return s.name }
-
-// WeightArtifact is a built weight artifact ready to push as an OCI artifact.
+// WeightArtifact is a built weight artifact ready to push as an OCI manifest.
 // It implements Artifact.
+//
+// The lockfile entry (Entry) is the single source of truth for all
+// metadata. Each layer carries its layerPlan; layer bytes are
+// reproduced on demand by streaming from store at push time.
 type WeightArtifact struct {
-	name       string
 	descriptor v1.Descriptor
 
-	// FilePath is the local file path to the weight data (for pushing layers).
-	FilePath string
-	// Target is the container mount path for this weight.
-	Target string
-	// Config is the weight metadata for the config blob.
-	Config WeightConfig
+	// Entry is the lockfile entry describing this weight's metadata.
+	// Must not be mutated after construction.
+	Entry lockfile.WeightLockEntry
+
+	// Layers are the packed layer descriptors. The pusher reads bytes
+	// for each layer by replaying its layerPlan against store; their
+	// metadata (digest, size, mediaType) matches Entry.Layers.
+	Layers []packedLayer
+
+	// store is the content-addressed store from which layer bytes are
+	// re-streamed during push. Required for any path that reads
+	// layer bytes; tests that only inspect Entry/Layers metadata may
+	// leave it nil.
+	store store.Store
 }
 
-// NewWeightArtifact creates a WeightArtifact from a build result.
-func NewWeightArtifact(name string, desc v1.Descriptor, filePath, target string, cfg WeightConfig) *WeightArtifact {
+// buildWeightArtifact builds a WeightArtifact from a lockfile entry,
+// packed layer descriptors, and the store from which the layers can
+// be re-streamed during push. It assembles the manifest *for digest
+// computation only* (so entry.Digest can be backfilled), then
+// discards it: the manifest carries fileLayers wired to a particular
+// context, so reusing it across Push calls would defeat
+// cancellation. Push rebuilds the manifest with the push context.
+func buildWeightArtifact(entry *lockfile.WeightLockEntry, layers []packedLayer, st store.Store) (*WeightArtifact, error) {
+	img, err := buildWeightManifestV1(context.Background(), *entry, layers, st)
+	if err != nil {
+		return nil, fmt.Errorf("build weight manifest: %w", err)
+	}
+	desc, err := descriptorFromImage(img)
+	if err != nil {
+		return nil, fmt.Errorf("compute manifest descriptor: %w", err)
+	}
+	entry.Digest = desc.Digest.String()
 	return &WeightArtifact{
-		name:       name,
 		descriptor: desc,
-		FilePath:   filePath,
-		Target:     target,
-		Config:     cfg,
+		Entry:      *entry,
+		Layers:     layers,
+		store:      st,
+	}, nil
+}
+
+// newWeightArtifact creates a WeightArtifact with a pre-built manifest.
+// Prefer buildWeightArtifact for production use; this is for tests that
+// need a minimal artifact without a real manifest.
+func newWeightArtifact(entry lockfile.WeightLockEntry, desc v1.Descriptor, layers []packedLayer) *WeightArtifact {
+	return &WeightArtifact{
+		descriptor: desc,
+		Entry:      entry,
+		Layers:     layers,
 	}
 }
 
-// Type returns ArtifactTypeWeight.
-func (a *WeightArtifact) Type() ArtifactType { return ArtifactTypeWeight }
-
-// Name returns the artifact's logical name.
-func (a *WeightArtifact) Name() string { return a.name }
-
-// Descriptor returns the OCI descriptor for this weight artifact.
+func (a *WeightArtifact) Type() ArtifactType        { return ArtifactTypeWeight }
+func (a *WeightArtifact) Name() string              { return a.Entry.Name }
 func (a *WeightArtifact) Descriptor() v1.Descriptor { return a.descriptor }
 
-// WeightConfig contains metadata about a weight artifact.
-// This is serialized as the config blob in the OCI manifest.
-// The schema is versioned via SchemaVersion to allow evolution.
-type WeightConfig struct {
-	SchemaVersion string    `json:"schemaVersion"`
-	CogVersion    string    `json:"cogVersion"`
-	Name          string    `json:"name"`
-	Target        string    `json:"target"`
-	Created       time.Time `json:"created"` // RFC 3339 format when serialized to JSON
-}
+// TotalSize returns the sum of all layer blob sizes (bytes over the wire).
+func (a *WeightArtifact) TotalSize() int64 { return a.Entry.SizeCompressed }

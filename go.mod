@@ -11,6 +11,7 @@ require (
 	github.com/docker/go-connections v0.6.0
 	github.com/getkin/kin-openapi v0.135.0
 	github.com/google/go-containerregistry v0.21.4
+	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/go-version v1.9.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-isatty v0.0.21
@@ -83,6 +84,7 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/in-toto/attestation v1.1.2 // indirect
 	github.com/in-toto/in-toto-golang v0.10.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

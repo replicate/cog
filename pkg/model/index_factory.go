@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strconv"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -16,12 +17,12 @@ type IndexBuilder struct {
 	weightDescriptors []weightDescEntry
 }
 
-// weightDescEntry pairs a weight descriptor with the image digest it references.
+// weightDescEntry pairs a weight descriptor with its index-level metadata.
 type weightDescEntry struct {
-	descriptor  v1.Descriptor
-	imageDigest string
-	name        string
-	target      string
+	descriptor       v1.Descriptor
+	name             string
+	setDigest        string
+	uncompressedSize int64
 }
 
 // NewIndexBuilder creates a new index builder.
@@ -36,14 +37,14 @@ func (b *IndexBuilder) SetImageDescriptor(desc v1.Descriptor, platform *v1.Platf
 }
 
 // AddWeightDescriptor adds a weight manifest descriptor.
-// imageDigest is the digest of the model image, used in the reference annotation.
-// name and target are optional weight metadata for index annotations.
-func (b *IndexBuilder) AddWeightDescriptor(desc v1.Descriptor, imageDigest, name, target string) {
+// Metadata (name, setDigest, uncompressedSize) is hoisted into index-level
+// annotations so the index is inspectable without fetching child manifests (§2.6).
+func (b *IndexBuilder) AddWeightDescriptor(desc v1.Descriptor, name, setDigest string, uncompressedSize int64) {
 	b.weightDescriptors = append(b.weightDescriptors, weightDescEntry{
-		descriptor:  desc,
-		imageDigest: imageDigest,
-		name:        name,
-		target:      target,
+		descriptor:       desc,
+		name:             name,
+		setDigest:        setDigest,
+		uncompressedSize: uncompressedSize,
 	})
 }
 
@@ -68,27 +69,31 @@ func (b *IndexBuilder) BuildFromDescriptors() (v1.ImageIndex, error) {
 		},
 	})
 
-	// Add weight manifest(s)
+	// Add weight manifest(s). Per spec §2.6, weight descriptors in the
+	// index carry name and set-digest so the index is inspectable without
+	// fetching child manifests.
 	for _, entry := range b.weightDescriptors {
-		annotations := map[string]string{
-			AnnotationReferenceType: AnnotationValueWeights,
-		}
-		if entry.imageDigest != "" {
-			annotations[AnnotationReferenceDigest] = entry.imageDigest
-		}
+		annotations := make(map[string]string, 3)
 		if entry.name != "" {
-			annotations[AnnotationWeightName] = entry.name
+			annotations[AnnotationV1WeightName] = entry.name
 		}
-		if entry.target != "" {
-			annotations[AnnotationWeightDest] = entry.target
+		if entry.setDigest != "" {
+			annotations[AnnotationV1WeightSetDigest] = entry.setDigest
+		}
+		if entry.uncompressedSize > 0 {
+			annotations[AnnotationV1WeightSizeUncomp] = strconv.FormatInt(entry.uncompressedSize, 10)
 		}
 
+		weightDesc := entry.descriptor
+		weightDesc.ArtifactType = MediaTypeWeightArtifact
+
 		idx = mutate.AppendManifests(idx, mutate.IndexAddendum{
-			Add: &descriptorAppendable{desc: entry.descriptor},
+			Add: &descriptorAppendable{desc: weightDesc},
 			Descriptor: v1.Descriptor{
-				MediaType: entry.descriptor.MediaType,
-				Size:      entry.descriptor.Size,
-				Digest:    entry.descriptor.Digest,
+				MediaType:    entry.descriptor.MediaType,
+				Size:         entry.descriptor.Size,
+				Digest:       entry.descriptor.Digest,
+				ArtifactType: MediaTypeWeightArtifact,
 				Platform: &v1.Platform{
 					OS:           PlatformUnknown,
 					Architecture: PlatformUnknown,
@@ -117,4 +122,8 @@ func (d *descriptorAppendable) Digest() (v1.Hash, error) {
 
 func (d *descriptorAppendable) Size() (int64, error) {
 	return d.desc.Size, nil
+}
+
+func (d *descriptorAppendable) ArtifactType() (string, error) {
+	return d.desc.ArtifactType, nil
 }

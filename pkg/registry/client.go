@@ -82,4 +82,8 @@ type Client interface {
 	// This method handles transient failures automatically with exponential backoff.
 	// Use WriteLayerOptions to configure progress reporting and retry callbacks.
 	WriteLayer(ctx context.Context, opts WriteLayerOptions) error
+
+	// BlobExists checks whether a blob with the given digest exists in the
+	// repository. This is a lightweight HEAD request.
+	BlobExists(ctx context.Context, repo string, digest string) (bool, error)
 }

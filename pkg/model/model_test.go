@@ -2,13 +2,13 @@ package model
 
 import (
 	"testing"
-	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 func TestModel_HasGPU(t *testing.T) {
@@ -125,10 +125,10 @@ func TestModel_GetImageArtifact(t *testing.T) {
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc123"}, Size: 1024},
 		"r8.im/user/model@sha256:abc123",
 	)
-	weightArtifact := NewWeightArtifact("weights",
+	weightArtifact := newWeightArtifact(
+		lockfile.WeightLockEntry{Name: "weights", Target: "/src/weights"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "def456"}, Size: 4096},
-		"/data/weights.bin", "/weights/model.bin",
-		WeightConfig{SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "weights", Target: "/weights/model.bin", Created: time.Now()},
+		[]packedLayer{{Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTarGzip}},
 	)
 
 	tests := []struct {
@@ -177,15 +177,15 @@ func TestModel_WeightArtifacts(t *testing.T) {
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc123"}, Size: 1024},
 		"r8.im/user/model@sha256:abc123",
 	)
-	w1 := NewWeightArtifact("llama",
+	w1 := newWeightArtifact(
+		lockfile.WeightLockEntry{Name: "llama", Target: "/src/weights/llama"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w1"}, Size: 4096},
-		"/data/llama.bin", "/weights/llama.bin",
-		WeightConfig{SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "llama", Target: "/weights/llama.bin", Created: time.Now()},
+		[]packedLayer{{Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
-	w2 := NewWeightArtifact("embeddings",
+	w2 := newWeightArtifact(
+		lockfile.WeightLockEntry{Name: "embeddings", Target: "/src/weights/embed"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w2"}, Size: 2048},
-		"/data/embed.bin", "/weights/embed.bin",
-		WeightConfig{SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "embeddings", Target: "/weights/embed.bin", Created: time.Now()},
+		[]packedLayer{{Digest: v1.Hash{Algorithm: "sha256", Hex: "bbb"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
 
 	tests := []struct {
@@ -212,10 +212,10 @@ func TestModel_ArtifactsByType(t *testing.T) {
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc123"}, Size: 1024},
 		"r8.im/user/model@sha256:abc123",
 	)
-	w1 := NewWeightArtifact("llama",
+	w1 := newWeightArtifact(
+		lockfile.WeightLockEntry{Name: "llama", Target: "/src/weights/llama"},
 		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "w1"}, Size: 4096},
-		"/data/llama.bin", "/weights/llama.bin",
-		WeightConfig{SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "llama", Target: "/weights/llama.bin", Created: time.Now()},
+		[]packedLayer{{Digest: v1.Hash{Algorithm: "sha256", Hex: "aaa"}, Size: 100, MediaType: mediaTypeOCILayerTar}},
 	)
 
 	m := &Model{Artifacts: []Artifact{imgArtifact, w1}}

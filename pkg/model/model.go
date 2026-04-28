@@ -18,11 +18,6 @@ type Model struct {
 	// Index is the OCI Image Index (populated when inspecting a pushed model).
 	Index *Index
 
-	// TODO(md): OCIIndex is a temporary gate. When true, Push() creates an OCI
-	// Image Index with weight artifacts. When false, Push() does a plain docker push.
-	// Remove this field once index pushes are validated with all registries.
-	OCIIndex bool
-
 	// Artifacts is the collection of all artifacts produced by building this model.
 	// Populated by Resolver.Build(). Contains ImageArtifact and WeightArtifact instances.
 	Artifacts []Artifact

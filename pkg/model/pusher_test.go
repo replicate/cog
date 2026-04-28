@@ -8,12 +8,45 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
+
+// bundleWeightFixture creates a WeightArtifact with real packed
+// layers and a valid manifest descriptor, ready to hand to
+// BundlePusher.Push.
+func bundleWeightFixture(t *testing.T, name, target string) *WeightArtifact {
+	t.Helper()
+	sourceDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "config.json"),
+		[]byte(`{"name":"`+name+`"}`), 0o644))
+
+	st, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
+	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
+	require.NoError(t, err)
+	inv, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, ingressFromInventory(t.Context(), src, st, inv))
+
+	pkr := newPacker(nil)
+	pl := pkr.planLayers(inv)
+	layers, err := pkr.computeLayerDigests(t.Context(), st, pl)
+	require.NoError(t, err)
+	files := packedFilesFromPlan(layers)
+
+	entry := newWeightLockEntry(name, target, lockfile.WeightLockSource{}, files, layers)
+	artifact, err := buildWeightArtifact(&entry, layers, st)
+	require.NoError(t, err)
+	return artifact
+}
 
 // =============================================================================
 // BundlePusher tests
@@ -75,10 +108,7 @@ func TestBundlePusher_Push(t *testing.T) {
 	})
 
 	t.Run("full push flow succeeds with single weight", func(t *testing.T) {
-		// Create temp weight file
-		dir := t.TempDir()
-		weightPath := filepath.Join(dir, "model.safetensors")
-		require.NoError(t, os.WriteFile(weightPath, []byte("fake weight data"), 0o644))
+		wa := bundleWeightFixture(t, "model-v1", "/src/weights/model-v1")
 
 		// Track call sequence (mutex-protected for goroutine safety)
 		var mu sync.Mutex
@@ -99,7 +129,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		imgDesc := v1.Descriptor{
 			MediaType: types.OCIManifestSchema1,
 			Size:      1234,
-			Digest:    v1.Hash{Algorithm: "sha256", Hex: "imgdigest"},
+			Digest:    v1.Hash{Algorithm: "sha256", Hex: "imgdigestabc1234567"},
 		}
 
 		reg := &mockRegistry{
@@ -126,8 +156,8 @@ func TestBundlePusher_Push(t *testing.T) {
 
 				// Second manifest: weight with annotations
 				require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.OS)
-				require.Equal(t, AnnotationValueWeights, idxManifest.Manifests[1].Annotations[AnnotationReferenceType])
-				require.Equal(t, imgDesc.Digest.String(), idxManifest.Manifests[1].Annotations[AnnotationReferenceDigest])
+				require.NotEmpty(t, idxManifest.Manifests[1].Annotations[AnnotationV1WeightName])
+				require.NotEmpty(t, idxManifest.Manifests[1].Annotations[AnnotationV1WeightSetDigest])
 
 				return nil
 			},
@@ -138,15 +168,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact("model-v1", v1.Descriptor{
-					Digest: v1.Hash{Algorithm: "sha256", Hex: "aabbccddee112233445566778899aabb"},
-				}, weightPath, "/weights/model.safetensors", WeightConfig{
-					SchemaVersion: "1.0",
-					CogVersion:    "0.15.0",
-					Name:          "model-v1",
-					Target:        "/weights/model.safetensors",
-					Created:       time.Now().UTC(),
-				}),
+				wa,
 			},
 		}
 
@@ -164,14 +186,14 @@ func TestBundlePusher_Push(t *testing.T) {
 		require.Len(t, callOrder, 4)
 		require.Equal(t, "docker:push:r8.im/user/model:latest", callOrder[0])
 		require.Equal(t, "registry:getDescriptor:r8.im/user/model:latest", callOrder[1])
-		require.Equal(t, "registry:pushImage:r8.im/user/model:weights-model-v1-aabbccddee11", callOrder[2])
+		// Tag derives from the weight's set digest (§2.4).
+		expectedTag := WeightTag(wa.Name(), wa.Entry.SetDigest)
+		require.Equal(t, "registry:pushImage:r8.im/user/model:"+expectedTag, callOrder[2])
 		require.Equal(t, "registry:pushIndex:r8.im/user/model:latest", callOrder[3])
 	})
 
 	t.Run("uses default platform when not specified", func(t *testing.T) {
-		dir := t.TempDir()
-		weightPath := filepath.Join(dir, "model.bin")
-		require.NoError(t, os.WriteFile(weightPath, []byte("test"), 0o644))
+		wa := bundleWeightFixture(t, "w1", "/src/weights/w1")
 
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error { return nil },
@@ -200,10 +222,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact("w1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-					SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "w1",
-					Target: "/weights/model.bin", Created: time.Now().UTC(),
-				}),
+				wa,
 			},
 		}
 
@@ -212,9 +231,7 @@ func TestBundlePusher_Push(t *testing.T) {
 	})
 
 	t.Run("returns error when image push fails", func(t *testing.T) {
-		dir := t.TempDir()
-		weightPath := filepath.Join(dir, "model.bin")
-		require.NoError(t, os.WriteFile(weightPath, []byte("test"), 0o644))
+		wa := bundleWeightFixture(t, "w1", "/src/weights/w1")
 
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error {
@@ -228,10 +245,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact("w1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-					SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "w1",
-					Target: "/weights/model.bin", Created: time.Now().UTC(),
-				}),
+				wa,
 			},
 		}
 
@@ -243,9 +257,7 @@ func TestBundlePusher_Push(t *testing.T) {
 	})
 
 	t.Run("returns error when get descriptor fails", func(t *testing.T) {
-		dir := t.TempDir()
-		weightPath := filepath.Join(dir, "model.bin")
-		require.NoError(t, os.WriteFile(weightPath, []byte("test"), 0o644))
+		wa := bundleWeightFixture(t, "w1", "/src/weights/w1")
 
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error { return nil },
@@ -261,10 +273,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact("w1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-					SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "w1",
-					Target: "/weights/model.bin", Created: time.Now().UTC(),
-				}),
+				wa,
 			},
 		}
 
@@ -275,9 +284,7 @@ func TestBundlePusher_Push(t *testing.T) {
 	})
 
 	t.Run("returns error when weight push fails", func(t *testing.T) {
-		dir := t.TempDir()
-		weightPath := filepath.Join(dir, "model.bin")
-		require.NoError(t, os.WriteFile(weightPath, []byte("test"), 0o644))
+		wa := bundleWeightFixture(t, "w1", "/src/weights/w1")
 
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error { return nil },
@@ -300,10 +307,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact("w1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-					SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "w1",
-					Target: "/weights/model.bin", Created: time.Now().UTC(),
-				}),
+				wa,
 			},
 		}
 
@@ -315,9 +319,7 @@ func TestBundlePusher_Push(t *testing.T) {
 	})
 
 	t.Run("returns error when index push fails", func(t *testing.T) {
-		dir := t.TempDir()
-		weightPath := filepath.Join(dir, "model.bin")
-		require.NoError(t, os.WriteFile(weightPath, []byte("test"), 0o644))
+		wa := bundleWeightFixture(t, "w1", "/src/weights/w1")
 
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error { return nil },
@@ -341,10 +343,7 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact("w1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-					SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "w1",
-					Target: "/weights/model.bin", Created: time.Now().UTC(),
-				}),
+				wa,
 			},
 		}
 
@@ -355,11 +354,8 @@ func TestBundlePusher_Push(t *testing.T) {
 	})
 
 	t.Run("pushes multiple weights concurrently", func(t *testing.T) {
-		dir := t.TempDir()
-		weight1Path := filepath.Join(dir, "model1.bin")
-		weight2Path := filepath.Join(dir, "model2.bin")
-		require.NoError(t, os.WriteFile(weight1Path, []byte("weight 1 data"), 0o644))
-		require.NoError(t, os.WriteFile(weight2Path, []byte("weight 2 data"), 0o644))
+		wa1 := bundleWeightFixture(t, "w1", "/src/weights/w1")
+		wa2 := bundleWeightFixture(t, "w2", "/src/weights/w2")
 
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error { return nil },
@@ -391,18 +387,8 @@ func TestBundlePusher_Push(t *testing.T) {
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact("w1", v1.Descriptor{
-					Digest: v1.Hash{Algorithm: "sha256", Hex: "aaaa111122223333444455556666777788889999aaaabbbbccccddddeeee0000"},
-				}, weight1Path, "/weights/model1.bin", WeightConfig{
-					SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "w1",
-					Target: "/weights/model1.bin", Created: time.Now().UTC(),
-				}),
-				NewWeightArtifact("w2", v1.Descriptor{
-					Digest: v1.Hash{Algorithm: "sha256", Hex: "bbbb111122223333444455556666777788889999aaaabbbbccccddddeeee0000"},
-				}, weight2Path, "/weights/model2.bin", WeightConfig{
-					SchemaVersion: "1.0", CogVersion: "0.15.0", Name: "w2",
-					Target: "/weights/model2.bin", Created: time.Now().UTC(),
-				}),
+				wa1,
+				wa2,
 			},
 		}
 
@@ -410,6 +396,60 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, int32(2), pushedWeightCount.Load()) // both weights pushed (1 tag each)
+	})
+
+	t.Run("forwards weight progress callback", func(t *testing.T) {
+		wa := bundleWeightFixture(t, "w1", "/src/weights/w1")
+
+		docker := &mockDocker{
+			pushFunc: func(ctx context.Context, ref string) error { return nil },
+		}
+
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				return v1.Descriptor{
+					MediaType: types.OCIManifestSchema1,
+					Size:      100,
+					Digest:    v1.Hash{Algorithm: "sha256", Hex: "abc"},
+				}, nil
+			},
+			writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
+				if opts.ProgressCh != nil {
+					opts.ProgressCh <- v1.Update{Complete: 42, Total: 100}
+				}
+				return nil
+			},
+			pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error { return nil },
+			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error { return nil },
+		}
+
+		var mu sync.Mutex
+		var events []WeightLayerProgress
+		pusher := NewBundlePusher(docker, reg)
+		m := &Model{
+			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
+			Artifacts: []Artifact{
+				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
+				wa,
+			},
+		}
+
+		err := pusher.Push(context.Background(), m, PushOptions{
+			WeightProgressFn: func(p WeightLayerProgress) {
+				mu.Lock()
+				defer mu.Unlock()
+				events = append(events, p)
+			},
+		})
+		require.NoError(t, err)
+
+		mu.Lock()
+		defer mu.Unlock()
+		require.NotEmpty(t, events)
+		for _, e := range events {
+			require.Equal(t, "w1", e.WeightName)
+			require.NotEmpty(t, e.LayerDigest)
+		}
 	})
 }
 
@@ -441,7 +481,7 @@ func TestResolver_Push(t *testing.T) {
 		require.True(t, dockerPushed, "standalone should use docker push")
 	})
 
-	t.Run("OCIIndex false uses docker push", func(t *testing.T) {
+	t.Run("no weight artifacts uses docker push", func(t *testing.T) {
 		var dockerPushed bool
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error {
@@ -453,7 +493,6 @@ func TestResolver_Push(t *testing.T) {
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
-			// OCIIndex not set (false by default)
 			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
@@ -462,10 +501,10 @@ func TestResolver_Push(t *testing.T) {
 
 		err := resolver.Push(context.Background(), m, PushOptions{})
 		require.NoError(t, err)
-		require.True(t, dockerPushed, "default format should use docker push")
+		require.True(t, dockerPushed, "model without weights should use docker push")
 	})
 
-	t.Run("OCIIndex true produces an OCI index", func(t *testing.T) {
+	t.Run("bundle with weight artifacts produces an OCI index", func(t *testing.T) {
 		var indexPushed bool
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error { return nil },
@@ -478,6 +517,7 @@ func TestResolver_Push(t *testing.T) {
 					Digest:    v1.Hash{Algorithm: "sha256", Hex: "abc"},
 				}, nil
 			},
+			pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error { return nil },
 			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
 				indexPushed = true
 				return nil
@@ -485,17 +525,18 @@ func TestResolver_Push(t *testing.T) {
 		}
 		resolver := NewResolver(docker, reg)
 
+		wa := bundleWeightFixture(t, "w1", "/src/weights/w1")
 		m := &Model{
-			OCIIndex: true,
-			Image:    &ImageArtifact{Reference: "r8.im/user/model:latest"},
+			Image: &ImageArtifact{Reference: "r8.im/user/model:latest"},
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
+				wa,
 			},
 		}
 
 		err := resolver.Push(context.Background(), m, PushOptions{})
 		require.NoError(t, err)
-		require.True(t, indexPushed, "OCIIndex=true should push an OCI index")
+		require.True(t, indexPushed, "bundle with weights should push an OCI index")
 	})
 
 	t.Run("standalone returns error when image nil", func(t *testing.T) {
@@ -513,15 +554,15 @@ func TestResolver_Push(t *testing.T) {
 		require.Contains(t, err.Error(), "no image artifact")
 	})
 
-	t.Run("OCIIndex true returns error when no image artifact", func(t *testing.T) {
+	t.Run("bundle returns error when no image artifact", func(t *testing.T) {
 		docker := &mockDocker{}
 		reg := &mockRegistry{}
 		resolver := NewResolver(docker, reg)
 
+		wa := bundleWeightFixture(t, "w1", "/src/weights/w1")
 		m := &Model{
-			OCIIndex:  true,
 			Image:     nil,
-			Artifacts: []Artifact{},
+			Artifacts: []Artifact{wa}, // weight but no image
 		}
 
 		err := resolver.Push(context.Background(), m, PushOptions{})
@@ -535,13 +576,6 @@ func TestResolver_Push(t *testing.T) {
 // =============================================================================
 
 func TestPushOptions(t *testing.T) {
-	t.Run("ProjectDir field", func(t *testing.T) {
-		opts := PushOptions{
-			ProjectDir: "/path/to/project",
-		}
-		require.Equal(t, "/path/to/project", opts.ProjectDir)
-	})
-
 	t.Run("Platform field", func(t *testing.T) {
 		opts := PushOptions{
 			Platform: &Platform{OS: "linux", Architecture: "arm64"},

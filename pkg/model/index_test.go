@@ -6,6 +6,8 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 func TestModel_IsBundle(t *testing.T) {
@@ -27,7 +29,7 @@ func TestModel_IsBundle(t *testing.T) {
 		m := &Model{
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				NewWeightArtifact("w1", v1.Descriptor{}, "/tmp/w1", "/weights/w1", WeightConfig{}),
+				newWeightArtifact(lockfile.WeightLockEntry{Name: "w1", Target: "/src/weights/w1"}, v1.Descriptor{}, nil),
 			},
 		}
 		require.True(t, m.IsBundle())

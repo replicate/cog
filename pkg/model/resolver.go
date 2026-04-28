@@ -12,6 +12,8 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
 // Option configures how Resolver methods behave.
@@ -239,26 +241,31 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 		return nil, err
 	}
 
-	m.OCIIndex = opts.OCIIndex
 	m.Artifacts = []Artifact{ia}
 
-	// Build weight artifacts if OCI index mode is enabled
+	// Build weight artifacts when weights are declared in cog.yaml.
 	lockPath := opts.WeightsLockPath
 	if lockPath == "" {
-		lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
+		lockPath = filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
 	}
 
-	if opts.OCIIndex && len(src.Config.Weights) > 0 {
-		wb := NewWeightBuilder(src, m.CogVersion, lockPath)
+	if len(src.Config.Weights) > 0 {
+		st, storeErr := store.OpenDefault()
+		if storeErr != nil {
+			return nil, fmt.Errorf("open weights store: %w", storeErr)
+		}
+		wb := NewWeightBuilder(src, st, lockPath)
 		for _, ws := range src.Config.Weights {
-			spec := NewWeightSpec(ws.Name, ws.Source, ws.Target)
+			spec, specErr := WeightSpecFromConfig(ws)
+			if specErr != nil {
+				return nil, fmt.Errorf("build weight %q: %w", ws.Name, specErr)
+			}
 			artifact, buildErr := wb.Build(ctx, spec)
 			if buildErr != nil {
 				return nil, fmt.Errorf("build weight %q: %w", ws.Name, buildErr)
 			}
 			m.Artifacts = append(m.Artifacts, artifact)
 		}
-
 	}
 
 	return m, nil
@@ -270,7 +277,7 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 // monolithic push and supports layers of any size through chunked uploads.
 // Falls back to legacy Docker push if OCI push is not available.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	if m.OCIIndex {
+	if m.IsBundle() {
 		pusher := NewBundlePusher(r.docker, r.registry)
 		return pusher.Push(ctx, m, opts)
 	}
@@ -420,7 +427,7 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 			}
 		}
 		// Determine manifest type
-		if pm.OS == PlatformUnknown && pm.Annotations != nil && pm.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
+		if pm.OS == PlatformUnknown && isWeightDescriptor(pm) {
 			im.Type = ManifestTypeWeights
 		} else {
 			im.Type = ManifestTypeImage
@@ -436,16 +443,14 @@ func isOCIIndex(mr *registry.ManifestResult) bool {
 	return mr.IsIndex()
 }
 
-// findWeightsManifest finds the weights manifest in an index.
-// Returns nil if no weights manifest is found.
-func findWeightsManifest(manifests []registry.PlatformManifest) *registry.PlatformManifest {
-	for i := range manifests {
-		m := &manifests[i]
-		if m.Annotations != nil && m.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
-			return m
-		}
+// isWeightDescriptor identifies a weight manifest descriptor in an OCI index
+// by the presence of the set-digest annotation (v1 format).
+func isWeightDescriptor(pm registry.PlatformManifest) bool {
+	if pm.Annotations == nil {
+		return false
 	}
-	return nil
+	_, ok := pm.Annotations[AnnotationV1WeightSetDigest]
+	return ok
 }
 
 // findImageManifest finds the model image manifest in an index.

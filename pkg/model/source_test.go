@@ -42,7 +42,8 @@ func TestSource_ArtifactSpecs_NoWeights(t *testing.T) {
 	}
 	src := NewSourceFromConfig(cfg, "/path/to/project")
 
-	specs := src.ArtifactSpecs()
+	specs, err := src.ArtifactSpecs()
+	require.NoError(t, err)
 
 	require.Len(t, specs, 1)
 
@@ -59,13 +60,14 @@ func TestSource_ArtifactSpecs_WithWeights(t *testing.T) {
 		Image: "r8.im/user/model",
 		Build: &config.Build{PythonVersion: "3.11"},
 		Weights: []config.WeightSource{
-			{Name: "llama-7b", Source: "/data/llama-7b.safetensors", Target: "/weights/llama-7b.safetensors"},
-			{Name: "embeddings", Source: "/data/embeddings.bin", Target: "/weights/embeddings.bin"},
+			{Name: "llama-7b", Target: "/weights/llama-7b", Source: &config.WeightSourceConfig{URI: "/data/llama-7b"}},
+			{Name: "embeddings", Target: "/weights/embeddings", Source: &config.WeightSourceConfig{URI: "/data/embeddings"}},
 		},
 	}
 	src := NewSourceFromConfig(cfg, "/path/to/project")
 
-	specs := src.ArtifactSpecs()
+	specs, err := src.ArtifactSpecs()
+	require.NoError(t, err)
 
 	require.Len(t, specs, 3) // 1 image + 2 weights
 
@@ -79,14 +81,14 @@ func TestSource_ArtifactSpecs_WithWeights(t *testing.T) {
 	require.True(t, ok, "second spec should be *WeightSpec")
 	require.Equal(t, ArtifactTypeWeight, w1.Type())
 	require.Equal(t, "llama-7b", w1.Name())
-	require.Equal(t, "/data/llama-7b.safetensors", w1.Source)
-	require.Equal(t, "/weights/llama-7b.safetensors", w1.Target)
+	require.Equal(t, "file:///data/llama-7b", w1.URI)
+	require.Equal(t, "/weights/llama-7b", w1.Target)
 
 	w2, ok := specs[2].(*WeightSpec)
 	require.True(t, ok, "third spec should be *WeightSpec")
 	require.Equal(t, "embeddings", w2.Name())
-	require.Equal(t, "/data/embeddings.bin", w2.Source)
-	require.Equal(t, "/weights/embeddings.bin", w2.Target)
+	require.Equal(t, "file:///data/embeddings", w2.URI)
+	require.Equal(t, "/weights/embeddings", w2.Target)
 }
 
 func TestSource_ArtifactSpecs_EmptyImageName(t *testing.T) {
@@ -95,7 +97,8 @@ func TestSource_ArtifactSpecs_EmptyImageName(t *testing.T) {
 	}
 	src := NewSourceFromConfig(cfg, "/path/to/project")
 
-	specs := src.ArtifactSpecs()
+	specs, err := src.ArtifactSpecs()
+	require.NoError(t, err)
 
 	require.Len(t, specs, 1)
 	imgSpec, ok := specs[0].(*ImageSpec)
@@ -106,7 +109,22 @@ func TestSource_ArtifactSpecs_EmptyImageName(t *testing.T) {
 func TestSource_ArtifactSpecs_NilConfig(t *testing.T) {
 	src := NewSourceFromConfig(nil, "/path/to/project")
 
-	specs := src.ArtifactSpecs()
+	specs, err := src.ArtifactSpecs()
+	require.NoError(t, err)
 
 	require.Nil(t, specs)
+}
+
+func TestSource_ArtifactSpecs_MalformedWeightURI(t *testing.T) {
+	cfg := &config.Config{
+		Image: "r8.im/user/model",
+		Build: &config.Build{PythonVersion: "3.11"},
+		Weights: []config.WeightSource{
+			{Name: "bad", Target: "/w", Source: &config.WeightSourceConfig{URI: "bogus://nope"}},
+		},
+	}
+	src := NewSourceFromConfig(cfg, "/path/to/project")
+
+	_, err := src.ArtifactSpecs()
+	require.Error(t, err)
 }

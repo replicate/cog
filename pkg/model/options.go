@@ -45,11 +45,6 @@ type BuildOptions struct {
 	// Default: weights.lock in project directory.
 	WeightsLockPath string
 
-	// TODO(md): OCIIndex is a temporary gate. When true, builds produce weight
-	// artifacts and pushes create an OCI Image Index. Set via COG_OCI_INDEX=1.
-	// Remove this field once index pushes are validated with all registries.
-	OCIIndex bool
-
 	// ExcludeSource skips the COPY . /src step in the generated Dockerfile.
 	// Used by `cog serve` to produce an image identical to `cog build` minus
 	// the source copy — the source directory is volume-mounted at runtime.
