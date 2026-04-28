@@ -1,11 +1,11 @@
 ---
 # cog-1pm2
 title: Embed /.cog/weights.json in model image
-status: todo
+status: completed
 type: task
 priority: high
 created_at: 2026-04-17T19:28:15Z
-updated_at: 2026-04-23T22:22:36Z
+updated_at: 2026-04-28T00:15:01Z
 parent: cog-kgd7
 blocked_by:
     - cog-2gv9
@@ -59,9 +59,30 @@ Three fields per entry. The lockfile's `WeightLockEntry` carries all of these pl
 
 Tasks:
 
-- [ ] Define `RuntimeWeightsManifest` / `RuntimeWeightEntry` types (`name`, `target`, `setDigest`)
-- [ ] `WeightsLock.RuntimeManifest()` projection function
-- [ ] At `cog build` time: read `weights.lock`, project to runtime manifest, serialize to `/.cog/weights.json`, COPY into image
-- [ ] `pkg/dockerfile/` generator: emit the COPY directive
-- [ ] `pkg/image/build.go`: hook the generation step before Docker build
-- [ ] Round-trip test against spec §3.3 example
+- [x] Define `RuntimeWeightsManifest` / `RuntimeWeightEntry` types (`name`, `target`, `setDigest`)
+- [x] `WeightsLock.RuntimeManifest()` projection function
+- [x] At `cog build` time: read `weights.lock`, project to runtime manifest, serialize to `/.cog/weights.json`, COPY into image
+- [x] `pkg/dockerfile/` generator: emit the COPY directive (not needed — bundled via final Docker layer, same pattern as schema)
+- [x] `pkg/image/build.go`: hook the generation step before Docker build
+- [x] Round-trip test against spec §3.3 example
+
+## Summary of Changes
+
+Added runtime weights manifest generation to `cog build`. When managed weights are configured (`weights` stanza in cog.yaml) and a lockfile exists, the build pipeline now:
+
+1. Loads `weights.lock` from the project directory
+2. Projects it to the minimal spec §3.3 runtime manifest (name, target, setDigest per weight)
+3. Writes `.cog/weights.json` into the build context
+4. COPYs it into the final image layer alongside the OpenAPI schema
+
+**New types** (`pkg/weights/lockfile/lockfile.go`):
+- `RuntimeWeightsManifest` and `RuntimeWeightEntry` — deliberately separate from the lockfile types; only the three fields coglet needs.
+- `(*WeightsLock).RuntimeManifest()` — projection function.
+
+**Build wiring** (`pkg/image/build.go`):
+- `writeRuntimeWeightsManifest(dir)` — loads lockfile, projects, writes `.cog/weights.json`. Errors with actionable guidance if lockfile is missing.
+- `buildBundleDockerfile()` — shared helper for the skipLabels and full-build paths to emit COPY directives for all `.cog/` bundled files.
+- `BuildAddLabelsAndSchemaToImage` refactored from single `bundledSchemaFile string` to `bundleFiles []string` so both schema and weights are bundled in a single final Docker layer.
+- Stale `.cog/weights.json` cleaned up at Build() entry, same as the schema file.
+
+**Tests**: 9 new tests covering projection (spec §3.3 field exactness, round-trip, multi-weight, empty), build function (writes correct file, missing lockfile error), and Dockerfile generation (schema-only, nothing, with-weights-file).

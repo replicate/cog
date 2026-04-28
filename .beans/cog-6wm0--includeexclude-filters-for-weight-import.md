@@ -1,11 +1,11 @@
 ---
 # cog-6wm0
 title: Include/exclude filters for weight import
-status: in-progress
+status: completed
 type: task
 priority: high
 created_at: 2026-04-17T19:27:37Z
-updated_at: 2026-04-27T22:07:26Z
+updated_at: 2026-04-27T23:58:15Z
 parent: cog-66gt
 ---
 

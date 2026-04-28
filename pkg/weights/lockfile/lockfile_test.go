@@ -427,3 +427,102 @@ func TestComputeSetDigest_FileOrderIndependent(t *testing.T) {
 	assert.Equal(t, setDigestOf(ordered), setDigestOf(reversed),
 		"set digest must be independent of file input order")
 }
+
+func TestRuntimeManifest_ProjectsSpecFields(t *testing.T) {
+	// Verify the projection matches spec §3.3: only name, target, setDigest.
+	lock := &WeightsLock{
+		Version: Version,
+		Weights: []WeightLockEntry{
+			{
+				Name:           "z-image-turbo",
+				Target:         "/src/weights",
+				Digest:         "sha256:abc123",
+				SetDigest:      "sha256:def456",
+				Size:           32600000000,
+				SizeCompressed: 32457803776,
+				Source: WeightLockSource{
+					URI:         "file://./weights",
+					Fingerprint: "sha256:def456",
+					Include:     []string{},
+					Exclude:     []string{},
+				},
+				Files: []WeightLockFile{
+					{Path: "config.json", Size: 1234, Digest: "sha256:f01", Layer: "sha256:aaa"},
+				},
+				Layers: []WeightLockLayer{
+					{Digest: "sha256:aaa", MediaType: mediaTypeOCILayerTarGzip, Size: 15000000, SizeUncompressed: 18500000},
+				},
+			},
+		},
+	}
+
+	rm := lock.RuntimeManifest()
+	require.Len(t, rm.Weights, 1)
+
+	w := rm.Weights[0]
+	assert.Equal(t, "z-image-turbo", w.Name)
+	assert.Equal(t, "/src/weights", w.Target)
+	assert.Equal(t, "sha256:def456", w.SetDigest)
+}
+
+func TestRuntimeManifest_RoundTrip(t *testing.T) {
+	// Verify that serializing and deserializing the runtime manifest
+	// produces the exact spec §3.3 shape.
+	lock := &WeightsLock{
+		Version: Version,
+		Weights: []WeightLockEntry{
+			{
+				Name:      "z-image-turbo",
+				Target:    "/src/weights",
+				SetDigest: "sha256:def456",
+			},
+		},
+	}
+
+	rm := lock.RuntimeManifest()
+	data, err := json.MarshalIndent(rm, "", "  ")
+	require.NoError(t, err)
+
+	var decoded RuntimeWeightsManifest
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Len(t, decoded.Weights, 1)
+	assert.Equal(t, "z-image-turbo", decoded.Weights[0].Name)
+	assert.Equal(t, "/src/weights", decoded.Weights[0].Target)
+	assert.Equal(t, "sha256:def456", decoded.Weights[0].SetDigest)
+
+	// Verify the JSON contains only the expected keys (no extras from lockfile).
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &raw))
+
+	var entries []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(raw["weights"], &entries))
+	require.Len(t, entries, 1)
+
+	keys := make([]string, 0, len(entries[0]))
+	for k := range entries[0] {
+		keys = append(keys, k)
+	}
+	assert.ElementsMatch(t, []string{"name", "target", "setDigest"}, keys,
+		"runtime manifest entries must contain exactly the spec §3.3 fields")
+}
+
+func TestRuntimeManifest_MultipleWeights(t *testing.T) {
+	lock := &WeightsLock{
+		Version: Version,
+		Weights: []WeightLockEntry{
+			{Name: "model-a", Target: "/src/weights/a", SetDigest: "sha256:aaa"},
+			{Name: "model-b", Target: "/src/weights/b", SetDigest: "sha256:bbb"},
+		},
+	}
+
+	rm := lock.RuntimeManifest()
+	require.Len(t, rm.Weights, 2)
+	assert.Equal(t, "model-a", rm.Weights[0].Name)
+	assert.Equal(t, "model-b", rm.Weights[1].Name)
+}
+
+func TestRuntimeManifest_Empty(t *testing.T) {
+	lock := &WeightsLock{Version: Version, Weights: []WeightLockEntry{}}
+	rm := lock.RuntimeManifest()
+	assert.Empty(t, rm.Weights)
+}

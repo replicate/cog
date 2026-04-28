@@ -238,6 +238,37 @@ func (e *WeightLockEntry) ComputeSetDigest() string {
 	return weightsource.DirHash(e.Files)
 }
 
+// RuntimeWeightsManifest is the in-image /.cog/weights.json file that
+// signals managed weights to coglet. It is a minimal projection of the
+// lockfile: only the fields coglet needs to know which weights to expect
+// and where (spec §3.3).
+type RuntimeWeightsManifest struct {
+	Weights []RuntimeWeightEntry `json:"weights"`
+}
+
+// RuntimeWeightEntry is one weight in the runtime manifest. Three fields
+// per entry: name, target, and the content-addressable set digest.
+type RuntimeWeightEntry struct {
+	Name      string `json:"name"`
+	Target    string `json:"target"`
+	SetDigest string `json:"setDigest"`
+}
+
+// RuntimeManifest projects the lockfile into the minimal runtime manifest
+// written to /.cog/weights.json (spec §3.3). The result contains only the
+// fields coglet needs: name, target, and setDigest per weight.
+func (wl *WeightsLock) RuntimeManifest() *RuntimeWeightsManifest {
+	entries := make([]RuntimeWeightEntry, len(wl.Weights))
+	for i, w := range wl.Weights {
+		entries[i] = RuntimeWeightEntry{
+			Name:      w.Name,
+			Target:    w.Target,
+			SetDigest: w.SetDigest,
+		}
+	}
+	return &RuntimeWeightsManifest{Weights: entries}
+}
+
 // canonicalize applies the serialization rules to a single entry:
 // Files sorted by path, Layers sorted by digest, nil Include/Exclude
 // normalized to [] so the shape is stable. Include/Exclude ordering is

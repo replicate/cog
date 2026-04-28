@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: high
 created_at: 2026-04-27T22:28:57Z
-updated_at: 2026-04-27T22:33:26Z
+updated_at: 2026-04-27T23:58:15Z
 ---
 
 Add --dry-run and --verbose flags to `cog weights import`.

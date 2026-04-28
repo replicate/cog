@@ -1,11 +1,11 @@
 ---
 # cog-ntiv
 title: Streaming import for single-file sources larger than local disk
-status: todo
+status: scrapped
 type: task
 priority: low
 created_at: 2026-04-22T20:24:58Z
-updated_at: 2026-04-22T20:25:31Z
+updated_at: 2026-04-28T16:07:14Z
 parent: cog-66gt
 blocked_by:
     - cog-3p4a
