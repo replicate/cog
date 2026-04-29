@@ -84,7 +84,7 @@ func TestPlanImport_ConfigChanged(t *testing.T) {
 	specWithExclude, err := WeightSpecFromConfig(config.WeightSource{
 		Name:   "w",
 		Target: "/src/w",
-		Source:  &config.WeightSourceConfig{URI: "weights", Exclude: []string{"*.onnx"}},
+		Source: &config.WeightSourceConfig{URI: "weights", Exclude: []string{"*.onnx"}},
 	})
 	require.NoError(t, err)
 
@@ -116,7 +116,7 @@ func TestPlanImport_WithFilter_ShowsExcluded(t *testing.T) {
 	spec, err := WeightSpecFromConfig(config.WeightSource{
 		Name:   "w",
 		Target: "/src/w",
-		Source:  &config.WeightSourceConfig{URI: "weights", Exclude: []string{"*.onnx"}},
+		Source: &config.WeightSourceConfig{URI: "weights", Exclude: []string{"*.onnx"}},
 	})
 	require.NoError(t, err)
 

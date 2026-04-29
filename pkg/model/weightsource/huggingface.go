@@ -266,7 +266,7 @@ type hfTreeEntry struct {
 // xet-tracked files (the Hub API exposes sha256 in the lfs field for
 // both).
 type hfLFSInfo struct {
-	OID  string `json:"oid"`  // sha256 of the full file
+	OID  string `json:"oid"` // sha256 of the full file
 	Size int64  `json:"size"`
 }
 

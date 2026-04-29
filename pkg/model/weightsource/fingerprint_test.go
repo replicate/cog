@@ -52,5 +52,3 @@ func TestFingerprint_IsZero(t *testing.T) {
 func TestFingerprint_String(t *testing.T) {
 	assert.Equal(t, "sha256:abc", Fingerprint("sha256:abc").String())
 }
-
-
