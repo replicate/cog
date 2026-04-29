@@ -143,10 +143,10 @@ func CollectImports(root *sitter.Node, source []byte) *schema.ImportContext {
 	ctx := schema.NewImportContext()
 
 	for _, child := range NamedChildren(root) {
-		if child.Type() == "import_from_statement" {
+		switch child.Type() {
+		case "import_from_statement":
 			parseImportFrom(child, source, ctx)
-		}
-		if child.Type() == "import_statement" {
+		case "import_statement":
 			parseImport(child, source, ctx)
 		}
 	}
@@ -164,6 +164,35 @@ func CollectImports(root *sitter.Node, source []byte) *schema.ImportContext {
 	return ctx
 }
 
+func setImport(ctx *schema.ImportContext, localName, module, original string) {
+	ctx.Names.Set(localName, schema.ImportEntry{Module: module, Original: original})
+}
+
+func aliasedImportParts(node *sitter.Node, source []byte) (string, string, bool) {
+	origNode := node.ChildByFieldName("name")
+	if origNode == nil {
+		return "", "", false
+	}
+	original := Content(origNode, source)
+	alias := original
+	if aliasNode := node.ChildByFieldName("alias"); aliasNode != nil {
+		alias = Content(aliasNode, source)
+	}
+	return original, alias, true
+}
+
+func addImportFromNode(ctx *schema.ImportContext, module string, node *sitter.Node, source []byte) {
+	switch node.Type() {
+	case "dotted_name":
+		name := Content(node, source)
+		setImport(ctx, name, module, name)
+	case "aliased_import":
+		if original, alias, ok := aliasedImportParts(node, source); ok {
+			setImport(ctx, alias, module, original)
+		}
+	}
+}
+
 func parseImportFrom(node *sitter.Node, source []byte, ctx *schema.ImportContext) {
 	moduleNode := node.ChildByFieldName("module_name")
 	if moduleNode == nil {
@@ -177,41 +206,14 @@ func parseImportFrom(node *sitter.Node, source []byte, ctx *schema.ImportContext
 			// Single import: `from X import name`
 			// Skip if this is the module_name itself
 			if child.StartByte() != moduleNode.StartByte() {
-				name := Content(child, source)
-				ctx.Names.Set(name, schema.ImportEntry{Module: module, Original: name})
+				addImportFromNode(ctx, module, child, source)
 			}
 		case "aliased_import":
 			// Single aliased import: `from X import name as alias`
-			origNode := child.ChildByFieldName("name")
-			aliasNode := child.ChildByFieldName("alias")
-			orig := ""
-			if origNode != nil {
-				orig = Content(origNode, source)
-			}
-			alias := orig
-			if aliasNode != nil {
-				alias = Content(aliasNode, source)
-			}
-			ctx.Names.Set(alias, schema.ImportEntry{Module: module, Original: orig})
+			addImportFromNode(ctx, module, child, source)
 		case "import_list":
 			for _, importChild := range AllChildren(child) {
-				switch importChild.Type() {
-				case "dotted_name":
-					name := Content(importChild, source)
-					ctx.Names.Set(name, schema.ImportEntry{Module: module, Original: name})
-				case "aliased_import":
-					origNode := importChild.ChildByFieldName("name")
-					aliasNode := importChild.ChildByFieldName("alias")
-					orig := ""
-					if origNode != nil {
-						orig = Content(origNode, source)
-					}
-					alias := orig
-					if aliasNode != nil {
-						alias = Content(aliasNode, source)
-					}
-					ctx.Names.Set(alias, schema.ImportEntry{Module: module, Original: orig})
-				}
+				addImportFromNode(ctx, module, importChild, source)
 			}
 		}
 	}
@@ -231,7 +233,7 @@ func parseImport(node *sitter.Node, source []byte, ctx *schema.ImportContext) {
 			module = strings.TrimSpace(before)
 			alias = strings.TrimSpace(after)
 		}
-		ctx.Names.Set(alias, schema.ImportEntry{Module: module, Original: module})
+		setImport(ctx, alias, module, module)
 	}
 }
 
@@ -481,6 +483,67 @@ func mergeModelFields(parents [][]schema.ModelField, own []schema.ModelField) []
 	return merged
 }
 
+func mergeDiscoveredModels(dst, src schema.ModelClassMap) {
+	if src == nil {
+		return
+	}
+	src.Entries(func(name string, fields []schema.ModelField) {
+		if _, exists := dst.Get(name); !exists {
+			dst.Set(name, fields)
+		}
+	})
+}
+
+func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) schema.ModelClassMap {
+	if isKnownExternalModule(module) {
+		return nil
+	}
+
+	pyPath := moduleToFilePath(module)
+	if pyPath == "" {
+		return nil
+	}
+
+	fullPath := filepath.Join(sourceDir, pyPath)
+	source, err := os.ReadFile(fullPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "cog: warning: failed to read %q: %v\n", fullPath, err)
+		return nil
+	}
+
+	parser := sitter.NewParser()
+	parser.SetLanguage(python.GetLanguage())
+	tree, err := parser.ParseCtx(context.Background(), nil, source)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cog: warning: failed to parse %q: %v\n", fullPath, err)
+		return nil
+	}
+
+	fileCtx := &modelParseContext{imports: CollectImports(tree.RootNode(), source), typedDicts: make(map[string]bool)}
+	fileModels := collectModelClasses(tree.RootNode(), source, fileCtx)
+	for name := range fileCtx.typedDicts {
+		ctx.typedDicts[name] = true
+	}
+	return fileModels
+}
+
+func propagateImportedAlias(localName string, entry schema.ImportEntry, models schema.ModelClassMap, typedDicts map[string]bool) {
+	if localName == entry.Original {
+		return
+	}
+	if fields, ok := models.Get(entry.Original); ok {
+		if _, exists := models.Get(localName); !exists {
+			models.Set(localName, fields)
+		}
+	}
+	if typedDicts[entry.Original] {
+		typedDicts[localName] = true
+	}
+}
+
 // resolveExternalModels looks at imports that brought in names not yet in
 // modelClasses, attempts to find the corresponding .py file on disk, parses
 // it, and merges any schema object classes into modelClasses.
@@ -508,65 +571,10 @@ func resolveExternalModels(sourceDir string, models schema.ModelClassMap, ctx *m
 		module := entry.Module
 		if !tried[module] {
 			tried[module] = true
-
-			// Skip known non-local modules.
-			if isKnownExternalModule(module) {
-				return
-			}
-
-			// Convert module path to filesystem path and try to find it.
-			pyPath := moduleToFilePath(module)
-			if pyPath == "" {
-				return
-			}
-
-			fullPath := filepath.Join(sourceDir, pyPath)
-			source, err := os.ReadFile(fullPath)
-			if err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					// File doesn't exist — it's an external package, not local.
-					return
-				}
-				fmt.Fprintf(os.Stderr, "cog: warning: failed to read %q: %v\n", fullPath, err)
-				return
-			}
-
-			// Parse the file and extract schema object classes.
-			parser := sitter.NewParser()
-			parser.SetLanguage(python.GetLanguage())
-			tree, err := parser.ParseCtx(context.Background(), nil, source)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "cog: warning: failed to parse %q: %v\n", fullPath, err)
-				return
-			}
-
-			fileCtx := &modelParseContext{imports: CollectImports(tree.RootNode(), source), typedDicts: make(map[string]bool)}
-			fileModels := collectModelClasses(tree.RootNode(), source, fileCtx)
-
-			// Merge discovered models into the caller's map.
-			fileModels.Entries(func(name string, fields []schema.ModelField) {
-				if _, exists := models.Get(name); !exists {
-					models.Set(name, fields)
-				}
-			})
-			for name := range fileCtx.typedDicts {
-				ctx.typedDicts[name] = true
-			}
+			mergeDiscoveredModels(models, ctx.loadModelsFromModule(sourceDir, module))
 		}
 
-		// Handle aliases: "from X import MyOutput as Output"
-		// localName is "Output", entry.Original is "MyOutput".
-		// If we resolved "MyOutput" from the file, also register it under "Output".
-		if localName != entry.Original {
-			if fields, ok := models.Get(entry.Original); ok {
-				if _, exists := models.Get(localName); !exists {
-					models.Set(localName, fields)
-				}
-			}
-			if ctx.typedDicts[entry.Original] {
-				ctx.typedDicts[localName] = true
-			}
-		}
+		propagateImportedAlias(localName, entry, models, ctx.typedDicts)
 	})
 }
 
@@ -1232,6 +1240,53 @@ type inputParseContext struct {
 	typedDicts map[string]bool
 }
 
+func resolveParameterFieldType(typeNode *sitter.Node, source []byte, ctx *inputParseContext) (schema.FieldType, error) {
+	typeAnn, err := parseTypeAnnotation(typeNode, source)
+	if err != nil {
+		return schema.FieldType{}, err
+	}
+	return schema.ResolveFieldType(typeAnn, ctx.imports, ctx.typedDicts)
+}
+
+func typedParameterParts(node *sitter.Node, source []byte) (string, *sitter.Node) {
+	var name string
+	var typeNode *sitter.Node
+	for i := 0; i < int(node.NamedChildCount()); i++ {
+		c := node.NamedChild(i)
+		switch c.Type() {
+		case "identifier":
+			if name == "" {
+				name = Content(c, source)
+			}
+		case "type":
+			typeNode = c
+		}
+	}
+	return name, typeNode
+}
+
+func inputField(name string, order int, fieldType schema.FieldType) schema.InputField {
+	return schema.InputField{
+		Name:      name,
+		Order:     order,
+		FieldType: fieldType,
+	}
+}
+
+func inputFieldWithInfo(name string, order int, fieldType schema.FieldType, info inputCallInfo) schema.InputField {
+	field := inputField(name, order, fieldType)
+	field.Default = info.Default
+	field.Description = info.Description
+	field.GE = info.GE
+	field.LE = info.LE
+	field.MinLength = info.MinLength
+	field.MaxLength = info.MaxLength
+	field.Regex = info.Regex
+	field.Choices = info.Choices
+	field.Deprecated = info.Deprecated
+	return field
+}
+
 func firstParamIsSelf(params *sitter.Node, source []byte) bool {
 	for _, child := range AllChildren(params) {
 		if child.Type() == "identifier" {
@@ -1294,19 +1349,7 @@ func extractInputs(
 func parseTypedParameter(node *sitter.Node, source []byte, order int, ctx *inputParseContext) (schema.InputField, error) {
 	// typed_parameter has no "name" field in the Python grammar.
 	// Structure is: identifier ":" type
-	var name string
-	var typeNode *sitter.Node
-	for i := 0; i < int(node.NamedChildCount()); i++ {
-		c := node.NamedChild(i)
-		switch c.Type() {
-		case "identifier":
-			if name == "" {
-				name = Content(c, source)
-			}
-		case "type":
-			typeNode = c
-		}
-	}
+	name, typeNode := typedParameterParts(node, source)
 	if name == "" {
 		return schema.InputField{}, schema.WrapError(schema.ErrParse, "typed_parameter has no identifier", nil)
 	}
@@ -1314,20 +1357,12 @@ func parseTypedParameter(node *sitter.Node, source []byte, order int, ctx *input
 		return schema.InputField{}, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", name, ctx.methodName), nil)
 	}
 
-	typeAnn, err := parseTypeAnnotation(typeNode, source)
-	if err != nil {
-		return schema.InputField{}, err
-	}
-	fieldType, err := schema.ResolveFieldType(typeAnn, ctx.imports, ctx.typedDicts)
+	fieldType, err := resolveParameterFieldType(typeNode, source, ctx)
 	if err != nil {
 		return schema.InputField{}, err
 	}
 
-	return schema.InputField{
-		Name:      name,
-		Order:     order,
-		FieldType: fieldType,
-	}, nil
+	return inputField(name, order, fieldType), nil
 }
 
 func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx *inputParseContext) (schema.InputField, error) {
@@ -1342,11 +1377,7 @@ func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx
 		return schema.InputField{}, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", name, ctx.methodName), nil)
 	}
 
-	typeAnn, err := parseTypeAnnotation(typeNode, source)
-	if err != nil {
-		return schema.InputField{}, err
-	}
-	fieldType, err := schema.ResolveFieldType(typeAnn, ctx.imports, ctx.typedDicts)
+	fieldType, err := resolveParameterFieldType(typeNode, source, ctx)
 	if err != nil {
 		return schema.InputField{}, err
 	}
@@ -1360,48 +1391,19 @@ func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx
 			if err != nil {
 				return schema.InputField{}, err
 			}
-			return schema.InputField{
-				Name:        name,
-				Order:       order,
-				FieldType:   fieldType,
-				Default:     info.Default,
-				Description: info.Description,
-				GE:          info.GE,
-				LE:          info.LE,
-				MinLength:   info.MinLength,
-				MaxLength:   info.MaxLength,
-				Regex:       info.Regex,
-				Choices:     info.Choices,
-				Deprecated:  info.Deprecated,
-			}, nil
+			return inputFieldWithInfo(name, order, fieldType, info), nil
 		}
 
 		// 2. Reference to Input() via class attribute or static method
 		if info, ok := resolveInputReference(valNode, source, ctx.registry); ok {
-			return schema.InputField{
-				Name:        name,
-				Order:       order,
-				FieldType:   fieldType,
-				Default:     info.Default,
-				Description: info.Description,
-				GE:          info.GE,
-				LE:          info.LE,
-				MinLength:   info.MinLength,
-				MaxLength:   info.MaxLength,
-				Regex:       info.Regex,
-				Choices:     info.Choices,
-				Deprecated:  info.Deprecated,
-			}, nil
+			return inputFieldWithInfo(name, order, fieldType, info), nil
 		}
 
 		// 3. Plain default — must be statically resolvable
 		if def, ok := resolveDefaultExpr(valNode, source, ctx.scope); ok {
-			return schema.InputField{
-				Name:      name,
-				Order:     order,
-				FieldType: fieldType,
-				Default:   &def,
-			}, nil
+			field := inputField(name, order, fieldType)
+			field.Default = &def
+			return field, nil
 		}
 
 		// Can't resolve — hard error
@@ -1411,11 +1413,7 @@ func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx
 	}
 
 	// No default — required parameter
-	return schema.InputField{
-		Name:      name,
-		Order:     order,
-		FieldType: fieldType,
-	}, nil
+	return inputField(name, order, fieldType), nil
 }
 
 // ---------------------------------------------------------------------------
