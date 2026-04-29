@@ -37,6 +37,12 @@ def _is_union(tpe: type) -> bool:
     return False
 
 
+def _is_dict_like(tpe: Any) -> bool:
+    """Check if a type should be treated like a dict, including TypedDict."""
+    is_typeddict = getattr(typing, "is_typeddict", None)
+    return tpe is dict or (callable(is_typeddict) and is_typeddict(tpe))
+
+
 class PrimitiveType(Enum):
     """Primitive types supported by Cog."""
 
@@ -215,14 +221,14 @@ class FieldType:
         if tpe is list:
             tpe = List[Any]
             origin = typing.get_origin(tpe)
-        elif tpe is dict:
+        elif _is_dict_like(tpe):
             tpe = Dict[str, Any]
             origin = typing.get_origin(tpe)
         elif tpe is set:
             tpe = Set[Any]
             origin = typing.get_origin(tpe)
 
-        if origin is dict:
+        if origin is dict or _is_dict_like(tpe):
             # dict / Dict[K, V] → opaque JSON object, consistent with the
             # static Go schema generator's SchemaAnyType().
             return FieldType(
@@ -238,7 +244,7 @@ class FieldType:
                     raise ValueError("List must have one type argument")
                 elem_t = t_args[0]
                 # dict elements in lists → treat as ANY (opaque JSON objects)
-                if elem_t is dict or typing.get_origin(elem_t) is dict:
+                if _is_dict_like(elem_t) or typing.get_origin(elem_t) is dict:
                     return FieldType(
                         primitive=PrimitiveType.ANY,
                         repetition=Repetition.REPEATED,
@@ -267,7 +273,7 @@ class FieldType:
                         raise ValueError("List must have one type argument")
                     elem_t = list_args[0]
                     # dict elements in optional lists → ANY
-                    if elem_t is dict or typing.get_origin(elem_t) is dict:
+                    if _is_dict_like(elem_t) or typing.get_origin(elem_t) is dict:
                         return FieldType(
                             primitive=PrimitiveType.ANY,
                             repetition=Repetition.OPTIONAL_REPEATED,
@@ -281,7 +287,7 @@ class FieldType:
                 else:
                     elem_t = Any
                 repetition = Repetition.OPTIONAL_REPEATED
-            elif nested_t is dict or elem_t is dict:
+            elif nested_t is dict or _is_dict_like(elem_t):
                 # Optional[dict] or Optional[Dict[str, Any]] → optional ANY.
                 # nested_t is dict: elem_t is parameterized (e.g. Dict[str, Any]).
                 # elem_t is dict: elem_t is bare dict (nested_t is None).

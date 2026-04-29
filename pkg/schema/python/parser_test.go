@@ -2878,3 +2878,263 @@ class Predictor(BasePredictor):
 	require.Empty(t, messages.Default.List)
 	require.False(t, messages.IsRequired())
 }
+
+func TestTypedDictInput(t *testing.T) {
+	source := `
+from typing import TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict):
+    name: str
+    count: int
+
+class Predictor(BasePredictor):
+    def predict(self, data: Payload) -> str:
+        return data["name"]
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+}
+
+func TestOptionalListOfTypedDictInput(t *testing.T) {
+	source := `
+from typing import TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict):
+    name: str
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[Payload] | None = None) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, messages.FieldType.Repetition)
+}
+
+func TestTypedDictOutput(t *testing.T) {
+	source := `
+from typing import TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict):
+    name: str
+    count: int
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 2, info.Output.Fields.Len())
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.True(t, name.Required)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+
+	count, ok := info.Output.Fields.Get("count")
+	require.True(t, ok)
+	require.True(t, count.Required)
+	require.Equal(t, schema.TypeInteger, count.Type.Primitive)
+}
+
+func TestTypedDictOutputTotalFalse(t *testing.T) {
+	source := `
+from typing import TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict, total=False):
+    name: str
+    count: int
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.False(t, name.Required)
+	require.False(t, name.Type.Nullable)
+
+	count, ok := info.Output.Fields.Get("count")
+	require.True(t, ok)
+	require.False(t, count.Required)
+	require.False(t, count.Type.Nullable)
+}
+
+func TestTypedDictOutputNotRequiredField(t *testing.T) {
+	source := `
+from typing import NotRequired, TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict):
+    name: str
+    count: NotRequired[int]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.True(t, name.Required)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+
+	count, ok := info.Output.Fields.Get("count")
+	require.True(t, ok)
+	require.False(t, count.Required)
+	require.False(t, count.Type.Nullable)
+	require.Equal(t, schema.TypeInteger, count.Type.Primitive)
+}
+
+func TestTypedDictOutputRequiredOptionalField(t *testing.T) {
+	source := `
+from typing import Required, TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict, total=False):
+    value: Required[int | None]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	value, ok := info.Output.Fields.Get("value")
+	require.True(t, ok)
+	require.True(t, value.Required)
+	require.True(t, value.Type.Nullable)
+	require.Equal(t, schema.TypeInteger, value.Type.Primitive)
+}
+
+func TestCrossFileTypedDictImport(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "types.py", `
+from typing import TypedDict
+
+class Output(TypedDict):
+    text: str
+    score: float
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BasePredictor
+from types import Output
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Output:
+        pass
+`)
+	info := parseFile(t, dir, "predict.py", "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 2, info.Output.Fields.Len())
+
+	text, ok := info.Output.Fields.Get("text")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, text.Type.Primitive)
+	require.True(t, text.Required)
+
+	score, ok := info.Output.Fields.Get("score")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeFloat, score.Type.Primitive)
+	require.True(t, score.Required)
+}
+
+func TestQualifiedTypedDictImportInputAndOutput(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "output_types.py", `
+from typing import TypedDict
+
+class Payload(TypedDict):
+    name: str
+    count: int
+
+class Output(TypedDict):
+    text: str
+`)
+	writeFile(t, dir, "predict.py", `
+import output_types as ot
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: ot.Payload) -> ot.Output:
+        pass
+`)
+	info := parseFile(t, dir, "predict.py", "Predictor")
+
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	text, ok := info.Output.Fields.Get("text")
+	require.True(t, ok)
+	require.True(t, text.Required)
+	require.Equal(t, schema.TypeString, text.Type.Primitive)
+}
+
+func TestInheritedTypedDictOutput(t *testing.T) {
+	source := `
+from typing import TypedDict
+from cog import BasePredictor
+
+class BasePayload(TypedDict):
+    name: str
+
+class Payload(BasePayload):
+    count: int
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 2, info.Output.Fields.Len())
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.True(t, name.Required)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+
+	count, ok := info.Output.Fields.Get("count")
+	require.True(t, ok)
+	require.True(t, count.Required)
+	require.Equal(t, schema.TypeInteger, count.Type.Primitive)
+}
+
+func TestNonTypedDictNotRequiredQualifierErrors(t *testing.T) {
+	source := `
+from typing import NotRequired
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Output(BaseModel):
+    count: NotRequired[int]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Output:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "NotRequired")
+}

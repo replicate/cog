@@ -1,8 +1,17 @@
 """Tests for cog._adt module (FieldType, PrimitiveType)."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 
 from cog._adt import FieldType, PrimitiveType, Repetition
+
+
+class ExampleTypedDict(TypedDict):
+    name: str
+    count: int
+
+
+class ExampleDictSubclass(dict[str, int]):
+    pass
 
 
 class TestDictInputTypes:
@@ -78,6 +87,50 @@ class TestDictInputTypes:
         ft = FieldType.from_type(dict[str, int])
         assert ft.primitive is PrimitiveType.ANY
         assert ft.repetition is Repetition.REQUIRED
+
+    def test_typeddict_input(self) -> None:
+        """TypedDict subclasses should be accepted as dict-like inputs."""
+        ft = FieldType.from_type(ExampleTypedDict)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REQUIRED
+        assert ft.coder is None
+
+    def test_list_of_typeddict_input(self) -> None:
+        """list[TypedDict] should produce a repeated ANY field."""
+        ft = FieldType.from_type(list[ExampleTypedDict])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REPEATED
+        assert ft.coder is None
+
+    def test_optional_typeddict_input(self) -> None:
+        """Optional[TypedDict] should produce an optional ANY field."""
+        ft = FieldType.from_type(Optional[ExampleTypedDict])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL
+        assert ft.coder is None
+
+    def test_optional_list_of_typeddict_input(self) -> None:
+        """Optional[list[TypedDict]] should produce optional repeated ANY."""
+        ft = FieldType.from_type(Optional[list[ExampleTypedDict]])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+        assert ft.coder is None
+
+    def test_pep604_list_of_typeddict_or_none_input(self) -> None:
+        """list[TypedDict] | None should produce optional repeated ANY."""
+        ft = FieldType.from_type(list[ExampleTypedDict] | None)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+        assert ft.coder is None
+
+    def test_plain_dict_subclass_is_not_treated_as_dict(self) -> None:
+        """Plain dict subclasses should not be accepted as dict-like inputs."""
+        try:
+            FieldType.from_type(ExampleDictSubclass)
+        except ValueError as exc:
+            assert str(exc) == "unsupported Cog type ExampleDictSubclass"
+        else:
+            raise AssertionError("Expected ValueError for plain dict subclass")
 
     def test_list_dict_str_int_type_erasure(self) -> None:
         """list[dict[str, int]] should be accepted as repeated ANY."""

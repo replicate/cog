@@ -1,0 +1,37 @@
+# Test TypedDict inputs through the default static schema path.
+#
+# This exercises the Go tree-sitter parser end-to-end for TypedDict inputs:
+# build-time extraction, embedded OpenAPI schema, and predict-time JSON input.
+
+# Build the image.
+cog build -t $TEST_IMAGE
+
+# TypedDict and optional list[TypedDict] inputs should be represented like dicts.
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout '"data":{"title":"Data","type":"object","x-order":0}'
+stdout '"items":{"items":{"type":"object"},"title":"Items","type":"array","x-order":1}'
+
+# Predict should accept TypedDict-shaped JSON payloads end-to-end.
+cog predict $TEST_IMAGE --json '{"data": {"name": "alice", "count": 2}, "items": [{"name": "first", "count": 1}, {"name": "second", "count": 3}]}'
+stdout '"status": "succeeded"'
+stdout '"output": "alice:2 items=2"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import TypedDict
+
+from cog import BasePredictor
+
+
+class Payload(TypedDict):
+    name: str
+    count: int
+
+
+class Predictor(BasePredictor):
+    def predict(self, data: Payload, items: list[Payload] | None = None) -> str:
+        return f"{data['name']}:{data['count']} items={len(items or [])}"
