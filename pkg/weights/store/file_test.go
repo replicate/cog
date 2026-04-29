@@ -64,6 +64,24 @@ func TestFile_RoundTrip(t *testing.T) {
 	require.Equal(t, filepath.Join(s.Root(), "files", "sha256", hexStr[:2], hexStr), p)
 }
 
+func TestFile_PutFile_SizeMismatch(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newStore(t)
+	data := []byte("hello weights")
+	d := digestOf(data)
+
+	// Claim the file is larger than it really is.
+	err := s.PutFile(ctx, d, int64(len(data))+100, bytes.NewReader(data))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "size mismatch")
+
+	// File must not be stored.
+	ok, err := s.Exists(ctx, d)
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
 func TestFile_PutFile_DigestMismatch(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -419,6 +419,9 @@ func ingressOne(ctx context.Context, src weightsource.Source, st store.Store, f 
 // bytes come from the content-addressed store, keyed by digest.
 func writeLayer(ctx context.Context, st store.Store, tw *tar.Writer, files []weightsource.InventoryFile) error {
 	for _, dir := range collectDirs(files) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := tw.WriteHeader(deterministicDirHeader(dir)); err != nil {
 			return fmt.Errorf("write dir header %s: %w", dir, err)
 		}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -111,6 +112,13 @@ func (m *hfMock) handler() http.Handler {
 	return mux
 }
 
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+	return u
+}
+
 func newTestHFSource(t *testing.T, serverURL, repo, ref string) *HFSource {
 	t.Helper()
 	if ref == "" {
@@ -119,7 +127,7 @@ func newTestHFSource(t *testing.T, serverURL, repo, ref string) *HFSource {
 	return &HFSource{
 		repo:    repo,
 		ref:     ref,
-		baseURL: serverURL,
+		baseURL: mustParseURL(t, serverURL),
 		token:   "",
 		client:  newHFHTTPClient(),
 	}
@@ -402,7 +410,7 @@ func TestHFSource_AuthHeader(t *testing.T) {
 	src := &HFSource{
 		repo:    "org/repo",
 		ref:     "main",
-		baseURL: ts.URL,
+		baseURL: mustParseURL(t, ts.URL),
 		token:   "hf_test_token_123",
 		client:  newHFHTTPClient(),
 	}
@@ -424,7 +432,7 @@ func TestHFSource_NoAuthHeader_WhenNoToken(t *testing.T) {
 	src := &HFSource{
 		repo:    "org/repo",
 		ref:     "main",
-		baseURL: ts.URL,
+		baseURL: mustParseURL(t, ts.URL),
 		token:   "",
 		client:  newHFHTTPClient(),
 	}
@@ -477,6 +485,54 @@ func TestHFSource_HTTP500_Retries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "abcd"+strings.Repeat("00", 18), sha)
 	assert.Equal(t, int32(2), attempts.Load(), "should have retried once")
+}
+
+func TestHFSource_Open_EscapesPathComponents(t *testing.T) {
+	// Verify that file paths with special characters are properly
+	// URL-escaped when sent to the server. Go's net/http server
+	// decodes percent-encoding in r.URL.Path, so we capture the raw
+	// request line from the underlying connection via RequestURI.
+	var gotRequestURI string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRequestURI = r.RequestURI
+		_, _ = w.Write([]byte("data"))
+	}))
+	defer ts.Close()
+
+	src := newTestHFSource(t, ts.URL, "org/repo", "main")
+
+	// File path with spaces and special chars.
+	rc, err := src.Open(t.Context(), "sub dir/model file.bin")
+	require.NoError(t, err)
+	_ = rc.Close()
+
+	assert.Contains(t, gotRequestURI, "sub%20dir/model%20file.bin",
+		"path components should be individually escaped")
+}
+
+func TestHFSource_BuildURL(t *testing.T) {
+	src := &HFSource{baseURL: mustParseURL(t, "https://huggingface.co")}
+	tests := []struct {
+		name     string
+		segments []string
+		want     string
+	}{
+		{"simple", []string{"api", "models", "org/repo", "revision", "main"}, "https://huggingface.co/api/models/org/repo/revision/main"},
+		{"cleans dots", []string{"api", "models", "org/repo", "revision", ".."}, "https://huggingface.co/api/models/org/repo"},
+		{"cleans double slash", []string{"api", "models", "org/repo", "", "tree", "main"}, "https://huggingface.co/api/models/org/repo/tree/main"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := src.buildURL(tc.segments...)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestHFSource_BuildURLWithQuery(t *testing.T) {
+	src := &HFSource{baseURL: mustParseURL(t, "https://huggingface.co")}
+	got := src.buildURLWithQuery("recursive=true", "api", "models", "org/repo", "tree", "abc123")
+	assert.Equal(t, "https://huggingface.co/api/models/org/repo/tree/abc123?recursive=true", got)
 }
 
 func TestFor_HFSchemes(t *testing.T) {

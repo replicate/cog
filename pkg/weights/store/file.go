@@ -113,7 +113,7 @@ func (s *FileStore) Exists(_ context.Context, digest string) (bool, error) {
 // io.Discard and nil is returned. This matters because Pull streams a
 // whole layer tar and may encounter files already stored from a
 // previous pull — we need those to succeed without desyncing the tar.
-func (s *FileStore) PutFile(ctx context.Context, expectedDigest string, _ int64, r io.Reader) error {
+func (s *FileStore) PutFile(ctx context.Context, expectedDigest string, expectedSize int64, r io.Reader) error {
 	hexStr, err := parseDigest(expectedDigest)
 	if err != nil {
 		return err
@@ -145,12 +145,17 @@ func (s *FileStore) PutFile(ctx context.Context, expectedDigest string, _ int64,
 	hasher := sha256.New()
 	reader := &ctxReader{ctx: ctx, r: io.TeeReader(r, hasher)}
 
-	if _, err := io.Copy(tmp, reader); err != nil {
+	n, err := io.Copy(tmp, reader)
+	if err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("write %s: %w", expectedDigest, err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp file: %w", err)
+	}
+
+	if expectedSize >= 0 && n != expectedSize {
+		return fmt.Errorf("size mismatch for %s: expected %d bytes, got %d", expectedDigest, expectedSize, n)
 	}
 
 	gotHex := hex.EncodeToString(hasher.Sum(nil))

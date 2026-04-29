@@ -147,6 +147,16 @@ func TestFileSource_Open(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("path traversal rejected", func(t *testing.T) {
+		_, err := src.Open(t.Context(), "../"+filepath.Base(dir)+"/../etc/passwd")
+		require.Error(t, err)
+	})
+
+	t.Run("absolute path rejected", func(t *testing.T) {
+		_, err := src.Open(t.Context(), "/etc/passwd")
+		require.Error(t, err)
+	})
+
 	t.Run("canceled context", func(t *testing.T) {
 		// Cancellation is tested with an independent context because
 		// t.Context() is tied to the test lifetime; we need a context

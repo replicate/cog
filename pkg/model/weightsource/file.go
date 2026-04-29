@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,9 @@ const FileScheme = "file"
 type FileSource struct {
 	// dir is the resolved absolute path to the source directory.
 	dir string
+	// fsys is an fs.FS rooted at dir. Open uses this instead of raw
+	// os.Open to guarantee path-escape prevention at the FS boundary.
+	fsys fs.FS
 }
 
 // NewFileSource constructs a FileSource bound to uri, resolving relative
@@ -49,7 +53,7 @@ func NewFileSource(uri, projectDir string) (*FileSource, error) {
 	if !fi.IsDir() {
 		return nil, fmt.Errorf("weight source %s is not a directory (file:// sources must be directories)", uri)
 	}
-	return &FileSource{dir: path}, nil
+	return &FileSource{dir: path, fsys: os.DirFS(path)}, nil
 }
 
 // sourceDir returns the resolved absolute path of the source directory.
@@ -78,15 +82,16 @@ func (s *FileSource) Open(ctx context.Context, path string) (io.ReadCloser, erro
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	// Inventory paths use forward slashes; filepath.Join on a path
-	// containing "/" works correctly on POSIX and is normalized on
-	// Windows.
-	abs := filepath.Join(s.dir, filepath.FromSlash(path))
-	f, err := os.Open(abs) //nolint:gosec // path is under the configured source dir
+	f, err := s.fsys.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
-	return f, nil
+	rc, ok := f.(io.ReadCloser)
+	if !ok {
+		_ = f.Close()
+		return nil, fmt.Errorf("open %s: filesystem does not support ReadCloser", path)
+	}
+	return rc, nil
 }
 
 // normalizeFileURI produces the canonical file:// URI for a path value

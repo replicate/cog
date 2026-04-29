@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -43,10 +45,10 @@ const hfInlineDigestConcurrency = 4
 // uses that pinned sha for all subsequent Open calls. Callers must call
 // Inventory before Open to ensure content is pinned to a specific commit.
 type HFSource struct {
-	repo        string // "org/repo"
-	ref         string // user-provided ref (branch, tag, or sha); defaults to "main"
-	resolvedRef string // full commit sha, set by Inventory; Open uses this when non-empty
-	baseURL     string
+	repo        string   // "org/repo"
+	ref         string   // user-provided ref (branch, tag, or sha); defaults to "main"
+	resolvedRef string   // full commit sha, set by Inventory; Open uses this when non-empty
+	baseURL     *url.URL // parsed once at construction; cloned in buildURL to avoid mutation
 	token       string
 	client      *http.Client
 }
@@ -60,9 +62,13 @@ func NewHFSource(uri string) (*HFSource, error) {
 		return nil, err
 	}
 
-	baseURL := os.Getenv("HF_ENDPOINT")
-	if baseURL == "" {
-		baseURL = hfDefaultBaseURL
+	rawURL := os.Getenv("HF_ENDPOINT")
+	if rawURL == "" {
+		rawURL = hfDefaultBaseURL
+	}
+	baseURL, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid HF base URL %q: %w", rawURL, err)
 	}
 
 	token := os.Getenv("HF_TOKEN")
@@ -236,9 +242,9 @@ type hfRevisionResponse struct {
 // resolveRef calls the Hub API to resolve a ref (branch/tag/sha) to the
 // full 40-char commit sha.
 func (s *HFSource) resolveRef(ctx context.Context) (string, error) {
-	url := fmt.Sprintf("%s/api/models/%s/revision/%s", s.baseURL, s.repo, s.ref)
+	u := s.buildURL("api", "models", s.repo, "revision", s.ref)
 
-	body, err := s.doGet(ctx, url)
+	body, err := s.doGet(ctx, u)
 	if err != nil {
 		return "", err
 	}
@@ -275,9 +281,9 @@ type hfLFSInfo struct {
 // not follow pagination yet — repos with very many files may return an
 // incomplete listing. A follow-up should add cursor-based pagination.
 func (s *HFSource) listTree(ctx context.Context, commitSHA string) ([]hfTreeEntry, error) {
-	url := fmt.Sprintf("%s/api/models/%s/tree/%s?recursive=true", s.baseURL, s.repo, commitSHA)
+	u := s.buildURLWithQuery("recursive=true", "api", "models", s.repo, "tree", commitSHA)
 
-	body, err := s.doGet(ctx, url)
+	body, err := s.doGet(ctx, u)
 	if err != nil {
 		return nil, err
 	}
@@ -375,9 +381,23 @@ func (s *HFSource) hashOneInlineFile(ctx context.Context, commitSHA string, entr
 
 // fetchFile streams one file from the resolve endpoint. The endpoint
 // issues a 302 to the appropriate backend (LFS CDN, xet, or inline).
-func (s *HFSource) fetchFile(ctx context.Context, ref, path string) (io.ReadCloser, error) {
-	url := fmt.Sprintf("%s/%s/resolve/%s/%s", s.baseURL, s.repo, ref, path)
-	return s.doGet(ctx, url)
+func (s *HFSource) fetchFile(ctx context.Context, ref, filePath string) (io.ReadCloser, error) {
+	u := s.buildURL(s.repo, "resolve", ref, filePath)
+	return s.doGet(ctx, u)
+}
+
+// buildURL joins path segments onto s.baseURL. path.Join cleans ".."
+// and double-slash components; url.URL.String handles encoding.
+func (s *HFSource) buildURL(segments ...string) string {
+	return s.buildURLWithQuery("", segments...)
+}
+
+// buildURLWithQuery is like buildURL but appends a raw query string.
+func (s *HFSource) buildURLWithQuery(query string, segments ...string) string {
+	u := *s.baseURL // shallow copy
+	u.Path = path.Join(u.Path, path.Join(segments...))
+	u.RawQuery = query
+	return u.String()
 }
 
 // doGet performs an HTTP GET with retries (via the retrying transport)
