@@ -117,6 +117,17 @@ class Predictor(BasePredictor):
                 for f in entry["files"]
             ]
 
+            # Dump directory contents before validation for debugging.
+            target_dir = Path(target)
+            if target_dir.is_dir():
+                print(f"--- find {target} ---", file=sys.stderr)
+                for p in sorted(target_dir.rglob("*")):
+                    suffix = "/" if p.is_dir() else f"  ({p.stat().st_size})"
+                    print(f"  {p.relative_to(target_dir)}{suffix}", file=sys.stderr)
+                print("---", file=sys.stderr)
+            else:
+                print(f"--- {target}: does not exist ---", file=sys.stderr)
+
             print(
                 f"validating weight '{name}' at {target} ({len(expected_files)} files)",
                 file=sys.stderr,
