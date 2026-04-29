@@ -45,9 +45,10 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 
 	// 3. Collect schema object classes (BaseModel and TypedDict) locally first,
 	// then across local imports.
-	modelClasses, typedDicts := collectModelClasses(root, source, imports)
+	modelCtx := &modelParseContext{imports: imports, typedDicts: make(map[string]bool)}
+	modelClasses := collectModelClasses(root, source, modelCtx)
 	if sourceDir != "" {
-		resolveExternalModels(sourceDir, imports, modelClasses, typedDicts)
+		resolveExternalModels(sourceDir, modelClasses, modelCtx)
 	}
 
 	// 4. Collect Input() references from class attributes and static methods
@@ -72,7 +73,14 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	isMethod := firstParamIsSelf(paramsNode, source)
 
 	// 7. Extract parameters
-	inputs, err := extractInputs(paramsNode, source, methodName, isMethod, imports, inputRegistry, moduleScope, typedDicts)
+	paramCtx := &inputParseContext{
+		methodName: methodName,
+		imports:    imports,
+		registry:   inputRegistry,
+		scope:      moduleScope,
+		typedDicts: modelCtx.typedDicts,
+	}
+	inputs, err := extractInputs(paramsNode, source, isMethod, paramCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +220,7 @@ func parseImportFrom(node *sitter.Node, source []byte, ctx *schema.ImportContext
 func parseImport(node *sitter.Node, source []byte, ctx *schema.ImportContext) {
 	text := strings.TrimSpace(Content(node, source))
 	imports := strings.TrimSpace(strings.TrimPrefix(text, "import "))
-	for _, part := range strings.Split(imports, ",") {
+	for part := range strings.SplitSeq(imports, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -403,9 +411,13 @@ func resolveChoicesCall(node *sitter.Node, source []byte, scope moduleScope) ([]
 // BaseModel subclass collection
 // ---------------------------------------------------------------------------
 
-func collectModelClasses(root *sitter.Node, source []byte, imports *schema.ImportContext) (schema.ModelClassMap, map[string]bool) {
+type modelParseContext struct {
+	imports    *schema.ImportContext
+	typedDicts map[string]bool
+}
+
+func collectModelClasses(root *sitter.Node, source []byte, ctx *modelParseContext) schema.ModelClassMap {
 	models := schema.NewOrderedMap[string, []schema.ModelField]()
-	typedDicts := make(map[string]bool)
 
 	for _, child := range NamedChildren(root) {
 		classNode := UnwrapClass(child)
@@ -419,22 +431,22 @@ func collectModelClasses(root *sitter.Node, source []byte, imports *schema.Impor
 		}
 		className := Content(nameNode, source)
 
-		isBaseModel := InheritsFromBaseModel(classNode, source, imports)
-		isTypedDict, requiredByDefault, parents := TypedDictClassInfo(classNode, source, imports, typedDicts)
+		isBaseModel := InheritsFromBaseModel(classNode, source, ctx.imports)
+		isTypedDict, requiredByDefault, parents := TypedDictClassInfo(classNode, source, ctx.imports, ctx.typedDicts)
 		if !isBaseModel && !isTypedDict {
 			continue
 		}
 
-		fields := extractClassAnnotations(classNode, source, imports, isTypedDict, requiredByDefault)
+		fields := extractClassAnnotations(classNode, source, ctx.imports, isTypedDict, requiredByDefault)
 		if isTypedDict {
 			fields = mergeModelFields(parentModelFields(models, parents), fields)
 		}
 		models.Set(className, fields)
 		if isTypedDict {
-			typedDicts[className] = true
+			ctx.typedDicts[className] = true
 		}
 	}
-	return models, typedDicts
+	return models
 }
 
 func parentModelFields(models schema.ModelClassMap, parents []string) [][]schema.ModelField {
@@ -483,11 +495,11 @@ func mergeModelFields(parents [][]schema.ModelField, own []schema.ModelField) []
 //
 // Non-local imports (stdlib, pip packages) are skipped because the file
 // won't exist on disk.
-func resolveExternalModels(sourceDir string, imports *schema.ImportContext, models schema.ModelClassMap, typedDicts map[string]bool) {
+func resolveExternalModels(sourceDir string, models schema.ModelClassMap, ctx *modelParseContext) {
 	// Track which modules we've already tried so we don't re-parse.
 	tried := make(map[string]bool)
 
-	imports.Names.Entries(func(localName string, entry schema.ImportEntry) {
+	ctx.imports.Names.Entries(func(localName string, entry schema.ImportEntry) {
 		// Already resolved locally — skip.
 		if _, ok := models.Get(localName); ok {
 			return
@@ -528,8 +540,8 @@ func resolveExternalModels(sourceDir string, imports *schema.ImportContext, mode
 				return
 			}
 
-			fileImports := CollectImports(tree.RootNode(), source)
-			fileModels, fileTypedDicts := collectModelClasses(tree.RootNode(), source, fileImports)
+			fileCtx := &modelParseContext{imports: CollectImports(tree.RootNode(), source), typedDicts: make(map[string]bool)}
+			fileModels := collectModelClasses(tree.RootNode(), source, fileCtx)
 
 			// Merge discovered models into the caller's map.
 			fileModels.Entries(func(name string, fields []schema.ModelField) {
@@ -537,8 +549,8 @@ func resolveExternalModels(sourceDir string, imports *schema.ImportContext, mode
 					models.Set(name, fields)
 				}
 			})
-			for name := range fileTypedDicts {
-				typedDicts[name] = true
+			for name := range fileCtx.typedDicts {
+				ctx.typedDicts[name] = true
 			}
 		}
 
@@ -551,8 +563,8 @@ func resolveExternalModels(sourceDir string, imports *schema.ImportContext, mode
 					models.Set(localName, fields)
 				}
 			}
-			if typedDicts[entry.Original] {
-				typedDicts[localName] = true
+			if ctx.typedDicts[entry.Original] {
+				ctx.typedDicts[localName] = true
 			}
 		}
 	})
@@ -1212,6 +1224,14 @@ func findMethodInClass(classNode *sitter.Node, source []byte, className, methodN
 // Parameter extraction
 // ---------------------------------------------------------------------------
 
+type inputParseContext struct {
+	methodName string
+	imports    *schema.ImportContext
+	registry   *inputRegistry
+	scope      moduleScope
+	typedDicts map[string]bool
+}
+
 func firstParamIsSelf(params *sitter.Node, source []byte) bool {
 	for _, child := range AllChildren(params) {
 		if child.Type() == "identifier" {
@@ -1224,12 +1244,8 @@ func firstParamIsSelf(params *sitter.Node, source []byte) bool {
 func extractInputs(
 	paramsNode *sitter.Node,
 	source []byte,
-	methodName string,
 	skipSelf bool,
-	imports *schema.ImportContext,
-	registry *inputRegistry,
-	scope moduleScope,
-	typedDicts map[string]bool,
+	ctx *inputParseContext,
 ) (*schema.OrderedMap[string, schema.InputField], error) {
 	inputs := schema.NewOrderedMap[string, schema.InputField]()
 	order := 0
@@ -1247,7 +1263,7 @@ func extractInputs(
 			}
 
 		case "typed_parameter":
-			input, err := parseTypedParameter(child, source, order, methodName, imports, typedDicts)
+			input, err := parseTypedParameter(child, source, order, ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -1255,7 +1271,7 @@ func extractInputs(
 			order++
 
 		case "typed_default_parameter":
-			input, err := parseTypedDefaultParameter(child, source, order, methodName, imports, registry, scope, typedDicts)
+			input, err := parseTypedDefaultParameter(child, source, order, ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -1268,14 +1284,14 @@ func extractInputs(
 			if nameNode != nil {
 				paramName = Content(nameNode, source)
 			}
-			return nil, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", paramName, methodName), nil)
+			return nil, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", paramName, ctx.methodName), nil)
 		}
 	}
 
 	return inputs, nil
 }
 
-func parseTypedParameter(node *sitter.Node, source []byte, order int, methodName string, imports *schema.ImportContext, typedDicts map[string]bool) (schema.InputField, error) {
+func parseTypedParameter(node *sitter.Node, source []byte, order int, ctx *inputParseContext) (schema.InputField, error) {
 	// typed_parameter has no "name" field in the Python grammar.
 	// Structure is: identifier ":" type
 	var name string
@@ -1295,14 +1311,14 @@ func parseTypedParameter(node *sitter.Node, source []byte, order int, methodName
 		return schema.InputField{}, schema.WrapError(schema.ErrParse, "typed_parameter has no identifier", nil)
 	}
 	if typeNode == nil {
-		return schema.InputField{}, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", name, methodName), nil)
+		return schema.InputField{}, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", name, ctx.methodName), nil)
 	}
 
 	typeAnn, err := parseTypeAnnotation(typeNode, source)
 	if err != nil {
 		return schema.InputField{}, err
 	}
-	fieldType, err := schema.ResolveFieldType(typeAnn, imports, typedDicts)
+	fieldType, err := schema.ResolveFieldType(typeAnn, ctx.imports, ctx.typedDicts)
 	if err != nil {
 		return schema.InputField{}, err
 	}
@@ -1314,16 +1330,7 @@ func parseTypedParameter(node *sitter.Node, source []byte, order int, methodName
 	}, nil
 }
 
-func parseTypedDefaultParameter(
-	node *sitter.Node,
-	source []byte,
-	order int,
-	methodName string,
-	imports *schema.ImportContext,
-	registry *inputRegistry,
-	scope moduleScope,
-	typedDicts map[string]bool,
-) (schema.InputField, error) {
+func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx *inputParseContext) (schema.InputField, error) {
 	nameNode := node.ChildByFieldName("name")
 	if nameNode == nil {
 		return schema.InputField{}, schema.WrapError(schema.ErrParse, "typed_default_parameter has no name", nil)
@@ -1332,14 +1339,14 @@ func parseTypedDefaultParameter(
 
 	typeNode := node.ChildByFieldName("type")
 	if typeNode == nil {
-		return schema.InputField{}, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", name, methodName), nil)
+		return schema.InputField{}, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", name, ctx.methodName), nil)
 	}
 
 	typeAnn, err := parseTypeAnnotation(typeNode, source)
 	if err != nil {
 		return schema.InputField{}, err
 	}
-	fieldType, err := schema.ResolveFieldType(typeAnn, imports, typedDicts)
+	fieldType, err := schema.ResolveFieldType(typeAnn, ctx.imports, ctx.typedDicts)
 	if err != nil {
 		return schema.InputField{}, err
 	}
@@ -1348,8 +1355,8 @@ func parseTypedDefaultParameter(
 
 	if valNode != nil {
 		// 1. Direct Input() call
-		if isInputCall(valNode, source, imports) {
-			info, err := parseInputCall(valNode, source, name, scope)
+		if isInputCall(valNode, source, ctx.imports) {
+			info, err := parseInputCall(valNode, source, name, ctx.scope)
 			if err != nil {
 				return schema.InputField{}, err
 			}
@@ -1370,7 +1377,7 @@ func parseTypedDefaultParameter(
 		}
 
 		// 2. Reference to Input() via class attribute or static method
-		if info, ok := resolveInputReference(valNode, source, registry); ok {
+		if info, ok := resolveInputReference(valNode, source, ctx.registry); ok {
 			return schema.InputField{
 				Name:        name,
 				Order:       order,
@@ -1388,7 +1395,7 @@ func parseTypedDefaultParameter(
 		}
 
 		// 3. Plain default — must be statically resolvable
-		if def, ok := resolveDefaultExpr(valNode, source, scope); ok {
+		if def, ok := resolveDefaultExpr(valNode, source, ctx.scope); ok {
 			return schema.InputField{
 				Name:      name,
 				Order:     order,

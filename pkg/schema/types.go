@@ -317,7 +317,7 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[str
 		prim, ok := PrimitiveFromName(name)
 		if !ok {
 			if qualifiedEntry.Module != "" {
-				return FieldType{}, errUnsupportedType(name)
+				return FieldType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
 			}
 			return FieldType{}, errUnsupportedType(name)
 		}
