@@ -168,7 +168,6 @@ Stores credentials for `cog push`.
 These commands exist but are hidden from `cog --help`:
 
 - **`cog debug`** -- Generates the Dockerfile from cog.yaml without building (useful for debugging build issues)
-- **`cog inspect`** -- Inspects model images and OCI indices
 - **`cog weights`** -- Parent command for `weights build`, `weights push`, `weights inspect`
 
 There's also a separate `base-image` binary (`cmd/base-image/`) with subcommands for managing Cog base images (`dockerfile`, `build`, `generate-matrix`). This isn't a `cog` subcommand.

@@ -404,53 +404,12 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
 
-	m.Index = &Index{
-		Digest:    manifest.Digest, // Content-addressable digest from registry
-		Reference: ref.String(),
-		MediaType: manifest.MediaType,
-		Manifests: make([]IndexManifest, len(manifest.Manifests)),
-	}
-
-	// Populate index manifests
-	for i, pm := range manifest.Manifests {
-		im := IndexManifest{
-			Digest:      pm.Digest,
-			MediaType:   pm.MediaType,
-			Size:        pm.Size,
-			Annotations: pm.Annotations,
-		}
-		if pm.OS != "" {
-			im.Platform = &Platform{
-				OS:           pm.OS,
-				Architecture: pm.Architecture,
-				Variant:      pm.Variant,
-			}
-		}
-		// Determine manifest type
-		if pm.OS == PlatformUnknown && isWeightDescriptor(pm) {
-			im.Type = ManifestTypeWeights
-		} else {
-			im.Type = ManifestTypeImage
-		}
-		m.Index.Manifests[i] = im
-	}
-
 	return m, nil
 }
 
 // isOCIIndex checks if the manifest result is an OCI Image Index.
 func isOCIIndex(mr *registry.ManifestResult) bool {
 	return mr.IsIndex()
-}
-
-// isWeightDescriptor identifies a weight manifest descriptor in an OCI index
-// by the presence of the set-digest annotation (v1 format).
-func isWeightDescriptor(pm registry.PlatformManifest) bool {
-	if pm.Annotations == nil {
-		return false
-	}
-	_, ok := pm.Annotations[AnnotationV1WeightSetDigest]
-	return ok
 }
 
 // findImageManifest finds the model image manifest in an index.

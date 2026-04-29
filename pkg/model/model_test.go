@@ -228,3 +228,29 @@ func TestModel_ArtifactsByType(t *testing.T) {
 	require.Len(t, weights, 1)
 	require.Equal(t, "llama", weights[0].Name())
 }
+
+func TestModel_IsBundle(t *testing.T) {
+	t.Run("returns false with no artifacts", func(t *testing.T) {
+		m := &Model{}
+		require.False(t, m.IsBundle())
+	})
+
+	t.Run("returns false with only image artifact", func(t *testing.T) {
+		m := &Model{
+			Artifacts: []Artifact{
+				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
+			},
+		}
+		require.False(t, m.IsBundle())
+	})
+
+	t.Run("returns true with weight artifacts", func(t *testing.T) {
+		m := &Model{
+			Artifacts: []Artifact{
+				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
+				newWeightArtifact(lockfile.WeightLockEntry{Name: "w1", Target: "/src/weights/w1"}, v1.Descriptor{}, nil),
+			},
+		}
+		require.True(t, m.IsBundle())
+	})
+}

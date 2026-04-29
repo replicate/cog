@@ -15,9 +15,6 @@ type Model struct {
 	Schema     *openapi3.T    // OpenAPI schema
 	CogVersion string         // Version of cog used to build
 
-	// Index is the OCI Image Index (populated when inspecting a pushed model).
-	Index *Index
-
 	// Artifacts is the collection of all artifacts produced by building this model.
 	// Populated by Resolver.Build(). Contains ImageArtifact and WeightArtifact instances.
 	Artifacts []Artifact

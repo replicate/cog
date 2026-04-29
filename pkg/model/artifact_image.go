@@ -26,6 +26,11 @@ type Platform struct {
 	Variant      string
 }
 
+// PlatformUnknown is the OCI placeholder ("unknown") used for non-platform
+// artifacts such as weight manifests, distinguishing them from the model
+// image manifest in the OCI index.
+const PlatformUnknown = "unknown"
+
 // Label keys for Cog-specific metadata stored in image labels.
 var (
 	LabelConfig          = global.LabelNamespace + "config"
