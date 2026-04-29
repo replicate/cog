@@ -11,6 +11,7 @@ package lockfile
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -294,6 +295,44 @@ func (wl *WeightsLock) FindWeight(name string) *WeightLockEntry {
 		}
 	}
 	return nil
+}
+
+// Retain removes any entries whose Name is not in keep. The order of
+// surviving entries is preserved. Retain is used after a full import
+// pass to prune weights that were removed from cog.yaml.
+func (wl *WeightsLock) Retain(keep []string) {
+	set := make(map[string]bool, len(keep))
+	for _, n := range keep {
+		set[n] = true
+	}
+	kept := make([]WeightLockEntry, 0, len(keep))
+	for _, e := range wl.Weights {
+		if set[e.Name] {
+			kept = append(kept, e)
+		}
+	}
+	wl.Weights = kept
+}
+
+// PruneLockfile removes lockfile entries whose names are not in keep.
+// It is a no-op when the lockfile does not exist or when nothing would
+// change, avoiding unnecessary file rewrites (which churn git diffs).
+func PruneLockfile(lockPath string, keep []string) error {
+	lock, err := LoadWeightsLock(lockPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+
+	before := len(lock.Weights)
+	lock.Retain(keep)
+	if len(lock.Weights) == before {
+		return nil // nothing pruned
+	}
+
+	return lock.Save(lockPath)
 }
 
 // Upsert inserts or replaces the entry with the matching Name. It leaves

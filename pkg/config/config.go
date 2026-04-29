@@ -88,6 +88,15 @@ func (w *WeightSource) SourceURI() string {
 	return w.Source.URI
 }
 
+// WeightNames returns the names of the given weight sources.
+func WeightNames(ws []WeightSource) []string {
+	names := make([]string, len(ws))
+	for i, w := range ws {
+		names[i] = w.Name
+	}
+	return names
+}
+
 type Config struct {
 	Build       *Build         `json:"build" yaml:"build"`
 	Image       string         `json:"image,omitempty" yaml:"image,omitempty"`

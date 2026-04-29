@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
@@ -129,6 +130,13 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 	artifacts, err := buildWeightArtifactsFromPlans(ctx, builder, weightSpecs, plans)
 	if err != nil {
 		return err
+	}
+
+	// Prune lockfile entries for weights no longer declared in cog.yaml.
+	// This always uses the full config (not the filtered import set)
+	// so orphans are corrected regardless of which weights were imported.
+	if err := lockfile.PruneLockfile(lockPath, config.WeightNames(cfg.Weights)); err != nil {
+		return fmt.Errorf("prune lockfile: %w", err)
 	}
 
 	for _, wa := range artifacts {

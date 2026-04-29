@@ -224,6 +224,20 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 	opts = opts.WithDefaults(src)
 
+	// Prune lockfile entries for weights no longer in cog.yaml.
+	// This must happen before the image build so
+	// writeRuntimeWeightsManifest (which projects the lockfile into
+	// /.cog/weights.json) sees a clean lockfile without orphaned
+	// entries. An empty keep-set (all weights removed) clears every
+	// entry, which is correct: the lockfile should reflect cog.yaml.
+	lockPath := opts.WeightsLockPath
+	if lockPath == "" {
+		lockPath = filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
+	}
+	if err := lockfile.PruneLockfile(lockPath, config.WeightNames(src.Config.Weights)); err != nil {
+		return nil, fmt.Errorf("prune lockfile: %w", err)
+	}
+
 	// Build image artifact via ImageBuilder
 	ib := NewImageBuilder(r.factory, r.docker, src, opts)
 	imageSpec := NewImageSpec("model", opts.ImageName)
@@ -244,11 +258,6 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	m.Artifacts = []Artifact{ia}
 
 	// Build weight artifacts when weights are declared in cog.yaml.
-	lockPath := opts.WeightsLockPath
-	if lockPath == "" {
-		lockPath = filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
-	}
-
 	if len(src.Config.Weights) > 0 {
 		st, storeErr := store.OpenDefault()
 		if storeErr != nil {

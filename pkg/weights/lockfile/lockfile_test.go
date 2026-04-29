@@ -526,3 +526,142 @@ func TestRuntimeManifest_Empty(t *testing.T) {
 	rm := lock.RuntimeManifest()
 	assert.Empty(t, rm.Weights)
 }
+
+func TestWeightsLock_Retain(t *testing.T) {
+	t.Run("removes entries not in keep set", func(t *testing.T) {
+		lock := &WeightsLock{
+			Version: Version,
+			Weights: []WeightLockEntry{
+				{Name: "a", Target: "/a", Digest: "sha256:aaa"},
+				{Name: "b", Target: "/b", Digest: "sha256:bbb"},
+				{Name: "c", Target: "/c", Digest: "sha256:ccc"},
+			},
+		}
+
+		lock.Retain([]string{"a", "c"})
+		require.Len(t, lock.Weights, 2)
+		assert.Equal(t, "a", lock.Weights[0].Name)
+		assert.Equal(t, "c", lock.Weights[1].Name)
+	})
+
+	t.Run("preserves order", func(t *testing.T) {
+		lock := &WeightsLock{
+			Version: Version,
+			Weights: []WeightLockEntry{
+				{Name: "z", Target: "/z"},
+				{Name: "m", Target: "/m"},
+				{Name: "a", Target: "/a"},
+			},
+		}
+
+		lock.Retain([]string{"a", "z"})
+		require.Len(t, lock.Weights, 2)
+		assert.Equal(t, "z", lock.Weights[0].Name, "original insertion order must be preserved")
+		assert.Equal(t, "a", lock.Weights[1].Name)
+	})
+
+	t.Run("empty keep set removes all", func(t *testing.T) {
+		lock := &WeightsLock{
+			Version: Version,
+			Weights: []WeightLockEntry{
+				{Name: "a", Target: "/a"},
+			},
+		}
+
+		lock.Retain(nil)
+		assert.Empty(t, lock.Weights)
+	})
+
+	t.Run("noop when all kept", func(t *testing.T) {
+		lock := &WeightsLock{
+			Version: Version,
+			Weights: []WeightLockEntry{
+				{Name: "a", Target: "/a"},
+				{Name: "b", Target: "/b"},
+			},
+		}
+
+		lock.Retain([]string{"a", "b"})
+		require.Len(t, lock.Weights, 2)
+		assert.Equal(t, "a", lock.Weights[0].Name)
+		assert.Equal(t, "b", lock.Weights[1].Name)
+	})
+
+	t.Run("keep set with unknown names is safe", func(t *testing.T) {
+		lock := &WeightsLock{
+			Version: Version,
+			Weights: []WeightLockEntry{
+				{Name: "a", Target: "/a"},
+			},
+		}
+
+		lock.Retain([]string{"a", "nonexistent"})
+		require.Len(t, lock.Weights, 1)
+		assert.Equal(t, "a", lock.Weights[0].Name)
+	})
+}
+
+func TestPruneLockfile_RemovesOrphanedEntries(t *testing.T) {
+	// Regression test: removing a weight from cog.yaml must remove its
+	// entry from weights.lock. Before the fix, orphaned entries
+	// persisted and were projected into /.cog/weights.json, causing
+	// coglet to expect weights that no longer exist.
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "weights.lock")
+
+	lock := &WeightsLock{
+		Version: Version,
+		Weights: []WeightLockEntry{
+			{Name: "w1", Target: "/src/w1", Digest: "sha256:aaa"},
+			{Name: "w2", Target: "/src/w2", Digest: "sha256:bbb"},
+		},
+	}
+	require.NoError(t, lock.Save(lockPath))
+
+	err := PruneLockfile(lockPath, []string{"w1"})
+	require.NoError(t, err)
+
+	loaded, err := LoadWeightsLock(lockPath)
+	require.NoError(t, err)
+	require.Len(t, loaded.Weights, 1, "orphaned entry w2 should be removed")
+	assert.Equal(t, "w1", loaded.Weights[0].Name)
+}
+
+func TestPruneLockfile_NoopWhenNothingRemoved(t *testing.T) {
+	// PruneLockfile should not rewrite the lockfile if there are no
+	// orphaned entries, keeping the mtime stable for git.
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "weights.lock")
+
+	lock := &WeightsLock{
+		Version: Version,
+		Weights: []WeightLockEntry{
+			{Name: "w1", Target: "/src/w1", Digest: "sha256:aaa"},
+		},
+	}
+	require.NoError(t, lock.Save(lockPath))
+
+	infoBefore, err := os.Stat(lockPath)
+	require.NoError(t, err)
+
+	err = PruneLockfile(lockPath, []string{"w1"})
+	require.NoError(t, err)
+
+	infoAfter, err := os.Stat(lockPath)
+	require.NoError(t, err)
+	assert.Equal(t, infoBefore.ModTime(), infoAfter.ModTime(),
+		"PruneLockfile must not rewrite lockfile when nothing changed")
+}
+
+func TestPruneLockfile_MissingLockfileIsNoop(t *testing.T) {
+	// If no lockfile exists yet, PruneLockfile is a safe no-op.
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "weights.lock")
+
+	err := PruneLockfile(lockPath, []string{"w1"})
+	require.NoError(t, err, "pruning a missing lockfile should not error")
+
+	// Lockfile should not have been created.
+	_, err = os.Stat(lockPath)
+	require.True(t, os.IsNotExist(err), "PruneLockfile must not create a lockfile")
+}
