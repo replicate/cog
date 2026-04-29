@@ -204,6 +204,10 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
+		if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
+			return err
+		}
+
 		console.Info("Building Docker image from environment in cog.yaml...")
 		console.Info("")
 		m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))

@@ -14,6 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/provider/setup"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 func newPushCommand() *cobra.Command {
@@ -63,6 +64,10 @@ func push(cmd *cobra.Command, args []string) error {
 
 	src, err := model.NewSource(configFilename)
 	if err != nil {
+		return err
+	}
+
+	if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
 		return err
 	}
 
