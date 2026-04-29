@@ -35,12 +35,11 @@ stdout 'hello world \(weight-size=1024\)'
 exec sh -c 'test ! -d .cog/mounts || test -z "$(ls -A .cog/mounts)"'
 
 -- cog.yaml --
-# image is set dynamically by the test (TEST_REGISTRY varies per run).
-# We substitute it in via `sh -c` before `cog weights import`.
+# image: is appended by the test before `cog weights import` (the
+# value depends on $TEST_REGISTRY, which varies per run).
 build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
-image: test/import-predict-model
 weights:
   - name: greeting
     target: /src/mounted-weights/greeting

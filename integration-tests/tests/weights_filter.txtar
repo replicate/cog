@@ -40,10 +40,11 @@ cog predict -i s=check
 stdout 'files=config.json,model.safetensors,tokenizer.json'
 
 -- cog.yaml --
+# image: is appended by the test before `cog weights import` (the
+# value depends on $TEST_REGISTRY, which varies per run).
 build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
-image: test/filter-model
 weights:
   - name: filtered
     target: /src/weights/filtered

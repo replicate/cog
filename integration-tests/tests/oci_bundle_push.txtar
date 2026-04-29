@@ -16,8 +16,16 @@ mkdir weights-beta
 exec sh -c 'printf AAAA > weights-alpha/data.bin'
 exec sh -c 'printf BBBB > weights-beta/data.bin'
 
-# cog push runs the weight builder implicitly when cog.yaml declares
-# weights. Presence of weights: in cog.yaml triggers bundle format.
+# image: is required in cog.yaml when weights are declared, and
+# cog weights import reads it from there.
+exec sh -c 'printf "image: %s/test/bundle-model\n" "$TEST_REGISTRY" >> cog.yaml'
+
+# Step 1: import generates weights.lock and pushes weight manifests.
+# cog push later requires the lockfile to already exist.
+cog weights import
+
+# Step 2: cog push assembles the OCI index (image + weight manifests)
+# and uploads it to the registry under the supplied tag.
 cog push $TEST_REGISTRY/test/bundle-model:v1
 
 # Image push header, then weight push header — one each.
@@ -27,22 +35,28 @@ stderr 'Pushing weights\.\.\.'
 # Resolve the pushed ref and verify the top-level index shape.
 registry-inspect $TEST_REGISTRY/test/bundle-model:v1
 stdout 'application/vnd.oci.image.index.v1\+json'
-# v1 annotation namespace (spec §2.3).
-stdout 'run.cog.reference.type.*weights'
+# v1 annotations on each weight descriptor (spec §2.5).
 stdout 'run.cog.weight.name.*alpha'
 stdout 'run.cog.weight.name.*beta'
+stdout 'run.cog.weight.set-digest'
 
 -- cog.yaml --
+# image: is appended by the test before `cog push` (the value depends
+# on $TEST_REGISTRY, which varies per run). cog push <ref> still
+# pushes to the supplied ref, but image: must be set when weights are
+# configured (validation requirement).
 build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
 weights:
   - name: alpha
-    source: weights-alpha
     target: /src/weights-alpha
+    source:
+      uri: file://./weights-alpha
   - name: beta
-    source: weights-beta
     target: /src/weights-beta
+    source:
+      uri: file://./weights-beta
 
 -- predict.py --
 from cog import BasePredictor

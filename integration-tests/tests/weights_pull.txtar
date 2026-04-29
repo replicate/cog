@@ -18,12 +18,16 @@ exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "A" > weights-
 exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "B" > weights-beta/model.bin'
 
 # Step 1: import weights to the local registry. This populates
-# weights.lock and pushes the layers.
+# weights.lock, pushes the layers, and warms the local cache as a
+# side effect (cog-i12u: import == build + push + populate cache).
 cog weights import --image $TEST_REGISTRY/test/pull-model
 stderr 'Pushing 2 weight'
 exists weights.lock
 
-# Cache starts empty.
+# Purge the cache so the next step exercises the cold-pull path.
+# The realistic scenario for `cog weights pull` is "lockfile checked
+# in, but the local cache is empty" — e.g. a fresh clone.
+exec sh -c 'rm -rf $WORK/cache/weights/files'
 ! exists $WORK/cache/weights/files/sha256
 
 # Step 2: pull from a cold cache. Expect both weights to be fetched.

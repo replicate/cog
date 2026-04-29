@@ -18,9 +18,15 @@ exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "X" > weights-
 # the repo via src.Config.Image when constructing the WeightManager.
 exec sh -c 'printf "image: %s/test/pull-predict-model\n" "$TEST_REGISTRY" >> cog.yaml'
 
-# Step 1: import to the local registry.
+# Step 1: import to the local registry. This also warms the local
+# cache as a side effect of import (cog-i12u guarantee).
 cog weights import
 exists weights.lock
+
+# Purge the cache so step 2 exercises pull's cold-fetch path. The
+# realistic scenario for `cog weights pull` is "lockfile checked in,
+# cache empty" — e.g. a fresh clone.
+exec sh -c 'rm -rf $WORK/cache/weights/files'
 
 # Step 2: pull into the isolated cache.
 cog weights pull
@@ -38,12 +44,11 @@ stdout 'hello world \(weight-size=1024\)'
 exec sh -c 'test ! -d .cog/mounts || test -z "$(ls -A .cog/mounts)"'
 
 -- cog.yaml --
-# image is set dynamically by the test (TEST_REGISTRY varies per run).
-# We substitute it in via `sh -c` before `cog weights import`.
+# image: is appended by the test before `cog weights import` (the
+# value depends on $TEST_REGISTRY, which varies per run).
 build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
-image: test/pull-predict-model
 weights:
   - name: greeting
     target: /src/mounted-weights/greeting
