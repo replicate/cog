@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types/image"
@@ -12,8 +11,6 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
-	"github.com/replicate/cog/pkg/weights/lockfile"
-	"github.com/replicate/cog/pkg/weights/store"
 )
 
 // Option configures how Resolver methods behave.
@@ -224,21 +221,6 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 	opts = opts.WithDefaults(src)
 
-	// Prune lockfile entries for weights no longer in cog.yaml.
-	// This must happen before the image build so
-	// writeRuntimeWeightsManifest (which projects the lockfile into
-	// /.cog/weights.json) sees a clean lockfile without orphaned
-	// entries. An empty keep-set (all weights removed) clears every
-	// entry, which is correct: the lockfile should reflect cog.yaml.
-	lockPath := opts.WeightsLockPath
-	if lockPath == "" {
-		lockPath = filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
-	}
-	if err := lockfile.PruneLockfile(lockPath, config.WeightNames(src.Config.Weights)); err != nil {
-		return nil, fmt.Errorf("prune lockfile: %w", err)
-	}
-
-	// Build image artifact via ImageBuilder
 	ib := NewImageBuilder(r.factory, r.docker, src, opts)
 	imageSpec := NewImageSpec("model", opts.ImageName)
 	imgResult, err := ib.Build(ctx, imageSpec)
@@ -257,24 +239,12 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 
 	m.Artifacts = []Artifact{ia}
 
-	// Build weight artifacts when weights are declared in cog.yaml.
 	if len(src.Config.Weights) > 0 {
-		st, storeErr := store.OpenDefault()
-		if storeErr != nil {
-			return nil, fmt.Errorf("open weights store: %w", storeErr)
+		weights, weightErr := WeightsFromLockfile(src.ProjectDir)
+		if weightErr != nil {
+			return nil, weightErr
 		}
-		wb := NewWeightBuilder(src, st, lockPath)
-		for _, ws := range src.Config.Weights {
-			spec, specErr := WeightSpecFromConfig(ws)
-			if specErr != nil {
-				return nil, fmt.Errorf("build weight %q: %w", ws.Name, specErr)
-			}
-			artifact, buildErr := wb.Build(ctx, spec)
-			if buildErr != nil {
-				return nil, fmt.Errorf("build weight %q: %w", ws.Name, buildErr)
-			}
-			m.Artifacts = append(m.Artifacts, artifact)
-		}
+		m.Weights = weights
 	}
 
 	return m, nil

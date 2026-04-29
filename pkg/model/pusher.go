@@ -23,11 +23,6 @@ type PushOptions struct {
 	// per-layer byte progress (Phase empty, Complete/Total set).
 	ImageProgressFn func(PushProgress)
 
-	// WeightProgressFn is an optional callback for per-weight-layer upload
-	// progress. WeightLayerProgress.WeightName identifies which artifact
-	// the update belongs to.
-	WeightProgressFn func(WeightLayerProgress)
-
 	// OnFallback is called when OCI push fails and the push is about to fall
 	// back to Docker push. This allows the caller to clean up any OCI-specific
 	// progress display before Docker push starts its own output.
@@ -35,31 +30,32 @@ type PushOptions struct {
 }
 
 // BundlePusher pushes an OCI Image Index containing a model image + its
-// weight artifacts. It orchestrates ImagePusher and WeightPusher, then
-// assembles the index from the pushed manifest descriptors.
+// weight manifests. It pushes the image, HEAD-checks each weight
+// manifest (which was pushed by `cog weights import`), then assembles
+// the index from the descriptors.
 type BundlePusher struct {
-	imagePusher  *ImagePusher
-	weightPusher *WeightPusher
-	registry     registry.Client
+	imagePusher *ImagePusher
+	registry    registry.Client
 }
 
 // NewBundlePusher creates a BundlePusher.
 func NewBundlePusher(docker command.Command, reg registry.Client) *BundlePusher {
 	return &BundlePusher{
-		imagePusher:  newImagePusher(docker, reg),
-		weightPusher: NewWeightPusher(reg),
-		registry:     reg,
+		imagePusher: newImagePusher(docker, reg),
+		registry:    reg,
 	}
 }
 
-// Push pushes the model as an OCI Index with its weight artifacts.
+// Push pushes the model as an OCI Index. The image is pushed via
+// ImagePusher. Weight manifests are verified via HEAD (they were
+// pushed by `cog weights import`); if any are missing, the push
+// fails with a message to re-run import.
 func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) error {
 	imgArtifact := m.GetImageArtifact()
 	if imgArtifact == nil {
 		return fmt.Errorf("no image artifact in model")
 	}
 
-	weightArtifacts := m.WeightArtifacts()
 	repo := repoFromReference(imgArtifact.Reference)
 
 	var imagePushOpts []ImagePushOption
@@ -73,19 +69,26 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 		return fmt.Errorf("push image %q: %w", imgArtifact.Reference, err)
 	}
 
-	// Lightweight HEAD, to anchor the OCI index entry and the
-	// run.cog.reference.digest annotation on each weight manifest.
-	imgDesc, err := p.registry.GetDescriptor(ctx, imgArtifact.Reference)
-	if err != nil {
-		return fmt.Errorf("get image descriptor: %w", err)
-	}
+	// HEAD the image and verify weight manifests concurrently.
+	var imgDesc v1.Descriptor
+	var weightDescs []v1.Descriptor
 
-	var weightResults []*WeightPushResult
-	if len(weightArtifacts) > 0 {
-		weightResults, err = p.pushWeights(ctx, repo, weightArtifacts, opts.WeightProgressFn)
-		if err != nil {
-			return err
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		var descErr error
+		imgDesc, descErr = p.registry.GetDescriptor(gctx, imgArtifact.Reference)
+		if descErr != nil {
+			return fmt.Errorf("get image descriptor: %w", descErr)
 		}
+		return nil
+	})
+	g.Go(func() error {
+		var verifyErr error
+		weightDescs, verifyErr = p.verifyWeights(gctx, repo, m.Weights)
+		return verifyErr
+	})
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	platform := opts.Platform
@@ -99,10 +102,9 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 		Architecture: platform.Architecture,
 		Variant:      platform.Variant,
 	})
-	for i, wr := range weightResults {
-		wa := weightArtifacts[i]
-		builder.AddWeightDescriptor(wr.Descriptor,
-			wa.Entry.Name, wa.Entry.SetDigest, wa.Entry.Size)
+	for i, desc := range weightDescs {
+		w := m.Weights[i]
+		builder.AddWeightDescriptor(desc, w.Name, w.SetDigest, w.Size)
 	}
 
 	idx, err := builder.BuildFromDescriptors()
@@ -118,28 +120,35 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	return nil
 }
 
-// pushWeights pushes all weight artifacts concurrently (bounded by
-// GetPushConcurrency) and returns their results in input order.
-func (p *BundlePusher) pushWeights(
+// verifyWeights HEAD-checks each weight manifest in the registry,
+// returning descriptors in input order. Returns an error if any
+// manifest is not found (the user needs to run `cog weights import`).
+func (p *BundlePusher) verifyWeights(
 	ctx context.Context,
 	repo string,
-	weights []*WeightArtifact,
-	progressFn func(WeightLayerProgress),
-) ([]*WeightPushResult, error) {
-	ordered := make([]*WeightPushResult, len(weights))
+	weights []Weight,
+) ([]v1.Descriptor, error) {
+	if len(weights) == 0 {
+		return nil, nil
+	}
+
+	descs := make([]v1.Descriptor, len(weights))
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(GetPushConcurrency())
 
-	for i, wa := range weights {
+	for i, w := range weights {
 		g.Go(func() error {
-			result, err := p.weightPusher.Push(ctx, repo, wa, WeightPushOptions{
-				ProgressFn: progressFn,
-			})
+			tag := WeightTag(w.Name, w.SetDigest)
+			ref := repo + ":" + tag
+			desc, err := p.registry.GetDescriptor(ctx, ref)
 			if err != nil {
-				return fmt.Errorf("push weight %q: %w", wa.Name(), err)
+				return fmt.Errorf(
+					"weight %q not found in registry (%s); run 'cog weights import' to push weights first: %w",
+					w.Name, ref, err,
+				)
 			}
-			ordered[i] = result
+			descs[i] = desc
 			return nil
 		})
 	}
@@ -148,7 +157,7 @@ func (p *BundlePusher) pushWeights(
 		return nil, err
 	}
 
-	return ordered, nil
+	return descs, nil
 }
 
 // repoFromReference extracts the repository (without tag or digest) from an

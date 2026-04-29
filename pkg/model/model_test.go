@@ -244,11 +244,13 @@ func TestModel_IsBundle(t *testing.T) {
 		require.False(t, m.IsBundle())
 	})
 
-	t.Run("returns true with weight artifacts", func(t *testing.T) {
+	t.Run("returns true with weights", func(t *testing.T) {
 		m := &Model{
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
-				newWeightArtifact(lockfile.WeightLockEntry{Name: "w1", Target: "/src/weights/w1"}, v1.Descriptor{}, nil),
+			},
+			Weights: []Weight{
+				{Name: "w1", Target: "/src/weights/w1", SetDigest: "sha256:abc123"},
 			},
 		}
 		require.True(t, m.IsBundle())

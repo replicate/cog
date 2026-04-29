@@ -104,8 +104,7 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 		ProgressOutput:   "tty",
 		Annotations:      map[string]string{"key": "value"},
 		SchemaFile:       "/path/to/schema.json",
-		DockerfileFile:   "/path/to/Dockerfile",
-		WeightsLockPath:  "/path/to/weights.lock",
+		DockerfileFile: "/path/to/Dockerfile",
 	}
 
 	result := opts.WithDefaults(src)
@@ -123,12 +122,4 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 	require.Equal(t, map[string]string{"key": "value"}, result.Annotations)
 	require.Equal(t, "/path/to/schema.json", result.SchemaFile)
 	require.Equal(t, "/path/to/Dockerfile", result.DockerfileFile)
-	require.Equal(t, "/path/to/weights.lock", result.WeightsLockPath)
-}
-
-func TestBuildOptions_WeightsLockPath(t *testing.T) {
-	opts := BuildOptions{
-		WeightsLockPath: "/custom/weights.lock",
-	}
-	require.Equal(t, "/custom/weights.lock", opts.WeightsLockPath)
 }

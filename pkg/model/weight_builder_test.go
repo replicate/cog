@@ -525,3 +525,4 @@ func TestWeightBuilder_NormalizesSourceURI(t *testing.T) {
 		})
 	}
 }
+
