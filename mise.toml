@@ -96,7 +96,8 @@ run = "rm -f dist/cog-*.whl dist/cog-*.tar.gz dist/coglet-*.whl"
 alias = "build:all"
 description = "Build all components"
 run = [
-  { tasks = ["build:cog", "build:coglet:wheel:linux-x64", "build:sdk"] },
+  { tasks = ["build:cog", "build:sdk"] },
+  { task = "build:coglet:wheel:linux-x64" },
   { task = "_build_summary" },
 ]
 
