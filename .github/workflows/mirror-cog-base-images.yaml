@@ -13,6 +13,9 @@ name: Mirror cog-base images
 on:
   workflow_dispatch:
 
+env:
+  MISE_LOCKED: "1"
+
 jobs:
   mirror:
     runs-on: ubuntu-latest

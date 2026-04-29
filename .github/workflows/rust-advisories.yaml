@@ -9,6 +9,9 @@ on:
 permissions:
   issues: write
 
+env:
+  MISE_LOCKED: "1"
+
 jobs:
   check-advisories:
     name: Check Rust advisories

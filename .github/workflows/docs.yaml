@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+env:
+  MISE_LOCKED: "1"
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
