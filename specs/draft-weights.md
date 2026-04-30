@@ -22,6 +22,7 @@ All layers are tar archives. Tar provides file metadata (path, size, permissions
 **Layers MUST be extractable in any order and produce identical results.** Unlike Docker image layers which use overlay semantics (later layers shadow earlier ones), weight layers are independent units. Each layer contains a disjoint set of files. No file path appears in more than one layer within a manifest.
 
 Specifically:
+
 - No file path appears in more than one layer (disjoint file sets).
 - Layers MUST NOT contain overlay/union filesystem artifacts: no whiteout files (`.wh.*`), no opaque whiteout markers (`.wh..wh..opq`), no delete markers of any kind.
 - Extracting all layers to the same target directory in any order MUST produce a byte-identical result.
@@ -80,13 +81,13 @@ Each named weight is an OCI manifest with `artifactType` identifying it as a cog
 
 ### 2.1 Media types
 
-| Media type | Usage |
-|-----------|-------|
-| `application/vnd.cog.weight.v1` | Manifest `artifactType` field |
-| `application/vnd.cog.weight.config.v1+json` | Config blob media type |
-| `application/vnd.oci.image.layer.v1.tar` | Uncompressed tar layer |
-| `application/vnd.oci.image.layer.v1.tar+gzip` | Gzip-compressed tar layer |
-| `application/vnd.oci.image.layer.v1.tar+zstd` | Zstd-compressed tar layer |
+| Media type                                    | Usage                         |
+| --------------------------------------------- | ----------------------------- |
+| `application/vnd.cog.weight.v1`               | Manifest `artifactType` field |
+| `application/vnd.cog.weight.config.v1+json`   | Config blob media type        |
+| `application/vnd.oci.image.layer.v1.tar`      | Uncompressed tar layer        |
+| `application/vnd.oci.image.layer.v1.tar+gzip` | Gzip-compressed tar layer     |
+| `application/vnd.oci.image.layer.v1.tar+zstd` | Zstd-compressed tar layer     |
 
 The layer media types (`tar`, `tar+gzip`, `tar+zstd`) are standard OCI types defined in the [OCI image spec](https://github.com/opencontainers/image-spec/blob/main/layer.md), reused here for ecosystem compatibility. Consumers MUST accept all three. Producers choose which to use for each layer (§1.2); the media type communicates that choice. Because the manifest uses standard OCI media types throughout, existing tools (crane, skopeo, containerd, `docker pull`) work with weight artifacts without modification.
 
@@ -160,20 +161,20 @@ The config blob is a JSON document with media type `application/vnd.cog.weight.c
 
 **Top-level fields:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Weight name (e.g., `z-image-turbo`). Same as the manifest annotation. |
-| `target` | string | Absolute mount path in the container (e.g., `/src/weights`). Same as the manifest annotation. |
-| `setDigest` | string | Weight set digest (§2.4). Same as the manifest annotation. |
+| Field       | Type   | Description                                                                                   |
+| ----------- | ------ | --------------------------------------------------------------------------------------------- |
+| `name`      | string | Weight name (e.g., `z-image-turbo`). Same as the manifest annotation.                         |
+| `target`    | string | Absolute mount path in the container (e.g., `/src/weights`). Same as the manifest annotation. |
+| `setDigest` | string | Weight set digest (§2.4). Same as the manifest annotation.                                    |
 
 **File entry fields:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `path` | string | File path relative to the weight target directory. Same as the tar entry path. |
-| `layer` | string | Digest of the layer containing this file. |
-| `size` | integer | File size in bytes (uncompressed). |
-| `digest` | string | SHA-256 content digest of the individual file. |
+| Field    | Type    | Description                                                                    |
+| -------- | ------- | ------------------------------------------------------------------------------ |
+| `path`   | string  | File path relative to the weight target directory. Same as the tar entry path. |
+| `layer`  | string  | Digest of the layer containing this file.                                      |
+| `size`   | integer | File size in bytes (uncompressed).                                             |
+| `digest` | string  | SHA-256 content digest of the individual file.                                 |
 
 The `files` array MUST be sorted by `path` lexicographically. This ensures the config blob is deterministic for a given packing: the same source files packed with the same parameters always produce an identical config blob. Note that the config blob may differ across packing changes (different `layer` values), but the weight set digest (§2.4) remains stable because it is computed from file content only.
 
@@ -212,18 +213,18 @@ Annotations use the `run.cog.*` namespace (reverse-domain of cog.run).
 
 **Manifest-level annotations:**
 
-| Key | Value | Description |
-|-----|-------|-------------|
-| `run.cog.weight.name` | string | Weight name (e.g., `z-image-turbo`). REQUIRED. |
-| `run.cog.weight.target` | string | Absolute mount path in the container (e.g., `/src/weights`). REQUIRED. |
-| `run.cog.weight.set-digest` | digest string | Weight set digest (§2.4). REQUIRED. |
+| Key                         | Value         | Description                                                            |
+| --------------------------- | ------------- | ---------------------------------------------------------------------- |
+| `run.cog.weight.name`       | string        | Weight name (e.g., `z-image-turbo`). REQUIRED.                         |
+| `run.cog.weight.target`     | string        | Absolute mount path in the container (e.g., `/src/weights`). REQUIRED. |
+| `run.cog.weight.set-digest` | digest string | Weight set digest (§2.4). REQUIRED.                                    |
 
 All manifest-level annotations are deterministic from the weight content and cog.yaml config. No timestamps, source URIs, or producer metadata are included -- identical inputs always produce an identical manifest digest.
 
 **Layer descriptor annotations:**
 
-| Key | Value | Description |
-|-----|-------|-------------|
+| Key                                | Value          | Description                                                                                                      |
+| ---------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `run.cog.weight.size.uncompressed` | integer string | Uncompressed size of the layer's contents in bytes (sum of regular-file bytes, excluding tar headers). REQUIRED. |
 
 This is the only annotation layer descriptors carry. All file-level metadata (paths, per-file sizes, layer mappings) lives in the config blob (§2.3); consumers that need it MUST read the config blob.
@@ -268,10 +269,10 @@ The model image gets a real platform descriptor. Weight descriptors carry both `
 
 **Index descriptor annotations:**
 
-| Key | Value | Description |
-|-----|-------|-------------|
-| `run.cog.weight.name` | string | Weight name. REQUIRED. |
-| `run.cog.weight.set-digest` | digest string | Weight set digest (§2.4). REQUIRED. |
+| Key                                | Value          | Description                                               |
+| ---------------------------------- | -------------- | --------------------------------------------------------- |
+| `run.cog.weight.name`              | string         | Weight name. REQUIRED.                                    |
+| `run.cog.weight.set-digest`        | digest string  | Weight set digest (§2.4). REQUIRED.                       |
 | `run.cog.weight.size.uncompressed` | integer string | Total uncompressed size of all layers in bytes. REQUIRED. |
 
 These annotations exist so the index is scannable without fetching child manifests. `name` and `set-digest` identify what the weight is and enable cache lookups. `size.uncompressed` enables scheduling decisions (e.g., whether a node has enough disk space) without downloading any weight data.
@@ -376,16 +377,16 @@ Source: [HuggingFace repo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) with
 
 **v1:** 1 weight entry, 1 manifest, 8 layers. Using a 64 MB bundle threshold: the 12 small files (configs, JSONs, tokenizer, index files -- all under 64 MB, ~16 MB total) are bundled into a single compressed layer. The 7 large files (all safetensors shards, each above 64 MB) each get their own uncompressed standalone layer:
 
-| Layer | Contents | Size | Format |
-|-------|----------|------|--------|
-| 1 | Bundle: 12 small files (configs, JSONs, tokenizer, index files) | ~16 MB | compressed |
-| 2 | text_encoder/model-00001-of-00003.safetensors | ~3.9 GB | uncompressed |
-| 3 | text_encoder/model-00002-of-00003.safetensors | ~3.9 GB | uncompressed |
-| 4 | text_encoder/model-00003-of-00003.safetensors | ~99 MB | uncompressed |
-| 5 | vae/diffusion_pytorch_model.safetensors | ~167 MB | uncompressed |
-| 6 | transformer/diffusion_pytorch_model-00001-of-00003.safetensors | ~9.9 GB | uncompressed |
-| 7 | transformer/diffusion_pytorch_model-00002-of-00003.safetensors | ~9.9 GB | uncompressed |
-| 8 | transformer/diffusion_pytorch_model-00003-of-00003.safetensors | ~4.6 GB | uncompressed |
+| Layer | Contents                                                        | Size    | Format       |
+| ----- | --------------------------------------------------------------- | ------- | ------------ |
+| 1     | Bundle: 12 small files (configs, JSONs, tokenizer, index files) | ~16 MB  | compressed   |
+| 2     | text_encoder/model-00001-of-00003.safetensors                   | ~3.9 GB | uncompressed |
+| 3     | text_encoder/model-00002-of-00003.safetensors                   | ~3.9 GB | uncompressed |
+| 4     | text_encoder/model-00003-of-00003.safetensors                   | ~99 MB  | uncompressed |
+| 5     | vae/diffusion_pytorch_model.safetensors                         | ~167 MB | uncompressed |
+| 6     | transformer/diffusion_pytorch_model-00001-of-00003.safetensors  | ~9.9 GB | uncompressed |
+| 7     | transformer/diffusion_pytorch_model-00002-of-00003.safetensors  | ~9.9 GB | uncompressed |
+| 8     | transformer/diffusion_pytorch_model-00003-of-00003.safetensors  | ~4.6 GB | uncompressed |
 
 Layer 1 is `tar+gzip` (small compressible text files). Layers 2-8 are `tar` (large binary safetensors where compression yields negligible savings). Consumers process each layer according to its media type regardless of the producer's threshold or compression choices.
 

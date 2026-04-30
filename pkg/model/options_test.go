@@ -104,7 +104,7 @@ func TestBuildOptions_AllFieldsPreserved(t *testing.T) {
 		ProgressOutput:   "tty",
 		Annotations:      map[string]string{"key": "value"},
 		SchemaFile:       "/path/to/schema.json",
-		DockerfileFile: "/path/to/Dockerfile",
+		DockerfileFile:   "/path/to/Dockerfile",
 	}
 
 	result := opts.WithDefaults(src)
