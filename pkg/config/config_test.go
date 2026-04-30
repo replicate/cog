@@ -589,19 +589,14 @@ torch==1.12.1`
 
 func TestBlankBuild(t *testing.T) {
 	// Naively, this turns into nil, so make sure it's a real build object
-	// Write a temp file
-	dir := t.TempDir()
-	configPath := path.Join(dir, "cog.yaml")
-	err := os.WriteFile(configPath, []byte(`build:`), 0o644)
-	require.NoError(t, err)
-
-	cfgFile, err := parseFile(configPath)
+	cfgFile, err := parseBytes([]byte(`build:`))
 	require.NoError(t, err)
 	// Note: `build:` by itself in YAML parses to Build: nil (empty map becomes nil pointer)
 	// The completion step should create a default Build
 
 	config, err := configFileToConfig(cfgFile)
 	require.NoError(t, err)
+	dir := t.TempDir()
 	require.NoError(t, config.Complete(dir))
 	require.NotNil(t, config.Build)
 	require.Equal(t, false, config.Build.GPU)
@@ -637,17 +632,17 @@ build:
   run:
   - command: "echo 'Hello, World!'"
 `
-	dir := t.TempDir()
-	configPath := path.Join(dir, "cog.yaml")
-	err := os.WriteFile(configPath, []byte(yamlString), 0o644)
-	require.NoError(t, err)
-
-	_, err = parseFile(configPath)
+	_, err := parseBytes([]byte(yamlString))
 	require.NoError(t, err)
 }
 
 func TestConfigMarshal(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := &Config{
+		Build: &Build{
+			GPU:           false,
+			PythonVersion: "3.13",
+		},
+	}
 	data, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 	// yaml v4 uses 4-space indentation by default

@@ -72,20 +72,9 @@ func (c *Console) Info(msg string) {
 	c.log(InfoLevel, msg)
 }
 
-// Success tells the user something completed successfully.
-// Displays at info level with a green ✓ prefix.
-func (c *Console) Success(msg string) {
-	c.logStyled(InfoLevel, StyleSuccess, msg)
-}
-
 // Warn tells the user that something might break.
 func (c *Console) Warn(msg string) {
 	c.log(WarnLevel, msg)
-}
-
-// Error tells the user that something is broken.
-func (c *Console) Error(msg string) {
-	c.log(ErrorLevel, msg)
 }
 
 // Fatal level message, followed by exit

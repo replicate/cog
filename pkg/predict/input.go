@@ -27,10 +27,6 @@ type Input struct {
 
 type Inputs map[string]Input
 
-func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) {
-	return NewInputsForMode(keyVals, schema, false)
-}
-
 func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain bool) (Inputs, error) {
 	schemaKey := "Input"
 	if isTrain {
@@ -131,19 +127,6 @@ func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain b
 		}
 	}
 	return input, nil
-}
-
-func NewInputsWithBaseDir(keyVals map[string]string, baseDir string) Inputs {
-	input := Inputs{}
-	for key, val := range keyVals {
-		if strings.HasPrefix(val, "@") {
-			val = filepath.Join(baseDir, val[1:])
-			input[key] = Input{File: &val}
-		} else {
-			input[key] = Input{String: &val}
-		}
-	}
-	return input
 }
 
 func (inputs *Inputs) toMap() (map[string]any, error) {

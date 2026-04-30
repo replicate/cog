@@ -3,12 +3,8 @@ package config
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"go.yaml.in/yaml/v4"
-
-	"github.com/replicate/cog/pkg/util/files"
 )
 
 // parse reads and parses YAML content from an io.Reader into a configFile.
@@ -21,41 +17,6 @@ func parse(r io.Reader) (*configFile, error) {
 	}
 
 	return parseBytes(contents)
-}
-
-// parseFile reads and parses a cog.yaml file into a configFile.
-// This only does YAML parsing - no validation or defaults.
-// Returns ParseError if the file cannot be read or parsed.
-func parseFile(filename string) (*configFile, error) {
-	exists, err := files.Exists(filename)
-	if err != nil {
-		return nil, &ParseError{Filename: filename, Err: err}
-	}
-
-	if !exists {
-		return nil, &ParseError{
-			Filename: filename,
-			Err:      fmt.Errorf("%s does not exist in %s", filepath.Base(filename), filepath.Dir(filename)),
-		}
-	}
-
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, &ParseError{Filename: filename, Err: err}
-	}
-	defer f.Close()
-
-	cfg, err := parse(f)
-	if err != nil {
-		// Add filename context to the error
-		if parseErr, ok := err.(*ParseError); ok {
-			parseErr.Filename = filename
-			return nil, parseErr
-		}
-		return nil, &ParseError{Filename: filename, Err: err}
-	}
-
-	return cfg, nil
 }
 
 // parseBytes parses YAML content into a configFile.
