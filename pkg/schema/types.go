@@ -259,6 +259,22 @@ func (ctx *ImportContext) IsBaseModel(name string) bool {
 	return false
 }
 
+// IsTypedDict returns true if name resolves to typing.TypedDict or typing_extensions.TypedDict.
+func (ctx *ImportContext) IsTypedDict(name string) bool {
+	if e, ok := ctx.Names.Get(name); ok {
+		return (e.Module == "typing" || e.Module == "typing_extensions") && e.Original == "TypedDict"
+	}
+	return false
+}
+
+// IsTypedDictFieldQualifier returns true if name resolves to Required or NotRequired.
+func (ctx *ImportContext) IsTypedDictFieldQualifier(name string) bool {
+	if e, ok := ctx.Names.Get(name); ok {
+		return (e.Module == "typing" || e.Module == "typing_extensions") && (e.Original == "Required" || e.Original == "NotRequired")
+	}
+	return false
+}
+
 // IsBasePredictor returns true if name resolves to cog.BasePredictor.
 func (ctx *ImportContext) IsBasePredictor(name string) bool {
 	if e, ok := ctx.Names.Get(name); ok {
@@ -267,22 +283,51 @@ func (ctx *ImportContext) IsBasePredictor(name string) bool {
 	return false
 }
 
+// ResolveQualifiedName unwraps module-qualified names like alias.Type to Type
+// when alias is known in the import context.
+func (ctx *ImportContext) ResolveQualifiedName(name string) (string, ImportEntry, bool) {
+	parts := strings.SplitN(name, ".", 2)
+	if len(parts) != 2 {
+		return name, ImportEntry{}, false
+	}
+	entry, ok := ctx.Names.Get(parts[0])
+	if !ok {
+		return parts[1], ImportEntry{}, true
+	}
+	return parts[1], entry, true
+}
+
 // ResolveFieldType resolves a TypeAnnotation into a FieldType.
-func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error) {
+func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[string]bool) (FieldType, error) {
 	switch ann.Kind {
 	case TypeAnnotSimple:
-		// Bare dict / Dict → opaque JSON object (TypeAny)
-		if ann.Name == "dict" || ann.Name == "Dict" {
+		name := ann.Name
+		qualifiedEntry := ImportEntry{}
+		if resolved, entry, ok := ctx.ResolveQualifiedName(name); ok {
+			name = resolved
+			qualifiedEntry = entry
+		}
+		if typedDicts[name] {
 			return FieldType{Primitive: TypeAny, Repetition: Required}, nil
 		}
-		prim, ok := PrimitiveFromName(ann.Name)
+		// Bare dict / Dict → opaque JSON object (TypeAny)
+		if name == "dict" || name == "Dict" {
+			return FieldType{Primitive: TypeAny, Repetition: Required}, nil
+		}
+		prim, ok := PrimitiveFromName(name)
 		if !ok {
-			return FieldType{}, errUnsupportedType(ann.Name)
+			if qualifiedEntry.Module != "" {
+				return FieldType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
+			}
+			return FieldType{}, errUnsupportedType(name)
 		}
 		return FieldType{Primitive: prim, Repetition: Required}, nil
 
 	case TypeAnnotGeneric:
 		outer := ann.Name
+		if resolved, _, ok := ctx.ResolveQualifiedName(outer); ok {
+			outer = resolved
+		}
 		// dict[K, V] / Dict[K, V] → opaque JSON object (TypeAny).
 		// Type parameters are intentionally discarded because FieldType is flat
 		// (PrimitiveType + Repetition only). The output path uses the recursive
@@ -295,7 +340,7 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error)
 			if len(ann.Args) != 1 {
 				return FieldType{}, errUnsupportedType(fmt.Sprintf("Optional expects exactly 1 type argument, got %d", len(ann.Args)))
 			}
-			inner, err := ResolveFieldType(ann.Args[0], ctx)
+			inner, err := ResolveFieldType(ann.Args[0], ctx, typedDicts)
 			if err != nil {
 				return FieldType{}, err
 			}
@@ -307,13 +352,13 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error)
 		}
 		if outer == "Union" {
 			// typing.Union[X, Y] → treat as union type
-			return ResolveFieldType(TypeAnnotation{Kind: TypeAnnotUnion, Args: ann.Args}, ctx)
+			return ResolveFieldType(TypeAnnotation{Kind: TypeAnnotUnion, Args: ann.Args}, ctx, typedDicts)
 		}
 		if outer == "List" || outer == "list" {
 			if len(ann.Args) != 1 {
 				return FieldType{}, errUnsupportedType(fmt.Sprintf("List expects exactly 1 type argument, got %d", len(ann.Args)))
 			}
-			inner, err := ResolveFieldType(ann.Args[0], ctx)
+			inner, err := ResolveFieldType(ann.Args[0], ctx, typedDicts)
 			if err != nil {
 				return FieldType{}, err
 			}
@@ -326,7 +371,7 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext) (FieldType, error)
 
 	case TypeAnnotUnion:
 		if inner, ok := UnwrapOptional(ann); ok {
-			ft, err := ResolveFieldType(inner, ctx)
+			ft, err := ResolveFieldType(inner, ctx, typedDicts)
 			if err != nil {
 				return FieldType{}, err
 			}
@@ -365,9 +410,10 @@ type ModelClassMap = *OrderedMap[string, []ModelField]
 
 // ModelField is a field extracted from a BaseModel subclass.
 type ModelField struct {
-	Name    string
-	Type    TypeAnnotation
-	Default *DefaultValue
+	Name        string
+	Type        TypeAnnotation
+	Default     *DefaultValue
+	KeyRequired *bool
 }
 
 // TitleCase converts snake_case to Title Case.

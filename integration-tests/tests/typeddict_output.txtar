@@ -1,0 +1,39 @@
+# Test TypedDict return types through the static schema path.
+#
+# This exercises the Go tree-sitter parser end-to-end: build-time extraction,
+# embedded OpenAPI schema, and prediction output for a TypedDict response.
+
+# Build the image.
+cog build -t $TEST_IMAGE
+
+# Verify the schema is embedded with object fields from the TypedDict.
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout '"type":"object"'
+stdout '"name":'
+stdout '"count":'
+stdout '"required":\["name"\]'
+
+# Predict should return a JSON object matching the TypedDict.
+cog predict $TEST_IMAGE
+stdout '"name": "alice"'
+stdout '"count": 3'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import NotRequired, TypedDict
+
+from cog import BasePredictor
+
+
+class Output(TypedDict):
+    name: str
+    count: NotRequired[int]
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Output:
+        return {"name": "alice", "count": 3}

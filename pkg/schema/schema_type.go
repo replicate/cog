@@ -249,43 +249,56 @@ func resolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClass
 }
 
 func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
+	name := ann.Name
+	qualifiedEntry := ImportEntry{}
+	if resolved, entry, ok := ctx.ResolveQualifiedName(name); ok {
+		name = resolved
+		qualifiedEntry = entry
+	}
+
 	// Check for BaseModel subclass
-	if fields, ok := models.Get(ann.Name); ok {
+	if fields, ok := models.Get(name); ok {
 		// Cycle detection: if we're already resolving this model, emit opaque object.
-		if seen[ann.Name] {
+		if seen[name] {
 			return SchemaAnyType(), nil
 		}
 		if seen == nil {
 			seen = make(map[string]bool)
 		}
-		seen[ann.Name] = true
-		defer delete(seen, ann.Name)
+		seen[name] = true
+		defer delete(seen, name)
 		return resolveModelToSchemaType(fields, ctx, models, seen)
 	}
 
 	// Unparameterized dict → opaque JSON object
-	if ann.Name == "Any" || ann.Name == "dict" || ann.Name == "Dict" {
+	if name == "Any" || name == "dict" || name == "Dict" {
 		return SchemaAnyType(), nil
 	}
 
 	// Unparameterized list → array of opaque objects
-	if ann.Name == "list" || ann.Name == "List" {
+	if name == "list" || name == "List" {
 		return SchemaArrayOf(SchemaAnyType()), nil
 	}
 
-	prim, ok := PrimitiveFromName(ann.Name)
+	prim, ok := PrimitiveFromName(name)
 	if !ok {
 		// Check if this name was imported from an external package
-		if entry, imported := ctx.Names.Get(ann.Name); imported {
-			return SchemaType{}, errUnresolvableImportedType(ann.Name, entry.Module)
+		if qualifiedEntry.Module != "" {
+			return SchemaType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
 		}
-		return SchemaType{}, errUnresolvableType(ann.Name)
+		if entry, imported := ctx.Names.Get(name); imported {
+			return SchemaType{}, errUnresolvableImportedType(name, entry.Module)
+		}
+		return SchemaType{}, errUnresolvableType(name)
 	}
 	return SchemaPrim(prim), nil
 }
 
 func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
 	outer := ann.Name
+	if resolved, _, ok := ctx.ResolveQualifiedName(outer); ok {
+		outer = resolved
+	}
 
 	// dict[K, V] — recursively resolve value type
 	if outer == "dict" || outer == "Dict" {
@@ -376,6 +389,9 @@ func resolveModelToSchemaType(modelFields []ModelField, ctx *ImportContext, mode
 		st, required, err := resolveFieldSchemaType(f.Type, ctx, models, seen)
 		if err != nil {
 			return SchemaType{}, fmt.Errorf("field %q: %w", f.Name, err)
+		}
+		if f.KeyRequired != nil {
+			required = *f.KeyRequired
 		}
 		if f.Default != nil {
 			required = false
