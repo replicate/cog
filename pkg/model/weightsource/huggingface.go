@@ -386,6 +386,17 @@ func (s *HFSource) fetchFile(ctx context.Context, ref, filePath string) (io.Read
 	return s.doGet(ctx, u)
 }
 
+// escapeURLPath percent-encodes each component of a forward-slash-separated
+// path, preserving the directory structure. This ensures filenames containing
+// special URL characters (#, %, spaces, etc.) produce valid URLs.
+func escapeURLPath(p string) string {
+	parts := strings.Split(p, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
+}
+
 // buildURL joins path segments onto s.baseURL. path.Join cleans ".."
 // and double-slash components; url.URL.String handles encoding.
 func (s *HFSource) buildURL(segments ...string) string {
@@ -393,9 +404,25 @@ func (s *HFSource) buildURL(segments ...string) string {
 }
 
 // buildURLWithQuery is like buildURL but appends a raw query string.
+// It sets both Path (decoded) and RawPath (percent-encoded) so that
+// url.URL.String() emits correctly escaped URLs even when path segments
+// contain special characters (#, %, spaces, etc.).
 func (s *HFSource) buildURLWithQuery(query string, segments ...string) string {
 	u := *s.baseURL // shallow copy
-	u.Path = path.Join(u.Path, path.Join(segments...))
+
+	joined := path.Join(segments...)
+	u.Path = path.Join(u.Path, joined)
+
+	escaped := make([]string, len(segments))
+	for i, seg := range segments {
+		escaped[i] = escapeURLPath(seg)
+	}
+	joinedEscaped := path.Join(escaped...)
+	if joined != joinedEscaped {
+		basePath := u.Path[:len(u.Path)-len(joined)]
+		u.RawPath = basePath + joinedEscaped
+	}
+
 	u.RawQuery = query
 	return u.String()
 }
