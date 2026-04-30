@@ -1,0 +1,12 @@
+# Keep the weights/ directory out of the docker build context.
+#
+# With v1 managed weights, cog.yaml's weights: entries are packed into
+# separate OCI layers and land at their target paths at runtime via the
+# image index — they must NOT be baked into the model image by `cog build`.
+weights/
+
+# Packed layer cache written by `cog weights build`.
+.cog/weights-cache/
+
+# Git metadata doesn't belong in the image.
+.git/
