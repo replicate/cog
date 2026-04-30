@@ -28,9 +28,9 @@ cog weights import
 # and uploads it to the registry under the supplied tag.
 cog push $TEST_REGISTRY/test/bundle-model:v1
 
-# Image push header, then weight push header — one each.
+# Image push header — weights are pushed during `cog weights import`,
+# not during `cog push`.
 stderr 'Pushing image '
-stderr 'Pushing weights\.\.\.'
 
 # Resolve the pushed ref and verify the top-level index shape.
 registry-inspect $TEST_REGISTRY/test/bundle-model:v1
