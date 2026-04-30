@@ -14,11 +14,3 @@ type BuildOptions struct {
 	// If empty, inline caching is used instead of local cache.
 	XCachePath string
 }
-
-// DefaultBuildOptions returns BuildOptions with sensible defaults.
-func DefaultBuildOptions() BuildOptions {
-	return BuildOptions{
-		SourceEpochTimestamp: -1,
-		XCachePath:           "",
-	}
-}

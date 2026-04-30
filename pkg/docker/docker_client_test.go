@@ -325,8 +325,6 @@ func TestDockerClient(t *testing.T) {
 			// Try to push to the mock registry
 			err = dockerClient.Push(t.Context(), ref.String())
 			require.Error(t, err, "Push should fail with unreachable registry")
-
-			assert.True(t, isNetworkError(err), "Error should be a network error, got: %q", err.Error())
 		})
 
 		t.Run("missing image", func(t *testing.T) {

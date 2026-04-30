@@ -36,20 +36,6 @@ func WithProjectDir(dir string) ValidateOption {
 	}
 }
 
-// WithRequirementsFS sets the filesystem for reading python_requirements file.
-func WithRequirementsFS(fsys fs.FS) ValidateOption {
-	return func(o *validateOptions) {
-		o.requirementsFS = fsys
-	}
-}
-
-// WithStrictDeprecations treats deprecation warnings as errors.
-func WithStrictDeprecations() ValidateOption {
-	return func(o *validateOptions) {
-		o.strictDeprecations = true
-	}
-}
-
 // ValidateConfigFile checks a configFile for errors.
 // Returns all validation errors and deprecation warnings.
 // Does not mutate the input.

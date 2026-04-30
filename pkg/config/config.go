@@ -85,15 +85,6 @@ type Config struct {
 	parsedEnvironment map[string]string
 }
 
-func defaultConfig() *Config {
-	return &Config{
-		Build: &Build{
-			GPU:           false,
-			PythonVersion: "3.13",
-		},
-	}
-}
-
 func (r *RunItem) UnmarshalYAML(unmarshal func(any) error) error {
 	var commandOrMap any
 	if err := unmarshal(&commandOrMap); err != nil {

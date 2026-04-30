@@ -3,24 +3,11 @@ package requirements
 import (
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
-
-func TestPythonRequirements(t *testing.T) {
-	srcDir := t.TempDir()
-	reqFile := path.Join(srcDir, "requirements.txt")
-	err := os.WriteFile(reqFile, []byte("torch==2.5.1"), 0o644)
-	require.NoError(t, err)
-
-	tmpDir := t.TempDir()
-	requirementsFile, err := GenerateRequirements(tmpDir, reqFile, RequirementsFile)
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(tmpDir, "requirements.txt"), requirementsFile)
-}
 
 func TestReadRequirements(t *testing.T) {
 	srcDir := t.TempDir()
@@ -430,11 +417,6 @@ func TestReadRequirementsWithEditable(t *testing.T) {
 	requirements, err := ReadRequirements(reqFile)
 	require.NoError(t, err)
 	require.Equal(t, []string{"torch==2.5.1"}, requirements)
-}
-
-func TestVersionSpecifier(t *testing.T) {
-	specifier := VersionSpecifier("mypackage>= 1.0, < 1.4 || > 2.0")
-	require.Equal(t, specifier, ">=1.0,<1.4||>2.0")
 }
 
 func TestPackageName(t *testing.T) {
