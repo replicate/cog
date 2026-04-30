@@ -46,4 +46,3 @@ func isMissingDeviceDriverError(err error) bool {
 	return strings.Contains(msg, "could not select device driver") ||
 		strings.Contains(msg, "nvidia-container-cli: initialization error")
 }
-
