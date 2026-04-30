@@ -9,7 +9,7 @@ cog build -t $TEST_IMAGE
 # TypedDict and optional list[TypedDict] inputs should be represented like dicts.
 exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
 stdout '"data":{"title":"Data","type":"object","x-order":0}'
-stdout '"items":{"items":{"type":"object"},"title":"Items","type":"array","x-order":1}'
+stdout '"items":{"default":null,"items":{"type":"object"},"nullable":true,"title":"Items","type":"array","x-order":1}'
 
 # Predict should accept TypedDict-shaped JSON payloads end-to-end.
 cog predict $TEST_IMAGE --json '{"data": {"name": "alice", "count": 2}, "items": [{"name": "first", "count": 1}, {"name": "second", "count": 3}]}'
