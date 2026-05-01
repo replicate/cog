@@ -39,8 +39,19 @@ def _is_union(tpe: type) -> bool:
 
 def _is_dict_like(tpe: Any) -> bool:
     """Check if a type should be treated like a dict, including TypedDict."""
+    if tpe is dict:
+        return True
+
+    try:
+        from typing_extensions import is_typeddict as is_typeddict_ext
+
+        if is_typeddict_ext(tpe):
+            return True
+    except ImportError:
+        pass
+
     is_typeddict = getattr(typing, "is_typeddict", None)
-    return tpe is dict or (callable(is_typeddict) and is_typeddict(tpe))
+    return callable(is_typeddict) and is_typeddict(tpe)
 
 
 class PrimitiveType(Enum):
