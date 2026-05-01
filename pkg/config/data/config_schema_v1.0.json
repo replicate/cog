@@ -234,7 +234,7 @@
             "properties": {
               "uri": {
                 "type": "string",
-                "description": "Source location. Supported schemes: hf://, s3://, http://, https://, oci://, or a local filesystem path."
+                "description": "Source location. Supported schemes: hf:// (HuggingFace Hub), file:// (local directory), or a bare local filesystem path."
               },
               "include": {
                 "type": "array",

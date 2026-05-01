@@ -128,6 +128,12 @@ func buildWeightManifestV1(ctx context.Context, entry lockfile.WeightLockEntry, 
 		if lr.MediaType == "" {
 			return nil, fmt.Errorf("layer %d (%s): missing media type", i, lr.Digest)
 		}
+		// The packer never emits empty plans; guard so a regression
+		// surfaces here rather than as a registry digest mismatch
+		// during push.
+		if len(lr.Plan.Files) == 0 {
+			return nil, fmt.Errorf("layer %d (%s): plan has no files", i, lr.Digest)
+		}
 
 		adds = append(adds, mutate.Addendum{
 			Layer:     newFileLayer(ctx, lr, st),

@@ -252,6 +252,23 @@ func TestFileSource_Inventory_SkipsDotCog(t *testing.T) {
 	assert.Len(t, inv2.Files, 1)
 }
 
+func TestFileSource_Inventory_RejectsSymlinks(t *testing.T) {
+	// Spec §1.3 requires producers to reject non-regular entries —
+	// silently skipping a symlink would let users ship a model
+	// missing files they expected.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "real.txt"), []byte("hello"), 0o644))
+	require.NoError(t, os.Symlink(filepath.Join(dir, "real.txt"), filepath.Join(dir, "link.txt")))
+
+	src, err := NewFileSource("file://"+dir, "")
+	require.NoError(t, err)
+
+	_, err = src.Inventory(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-regular entry")
+	assert.Contains(t, err.Error(), "link.txt")
+}
+
 func TestFileSource_Inventory_ContextCanceled(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644))

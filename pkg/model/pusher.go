@@ -112,9 +112,10 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	return nil
 }
 
-// verifyWeights HEAD-checks each weight manifest in the registry,
-// returning descriptors in input order. Returns an error if any
-// manifest is not found (the user needs to run `cog weights import`).
+// verifyWeights HEAD-checks each weight manifest by digest. Tags are
+// mutable; resolving repo@digest forces the registry to return the
+// exact manifest the lockfile recorded, and we cross-check the
+// returned digest in case of a non-content-addressed proxy.
 func (p *BundlePusher) verifyWeights(
 	ctx context.Context,
 	repo string,
@@ -131,14 +132,20 @@ func (p *BundlePusher) verifyWeights(
 
 	for i, w := range weights {
 		g.Go(func() error {
-			tag := WeightTag(w.Name, w.SetDigest)
-			ref := repo + ":" + tag
+			if w.Digest == "" {
+				return fmt.Errorf("weight %q: missing manifest digest in lockfile; re-run 'cog weights import'", w.Name)
+			}
+			ref := repo + "@" + w.Digest
 			desc, err := p.registry.GetDescriptor(ctx, ref)
 			if err != nil {
 				return fmt.Errorf(
 					"weight %q not found in registry (%s); run 'cog weights import' to push weights first: %w",
 					w.Name, ref, err,
 				)
+			}
+			if desc.Digest.String() != w.Digest {
+				return fmt.Errorf("weight %q: registry returned digest %s for requested %s",
+					w.Name, desc.Digest.String(), w.Digest)
 			}
 			descs[i] = desc
 			return nil

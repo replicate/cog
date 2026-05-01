@@ -127,16 +127,21 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 
 	console.Infof("Building %d weight(s)...", len(weightSpecs))
 
-	artifacts, err := buildWeightArtifactsFromPlans(ctx, builder, weightSpecs, plans)
-	if err != nil {
+	var artifacts []*model.WeightArtifact
+	if err := lockfile.WithLock(ctx, lockPath, func() error {
+		var buildErr error
+		artifacts, buildErr = buildWeightArtifactsFromPlans(ctx, builder, weightSpecs, plans)
+		if buildErr != nil {
+			return buildErr
+		}
+		// Prune using the full config so orphans clear even when only
+		// some weights are being imported.
+		if err := lockfile.PruneLockfile(lockPath, config.WeightNames(cfg.Weights)); err != nil {
+			return fmt.Errorf("prune lockfile: %w", err)
+		}
+		return nil
+	}); err != nil {
 		return err
-	}
-
-	// Prune lockfile entries for weights no longer declared in cog.yaml.
-	// This always uses the full config (not the filtered import set)
-	// so orphans are corrected regardless of which weights were imported.
-	if err := lockfile.PruneLockfile(lockPath, config.WeightNames(cfg.Weights)); err != nil {
-		return fmt.Errorf("prune lockfile: %w", err)
 	}
 
 	for _, wa := range artifacts {

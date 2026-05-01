@@ -172,11 +172,12 @@ func wrapLinkError(err error, src, dst string) error {
 	return fmt.Errorf("hardlink %s -> %s: %w", src, dst, err)
 }
 
-// newInvocationID returns 8 hex chars (2^32 distinct). Short enough
-// for pleasant paths, wide enough that concurrent Predictors don't
-// collide in practice.
+// newInvocationID returns 16 hex chars (2^64 distinct). Short enough
+// for pleasant paths, wide enough that thousands of concurrent
+// Predictors (e.g. across a CI matrix or a parallel testscript run)
+// don't hit a birthday collision.
 func newInvocationID() (string, error) {
-	var b [4]byte
+	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}

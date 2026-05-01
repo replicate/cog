@@ -9,6 +9,7 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
@@ -231,6 +232,11 @@ func (m *Manager) pullLayer(
 			return fmt.Errorf("read layer %s: %w", layerDigest, err)
 		}
 		if hdr.Typeflag != tar.TypeReg {
+			// Spec §1.3 says producers MUST emit only regular
+			// files. A non-regular entry indicates a producer bug
+			// (or registry tampering); skip but surface so it's
+			// diagnosable in --debug.
+			console.Debugf("layer %s: skipping unexpected tar entry %q (typeflag %d)", layerDigest, hdr.Name, hdr.Typeflag)
 			continue
 		}
 

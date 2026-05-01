@@ -10,19 +10,51 @@
 package lockfile
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"time"
+
+	"github.com/gofrs/flock"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
 )
 
 // WeightsLockFilename is the default filename for the weights lock file.
 const WeightsLockFilename = "weights.lock"
+
+// WithLock runs fn while holding an exclusive cross-process advisory
+// lock on a sibling guard file. Concurrent `cog weights import` runs
+// against the same project would otherwise race load+mutate+save and
+// lose writes.
+//
+// ctx cancellation interrupts a blocking lock acquisition so a wedged
+// peer can't make import un-cancellable.
+func WithLock(ctx context.Context, lockPath string, fn func() error) (retErr error) {
+	guardPath := lockPath + ".guard"
+	if err := os.MkdirAll(filepath.Dir(guardPath), 0o755); err != nil {
+		return fmt.Errorf("create lockfile dir: %w", err)
+	}
+	fl := flock.New(guardPath)
+	locked, err := fl.TryLockContext(ctx, 100*time.Millisecond)
+	if err != nil {
+		return fmt.Errorf("acquire weights.lock guard: %w", err)
+	}
+	if !locked {
+		return ctx.Err()
+	}
+	defer func() {
+		if err := fl.Unlock(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("release weights.lock guard: %w", err)
+		}
+	}()
+	return fn()
+}
 
 // Version is the current lockfile format version.
 //
@@ -173,7 +205,10 @@ type WeightLockLayer struct {
 }
 
 // ParseWeightsLock parses a weights.lock JSON document and rejects
-// anything that is not a supported lockfile version.
+// anything that is not a supported lockfile version. It also rejects
+// lockfiles with duplicate weight names or duplicate targets — those
+// would yield non-deterministic behavior in FindWeight, Pull, Prepare,
+// and Retain.
 func ParseWeightsLock(data []byte) (*WeightsLock, error) {
 	var lock WeightsLock
 	if err := json.Unmarshal(data, &lock); err != nil {
@@ -183,7 +218,33 @@ func ParseWeightsLock(data []byte) (*WeightsLock, error) {
 		return nil, fmt.Errorf("unsupported weights.lock version %d (want %d)",
 			lock.Version, Version)
 	}
+	if err := validateUnique(lock.Weights); err != nil {
+		return nil, fmt.Errorf("parse weights.lock: %w", err)
+	}
 	return &lock, nil
+}
+
+// validateUnique rejects duplicate weight names and duplicate (cleaned)
+// targets. Config-level validation enforces the same rules; we re-check
+// here because weights.lock can be edited by hand or end up with
+// duplicates after a botched merge.
+func validateUnique(entries []WeightLockEntry) error {
+	seenNames := make(map[string]bool, len(entries))
+	seenTargets := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if seenNames[e.Name] {
+			return fmt.Errorf("duplicate weight name %q", e.Name)
+		}
+		seenNames[e.Name] = true
+		if e.Target != "" {
+			cleaned := filepath.Clean(e.Target)
+			if seenTargets[cleaned] {
+				return fmt.Errorf("duplicate weight target %q", e.Target)
+			}
+			seenTargets[cleaned] = true
+		}
+	}
+	return nil
 }
 
 // LoadWeightsLock loads a weights.lock file from disk.
@@ -201,13 +262,56 @@ func LoadWeightsLock(path string) (*WeightsLock, error) {
 // produce byte-identical output. It sorts each entry's Files by path and
 // Layers by digest before serializing, normalizes empty Include/Exclude
 // slices to [] (never omitted), and emits standard two-space indent.
+//
+// The write is atomic: bytes are written to a sibling temp file in the
+// same directory and renamed into place. A killed cog process or
+// concurrent writer cannot leave a half-written lockfile that would
+// later block `cog push` / `cog predict` / `cog train`.
 func (wl *WeightsLock) Save(path string) error {
 	data, err := wl.Marshal()
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil { //nolint:gosec // lockfile is checked into the repo
-		return fmt.Errorf("write weights.lock: %w", err)
+	return atomicWriteFile(path, data, 0o644)
+}
+
+// atomicWriteFile writes data to path via a temp file in the same
+// directory followed by os.Rename. Same-directory placement keeps
+// source and destination on the same filesystem; os.Rename is only
+// atomic within a filesystem.
+//
+// The temp file is fsync'd before rename so a crash mid-import
+// can't leave a zero-byte lockfile behind.
+func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".weights-*.lock.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	// No-op once Rename succeeds (file is gone); covers panic/SIGINT
+	// between CreateTemp and Rename.
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("fsync temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	// gosec G304/G703: tmpPath is from os.CreateTemp; path is the
+	// caller-supplied lockfile location.
+	if err := os.Rename(tmpPath, path); err != nil { //nolint:gosec
+		return fmt.Errorf("rename temp file: %w", err)
 	}
 	return nil
 }

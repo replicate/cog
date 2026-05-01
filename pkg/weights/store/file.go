@@ -122,7 +122,12 @@ func (s *FileStore) PutFile(ctx context.Context, expectedDigest string, expected
 	if ok, err := s.Exists(ctx, expectedDigest); err != nil {
 		return err
 	} else if ok {
-		_, _ = io.Copy(io.Discard, r)
+		// Drain the reader so a shared tar stream advances. Propagate
+		// I/O errors rather than letting them surface on the next
+		// entry, far from the cause.
+		if _, err := io.Copy(io.Discard, r); err != nil {
+			return fmt.Errorf("drain reader for already-stored %s: %w", expectedDigest, err)
+		}
 		return nil
 	}
 

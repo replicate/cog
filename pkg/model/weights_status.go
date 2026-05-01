@@ -103,18 +103,23 @@ func ComputeWeightsStatus(ctx context.Context, cfg *config.Config, lock *lockfil
 		results = append(results, r)
 	}
 
-	// Orphaned: in lockfile but not in config.
-	for i := range lockByName {
-		if configNames[i] {
-			continue
+	// Orphaned: in lockfile but not in config. Iterate the lockfile
+	// slice (ordered) rather than the map (random) so JSON and CLI
+	// output are deterministic across runs — diff tooling and humans
+	// both depend on stable orphan order.
+	if lock != nil {
+		for i := range lock.Weights {
+			le := &lock.Weights[i]
+			if configNames[le.Name] {
+				continue
+			}
+			results = append(results, WeightStatusResult{
+				Name:      le.Name,
+				Target:    le.Target,
+				Status:    WeightStatusOrphaned,
+				LockEntry: le,
+			})
 		}
-		le := lockByName[i]
-		results = append(results, WeightStatusResult{
-			Name:      le.Name,
-			Target:    le.Target,
-			Status:    WeightStatusOrphaned,
-			LockEntry: le,
-		})
 	}
 
 	// Second pass: concurrent per-layer registry checks.

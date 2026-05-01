@@ -498,7 +498,8 @@ func validateWeights(cfg *configFile, result *ValidationResult) {
 			validateWeightPatterns(idx+".source.exclude", w.Source.Exclude, result)
 		}
 
-		// Target is required, must be absolute, and must be unique.
+		// Target is required, must be absolute, must not be the
+		// container root, and must be unique.
 		if w.Target == "" {
 			result.AddError(&ValidationError{
 				Field:   idx + ".target",
@@ -514,6 +515,17 @@ func validateWeights(cfg *configFile, result *ValidationResult) {
 			}
 
 			cleaned := filepath.Clean(w.Target)
+
+			// Mounting weights at "/" would shadow the entire
+			// container root with the weight's bind mount.
+			if cleaned == "/" {
+				result.AddError(&ValidationError{
+					Field:   idx + ".target",
+					Value:   w.Target,
+					Message: "target must not be the container root \"/\"",
+				})
+			}
+
 			if seenTargets[cleaned] {
 				result.AddError(&ValidationError{
 					Field:   idx + ".target",

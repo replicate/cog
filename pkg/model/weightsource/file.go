@@ -66,8 +66,9 @@ func (s *FileSource) sourceDir() string { return s.dir }
 // set, spec §2.4).
 //
 // The .cog state directory is skipped. Non-regular entries (symlinks,
-// devices, etc.) are skipped — the spec defines packing over concrete
-// files only.
+// devices, FIFOs, sockets) are rejected per spec §1.3 — silently
+// dropping them would let a user ship a model missing files they
+// expected. Resolve to regular files before importing.
 func (s *FileSource) Inventory(ctx context.Context) (Inventory, error) {
 	if err := ctx.Err(); err != nil {
 		return Inventory{}, err

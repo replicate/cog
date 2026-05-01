@@ -225,6 +225,9 @@ func (s *HFSource) Open(ctx context.Context, path string) (io.ReadCloser, error)
 		return nil, err
 	}
 
+	// Prefer the commit sha pinned by Inventory; fall back to the
+	// user-supplied ref if Open is called first. parseHFURI
+	// guarantees s.ref is non-empty.
 	ref := s.resolvedRef
 	if ref == "" {
 		ref = s.ref
@@ -405,6 +408,12 @@ func (s *HFSource) hashInlineFiles(ctx context.Context, commitSHA string, entrie
 
 // hashOneInlineFile fetches one inline file from the resolve endpoint
 // and computes its sha256 while reading.
+//
+// The body is bounded by the size the HF tree API reported. A
+// misconfigured mirror (or hostile MITM) returning more bytes than
+// the metadata claims is treated as an error rather than allowed to
+// run unbounded — without this guard, a 50 GB stream behind a 1 KB
+// metadata claim would hash forever and waste bandwidth.
 func (s *HFSource) hashOneInlineFile(ctx context.Context, commitSHA string, entry hfTreeEntry) (InventoryFile, error) {
 	rc, err := s.fetchFile(ctx, commitSHA, entry.Path)
 	if err != nil {
@@ -412,10 +421,25 @@ func (s *HFSource) hashOneInlineFile(ctx context.Context, commitSHA string, entr
 	}
 	defer rc.Close()
 
+	// Read up to size+1 bytes; the extra byte lets us detect overruns
+	// without trusting the server's Content-Length.
+	limit := entry.Size + 1
+	if entry.Size <= 0 {
+		// API returned 0 (or unset) — fall back to a sane upper bound
+		// so a streaming server can't hang us. Inline files are
+		// git-blob-sized in practice.
+		limit = hfMaxInlineFileSize
+	}
+	limited := io.LimitReader(rc, limit)
+
 	h := sha256.New()
-	n, err := io.Copy(h, rc)
+	n, err := io.Copy(h, limited)
 	if err != nil {
 		return InventoryFile{}, fmt.Errorf("hash inline file %s: %w", entry.Path, err)
+	}
+	if entry.Size > 0 && n != entry.Size {
+		return InventoryFile{}, fmt.Errorf("inline file %s: server returned %d bytes, advertised %d",
+			entry.Path, n, entry.Size)
 	}
 
 	return InventoryFile{
@@ -424,6 +448,11 @@ func (s *HFSource) hashOneInlineFile(ctx context.Context, commitSHA string, entr
 		Digest: "sha256:" + hex.EncodeToString(h.Sum(nil)),
 	}, nil
 }
+
+// hfMaxInlineFileSize caps inline-file reads when the API doesn't
+// report a size. Inline (non-LFS) files on the Hub are git blobs;
+// real model weights go through LFS, which supplies sha256 directly.
+const hfMaxInlineFileSize = 256 * 1024 * 1024
 
 // fetchFile streams one file from the resolve endpoint. The endpoint
 // issues a 302 to the appropriate backend (LFS CDN, xet, or inline).

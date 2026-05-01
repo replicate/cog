@@ -32,7 +32,11 @@ type fileEntry struct {
 // phase computes SHA-256 digests concurrently, bounded by GOMAXPROCS.
 //
 // The .cog state directory is skipped to match the packer's behavior.
-// Symlinks and non-regular files are skipped — same reason.
+// Non-regular entries (symlinks, devices, FIFOs, sockets) are
+// rejected per spec §1.3: a model author who symlinked a weight into
+// the source dir would otherwise silently ship a model missing files
+// they expected. The user must resolve to regular files before
+// importing.
 func computeInventory(ctx context.Context, dir string) (Inventory, error) {
 	// Phase 1: walk to collect paths and sizes (metadata only, fast).
 	var entries []fileEntry
@@ -43,8 +47,16 @@ func computeInventory(ctx context.Context, dir string) (Inventory, error) {
 		if d.IsDir() && d.Name() == ".cog" {
 			return filepath.SkipDir
 		}
-		if !d.Type().IsRegular() {
+		if d.IsDir() {
 			return nil
+		}
+		if !d.Type().IsRegular() {
+			rel, relErr := filepath.Rel(dir, path)
+			if relErr != nil {
+				rel = path
+			}
+			return fmt.Errorf("weight source contains non-regular entry %q (%s); resolve to regular files before importing",
+				filepath.ToSlash(rel), d.Type().String())
 		}
 		if err := ctx.Err(); err != nil {
 			return err

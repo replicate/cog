@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weights/store"
 )
@@ -156,9 +157,10 @@ func (b *WeightBuilder) buildWithResolved(ctx context.Context, spec ArtifactSpec
 	if canFastPath(lock, currentEnvelope, existing, ws, inv) {
 		layers, err = layersFromLockfile(existing, plan)
 		if err != nil {
-			// Lockfile and freshly-planned layers disagree on
-			// shape. Treat as a cache miss: recompute. This can
-			// happen if the user edited weights.lock by hand.
+			// Recompute to recover; log so a real cog bug (envelope
+			// didn't capture a packer change) is diagnosable instead
+			// of silently masked.
+			console.Debugf("weight %q: lockfile fast-path failed (%v); recomputing", ws.Name(), err)
 			layers = nil
 		}
 	}
