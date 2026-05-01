@@ -1,0 +1,41 @@
+# Test typing_extensions.TypedDict inputs through the legacy runtime schema path.
+#
+# This exercises python/cog/_adt.py via in-container runtime schema generation,
+# proving typing_extensions.TypedDict subclasses are treated like dict inputs when
+# COG_LEGACY_SCHEMA=1 forces the legacy path.
+
+env COG_LEGACY_SCHEMA=1
+
+# Build the image through the legacy runtime schema generator.
+cog build -t $TEST_IMAGE
+stderr 'Validating model schema'
+
+# typing_extensions.TypedDict and list[TypedDict] inputs work via JSON.
+cog predict $TEST_IMAGE --json '{"data": {"name": "alice", "count": 2}, "items": [{"name": "first", "count": 1}, {"name": "second", "count": 3}]}'
+stdout '"status": "succeeded"'
+stdout '"output": "alice:2 items=2"'
+
+# The generated schema should still expose these as opaque JSON objects.
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout '"data":{"title":"Data","type":"object","x-order":0}'
+stdout '"items":{"items":{"type":"object"},"title":"Items","type":"array","x-order":1}'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing_extensions import TypedDict
+
+from cog import BasePredictor
+
+
+class Payload(TypedDict):
+    name: str
+    count: int
+
+
+class Predictor(BasePredictor):
+    def predict(self, data: Payload, items: list[Payload]) -> str:
+        return f"{data['name']}:{data['count']} items={len(items)}"

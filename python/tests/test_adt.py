@@ -2,10 +2,17 @@
 
 from typing import Any, Dict, List, Optional, TypedDict
 
+from typing_extensions import TypedDict as ExtensionsTypedDict
+
 from cog._adt import FieldType, PrimitiveType, Repetition
 
 
 class ExampleTypedDict(TypedDict):
+    name: str
+    count: int
+
+
+class ExampleExtensionsTypedDict(ExtensionsTypedDict):
     name: str
     count: int
 
@@ -95,9 +102,23 @@ class TestDictInputTypes:
         assert ft.repetition is Repetition.REQUIRED
         assert ft.coder is None
 
+    def test_typing_extensions_typeddict_input(self) -> None:
+        """typing_extensions.TypedDict should be accepted as dict-like inputs."""
+        ft = FieldType.from_type(ExampleExtensionsTypedDict)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REQUIRED
+        assert ft.coder is None
+
     def test_list_of_typeddict_input(self) -> None:
         """list[TypedDict] should produce a repeated ANY field."""
         ft = FieldType.from_type(list[ExampleTypedDict])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REPEATED
+        assert ft.coder is None
+
+    def test_list_of_typing_extensions_typeddict_input(self) -> None:
+        """list[typing_extensions.TypedDict] should produce repeated ANY."""
+        ft = FieldType.from_type(list[ExampleExtensionsTypedDict])
         assert ft.primitive is PrimitiveType.ANY
         assert ft.repetition is Repetition.REPEATED
         assert ft.coder is None
@@ -109,6 +130,13 @@ class TestDictInputTypes:
         assert ft.repetition is Repetition.OPTIONAL
         assert ft.coder is None
 
+    def test_optional_typing_extensions_typeddict_input(self) -> None:
+        """Optional[typing_extensions.TypedDict] should produce optional ANY."""
+        ft = FieldType.from_type(Optional[ExampleExtensionsTypedDict])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL
+        assert ft.coder is None
+
     def test_optional_list_of_typeddict_input(self) -> None:
         """Optional[list[TypedDict]] should produce optional repeated ANY."""
         ft = FieldType.from_type(Optional[list[ExampleTypedDict]])
@@ -116,9 +144,23 @@ class TestDictInputTypes:
         assert ft.repetition is Repetition.OPTIONAL_REPEATED
         assert ft.coder is None
 
+    def test_optional_list_of_typing_extensions_typeddict_input(self) -> None:
+        """Optional[list[typing_extensions.TypedDict]] should be optional repeated ANY."""
+        ft = FieldType.from_type(Optional[list[ExampleExtensionsTypedDict]])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+        assert ft.coder is None
+
     def test_pep604_list_of_typeddict_or_none_input(self) -> None:
         """list[TypedDict] | None should produce optional repeated ANY."""
         ft = FieldType.from_type(list[ExampleTypedDict] | None)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+        assert ft.coder is None
+
+    def test_pep604_list_of_typing_extensions_typeddict_or_none_input(self) -> None:
+        """list[typing_extensions.TypedDict] | None should be optional repeated ANY."""
+        ft = FieldType.from_type(list[ExampleExtensionsTypedDict] | None)
         assert ft.primitive is PrimitiveType.ANY
         assert ft.repetition is Repetition.OPTIONAL_REPEATED
         assert ft.coder is None
