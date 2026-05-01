@@ -2,14 +2,16 @@ package weightsource
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 
 	"golang.org/x/sync/errgroup"
-
-	"github.com/replicate/cog/pkg/util"
 )
 
 // fileEntry holds the metadata collected during the walk phase, before
@@ -76,14 +78,14 @@ func computeInventory(ctx context.Context, dir string) (Inventory, error) {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			h, err := util.SHA256HashFile(e.absPath)
+			digest, err := sha256File(e.absPath)
 			if err != nil {
 				return fmt.Errorf("hash %s: %w", e.rel, err)
 			}
 			files[i] = InventoryFile{
 				Path:   e.rel,
 				Size:   e.size,
-				Digest: "sha256:" + h,
+				Digest: digest,
 			}
 			return nil
 		})
@@ -99,4 +101,20 @@ func computeInventory(ctx context.Context, dir string) (Inventory, error) {
 		Files:       files,
 		Fingerprint: Fingerprint(DirHash(files)),
 	}, nil
+}
+
+// sha256File returns the SHA-256 digest of the file at path in
+// "sha256:<hex>" form, matching the format used by InventoryFile.Digest.
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
