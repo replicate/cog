@@ -48,6 +48,7 @@ def _is_dict_like(tpe: Any) -> bool:
         if is_typeddict_ext(tpe):
             return True
     except ImportError:
+        # `typing_extensions` is optional; fall back to `typing.is_typeddict` below.
         pass
 
     is_typeddict = getattr(typing, "is_typeddict", None)
