@@ -153,14 +153,14 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		require.NoError(t, err)
 
-		// Verify call sequence. Image push is first, index push is last.
-		// The two HEAD checks (image + weight) run concurrently so their
-		// relative order is nondeterministic.
+		// Verify call sequence. Weight verification happens first,
+		// then docker push, then image HEAD, then index push.
 		require.Len(t, callOrder, 4)
-		require.Equal(t, "docker:push:r8.im/user/model:latest", callOrder[0])
 		expectedTag := WeightTag(w.Name, w.SetDigest)
-		require.Contains(t, callOrder, "registry:getDescriptor:r8.im/user/model:latest")
-		require.Contains(t, callOrder, "registry:getDescriptor:r8.im/user/model:"+expectedTag)
+		require.Equal(t, "registry:getDescriptor:r8.im/user/model:"+expectedTag, callOrder[0],
+			"weight verification must happen before image push")
+		require.Equal(t, "docker:push:r8.im/user/model:latest", callOrder[1])
+		require.Equal(t, "registry:getDescriptor:r8.im/user/model:latest", callOrder[2])
 		require.Equal(t, "registry:pushIndex:r8.im/user/model:latest", callOrder[3])
 	})
 
@@ -200,7 +200,16 @@ func TestBundlePusher_Push(t *testing.T) {
 				return errors.New("unauthorized: authentication required")
 			},
 		}
-		reg := &mockRegistry{}
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				// Weight verification succeeds; image push will fail.
+				return v1.Descriptor{
+					MediaType: types.OCIManifestSchema1,
+					Size:      100,
+					Digest:    v1.Hash{Algorithm: "sha256", Hex: "abc"},
+				}, nil
+			},
+		}
 
 		pusher := NewBundlePusher(docker, reg)
 		w1 := Weight{Name: "w1", Target: "/src/weights/w1", SetDigest: "sha256:abc"}
@@ -232,21 +241,15 @@ func TestBundlePusher_Push(t *testing.T) {
 	})
 
 	t.Run("returns error when weight manifest not in registry", func(t *testing.T) {
-		imgDesc := v1.Descriptor{
-			MediaType: types.OCIManifestSchema1,
-			Size:      100,
-			Digest:    v1.Hash{Algorithm: "sha256", Hex: "abc"},
-		}
-
 		docker := &mockDocker{
-			pushFunc: func(ctx context.Context, ref string) error { return nil },
+			pushFunc: func(ctx context.Context, ref string) error {
+				t.Fatal("docker push should not be called when weight verification fails")
+				return nil
+			},
 		}
 		reg := &mockRegistry{
 			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
-				// Image HEAD succeeds, weight HEAD fails
-				if ref == "r8.im/user/model:latest" {
-					return imgDesc, nil
-				}
+				// Weight HEAD fails — verification happens before image push.
 				return v1.Descriptor{}, errors.New("manifest unknown")
 			},
 		}

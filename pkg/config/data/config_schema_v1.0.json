@@ -214,7 +214,7 @@
       "description": "A list of weight directories to include in the model.",
       "items": {
         "type": "object",
-        "required": ["name", "target"],
+        "required": ["name", "target", "source"],
         "additionalProperties": false,
         "properties": {
           "name": {

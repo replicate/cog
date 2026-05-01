@@ -244,7 +244,7 @@ type hfRevisionResponse struct {
 func (s *HFSource) resolveRef(ctx context.Context) (string, error) {
 	u := s.buildURL("api", "models", s.repo, "revision", s.ref)
 
-	body, err := s.doGet(ctx, u)
+	body, _, err := s.doGet(ctx, u)
 	if err != nil {
 		return "", err
 	}
@@ -276,24 +276,70 @@ type hfLFSInfo struct {
 	Size int64  `json:"size"`
 }
 
-// listTree fetches the recursive tree listing at the given commit sha.
-// NOTE: the HF Hub API paginates large repos. This implementation does
-// not follow pagination yet — repos with very many files may return an
-// incomplete listing. A follow-up should add cursor-based pagination.
+// listTree fetches the recursive tree listing at the given commit sha,
+// following cursor-based pagination via the Link header until all pages
+// are consumed.
 func (s *HFSource) listTree(ctx context.Context, commitSHA string) ([]hfTreeEntry, error) {
-	u := s.buildURLWithQuery("recursive=true", "api", "models", s.repo, "tree", commitSHA)
+	nextURL := s.buildURLWithQuery("recursive=true", "api", "models", s.repo, "tree", commitSHA)
 
-	body, err := s.doGet(ctx, u)
+	var all []hfTreeEntry
+	for nextURL != "" {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		entries, next, err := s.listTreePage(ctx, nextURL)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, entries...)
+		nextURL = next
+	}
+	return all, nil
+}
+
+// listTreePage fetches one page of the tree listing from url and returns
+// the entries plus the URL for the next page (empty string if this was
+// the last page). The HF Hub API signals pagination via a Link header:
+//
+//	Link: <https://huggingface.co/api/models/.../tree/...?cursor=...>; rel="next"
+func (s *HFSource) listTreePage(ctx context.Context, pageURL string) ([]hfTreeEntry, string, error) {
+	body, resp, err := s.doGet(ctx, pageURL)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer body.Close()
 
 	var entries []hfTreeEntry
 	if err := json.NewDecoder(body).Decode(&entries); err != nil {
-		return nil, fmt.Errorf("decode tree response: %w", err)
+		return nil, "", fmt.Errorf("decode tree response: %w", err)
 	}
-	return entries, nil
+
+	next := parseLinkNext(resp.Header.Get("Link"))
+	return entries, next, nil
+}
+
+// parseLinkNext extracts the URL from a Link header with rel="next".
+// Returns "" if no next link is present. Handles the standard format:
+//
+//	<url>; rel="next"
+func parseLinkNext(header string) string {
+	if header == "" {
+		return ""
+	}
+	for part := range strings.SplitSeq(header, ",") {
+		part = strings.TrimSpace(part)
+		if !strings.Contains(part, `rel="next"`) {
+			continue
+		}
+		// Extract URL from angle brackets.
+		start := strings.Index(part, "<")
+		end := strings.Index(part, ">")
+		if start >= 0 && end > start {
+			return part[start+1 : end]
+		}
+	}
+	return ""
 }
 
 // buildInventoryFiles converts tree entries into InventoryFiles. LFS
@@ -383,7 +429,8 @@ func (s *HFSource) hashOneInlineFile(ctx context.Context, commitSHA string, entr
 // issues a 302 to the appropriate backend (LFS CDN, xet, or inline).
 func (s *HFSource) fetchFile(ctx context.Context, ref, filePath string) (io.ReadCloser, error) {
 	u := s.buildURL(s.repo, "resolve", ref, filePath)
-	return s.doGet(ctx, u)
+	body, _, err := s.doGet(ctx, u)
+	return body, err
 }
 
 // escapeURLPath percent-encodes each component of a forward-slash-separated
@@ -428,29 +475,31 @@ func (s *HFSource) buildURLWithQuery(query string, segments ...string) string {
 }
 
 // doGet performs an HTTP GET with retries (via the retrying transport)
-// and returns the response body. The caller must close the body.
+// and returns the response body and the full response. The caller must
+// close the body. Most callers only need the body; callers that need
+// response headers (e.g. pagination via Link) use the response directly.
 //
 // Non-retryable 4xx responses are translated into specific errors:
 //   - 401 → auth hint
 //   - 403 → permissions hint
 //   - 404 → not-found
 //   - others → raw status + snippet of body
-func (s *HFSource) doGet(ctx context.Context, url string) (io.ReadCloser, error) {
+func (s *HFSource) doGet(ctx context.Context, url string) (io.ReadCloser, *http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, nil, fmt.Errorf("create request: %w", err)
 	}
 	if s.token != "" {
 		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
 
-	resp, err := s.client.Do(req) //nolint:gosec // G704: URL is constructed from parsed hf:// URI components, not arbitrary user input
+	resp, err := s.client.Do(req) //nolint:gosec // URL is constructed from parsed hf:// URI components, not arbitrary user input
 	if err != nil {
-		return nil, fmt.Errorf("request %s: %w", url, err)
+		return nil, nil, fmt.Errorf("request %s: %w", url, err)
 	}
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return resp.Body, nil
+		return resp.Body, resp, nil
 	}
 
 	// Non-2xx: read a snippet of the body for diagnostics, then close.
@@ -459,12 +508,12 @@ func (s *HFSource) doGet(ctx context.Context, url string) (io.ReadCloser, error)
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		return nil, fmt.Errorf("authentication failed for %s (HTTP 401): set HF_TOKEN or HUGGING_FACE_HUB_TOKEN", url)
+		return nil, nil, fmt.Errorf("authentication failed for %s (HTTP 401): set HF_TOKEN or HUGGING_FACE_HUB_TOKEN", url)
 	case http.StatusForbidden:
-		return nil, fmt.Errorf("access denied for %s (HTTP 403): check repo visibility and token permissions", url)
+		return nil, nil, fmt.Errorf("access denied for %s (HTTP 403): check repo visibility and token permissions", url)
 	case http.StatusNotFound:
-		return nil, fmt.Errorf("not found: %s (HTTP 404)", url)
+		return nil, nil, fmt.Errorf("not found: %s (HTTP 404)", url)
 	default:
-		return nil, fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, url, string(errBody))
+		return nil, nil, fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, url, string(errBody))
 	}
 }

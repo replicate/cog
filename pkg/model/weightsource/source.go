@@ -82,7 +82,7 @@ func sortInventoryFiles(files []InventoryFile) {
 // Empty strings and unsupported schemes return an error.
 func NormalizeURI(uri string) (string, error) {
 	if uri == "" {
-		return "", fmt.Errorf("empty weight source uri")
+		return "", fmt.Errorf("weight source.uri is required")
 	}
 
 	scheme := schemeOf(uri)

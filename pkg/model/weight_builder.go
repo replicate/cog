@@ -326,44 +326,46 @@ func loadLockfileOrEmpty(path string) (*lockfile.WeightsLock, error) {
 	return nil, err
 }
 
-// layerKey returns a content signature for a layerPlan: the joined
-// file digests in tar-emission order. Two planLayers with identical
-// keys produce identical tar bytes and therefore identical layer
-// digests (modulo envelope-format concerns, which the caller handles
+// fileSetKey joins file identities into a single string that serves as
+// a content signature. Files must already be in the intended order
+// (the packer's tar-emission order). Two file sets with identical keys
+// produce identical tar bytes and therefore identical layer digests
+// (modulo envelope-format concerns, which the caller handles
 // separately).
-func layerKey(lp layerPlan) string {
-	digests := make([]string, len(lp.Files))
-	for i, f := range lp.Files {
-		digests[i] = f.Digest
+//
+// Both path and digest are included because tar headers contain the
+// file path — two files with identical content but different paths
+// produce different tar bytes and therefore different layer digests.
+func fileSetKey(parts []weightsource.DirhashPart) string {
+	ids := make([]string, len(parts))
+	for i, p := range parts {
+		ids[i] = p.String()
 	}
-	return strings.Join(digests, "\n")
+	return strings.Join(ids, "\n")
 }
 
-// lockedLayerKey returns the layerKey for a recorded layer in entry,
-// reconstructed by collecting the file digests of every entry.Files
-// member that points at the given layerDigest.
-//
-// Result is sorted by inventory path so it matches a planLayer whose
-// Files are in the packer's emission order (small-file bundles are
-// path-sorted; single-file layers carry one file). For multi-file
-// bundles, both this function and planLayers sort by path; for
-// single-file layers, both have one entry. Either way the keys match
-// when the underlying file set matches.
-func lockedLayerKey(entry *lockfile.WeightLockEntry, layerDigest string) string {
-	type fd struct {
-		path   string
-		digest string
+// layerKey returns the fileSetKey for a planned layer.
+func layerKey(lp layerPlan) string {
+	parts := make([]weightsource.DirhashPart, len(lp.Files))
+	for i, f := range lp.Files {
+		parts[i] = f.DirhashParts()
 	}
-	var fs []fd
+	return fileSetKey(parts)
+}
+
+// lockedLayerKey returns the fileSetKey for a recorded layer in entry,
+// reconstructed by collecting the files that point at the given
+// layerDigest and sorting them by path to match the packer's emission
+// order.
+func lockedLayerKey(entry *lockfile.WeightLockEntry, layerDigest string) string {
+	var parts []weightsource.DirhashPart
 	for _, f := range entry.Files {
 		if f.Layer == layerDigest {
-			fs = append(fs, fd{path: f.Path, digest: f.Digest})
+			parts = append(parts, weightsource.DirhashPart{Path: f.Path, Digest: f.Digest})
 		}
 	}
-	slices.SortFunc(fs, func(a, b fd) int { return strings.Compare(a.path, b.path) })
-	digests := make([]string, len(fs))
-	for i, f := range fs {
-		digests[i] = f.digest
-	}
-	return strings.Join(digests, "\n")
+	slices.SortFunc(parts, func(a, b weightsource.DirhashPart) int {
+		return strings.Compare(a.Path, b.Path)
+	})
+	return fileSetKey(parts)
 }

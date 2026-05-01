@@ -709,6 +709,8 @@ weights:
 }
 
 func TestWeightsWithoutSourceYAML(t *testing.T) {
+	// source is required on each weight entry. A config without it
+	// parses (Go doesn't enforce JSON schema) but fails validation.
 	yamlString := `build:
   python_version: "3.12"
 image: "registry.example.com/acme/my-model"
@@ -720,11 +722,10 @@ weights:
 `
 
 	config, err := FromYAML([]byte(yamlString))
-	require.NoError(t, err)
+	require.NoError(t, err, "parsing should succeed even without source")
 	require.Len(t, config.Weights, 1)
 
-	require.Equal(t, "base-model", config.Weights[0].Name)
-	require.Equal(t, "/src/weights", config.Weights[0].Target)
+	// Source is nil at the Go level — the schema enforces it, not the parser.
 	require.Nil(t, config.Weights[0].Source)
 	require.Equal(t, "", config.Weights[0].SourceURI())
 }

@@ -29,7 +29,7 @@ func TestNormalizeURI(t *testing.T) {
 		{"clean dot segment", "./weights/./models", "file://./weights/models", ""},
 		{"absolute clean", "/data//weights", "file:///data/weights", ""},
 
-		{"empty", "", "", "empty weight source uri"},
+		{"empty", "", "", "source.uri is required"},
 		{"empty file scheme", "file://", "", "empty weight source path"},
 		{"project dir itself rejected", ".", "", "project directory itself"},
 		{"parent escape rejected", "../sibling", "", "escapes the project directory"},

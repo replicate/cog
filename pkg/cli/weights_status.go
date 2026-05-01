@@ -129,7 +129,13 @@ func weightsStatusCommand(cmd *cobra.Command, jsonOutput, verbose bool) error {
 	if jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(out)
+		if err := enc.Encode(out); err != nil {
+			return err
+		}
+		if !ws.AllReady() {
+			return errWeightsNotReady
+		}
+		return nil
 	}
 
 	printWeightsStatusText(out, verbose)

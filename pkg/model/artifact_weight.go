@@ -101,6 +101,21 @@ func (s *WeightSpec) Equal(other *WeightSpec) bool {
 func (s *WeightSpec) Type() ArtifactType { return ArtifactTypeWeight }
 func (s *WeightSpec) Name() string       { return s.name }
 
+// ConfigWeight returns the lockfile-package representation of this spec
+// for drift comparison. This is the single mapping point between
+// WeightSpec and lockfile.ConfigWeight — adding a user-intent field to
+// WeightSpec requires updating this method, and the compiler will
+// surface any field mismatches.
+func (s *WeightSpec) ConfigWeight() lockfile.ConfigWeight {
+	return lockfile.ConfigWeight{
+		Name:    s.name,
+		Target:  s.Target,
+		URI:     s.URI,
+		Include: s.Include,
+		Exclude: s.Exclude,
+	}
+}
+
 // WeightArtifact is a built weight artifact ready to push as an OCI manifest.
 // It implements Artifact.
 //

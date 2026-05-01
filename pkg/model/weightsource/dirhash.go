@@ -16,6 +16,16 @@ type DirhashPart struct {
 	Digest string
 }
 
+// String returns the canonical identity of a single file: "path\x00digest".
+// This is the primitive that any code comparing files across layers,
+// plans, or lockfile entries should use. DirHash composes over this
+// (sorted, then hashed); layer keys join these (preserving individual
+// file identity so two files with identical content but different paths
+// remain distinguishable).
+func (p DirhashPart) String() string {
+	return p.Path + "\x00" + p.Digest
+}
+
 // Dirhashable is implemented by types that can participate in DirHash.
 // Both weightsource.InventoryFile and lockfile.WeightLockFile implement
 // it, letting the two call sites share one digest implementation.

@@ -157,6 +157,43 @@ func TestCheckDrift(t *testing.T) {
 		assert.Contains(t, err.Error(), "not imported yet")
 	})
 
+	t.Run("whitespace in patterns does not cause false drift", func(t *testing.T) {
+		// Regression: the build path trims whitespace from
+		// include/exclude patterns (via sortedClone), so the lockfile
+		// stores trimmed values. The drift checker must also trim so
+		// patterns like " *.bin " don't cause persistent false drift.
+		dir := t.TempDir()
+		lock := &lockfile.WeightsLock{
+			Version: 1,
+			Weights: []lockfile.WeightLockEntry{
+				{
+					Name:   "my-model",
+					Target: "/src/weights",
+					Source: lockfile.WeightLockSource{
+						URI:     "file://./weights",
+						Include: []string{"*.bin"},
+						Exclude: []string{"*.tmp"},
+					},
+				},
+			},
+		}
+		require.NoError(t, lock.Save(filepath.Join(dir, lockfile.WeightsLockFilename)))
+
+		ws := []config.WeightSource{
+			{
+				Name:   "my-model",
+				Target: "/src/weights",
+				Source: &config.WeightSourceConfig{
+					URI:     "./weights",
+					Include: []string{"  *.bin  "},
+					Exclude: []string{"  *.tmp  "},
+				},
+			},
+		}
+		require.NoError(t, CheckDrift(dir, ws),
+			"whitespace-padded patterns should match trimmed lockfile values")
+	})
+
 	t.Run("corrupt lockfile: errors", func(t *testing.T) {
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(

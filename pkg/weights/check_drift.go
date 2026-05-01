@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
-	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
@@ -47,38 +46,20 @@ func CheckDrift(projectDir string, weights []config.WeightSource) error {
 }
 
 // toConfigWeights converts config weight declarations to
-// lockfile.ConfigWeight values, normalizing URIs and sorting
-// include/exclude patterns so the comparison matches the lockfile's
-// canonical form.
+// lockfile.ConfigWeight values by going through WeightSpecFromConfig —
+// the single normalization entry point that trims whitespace, sorts
+// patterns, and normalizes URIs. This ensures the drift checker uses
+// exactly the same canonical form as the build/import path.
 func toConfigWeights(ws []config.WeightSource) ([]lockfile.ConfigWeight, error) {
 	cws := make([]lockfile.ConfigWeight, 0, len(ws))
 	for _, w := range ws {
-		uri, err := weightsource.NormalizeURI(w.SourceURI())
+		spec, err := model.WeightSpecFromConfig(w)
 		if err != nil {
-			return nil, fmt.Errorf("weight %q: %w", w.Name, err)
+			return nil, err
 		}
-		cw := lockfile.ConfigWeight{
-			Name:   w.Name,
-			Target: w.Target,
-			URI:    uri,
-		}
-		if w.Source != nil {
-			cw.Include = sortedCopy(w.Source.Include)
-			cw.Exclude = sortedCopy(w.Source.Exclude)
-		}
-		cws = append(cws, cw)
+		cws = append(cws, spec.ConfigWeight())
 	}
 	return cws, nil
-}
-
-// sortedCopy returns a sorted copy of s, or nil if s is nil.
-func sortedCopy(s []string) []string {
-	if s == nil {
-		return nil
-	}
-	out := slices.Clone(s)
-	slices.Sort(out)
-	return out
 }
 
 // formatDriftError builds a user-facing error from drift results.

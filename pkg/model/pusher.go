@@ -46,10 +46,12 @@ func NewBundlePusher(docker command.Command, reg registry.Client) *BundlePusher 
 	}
 }
 
-// Push pushes the model as an OCI Index. The image is pushed via
-// ImagePusher. Weight manifests are verified via HEAD (they were
-// pushed by `cog weights import`); if any are missing, the push
-// fails with a message to re-run import.
+// Push pushes the model as an OCI Index. Weight manifests are
+// verified via HEAD *before* the image is pushed — if any are missing,
+// the push fails fast with a message to re-run import, without leaving
+// an orphaned image in the registry. The image is then pushed via
+// ImagePusher, followed by a HEAD to get its descriptor, and finally
+// the OCI Index is assembled and pushed.
 func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) error {
 	imgArtifact := m.GetImageArtifact()
 	if imgArtifact == nil {
@@ -57,6 +59,12 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 	}
 
 	repo := repoFromReference(imgArtifact.Reference)
+
+	// Verify weight manifests exist before pushing the image.
+	weightDescs, err := p.verifyWeights(ctx, repo, m.Weights)
+	if err != nil {
+		return err
+	}
 
 	var imagePushOpts []ImagePushOption
 	if opts.ImageProgressFn != nil {
@@ -69,26 +77,10 @@ func (p *BundlePusher) Push(ctx context.Context, m *Model, opts PushOptions) err
 		return fmt.Errorf("push image %q: %w", imgArtifact.Reference, err)
 	}
 
-	// HEAD the image and verify weight manifests concurrently.
-	var imgDesc v1.Descriptor
-	var weightDescs []v1.Descriptor
-
-	g, gctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		var descErr error
-		imgDesc, descErr = p.registry.GetDescriptor(gctx, imgArtifact.Reference)
-		if descErr != nil {
-			return fmt.Errorf("get image descriptor: %w", descErr)
-		}
-		return nil
-	})
-	g.Go(func() error {
-		var verifyErr error
-		weightDescs, verifyErr = p.verifyWeights(gctx, repo, m.Weights)
-		return verifyErr
-	})
-	if err := g.Wait(); err != nil {
-		return err
+	// HEAD the pushed image to get its descriptor for the index.
+	imgDesc, err := p.registry.GetDescriptor(ctx, imgArtifact.Reference)
+	if err != nil {
+		return fmt.Errorf("get image descriptor: %w", err)
 	}
 
 	platform := opts.Platform

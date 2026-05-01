@@ -492,6 +492,43 @@ func TestWeightBuilder_ImplementsBuilderInterface(t *testing.T) {
 	var _ Builder = wb
 }
 
+func TestWeightBuilder_IdenticalContentDifferentPaths(t *testing.T) {
+	// Regression test: two files with identical content but different
+	// paths must produce distinct layers (tar headers include the path).
+	// Previously layerKey only used digests, so both files mapped to
+	// the same key and one plan overwrote the other in the lookup map.
+	projectDir := t.TempDir()
+	sameContent := []byte("identical-bytes-for-both-files")
+	makeWeightDir(t, projectDir, "w", map[string][]byte{
+		"a.bin": sameContent,
+		"b.bin": sameContent,
+	})
+
+	wb, _ := newTestBuilder(t, projectDir, []config.WeightSource{
+		{Name: "w", Target: "/src/w", Source: &config.WeightSourceConfig{URI: "w"}},
+	})
+
+	spec := testWeightSpec(t, "w", "w", "/src/w")
+	art, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+	wa := art.(*WeightArtifact)
+
+	// Both files should appear in the lockfile entry.
+	require.Len(t, wa.Entry.Files, 2, "both files must be tracked")
+	paths := []string{wa.Entry.Files[0].Path, wa.Entry.Files[1].Path}
+	assert.Contains(t, paths, "a.bin")
+	assert.Contains(t, paths, "b.bin")
+
+	// A second build should also succeed (fast path), confirming
+	// layersFromLockfile correctly pairs layers when content is
+	// identical but paths differ.
+	art2, err := wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+	wa2 := art2.(*WeightArtifact)
+	assert.Equal(t, wa.Descriptor().Digest, wa2.Descriptor().Digest,
+		"fast-path rebuild must produce the same manifest digest")
+}
+
 func TestWeightBuilder_NormalizesSourceURI(t *testing.T) {
 	// Different bare-path spellings of the same directory should
 	// produce the same normalized URI in the lockfile.
