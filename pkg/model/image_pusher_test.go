@@ -75,6 +75,9 @@ func (m *ociMockClient) GetDescriptor(context.Context, string) (v1.Descriptor, e
 	return v1.Descriptor{}, nil
 }
 func (m *ociMockClient) PushIndex(context.Context, string, v1.ImageIndex) error { return nil }
+func (m *ociMockClient) BlobExists(context.Context, string, string) (bool, error) {
+	return false, nil
+}
 
 // testArtifact creates an *ImageArtifact for testing with the given reference string.
 func testArtifact(ref string) *ImageArtifact {

@@ -211,23 +211,46 @@
         "array",
         "null"
       ],
-      "description": "A list of weight files or directories to include in the model.",
+      "description": "A list of weight directories to include in the model.",
       "items": {
         "type": "object",
-        "required": ["source"],
+        "required": ["name", "target", "source"],
         "additionalProperties": false,
         "properties": {
           "name": {
             "type": "string",
-            "description": "A unique identifier for this weight entry."
-          },
-          "source": {
-            "type": "string",
-            "description": "Path to a weight file or directory (relative to cog.yaml)."
+            "description": "A unique identifier for this weight entry. Maps to <image>/weights/<name> in the registry.",
+            "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$"
           },
           "target": {
             "type": "string",
-            "description": "Target path in the container (must be under /cache/). Defaults to /cache/<basename>."
+            "description": "Absolute path where the weight directory is mounted in the container."
+          },
+          "source": {
+            "type": "object",
+            "description": "Import configuration for this weight entry. Documents provenance and re-import settings.",
+            "required": ["uri"],
+            "additionalProperties": false,
+            "properties": {
+              "uri": {
+                "type": "string",
+                "description": "Source location. Supported schemes: hf:// (HuggingFace Hub), file:// (local directory), or a bare local filesystem path."
+              },
+              "include": {
+                "type": "array",
+                "description": "Glob patterns for files to include (allowlist mode).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "exclude": {
+                "type": "array",
+                "description": "Glob patterns for files to skip during import.",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }

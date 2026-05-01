@@ -76,8 +76,13 @@ func TestImageBuilder_ErrorWrongSpecType(t *testing.T) {
 	ib := NewImageBuilder(&mockFactory{}, &mockDocker{}, src, BuildOptions{})
 
 	// Pass a WeightSpec instead of ImageSpec
-	weightSpec := NewWeightSpec("model", "model.bin", "/weights/model.bin")
-	_, err := ib.Build(context.Background(), weightSpec)
+	weightSpec, err := WeightSpecFromConfig(config.WeightSource{
+		Name:   "model",
+		Target: "/weights/model.bin",
+		Source: &config.WeightSourceConfig{URI: "model.bin"},
+	})
+	require.NoError(t, err)
+	_, err = ib.Build(context.Background(), weightSpec)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "expected *ImageSpec")
 }

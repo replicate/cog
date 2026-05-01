@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // mockDocker implements command.Command for testing.
@@ -147,6 +147,10 @@ func (m *mockRegistry) WriteLayer(ctx context.Context, opts registry.WriteLayerO
 	}
 	// Default: no-op. The caller (WeightPusher) owns closing ProgressCh.
 	return nil
+}
+
+func (m *mockRegistry) BlobExists(_ context.Context, _ string, _ string) (bool, error) {
+	return false, nil
 }
 
 // mockFactory implements Factory for testing.
@@ -1016,7 +1020,7 @@ func TestResolver_Build_NoWeightsManifestWithoutWeights(t *testing.T) {
 
 	require.NoError(t, err)
 	require.False(t, m.IsBundle())
-	require.Empty(t, m.WeightArtifacts())
+	require.Empty(t, m.Weights)
 }
 
 func TestResolver_Build_PopulatesArtifacts(t *testing.T) {
@@ -1072,7 +1076,7 @@ func TestResolver_Build_PopulatesArtifacts(t *testing.T) {
 	require.Equal(t, imageDigest, imgArtifact.Descriptor().Digest.String())
 }
 
-func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
+func TestResolver_Build_PopulatesWeights(t *testing.T) {
 	imageDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 
 	docker := &mockDocker{
@@ -1082,7 +1086,6 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
-
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.15.0",
 						},
@@ -1103,16 +1106,32 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 	}
 	resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
 
-	// Create a temp directory with a real weight file
 	dir := t.TempDir()
-	weightContent := []byte("test weight for resolver build")
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.safetensors"), weightContent, 0o644))
+
+	// Pre-create a lockfile (as if `cog weights import` had run).
+	lock := &lockfile.WeightsLock{
+		Version: lockfile.Version,
+		Weights: []lockfile.WeightLockEntry{
+			{
+				Name:           "my-model",
+				Target:         "/srv/weights/model",
+				Digest:         "sha256:deadbeef",
+				SetDigest:      "sha256:setdigest123",
+				Size:           4096,
+				SizeCompressed: 2048,
+				Source: lockfile.WeightLockSource{
+					URI: "file://./weights/model",
+				},
+			},
+		},
+	}
+	require.NoError(t, lock.Save(filepath.Join(dir, lockfile.WeightsLockFilename)))
 
 	src := &Source{
 		Config: &config.Config{
 			Build: &config.Build{},
 			Weights: []config.WeightSource{
-				{Name: "my-model", Source: "model.safetensors", Target: "/srv/weights/model.safetensors"},
+				{Name: "my-model", Target: "/srv/weights/model", Source: &config.WeightSourceConfig{URI: "weights/model"}},
 			},
 		},
 		ProjectDir: dir,
@@ -1120,37 +1139,26 @@ func TestResolver_Build_PopulatesWeightArtifacts(t *testing.T) {
 
 	m, err := resolver.Build(context.Background(), src, BuildOptions{
 		ImageName: "test-image:latest",
-		OCIIndex:  true,
 	})
 
 	require.NoError(t, err)
-	require.NotNil(t, m.Artifacts)
 
-	// Should have 2 artifacts: 1 image + 1 weight
-	require.Len(t, m.Artifacts, 2, "should have image + weight artifacts")
+	// Artifacts should contain only the image (weights are not artifacts).
+	require.Len(t, m.Artifacts, 1, "should have image artifact only")
+	require.NotNil(t, m.GetImageArtifact())
 
-	// Verify image artifact
-	imgArtifact := m.GetImageArtifact()
-	require.NotNil(t, imgArtifact)
-	require.Equal(t, "model", imgArtifact.Name())
+	// Weights loaded from lockfile.
+	require.Len(t, m.Weights, 1)
+	require.Equal(t, "my-model", m.Weights[0].Name)
+	require.Equal(t, "/srv/weights/model", m.Weights[0].Target)
+	require.Equal(t, "sha256:deadbeef", m.Weights[0].Digest)
+	require.Equal(t, "sha256:setdigest123", m.Weights[0].SetDigest)
+	require.Equal(t, int64(4096), m.Weights[0].Size)
 
-	// Verify weight artifact
-	weightArtifacts := m.WeightArtifacts()
-	require.Len(t, weightArtifacts, 1)
-	wa := weightArtifacts[0]
-	require.Equal(t, "my-model", wa.Name())
-	require.Equal(t, ArtifactTypeWeight, wa.Type())
-	require.Equal(t, "/srv/weights/model.safetensors", wa.Target)
-	require.Equal(t, filepath.Join(dir, "model.safetensors"), wa.FilePath)
-
-	// Weight config should be populated
-	require.Equal(t, "1.0", wa.Config.SchemaVersion)
-	require.Equal(t, "my-model", wa.Config.Name)
-	require.Equal(t, "/srv/weights/model.safetensors", wa.Config.Target)
-	require.False(t, wa.Config.Created.IsZero())
+	require.True(t, m.IsBundle())
 }
 
-func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
+func TestResolver_Build_WithWeightsIsBundle(t *testing.T) {
 	imageDigest := "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 
 	docker := &mockDocker{
@@ -1160,7 +1168,6 @@ func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
 				Config: &dockerspec.DockerOCIImageConfig{
 					ImageConfig: ocispec.ImageConfig{
 						Labels: map[string]string{
-
 							LabelConfig:  `{"build":{"python_version":"3.11"}}`,
 							LabelVersion: "0.15.0",
 						},
@@ -1182,13 +1189,30 @@ func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
 	resolver := NewResolver(docker, &mockRegistry{}).WithFactory(factory)
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.bin"), []byte("test weights"), 0o644))
+
+	// Pre-create lockfile.
+	lock := &lockfile.WeightsLock{
+		Version: lockfile.Version,
+		Weights: []lockfile.WeightLockEntry{
+			{
+				Name:      "my-model",
+				Target:    "/src/weights",
+				Digest:    "sha256:abc",
+				SetDigest: "sha256:set123",
+				Size:      1024,
+				Source: lockfile.WeightLockSource{
+					URI: "file://./weights",
+				},
+			},
+		},
+	}
+	require.NoError(t, lock.Save(filepath.Join(dir, lockfile.WeightsLockFilename)))
 
 	src := &Source{
 		Config: &config.Config{
 			Build: &config.Build{},
 			Weights: []config.WeightSource{
-				{Name: "my-model", Source: "model.bin", Target: "/weights/model.bin"},
+				{Name: "my-model", Target: "/src/weights", Source: &config.WeightSourceConfig{URI: "weights"}},
 			},
 		},
 		ProjectDir: dir,
@@ -1196,50 +1220,19 @@ func TestResolver_Build_WithWeightsLoadsManifest(t *testing.T) {
 
 	m, err := resolver.Build(context.Background(), src, BuildOptions{
 		ImageName: "test-image:latest",
-		OCIIndex:  true,
 	})
 
 	require.NoError(t, err)
 	require.True(t, m.IsBundle())
-	require.True(t, m.OCIIndex)
 
-	// Should have 2 artifacts: image + weight
-	require.Len(t, m.Artifacts, 2)
+	// 1 image artifact, 1 weight in Weights
+	require.Len(t, m.Artifacts, 1)
 	require.NotNil(t, m.GetImageArtifact())
-	require.Len(t, m.WeightArtifacts(), 1)
-
-	// Weight artifacts should be populated
-	require.Len(t, m.WeightArtifacts(), 1)
+	require.Len(t, m.Weights, 1)
+	require.Equal(t, "my-model", m.Weights[0].Name)
 }
 
 func TestIndexDetectionHelpers(t *testing.T) {
-	t.Run("findWeightsManifest", func(t *testing.T) {
-		manifests := []registry.PlatformManifest{
-			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},
-			{
-				Digest:       "sha256:weights456",
-				OS:           PlatformUnknown,
-				Architecture: PlatformUnknown,
-				Annotations: map[string]string{
-					AnnotationReferenceType: AnnotationValueWeights,
-				},
-			},
-		}
-
-		wm := findWeightsManifest(manifests)
-		require.NotNil(t, wm)
-		require.Equal(t, "sha256:weights456", wm.Digest)
-	})
-
-	t.Run("findWeightsManifest not found", func(t *testing.T) {
-		manifests := []registry.PlatformManifest{
-			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},
-		}
-
-		wm := findWeightsManifest(manifests)
-		require.Nil(t, wm)
-	})
-
 	t.Run("findImageManifest", func(t *testing.T) {
 		manifests := []registry.PlatformManifest{
 			{Digest: "sha256:image123", OS: "linux", Architecture: "amd64"},

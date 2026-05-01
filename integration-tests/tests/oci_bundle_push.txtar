@@ -1,49 +1,62 @@
-# Test pushing an OCI bundle with declarative weights via cog push.
-# Verifies: cog.yaml weights -> cog weights build -> cog push (BundlePusher path)
-# The push should create an OCI index with image + weight manifests.
+# Exercise the full `cog push` bundle path with v1 managed weights:
+# cog.yaml weights -> implicit cog weights build -> cog push -> OCI index.
+# The pushed artifact is an OCI image index carrying the model image
+# manifest plus one weight manifest (application/vnd.cog.weight.v1) per
+# cog.yaml entry.
 
 [short] skip 'requires local registry'
 
-# Start test registry
 registry-start
 
-# Create weight files (small, deterministic)
-mkdir weights
-exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "A" > weights/model-a.bin'
-exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "B" > weights/model-b.bin'
+# Two weight directories. Each holds a single small file; the packer
+# emits a bundle layer for all the small files under the default
+# threshold so we end up with one layer per weight entry.
+mkdir weights-alpha
+mkdir weights-beta
+exec sh -c 'printf AAAA > weights-alpha/data.bin'
+exec sh -c 'printf BBBB > weights-beta/data.bin'
 
-# Step 1: Build weights.lock
-cog weights build
-stderr 'Generated weights.lock'
-exists weights.lock
+# image: is required in cog.yaml when weights are declared, and
+# cog weights import reads it from there.
+exec sh -c 'printf "image: %s/test/bundle-model\n" "$TEST_REGISTRY" >> cog.yaml'
 
-# Step 2: Build and push with OCI index mode
-env COG_OCI_INDEX=1
+# Step 1: import generates weights.lock and pushes weight manifests.
+# cog push later requires the lockfile to already exist.
+cog weights import
+
+# Step 2: cog push assembles the OCI index (image + weight manifests)
+# and uploads it to the registry under the supplied tag.
 cog push $TEST_REGISTRY/test/bundle-model:v1
 
-# Verify push succeeded — should mention pushing
-stderr -count=1 'Pushing'
+# Image push header — weights are pushed during `cog weights import`,
+# not during `cog push`.
+stderr 'Pushing image '
 
-# Step 3: Verify the pushed artifact is an OCI index with image + weight manifests
+# Resolve the pushed ref and verify the top-level index shape.
 registry-inspect $TEST_REGISTRY/test/bundle-model:v1
-# Verify it's an OCI index
 stdout 'application/vnd.oci.image.index.v1\+json'
-# Verify weight annotations are present
-stdout 'vnd.cog.reference.type.*weights'
-stdout 'vnd.cog.weight.name.*alpha'
-stdout 'vnd.cog.weight.name.*beta'
+# v1 annotations on each weight descriptor (spec §2.5).
+stdout 'run.cog.weight.name.*alpha'
+stdout 'run.cog.weight.name.*beta'
+stdout 'run.cog.weight.set-digest'
 
 -- cog.yaml --
+# image: is appended by the test before `cog push` (the value depends
+# on $TEST_REGISTRY, which varies per run). cog push <ref> still
+# pushes to the supplied ref, but image: must be set when weights are
+# configured (validation requirement).
 build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
 weights:
   - name: alpha
-    source: weights/model-a.bin
-    target: /weights/model-a.bin
+    target: /src/weights-alpha
+    source:
+      uri: file://./weights-alpha
   - name: beta
-    source: weights/model-b.bin
-    target: /weights/model-b.bin
+    target: /src/weights-beta
+    source:
+      uri: file://./weights-beta
 
 -- predict.py --
 from cog import BasePredictor

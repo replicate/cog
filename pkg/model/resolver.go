@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types/image"
@@ -222,7 +221,6 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 	opts = opts.WithDefaults(src)
 
-	// Build image artifact via ImageBuilder
 	ib := NewImageBuilder(r.factory, r.docker, src, opts)
 	imageSpec := NewImageSpec("model", opts.ImageName)
 	imgResult, err := ib.Build(ctx, imageSpec)
@@ -239,26 +237,14 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 		return nil, err
 	}
 
-	m.OCIIndex = opts.OCIIndex
 	m.Artifacts = []Artifact{ia}
 
-	// Build weight artifacts if OCI index mode is enabled
-	lockPath := opts.WeightsLockPath
-	if lockPath == "" {
-		lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
-	}
-
-	if opts.OCIIndex && len(src.Config.Weights) > 0 {
-		wb := NewWeightBuilder(src, m.CogVersion, lockPath)
-		for _, ws := range src.Config.Weights {
-			spec := NewWeightSpec(ws.Name, ws.Source, ws.Target)
-			artifact, buildErr := wb.Build(ctx, spec)
-			if buildErr != nil {
-				return nil, fmt.Errorf("build weight %q: %w", ws.Name, buildErr)
-			}
-			m.Artifacts = append(m.Artifacts, artifact)
+	if len(src.Config.Weights) > 0 {
+		weights, weightErr := WeightsFromLockfile(src.ProjectDir)
+		if weightErr != nil {
+			return nil, weightErr
 		}
-
+		m.Weights = weights
 	}
 
 	return m, nil
@@ -270,7 +256,7 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 // monolithic push and supports layers of any size through chunked uploads.
 // Falls back to legacy Docker push if OCI push is not available.
 func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	if m.OCIIndex {
+	if m.IsBundle() {
 		pusher := NewBundlePusher(r.docker, r.registry)
 		return pusher.Push(ctx, m, opts)
 	}
@@ -397,55 +383,12 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
 
-	m.Index = &Index{
-		Digest:    manifest.Digest, // Content-addressable digest from registry
-		Reference: ref.String(),
-		MediaType: manifest.MediaType,
-		Manifests: make([]IndexManifest, len(manifest.Manifests)),
-	}
-
-	// Populate index manifests
-	for i, pm := range manifest.Manifests {
-		im := IndexManifest{
-			Digest:      pm.Digest,
-			MediaType:   pm.MediaType,
-			Size:        pm.Size,
-			Annotations: pm.Annotations,
-		}
-		if pm.OS != "" {
-			im.Platform = &Platform{
-				OS:           pm.OS,
-				Architecture: pm.Architecture,
-				Variant:      pm.Variant,
-			}
-		}
-		// Determine manifest type
-		if pm.OS == PlatformUnknown && pm.Annotations != nil && pm.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
-			im.Type = ManifestTypeWeights
-		} else {
-			im.Type = ManifestTypeImage
-		}
-		m.Index.Manifests[i] = im
-	}
-
 	return m, nil
 }
 
 // isOCIIndex checks if the manifest result is an OCI Image Index.
 func isOCIIndex(mr *registry.ManifestResult) bool {
 	return mr.IsIndex()
-}
-
-// findWeightsManifest finds the weights manifest in an index.
-// Returns nil if no weights manifest is found.
-func findWeightsManifest(manifests []registry.PlatformManifest) *registry.PlatformManifest {
-	for i := range manifests {
-		m := &manifests[i]
-		if m.Annotations != nil && m.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
-			return m
-		}
-	}
-	return nil
 }
 
 // findImageManifest finds the model image manifest in an index.

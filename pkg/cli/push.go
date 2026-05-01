@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/provider/setup"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 func newPushCommand() *cobra.Command {
@@ -65,6 +66,10 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
+		return err
+	}
+
 	imageName := src.Config.Image
 	if len(args) > 0 {
 		imageName = args[0]
@@ -108,9 +113,8 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	// Log weights info
-	weights := m.WeightArtifacts()
-	if len(weights) > 0 {
-		console.Infof("\n%d weight artifact(s)", len(weights))
+	if len(m.Weights) > 0 {
+		console.Infof("\n%d managed weight(s)", len(m.Weights))
 	}
 
 	// Push the model (image + optional weights)
@@ -125,7 +129,6 @@ func push(cmd *cobra.Command, args []string) error {
 
 	pushErr := resolver.Push(ctx, m, model.PushOptions{
 		ImageProgressFn: func(prog model.PushProgress) {
-			// Phase transitions: use console.Info for pretty CLI formatting
 			if prog.Phase != "" {
 				switch prog.Phase {
 				case model.PushPhaseExporting:
@@ -136,14 +139,7 @@ func push(cmd *cobra.Command, args []string) error {
 				return
 			}
 
-			// Byte progress: show per-layer progress bars
-			// Truncate digest for display: "sha256:abc123..." → "abc123..."
-			displayDigest := prog.LayerDigest
-			if len(displayDigest) > 7+12 { // "sha256:" + 12 hex chars
-				displayDigest = displayDigest[7:19] + "..."
-			}
-
-			pw.Write(displayDigest, "Pushing", prog.Complete, prog.Total)
+			pw.Write(model.ShortDigest(prog.LayerDigest), "Pushing", prog.Complete, prog.Total)
 		},
 		OnFallback: func() {
 			// Close progress writer to finalize OCI progress bars before Docker

@@ -30,6 +30,7 @@ import (
 	"github.com/replicate/cog/pkg/schema/python"
 	"github.com/replicate/cog/pkg/util/console"
 	cogversion "github.com/replicate/cog/pkg/util/version"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weightslegacy"
 	"github.com/replicate/cog/pkg/wheels"
 )
@@ -37,6 +38,7 @@ import (
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
 const weightsManifestPath = ".cog/cache/weights_manifest.json"
 const bundledSchemaFile = ".cog/openapi_schema.json"
+const bundledWeightsFile = ".cog/weights.json"
 
 var errGit = errors.New("git error")
 
@@ -65,8 +67,9 @@ func Build(
 	annotations map[string]string,
 	dockerCommand command.Command,
 	client registry.Client) (string, error) {
-	// remove bundled schema files that may be left from previous builds
+	// remove bundled files that may be left from previous builds
 	_ = os.Remove(bundledSchemaFile)
+	_ = os.Remove(bundledWeightsFile)
 
 	if err := checkCompatibleDockerIgnore(dir); err != nil {
 		return "", err
@@ -128,6 +131,16 @@ func Build(
 	// Write and validate pre-build schema (static or from file).
 	if len(schemaJSON) > 0 {
 		if err := writeAndValidateSchema(schemaJSON); err != nil {
+			return "", err
+		}
+	}
+
+	// --- Runtime weights manifest (/.cog/weights.json) ---
+	// When managed weights are configured and a lockfile exists, project the
+	// lockfile to the minimal runtime manifest (spec §3.3) and write it into
+	// the build context so it ends up at /.cog/weights.json in the image.
+	if len(cfg.Weights) > 0 {
+		if err := writeRuntimeWeightsManifest(dir); err != nil {
 			return "", err
 		}
 	}
@@ -294,18 +307,14 @@ func Build(
 	// so we don't need metadata labels, pip freeze, or git info.
 	// We still need the schema bundled, so do a minimal second build to add it.
 	if skipLabels {
-		if len(schemaJSON) > 0 {
-			// Use trailing "/" on the destination so Docker creates the .cog/
-			// directory even in ExcludeSource images where COPY . /src was
-			// skipped and .cog/ does not yet exist.
-			schemaDockerfile := fmt.Sprintf("FROM %s\nCOPY %s .cog/\n", tmpImageId, bundledSchemaFile)
+		if files := collectBundleFiles(schemaJSON); len(files) > 0 {
 			buildOpts := command.ImageBuildOptions{
-				DockerfileContents: schemaDockerfile,
+				DockerfileContents: bundleDockerfile(tmpImageId, files),
 				ImageName:          tmpImageId,
 				ProgressOutput:     progressOutput,
 			}
 			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
-				return "", fmt.Errorf("Failed to bundle schema into image: %w", err)
+				return "", fmt.Errorf("Failed to bundle .cog files into image: %w", err)
 			}
 		}
 		return tmpImageId, nil
@@ -389,12 +398,7 @@ func Build(
 	maps.Copy(labels, annotations)
 
 	// The final image ID comes from the label-adding step.
-	// When schema validation is skipped (cog exec), there is no schema file to bundle.
-	schemaFileToBundle := bundledSchemaFile
-	if skipSchemaValidation {
-		schemaFileToBundle = ""
-	}
-	imageID, err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, schemaFileToBundle, progressOutput)
+	imageID, err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, collectBundleFiles(schemaJSON), progressOutput)
 	if err != nil {
 		return "", fmt.Errorf("Failed to add labels to image: %w", err)
 	}
@@ -409,21 +413,15 @@ func Build(
 	return imageID, nil
 }
 
-// BuildAddLabelsAndSchemaToImage builds a cog model with labels and schema.
-// Returns the image ID (sha256:...) of the final image.
+// BuildAddLabelsAndSchemaToImage builds a cog model with labels and bundled
+// .cog/ files. Returns the image ID (sha256:...) of the final image.
 //
-// The new image is based on the provided image with the labels and schema file appended to it.
+// The new image is based on the provided image with the labels and any
+// bundled files (schema, weights manifest, etc.) appended to it.
 // tmpName is the source image to build from, image is the final image name/tag.
-func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, tmpName, image string, labels map[string]string, bundledSchemaFile string, progressOutput string) (string, error) {
-	var dockerfile string
-	if bundledSchemaFile != "" {
-		dockerfile = fmt.Sprintf("FROM %s\nCOPY %s .cog\n", tmpName, bundledSchemaFile)
-	} else {
-		dockerfile = fmt.Sprintf("FROM %s\n", tmpName)
-	}
-
+func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, tmpName, image string, labels map[string]string, bundleFiles []string, progressOutput string) (string, error) {
 	buildOpts := command.ImageBuildOptions{
-		DockerfileContents: dockerfile,
+		DockerfileContents: bundleDockerfile(tmpName, bundleFiles),
 		ImageName:          image,
 		Labels:             labels,
 		ProgressOutput:     progressOutput,
@@ -431,7 +429,7 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 
 	imageID, err := dockerClient.ImageBuild(ctx, buildOpts)
 	if err != nil {
-		return "", fmt.Errorf("Failed to add labels and schema to image: %w", err)
+		return "", fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return imageID, nil
 }
@@ -538,6 +536,56 @@ func writeAndValidateSchema(schemaJSON []byte) error {
 		return fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
 	}
 	return nil
+}
+
+// writeRuntimeWeightsManifest projects the lockfile to /.cog/weights.json (spec §3.3).
+func writeRuntimeWeightsManifest(dir string) error {
+	lockPath := filepath.Join(dir, lockfile.WeightsLockFilename)
+	lock, err := lockfile.LoadWeightsLock(lockPath)
+	if err != nil {
+		return fmt.Errorf("managed weights configured but no lockfile found: %w\nRun 'cog weights import' first", err)
+	}
+
+	manifest := lock.RuntimeManifest()
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize runtime weights manifest: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(bundledWeightsFile), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", bundledWeightsFile, err)
+	}
+	if err := os.WriteFile(bundledWeightsFile, data, 0o644); err != nil { //nolint:gosec // bundled into image, not a secret
+		return fmt.Errorf("failed to write runtime weights manifest %s: %w", bundledWeightsFile, err)
+	}
+	console.Debugf("Wrote runtime weights manifest to %s (%d weights)", bundledWeightsFile, len(manifest.Weights))
+	return nil
+}
+
+// collectBundleFiles returns the list of .cog/ files that should be COPYed
+// into the final image layer. It checks schemaJSON (non-nil = schema was
+// generated) and probes the filesystem for the weights manifest.
+func collectBundleFiles(schemaJSON []byte) []string {
+	var files []string
+	if len(schemaJSON) > 0 {
+		files = append(files, bundledSchemaFile)
+	}
+	if _, err := os.Stat(bundledWeightsFile); err == nil {
+		files = append(files, bundledWeightsFile)
+	}
+	return files
+}
+
+// bundleDockerfile returns a Dockerfile that COPYs .cog/ files into the
+// image. Trailing "/" on the destination ensures Docker creates the .cog/
+// directory even when COPY . /src was skipped (ExcludeSource images).
+func bundleDockerfile(baseImage string, files []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "FROM %s\n", baseImage)
+	for _, f := range files {
+		fmt.Fprintf(&b, "COPY %s .cog/\n", f)
+	}
+	return b.String()
 }
 
 func isGitWorkTree(ctx context.Context, dir string) bool {

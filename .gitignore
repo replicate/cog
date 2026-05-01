@@ -23,10 +23,6 @@ flag_file
 bin/*
 .beads/
 
-# Test directory for weights testing
-/test-weights/
-weights.lock
-
 # Auto-:d version files from setuptools-scm
 python/cog/_version.py
 coglet/python/coglet/_version.py

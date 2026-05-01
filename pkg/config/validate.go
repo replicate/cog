@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -58,6 +59,7 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	validateBuild(cfg, options, result)
 	validateEnvironment(cfg, result)
 	validateConcurrency(cfg, result)
+	validateWeights(cfg, result)
 
 	// Check deprecated fields
 	checkDeprecatedFields(cfg, result)
@@ -439,6 +441,158 @@ func validateConcurrency(cfg *configFile, result *ValidationResult) {
 			}
 		}
 	}
+}
+
+// weightNameRegex matches OCI-safe path components: lowercase alphanumeric,
+// separated by hyphens, dots, or underscores. Weight names become registry
+// path components (<image>/weights/<name>), so they must follow OCI rules.
+var weightNameRegex = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
+
+// validateWeights validates the weights stanza.
+func validateWeights(cfg *configFile, result *ValidationResult) {
+	if len(cfg.Weights) == 0 {
+		return
+	}
+
+	// Weights require an image field.
+	if cfg.Image == nil || *cfg.Image == "" {
+		result.AddError(&ValidationError{
+			Field:   "image",
+			Message: "image is required when weights are configured",
+		})
+	}
+
+	seenNames := make(map[string]bool)
+	seenTargets := make(map[string]bool)
+	var cleanedTargets []string
+
+	for i, w := range cfg.Weights {
+		idx := fmt.Sprintf("weights[%d]", i)
+
+		// Name is required, must be OCI-safe, and must be unique.
+		switch {
+		case w.Name == "":
+			result.AddError(&ValidationError{
+				Field:   idx + ".name",
+				Message: "name is required",
+			})
+		case !weightNameRegex.MatchString(w.Name):
+			result.AddError(&ValidationError{
+				Field:   idx + ".name",
+				Value:   w.Name,
+				Message: "must contain only lowercase alphanumeric characters, hyphens, dots, or underscores (e.g. \"my-model-weights\")",
+			})
+		case seenNames[w.Name]:
+			result.AddError(&ValidationError{
+				Field:   idx + ".name",
+				Value:   w.Name,
+				Message: "duplicate weight name",
+			})
+		default:
+			seenNames[w.Name] = true
+		}
+
+		// Validate include/exclude patterns if source is present.
+		if w.Source != nil {
+			validateWeightPatterns(idx+".source.include", w.Source.Include, result)
+			validateWeightPatterns(idx+".source.exclude", w.Source.Exclude, result)
+		}
+
+		// Target is required, must be absolute, must not be the
+		// container root, and must be unique.
+		if w.Target == "" {
+			result.AddError(&ValidationError{
+				Field:   idx + ".target",
+				Message: "target is required",
+			})
+		} else {
+			if !filepath.IsAbs(w.Target) {
+				result.AddError(&ValidationError{
+					Field:   idx + ".target",
+					Value:   w.Target,
+					Message: "target must be an absolute path",
+				})
+			}
+
+			cleaned := filepath.Clean(w.Target)
+
+			// Mounting weights at "/" would shadow the entire
+			// container root with the weight's bind mount.
+			if cleaned == "/" {
+				result.AddError(&ValidationError{
+					Field:   idx + ".target",
+					Value:   w.Target,
+					Message: "target must not be the container root \"/\"",
+				})
+			}
+
+			if seenTargets[cleaned] {
+				result.AddError(&ValidationError{
+					Field:   idx + ".target",
+					Value:   w.Target,
+					Message: "duplicate weight target",
+				})
+			} else {
+				seenTargets[cleaned] = true
+
+				// Check disjoint subtrees: no target may be an ancestor
+				// or descendant of another target.
+				for _, prev := range cleanedTargets {
+					if isSubpath(cleaned, prev) || isSubpath(prev, cleaned) {
+						result.AddError(&ValidationError{
+							Field:   idx + ".target",
+							Value:   w.Target,
+							Message: fmt.Sprintf("target overlaps with %q; weight targets must be disjoint", prev),
+						})
+						break
+					}
+				}
+				cleanedTargets = append(cleanedTargets, cleaned)
+			}
+		}
+	}
+}
+
+// validateWeightPatterns validates a list of include or exclude glob patterns.
+// It rejects empty-string patterns (including whitespace-only), !-prefixed
+// patterns (gitignore negation), and patterns containing backslashes.
+// Patterns are checked after trimming whitespace, but the input slice is
+// not mutated — the caller must normalize patterns separately.
+func validateWeightPatterns(field string, patterns []string, result *ValidationResult) {
+	for i, raw := range patterns {
+		p := strings.TrimSpace(raw)
+
+		if p == "" {
+			result.AddError(&ValidationError{
+				Field:   fmt.Sprintf("%s[%d]", field, i),
+				Message: "pattern must not be empty",
+			})
+			continue
+		}
+		if strings.HasPrefix(p, "!") {
+			result.AddError(&ValidationError{
+				Field:   fmt.Sprintf("%s[%d]", field, i),
+				Value:   p,
+				Message: "negation patterns (starting with '!') are not supported",
+			})
+		}
+		if strings.Contains(p, `\`) {
+			result.AddError(&ValidationError{
+				Field:   fmt.Sprintf("%s[%d]", field, i),
+				Value:   p,
+				Message: "patterns must use forward slashes, not backslashes",
+			})
+		}
+	}
+}
+
+// isSubpath reports whether child is a strict subdirectory of parent.
+// Both paths must be cleaned absolute paths.
+func isSubpath(child, parent string) bool {
+	if child == parent {
+		return false
+	}
+	return strings.HasPrefix(child, parent+"/")
 }
 
 // checkDeprecatedFields checks for deprecated fields and adds warnings.

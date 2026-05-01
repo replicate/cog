@@ -4,12 +4,10 @@ package harness
 import (
 	"context"
 	cryptorand "crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	mathrand "math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -252,7 +250,6 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 		NewCommand("registry-inspect", h.cmdRegistryInspect),
 		NewCommand("registry-seed", h.cmdRegistrySeed),
 		NewCommand("docker-push", h.cmdDockerPush),
-		NewCommand("mock-weights", h.cmdMockWeights),
 
 		// Mock upload server commands
 		NewCommand("upload-server-start", h.cmdUploadServerStart),
@@ -1061,183 +1058,6 @@ func (h *Harness) cmdDockerPush(ts *testscript.TestScript, neg bool, args []stri
 	}
 
 	ts.Logf("docker-push: pushed %s to %s", localImage, remoteRef)
-}
-
-// =============================================================================
-// Mock weights command
-// =============================================================================
-
-// mockWeightsLock mirrors the structure from pkg/model/weights_lock.go
-// SYNC: If pkg/model/WeightsLock changes, update this copy.
-// We duplicate it here to avoid importing pkg/model which transitively imports pkg/wheels.
-type mockWeightsLock struct {
-	Version string           `json:"version"`
-	Created time.Time        `json:"created"`
-	Files   []mockWeightFile `json:"files"`
-}
-
-// mockWeightFile mirrors WeightFile from pkg/model/weights.go
-// SYNC: If pkg/model/WeightFile changes, update this copy.
-type mockWeightFile struct {
-	Name             string `json:"name"`
-	Dest             string `json:"dest"`
-	DigestOriginal   string `json:"digestOriginal"`
-	Digest           string `json:"digest"`
-	Size             int64  `json:"size"`
-	SizeUncompressed int64  `json:"sizeUncompressed"`
-	MediaType        string `json:"mediaType"`
-	ContentType      string `json:"contentType,omitempty"`
-}
-
-// cmdMockWeights generates mock weight files and a weights.lock file.
-// Usage: mock-weights [--count N] [--min-size S] [--max-size S]
-// Defaults:
-//   - count: 2
-//   - min-size: 1kb
-//   - max-size: 10kb
-//
-// Creates files in $WORK/weights/ and writes $WORK/weights.lock
-func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []string) {
-	if neg {
-		ts.Fatalf("mock-weights: does not support negation")
-	}
-
-	// Parse arguments
-	count := 2
-	minSize := int64(1024)      // 1KB
-	maxSize := int64(10 * 1024) // 10KB
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--count", "-n":
-			if i+1 < len(args) {
-				if n, err := strconv.Atoi(args[i+1]); err == nil {
-					count = n
-				}
-				i++
-			}
-		case "--min-size":
-			if i+1 < len(args) {
-				if size, err := parseSize(args[i+1]); err == nil {
-					minSize = size
-				}
-				i++
-			}
-		case "--max-size":
-			if i+1 < len(args) {
-				if size, err := parseSize(args[i+1]); err == nil {
-					maxSize = size
-				}
-				i++
-			}
-		}
-	}
-
-	workDir := ts.Getenv("WORK")
-	weightsDir := filepath.Join(workDir, "weights")
-	lockPath := filepath.Join(workDir, "weights.lock")
-
-	// Create weights directory
-	if err := os.MkdirAll(weightsDir, 0o755); err != nil {
-		ts.Fatalf("mock-weights: failed to create weights dir: %v", err)
-	}
-
-	var files []mockWeightFile
-
-	for i := 1; i <= count; i++ {
-		// Random size between min and max
-		size := minSize
-		if maxSize > minSize {
-			size = minSize + mathrand.Int64N(maxSize-minSize+1) //nolint:gosec // test data, not security-sensitive
-		}
-
-		// Generate identifier (e.g., "weights-001")
-		weightName := fmt.Sprintf("weights-%03d", i)
-		filename := weightName + ".bin"
-		filePath := filepath.Join(weightsDir, filename)
-
-		// Generate random data
-		data := make([]byte, size)
-		if _, err := cryptorand.Read(data); err != nil {
-			ts.Fatalf("mock-weights: failed to generate random data: %v", err)
-		}
-
-		// Write file
-		if err := os.WriteFile(filePath, data, 0o644); err != nil {
-			ts.Fatalf("mock-weights: failed to write %s: %v", filename, err)
-		}
-
-		// Compute digest (uncompressed, since we're not actually compressing for tests)
-		hash := sha256.Sum256(data)
-		digest := "sha256:" + hex.EncodeToString(hash[:])
-
-		files = append(files, mockWeightFile{
-			Name:             weightName,
-			Dest:             "/cache/" + filename,
-			DigestOriginal:   digest,
-			Digest:           digest, // Same as original since we're not compressing
-			Size:             size,
-			SizeUncompressed: size,
-			// MediaType matches production WeightBuilder output (uncompressed).
-			MediaType:   "application/vnd.cog.weight.layer.v1",
-			ContentType: "application/octet-stream",
-		})
-	}
-
-	// Create weights.lock
-	lock := mockWeightsLock{
-		Version: "1.0",
-		Created: time.Now().UTC(),
-		Files:   files,
-	}
-
-	lockData, err := json.MarshalIndent(lock, "", "  ")
-	if err != nil {
-		ts.Fatalf("mock-weights: failed to marshal weights.lock: %v", err)
-	}
-
-	if err := os.WriteFile(lockPath, lockData, 0o644); err != nil {
-		ts.Fatalf("mock-weights: failed to write weights.lock: %v", err)
-	}
-
-	ts.Logf("mock-weights: created %d files in %s", count, weightsDir)
-}
-
-// parseSize parses size strings like "1kb", "10KB", "1mb" into bytes.
-func parseSize(s string) (int64, error) {
-	s = strings.TrimSpace(strings.ToLower(s))
-	if s == "" {
-		return 0, fmt.Errorf("empty size string")
-	}
-
-	var multiplier int64 = 1
-	var numStr string
-
-	switch {
-	case strings.HasSuffix(s, "gb"):
-		multiplier = 1024 * 1024 * 1024
-		numStr = strings.TrimSuffix(s, "gb")
-	case strings.HasSuffix(s, "mb"):
-		multiplier = 1024 * 1024
-		numStr = strings.TrimSuffix(s, "mb")
-	case strings.HasSuffix(s, "kb"):
-		multiplier = 1024
-		numStr = strings.TrimSuffix(s, "kb")
-	case strings.HasSuffix(s, "b"):
-		numStr = strings.TrimSuffix(s, "b")
-	default:
-		numStr = s
-	}
-
-	num, err := strconv.ParseFloat(strings.TrimSpace(numStr), 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid number: %s", numStr)
-	}
-	if num < 0 {
-		return 0, fmt.Errorf("size cannot be negative")
-	}
-
-	return int64(num * float64(multiplier)), nil
 }
 
 // =============================================================================

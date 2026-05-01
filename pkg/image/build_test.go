@@ -2,15 +2,18 @@ package image
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 var hasGit = (func() bool {
@@ -257,4 +260,99 @@ func TestUseStaticSchemaGen(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestWriteRuntimeWeightsManifest(t *testing.T) {
+	dir := t.TempDir()
+
+	lock := &lockfile.WeightsLock{
+		Version: lockfile.Version,
+		Weights: []lockfile.WeightLockEntry{
+			{
+				Name:      "model-a",
+				Target:    "/src/weights/a",
+				SetDigest: "sha256:aaa111",
+				Digest:    "sha256:manifest-a",
+			},
+			{
+				Name:      "model-b",
+				Target:    "/src/weights/b",
+				SetDigest: "sha256:bbb222",
+				Digest:    "sha256:manifest-b",
+			},
+		},
+	}
+	require.NoError(t, lock.Save(filepath.Join(dir, lockfile.WeightsLockFilename)))
+
+	// writeRuntimeWeightsManifest writes to the CWD-relative bundledWeightsFile.
+	t.Chdir(t.TempDir())
+
+	require.NoError(t, writeRuntimeWeightsManifest(dir))
+
+	data, err := os.ReadFile(bundledWeightsFile)
+	require.NoError(t, err)
+
+	var manifest lockfile.RuntimeWeightsManifest
+	require.NoError(t, json.Unmarshal(data, &manifest))
+	require.Len(t, manifest.Weights, 2)
+
+	assert.Equal(t, "model-a", manifest.Weights[0].Name)
+	assert.Equal(t, "/src/weights/a", manifest.Weights[0].Target)
+	assert.Equal(t, "sha256:aaa111", manifest.Weights[0].SetDigest)
+
+	assert.Equal(t, "model-b", manifest.Weights[1].Name)
+	assert.Equal(t, "/src/weights/b", manifest.Weights[1].Target)
+	assert.Equal(t, "sha256:bbb222", manifest.Weights[1].SetDigest)
+
+	// Verify the JSON contains only the spec §3.3 fields (no lockfile extras).
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &raw))
+
+	var entries []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(raw["weights"], &entries))
+	for i, entry := range entries {
+		keys := make([]string, 0, len(entry))
+		for k := range entry {
+			keys = append(keys, k)
+		}
+		assert.ElementsMatch(t, []string{"name", "target", "setDigest"}, keys,
+			"entry %d must have exactly the spec §3.3 fields", i)
+	}
+}
+
+func TestWriteRuntimeWeightsManifest_MissingLockfile(t *testing.T) {
+	err := writeRuntimeWeightsManifest(t.TempDir())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "managed weights configured but no lockfile found")
+}
+
+func TestCollectBundleFiles_SchemaOnly(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	files := collectBundleFiles([]byte(`{"openapi":"3.0.0"}`))
+	assert.Equal(t, []string{bundledSchemaFile}, files)
+}
+
+func TestCollectBundleFiles_Nothing(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	files := collectBundleFiles(nil)
+	assert.Empty(t, files)
+}
+
+func TestCollectBundleFiles_WithWeightsFile(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	require.NoError(t, os.MkdirAll(".cog", 0o755))
+	require.NoError(t, os.WriteFile(bundledWeightsFile, []byte(`{"weights":[]}`), 0o644))
+
+	files := collectBundleFiles([]byte(`{"openapi":"3.0.0"}`))
+	assert.Equal(t, []string{bundledSchemaFile, bundledWeightsFile}, files)
+}
+
+func TestBundleDockerfile(t *testing.T) {
+	df := bundleDockerfile("myimage:latest", []string{bundledSchemaFile, bundledWeightsFile})
+	assert.Contains(t, df, "FROM myimage:latest")
+	assert.Contains(t, df, "COPY .cog/openapi_schema.json .cog/")
+	assert.Contains(t, df, "COPY .cog/weights.json .cog/")
 }

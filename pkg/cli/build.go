@@ -13,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 var (
@@ -84,6 +85,10 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 
 	src, err := model.NewSource(configFilename)
 	if err != nil {
+		return err
+	}
+
+	if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
 		return err
 	}
 
@@ -219,7 +224,6 @@ func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map
 		Strip:                buildStrip,
 		Precompile:           buildPrecompile,
 		Annotations:          annotations,
-		OCIIndex:             model.OCIIndexEnabled(),
 		SkipSchemaValidation: buildSkipSchemaValidation,
 	}
 }

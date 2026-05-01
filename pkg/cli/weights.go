@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -9,11 +10,13 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
-	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
 
 func newWeightsCommand() *cobra.Command {
@@ -24,27 +27,52 @@ func newWeightsCommand() *cobra.Command {
 		Hidden: true,
 	}
 
-	cmd.AddCommand(newWeightsBuildCommand())
-	cmd.AddCommand(newWeightsInspectCommand())
-	cmd.AddCommand(newWeightsPushCommand())
+	cmd.AddCommand(newWeightsImportCommand())
+	cmd.AddCommand(newWeightsPullCommand())
+	cmd.AddCommand(newWeightsStatusCommand())
 	return cmd
 }
 
-func newWeightsBuildCommand() *cobra.Command {
+func newWeightsImportCommand() *cobra.Command {
+	var (
+		dryRun  bool
+		verbose bool
+	)
+
 	cmd := &cobra.Command{
-		Use:   "build",
-		Short: "Generate weights.lock from weight sources in cog.yaml",
-		Long: `Reads the weights section from cog.yaml, processes each weight source,
-and generates a weights.lock file containing metadata (digests, sizes) for each file.`,
-		Args: cobra.NoArgs,
-		RunE: weightsBuildCommand,
+		Use:   "import [name...]",
+		Short: "Build and push weights to a registry",
+		Long: `Packages weight sources from cog.yaml into OCI layers, updates weights.lock,
+and pushes the layers to a registry.
+
+Import also warms the local content-addressed weight store as a side
+effect, so 'cog predict' can mount the weights immediately without a
+separate 'cog weights pull'. Pull is still useful when someone clones
+a repo with a checked-in weights.lock but a cold local cache.
+
+If weight names are provided, only those weights are imported. Otherwise all weights
+defined in cog.yaml are imported.
+
+The registry is determined from the image name, which can be:
+- Set in cog.yaml as the 'image' field
+- Overridden with the --image flag
+
+Use --dry-run to preview what would change without importing anything.
+Add --verbose to see per-file details including which files pass the filter.`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return weightsImportCommand(cmd, args, dryRun, verbose)
+		},
 	}
 
 	addConfigFlag(cmd)
+	cmd.Flags().String("image", "", "Registry repository (overrides cog.yaml image field)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be imported without making changes")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show per-file details")
 	return cmd
 }
 
-func weightsBuildCommand(cmd *cobra.Command, args []string) error {
+func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose bool) error {
 	ctx := cmd.Context()
 
 	src, err := model.NewSource(configFilename)
@@ -52,42 +80,279 @@ func weightsBuildCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
 
-	if len(src.Config.Weights) == 0 {
-		return fmt.Errorf("no weights defined in %s", configFilename)
+	cfg := src.Config
+
+	imageName, _ := cmd.Flags().GetString("image")
+	if imageName == "" {
+		imageName = cfg.Image
+	}
+	if imageName == "" {
+		return fmt.Errorf("To import weights, you must either set the 'image' option in cog.yaml or pass --image. For example, 'cog weights import --image registry.example.com/your-username/model-name'")
 	}
 
-	// Extract weight specs from the source
-	var weightSpecs []*model.WeightSpec
-	for _, spec := range src.ArtifactSpecs() {
-		if ws, ok := spec.(*model.WeightSpec); ok {
-			weightSpecs = append(weightSpecs, ws)
-		}
+	repo, err := parseRepoOnly(imageName)
+	if err != nil {
+		return err
 	}
 
-	console.Infof("Processing %d weight source(s)...", len(weightSpecs))
+	weightSpecs, err := collectWeightSpecs(src, args)
+	if err != nil {
+		return err
+	}
 
-	lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
-	builder := model.NewWeightBuilder(src, global.Version, lockPath)
+	// Always plan first to show the user what would happen.
+	lockPath := filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
+	builder := model.NewWeightBuilder(src, nil, lockPath)
 
-	// Build each weight artifact (hashes file, updates lockfile)
-	var totalSize int64
-	for _, ws := range weightSpecs {
-		artifact, buildErr := builder.Build(ctx, ws)
+	plans, err := planWeightImports(ctx, builder, weightSpecs)
+	if err != nil {
+		return err
+	}
+
+	printImportPlan(plans, verbose)
+
+	if dryRun {
+		return nil
+	}
+
+	// Proceed with the real import. We create a new builder with a real
+	// store but reuse each plan's resolvedInventory (which captures the
+	// Source and filtered file list, independent of the builder).
+	fileStore, err := store.OpenDefault()
+	if err != nil {
+		return fmt.Errorf("open weights store: %w", err)
+	}
+
+	builder = model.NewWeightBuilder(src, fileStore, lockPath)
+
+	console.Infof("Building %d weight(s)...", len(weightSpecs))
+
+	var artifacts []*model.WeightArtifact
+	if err := lockfile.WithLock(ctx, lockPath, func() error {
+		var buildErr error
+		artifacts, buildErr = buildWeightArtifactsFromPlans(ctx, builder, weightSpecs, plans)
 		if buildErr != nil {
-			return fmt.Errorf("failed to build weight %q: %w", ws.Name(), buildErr)
+			return buildErr
 		}
+		// Prune using the full config so orphans clear even when only
+		// some weights are being imported.
+		if err := lockfile.PruneLockfile(lockPath, config.WeightNames(cfg.Weights)); err != nil {
+			return fmt.Errorf("prune lockfile: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
 
+	for _, wa := range artifacts {
+		console.Infof("  %s -> %s (%d layer(s), %s)",
+			wa.Name(), wa.Entry.Target, len(wa.Layers), formatSize(wa.TotalSize()))
+	}
+
+	console.Infof("\nPushing %d weight(s) to %s...", len(artifacts), repo)
+
+	return pushWeightArtifacts(ctx, repo, artifacts, "Imported")
+}
+
+// planWeightImports runs PlanImport for each spec without side effects.
+func planWeightImports(ctx context.Context, builder *model.WeightBuilder, specs []*model.WeightSpec) ([]*model.WeightImportPlan, error) {
+	plans := make([]*model.WeightImportPlan, 0, len(specs))
+	for _, ws := range specs {
+		plan, err := builder.PlanImport(ctx, ws)
+		if err != nil {
+			return nil, fmt.Errorf("plan weight %q: %w", ws.Name(), err)
+		}
+		plans = append(plans, plan)
+	}
+	return plans, nil
+}
+
+// buildWeightArtifactsFromPlans builds each weight spec, reusing the
+// pre-computed inventories from planning to avoid re-walking sources.
+func buildWeightArtifactsFromPlans(ctx context.Context, builder *model.WeightBuilder, specs []*model.WeightSpec, plans []*model.WeightImportPlan) ([]*model.WeightArtifact, error) {
+	artifacts := make([]*model.WeightArtifact, 0, len(specs))
+	for i, ws := range specs {
+		artifact, err := builder.BuildFromPlan(ctx, ws, plans[i])
+		if err != nil {
+			return nil, fmt.Errorf("failed to build weight %q: %w", ws.Name(), err)
+		}
 		wa, ok := artifact.(*model.WeightArtifact)
 		if !ok {
-			return fmt.Errorf("unexpected artifact type %T for weight %q", artifact, ws.Name())
+			return nil, fmt.Errorf("unexpected artifact type %T for weight %q", artifact, ws.Name())
 		}
-		size := wa.Descriptor().Size
-		totalSize += size
-		console.Infof("  %s -> %s (%s)", wa.Name(), wa.Target, formatSize(size))
+		artifacts = append(artifacts, wa)
+	}
+	return artifacts, nil
+}
+
+// printImportPlan prints a human-readable summary of what would happen.
+func printImportPlan(plans []*model.WeightImportPlan, verbose bool) {
+	for _, p := range plans {
+		statusIcon := planStatusIcon(p.Status)
+		console.Infof("%s %s  %s → %s", statusIcon, p.Spec.Name(), p.Spec.URI, p.Spec.Target)
+		console.Infof("  status: %s", p.Status)
+
+		if len(p.Changes) > 0 {
+			for _, c := range p.Changes {
+				console.Infof("  changed: %s", c)
+			}
+		}
+
+		filtered := p.FilteredFiles()
+		console.Infof("  files: %d  size: %s", len(filtered), formatSize(p.TotalSize()))
+
+		if verbose {
+			excluded := p.ExcludedFiles()
+			if len(excluded) > 0 {
+				console.Infof("  excluded (%d files):", len(excluded))
+				for _, f := range excluded {
+					console.Infof("    - %s (%s)", f.Path, formatSize(f.Size))
+				}
+			}
+			if len(filtered) > 0 {
+				console.Infof("  included (%d files):", len(filtered))
+				for _, f := range filtered {
+					console.Infof("    + %s (%s)", f.Path, formatSize(f.Size))
+				}
+			}
+		}
+
+		console.Infof("") // blank line between weights
+	}
+}
+
+func planStatusIcon(status model.WeightImportPlanStatus) string {
+	switch status {
+	case model.PlanStatusNew:
+		return "+"
+	case model.PlanStatusUnchanged:
+		return "="
+	case model.PlanStatusConfigChanged, model.PlanStatusUpstreamChanged:
+		return "~"
+	default:
+		return "?"
+	}
+}
+
+// collectWeightSpecs extracts WeightSpecs from the source, optionally
+// filtered to only the names listed in filterNames. An error is returned
+// if no weights match or if a requested name doesn't exist.
+func collectWeightSpecs(src *model.Source, filterNames []string) ([]*model.WeightSpec, error) {
+	if len(src.Config.Weights) == 0 {
+		return nil, fmt.Errorf("no weights defined in %s", configFilename)
 	}
 
-	console.Infof("\nGenerated %s with %d file(s) (%s total)",
-		model.WeightsLockFilename, len(weightSpecs), formatSize(totalSize))
+	artifactSpecs, err := src.ArtifactSpecs()
+	if err != nil {
+		return nil, err
+	}
+	var allSpecs []*model.WeightSpec
+	for _, spec := range artifactSpecs {
+		if ws, ok := spec.(*model.WeightSpec); ok {
+			allSpecs = append(allSpecs, ws)
+		}
+	}
+
+	if len(filterNames) == 0 {
+		return allSpecs, nil
+	}
+
+	specMap := make(map[string]*model.WeightSpec, len(allSpecs))
+	for _, ws := range allSpecs {
+		specMap[ws.Name()] = ws
+	}
+
+	seen := make(map[string]bool, len(filterNames))
+	filtered := make([]*model.WeightSpec, 0, len(filterNames))
+	for _, n := range filterNames {
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+
+		ws, ok := specMap[n]
+		if !ok {
+			return nil, fmt.Errorf("weight %q not found in %s", n, configFilename)
+		}
+		filtered = append(filtered, ws)
+	}
+	return filtered, nil
+}
+
+// parseRepoOnly parses an image string as a bare repository, rejecting
+// tags and digests (weight tags are auto-generated).
+func parseRepoOnly(imageName string) (string, error) {
+	parsedRepo, err := name.NewRepository(imageName, name.Insecure)
+	if err != nil {
+		if ref, refErr := name.ParseReference(imageName, name.Insecure); refErr == nil {
+			return "", fmt.Errorf("image reference %q includes a tag or digest — provide only the repository (e.g., %q)", imageName, ref.Context().Name())
+		}
+		return "", fmt.Errorf("invalid repository %q: %w", imageName, err)
+	}
+	return parsedRepo.Name(), nil
+}
+
+// pushWeightArtifacts pushes weight artifacts to the registry with
+// concurrent layer uploads and progress display. The verb parameter
+// controls the summary message (e.g. "Imported" vs "Pushed").
+func pushWeightArtifacts(ctx context.Context, repo string, artifacts []*model.WeightArtifact, verb string) error {
+	regClient := registry.NewRegistryClient()
+	pusher := model.NewWeightPusher(regClient)
+
+	pw := docker.NewProgressWriter()
+	defer pw.Close()
+
+	refs := make([]string, len(artifacts))
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(model.GetPushConcurrency())
+
+	for i, wa := range artifacts {
+		artName := wa.Name()
+
+		g.Go(func() error {
+			result, pushErr := pusher.Push(ctx, repo, wa, model.WeightPushOptions{
+				ProgressFn: func(prog model.WeightLayerProgress) {
+					row := model.ShortDigest(prog.LayerDigest)
+					pw.Write(artName+"/"+row, "Pushing", prog.Complete, prog.Total)
+				},
+				RetryFn: func(event model.WeightRetryEvent) bool {
+					status := fmt.Sprintf("Retrying (%d/%d) in %s",
+						event.Attempt, event.MaxAttempts,
+						event.NextRetryIn.Round(time.Second))
+					pw.WriteStatus(event.Name, status)
+					if !console.IsTerminal() {
+						console.Warnf("  %s: retrying (%d/%d) in %s: %v",
+							event.Name, event.Attempt, event.MaxAttempts,
+							event.NextRetryIn.Round(time.Second), event.Err)
+					}
+					return true
+				},
+			})
+
+			if pushErr != nil {
+				pw.WriteStatus(artName, "FAILED")
+				return fmt.Errorf("push weight %q: %w", artName, pushErr)
+			}
+
+			pw.WriteStatus(artName, "Pushed")
+			refs[i] = result.Ref
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	var totalSize int64
+	for i, wa := range artifacts {
+		console.Infof("  %s: %s", wa.Name(), refs[i])
+		totalSize += wa.TotalSize()
+	}
+
+	console.Infof("\n%s %d weight artifact(s) to %s", verb, len(artifacts), repo)
+	console.Infof("Total: %s", formatSize(totalSize))
 
 	return nil
 }
@@ -109,158 +374,4 @@ func formatSize(bytes int64) string {
 	default:
 		return fmt.Sprintf("%dB", bytes)
 	}
-}
-
-func newWeightsPushCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "push [IMAGE]",
-		Short: "Push weights to a registry",
-		Long: `Reads weights.lock and pushes weight files as an OCI artifact to a registry.
-
-The registry is determined from the image name, which can be:
-- Specified as an argument: cog weights push registry.example.com/user/model
-- Set in cog.yaml as the 'image' field`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: weightsPushCommand,
-	}
-
-	addConfigFlag(cmd)
-	return cmd
-}
-
-func weightsPushCommand(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-
-	src, err := model.NewSource(configFilename)
-	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
-	}
-
-	cfg := src.Config
-
-	// Determine image name
-	imageName := cfg.Image
-	if len(args) > 0 {
-		imageName = args[0]
-	}
-	if imageName == "" {
-		return fmt.Errorf("To push weights, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog weights push registry.example.com/your-username/model-name'")
-	}
-
-	// Parse as repository only — reject tags/digests since weight tags are auto-generated.
-	parsedRepo, err := name.NewRepository(imageName, name.Insecure)
-	if err != nil {
-		// NewRepository fails for inputs with :tag or @digest — check if it's a valid ref
-		if ref, refErr := name.ParseReference(imageName, name.Insecure); refErr == nil {
-			return fmt.Errorf("image reference %q includes a tag or digest — provide only the repository (e.g., %q)", imageName, ref.Context().Name())
-		}
-		return fmt.Errorf("invalid repository %q: %w", imageName, err)
-	}
-	repo := parsedRepo.Name()
-
-	if len(cfg.Weights) == 0 {
-		return fmt.Errorf("no weights defined in %s", configFilename)
-	}
-
-	// Build weight artifacts (reads lockfile as cache, hashes files)
-	lockPath := filepath.Join(src.ProjectDir, model.WeightsLockFilename)
-	builder := model.NewWeightBuilder(src, global.Version, lockPath)
-
-	var artifacts []*model.WeightArtifact
-	for _, spec := range src.ArtifactSpecs() {
-		ws, ok := spec.(*model.WeightSpec)
-		if !ok {
-			continue
-		}
-		artifact, buildErr := builder.Build(ctx, ws)
-		if buildErr != nil {
-			return fmt.Errorf("failed to build weight %q: %w", ws.Name(), buildErr)
-		}
-		wa, ok := artifact.(*model.WeightArtifact)
-		if !ok {
-			return fmt.Errorf("unexpected artifact type %T for weight %q", artifact, ws.Name())
-		}
-		artifacts = append(artifacts, wa)
-	}
-
-	if len(artifacts) == 0 {
-		return fmt.Errorf("no weight artifacts to push")
-	}
-
-	console.Infof("Pushing %d weight file(s) to %s...", len(artifacts), repo)
-
-	regClient := registry.NewRegistryClient()
-	pusher := model.NewWeightPusher(regClient)
-
-	// Set up progress display using Docker's jsonmessage rendering.
-	pw := docker.NewProgressWriter()
-	defer pw.Close()
-
-	// Push each weight artifact concurrently using errgroup for
-	// bounded concurrency and first-error cancellation.
-	type pushResult struct {
-		ref  string
-		size int64
-	}
-
-	ordered := make([]pushResult, len(artifacts))
-
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(model.GetPushConcurrency())
-
-	for i, wa := range artifacts {
-		artName := wa.Name()
-		artSize := wa.Descriptor().Size
-
-		g.Go(func() error {
-			result, pushErr := pusher.Push(ctx, repo, wa, model.WeightPushOptions{
-				ProgressFn: func(prog model.PushProgress) {
-					pw.Write(artName, "Pushing", prog.Complete, prog.Total)
-				},
-				RetryFn: func(event model.WeightRetryEvent) bool {
-					status := fmt.Sprintf("Retrying (%d/%d) in %s",
-						event.Attempt, event.MaxAttempts,
-						event.NextRetryIn.Round(time.Second))
-					pw.WriteStatus(event.Name, status)
-					// In non-TTY mode, also log the error detail since the
-					// progress writer output won't be visible.
-					if !console.IsTerminal() {
-						console.Warnf("  %s: retrying (%d/%d) in %s: %v",
-							event.Name, event.Attempt, event.MaxAttempts,
-							event.NextRetryIn.Round(time.Second), event.Err)
-					}
-					return true
-				},
-			})
-
-			if pushErr != nil {
-				pw.WriteStatus(artName, "FAILED")
-				return fmt.Errorf("push weight %q: %w", artName, pushErr)
-			}
-
-			pw.WriteStatus(artName, "Pushed")
-			ordered[i] = pushResult{ref: result.Ref, size: artSize}
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		pw.Close()
-		return err
-	}
-
-	// Close progress display
-	pw.Close()
-
-	// Print final summary
-	var totalSize int64
-	for i, wa := range artifacts {
-		console.Infof("  %s: %s", wa.Name(), ordered[i].ref)
-		totalSize += ordered[i].size
-	}
-
-	console.Infof("\nPushed %d weight artifact(s) to %s", len(artifacts), repo)
-	console.Infof("Total: %s", formatSize(totalSize))
-
-	return nil
 }

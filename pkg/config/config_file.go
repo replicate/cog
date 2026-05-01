@@ -50,11 +50,13 @@ type mountFile struct {
 	Target string `json:"target,omitempty" yaml:"target,omitempty"`
 }
 
-// weightFile represents a weight source configuration.
+// weightFile represents a weight entry in cog.yaml.
+// Uses WeightSourceConfig directly since it has no pointer fields that
+// would need "not set" vs "zero value" distinction.
 type weightFile struct {
-	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
-	Source string `json:"source" yaml:"source"`
-	Target string `json:"target,omitempty" yaml:"target,omitempty"`
+	Name   string              `json:"name" yaml:"name"`
+	Target string              `json:"target" yaml:"target"`
+	Source *WeightSourceConfig `json:"source,omitempty" yaml:"source,omitempty"`
 }
 
 // concurrencyFile represents concurrency configuration.

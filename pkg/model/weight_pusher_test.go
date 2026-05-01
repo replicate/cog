@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,8 +15,56 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/weights/lockfile"
+	"github.com/replicate/cog/pkg/weights/store"
 )
+
+// packTestLayers packs a directory containing a single file into tar
+// layers and returns the layer results. Used as a fixture builder so tests
+// don't each reimplement packing.
+func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir string, layers []packedLayer, st store.Store) {
+	t.Helper()
+	sourceDir = t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, filename), content, 0o644))
+
+	st, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
+
+	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
+	require.NoError(t, err)
+	inv, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, ingressFromInventory(t.Context(), src, st, inv))
+
+	pkr := newPacker(nil)
+	pl := pkr.planLayers(inv)
+	require.NotEmpty(t, pl.Layers)
+	layers, err = pkr.computeLayerDigests(t.Context(), st, pl)
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	return sourceDir, layers, st
+}
+
+// newTestWeightArtifact builds a WeightArtifact with packed layers and a
+// fresh manifest descriptor, suitable for push tests.
+func newTestWeightArtifact(t *testing.T, name, target string) *WeightArtifact {
+	t.Helper()
+	_, layers, st := packTestLayers(t, "config.json", []byte(`{"hidden_size": 768}`))
+
+	// Build a lock entry from the pack result.
+	files := []packedFile{{
+		Path:        "config.json",
+		Size:        int64(len(`{"hidden_size": 768}`)),
+		Digest:      layers[0].Digest.String(),
+		LayerDigest: layers[0].Digest.String(),
+	}}
+	entry := newWeightLockEntry(name, target, lockfile.WeightLockSource{}, files, layers)
+	artifact, err := buildWeightArtifact(&entry, layers, st)
+	require.NoError(t, err)
+	return artifact
+}
 
 func TestWeightPusher_Push_ReturnsErrorForNilArtifact(t *testing.T) {
 	reg := &mockRegistry{}
@@ -27,51 +76,40 @@ func TestWeightPusher_Push_ReturnsErrorForNilArtifact(t *testing.T) {
 	require.Contains(t, err.Error(), "artifact is nil")
 }
 
-func TestWeightPusher_Push_ReturnsErrorForMissingFile(t *testing.T) {
+func TestWeightPusher_Push_ReturnsErrorForEmptyRepo(t *testing.T) {
+	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
+
 	reg := &mockRegistry{}
 	pusher := NewWeightPusher(reg)
 
-	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, "/nonexistent/path/weights.bin", "/weights/model.bin", WeightConfig{
-		SchemaVersion: "1.0",
-		CogVersion:    "0.15.0",
-		Name:          "model-v1",
-		Target:        "/weights/model.bin",
-		Created:       time.Now().UTC(),
-	})
-
-	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact)
-
+	_, err := pusher.Push(context.Background(), "", artifact)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "weight file")
+	require.Contains(t, err.Error(), "repo is required")
 }
 
-func TestWeightPusher_Push_PushesCorrectOCIArtifact(t *testing.T) {
-	// Create a temp weight file
-	dir := t.TempDir()
-	weightPath := filepath.Join(dir, "model.safetensors")
-	weightContent := []byte("fake weight data for testing tarball layer creation")
-	require.NoError(t, os.WriteFile(weightPath, weightContent, 0o644))
+func TestWeightPusher_Push_ReturnsErrorForEmptyLayers(t *testing.T) {
+	// Empty layer set must be caught before we try to build a manifest.
+	artifact := newWeightArtifact(
+		lockfile.WeightLockEntry{Name: "model-v1", Target: "/src/weights"},
+		v1.Descriptor{Digest: v1.Hash{Algorithm: "sha256", Hex: "abc"}},
+		nil)
 
-	created := time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC)
-	cfg := WeightConfig{
-		SchemaVersion: "1.0",
-		CogVersion:    "0.15.0",
-		Name:          "model-v1",
-		Target:        "/weights/model.safetensors",
-		Created:       created,
-	}
+	reg := &mockRegistry{}
+	pusher := NewWeightPusher(reg)
 
-	desc := v1.Descriptor{
-		Digest: v1.Hash{Algorithm: "sha256", Hex: "aabbccddee112233445566778899aabb00112233445566778899aabbccddeeff"},
-	}
-	artifact := NewWeightArtifact("model-v1", desc, weightPath, "/weights/model.safetensors", cfg)
+	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "has no layers")
+}
 
-	// Capture what gets pushed
-	var pushedRefs []string
+func TestWeightPusher_Push_PushesExpectedManifest(t *testing.T) {
+	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
+
+	var pushedRef string
 	var pushedImg v1.Image
 	reg := &mockRegistry{
 		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
-			pushedRefs = append(pushedRefs, ref)
+			pushedRef = ref
 			pushedImg = img
 			return nil
 		},
@@ -79,61 +117,86 @@ func TestWeightPusher_Push_PushesCorrectOCIArtifact(t *testing.T) {
 
 	pusher := NewWeightPusher(reg)
 	result, err := pusher.Push(context.Background(), "r8.im/user/model", artifact)
-
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Verify the image was pushed with a single combined tag
-	require.Len(t, pushedRefs, 1)
-	require.Equal(t, "r8.im/user/model:weights-model-v1-aabbccddee11", pushedRefs[0])
-	require.NotNil(t, pushedImg)
+	// Tag derives from the set digest (12-char prefix after "sha256:").
+	require.Contains(t, pushedRef, "weights-model-v1-")
+	require.Equal(t, pushedRef, result.Ref)
 
-	// Verify manifest structure
+	// Manifest shape matches spec §2.2: OCI manifest, config blob, layers
+	// with standard OCI media types, artifactType on the raw manifest.
 	manifest, err := pushedImg.Manifest()
 	require.NoError(t, err)
 	require.Equal(t, types.OCIManifestSchema1, manifest.MediaType)
-
-	// Verify config blob has correct media type
 	require.Equal(t, types.MediaType(MediaTypeWeightConfig), manifest.Config.MediaType)
+	require.NotEmpty(t, manifest.Config.Digest.Hex)
+	require.NotEmpty(t, manifest.Layers)
+	for _, layer := range manifest.Layers {
+		require.Contains(t, []types.MediaType{
+			types.MediaType(mediaTypeOCILayerTar),
+			types.MediaType(mediaTypeOCILayerTarGzip),
+		}, layer.MediaType)
+	}
 
-	// Verify config blob content is correct WeightConfig JSON
-	configBlob, err := pushedImg.RawConfigFile()
+	// Raw manifest carries artifactType; check it.
+	rawManifest, err := pushedImg.RawManifest()
 	require.NoError(t, err)
-	var parsedConfig WeightConfig
-	require.NoError(t, json.Unmarshal(configBlob, &parsedConfig))
-	require.Equal(t, "1.0", parsedConfig.SchemaVersion)
-	require.Equal(t, "0.15.0", parsedConfig.CogVersion)
-	require.Equal(t, "model-v1", parsedConfig.Name)
-	require.Equal(t, "/weights/model.safetensors", parsedConfig.Target)
-	require.Equal(t, created, parsedConfig.Created)
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(rawManifest, &raw))
+	require.Equal(t, MediaTypeWeightArtifact, raw["artifactType"])
 
-	// Verify there's exactly one layer (single file = single layer)
-	require.Len(t, manifest.Layers, 1)
+	// Manifest-level annotations per spec §2.5.
+	require.Equal(t, "model-v1", manifest.Annotations[AnnotationV1WeightName])
+	require.Equal(t, "/src/weights", manifest.Annotations[AnnotationV1WeightTarget])
+	require.Equal(t, artifact.Entry.SetDigest, manifest.Annotations[AnnotationV1WeightSetDigest])
 
-	// Verify layer media type
-	require.Equal(t, types.MediaType(MediaTypeWeightLayer), manifest.Layers[0].MediaType)
-
-	// Verify layer size matches the tarball wrapping of the weight file
-	// (tarball will be larger than raw content due to tar headers)
-	require.Greater(t, manifest.Layers[0].Size, int64(0))
-
-	// Verify the result contains a valid descriptor
-	require.NotEmpty(t, result.Descriptor.Digest.String())
+	// Result descriptor is populated.
+	require.NotEmpty(t, result.Descriptor.Digest.Hex)
 	require.Greater(t, result.Descriptor.Size, int64(0))
 }
 
-func TestWeightPusher_Push_PropagatesPushError(t *testing.T) {
-	dir := t.TempDir()
-	weightPath := filepath.Join(dir, "model.bin")
-	require.NoError(t, os.WriteFile(weightPath, []byte("test"), 0o644))
+func TestWeightPusher_Push_TagDerivesFromSetDigest(t *testing.T) {
+	// The tag derives from the set digest so content-identical builds land
+	// at the same tag.
+	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
 
-	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-		SchemaVersion: "1.0",
-		CogVersion:    "0.15.0",
-		Name:          "model-v1",
-		Target:        "/weights/model.bin",
-		Created:       time.Now().UTC(),
-	})
+	var pushedRef string
+	reg := &mockRegistry{
+		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
+			pushedRef = ref
+			return nil
+		},
+	}
+
+	pusher := NewWeightPusher(reg)
+	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact)
+	require.NoError(t, err)
+
+	require.Contains(t, pushedRef, "weights-model-v1-")
+	require.Contains(t, pushedRef, ShortDigest(artifact.Entry.SetDigest))
+}
+
+func TestWeightPusher_Push_CustomTagOverride(t *testing.T) {
+	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
+
+	var pushedRef string
+	reg := &mockRegistry{
+		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
+			pushedRef = ref
+			return nil
+		},
+	}
+
+	pusher := NewWeightPusher(reg)
+	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact,
+		WeightPushOptions{Tag: "latest"})
+	require.NoError(t, err)
+	require.Equal(t, "r8.im/user/model:latest", pushedRef)
+}
+
+func TestWeightPusher_Push_PropagatesPushError(t *testing.T) {
+	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
 
 	reg := &mockRegistry{
 		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
@@ -149,198 +212,8 @@ func TestWeightPusher_Push_PropagatesPushError(t *testing.T) {
 	require.Contains(t, err.Error(), "unauthorized")
 }
 
-func TestWeightPusher_Push_RawManifestContainsArtifactType(t *testing.T) {
-	dir := t.TempDir()
-	weightPath := filepath.Join(dir, "model.bin")
-	require.NoError(t, os.WriteFile(weightPath, []byte("test weight data"), 0o644))
-
-	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-		SchemaVersion: "1.0",
-		CogVersion:    "0.15.0",
-		Name:          "model-v1",
-		Target:        "/weights/model.bin",
-		Created:       time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC),
-	})
-
-	var pushedImg v1.Image
-	reg := &mockRegistry{
-		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
-			pushedImg = img
-			return nil
-		},
-	}
-
-	pusher := NewWeightPusher(reg)
-	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact)
-	require.NoError(t, err)
-
-	// Parse raw manifest JSON to verify artifactType field
-	rawManifest, err := pushedImg.RawManifest()
-	require.NoError(t, err)
-
-	var manifestJSON map[string]any
-	require.NoError(t, json.Unmarshal(rawManifest, &manifestJSON))
-
-	// artifactType must be present at the manifest level (OCI 1.1)
-	require.Equal(t, MediaTypeWeightArtifact, manifestJSON["artifactType"])
-
-	// config.mediaType must be the weight config type
-	configMap, ok := manifestJSON["config"].(map[string]any)
-	require.True(t, ok, "config should be an object")
-	require.Equal(t, MediaTypeWeightConfig, configMap["mediaType"])
-
-	// layers should have exactly one entry with the weight layer media type
-	layers, ok := manifestJSON["layers"].([]any)
-	require.True(t, ok, "layers should be an array")
-	require.Len(t, layers, 1)
-
-	layerMap, ok := layers[0].(map[string]any)
-	require.True(t, ok, "layer should be an object")
-	require.Equal(t, MediaTypeWeightLayer, layerMap["mediaType"])
-}
-
-func TestWeightPusher_Push_ReturnsErrorForEmptyRepo(t *testing.T) {
-	dir := t.TempDir()
-	weightPath := filepath.Join(dir, "model.bin")
-	require.NoError(t, os.WriteFile(weightPath, []byte("test"), 0o644))
-
-	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-		SchemaVersion: "1.0",
-		CogVersion:    "0.15.0",
-		Name:          "model-v1",
-		Target:        "/weights/model.bin",
-		Created:       time.Now().UTC(),
-	})
-
-	reg := &mockRegistry{}
-	pusher := NewWeightPusher(reg)
-
-	_, err := pusher.Push(context.Background(), "", artifact)
-
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "repo is required")
-}
-
-func TestWeightPusher_Push_ReportsProgressViaWriteLayer(t *testing.T) {
-	dir := t.TempDir()
-	weightPath := filepath.Join(dir, "model.bin")
-	require.NoError(t, os.WriteFile(weightPath, []byte("test weight data for progress tracking"), 0o644))
-
-	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-		SchemaVersion: "1.0",
-		CogVersion:    "0.15.0",
-		Name:          "model-v1",
-		Target:        "/weights/model.bin",
-		Created:       time.Now().UTC(),
-	})
-
-	// Track progress updates received via callback
-	var (
-		mu       sync.Mutex
-		progress []PushProgress
-	)
-
-	// Mock WriteLayer to simulate progress updates (caller owns closing the channel)
-	reg := &mockRegistry{
-		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
-			// Simulate progress updates like the real registry client
-			if opts.ProgressCh != nil {
-				opts.ProgressCh <- v1.Update{Complete: 500, Total: 1000}
-				opts.ProgressCh <- v1.Update{Complete: 1000, Total: 1000}
-			}
-			return nil
-		},
-		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
-			return nil
-		},
-	}
-
-	pusher := NewWeightPusher(reg)
-	result, err := pusher.Push(context.Background(), "r8.im/user/model", artifact, WeightPushOptions{
-		ProgressFn: func(p PushProgress) {
-			mu.Lock()
-			defer mu.Unlock()
-			progress = append(progress, p)
-		},
-	})
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-
-	// Verify we received progress updates
-	mu.Lock()
-	defer mu.Unlock()
-	require.GreaterOrEqual(t, len(progress), 2, "should receive at least 2 progress updates")
-
-	// Verify progress updates contain expected values
-	require.Equal(t, int64(500), progress[0].Complete)
-	require.Equal(t, int64(1000), progress[0].Total)
-	require.Equal(t, int64(1000), progress[1].Complete)
-	require.Equal(t, int64(1000), progress[1].Total)
-}
-
-func TestWeightPusher_Push_ForwardsRetryCallback(t *testing.T) {
-	dir := t.TempDir()
-	weightPath := filepath.Join(dir, "model.bin")
-	require.NoError(t, os.WriteFile(weightPath, []byte("test weight data"), 0o644))
-
-	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-		SchemaVersion: "1.0",
-		CogVersion:    "0.15.0",
-		Name:          "model-v1",
-		Target:        "/weights/model.bin",
-		Created:       time.Now().UTC(),
-	})
-
-	// Mock WriteLayer to capture the retry config and invoke it
-	var retryEvents []WeightRetryEvent
-	reg := &mockRegistry{
-		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
-			// Simulate the registry invoking the retry callback
-			if opts.Retry != nil && opts.Retry.OnRetry != nil {
-				opts.Retry.OnRetry(registry.RetryEvent{
-					Attempt:     1,
-					MaxAttempts: 3,
-					Err:         fmt.Errorf("connection reset"),
-					NextRetryIn: 2 * time.Second,
-				})
-			}
-			return nil
-		},
-		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
-			return nil
-		},
-	}
-
-	pusher := NewWeightPusher(reg)
-	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact, WeightPushOptions{
-		RetryFn: func(event WeightRetryEvent) bool {
-			retryEvents = append(retryEvents, event)
-			return true
-		},
-	})
-
-	require.NoError(t, err)
-	require.Len(t, retryEvents, 1)
-	require.Equal(t, "model-v1", retryEvents[0].Name)
-	require.Equal(t, 1, retryEvents[0].Attempt)
-	require.Equal(t, 3, retryEvents[0].MaxAttempts)
-	require.Contains(t, retryEvents[0].Err.Error(), "connection reset")
-	require.Equal(t, 2*time.Second, retryEvents[0].NextRetryIn)
-}
-
-func TestWeightPusher_Push_WriteLayerErrorReported(t *testing.T) {
-	dir := t.TempDir()
-	weightPath := filepath.Join(dir, "model.bin")
-	require.NoError(t, os.WriteFile(weightPath, []byte("test"), 0o644))
-
-	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-		SchemaVersion: "1.0",
-		CogVersion:    "0.15.0",
-		Name:          "model-v1",
-		Target:        "/weights/model.bin",
-		Created:       time.Now().UTC(),
-	})
+func TestWeightPusher_Push_PropagatesLayerError(t *testing.T) {
+	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
 
 	reg := &mockRegistry{
 		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
@@ -352,27 +225,110 @@ func TestWeightPusher_Push_WriteLayerErrorReported(t *testing.T) {
 	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "push weight layer")
+	require.Contains(t, err.Error(), "push weight layers")
 	require.Contains(t, err.Error(), "503 Service Unavailable")
 }
 
-func TestWeightPusher_Push_PropagatesContextCancellation(t *testing.T) {
-	dir := t.TempDir()
-	weightPath := filepath.Join(dir, "model.bin")
-	require.NoError(t, os.WriteFile(weightPath, []byte("test"), 0o644))
+func TestWeightPusher_Push_ReportsProgressPerLayer(t *testing.T) {
+	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
 
-	artifact := NewWeightArtifact("model-v1", v1.Descriptor{}, weightPath, "/weights/model.bin", WeightConfig{
-		SchemaVersion: "1.0",
-		CogVersion:    "0.15.0",
-		Name:          "model-v1",
-		Target:        "/weights/model.bin",
-		Created:       time.Now().UTC(),
-	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
+	var (
+		mu     sync.Mutex
+		events []WeightLayerProgress
+	)
 
 	reg := &mockRegistry{
+		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
+			if opts.ProgressCh != nil {
+				opts.ProgressCh <- v1.Update{Complete: 500, Total: 1000}
+				opts.ProgressCh <- v1.Update{Complete: 1000, Total: 1000}
+			}
+			return nil
+		},
+		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error { return nil },
+	}
+
+	pusher := NewWeightPusher(reg)
+	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact,
+		WeightPushOptions{
+			ProgressFn: func(p WeightLayerProgress) {
+				mu.Lock()
+				defer mu.Unlock()
+				events = append(events, p)
+			},
+		})
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, events)
+	// Every event should carry a layer digest that matches one of the
+	// artifact's layers.
+	digestsSeen := map[string]bool{}
+	for _, e := range events {
+		digestsSeen[e.LayerDigest] = true
+	}
+	for _, l := range artifact.Layers {
+		require.True(t, digestsSeen[l.Digest.String()],
+			"expected progress for layer %s", l.Digest)
+	}
+}
+
+func TestWeightPusher_Push_ForwardsRetryCallback(t *testing.T) {
+	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
+
+	var retryEvents []WeightRetryEvent
+	var mu sync.Mutex
+	reg := &mockRegistry{
+		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
+			if opts.Retry != nil && opts.Retry.OnRetry != nil {
+				opts.Retry.OnRetry(registry.RetryEvent{
+					Attempt:     1,
+					MaxAttempts: 3,
+					Err:         fmt.Errorf("connection reset"),
+					NextRetryIn: 2 * time.Second,
+				})
+			}
+			return nil
+		},
+		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error { return nil },
+	}
+
+	pusher := NewWeightPusher(reg)
+	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact,
+		WeightPushOptions{
+			RetryFn: func(event WeightRetryEvent) bool {
+				mu.Lock()
+				defer mu.Unlock()
+				retryEvents = append(retryEvents, event)
+				return true
+			},
+		})
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, retryEvents)
+
+	ev := retryEvents[0]
+	require.Contains(t, ev.Name, "model-v1")
+	require.Contains(t, ev.Name, "layer sha256:")
+	require.Equal(t, 1, ev.Attempt)
+	require.Equal(t, 3, ev.MaxAttempts)
+	require.Contains(t, ev.Err.Error(), "connection reset")
+	require.Equal(t, 2*time.Second, ev.NextRetryIn)
+}
+
+func TestWeightPusher_Push_PropagatesContextCancellation(t *testing.T) {
+	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	reg := &mockRegistry{
+		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
+			return ctx.Err()
+		},
 		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error {
 			return ctx.Err()
 		},
@@ -382,5 +338,64 @@ func TestWeightPusher_Push_PropagatesContextCancellation(t *testing.T) {
 	_, err := pusher.Push(ctx, "r8.im/user/model", artifact)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "context canceled")
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestWeightPusher_Push_HonoursConcurrencyLimit(t *testing.T) {
+	// Pack a source with enough large files that we end up with multiple
+	// layers. Since test data is small, we rely on tuning bundle_file_max
+	// so every file lands in its own layer.
+	sourceDir := t.TempDir()
+	const n = 4
+	for i := range n {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(sourceDir, fmt.Sprintf("w-%d.safetensors", i)),
+			fmt.Appendf(nil, "payload %d", i),
+			0o644,
+		))
+	}
+
+	st, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
+	src, err := weightsource.NewFileSource("file://"+sourceDir, "")
+	require.NoError(t, err)
+	inv, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, ingressFromInventory(t.Context(), src, st, inv))
+	pkr := newPacker(&packOptions{
+		BundleFileMax: 1, // every file becomes its own layer
+	})
+	pl := pkr.planLayers(inv)
+	layers, err := pkr.computeLayerDigests(t.Context(), st, pl)
+	require.NoError(t, err)
+	files := packedFilesFromPlan(layers)
+	require.GreaterOrEqual(t, len(layers), n, "expected a layer per file")
+
+	entry := newWeightLockEntry("model", "/src/weights", lockfile.WeightLockSource{}, files, layers)
+	artifact, err := buildWeightArtifact(&entry, layers, st)
+	require.NoError(t, err)
+
+	var inFlight, maxInFlight atomic.Int32
+	reg := &mockRegistry{
+		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
+			cur := inFlight.Add(1)
+			for {
+				old := maxInFlight.Load()
+				if cur <= old || maxInFlight.CompareAndSwap(old, cur) {
+					break
+				}
+			}
+			time.Sleep(10 * time.Millisecond)
+			inFlight.Add(-1)
+			return nil
+		},
+		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error { return nil },
+	}
+
+	pusher := NewWeightPusher(reg)
+	_, err = pusher.Push(context.Background(), "r8.im/user/model", artifact,
+		WeightPushOptions{Concurrency: 2})
+	require.NoError(t, err)
+	require.LessOrEqual(t, int(maxInFlight.Load()), 2,
+		"concurrency limit not honored")
 }

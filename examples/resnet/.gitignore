@@ -1,0 +1,5 @@
+# Weight files (downloaded by `cog weights import` — see README.md)
+weights/
+
+# Cog build artifacts (packed layers, cached wheels, etc.)
+.cog/

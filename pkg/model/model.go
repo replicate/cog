@@ -2,10 +2,13 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
+	"path/filepath"
 
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // Model represents a Cog model extracted from an image.
@@ -15,17 +18,59 @@ type Model struct {
 	Schema     *openapi3.T    // OpenAPI schema
 	CogVersion string         // Version of cog used to build
 
-	// Index is the OCI Image Index (populated when inspecting a pushed model).
-	Index *Index
-
-	// TODO(md): OCIIndex is a temporary gate. When true, Push() creates an OCI
-	// Image Index with weight artifacts. When false, Push() does a plain docker push.
-	// Remove this field once index pushes are validated with all registries.
-	OCIIndex bool
-
 	// Artifacts is the collection of all artifacts produced by building this model.
-	// Populated by Resolver.Build(). Contains ImageArtifact and WeightArtifact instances.
+	// Populated by Resolver.Build(). Contains ImageArtifact instances only.
 	Artifacts []Artifact
+
+	// Weights are the model's managed weights, loaded from the lockfile
+	// during Build. Each Weight carries all lockfile metadata (name,
+	// target, digest, set digest, sizes). The push path uses these to
+	// HEAD-check weight manifests in the registry; it never streams
+	// layer bytes.
+	Weights []Weight
+}
+
+// Weight is the model's representation of a managed weight, projected
+// from a lockfile entry. Fields mirror lockfile.WeightLockEntry but
+// this type belongs to the model domain and carries only what the
+// build and push paths need.
+type Weight struct {
+	Name      string
+	Target    string
+	Digest    string // OCI manifest digest
+	SetDigest string // content-addressable file set identity (spec §2.4)
+	Size      int64
+	// SizeCompressed is the total compressed (over-the-wire) size.
+	SizeCompressed int64
+}
+
+// WeightFromLockEntry creates a Weight from a lockfile entry.
+func WeightFromLockEntry(e lockfile.WeightLockEntry) Weight {
+	return Weight{
+		Name:           e.Name,
+		Target:         e.Target,
+		Digest:         e.Digest,
+		SetDigest:      e.SetDigest,
+		Size:           e.Size,
+		SizeCompressed: e.SizeCompressed,
+	}
+}
+
+// WeightsFromLockfile loads a lockfile from projectDir and returns
+// the corresponding Weight slice. Returns an error if the lockfile
+// is missing or corrupt.
+func WeightsFromLockfile(projectDir string) ([]Weight, error) {
+	lock, err := lockfile.LoadWeightsLock(
+		filepath.Join(projectDir, lockfile.WeightsLockFilename),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load weights.lock: %w", err)
+	}
+	weights := make([]Weight, len(lock.Weights))
+	for i, e := range lock.Weights {
+		weights[i] = WeightFromLockEntry(e)
+	}
+	return weights, nil
 }
 
 // HasGPU returns true if the model requires GPU.
@@ -49,9 +94,9 @@ func (m *Model) ImageRef() string {
 	return m.Image.Reference
 }
 
-// IsBundle returns true if this model has weight artifacts.
+// IsBundle returns true if this model has managed weights.
 func (m *Model) IsBundle() bool {
-	return len(m.WeightArtifacts()) > 0
+	return len(m.Weights) > 0
 }
 
 // GetImageArtifact returns the first ImageArtifact from the artifacts collection,

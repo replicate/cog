@@ -1,0 +1,28 @@
+# ResNet50 image classifier using v1 managed weights.
+#
+# Weights are pulled from HuggingFace at import time:
+#   cog weights import
+#
+# Build and push:
+#   cog push
+
+image: <your-registry>/resnet
+
+build:
+  gpu: true
+  python_version: "3.13"
+  python_requirements: requirements.txt
+
+predict: "predict.py:Predictor"
+
+weights:
+  - name: resnet50
+    source:
+      uri: hf://microsoft/resnet-50
+      exclude:
+        - "pytorch_model.bin"  # legacy format, redundant with model.safetensors
+        - "flax_model.msgpack" # Flax/JAX weights
+        - "tf_model.h5"        # TensorFlow weights
+        - "README.md"
+        - ".gitattributes"
+    target: /src/weights/resnet50
