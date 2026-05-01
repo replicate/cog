@@ -1,7 +1,7 @@
-# Test TypedDict inputs through the legacy runtime schema path.
+# Test typing_extensions.TypedDict inputs through the legacy runtime schema path.
 #
 # This exercises python/cog/_adt.py via in-container runtime schema generation,
-# proving TypedDict subclasses are treated like dict inputs when
+# proving typing_extensions.TypedDict subclasses are treated like dict inputs when
 # COG_LEGACY_SCHEMA=1 forces the legacy path.
 
 env COG_LEGACY_SCHEMA=1
@@ -10,7 +10,7 @@ env COG_LEGACY_SCHEMA=1
 cog build -t $TEST_IMAGE
 stderr 'Validating model schema'
 
-# TypedDict and list[TypedDict] inputs work via JSON.
+# typing_extensions.TypedDict and list[TypedDict] inputs work via JSON.
 cog predict $TEST_IMAGE --json '{"data": {"name": "alice", "count": 2}, "items": [{"name": "first", "count": 1}, {"name": "second", "count": 3}]}'
 stdout '"status": "succeeded"'
 stdout '"output": "alice:2 items=2"'
@@ -26,7 +26,7 @@ build:
 predict: "predict.py:Predictor"
 
 -- predict.py --
-from typing import TypedDict
+from typing_extensions import TypedDict
 
 from cog import BasePredictor
 
