@@ -60,6 +60,14 @@ class Predictor(BasePredictor):
 	f.Add([]byte{0xff, 0xfe, 0x00, 0x01, 0x80, 0x90}, "Predictor", uint8(0))
 
 	f.Fuzz(func(t *testing.T, source []byte, predictRef string, modeRaw uint8) {
+		// Cap input size: tree-sitter can exhibit O(n^2) behavior on
+		// pathological inputs, causing the fuzz worker to exceed the
+		// per-input grace period and fail with "context deadline exceeded".
+		// Real Python source files are bounded; 64 KB is generous.
+		if len(source) > 64*1024 {
+			t.Skip("input too large")
+		}
+
 		mode := schema.ModePredict
 		if modeRaw%2 == 1 {
 			mode = schema.ModeTrain
@@ -87,6 +95,14 @@ func FuzzParseTypeAnnotation(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, typeName string) {
+		// Cap annotation length: pathologically long or deeply nested
+		// type strings (e.g. "dict[dict[dict[..." repeated thousands
+		// of times) can make tree-sitter exceed the fuzz worker's
+		// grace period. Real type annotations are short.
+		if len(typeName) > 1024 {
+			t.Skip("input too large")
+		}
+
 		// Build a minimal predict.py with the fuzzed return type.
 		source := []byte("from cog import BasePredictor\nfrom typing import *\nclass Predictor(BasePredictor):\n    def predict(self, x: str) -> " + typeName + ":\n        pass\n")
 		// Must not panic.
