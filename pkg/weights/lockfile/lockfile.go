@@ -289,22 +289,25 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	// No-op once Rename succeeds (file is gone); covers panic/SIGINT
-	// between CreateTemp and Rename.
-	defer func() { _ = os.Remove(tmpPath) }()
+	// Best-effort cleanup on every error path; both calls are no-ops
+	// after a successful Close + Rename.
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}()
 
 	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
 		return fmt.Errorf("write temp file: %w", err)
 	}
 	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
 		return fmt.Errorf("chmod temp file: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
 		return fmt.Errorf("fsync temp file: %w", err)
 	}
+	// Close explicitly on the success path: a deferred Sync failure
+	// can surface from Close, and we want to fail before Rename
+	// rather than commit a possibly-corrupt file.
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp file: %w", err)
 	}
