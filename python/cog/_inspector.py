@@ -269,6 +269,14 @@ class _AnyType:
 _any_type = _AnyType()
 
 
+def _strip_non_opaque_annotated(tpe: Any) -> Any:
+    """Strip non-opaque Annotated metadata preserved by get_type_hints."""
+    _, is_opaque = adt._unwrap_opaque(tpe)
+    if is_opaque or typing.get_origin(tpe) is not typing.Annotated:
+        return tpe
+    return typing.get_args(tpe)[0]
+
+
 def _create_output_type(tpe: type) -> adt.OutputType:
     """Create an OutputType from a return type annotation."""
     _, is_opaque = adt._unwrap_opaque(tpe)
@@ -360,6 +368,7 @@ def _create_predictor_info(
     except Exception:
         # Fall back to raw annotations if get_type_hints fails
         type_hints = spec.annotations
+    type_hints = {k: _strip_non_opaque_annotated(v) for k, v in type_hints.items()}
 
     # Skip 'self' for class methods
     names = spec.args[1:] if is_class_fn else spec.args
