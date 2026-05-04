@@ -57,9 +57,11 @@ type Build struct {
 	// SDKVersion pins the cog Python SDK version installed in the container.
 	// Accepts a PEP 440 version string (e.g. "0.18.0" or "0.18.0a1").
 	// When empty the latest release is installed. Overridden by COG_SDK_WHEEL env var.
-	SDKVersion string `json:"sdk_version,omitempty" yaml:"sdk_version,omitempty"`
+	SDKVersion  string   `json:"sdk_version,omitempty" yaml:"sdk_version,omitempty"`
+	Environment []string `json:"environment,omitempty" yaml:"environment,omitempty"`
 
 	pythonRequirementsContent []string
+	parsedEnvironment         map[string]string
 }
 
 type Concurrency struct {
@@ -103,10 +105,7 @@ type Config struct {
 	Predict     string         `json:"predict,omitempty" yaml:"predict"`
 	Train       string         `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *Concurrency   `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
-	Environment []string       `json:"environment,omitempty" yaml:"environment,omitempty"`
 	Weights     []WeightSource `json:"weights,omitempty" yaml:"weights,omitempty"`
-
-	parsedEnvironment map[string]string
 }
 
 func (r *RunItem) UnmarshalYAML(unmarshal func(any) error) error {
@@ -542,14 +541,14 @@ func (c *Config) RequirementsFile(projectDir string) string {
 }
 
 func (c *Config) ParsedEnvironment() map[string]string {
-	return c.parsedEnvironment
+	return c.Build.parsedEnvironment
 }
 
 func (c *Config) loadEnvironment() error {
-	env, err := parseAndValidateEnvironment(c.Environment)
+	env, err := parseAndValidateEnvironment(c.Build.Environment)
 	if err != nil {
 		return err
 	}
-	c.parsedEnvironment = env
+	c.Build.parsedEnvironment = env
 	return nil
 }

@@ -12,9 +12,9 @@ stdout 'michael'
 predict: "predict.py:Predictor"
 build:
   python_version: "3.12"
-environment:
-  - NAME=michael
-  - TEST_VAR=test_value
+  environment:
+    - NAME=michael
+    - TEST_VAR=test_value
 
 -- predict.py --
 from cog import BasePredictor

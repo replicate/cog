@@ -121,7 +121,16 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 			config.Concurrency.Max = *cfg.Concurrency.Max
 		}
 	}
-	config.Environment = cfg.Environment
+
+	// Environment can come from build.environment (preferred) or top-level environment (deprecated).
+	// Top-level is copied into build during validation/migration in resolveEnvironment.
+	if cfg.Build != nil {
+		config.Build.Environment = cfg.Build.Environment
+	}
+	// If top-level environment is set and build.environment is not, migrate it.
+	if len(cfg.Environment) > 0 && len(config.Build.Environment) == 0 {
+		config.Build.Environment = cfg.Environment
+	}
 
 	// Convert weights
 	if len(cfg.Weights) > 0 {
