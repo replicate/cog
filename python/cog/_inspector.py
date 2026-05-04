@@ -12,7 +12,7 @@ import sys
 import typing
 from dataclasses import MISSING, Field
 from enum import Enum
-from types import ModuleType
+from types import ModuleType, UnionType
 from typing import Any, AsyncIterator, Callable, Dict, Iterator, Type
 
 from . import _adt as adt
@@ -272,9 +272,37 @@ _any_type = _AnyType()
 def _strip_non_opaque_annotated(tpe: Any) -> Any:
     """Strip non-opaque Annotated metadata preserved by get_type_hints."""
     _, is_opaque = adt._unwrap_opaque(tpe)
-    if is_opaque or typing.get_origin(tpe) is not typing.Annotated:
+    if is_opaque:
         return tpe
-    return typing.get_args(tpe)[0]
+
+    origin = typing.get_origin(tpe)
+    if origin is typing.Annotated:
+        return _strip_non_opaque_annotated(typing.get_args(tpe)[0])
+
+    args = typing.get_args(tpe)
+    if not args:
+        return tpe
+
+    stripped_args = tuple(_strip_non_opaque_annotated(arg) for arg in args)
+    if stripped_args == args:
+        return tpe
+
+    if origin is typing.Union:
+        return typing.Union[stripped_args]
+    if origin is UnionType:
+        result = stripped_args[0]
+        for arg in stripped_args[1:]:
+            result |= arg
+        return result
+
+    copy_with = getattr(tpe, "copy_with", None)
+    if callable(copy_with):
+        return copy_with(stripped_args)
+
+    try:
+        return origin[stripped_args]
+    except TypeError:
+        return tpe
 
 
 def _create_output_type(tpe: type) -> adt.OutputType:

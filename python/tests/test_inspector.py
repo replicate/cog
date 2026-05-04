@@ -17,7 +17,7 @@ def test_inspector_preserves_opaque_input_metadata() -> None:
             return "ok"
 
     info = _create_predictor_info(
-        "predict", "Predictor", Predictor().predict, "predict", True
+        "predict", "Predictor", Predictor.predict, "predict", True
     )
     field = info.inputs["value"]
     assert field.type.primitive is adt.PrimitiveType.ANY
@@ -30,7 +30,7 @@ def test_inspector_preserves_opaque_list_input_metadata() -> None:
             return "ok"
 
     info = _create_predictor_info(
-        "predict", "Predictor", Predictor().predict, "predict", True
+        "predict", "Predictor", Predictor.predict, "predict", True
     )
     field = info.inputs["value"]
     assert field.type.primitive is adt.PrimitiveType.ANY
@@ -43,7 +43,7 @@ def test_inspector_supports_opaque_output_metadata() -> None:
             return ExternalObject()
 
     info = _create_predictor_info(
-        "predict", "Predictor", Predictor().predict, "predict", True
+        "predict", "Predictor", Predictor.predict, "predict", True
     )
     assert info.output.kind is adt.OutputKind.SINGLE
     assert info.output.type is adt.PrimitiveType.ANY
@@ -55,7 +55,7 @@ def test_inspector_supports_opaque_list_output_metadata() -> None:
             return [ExternalObject()]
 
     info = _create_predictor_info(
-        "predict", "Predictor", Predictor().predict, "predict", True
+        "predict", "Predictor", Predictor.predict, "predict", True
     )
     assert info.output.kind is adt.OutputKind.LIST
     assert info.output.type is adt.PrimitiveType.ANY
@@ -68,7 +68,7 @@ def test_inspector_rejects_optional_opaque_output_metadata() -> None:
 
     with pytest.raises(ValueError, match="output must not be Optional"):
         _create_predictor_info(
-            "predict", "Predictor", Predictor().predict, "predict", True
+            "predict", "Predictor", Predictor.predict, "predict", True
         )
 
 
@@ -80,10 +80,36 @@ def test_inspector_preserves_non_opaque_annotated_behavior() -> None:
             return value
 
     info = _create_predictor_info(
-        "predict", "Predictor", Predictor().predict, "predict", True
+        "predict", "Predictor", Predictor.predict, "predict", True
     )
     field = info.inputs["value"]
     assert field.type.primitive is adt.PrimitiveType.STRING
     assert field.type.repetition is adt.Repetition.REQUIRED
     assert info.output.kind is adt.OutputKind.SINGLE
     assert info.output.type is adt.PrimitiveType.STRING
+
+
+def test_inspector_preserves_nested_non_opaque_annotated_list_behavior() -> None:
+    class Predictor:
+        def predict(self, value: List[Annotated[str, "metadata"]]) -> str:
+            return value[0]
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    field = info.inputs["value"]
+    assert field.type.primitive is adt.PrimitiveType.STRING
+    assert field.type.repetition is adt.Repetition.REPEATED
+
+
+def test_inspector_preserves_nested_non_opaque_annotated_optional_behavior() -> None:
+    class Predictor:
+        def predict(self, value: Optional[Annotated[str, "metadata"]]) -> str:
+            return value or ""
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    field = info.inputs["value"]
+    assert field.type.primitive is adt.PrimitiveType.STRING
+    assert field.type.repetition is adt.Repetition.OPTIONAL
