@@ -237,6 +237,10 @@ func ResolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClass
 }
 
 func resolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
+	if inner, ok := unwrapOpaqueAnnotated(ann, ctx); ok {
+		return opaqueSchemaType(inner, ctx), nil
+	}
+
 	switch ann.Kind {
 	case TypeAnnotSimple:
 		return resolveSimpleSchemaType(ann, ctx, models, seen)
@@ -246,6 +250,16 @@ func resolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClass
 		return resolveUnionSchemaType(ann)
 	}
 	return SchemaType{}, errUnsupportedType("unknown type annotation")
+}
+
+func opaqueSchemaType(inner TypeAnnotation, ctx *ImportContext) SchemaType {
+	if inner.Kind == TypeAnnotGeneric {
+		outer, ok := opaqueContainerName(inner.Name, ctx)
+		if ok && (outer == "list" || outer == "List") && len(inner.Args) == 1 {
+			return SchemaArrayOf(SchemaPrim(TypeAny))
+		}
+	}
+	return SchemaPrim(TypeAny)
 }
 
 func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {

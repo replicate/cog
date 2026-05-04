@@ -3139,6 +3139,55 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.Repeated, values.FieldType.Repetition)
 }
 
+func TestOpaqueImportedOutput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[ThirdPartyType, Opaque]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeAny, info.Output.Primitive)
+}
+
+func TestOpaqueImportedListOutput(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[List[ThirdPartyType], Opaque]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
+	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
+}
+
+func TestOpaqueImportedOutputInsideList(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> List[Annotated[ThirdPartyType, Opaque]]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
+	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
+}
+
 func TestQualifiedOpaqueImportedInput(t *testing.T) {
 	source := `
 from typing import Annotated
