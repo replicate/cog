@@ -444,16 +444,13 @@ func opaqueFieldType(inner TypeAnnotation, ctx *ImportContext) FieldType {
 		return opaqueFieldType(unwrapped, ctx)
 	}
 
-	if inner.Kind == TypeAnnotSimple && (inner.Name == "List" || inner.Name == "list") {
+	if inner.Kind == TypeAnnotSimple && (opaqueShapeName(inner.Name, ctx) == "List" || inner.Name == "list") {
 		return FieldType{Primitive: TypeAny, Repetition: Repeated}
 	}
 
 	if inner.Kind == TypeAnnotGeneric {
-		outer := inner.Name
-		if resolved, _, ok := ctx.ResolveQualifiedName(outer); ok {
-			outer = resolved
-		}
-		if optionalInner, ok := UnwrapOptional(inner); ok {
+		outer := opaqueShapeName(inner.Name, ctx)
+		if optionalInner, ok := unwrapOpaqueOptional(inner, ctx); ok {
 			fieldType := opaqueFieldType(optionalInner, ctx)
 			repetition := Optional
 			if fieldType.Repetition == Repeated {
@@ -488,6 +485,30 @@ func opaqueFieldType(inner TypeAnnotation, ctx *ImportContext) FieldType {
 	}
 
 	return FieldType{Primitive: TypeAny, Repetition: Required}
+}
+
+func opaqueShapeName(name string, ctx *ImportContext) string {
+	if resolved, _, ok := ctx.ResolveQualifiedName(name); ok {
+		return resolved
+	}
+	return name
+}
+
+func unwrapOpaqueOptional(ann TypeAnnotation, ctx *ImportContext) (TypeAnnotation, bool) {
+	if ann.Kind == TypeAnnotGeneric {
+		name := opaqueShapeName(ann.Name, ctx)
+		if name == "Optional" && len(ann.Args) == 1 {
+			return ann.Args[0], true
+		}
+		if name == "Union" && len(ann.Args) == 2 {
+			for i := range ann.Args {
+				if ann.Args[i].Kind == TypeAnnotSimple && ann.Args[i].Name == "None" {
+					return ann.Args[1-i], true
+				}
+			}
+		}
+	}
+	return UnwrapOptional(ann)
 }
 
 // UnwrapOptional checks if a type annotation represents Optional[X] or Union[X, None].
