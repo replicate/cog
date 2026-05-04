@@ -2918,6 +2918,90 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.OptionalRepeated, messages.FieldType.Repetition)
 }
 
+func TestOpaqueImportedInput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: Annotated[ThirdPartyType, Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, value.FieldType.Primitive)
+	require.Equal(t, schema.Required, value.FieldType.Repetition)
+}
+
+func TestOpaqueImportedListInput(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, values: Annotated[List[ThirdPartyType], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, values.FieldType.Repetition)
+}
+
+func TestOpaqueImportedInputInsideList(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, values: List[Annotated[ThirdPartyType, Opaque]]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, values.FieldType.Repetition)
+}
+
+func TestQualifiedOpaqueImportedInput(t *testing.T) {
+	source := `
+from typing import Annotated
+import cog as c
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(c.BasePredictor):
+    def predict(self, value: Annotated[ThirdPartyType, c.Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, value.FieldType.Primitive)
+	require.Equal(t, schema.Required, value.FieldType.Repetition)
+}
+
+func TestOtherOpaqueDoesNotMatchCogOpaque(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor
+import otherlib
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: Annotated[ThirdPartyType, otherlib.Opaque]) -> str:
+        return "ok"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnresolvableType, se.Kind)
+	require.Contains(t, se.Message, "ThirdPartyType")
+}
+
 func TestTypedDictOutput(t *testing.T) {
 	source := `
 from typing import TypedDict
