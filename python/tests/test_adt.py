@@ -47,6 +47,13 @@ def test_opaque_list_field_type() -> None:
     assert ft.coder is None
 
 
+def test_opaque_bare_list_field_type() -> None:
+    ft = FieldType.from_type(Annotated[list, Opaque])
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.REPEATED
+    assert ft.coder is None
+
+
 def test_opaque_inside_list_field_type() -> None:
     ft = FieldType.from_type(List[Annotated[ThirdPartyObject, Opaque]])
     assert ft.primitive is PrimitiveType.ANY
@@ -63,6 +70,13 @@ def test_opaque_optional_field_type() -> None:
 
 def test_opaque_optional_list_field_type() -> None:
     ft = FieldType.from_type(Annotated[List[ThirdPartyObject], Opaque] | None)
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.OPTIONAL_REPEATED
+    assert ft.coder is None
+
+
+def test_opaque_optional_bare_list_field_type() -> None:
+    ft = FieldType.from_type(Annotated[list, Opaque] | None)
     assert ft.primitive is PrimitiveType.ANY
     assert ft.repetition is Repetition.OPTIONAL_REPEATED
     assert ft.coder is None

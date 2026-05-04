@@ -75,14 +75,14 @@ def _unwrap_opaque(tpe: Any) -> tuple[Any, bool]:
 def _opaque_field_type(inner: Any) -> "FieldType":
     """Build a FieldType for an opaque JSON object, preserving list/optional shape."""
     origin = typing.get_origin(inner)
-    if origin in (list, List):
+    if inner is list or origin in (list, List):
         return FieldType(PrimitiveType.ANY, Repetition.REPEATED, None)
 
     if _is_union(inner):
         args = typing.get_args(inner)
         if len(args) == 2 and type(None) in args:
             non_none = args[0] if args[1] is type(None) else args[1]
-            if typing.get_origin(non_none) in (list, List):
+            if non_none is list or typing.get_origin(non_none) in (list, List):
                 return FieldType(PrimitiveType.ANY, Repetition.OPTIONAL_REPEATED, None)
             return FieldType(PrimitiveType.ANY, Repetition.OPTIONAL, None)
 
