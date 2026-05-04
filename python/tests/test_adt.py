@@ -1,6 +1,6 @@
 """Tests for cog._adt module (FieldType, PrimitiveType)."""
 
-from typing import Annotated, Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 from typing_extensions import TypedDict as ExtensionsTypedDict
 
