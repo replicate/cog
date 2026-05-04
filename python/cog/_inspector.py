@@ -271,6 +271,17 @@ _any_type = _AnyType()
 
 def _create_output_type(tpe: type) -> adt.OutputType:
     """Create an OutputType from a return type annotation."""
+    _, is_opaque = adt._unwrap_opaque(tpe)
+    if is_opaque:
+        ft = adt.FieldType.from_type(tpe)
+        if ft.repetition in (adt.Repetition.OPTIONAL, adt.Repetition.OPTIONAL_REPEATED):
+            raise ValueError("output must not be Optional")
+        if ft.repetition is adt.Repetition.REPEATED:
+            return adt.OutputType(
+                kind=adt.OutputKind.LIST, type=adt.PrimitiveType.ANY
+            )
+        return adt.OutputType(kind=adt.OutputKind.SINGLE, type=adt.PrimitiveType.ANY)
+
     if tpe is Any:
         print(
             "Warning: use of Any as output type is error-prone and highly discouraged"
@@ -345,7 +356,7 @@ def _create_predictor_info(
 
     # Use get_type_hints to resolve string annotations (from __future__ import annotations)
     try:
-        type_hints = typing.get_type_hints(f)
+        type_hints = typing.get_type_hints(f, include_extras=True)
     except Exception:
         # Fall back to raw annotations if get_type_hints fails
         type_hints = spec.annotations
