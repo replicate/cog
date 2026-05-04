@@ -444,12 +444,14 @@ func opaqueFieldType(inner TypeAnnotation, ctx *ImportContext) FieldType {
 		return opaqueFieldType(unwrapped, ctx)
 	}
 
-	if inner.Kind == TypeAnnotSimple && (opaqueShapeName(inner.Name, ctx) == "List" || inner.Name == "list") {
-		return FieldType{Primitive: TypeAny, Repetition: Repeated}
+	if inner.Kind == TypeAnnotSimple {
+		if name, ok := opaqueContainerName(inner.Name, ctx); ok && (name == "List" || name == "list") {
+			return FieldType{Primitive: TypeAny, Repetition: Repeated}
+		}
 	}
 
 	if inner.Kind == TypeAnnotGeneric {
-		outer := opaqueShapeName(inner.Name, ctx)
+		outer, outerIsContainer := opaqueContainerName(inner.Name, ctx)
 		if optionalInner, ok := unwrapOpaqueOptional(inner, ctx); ok {
 			fieldType := opaqueFieldType(optionalInner, ctx)
 			repetition := Optional
@@ -457,6 +459,9 @@ func opaqueFieldType(inner TypeAnnotation, ctx *ImportContext) FieldType {
 				repetition = OptionalRepeated
 			}
 			return FieldType{Primitive: TypeAny, Repetition: repetition}
+		}
+		if !outerIsContainer {
+			return FieldType{Primitive: TypeAny, Repetition: Required}
 		}
 		switch outer {
 		case "List", "list":
@@ -487,16 +492,42 @@ func opaqueFieldType(inner TypeAnnotation, ctx *ImportContext) FieldType {
 	return FieldType{Primitive: TypeAny, Repetition: Required}
 }
 
-func opaqueShapeName(name string, ctx *ImportContext) string {
-	if resolved, _, ok := ctx.ResolveQualifiedName(name); ok {
-		return resolved
+func opaqueContainerName(name string, ctx *ImportContext) (string, bool) {
+	if resolved, entry, ok := ctx.ResolveQualifiedName(name); ok {
+		if isTypingModule(entry.Module) && entry.Original == entry.Module && isTypingContainer(resolved) {
+			return resolved, true
+		}
+		return "", false
 	}
-	return name
+	if entry, ok := ctx.Names.Get(name); ok {
+		if entry.Module == "builtins" && entry.Original == "list" {
+			return "list", true
+		}
+		if isTypingModule(entry.Module) && isTypingContainer(entry.Original) {
+			return entry.Original, true
+		}
+		return "", false
+	}
+	if name == "list" {
+		return "list", true
+	}
+	return "", false
+}
+
+func isTypingModule(module string) bool {
+	return module == "typing" || module == "typing_extensions"
+}
+
+func isTypingContainer(name string) bool {
+	return name == "List" || name == "Optional" || name == "Union"
 }
 
 func unwrapOpaqueOptional(ann TypeAnnotation, ctx *ImportContext) (TypeAnnotation, bool) {
 	if ann.Kind == TypeAnnotGeneric {
-		name := opaqueShapeName(ann.Name, ctx)
+		name, ok := opaqueContainerName(ann.Name, ctx)
+		if !ok {
+			return ann, false
+		}
 		if name == "Optional" && len(ann.Args) == 1 {
 			return ann.Args[0], true
 		}
