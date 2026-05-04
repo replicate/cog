@@ -18,42 +18,42 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CONFIG_DIR="${ROOT_DIR}/pkg/config"
 
 generate_cuda() {
-    echo "Generating CUDA base images..."
-    go run "${ROOT_DIR}/tools/compatgen/main.go" cuda -o "${CONFIG_DIR}/cuda_base_images.json"
+  echo "Generating CUDA base images..."
+  go run "${ROOT_DIR}/tools/compatgen/main.go" cuda -o "${CONFIG_DIR}/cuda_compatibility.json"
 }
 
 generate_torch() {
-    echo "Generating PyTorch compatibility matrix..."
-    go run "${ROOT_DIR}/tools/compatgen/main.go" torch -o "${CONFIG_DIR}/torch_compatibility_matrix.json"
+  echo "Generating PyTorch compatibility matrix..."
+  go run "${ROOT_DIR}/tools/compatgen/main.go" torch -o "${CONFIG_DIR}/torch_compatibility.json"
 }
 
 generate_tensorflow() {
-    echo "Generating TensorFlow compatibility matrix..."
-    go run "${ROOT_DIR}/tools/compatgen/main.go" tensorflow -o "${CONFIG_DIR}/tf_compatibility_matrix.json"
+  echo "Generating TensorFlow compatibility matrix..."
+  go run "${ROOT_DIR}/tools/compatgen/main.go" tensorflow -o "${CONFIG_DIR}/tf_compatibility.json"
 }
 
 target="${1:-all}"
 
 case "$target" in
-    cuda)
-        generate_cuda
-        ;;
-    torch)
-        generate_torch
-        ;;
-    tensorflow|tf)
-        generate_tensorflow
-        ;;
-    all)
-        generate_cuda
-        generate_torch
-        generate_tensorflow
-        ;;
-    *)
-        echo "Unknown target: $target"
-        echo "Usage: $0 [cuda|torch|tensorflow|all]"
-        exit 1
-        ;;
+cuda)
+  generate_cuda
+  ;;
+torch)
+  generate_torch
+  ;;
+tensorflow | tf)
+  generate_tensorflow
+  ;;
+all)
+  generate_cuda
+  generate_torch
+  generate_tensorflow
+  ;;
+*)
+  echo "Unknown target: $target"
+  echo "Usage: $0 [cuda|torch|tensorflow|all]"
+  exit 1
+  ;;
 esac
 
 echo "Done."
