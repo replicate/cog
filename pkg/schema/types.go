@@ -444,10 +444,22 @@ func opaqueFieldType(inner TypeAnnotation, ctx *ImportContext) FieldType {
 		return opaqueFieldType(unwrapped, ctx)
 	}
 
+	if inner.Kind == TypeAnnotSimple && (inner.Name == "List" || inner.Name == "list") {
+		return FieldType{Primitive: TypeAny, Repetition: Repeated}
+	}
+
 	if inner.Kind == TypeAnnotGeneric {
 		outer := inner.Name
 		if resolved, _, ok := ctx.ResolveQualifiedName(outer); ok {
 			outer = resolved
+		}
+		if optionalInner, ok := UnwrapOptional(inner); ok {
+			fieldType := opaqueFieldType(optionalInner, ctx)
+			repetition := Optional
+			if fieldType.Repetition == Repeated {
+				repetition = OptionalRepeated
+			}
+			return FieldType{Primitive: TypeAny, Repetition: repetition}
 		}
 		switch outer {
 		case "List", "list":

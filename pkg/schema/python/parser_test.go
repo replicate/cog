@@ -2952,6 +2952,72 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.Repeated, values.FieldType.Repetition)
 }
 
+func TestOpaqueImportedOptionalUnionInput(t *testing.T) {
+	source := `
+from typing import Annotated, Union
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: Annotated[Union[ThirdPartyType, None], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, value.FieldType.Primitive)
+	require.Equal(t, schema.Optional, value.FieldType.Repetition)
+}
+
+func TestOpaqueImportedOptionalUnionListInput(t *testing.T) {
+	source := `
+from typing import Annotated, List, Union
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, values: Annotated[Union[List[ThirdPartyType], None], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, values.FieldType.Repetition)
+}
+
+func TestOpaqueImportedBareListInput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+
+class Predictor(BasePredictor):
+    def predict(self, values: Annotated[list, Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, values.FieldType.Repetition)
+}
+
+func TestOpaqueImportedBareListPipeNoneInput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+
+class Predictor(BasePredictor):
+    def predict(self, values: Annotated[list, Opaque] | None) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, values.FieldType.Repetition)
+}
+
 func TestOpaqueImportedInputInsideList(t *testing.T) {
 	source := `
 from typing import Annotated, List
