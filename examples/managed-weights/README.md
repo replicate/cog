@@ -45,8 +45,9 @@ cd examples/managed-weights
 cog weights import
 ```
 
-This fetches the HuggingFace weights (minilm), hashes everything (both local
-and remote), and writes `weights.lock`.
+This fetches the HuggingFace weights (minilm), ingresses everything (both
+local and remote files) into the content-addressed store at
+`~/.cache/cog/weights/`, and writes `weights.lock`.
 
 ## Running the pipeline
 
