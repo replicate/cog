@@ -23,6 +23,7 @@ import sys as _sys
 
 from coglet import CancelationException as CancelationException
 
+from ._opaque import Opaque
 from ._version import __version__
 from .input import FieldInfo, Input
 from .model import BaseModel
@@ -116,6 +117,7 @@ __all__ = [
     # Core classes
     "BasePredictor",
     "BaseModel",
+    "Opaque",
     # Input
     "Input",
     "FieldInfo",

@@ -1,9 +1,10 @@
 """Tests for cog._adt module (FieldType, PrimitiveType)."""
 
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Annotated, Any, Dict, List, Optional, TypedDict
 
 from typing_extensions import TypedDict as ExtensionsTypedDict
 
+from cog import Opaque
 from cog._adt import FieldType, PrimitiveType, Repetition
 
 
@@ -19,6 +20,13 @@ class ExampleExtensionsTypedDict(ExtensionsTypedDict):
 
 class ExampleDictSubclass(dict[str, int]):
     pass
+
+
+def test_opaque_is_public_cog_export() -> None:
+    import cog
+
+    assert repr(cog.Opaque) == "cog.Opaque"
+    assert cog.Opaque is Opaque
 
 
 class TestDictInputTypes:
