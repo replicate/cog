@@ -65,8 +65,7 @@ type StandardGenerator struct {
 	strip            bool
 	precompile       bool
 
-	// absolute path to the build cache dir (.cog/build/), cleaned up
-	// after the build by Cleanup().
+	// absolute path to the build cache dir (.cog/build/)
 	tmpDir string
 
 	fileWalker weightslegacy.FileWalker

@@ -109,14 +109,17 @@ func (d *Dir) Path(name string) (string, error) {
 	return p, nil
 }
 
-// TempPath returns the absolute path to a subdirectory of .cog/, creating
-// it if needed and registering it for removal on Close. Use this for
-// scratch directories (like build/) that should not persist between
-// invocations.
+// TempPath returns the absolute path to a scratch subdirectory of .cog/.
+// Any existing contents are wiped first, and the directory is registered
+// for removal on Close. Use this for directories (like build/) that
+// should start clean and not persist between invocations.
 func (d *Dir) TempPath(name string) (string, error) {
-	p, err := d.Path(name)
-	if err != nil {
-		return "", err
+	p := filepath.Join(d.root, name)
+	if err := os.RemoveAll(p); err != nil {
+		return "", fmt.Errorf("clean %s: %w", p, err)
+	}
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		return "", fmt.Errorf("create %s: %w", p, err)
 	}
 	d.onClose(func() error {
 		return os.RemoveAll(p)

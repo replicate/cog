@@ -89,6 +89,7 @@ func Build(
 		return "", err
 	}
 	defer release()
+
 	// Resolve build artifact paths from the .cog/ directory. TempPath
 	// registers .cog/build/ for removal on dc.Close(), so build staging
 	// artifacts don't accumulate between invocations.
@@ -97,15 +98,11 @@ func Build(
 		return "", fmt.Errorf("create build cache dir: %w", err)
 	}
 	bp := buildPaths{
-		buildDir:       buildDir,
-		schemaFile:     filepath.Join(buildDir, "openapi_schema.json"),
-		weightsFile:    filepath.Join(buildDir, "weights.json"),
+		buildDir:        buildDir,
+		schemaFile:      filepath.Join(buildDir, "openapi_schema.json"),
+		weightsFile:     filepath.Join(buildDir, "weights.json"),
 		weightsManifest: filepath.Join(dc.Root(), "cache", "weights_manifest.json"),
 	}
-
-	// remove bundled files that may be left from previous builds
-	_ = os.Remove(bp.schemaFile)
-	_ = os.Remove(bp.weightsFile)
 
 	// Determine whether to use the static schema generator (Go tree-sitter) or
 	// the legacy runtime path (boot container + python introspection).
@@ -198,15 +195,15 @@ func Build(
 		}
 
 		buildOpts := command.ImageBuildOptions{
-			WorkingDir:      dir,
+			WorkingDir:         dir,
 			DockerfileContents: string(dockerfileContents),
-			ImageName:       tmpImageId,
-			Secrets:         secrets,
-			NoCache:         noCache,
-			ProgressOutput:  progressOutput,
-			Epoch:           &config.BuildSourceEpochTimestamp,
-			ContextDir:      ".",
-			ExcludePatterns: defaultExcludePatterns,
+			ImageName:          tmpImageId,
+			Secrets:            secrets,
+			NoCache:            noCache,
+			ProgressOutput:     progressOutput,
+			Epoch:              &config.BuildSourceEpochTimestamp,
+			ContextDir:         ".",
+			ExcludePatterns:    defaultExcludePatterns,
 		}
 		if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
@@ -284,17 +281,17 @@ func Build(
 			}
 
 			buildOpts := command.ImageBuildOptions{
-				WorkingDir:      dir,
+				WorkingDir:         dir,
 				DockerfileContents: dockerfileContents,
-				ImageName:       tmpImageId,
-				Secrets:         secrets,
-				NoCache:         noCache,
-				ProgressOutput:  progressOutput,
-				Epoch:           &config.BuildSourceEpochTimestamp,
-				ContextDir:      contextDir,
-				BuildContexts:   buildContexts,
-				ExcludePatterns: defaultExcludePatterns,
-				BuildCacheDir:   generator.BuildCacheDir(),
+				ImageName:          tmpImageId,
+				Secrets:            secrets,
+				NoCache:            noCache,
+				ProgressOutput:     progressOutput,
+				Epoch:              &config.BuildSourceEpochTimestamp,
+				ContextDir:         contextDir,
+				BuildContexts:      buildContexts,
+				ExcludePatterns:    defaultExcludePatterns,
+				BuildCacheDir:      generator.BuildCacheDir(),
 			}
 
 			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
@@ -685,16 +682,16 @@ func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, d
 		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
 	}
 	buildOpts := command.ImageBuildOptions{
-		WorkingDir:      dir,
+		WorkingDir:         dir,
 		DockerfileContents: dockerfileContents,
-		ImageName:       imageName,
-		Secrets:         secrets,
-		NoCache:         noCache,
-		ProgressOutput:  progressOutput,
-		Epoch:           &config.BuildSourceEpochTimestamp,
-		ContextDir:      contextDir,
-		BuildContexts:   buildContexts,
-		ExcludePatterns: defaultExcludePatterns,
+		ImageName:          imageName,
+		Secrets:            secrets,
+		NoCache:            noCache,
+		ProgressOutput:     progressOutput,
+		Epoch:              &config.BuildSourceEpochTimestamp,
+		ContextDir:         contextDir,
+		BuildContexts:      buildContexts,
+		ExcludePatterns:    defaultExcludePatterns,
 	}
 	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
@@ -707,16 +704,16 @@ func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, do
 		return fmt.Errorf("Failed to write .dockerignore file with weights included: %w", err)
 	}
 	buildOpts := command.ImageBuildOptions{
-		WorkingDir:      dir,
+		WorkingDir:         dir,
 		DockerfileContents: dockerfileContents,
-		ImageName:       imageName,
-		Secrets:         secrets,
-		NoCache:         noCache,
-		ProgressOutput:  progressOutput,
-		Epoch:           &config.BuildSourceEpochTimestamp,
-		ContextDir:      contextDir,
-		BuildContexts:   buildContexts,
-		ExcludePatterns: defaultExcludePatterns,
+		ImageName:          imageName,
+		Secrets:            secrets,
+		NoCache:            noCache,
+		ProgressOutput:     progressOutput,
+		Epoch:              &config.BuildSourceEpochTimestamp,
+		ContextDir:         contextDir,
+		BuildContexts:      buildContexts,
+		ExcludePatterns:    defaultExcludePatterns,
 	}
 	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
@@ -779,4 +776,3 @@ func restoreDockerignore() error {
 
 	return os.Rename(dockerignoreBackupPath, ".dockerignore")
 }
-
