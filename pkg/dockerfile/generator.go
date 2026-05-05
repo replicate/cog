@@ -11,7 +11,7 @@ type Generator interface {
 	SetUseCogBaseImage(bool)
 	SetUseCogBaseImagePtr(*bool)
 	SetBreakSystemPackages(bool)
-	GenerateModelBaseWithSeparateWeights(ctx context.Context, imageName string) (string, string, string, error)
+	GenerateModelBaseWithSeparateWeights(ctx context.Context, imageName string) (string, string, []string, error)
 	SetStrip(bool)
 	SetPrecompile(bool)
 	SetUseCudaBaseImage(string)

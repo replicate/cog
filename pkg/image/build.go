@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,8 +34,6 @@ import (
 	"github.com/replicate/cog/pkg/weightslegacy"
 	"github.com/replicate/cog/pkg/wheels"
 )
-
-const dockerignoreBackupPath = ".dockerignore.cog.bak"
 
 // cogBuildContextName is the named build context for build staging
 // artifacts (.cog/build/). Dockerfile COPY instructions reference it
@@ -236,13 +235,9 @@ func Build(
 		}
 
 		if separateWeights {
-			weightsDockerfile, runnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(ctx, imageName)
+			weightsDockerfile, runnerDockerfile, weightsExcludePatterns, err := generator.GenerateModelBaseWithSeparateWeights(ctx, imageName)
 			if err != nil {
 				return "", fmt.Errorf("Failed to generate Dockerfile: %w", err)
-			}
-
-			if err := backupDockerignore(); err != nil {
-				return "", fmt.Errorf("Failed to backup .dockerignore file: %w", err)
 			}
 
 			weightsManifest, err := generator.GenerateWeightsManifest(ctx)
@@ -263,7 +258,10 @@ func Build(
 				console.Info("Weights unchanged, skip rebuilding and use cached image...")
 			}
 
-			if err := buildRunnerImage(ctx, dockerCommand, dir, runnerDockerfile, dockerignore, tmpImageId, secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
+			// Exclude weight dirs/files from the runner context so COPY . /src
+			// doesn't duplicate them (they arrive via COPY --from=weights).
+			runnerExclude := slices.Concat(defaultExcludePatterns, weightsExcludePatterns)
+			if err := buildRunnerImage(ctx, dockerCommand, dir, runnerDockerfile, tmpImageId, secrets, noCache, progressOutput, contextDir, buildContexts, runnerExclude); err != nil {
 				return "", fmt.Errorf("Failed to build runner Docker image: %w", err)
 			}
 		} else {
@@ -678,9 +676,6 @@ func gitTag(ctx context.Context, dir string) (string, error) {
 }
 
 func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string) error {
-	if err := makeDockerignoreForWeightsImage(); err != nil {
-		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
-	}
 	buildOpts := command.ImageBuildOptions{
 		WorkingDir:         dir,
 		DockerfileContents: dockerfileContents,
@@ -699,10 +694,7 @@ func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, d
 	return nil
 }
 
-func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, dockerfileContents, dockerignoreContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string) error {
-	if err := writeDockerignore(dockerignoreContents); err != nil {
-		return fmt.Errorf("Failed to write .dockerignore file with weights included: %w", err)
-	}
+func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string, excludePatterns []string) error {
 	buildOpts := command.ImageBuildOptions{
 		WorkingDir:         dir,
 		DockerfileContents: dockerfileContents,
@@ -713,66 +705,10 @@ func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, do
 		Epoch:              &config.BuildSourceEpochTimestamp,
 		ContextDir:         contextDir,
 		BuildContexts:      buildContexts,
-		ExcludePatterns:    defaultExcludePatterns,
+		ExcludePatterns:    excludePatterns,
 	}
 	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
 	}
-	if err := restoreDockerignore(); err != nil {
-		return fmt.Errorf("Failed to restore backup .dockerignore file: %w", err)
-	}
 	return nil
-}
-
-func makeDockerignoreForWeightsImage() error {
-	if err := backupDockerignore(); err != nil {
-		return fmt.Errorf("Failed to backup .dockerignore file: %w", err)
-	}
-
-	if err := writeDockerignore(dockerfile.DockerignoreHeader); err != nil {
-		return fmt.Errorf("Failed to write .dockerignore file: %w", err)
-	}
-	return nil
-}
-
-func writeDockerignore(contents string) error {
-	// read existing file contents from .dockerignore.cog.bak if it exists, and append to the new contents
-	if _, err := os.Stat(dockerignoreBackupPath); err == nil {
-		existingContents, err := os.ReadFile(dockerignoreBackupPath)
-		if err != nil {
-			return err
-		}
-		contents = string(existingContents) + "\n" + contents
-	}
-
-	return os.WriteFile(".dockerignore", []byte(contents), 0o644)
-}
-
-func backupDockerignore() error {
-	if _, err := os.Stat(".dockerignore"); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// .dockerignore file does not exist, nothing to backup
-			return nil
-		}
-		return err
-	}
-
-	// rename the .dockerignore file to a new name
-	return os.Rename(".dockerignore", dockerignoreBackupPath)
-}
-
-func restoreDockerignore() error {
-	if err := os.Remove(".dockerignore"); err != nil {
-		return err
-	}
-
-	if _, err := os.Stat(dockerignoreBackupPath); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// .dockerignore backup file does not exist, nothing to restore
-			return nil
-		}
-		return err
-	}
-
-	return os.Rename(dockerignoreBackupPath, ".dockerignore")
 }
