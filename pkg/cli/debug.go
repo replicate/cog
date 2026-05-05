@@ -2,14 +2,13 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/dockerfile"
+	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -38,44 +37,24 @@ func newDebugCommand() *cobra.Command {
 func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	// Find the root project directory
-	rootDir, err := config.GetProjectDir(configFilename)
+	src, err := model.NewSource(configFilename)
 	if err != nil {
 		return err
 	}
-
-	configPath := filepath.Join(rootDir, configFilename)
-
-	f, err := os.Open(configPath)
-	if err != nil {
-		return &config.ParseError{Filename: configFilename, Err: err}
-	}
-
-	result, err := config.Load(f, rootDir)
-	if err != nil {
-		_ = f.Close()
-		return err
-	}
-
-	_ = f.Close()
-
-	var (
-		cfg        = result.Config
-		projectDir = result.RootDir
-	)
-
-	// Display any deprecation warnings
-	for _, w := range result.Warnings {
-		console.Warnf("%s", w.Error())
-	}
+	defer src.Close()
 
 	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
 		return err
 	}
 
+	buildDir, err := src.DotCog.Path("build")
+	if err != nil {
+		return err
+	}
+
 	client := registry.NewRegistryClient()
-	generator, err := dockerfile.NewGenerator(cfg, projectDir, configFilename, dockerClient, client, true)
+	generator, err := dockerfile.NewGenerator(src.Config, src.ProjectDir, buildDir, src.ConfigFilename, dockerClient, client, true)
 	if err != nil {
 		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}
@@ -93,7 +72,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 
 	if buildSeparateWeights {
 		if imageName == "" {
-			imageName = config.DockerImageName(projectDir)
+			imageName = config.DockerImageName(src.ProjectDir)
 		}
 
 		weightsDockerfile, RunnerDockerfile, dockerignore, err := generator.GenerateModelBaseWithSeparateWeights(ctx, imageName)

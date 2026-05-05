@@ -11,7 +11,6 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util/console"
@@ -92,12 +91,7 @@ type StandardGenerator struct {
 	resolvedCogletConfig *wheels.WheelConfig
 }
 
-func NewStandardGenerator(config *config.Config, dir string, configFilename string, command command.Command, client registry.Client, requiresCog bool) (*StandardGenerator, error) {
-	tmpDir, err := dockercontext.BuildTempDir(dir)
-	if err != nil {
-		return nil, err
-	}
-
+func NewStandardGenerator(config *config.Config, dir string, buildCacheDir string, configFilename string, command command.Command, client registry.Client, requiresCog bool) (*StandardGenerator, error) {
 	// Default to "cog.yaml" if not specified
 	if configFilename == "" {
 		configFilename = "cog.yaml"
@@ -111,7 +105,7 @@ func NewStandardGenerator(config *config.Config, dir string, configFilename stri
 		// These must match the container platform, not the host.
 		GOOS:             "linux",
 		GOARCH:           "amd64",
-		tmpDir:           tmpDir,
+		tmpDir:           buildCacheDir,
 		fileWalker:       filepath.Walk,
 		useCudaBaseImage: true,
 		useCogBaseImage:  nil,
@@ -418,7 +412,7 @@ func (g *StandardGenerator) Name() string {
 // so this just returns "." — the actual filtering happens in buildkit.go
 // via ExcludePatterns.
 func (g *StandardGenerator) BuildDir() (string, error) {
-	return dockercontext.StandardBuildDirectory, nil
+	return ".", nil
 }
 
 // BuildCacheDir returns the absolute path to .cog/build/ where all build

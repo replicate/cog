@@ -21,23 +21,20 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/dockerfile"
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/schema"
 	"github.com/replicate/cog/pkg/schema/python"
 	"github.com/replicate/cog/pkg/util/console"
 	cogversion "github.com/replicate/cog/pkg/util/version"
-	"github.com/replicate/cog/pkg/weights/lockfile"
+	weightslockfile "github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weightslegacy"
 	"github.com/replicate/cog/pkg/wheels"
 )
 
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
-const weightsManifestPath = ".cog/cache/weights_manifest.json"
-const bundledSchemaFile = ".cog/build/openapi_schema.json"
-const bundledWeightsFile = ".cog/build/weights.json"
 
 // cogBuildContextName is the named build context for build staging
 // artifacts (.cog/build/). Dockerfile COPY instructions reference it
@@ -47,9 +44,19 @@ const cogBuildContextName = "cog_build"
 // defaultExcludePatterns filters .cog/ out of the project context mount
 // so weight blobs, mount dirs, and build caches are never sent to the
 // Docker daemon.
-var defaultExcludePatterns = []string{".cog"}
+var defaultExcludePatterns = []string{dotcog.Name}
 
 var errGit = errors.New("git error")
+
+// buildPaths holds resolved file paths within the .cog/ directory for a
+// single build invocation. Avoids hardcoded path constants spread across
+// helper functions.
+type buildPaths struct {
+	buildDir        string // .cog/build/ -- staging dir for wheels, schema, manifest
+	schemaFile      string // .cog/build/openapi_schema.json
+	weightsFile     string // .cog/build/weights.json
+	weightsManifest string // .cog/cache/weights_manifest.json (legacy separate-weights)
+}
 
 // Build a Cog model from a config and returns the image ID (sha256:...) on success.
 //
@@ -57,6 +64,7 @@ var errGit = errors.New("git error")
 func Build(
 	ctx context.Context,
 	cfg *config.Config,
+	dc *dotcog.Dir,
 	dir,
 	imageName string,
 	configFilename string,
@@ -76,9 +84,26 @@ func Build(
 	annotations map[string]string,
 	dockerCommand command.Command,
 	client registry.Client) (string, error) {
+	release, err := dc.Lock(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	// Resolve build artifact paths from the .cog/ directory.
+	buildDir, err := dc.Path("build")
+	if err != nil {
+		return "", fmt.Errorf("create build cache dir: %w", err)
+	}
+	bp := buildPaths{
+		buildDir:       buildDir,
+		schemaFile:     filepath.Join(buildDir, "openapi_schema.json"),
+		weightsFile:    filepath.Join(buildDir, "weights.json"),
+		weightsManifest: filepath.Join(dc.Root(), "cache", "weights_manifest.json"),
+	}
+
 	// remove bundled files that may be left from previous builds
-	_ = os.Remove(bundledSchemaFile)
-	_ = os.Remove(bundledWeightsFile)
+	_ = os.Remove(bp.schemaFile)
+	_ = os.Remove(bp.weightsFile)
 
 	// Determine whether to use the static schema generator (Go tree-sitter) or
 	// the legacy runtime path (boot container + python introspection).
@@ -135,7 +160,7 @@ func Build(
 
 	// Write and validate pre-build schema (static or from file).
 	if len(schemaJSON) > 0 {
-		if err := writeAndValidateSchema(schemaJSON); err != nil {
+		if err := writeAndValidateSchema(schemaJSON, bp.schemaFile); err != nil {
 			return "", err
 		}
 	}
@@ -145,7 +170,7 @@ func Build(
 	// lockfile to the minimal runtime manifest (spec §3.3) and write it into
 	// the build context so it ends up at /.cog/weights.json in the image.
 	if len(cfg.Weights) > 0 {
-		if err := writeRuntimeWeightsManifest(dir); err != nil {
+		if err := writeRuntimeWeightsManifest(dir, bp.weightsFile); err != nil {
 			return "", err
 		}
 	}
@@ -178,14 +203,14 @@ func Build(
 			NoCache:         noCache,
 			ProgressOutput:  progressOutput,
 			Epoch:           &config.BuildSourceEpochTimestamp,
-			ContextDir:      dockercontext.StandardBuildDirectory,
+			ContextDir:      ".",
 			ExcludePatterns: defaultExcludePatterns,
 		}
 		if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
-		generator, err := dockerfile.NewGenerator(cfg, dir, configFilename, dockerCommand, client, true)
+		generator, err := dockerfile.NewGenerator(cfg, dir, bp.buildDir, configFilename, dockerCommand, client, true)
 		if err != nil {
 			return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}
@@ -230,13 +255,13 @@ func Build(
 			if err != nil {
 				return "", fmt.Errorf("Failed to generate weights manifest: %w", err)
 			}
-			cachedManifest, _ := weightslegacy.LoadManifest(weightsManifestPath)
+			cachedManifest, _ := weightslegacy.LoadManifest(bp.weightsManifest)
 			changed := cachedManifest == nil || !weightsManifest.Equal(cachedManifest)
 			if changed {
 				if err := buildWeightsImage(ctx, dockerCommand, dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
 					return "", fmt.Errorf("Failed to build model weights Docker image: %w", err)
 				}
-				err := weightsManifest.Save(weightsManifestPath)
+				err := weightsManifest.Save(bp.weightsManifest)
 				if err != nil {
 					return "", fmt.Errorf("Failed to save weights hash: %w", err)
 				}
@@ -305,25 +330,26 @@ func Build(
 		}
 		schemaJSON = data
 
-		if err := writeAndValidateSchema(schemaJSON); err != nil {
+		if err := writeAndValidateSchema(schemaJSON, bp.schemaFile); err != nil {
 			return "", err
 		}
 	}
+
+	bundleFiles := collectBundleFiles(schemaJSON, &bp)
 
 	// When skipLabels is true (cog exec/predict/serve/train), skip the expensive
 	// label-adding phase. This image is for local use only and won't be distributed,
 	// so we don't need metadata labels, pip freeze, or git info.
 	// We still need the schema bundled, so do a minimal second build to add it.
 	if skipLabels {
-		if files := collectBundleFiles(schemaJSON); len(files) > 0 {
-			buildCacheDir := filepath.Join(dir, global.CogBuildArtifactsFolder, "build")
+		if len(bundleFiles) > 0 {
 			buildOpts := command.ImageBuildOptions{
-				DockerfileContents: bundleDockerfile(tmpImageId, files),
+				DockerfileContents: bundleDockerfile(tmpImageId, bundleFiles),
 				ImageName:          tmpImageId,
 				ProgressOutput:     progressOutput,
-				BuildCacheDir:      buildCacheDir,
+				BuildCacheDir:      bp.buildDir,
 				BuildContexts: map[string]string{
-					cogBuildContextName: buildCacheDir,
+					cogBuildContextName: bp.buildDir,
 				},
 			}
 			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
@@ -411,8 +437,7 @@ func Build(
 	maps.Copy(labels, annotations)
 
 	// The final image ID comes from the label-adding step.
-	buildCacheDir := filepath.Join(dir, global.CogBuildArtifactsFolder, "build")
-	imageID, err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, collectBundleFiles(schemaJSON), progressOutput, buildCacheDir)
+	imageID, err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, bundleFiles, progressOutput, bp.buildDir)
 	if err != nil {
 		return "", fmt.Errorf("Failed to add labels to image: %w", err)
 	}
@@ -536,12 +561,12 @@ func generateStaticSchema(cfg *config.Config, dir string) ([]byte, error) {
 
 // writeAndValidateSchema writes the schema JSON to the bundled schema file and
 // validates it as a well-formed OpenAPI 3.0 specification.
-func writeAndValidateSchema(schemaJSON []byte) error {
-	if err := os.MkdirAll(filepath.Dir(bundledSchemaFile), 0o755); err != nil {
-		return fmt.Errorf("failed to create directory for %s: %w", bundledSchemaFile, err)
+func writeAndValidateSchema(schemaJSON []byte, schemaPath string) error {
+	if err := os.MkdirAll(filepath.Dir(schemaPath), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", schemaPath, err)
 	}
-	if err := os.WriteFile(bundledSchemaFile, schemaJSON, 0o644); err != nil {
-		return fmt.Errorf("failed to store bundled schema file %s: %w", bundledSchemaFile, err)
+	if err := os.WriteFile(schemaPath, schemaJSON, 0o644); err != nil {
+		return fmt.Errorf("failed to store bundled schema file %s: %w", schemaPath, err)
 	}
 
 	loader := openapi3.NewLoader()
@@ -557,9 +582,9 @@ func writeAndValidateSchema(schemaJSON []byte) error {
 }
 
 // writeRuntimeWeightsManifest projects the lockfile to /.cog/weights.json (spec §3.3).
-func writeRuntimeWeightsManifest(dir string) error {
-	lockPath := filepath.Join(dir, lockfile.WeightsLockFilename)
-	lock, err := lockfile.LoadWeightsLock(lockPath)
+func writeRuntimeWeightsManifest(dir string, weightsPath string) error {
+	lockPath := filepath.Join(dir, weightslockfile.WeightsLockFilename)
+	lock, err := weightslockfile.LoadWeightsLock(lockPath)
 	if err != nil {
 		return fmt.Errorf("managed weights configured but no lockfile found: %w\nRun 'cog weights import' first", err)
 	}
@@ -570,26 +595,26 @@ func writeRuntimeWeightsManifest(dir string) error {
 		return fmt.Errorf("failed to serialize runtime weights manifest: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(bundledWeightsFile), 0o755); err != nil {
-		return fmt.Errorf("failed to create directory for %s: %w", bundledWeightsFile, err)
+	if err := os.MkdirAll(filepath.Dir(weightsPath), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", weightsPath, err)
 	}
-	if err := os.WriteFile(bundledWeightsFile, data, 0o644); err != nil { //nolint:gosec // bundled into image, not a secret
-		return fmt.Errorf("failed to write runtime weights manifest %s: %w", bundledWeightsFile, err)
+	if err := os.WriteFile(weightsPath, data, 0o644); err != nil { //nolint:gosec // bundled into image, not a secret
+		return fmt.Errorf("failed to write runtime weights manifest %s: %w", weightsPath, err)
 	}
-	console.Debugf("Wrote runtime weights manifest to %s (%d weights)", bundledWeightsFile, len(manifest.Weights))
+	console.Debugf("Wrote runtime weights manifest to %s (%d weights)", weightsPath, len(manifest.Weights))
 	return nil
 }
 
-// collectBundleFiles returns the list of .cog/ files that should be COPYed
-// into the final image layer. It checks schemaJSON (non-nil = schema was
-// generated) and probes the filesystem for the weights manifest.
-func collectBundleFiles(schemaJSON []byte) []string {
+// collectBundleFiles returns the list of .cog/build/ files that should be
+// COPYed into the final image layer. It checks schemaJSON (non-nil = schema
+// was generated) and probes the filesystem for the weights manifest.
+func collectBundleFiles(schemaJSON []byte, bp *buildPaths) []string {
 	var files []string
 	if len(schemaJSON) > 0 {
-		files = append(files, bundledSchemaFile)
+		files = append(files, bp.schemaFile)
 	}
-	if _, err := os.Stat(bundledWeightsFile); err == nil {
-		files = append(files, bundledWeightsFile)
+	if _, err := os.Stat(bp.weightsFile); err == nil {
+		files = append(files, bp.weightsFile)
 	}
 	return files
 }

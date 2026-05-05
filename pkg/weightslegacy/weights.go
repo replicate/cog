@@ -6,9 +6,11 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/replicate/cog/pkg/dotcog"
 )
 
-var prefixesToIgnore = []string{".cog", ".git", "__pycache__"}
+var prefixesToIgnore = []string{dotcog.Name, ".git", "__pycache__"}
 
 var suffixesToIgnore = []string{
 	".py", ".ipynb", ".whl", // Python projects

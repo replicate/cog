@@ -12,7 +12,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
@@ -79,7 +79,7 @@ func (m *Manager) Prepare(ctx context.Context) (_ *Mounts, retErr error) {
 	if err != nil {
 		return nil, fmt.Errorf("generate invocation id: %w", err)
 	}
-	root := filepath.Join(m.projectDir, global.CogBuildArtifactsFolder, "mounts", invocationID)
+	root := filepath.Join(m.projectDir, dotcog.Name, "mounts", invocationID)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("create mount root %s: %w", root, err)
 	}

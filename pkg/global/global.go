@@ -16,8 +16,7 @@ var (
 	ProfilingEnabled      = false
 	ReplicateRegistryHost = getDefaultRegistryHost()
 
-	LabelNamespace          = "run.cog."
-	CogBuildArtifactsFolder = ".cog"
+	LabelNamespace = "run.cog."
 )
 
 func getDefaultRegistryHost() string {

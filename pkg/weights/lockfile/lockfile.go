@@ -10,7 +10,6 @@
 package lockfile
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,41 +19,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/gofrs/flock"
-
 	"github.com/replicate/cog/pkg/model/weightsource"
 )
 
 // WeightsLockFilename is the default filename for the weights lock file.
 const WeightsLockFilename = "weights.lock"
-
-// WithLock runs fn while holding an exclusive cross-process advisory
-// lock on a sibling guard file. Concurrent `cog weights import` runs
-// against the same project would otherwise race load+mutate+save and
-// lose writes.
-//
-// ctx cancellation interrupts a blocking lock acquisition so a wedged
-// peer can't make import un-cancellable.
-func WithLock(ctx context.Context, lockPath string, fn func() error) (retErr error) {
-	guardPath := lockPath + ".guard"
-	if err := os.MkdirAll(filepath.Dir(guardPath), 0o755); err != nil {
-		return fmt.Errorf("create lockfile dir: %w", err)
-	}
-	fl := flock.New(guardPath)
-	locked, err := fl.TryLockContext(ctx, 100*time.Millisecond)
-	if err != nil {
-		return fmt.Errorf("acquire weights.lock guard: %w", err)
-	}
-	if !locked {
-		return ctx.Err()
-	}
-	defer func() {
-		if err := fl.Unlock(); err != nil && retErr == nil {
-			retErr = fmt.Errorf("release weights.lock guard: %w", err)
-		}
-	}()
-	return fn()
-}
 
 // Version is the current lockfile format version.
 //

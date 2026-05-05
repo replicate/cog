@@ -6,6 +6,6 @@ import (
 	"github.com/replicate/cog/pkg/registry"
 )
 
-func NewGenerator(config *config.Config, dir string, configFilename string, command command.Command, client registry.Client, requiresCog bool) (Generator, error) {
-	return NewStandardGenerator(config, dir, configFilename, command, client, requiresCog)
+func NewGenerator(config *config.Config, dir string, buildCacheDir string, configFilename string, command command.Command, client registry.Client, requiresCog bool) (Generator, error) {
+	return NewStandardGenerator(config, dir, buildCacheDir, configFilename, command, client, requiresCog)
 }

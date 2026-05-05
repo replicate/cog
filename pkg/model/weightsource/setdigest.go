@@ -12,6 +12,8 @@ import (
 	"runtime"
 
 	"golang.org/x/sync/errgroup"
+
+	"github.com/replicate/cog/pkg/dotcog"
 )
 
 // fileEntry holds the metadata collected during the walk phase, before
@@ -44,7 +46,7 @@ func computeInventory(ctx context.Context, dir string) (Inventory, error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() && d.Name() == ".cog" {
+		if d.IsDir() && d.Name() == dotcog.Name {
 			return filepath.SkipDir
 		}
 		if d.IsDir() {
