@@ -288,7 +288,7 @@ def _strip_non_opaque_annotated(tpe: Any) -> Any:
         return tpe
 
     if origin is typing.Union:
-        return typing.Union[stripped_args]
+        return typing.cast(Any, typing.Union).__getitem__(stripped_args)
     if origin is UnionType:
         result = stripped_args[0]
         for arg in stripped_args[1:]:

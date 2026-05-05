@@ -883,7 +883,7 @@ func parseTypeFromString(s string) (schema.TypeAnnotation, bool) {
 	}
 
 	// Simple or qualified identifier.
-	for _, part := range strings.Split(s, ".") {
+	for part := range strings.SplitSeq(s, ".") {
 		if part == "" {
 			return schema.TypeAnnotation{}, false
 		}
