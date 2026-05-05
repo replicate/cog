@@ -289,7 +289,8 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	// Best-effort cleanup on every error path; both calls are no-ops
+	// Best-effort cleanup on every exit path; both calls are no-ops
+	// after a successful Rename (the temp file was moved to path).
 	// after a successful Close + Rename.
 	defer func() {
 		_ = tmp.Close()
