@@ -21,9 +21,10 @@ import (
 )
 
 var (
-	baseImageCUDAVersion   string
-	baseImagePythonVersion string
-	baseImageTorchVersion  string
+	baseImageCUDAVersion         string
+	baseImagePythonVersion       string
+	baseImageTorchVersion        string
+	baseImageBreakSystemPackages bool
 )
 
 func NewBaseImageRootCommand() (*cobra.Command, error) {
@@ -205,6 +206,8 @@ func addBaseImageFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&baseImageCUDAVersion, "cuda", "", "CUDA version")
 	cmd.Flags().StringVar(&baseImagePythonVersion, "python", "", "Python version")
 	cmd.Flags().StringVar(&baseImageTorchVersion, "torch", "", "Torch version")
+	cmd.Flags().BoolVar(&baseImageBreakSystemPackages, "break-system-packages", false, "Allow pip to modify uv-managed Python installs")
+	_ = cmd.Flags().MarkHidden("break-system-packages")
 	addBuildTimestampFlag(cmd)
 }
 
@@ -214,7 +217,7 @@ func baseImageGeneratorFromFlags(ctx context.Context) (*dockerfile.BaseImageGene
 		return nil, err
 	}
 	client := registry.NewRegistryClient()
-	return dockerfile.NewBaseImageGenerator(
+	generator, err := dockerfile.NewBaseImageGenerator(
 		ctx,
 		client,
 		baseImageCUDAVersion,
@@ -223,4 +226,9 @@ func baseImageGeneratorFromFlags(ctx context.Context) (*dockerfile.BaseImageGene
 		dockerClient,
 		true,
 	)
+	if err != nil {
+		return nil, err
+	}
+	generator.SetBreakSystemPackages(baseImageBreakSystemPackages)
+	return generator, nil
 }

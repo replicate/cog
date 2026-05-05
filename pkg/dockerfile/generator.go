@@ -10,6 +10,7 @@ type Generator interface {
 	GenerateInitialSteps(ctx context.Context) (string, error)
 	SetUseCogBaseImage(bool)
 	SetUseCogBaseImagePtr(*bool)
+	SetBreakSystemPackages(bool)
 	GenerateModelBaseWithSeparateWeights(ctx context.Context, imageName string) (string, string, string, error)
 	Cleanup() error
 	SetStrip(bool)

@@ -39,7 +39,7 @@ func testInstallCog(stripped bool) string {
 	// When coglet has no explicit version pin (empty version via pypiWheels()),
 	// the SDK's own dependency handles coglet installation — no explicit coglet line.
 	return fmt.Sprintf(`ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/uv uv pip install --break-system-packages --no-cache cog%s
+RUN --mount=type=cache,target=/root/.cache/uv uv pip install --no-cache cog%s
 ENV CFLAGS=`, strippedCall)
 }
 
@@ -182,7 +182,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testInstallUVLine + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
@@ -240,7 +240,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallPython("3.12") + `COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
@@ -323,7 +323,7 @@ build:
 	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
 	require.NoError(t, err)
 	fmt.Println(actual)
-	require.Contains(t, actual, `uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt`)
+	require.Contains(t, actual, `uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt`)
 }
 
 // mockFileInfo is a test type to mock os.FileInfo
@@ -408,7 +408,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*` + `
 ` + testInstallPython("3.12") + `COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
@@ -566,7 +566,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 ` + testInstallUVLine + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.strip) + `
 RUN cowsay moo
@@ -626,7 +626,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 `+testInstallUVLine+`
 COPY `+gen.relativeTmpDir+`/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 `+testInstallCog(gen.strip)+`
 RUN cowsay moo
@@ -685,7 +685,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 ` + testInstallUVLine + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
 ` + testInstallCog(gen.strip) + `
 RUN cowsay moo
@@ -743,7 +743,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 ` + testInstallUVLine + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
 ` + testInstallCog(gen.strip) + `
 RUN cowsay moo
@@ -837,7 +837,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 ` + testInstallUVLine + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
 ` + testInstallCog(gen.strip) + `
 RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec touch -t 197001010000 {} \; && find / -type f -name "*.py" -printf "%h\n" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0
@@ -899,7 +899,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq &
 ` + testInstallUVLine + `
 COPY ` + gen.relativeTmpDir + `/requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt && find / -type f -name "*python*.so" -not -name "*cpython*.so" -exec strip -S {} \;
 ENV CFLAGS=
 ` + testInstallCog(true) + `
 RUN find / -type f -name "*.py[co]" -delete && find / -type f -name "*.py" -exec touch -t 197001010000 {} \; && find / -type f -name "*.py" -printf "%h\n" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0
@@ -945,7 +945,7 @@ predict: predict.py:Predictor
 
 	// Should contain uv pip install cog from PyPI.
 	// Coglet is not explicitly installed when unpinned — the SDK dependency handles it.
-	require.Contains(t, actual, "uv pip install --break-system-packages --no-cache cog")
+	require.Contains(t, actual, "uv pip install --no-cache cog")
 }
 
 func TestCOGWheelEnvPyPI(t *testing.T) {
@@ -973,7 +973,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	// Should contain uv pip install cog from PyPI
-	require.Contains(t, actual, "uv pip install --break-system-packages --no-cache cog")
+	require.Contains(t, actual, "uv pip install --no-cache cog")
 }
 
 func TestCOGWheelEnvPyPIWithVersion(t *testing.T) {
@@ -1001,7 +1001,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	// Should contain uv pip install cog==0.17.0 from PyPI
-	require.Contains(t, actual, "uv pip install --break-system-packages --no-cache cog==0.17.0")
+	require.Contains(t, actual, "uv pip install --no-cache cog==0.17.0")
 }
 
 func TestCOGWheelEnvURL(t *testing.T) {
@@ -1030,7 +1030,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	// Should contain uv pip install from custom URL
-	require.Contains(t, actual, "uv pip install --break-system-packages --no-cache "+customURL)
+	require.Contains(t, actual, "uv pip install --no-cache "+customURL)
 }
 
 func TestCOGWheelEnvFile(t *testing.T) {
@@ -1063,7 +1063,7 @@ predict: predict.py:Predictor
 	require.NoError(t, err)
 
 	// Should contain uv pip install from temp path (copied into container)
-	require.Contains(t, actual, "uv pip install --break-system-packages --no-cache /tmp/test-cog-0.1.0-py3-none-any.whl")
+	require.Contains(t, actual, "uv pip install --no-cache /tmp/test-cog-0.1.0-py3-none-any.whl")
 }
 
 func TestCogletStrippedFromRequirements(t *testing.T) {
@@ -1112,7 +1112,7 @@ predict: predict.py:Predictor
 
 	dockerfile, err := gen.GenerateInitialSteps(t.Context())
 	require.NoError(t, err)
-	require.Contains(t, dockerfile, "uv pip install --break-system-packages --no-cache cog==0.18.0")
+	require.Contains(t, dockerfile, "uv pip install --no-cache cog==0.18.0")
 	// No --pre flag for stable release
 	require.NotContains(t, dockerfile, "--pre")
 }
@@ -1138,7 +1138,7 @@ predict: predict.py:Predictor
 	dockerfile, err := gen.GenerateInitialSteps(t.Context())
 	require.NoError(t, err)
 	// cog install should have --pre and pinned version
-	require.Contains(t, dockerfile, "uv pip install --break-system-packages --pre --no-cache cog==0.18.0a1")
+	require.Contains(t, dockerfile, "uv pip install --pre --no-cache cog==0.18.0a1")
 	// coglet is NOT explicitly installed — SDK dependency pulls it in.
 	// No separate coglet install line expected.
 }
@@ -1189,7 +1189,7 @@ predict: predict.py:Predictor
 	dockerfile, err := gen.GenerateInitialSteps(t.Context())
 	require.NoError(t, err)
 	// env var wins: should install 0.17.0, not 0.18.0
-	require.Contains(t, dockerfile, "uv pip install --break-system-packages --no-cache cog==0.17.0")
+	require.Contains(t, dockerfile, "uv pip install --no-cache cog==0.17.0")
 	require.NotContains(t, dockerfile, "cog==0.18.0")
 }
 
@@ -1214,7 +1214,7 @@ predict: predict.py:Predictor
 	dockerfile, err := gen.GenerateInitialSteps(t.Context())
 	require.NoError(t, err)
 	// Should use --pre with no version pin
-	require.Contains(t, dockerfile, "uv pip install --break-system-packages --pre --no-cache cog")
+	require.Contains(t, dockerfile, "uv pip install --pre --no-cache cog")
 	// Must NOT contain a version pin
 	require.NotContains(t, dockerfile, "cog==")
 }

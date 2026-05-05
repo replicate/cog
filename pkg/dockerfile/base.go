@@ -75,11 +75,12 @@ type BaseImageConfiguration struct {
 }
 
 type BaseImageGenerator struct {
-	cudaVersion   string
-	pythonVersion string
-	torchVersion  string
-	command       command.Command
-	client        registry.Client
+	cudaVersion         string
+	pythonVersion       string
+	torchVersion        string
+	command             command.Command
+	client              registry.Client
+	breakSystemPackages bool
 }
 
 func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
@@ -170,7 +171,7 @@ func NewBaseImageGenerator(ctx context.Context, client registry.Client, cudaVers
 		return nil, err
 	}
 	if valid {
-		return &BaseImageGenerator{cudaVersion, pythonVersion, torchVersion, command, client}, nil
+		return &BaseImageGenerator{cudaVersion: cudaVersion, pythonVersion: pythonVersion, torchVersion: torchVersion, command: command, client: client}, nil
 	}
 	printNone := func(s string) string {
 		if s == "" {
@@ -193,6 +194,7 @@ func (g *BaseImageGenerator) GenerateDockerfile(ctx context.Context) (string, er
 	}
 	useCogBaseImage := false
 	generator.SetUseCogBaseImagePtr(&useCogBaseImage)
+	generator.SetBreakSystemPackages(g.breakSystemPackages)
 
 	dockerfile, err := generator.GenerateInitialSteps(ctx)
 	if err != nil {
@@ -200,6 +202,10 @@ func (g *BaseImageGenerator) GenerateDockerfile(ctx context.Context) (string, er
 	}
 
 	return dockerfile, nil
+}
+
+func (g *BaseImageGenerator) SetBreakSystemPackages(breakSystemPackages bool) {
+	g.breakSystemPackages = breakSystemPackages
 }
 
 func (g *BaseImageGenerator) makeConfig() (*config.Config, error) {
