@@ -697,7 +697,7 @@ class Predictor(BasePredictor):
 
 `Opaque` emits an object schema for the wrapped type and preserves the container shape. For example, `Annotated[list[T], Opaque]` is represented as an array of opaque objects.
 
-`Opaque` does not inspect, validate, encode, decode, or transform values. It only tells Cog's schema generator to treat the wrapped type as an opaque JSON object.
+`Opaque` does not inspect, validate, encode, decode, or transform values. It only tells Cog's schema generator to treat the wrapped type as an opaque JSON object. If your type needs custom serialization or deserialization, provide that separately; `Opaque` only affects schema generation.
 
 ### Structured output with `BaseModel`
 
