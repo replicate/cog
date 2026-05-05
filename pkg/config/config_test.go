@@ -117,7 +117,7 @@ foo==1.0.0`), 0o644)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--extra-index-url https://download.pytorch.org/whl/cu117
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu117/
 torch==1.13.1
 torchvision==0.14.1
 torchaudio==0.13.1
@@ -147,7 +147,7 @@ foo==1.0.0`), 0o644)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--extra-index-url https://download.pytorch.org/whl/cu116
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu116/
 torch==1.12.1
 torchvision==0.13.1
 torchaudio==0.12.1
@@ -351,7 +351,7 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--extra-index-url https://download.pytorch.org/whl/cu118
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu118/
 torch==2.0.1
 torchvision==0.15.2
 torchaudio==2.0.2
@@ -378,7 +378,7 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--extra-index-url https://download.pytorch.org/whl/cpu
+	expected := `--extra-index-url https://download.pytorch.org/whl/cpu/
 torch==2.0.1
 torchvision==0.15.2
 torchaudio==2.0.2
@@ -435,7 +435,7 @@ func TestPythonPackagesBothTorchAndTensorflow(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--extra-index-url https://download.pytorch.org/whl/cu121
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu121/
 tensorflow==2.16.1
 torch==2.3.1`
 	require.Equal(t, expected, requirements)
