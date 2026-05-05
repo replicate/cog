@@ -2,9 +2,6 @@
 #
 # https://docs.docker.com/engine/reference/builder/#dockerignore-file
 
-# Exclude Cog build cache
-.cog
-
 # Exclude Git files
 **/.git
 **/.github
