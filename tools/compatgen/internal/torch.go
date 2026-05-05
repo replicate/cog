@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/anaskhan96/soup"
@@ -181,6 +180,9 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	}
 	torchaudio := libVersions["torchaudio"]
 
+	extraIndexURL = normalizePytorchIndexURL(extraIndexURL)
+	torch = normalizeTorchVersionForIndexURL(torch, extraIndexURL)
+
 	pythons, err := FindCompatiblePythonVersions(torch, torchvision, torchaudio, extraIndexURL, findLinks)
 	if err != nil {
 		return nil, err
@@ -288,6 +290,29 @@ func basePytorchURL() string {
 func pytorchURL(name string) string {
 	url := fmt.Sprintf(basePytorchURL()+"/%s/", name)
 	return url
+}
+
+func normalizePytorchIndexURL(indexURL string) string {
+	if indexURL == "" {
+		return ""
+	}
+	return strings.TrimRight(indexURL, "/") + "/"
+}
+
+func normalizeTorchVersionForIndexURL(torchVersion string, indexURL string) string {
+	if indexURL == "" || strings.Contains(torchVersion, "+") {
+		return torchVersion
+	}
+	u, err := url.Parse(indexURL)
+	if err != nil {
+		return torchVersion
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	variant := parts[len(parts)-1]
+	if strings.HasPrefix(variant, "cu") || variant == "cpu" {
+		return torchVersion + "+" + variant
+	}
+	return torchVersion
 }
 
 func ExtractSubFeaturesFromPytorchVersion(pytorchVersion string) (string, string, string, string, string, error) {
@@ -406,7 +431,12 @@ func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
 	links := doc.FindAll("a")
 	packages := []TorchPackage{}
 	for _, link := range links {
-		name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion(link.Text())
+		filename := strings.TrimSpace(link.Text())
+		if !strings.HasSuffix(filename, ".whl") {
+			continue
+		}
+
+		name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion(filename)
 		if err != nil {
 			console.Warnf("Failed to parse pytorch version: %v", err)
 			continue
@@ -431,16 +461,18 @@ func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
 			continue
 		}
 
+		if !isDigits(pythonVersion) {
+			continue
+		}
+
 		// 310 -> 3.10
 		pythonVersion = pythonVersion[:1] + "." + pythonVersion[1:]
-		if minor, ok := strings.CutPrefix(pythonVersion, "3."); ok {
-			minorInt, err := strconv.Atoi(minor)
-			if err != nil {
-				return nil, fmt.Errorf("invalid python version %q: %w", pythonVersion, err)
-			}
-			if minorInt < config.MinimumMinorPythonVersion {
-				continue
-			}
+		isSupported, err := isSupportedPythonVersion(pythonVersion)
+		if err != nil {
+			return nil, err
+		}
+		if !isSupported {
+			continue
 		}
 
 		pkg := TorchPackage{
@@ -467,9 +499,21 @@ func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
 	return packages, nil
 }
 
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func findTorchPackagesWithVersion(pkgName string, url string, version string, appendPkg bool) ([]TorchPackage, error) {
 	if appendPkg {
-		url = url + "/" + pkgName
+		url = strings.TrimRight(url, "/") + "/" + pkgName
 	}
 	pkgs, err := fetchTorchPackagesFromURL(url)
 	if err != nil {
@@ -483,4 +527,19 @@ func findTorchPackagesWithVersion(pkgName string, url string, version string, ap
 		validPkgs = append(validPkgs, pkg)
 	}
 	return validPkgs, nil
+}
+
+func isSupportedPythonVersion(pythonVersion string) (bool, error) {
+	major, minor, err := splitPythonVersion(pythonVersion)
+	if err != nil {
+		return false, fmt.Errorf("invalid python version %q: %w", pythonVersion, err)
+	}
+	maxMajor, maxMinor, err := splitPythonVersion(config.DefaultPythonVersion)
+	if err != nil {
+		return false, fmt.Errorf("invalid default python version %q: %w", config.DefaultPythonVersion, err)
+	}
+	if major != config.MinimumMajorPythonVersion || major != maxMajor {
+		return false, nil
+	}
+	return minor >= config.MinimumMinorPythonVersion && minor <= maxMinor, nil
 }
