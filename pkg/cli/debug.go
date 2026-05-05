@@ -48,7 +48,7 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	buildDir, err := src.DotCog.Path("build")
+	buildDir, err := src.DotCog.TempPath("build")
 	if err != nil {
 		return err
 	}
@@ -58,11 +58,6 @@ func cmdDockerfile(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("Error creating Dockerfile generator: %w", err)
 	}
-	defer func() {
-		if err := generator.Cleanup(); err != nil {
-			console.Warnf("Error cleaning up after build: %v", err)
-		}
-	}()
 
 	generator.SetUseCudaBaseImage(buildUseCudaBaseImage)
 	useCogBaseImage := DetermineUseCogBaseImage(cmd)

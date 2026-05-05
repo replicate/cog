@@ -377,13 +377,6 @@ func makeDockerignoreForWeights(dirs, files []string) string {
 	return DockerignoreHeader + contents.String()
 }
 
-func (g *StandardGenerator) Cleanup() error {
-	if err := os.RemoveAll(g.tmpDir); err != nil {
-		return fmt.Errorf("Failed to clean up %s: %w", g.tmpDir, err)
-	}
-	return nil
-}
-
 func (g *StandardGenerator) BaseImage(ctx context.Context) (string, error) {
 	if g.IsUsingCogBaseImage() {
 		baseImage, err := g.determineBaseImageName(ctx)

@@ -89,8 +89,10 @@ func Build(
 		return "", err
 	}
 	defer release()
-	// Resolve build artifact paths from the .cog/ directory.
-	buildDir, err := dc.Path("build")
+	// Resolve build artifact paths from the .cog/ directory. TempPath
+	// registers .cog/build/ for removal on dc.Close(), so build staging
+	// artifacts don't accumulate between invocations.
+	buildDir, err := dc.TempPath("build")
 	if err != nil {
 		return "", fmt.Errorf("create build cache dir: %w", err)
 	}
@@ -222,11 +224,6 @@ func Build(
 		if err != nil {
 			return "", err
 		}
-		defer func() {
-			if err := generator.Cleanup(); err != nil {
-				console.Warnf("Error cleaning up Dockerfile generator: %s", err)
-			}
-		}()
 		generator.SetStrip(strip)
 		generator.SetPrecompile(precompile)
 		generator.SetUseCudaBaseImage(useCudaBaseImage)

@@ -15,7 +15,9 @@
 //
 // For operations that need exclusive access:
 //
-//	err := d.WithLock(ctx, func() error { ... })
+//	release, err := d.Lock(ctx)
+//	if err != nil { ... }
+//	defer release()
 package dotcog
 
 import (
@@ -47,9 +49,8 @@ type Dir struct {
 	// root is the absolute path to the .cog/ directory itself.
 	root string
 
-	// temp indicates this Dir was created by OpenTemp and should be
-	// removed entirely on Close.
-	temp bool
+	closeOnce sync.Once
+	closeErr  error
 
 	mu       sync.Mutex
 	cleanups []func() error
@@ -80,7 +81,12 @@ func OpenTemp() (*Dir, error) {
 		_ = os.RemoveAll(tmp)
 		return nil, fmt.Errorf("create %s: %w", root, err)
 	}
-	return &Dir{root: root, temp: true}, nil
+	d := &Dir{root: root}
+	// Register temp dir removal as a cleanup so Close handles it uniformly.
+	d.onClose(func() error {
+		return os.RemoveAll(tmp)
+	})
+	return d, nil
 }
 
 // Root returns the absolute path to the .cog/ directory.
@@ -103,6 +109,21 @@ func (d *Dir) Path(name string) (string, error) {
 	return p, nil
 }
 
+// TempPath returns the absolute path to a subdirectory of .cog/, creating
+// it if needed and registering it for removal on Close. Use this for
+// scratch directories (like build/) that should not persist between
+// invocations.
+func (d *Dir) TempPath(name string) (string, error) {
+	p, err := d.Path(name)
+	if err != nil {
+		return "", err
+	}
+	d.onClose(func() error {
+		return os.RemoveAll(p)
+	})
+	return p, nil
+}
+
 // FilePath returns the absolute path to a file inside .cog/, ensuring
 // the parent directory exists. Unlike Path, it does not create the leaf
 // as a directory.
@@ -114,39 +135,36 @@ func (d *Dir) FilePath(name string) (string, error) {
 	return p, nil
 }
 
-// OnClose registers a cleanup function to be called by Close. Functions
+// onClose registers a cleanup function to be called by Close. Functions
 // are called in LIFO order. Errors are joined, not short-circuited.
-func (d *Dir) OnClose(fn func() error) {
+func (d *Dir) onClose(fn func() error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.cleanups = append(d.cleanups, fn)
 }
 
-// Close runs all registered cleanup functions in reverse order. If the
-// Dir was created by OpenTemp, the entire temp tree is removed afterward.
-// Close is nil-safe: calling Close on a nil *Dir is a no-op.
+// Close runs all registered cleanup functions in reverse order.
+// Close is nil-safe and idempotent: calling Close on a nil *Dir or
+// calling it multiple times is a no-op.
 func (d *Dir) Close() error {
 	if d == nil {
 		return nil
 	}
-	d.mu.Lock()
-	cleanups := d.cleanups
-	d.cleanups = nil
-	d.mu.Unlock()
+	d.closeOnce.Do(func() {
+		d.mu.Lock()
+		cleanups := d.cleanups
+		d.cleanups = nil
+		d.mu.Unlock()
 
-	var errs []error
-	for i := len(cleanups) - 1; i >= 0; i-- {
-		if err := cleanups[i](); err != nil {
-			errs = append(errs, err)
+		var errs []error
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			if err := cleanups[i](); err != nil {
+				errs = append(errs, err)
+			}
 		}
-	}
-	if d.temp {
-		// root is .cog/ inside the temp dir; remove the parent.
-		if err := os.RemoveAll(filepath.Dir(d.root)); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+		d.closeErr = errors.Join(errs...)
+	})
+	return d.closeErr
 }
 
 // Lock acquires an exclusive project-wide advisory lock, blocking until
@@ -168,14 +186,12 @@ func (d *Dir) Lock(ctx context.Context) (release func(), err error) {
 		return noop, fmt.Errorf("acquire project lock: %w", err)
 	}
 	if !locked {
-		return noop, ctx.Err()
+		if err := ctx.Err(); err != nil {
+			return noop, err
+		}
+		return noop, fmt.Errorf("failed to acquire project lock")
 	}
 	return func() {
 		_ = fl.Unlock()
 	}, nil
-}
-
-// Remove deletes the entire .cog/ directory.
-func (d *Dir) Remove() error {
-	return os.RemoveAll(d.root)
 }
