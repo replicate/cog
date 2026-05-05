@@ -5,10 +5,6 @@ on:
     - cron: "0 12 * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -21,6 +17,9 @@ jobs:
     name: Update compatibility matrices
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -52,9 +51,11 @@ jobs:
             pkg/config/tf_compatibility.json
 
       - name: Report result
+        env:
+          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
         run: |
-          if [ -n "${{ steps.cpr.outputs.pull-request-number }}" ]; then
-            echo "Opened or updated PR #${{ steps.cpr.outputs.pull-request-number }}"
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Opened or updated PR #$PR_NUMBER"
           else
             echo "No compatibility matrix changes detected."
           fi
