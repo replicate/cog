@@ -48,6 +48,7 @@ const CFlags = "ENV CFLAGS=\"-O3 -funroll-loops -fno-strict-aliasing -flto -S\""
 const UVVersion = "0.9.26"
 const uvCacheMount = "--mount=type=cache,target=/root/.cache/uv"
 const uvPip = "uv pip"
+const uvBreakSystemPackages = "--break-system-packages"
 const PrecompilePythonCommand = "RUN find / -type f -name \"*.py[co]\" -delete && find / -type f -name \"*.py\" -exec touch -t 197001010000 {} \\; && find / -type f -name \"*.py\" -printf \"%h\\n\" | sort -u | /usr/bin/python3 -m compileall --invalidation-mode timestamp -o 2 -j 0"
 const STANDARD_GENERATOR_NAME = "STANDARD_GENERATOR"
 
@@ -677,7 +678,7 @@ func (g *StandardGenerator) installCogFromPyPI(config *wheels.WheelConfig, preRe
 	if preRelease {
 		flags = "--pre " + flags
 	}
-	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install " + flags + " " + packageSpec
+	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install " + uvBreakSystemPackages + " " + flags + " " + packageSpec
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -704,9 +705,9 @@ func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
 	// with coglet's cog compatibility shim that provides the same module paths.
 	var pipPrefix string
 	if strings.Contains(url, "coglet") {
-		pipPrefix = uvPip + " uninstall cog 2>/dev/null || true && "
+		pipPrefix = uvPip + " uninstall " + uvBreakSystemPackages + " cog 2>/dev/null || true && "
 	}
-	pipInstallLine := "RUN " + uvCacheMount + " " + pipPrefix + uvPip + " install --no-cache " + url
+	pipInstallLine := "RUN " + uvCacheMount + " " + pipPrefix + uvPip + " install " + uvBreakSystemPackages + " --no-cache " + url
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -742,10 +743,10 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 		// Uninstall cog first to avoid conflicts with coglet's cog shim package.
 		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
 		// with coglet's cog compatibility shim that provides the same module paths.
-		pipPrefix = uvPip + " uninstall cog 2>/dev/null || true && "
+		pipPrefix = uvPip + " uninstall " + uvBreakSystemPackages + " cog 2>/dev/null || true && "
 	}
 
-	pipInstallLine := "RUN " + uvCacheMount + " " + pipPrefix + uvPip + " install --no-cache " + containerPath
+	pipInstallLine := "RUN " + uvCacheMount + " " + pipPrefix + uvPip + " install " + uvBreakSystemPackages + " --no-cache " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -776,7 +777,7 @@ func (g *StandardGenerator) installCogletFromPyPI(config *wheels.WheelConfig, pr
 	if preRelease {
 		flags = "--pre " + flags
 	}
-	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install " + flags + " " + packageSpec
+	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install " + uvBreakSystemPackages + " " + flags + " " + packageSpec
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -786,7 +787,7 @@ func (g *StandardGenerator) installCogletFromPyPI(config *wheels.WheelConfig, pr
 
 // installCogletFromURL installs coglet from a URL
 func (g *StandardGenerator) installCogletFromURL(url string) (string, error) {
-	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install --no-cache " + url
+	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install " + uvBreakSystemPackages + " --no-cache " + url
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -807,7 +808,7 @@ func (g *StandardGenerator) installCogletFromFile(path string) (string, error) {
 		return "", err
 	}
 
-	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install --no-cache " + containerPath
+	pipInstallLine := "RUN " + uvCacheMount + " " + uvPip + " install " + uvBreakSystemPackages + " --no-cache " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
@@ -917,7 +918,7 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 		return "", err
 	}
 
-	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r " + containerPath
+	pipInstallLine := "RUN --mount=type=cache,target=/root/.cache/pip uv run pip install " + uvBreakSystemPackages + " --cache-dir /root/.cache/pip -r " + containerPath
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
