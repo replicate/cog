@@ -96,7 +96,7 @@ func TestParseTorchInstallStringNormalizesIndexURLAndSupportedPythons(t *testing
 	require.NoError(t, err)
 	require.Equal(t, "2.10.0+cu126", compat.Torch)
 	require.Equal(t, server.URL+"/whl/cu126/", compat.ExtraIndexURL)
-	require.Equal(t, []string{"3.13"}, compat.Pythons)
+	require.Equal(t, []string{"3.13", "3.14"}, compat.Pythons)
 }
 
 func TestFetchTorchPackagesSkipsNonCPythonWheelLinks(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/anaskhan96/soup"
@@ -467,11 +468,15 @@ func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
 
 		// 310 -> 3.10
 		pythonVersion = pythonVersion[:1] + "." + pythonVersion[1:]
-		isSupported, err := isSupportedPythonVersion(pythonVersion)
-		if err != nil {
-			return nil, err
-		}
-		if !isSupported {
+		if minor, ok := strings.CutPrefix(pythonVersion, "3."); ok {
+			minorInt, err := strconv.Atoi(minor)
+			if err != nil {
+				return nil, fmt.Errorf("invalid python version %q: %w", pythonVersion, err)
+			}
+			if minorInt < config.MinimumMinorPythonVersion {
+				continue
+			}
+		} else {
 			continue
 		}
 
@@ -527,19 +532,4 @@ func findTorchPackagesWithVersion(pkgName string, url string, version string, ap
 		validPkgs = append(validPkgs, pkg)
 	}
 	return validPkgs, nil
-}
-
-func isSupportedPythonVersion(pythonVersion string) (bool, error) {
-	major, minor, err := splitPythonVersion(pythonVersion)
-	if err != nil {
-		return false, fmt.Errorf("invalid python version %q: %w", pythonVersion, err)
-	}
-	maxMajor, maxMinor, err := splitPythonVersion(config.DefaultPythonVersion)
-	if err != nil {
-		return false, fmt.Errorf("invalid default python version %q: %w", config.DefaultPythonVersion, err)
-	}
-	if major != config.MinimumMajorPythonVersion || major != maxMajor {
-		return false, nil
-	}
-	return minor >= config.MinimumMinorPythonVersion && minor <= maxMinor, nil
 }
