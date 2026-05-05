@@ -343,7 +343,7 @@ func TestCollectBundleFiles_Nothing(t *testing.T) {
 func TestCollectBundleFiles_WithWeightsFile(t *testing.T) {
 	t.Chdir(t.TempDir())
 
-	require.NoError(t, os.MkdirAll(".cog", 0o755))
+	require.NoError(t, os.MkdirAll(".cog/build", 0o755))
 	require.NoError(t, os.WriteFile(bundledWeightsFile, []byte(`{"weights":[]}`), 0o644))
 
 	files := collectBundleFiles([]byte(`{"openapi":"3.0.0"}`))
@@ -353,6 +353,6 @@ func TestCollectBundleFiles_WithWeightsFile(t *testing.T) {
 func TestBundleDockerfile(t *testing.T) {
 	df := bundleDockerfile("myimage:latest", []string{bundledSchemaFile, bundledWeightsFile})
 	assert.Contains(t, df, "FROM myimage:latest")
-	assert.Contains(t, df, "COPY .cog/openapi_schema.json .cog/")
-	assert.Contains(t, df, "COPY .cog/weights.json .cog/")
+	assert.Contains(t, df, "COPY --from=cog_build openapi_schema.json .cog/")
+	assert.Contains(t, df, "COPY --from=cog_build weights.json .cog/")
 }

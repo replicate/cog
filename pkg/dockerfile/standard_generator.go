@@ -66,10 +66,9 @@ type StandardGenerator struct {
 	strip            bool
 	precompile       bool
 
-	// absolute path to tmpDir, a directory that will be cleaned up
+	// absolute path to the build cache dir (.cog/build/), cleaned up
+	// after the build by Cleanup().
 	tmpDir string
-	// tmpDir relative to Dir
-	relativeTmpDir string
 
 	fileWalker weightslegacy.FileWalker
 
@@ -98,11 +97,6 @@ func NewStandardGenerator(config *config.Config, dir string, configFilename stri
 	if err != nil {
 		return nil, err
 	}
-	// tmpDir, but without dir prefix. This is the path used in the Dockerfile.
-	relativeTmpDir, err := filepath.Rel(dir, tmpDir)
-	if err != nil {
-		return nil, err
-	}
 
 	// Default to "cog.yaml" if not specified
 	if configFilename == "" {
@@ -118,7 +112,6 @@ func NewStandardGenerator(config *config.Config, dir string, configFilename stri
 		GOOS:             "linux",
 		GOARCH:           "amd64",
 		tmpDir:           tmpDir,
-		relativeTmpDir:   relativeTmpDir,
 		fileWalker:       filepath.Walk,
 		useCudaBaseImage: true,
 		useCogBaseImage:  nil,
@@ -420,12 +413,28 @@ func (g *StandardGenerator) Name() string {
 	return STANDARD_GENERATOR_NAME
 }
 
+// BuildDir returns the Docker build context directory (the project root).
+// The context is filtered at the BuildKit session level to exclude .cog/,
+// so this just returns "." — the actual filtering happens in buildkit.go
+// via ExcludePatterns.
 func (g *StandardGenerator) BuildDir() (string, error) {
 	return dockercontext.StandardBuildDirectory, nil
 }
 
+// BuildCacheDir returns the absolute path to .cog/build/ where all build
+// staging artifacts live (Dockerfile, wheels, requirements.txt, schemas,
+// weights manifest, CA certs).
+func (g *StandardGenerator) BuildCacheDir() string {
+	return g.tmpDir
+}
+
+// BuildContexts returns named build contexts passed to BuildKit. The
+// "cog_build" context points at .cog/build/ and is referenced by
+// COPY --from=cog_build instructions in the generated Dockerfile.
 func (g *StandardGenerator) BuildContexts() (map[string]string, error) {
-	return map[string]string{}, nil
+	return map[string]string{
+		"cog_build": g.tmpDir,
+	}, nil
 }
 
 func (g *StandardGenerator) preamble() string {
@@ -1000,8 +1009,10 @@ func (g *StandardGenerator) installCACert() (string, error) {
 	return GenerateCACertInstall(certData, g.writeTemp)
 }
 
-// writeTemp writes a temporary file that can be used as part of the build process
-// It returns the lines to add to Dockerfile to make it available and the filename it ends up as inside the container
+// writeTemp writes a file to the build cache directory (.cog/build/) and
+// returns the Dockerfile lines to COPY it into the container. Files are
+// referenced via the "cog_build" named build context so the path is
+// relative to .cog/build/, not the project root.
 func (g *StandardGenerator) writeTemp(filename string, contents []byte) ([]string, string, error) {
 	path := filepath.Join(g.tmpDir, filename)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -1010,7 +1021,7 @@ func (g *StandardGenerator) writeTemp(filename string, contents []byte) ([]strin
 	if err := os.WriteFile(path, contents, 0o644); err != nil {
 		return []string{}, "", fmt.Errorf("Failed to write %s: %w", filename, err)
 	}
-	return []string{fmt.Sprintf("COPY %s /tmp/%s", filepath.Join(g.relativeTmpDir, filename), filename)}, "/tmp/" + filename, nil
+	return []string{fmt.Sprintf("COPY --from=cog_build %s /tmp/%s", filename, filename)}, "/tmp/" + filename, nil
 }
 
 func joinStringsWithoutLineSpace(chunks []string) string {

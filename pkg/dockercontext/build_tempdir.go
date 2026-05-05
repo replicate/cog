@@ -2,42 +2,32 @@ package dockercontext
 
 import (
 	"os"
-	"path"
-	"time"
+	"path/filepath"
 
 	"github.com/replicate/cog/pkg/global"
 )
 
+// CogBuildArtifactsDirPath returns the .cog directory path, creating it
+// if it doesn't exist.
 func CogBuildArtifactsDirPath(dir string) (string, error) {
-	tmpDir := path.Join(dir, global.CogBuildArtifactsFolder)
-	err := os.MkdirAll(tmpDir, 0o777)
-	if err != nil {
+	cogDir := filepath.Join(dir, global.CogBuildArtifactsFolder)
+	if err := os.MkdirAll(cogDir, 0o755); err != nil {
 		return "", err
 	}
-	return tmpDir, nil
+	return cogDir, nil
 }
 
-func CogTempDir(dir string, contextDir string) (string, error) {
-	tmpDir, err := CogBuildArtifactsDirPath(dir)
-	if err != nil {
-		return "", err
-	}
-	return path.Join(tmpDir, "tmp", contextDir), nil
-}
-
-func BuildCogTempDir(dir string, subDir string) (string, error) {
-	rootTmp, err := CogTempDir(dir, subDir)
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(rootTmp, 0o777); err != nil {
-		return "", err
-	}
-	return rootTmp, nil
-}
-
+// BuildTempDir returns the stable build staging directory at .cog/build/.
+// All build-time files (requirements.txt, wheels, CA certs, schemas,
+// weights manifest) are written here. The directory is created if it
+// doesn't exist.
+//
+// The path is deterministic so that generated Dockerfile COPY instructions
+// produce the same layer cache keys across builds when content is unchanged.
 func BuildTempDir(dir string) (string, error) {
-	// tmpDir ends up being something like dir/.cog/tmp/build20240620123456.000000
-	now := time.Now().Format("20060102150405.000000")
-	return BuildCogTempDir(dir, "build"+now)
+	buildDir := filepath.Join(dir, global.CogBuildArtifactsFolder, "build")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		return "", err
+	}
+	return buildDir, nil
 }

@@ -315,11 +315,18 @@ func (c *apiClient) ImageExists(ctx context.Context, ref string) (bool, error) {
 func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOptions) (string, error) {
 	console.Debugf("=== APIClient.ImageBuild %s", options.ImageName)
 
-	buildDir, err := os.MkdirTemp("", "cog-build")
-	if err != nil {
-		return "", err
+	// When the caller provides a BuildCacheDir (e.g. .cog/build/), write
+	// the Dockerfile there alongside other build artifacts. Otherwise
+	// create a throwaway temp dir.
+	buildDir := options.BuildCacheDir
+	if buildDir == "" {
+		var err error
+		buildDir, err = os.MkdirTemp("", "cog-build")
+		if err != nil {
+			return "", err
+		}
+		defer os.RemoveAll(buildDir)
 	}
-	defer os.RemoveAll(buildDir)
 
 	bc, err := buildkitclient.New(ctx, "",
 		// Connect to Docker Engine's embedded Buildkit.

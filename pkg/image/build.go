@@ -23,7 +23,6 @@ import (
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/dockercontext"
 	"github.com/replicate/cog/pkg/dockerfile"
-	"github.com/replicate/cog/pkg/dockerignore"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/schema"
@@ -37,8 +36,18 @@ import (
 
 const dockerignoreBackupPath = ".dockerignore.cog.bak"
 const weightsManifestPath = ".cog/cache/weights_manifest.json"
-const bundledSchemaFile = ".cog/openapi_schema.json"
-const bundledWeightsFile = ".cog/weights.json"
+const bundledSchemaFile = ".cog/build/openapi_schema.json"
+const bundledWeightsFile = ".cog/build/weights.json"
+
+// cogBuildContextName is the named build context for build staging
+// artifacts (.cog/build/). Dockerfile COPY instructions reference it
+// via --from=cog_build.
+const cogBuildContextName = "cog_build"
+
+// defaultExcludePatterns filters .cog/ out of the project context mount
+// so weight blobs, mount dirs, and build caches are never sent to the
+// Docker daemon.
+var defaultExcludePatterns = []string{".cog"}
 
 var errGit = errors.New("git error")
 
@@ -70,10 +79,6 @@ func Build(
 	// remove bundled files that may be left from previous builds
 	_ = os.Remove(bundledSchemaFile)
 	_ = os.Remove(bundledWeightsFile)
-
-	if err := checkCompatibleDockerIgnore(dir); err != nil {
-		return "", err
-	}
 
 	// Determine whether to use the static schema generator (Go tree-sitter) or
 	// the legacy runtime path (boot container + python introspection).
@@ -166,14 +171,15 @@ func Build(
 		}
 
 		buildOpts := command.ImageBuildOptions{
-			WorkingDir:         dir,
+			WorkingDir:      dir,
 			DockerfileContents: string(dockerfileContents),
-			ImageName:          tmpImageId,
-			Secrets:            secrets,
-			NoCache:            noCache,
-			ProgressOutput:     progressOutput,
-			Epoch:              &config.BuildSourceEpochTimestamp,
-			ContextDir:         dockercontext.StandardBuildDirectory,
+			ImageName:       tmpImageId,
+			Secrets:         secrets,
+			NoCache:         noCache,
+			ProgressOutput:  progressOutput,
+			Epoch:           &config.BuildSourceEpochTimestamp,
+			ContextDir:      dockercontext.StandardBuildDirectory,
+			ExcludePatterns: defaultExcludePatterns,
 		}
 		if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
@@ -256,15 +262,17 @@ func Build(
 			}
 
 			buildOpts := command.ImageBuildOptions{
-				WorkingDir:         dir,
+				WorkingDir:      dir,
 				DockerfileContents: dockerfileContents,
-				ImageName:          tmpImageId,
-				Secrets:            secrets,
-				NoCache:            noCache,
-				ProgressOutput:     progressOutput,
-				Epoch:              &config.BuildSourceEpochTimestamp,
-				ContextDir:         contextDir,
-				BuildContexts:      buildContexts,
+				ImageName:       tmpImageId,
+				Secrets:         secrets,
+				NoCache:         noCache,
+				ProgressOutput:  progressOutput,
+				Epoch:           &config.BuildSourceEpochTimestamp,
+				ContextDir:      contextDir,
+				BuildContexts:   buildContexts,
+				ExcludePatterns: defaultExcludePatterns,
+				BuildCacheDir:   generator.BuildCacheDir(),
 			}
 
 			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
@@ -308,10 +316,15 @@ func Build(
 	// We still need the schema bundled, so do a minimal second build to add it.
 	if skipLabels {
 		if files := collectBundleFiles(schemaJSON); len(files) > 0 {
+			buildCacheDir := filepath.Join(dir, global.CogBuildArtifactsFolder, "build")
 			buildOpts := command.ImageBuildOptions{
 				DockerfileContents: bundleDockerfile(tmpImageId, files),
 				ImageName:          tmpImageId,
 				ProgressOutput:     progressOutput,
+				BuildCacheDir:      buildCacheDir,
+				BuildContexts: map[string]string{
+					cogBuildContextName: buildCacheDir,
+				},
 			}
 			if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 				return "", fmt.Errorf("Failed to bundle .cog files into image: %w", err)
@@ -398,7 +411,8 @@ func Build(
 	maps.Copy(labels, annotations)
 
 	// The final image ID comes from the label-adding step.
-	imageID, err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, collectBundleFiles(schemaJSON), progressOutput)
+	buildCacheDir := filepath.Join(dir, global.CogBuildArtifactsFolder, "build")
+	imageID, err := BuildAddLabelsAndSchemaToImage(ctx, dockerCommand, tmpImageId, imageName, labels, collectBundleFiles(schemaJSON), progressOutput, buildCacheDir)
 	if err != nil {
 		return "", fmt.Errorf("Failed to add labels to image: %w", err)
 	}
@@ -419,12 +433,16 @@ func Build(
 // The new image is based on the provided image with the labels and any
 // bundled files (schema, weights manifest, etc.) appended to it.
 // tmpName is the source image to build from, image is the final image name/tag.
-func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, tmpName, image string, labels map[string]string, bundleFiles []string, progressOutput string) (string, error) {
+func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Command, tmpName, image string, labels map[string]string, bundleFiles []string, progressOutput string, buildCacheDir string) (string, error) {
 	buildOpts := command.ImageBuildOptions{
 		DockerfileContents: bundleDockerfile(tmpName, bundleFiles),
 		ImageName:          image,
 		Labels:             labels,
 		ProgressOutput:     progressOutput,
+		BuildCacheDir:      buildCacheDir,
+		BuildContexts: map[string]string{
+			cogBuildContextName: buildCacheDir,
+		},
 	}
 
 	imageID, err := dockerClient.ImageBuild(ctx, buildOpts)
@@ -576,14 +594,14 @@ func collectBundleFiles(schemaJSON []byte) []string {
 	return files
 }
 
-// bundleDockerfile returns a Dockerfile that COPYs .cog/ files into the
-// image. Trailing "/" on the destination ensures Docker creates the .cog/
-// directory even when COPY . /src was skipped (ExcludeSource images).
+// bundleDockerfile returns a Dockerfile that COPYs build artifacts into
+// the image via the cog_build named build context. Files are referenced
+// by basename since cog_build is rooted at .cog/build/.
 func bundleDockerfile(baseImage string, files []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "FROM %s\n", baseImage)
 	for _, f := range files {
-		fmt.Fprintf(&b, "COPY %s .cog/\n", f)
+		fmt.Fprintf(&b, "COPY --from=%s %s .cog/\n", cogBuildContextName, filepath.Base(f))
 	}
 	return b.String()
 }
@@ -645,15 +663,16 @@ func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, d
 		return fmt.Errorf("Failed to create .dockerignore file: %w", err)
 	}
 	buildOpts := command.ImageBuildOptions{
-		WorkingDir:         dir,
+		WorkingDir:      dir,
 		DockerfileContents: dockerfileContents,
-		ImageName:          imageName,
-		Secrets:            secrets,
-		NoCache:            noCache,
-		ProgressOutput:     progressOutput,
-		Epoch:              &config.BuildSourceEpochTimestamp,
-		ContextDir:         contextDir,
-		BuildContexts:      buildContexts,
+		ImageName:       imageName,
+		Secrets:         secrets,
+		NoCache:         noCache,
+		ProgressOutput:  progressOutput,
+		Epoch:           &config.BuildSourceEpochTimestamp,
+		ContextDir:      contextDir,
+		BuildContexts:   buildContexts,
+		ExcludePatterns: defaultExcludePatterns,
 	}
 	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
@@ -666,15 +685,16 @@ func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, do
 		return fmt.Errorf("Failed to write .dockerignore file with weights included: %w", err)
 	}
 	buildOpts := command.ImageBuildOptions{
-		WorkingDir:         dir,
+		WorkingDir:      dir,
 		DockerfileContents: dockerfileContents,
-		ImageName:          imageName,
-		Secrets:            secrets,
-		NoCache:            noCache,
-		ProgressOutput:     progressOutput,
-		Epoch:              &config.BuildSourceEpochTimestamp,
-		ContextDir:         contextDir,
-		BuildContexts:      buildContexts,
+		ImageName:       imageName,
+		Secrets:         secrets,
+		NoCache:         noCache,
+		ProgressOutput:  progressOutput,
+		Epoch:           &config.BuildSourceEpochTimestamp,
+		ContextDir:      contextDir,
+		BuildContexts:   buildContexts,
+		ExcludePatterns: defaultExcludePatterns,
 	}
 	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 		return fmt.Errorf("Failed to build Docker image: %w", err)
@@ -738,17 +758,3 @@ func restoreDockerignore() error {
 	return os.Rename(dockerignoreBackupPath, ".dockerignore")
 }
 
-func checkCompatibleDockerIgnore(dir string) error {
-	matcher, err := dockerignore.CreateMatcher(dir)
-	if err != nil {
-		return err
-	}
-	// If the matcher is nil and we don't have an error, we don't have a .dockerignore to scan.
-	if matcher == nil {
-		return nil
-	}
-	if matcher.MatchesPath(".cog") {
-		return errors.New("The .cog tmp path cannot be ignored by docker in .dockerignore")
-	}
-	return nil
-}

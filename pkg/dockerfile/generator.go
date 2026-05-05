@@ -6,6 +6,9 @@ import (
 	"github.com/replicate/cog/pkg/weightslegacy"
 )
 
+// Generator abstracts Dockerfile generation. The only implementation is
+// StandardGenerator — this interface exists for historical reasons and
+// will be removed in a future cleanup.
 type Generator interface {
 	GenerateInitialSteps(ctx context.Context) (string, error)
 	SetUseCogBaseImage(bool)
@@ -24,4 +27,5 @@ type Generator interface {
 	Name() string
 	BuildDir() (string, error)
 	BuildContexts() (map[string]string, error)
+	BuildCacheDir() string
 }
