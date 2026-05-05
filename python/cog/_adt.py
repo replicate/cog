@@ -514,7 +514,7 @@ class OutputType:
             assert self.fields is not None
             props = {}
             for name, field_type in self.fields.items():
-                props[name] = field_type.primitive.json_type()
+                props[name] = field_type.json_type()
                 props[name]["title"] = name.replace("_", " ").title()
             jt.update(
                 {

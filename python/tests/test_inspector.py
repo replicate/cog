@@ -79,6 +79,22 @@ def test_inspector_supports_basemodel_opaque_output_field() -> None:
     assert field.repetition is adt.Repetition.REQUIRED
 
 
+def test_inspector_supports_basemodel_opaque_list_output_field_schema() -> None:
+    class Output(BaseModel):
+        payload: Annotated[List[ExternalObject], Opaque]
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(payload=[ExternalObject()])
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    payload_schema = info.output.json_type()["properties"]["payload"]
+    assert payload_schema["type"] == "array"
+    assert payload_schema["items"] == {"type": "object"}
+
+
 def test_inspector_supports_basemodel_string_opaque_output_field() -> None:
     class Output(BaseModel):
         payload: "Annotated[ExternalObject, Opaque]"
@@ -95,6 +111,26 @@ def test_inspector_supports_basemodel_string_opaque_output_field() -> None:
     field = info.output.fields["payload"]
     assert field.primitive is adt.PrimitiveType.ANY
     assert field.repetition is adt.Repetition.REQUIRED
+
+
+def test_inspector_supports_pydantic_opaque_list_output_field_schema() -> None:
+    pydantic = pytest.importorskip("pydantic")
+
+    class Output(pydantic.BaseModel):
+        payload: Annotated[List[ExternalObject], Opaque]
+
+        model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(payload=[ExternalObject()])
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    payload_schema = info.output.json_type()["properties"]["payload"]
+    assert payload_schema["type"] == "array"
+    assert payload_schema["items"] == {"type": "object"}
 
 
 def test_inspector_rejects_optional_opaque_output_metadata() -> None:

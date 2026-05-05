@@ -339,8 +339,11 @@ def _create_output_type(tpe: type) -> adt.OutputType:
         and _check_parent(tpe, PydanticBaseModel)
     ):
         fields = {}
+        field_hints = typing.get_type_hints(tpe, include_extras=True)
         for name, field_info in tpe.model_fields.items():
-            ft = adt.FieldType.from_type(field_info.annotation)
+            field_type = field_hints.get(name, field_info.annotation)
+            field_type = _strip_non_opaque_annotated(field_type)
+            ft = adt.FieldType.from_type(field_type)
             fields[name] = ft
         return adt.OutputType(kind=adt.OutputKind.OBJECT, fields=fields)
 
