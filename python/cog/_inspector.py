@@ -326,7 +326,9 @@ def _create_output_type(tpe: type) -> adt.OutputType:
 
     if inspect.isclass(tpe) and _check_parent(tpe, BaseModel):
         fields = {}
-        for name, t in tpe.__annotations__.items():
+        field_hints = typing.get_type_hints(tpe, include_extras=True)
+        for name, t in field_hints.items():
+            t = _strip_non_opaque_annotated(t)
             ft = adt.FieldType.from_type(t)
             fields[name] = ft
         return adt.OutputType(kind=adt.OutputKind.OBJECT, fields=fields)

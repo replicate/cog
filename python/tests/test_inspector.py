@@ -2,7 +2,7 @@ from typing import Annotated, List, Optional
 
 import pytest
 
-from cog import Opaque
+from cog import BaseModel, Opaque
 from cog import _adt as adt
 from cog._inspector import _create_predictor_info
 
@@ -59,6 +59,42 @@ def test_inspector_supports_opaque_list_output_metadata() -> None:
     )
     assert info.output.kind is adt.OutputKind.LIST
     assert info.output.type is adt.PrimitiveType.ANY
+
+
+def test_inspector_supports_basemodel_opaque_output_field() -> None:
+    class Output(BaseModel):
+        payload: Annotated[ExternalObject, Opaque]
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(payload=ExternalObject())
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    assert info.output.kind is adt.OutputKind.OBJECT
+    assert info.output.fields is not None
+    field = info.output.fields["payload"]
+    assert field.primitive is adt.PrimitiveType.ANY
+    assert field.repetition is adt.Repetition.REQUIRED
+
+
+def test_inspector_supports_basemodel_string_opaque_output_field() -> None:
+    class Output(BaseModel):
+        payload: "Annotated[ExternalObject, Opaque]"
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(payload=ExternalObject())
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    assert info.output.kind is adt.OutputKind.OBJECT
+    assert info.output.fields is not None
+    field = info.output.fields["payload"]
+    assert field.primitive is adt.PrimitiveType.ANY
+    assert field.repetition is adt.Repetition.REQUIRED
 
 
 def test_inspector_rejects_optional_opaque_output_metadata() -> None:

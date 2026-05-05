@@ -238,7 +238,16 @@ func ResolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClass
 
 func resolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
 	if inner, ok := unwrapOpaqueAnnotated(ann, ctx); ok {
+		if _, ok := unwrapOpaqueOptional(inner, ctx); ok {
+			return SchemaType{}, errOptionalOutput()
+		}
 		return opaqueSchemaType(inner, ctx), nil
+	}
+	if ann.Kind == TypeAnnotGeneric && ctx.isAnnotated(ann.Name) {
+		if len(ann.Args) == 0 {
+			return SchemaType{}, errUnsupportedType("Annotated expects at least 1 type argument")
+		}
+		return resolveSchemaType(ann.Args[0], ctx, models, seen)
 	}
 
 	switch ann.Kind {

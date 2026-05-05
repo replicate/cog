@@ -3186,6 +3186,64 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
 }
 
+func TestOpaqueImportedOptionalOutputErrors(t *testing.T) {
+	source := `
+from typing import Annotated, Optional
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[Optional[ThirdPartyType], Opaque]:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrOptionalOutput, se.Kind)
+}
+
+func TestOpaqueImportedQualifiedUnionNoneOutputErrors(t *testing.T) {
+	source := `
+import typing
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> typing.Annotated[typing.Union[list[ThirdPartyType], None], Opaque]:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrOptionalOutput, se.Kind)
+}
+
+func TestAnnotatedStringOutput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[str, "metadata"]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestAnnotatedStringInsideListOutput(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> List[Annotated[str, "metadata"]]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Items.Primitive)
+}
+
 func TestOpaqueImportedBareListOutput(t *testing.T) {
 	source := `
 from typing import Annotated
