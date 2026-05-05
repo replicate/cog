@@ -1992,6 +1992,55 @@ class Predictor(BasePredictor):
 	require.Equal(t, true, errProp["nullable"])
 }
 
+func TestAnnotatedOptionalStringFieldNullable(t *testing.T) {
+	source := `
+from typing import Annotated, Optional
+from cog import BasePredictor, BaseModel
+
+class Result(BaseModel):
+    payload: Annotated[Optional[str], "metadata"]
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.NotNil(t, info.Output.Fields)
+
+	payload, ok := info.Output.Fields.Get("payload")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaPrimitive, payload.Type.Kind)
+	require.Equal(t, schema.TypeString, payload.Type.Primitive)
+	require.True(t, payload.Type.Nullable)
+	require.False(t, payload.Required)
+}
+
+func TestOpaqueAnnotatedOptionalImportedFieldNullable(t *testing.T) {
+	source := `
+from typing import Annotated, Optional
+from cog import BasePredictor, BaseModel, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Result(BaseModel):
+    payload: Annotated[Optional[ThirdPartyType], Opaque]
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.NotNil(t, info.Output.Fields)
+
+	payload, ok := info.Output.Fields.Get("payload")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaPrimitive, payload.Type.Kind)
+	require.Equal(t, schema.TypeAny, payload.Type.Primitive)
+	require.True(t, payload.Type.Nullable)
+	require.False(t, payload.Required)
+}
+
 func TestPydanticOutputWithListField(t *testing.T) {
 	source := `
 from pydantic import BaseModel
@@ -3228,6 +3277,19 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeString, info.Output.Primitive)
 }
 
+func TestAnnotatedOptionalStringOutputErrors(t *testing.T) {
+	source := `
+from typing import Annotated, Optional
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[Optional[str], "metadata"]:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrOptionalOutput, se.Kind)
+}
+
 func TestAnnotatedStringInsideListOutput(t *testing.T) {
 	source := `
 from typing import Annotated, List
@@ -3368,6 +3430,55 @@ class Predictor(BasePredictor):
 	require.True(t, ok)
 	require.True(t, count.Required)
 	require.Equal(t, schema.TypeInteger, count.Type.Primitive)
+}
+
+func TestTypedDictQualifiedAnnotatedOptionalStringFieldNullable(t *testing.T) {
+	source := `
+import typing
+from typing import TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict):
+    payload: typing.Annotated[typing.Optional[str], "metadata"]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	payload, ok := info.Output.Fields.Get("payload")
+	require.True(t, ok)
+	require.True(t, payload.Required)
+	require.True(t, payload.Type.Nullable)
+	require.Equal(t, schema.SchemaPrimitive, payload.Type.Kind)
+	require.Equal(t, schema.TypeString, payload.Type.Primitive)
+}
+
+func TestTypedDictOpaqueAnnotatedOptionalImportedFieldNullable(t *testing.T) {
+	source := `
+import typing
+from typing import TypedDict
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Payload(TypedDict):
+    payload: typing.Annotated[typing.Optional[ThirdPartyType], Opaque]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	payload, ok := info.Output.Fields.Get("payload")
+	require.True(t, ok)
+	require.True(t, payload.Required)
+	require.True(t, payload.Type.Nullable)
+	require.Equal(t, schema.SchemaPrimitive, payload.Type.Kind)
+	require.Equal(t, schema.TypeAny, payload.Type.Primitive)
 }
 
 func TestTypedDictOutputTotalFalse(t *testing.T) {

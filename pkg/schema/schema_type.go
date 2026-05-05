@@ -439,7 +439,22 @@ func resolveModelToSchemaType(modelFields []ModelField, ctx *ImportContext, mode
 // Unlike ResolveSchemaType (which rejects Optional as a top-level output),
 // this allows Optional[X] and Union[X, None] for fields, setting Nullable.
 func resolveFieldSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, bool, error) {
-	if inner, ok := UnwrapOptional(ann); ok {
+	if inner, ok := unwrapOpaqueAnnotated(ann, ctx); ok {
+		if optionalInner, ok := unwrapFieldOptional(inner, ctx); ok {
+			st := opaqueSchemaType(optionalInner, ctx)
+			st.Nullable = true
+			return st, false, nil
+		}
+		return opaqueSchemaType(inner, ctx), true, nil
+	}
+	if ann.Kind == TypeAnnotGeneric && ctx.isAnnotated(ann.Name) {
+		if len(ann.Args) == 0 {
+			return SchemaType{}, false, errUnsupportedType("Annotated expects at least 1 type argument")
+		}
+		return resolveFieldSchemaType(ann.Args[0], ctx, models, seen)
+	}
+
+	if inner, ok := unwrapFieldOptional(ann, ctx); ok {
 		st, err := resolveSchemaType(inner, ctx, models, seen)
 		if err != nil {
 			return SchemaType{}, false, err
@@ -453,4 +468,11 @@ func resolveFieldSchemaType(ann TypeAnnotation, ctx *ImportContext, models Model
 		return SchemaType{}, false, err
 	}
 	return st, true, nil
+}
+
+func unwrapFieldOptional(ann TypeAnnotation, ctx *ImportContext) (TypeAnnotation, bool) {
+	if inner, ok := unwrapOpaqueOptional(ann, ctx); ok {
+		return inner, true
+	}
+	return UnwrapOptional(ann)
 }
