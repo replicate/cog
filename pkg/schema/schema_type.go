@@ -253,6 +253,13 @@ func resolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClass
 }
 
 func opaqueSchemaType(inner TypeAnnotation, ctx *ImportContext) SchemaType {
+	if inner.Kind == TypeAnnotSimple {
+		outer, ok := opaqueContainerName(inner.Name, ctx)
+		if ok && (outer == "list" || outer == "List") {
+			return SchemaArrayOf(SchemaPrim(TypeAny))
+		}
+	}
+
 	if inner.Kind == TypeAnnotGeneric {
 		outer, ok := opaqueContainerName(inner.Name, ctx)
 		if ok && (outer == "list" || outer == "List") && len(inner.Args) == 1 {
@@ -290,7 +297,7 @@ func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mode
 	}
 
 	// Unparameterized list → array of opaque objects
-	if name == "list" || name == "List" {
+	if outer, ok := opaqueContainerName(ann.Name, ctx); ok && (outer == "list" || outer == "List") {
 		return SchemaArrayOf(SchemaAnyType()), nil
 	}
 
@@ -345,7 +352,7 @@ func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mod
 	}
 
 	// list[X] / List[X]
-	if outer == "List" || outer == "list" {
+	if listName, ok := opaqueContainerName(ann.Name, ctx); ok && (listName == "List" || listName == "list") {
 		if len(ann.Args) != 1 {
 			return SchemaType{}, errUnsupportedType("list expects exactly 1 type argument")
 		}

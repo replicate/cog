@@ -3171,6 +3171,38 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
 }
 
+func TestOpaqueImportedBareListOutput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[list, Opaque]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
+	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
+}
+
+func TestOpaqueImportedTypingBareListOutput(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor, Opaque
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[List, Opaque]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
+	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
+}
+
 func TestOpaqueImportedOutputInsideList(t *testing.T) {
 	source := `
 from typing import Annotated, List
@@ -3186,6 +3218,22 @@ class Predictor(BasePredictor):
 	require.NotNil(t, info.Output.Items)
 	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
 	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
+}
+
+func TestOpaqueOtherLibQualifiedListOutput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+import otherlib
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> otherlib.List[Annotated[ThirdPartyType, Opaque]]:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "List")
 }
 
 func TestQualifiedOpaqueImportedInput(t *testing.T) {
