@@ -1743,6 +1743,21 @@ class Predictor(BasePredictor):
 	require.Contains(t, se.Message, ".pyi stub")
 }
 
+func TestUnresolvableImportedTypeSuggestsOpaque(t *testing.T) {
+	source := `
+from cog import BasePredictor
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: ThirdPartyType) -> str:
+        return "ok"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnresolvableType, se.Kind)
+	require.Contains(t, se.Message, "cannot resolve type 'ThirdPartyType'")
+	require.Contains(t, se.Message, "Annotated[ThirdPartyType, Opaque]")
+}
+
 func TestUnresolvableUndefinedTypeError(t *testing.T) {
 	source := `
 from cog import BasePredictor

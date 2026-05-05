@@ -101,10 +101,12 @@ func errUnresolvableImportedType(name, module string) error {
 	return &SchemaError{
 		Kind: ErrUnresolvableType,
 		Message: fmt.Sprintf(
-			"cannot resolve output type '%s' (imported from '%s') — "+
+			"cannot resolve type '%s' (imported from '%s') - "+
 				"external types cannot be statically analyzed. "+
-				"Define it as a BaseModel subclass in your predict file, or provide a .pyi stub",
-			name, module),
+				"If this is a JSON-shaped third-party type, mark it opaque with "+
+				"`from typing import Annotated`, `from cog import Opaque`, and `field: Annotated[%s, Opaque]`. "+
+				"Otherwise define it as a BaseModel subclass in your predict file, or provide a .pyi stub",
+			name, module, name),
 	}
 }
 
@@ -112,7 +114,7 @@ func errUnresolvableType(name string) error {
 	return &SchemaError{
 		Kind: ErrUnresolvableType,
 		Message: fmt.Sprintf(
-			"cannot resolve output type '%s' — "+
+			"cannot resolve type '%s' - "+
 				"it is not a primitive type (str, int, float, bool, Path) "+
 				"and no BaseModel definition was found in the predict file",
 			name),
