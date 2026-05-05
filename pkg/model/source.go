@@ -16,7 +16,7 @@ type Source struct {
 	ProjectDir     string
 	ConfigFilename string // Base filename like "cog.yaml" or "my-config.yaml"
 	Warnings       []config.DeprecationWarning
-	DotCog         *dotcog.Dir // .cog/ project state directory; nil in tests
+	DotCog         *dotcog.Dir // .cog/ project state directory; nil when created via NewSourceFromConfig
 }
 
 // NewSource loads configuration from the given path and returns a Source.

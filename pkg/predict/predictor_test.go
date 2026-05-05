@@ -16,6 +16,7 @@ import (
 
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/docker/dockertest"
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/registry/registrytest"
 	"github.com/replicate/cog/pkg/weights"
@@ -74,7 +75,7 @@ func TestPredictor_Start_CleansUpMountsOnContainerStartFailure(t *testing.T) {
 	require.Error(t, err)
 
 	// Invocation dir must be cleaned up by Start's on-error defer.
-	mountRoot := filepath.Join(projectDir, ".cog", "mounts")
+	mountRoot := filepath.Join(projectDir, dotcog.Name, "mounts")
 	entries, readErr := os.ReadDir(mountRoot)
 	if readErr == nil {
 		require.Empty(t, entries, "failed Start must not leave invocation dirs under %s", mountRoot)

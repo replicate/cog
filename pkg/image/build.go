@@ -247,7 +247,7 @@ func Build(
 			cachedManifest, _ := weightslegacy.LoadManifest(bp.weightsManifest)
 			changed := cachedManifest == nil || !weightsManifest.Equal(cachedManifest)
 			if changed {
-				if err := buildWeightsImage(ctx, dockerCommand, dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput, contextDir, buildContexts); err != nil {
+				if err := buildContextImage(ctx, dockerCommand, dir, weightsDockerfile, imageName+"-weights", secrets, noCache, progressOutput, contextDir, buildContexts, defaultExcludePatterns); err != nil {
 					return "", fmt.Errorf("Failed to build model weights Docker image: %w", err)
 				}
 				err := weightsManifest.Save(bp.weightsManifest)
@@ -261,7 +261,7 @@ func Build(
 			// Exclude weight dirs/files from the runner context so COPY . /src
 			// doesn't duplicate them (they arrive via COPY --from=weights).
 			runnerExclude := slices.Concat(defaultExcludePatterns, weightsExcludePatterns)
-			if err := buildRunnerImage(ctx, dockerCommand, dir, runnerDockerfile, tmpImageId, secrets, noCache, progressOutput, contextDir, buildContexts, runnerExclude); err != nil {
+			if err := buildContextImage(ctx, dockerCommand, dir, runnerDockerfile, tmpImageId, secrets, noCache, progressOutput, contextDir, buildContexts, runnerExclude); err != nil {
 				return "", fmt.Errorf("Failed to build runner Docker image: %w", err)
 			}
 		} else {
@@ -618,7 +618,7 @@ func bundleDockerfile(baseImage string, files []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "FROM %s\n", baseImage)
 	for _, f := range files {
-		fmt.Fprintf(&b, "COPY --from=%s %s .cog/\n", cogBuildContextName, filepath.Base(f))
+		fmt.Fprintf(&b, "COPY --from=%s %s %s/\n", cogBuildContextName, filepath.Base(f), dotcog.Name)
 	}
 	return b.String()
 }
@@ -675,26 +675,7 @@ func gitTag(ctx context.Context, dir string) (string, error) {
 	return "", fmt.Errorf("Failed to find ref name: %w", errGit)
 }
 
-func buildWeightsImage(ctx context.Context, dockerClient command.Command, dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string) error {
-	buildOpts := command.ImageBuildOptions{
-		WorkingDir:         dir,
-		DockerfileContents: dockerfileContents,
-		ImageName:          imageName,
-		Secrets:            secrets,
-		NoCache:            noCache,
-		ProgressOutput:     progressOutput,
-		Epoch:              &config.BuildSourceEpochTimestamp,
-		ContextDir:         contextDir,
-		BuildContexts:      buildContexts,
-		ExcludePatterns:    defaultExcludePatterns,
-	}
-	if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
-		return fmt.Errorf("Failed to build Docker image for model weights: %w", err)
-	}
-	return nil
-}
-
-func buildRunnerImage(ctx context.Context, dockerClient command.Command, dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string, excludePatterns []string) error {
+func buildContextImage(ctx context.Context, dockerClient command.Command, dir, dockerfileContents, imageName string, secrets []string, noCache bool, progressOutput string, contextDir string, buildContexts map[string]string, excludePatterns []string) error {
 	buildOpts := command.ImageBuildOptions{
 		WorkingDir:         dir,
 		DockerfileContents: dockerfileContents,

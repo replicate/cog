@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
@@ -361,6 +362,6 @@ func TestBundleDockerfile(t *testing.T) {
 	bp := testBuildPaths(t)
 	df := bundleDockerfile("myimage:latest", []string{bp.schemaFile, bp.weightsFile})
 	assert.Contains(t, df, "FROM myimage:latest")
-	assert.Contains(t, df, "COPY --from=cog_build openapi_schema.json .cog/")
-	assert.Contains(t, df, "COPY --from=cog_build weights.json .cog/")
+	assert.Contains(t, df, "COPY --from=cog_build openapi_schema.json "+dotcog.Name+"/")
+	assert.Contains(t, df, "COPY --from=cog_build weights.json "+dotcog.Name+"/")
 }

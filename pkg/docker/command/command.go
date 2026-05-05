@@ -58,6 +58,10 @@ type ImageBuildOptions struct {
 	// "dockerfile" BuildKit mount points at this directory. When
 	// empty, a temporary directory is created and cleaned up after
 	// the build.
+	//
+	// Typically equals BuildContexts["cog_build"] when both are set,
+	// since the same directory serves as both the Dockerfile location
+	// and the named build context for COPY --from=cog_build.
 	BuildCacheDir string
 
 	// only supported on buildkit client, not cli client
