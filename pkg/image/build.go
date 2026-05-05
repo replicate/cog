@@ -209,7 +209,7 @@ func Build(
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
-		generator, err := dockerfile.NewGenerator(cfg, dir, bp.buildDir, configFilename, dockerCommand, client, true)
+		generator, err := dockerfile.NewStandardGenerator(cfg, dir, bp.buildDir, configFilename, dockerCommand, client, true)
 		if err != nil {
 			return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}
