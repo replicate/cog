@@ -291,7 +291,7 @@ func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err 
 func torchCPUPackage(ver, goos, goarch string) (name, cpuVersion, findLinks, extraIndexURL string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
 		if compat.TorchVersion() == ver && compat.CUDA == nil {
-			return "torch", torchStripCPUSuffixForM1(compat.Torch, goos, goarch), compat.FindLinks, compat.ExtraIndexURL, nil
+			return "torch", version.StripModifier(torchStripCPUSuffixForM1(compat.Torch, goos, goarch)), compat.FindLinks, compat.ExtraIndexURL, nil
 		}
 	}
 

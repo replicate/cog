@@ -8,10 +8,9 @@
 #   cog weights import
 #
 # Build and push the full bundle:
-#   cog push localhost:5000/managed-weights
+#   cog push
 
-image: registry.cloudflare.com/3515b24d58ec616d11f4ce4290a02ac4/md/examples/managed-weights
-# image: localhost:5000/md/examples/managed-weights
+image: <your-registry>/managed-weights
 
 build:
   gpu: false

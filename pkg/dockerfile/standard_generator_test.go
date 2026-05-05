@@ -197,7 +197,7 @@ COPY . /src`
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
 
-	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cpu
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cpu/
 torch==2.3.0
 pandas==1.2.0.12`, string(requirements))
 }
@@ -255,7 +255,7 @@ COPY . /src`
 
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
-	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118/
 torch==2.0.1
 pandas==2.0.3`, string(requirements))
 }
@@ -426,7 +426,7 @@ COPY . /src`
 
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
-	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118/
 torch==2.0.1
 pandas==2.0.3`, string(requirements))
 
@@ -640,7 +640,7 @@ COPY . /src`, expectedTorchVersion)
 
 		requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 		require.NoError(t, err)
-		expected = fmt.Sprintf(`--extra-index-url https://download.pytorch.org/whl/cu118
+		expected = fmt.Sprintf(`--extra-index-url https://download.pytorch.org/whl/cu118/
 torch==%s
 pandas==2.0.3`, expectedTorchVersion)
 		require.Equal(t, expected, string(requirements))
@@ -699,7 +699,7 @@ COPY . /src`
 
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
-	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118/
 torch==2.3.1
 pandas==2.0.3`, string(requirements))
 }
@@ -757,7 +757,7 @@ COPY . /src`
 
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
-	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118/
 torch==2.3.1
 pandas==2.0.3`, string(requirements))
 }
@@ -852,7 +852,7 @@ COPY . /src`
 
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
-	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118/
 torch==2.3.1
 pandas==2.0.3`, string(requirements))
 }
@@ -915,7 +915,7 @@ COPY . /src`
 	// coglet URL is stripped from requirements — build system installs coglet itself
 	requirements, err := os.ReadFile(path.Join(gen.tmpDir, "requirements.txt"))
 	require.NoError(t, err)
-	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118
+	require.Equal(t, `--extra-index-url https://download.pytorch.org/whl/cu118/
 torch==2.3.1
 pandas==2.0.3`, string(requirements))
 }

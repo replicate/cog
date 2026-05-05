@@ -71,6 +71,61 @@ func TestFetchTorchPackages(t *testing.T) {
 	}, torch271Packages)
 }
 
+func TestParseTorchInstallStringNormalizesIndexURLAndSupportedPythons(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/whl/cu126/torch":
+			_, _ = w.Write([]byte(`<a>torch-2.10.0%2Bcu126-cp313-cp313-manylinux_2_28_x86_64.whl</a><a>torch-2.10.0%2Bcu126-cp314-cp314-manylinux_2_28_x86_64.whl</a>`))
+		case "/whl/cu126/torchvision":
+			_, _ = w.Write([]byte(`<a>torchvision-0.25.0%2Bcu126-cp313-cp313-manylinux_2_28_x86_64.whl</a><a>torchvision-0.25.0%2Bcu126-cp314-cp314-manylinux_2_28_x86_64.whl</a>`))
+		case "/whl/cu126/torchaudio":
+			_, _ = w.Write([]byte(`<a>torchaudio-2.10.0%2Bcu126-cp313-cp313-manylinux_2_28_x86_64.whl</a><a>torchaudio-2.10.0%2Bcu126-cp314-cp314-manylinux_2_28_x86_64.whl</a>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	cuda126 := "12.6"
+	compat, err := parseTorchInstallString(
+		"pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url "+server.URL+"/whl/cu126",
+		map[string]string{"torch": "", "torchvision": "", "torchaudio": ""},
+		&cuda126,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "2.10.0+cu126", compat.Torch)
+	require.Equal(t, server.URL+"/whl/cu126/", compat.ExtraIndexURL)
+	require.Equal(t, []string{"3.13", "3.14"}, compat.Pythons)
+}
+
+func TestFetchTorchPackagesSkipsNonCPythonWheelLinks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`
+<a href="../lit-15.0.7.tar.gz">../lit-15.0.7.tar.gz</a>
+<a href="../torchtext-0.6.0.tar.gz">
+../torchtext-0.6.0.tar.gz</a>
+<a href="torch-2.10.0%2Bcu126-py3-none-linux_x86_64.whl">torch-2.10.0%2Bcu126-py3-none-linux_x86_64.whl</a>
+<a href="torch-2.10.0%2Bcu126-cp313-cp313-manylinux_2_28_x86_64.whl">torch-2.10.0%2Bcu126-cp313-cp313-manylinux_2_28_x86_64.whl</a>
+`))
+	}))
+	defer server.Close()
+
+	packages, err := fetchTorchPackagesFromURL(server.URL)
+
+	require.NoError(t, err)
+	cuda126 := "12.6"
+	require.Equal(t, []TorchPackage{
+		{
+			Name:          "2.10.0+cu126",
+			Version:       "2.10.0",
+			Variant:       "cu126",
+			CUDA:          &cuda126,
+			PythonVersion: "3.13",
+		},
+	}, packages)
+}
+
 func TestIsValidPytorchVersionFormat(t *testing.T) {
 	name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion("torch-2.7.1+cpu.cxx11.abi-cp312-cp312-linux_x86_64.whl")
 	require.NoError(t, err)
