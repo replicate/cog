@@ -40,6 +40,7 @@ This document defines the API of the `cog` Python module, which is used to defin
     - [`Optional`](#optional)
     - [`list`](#list)
     - [`dict`](#dict)
+    - [`cog.Opaque`](#cogopaque)
   - [Structured output with `BaseModel`](#structured-output-with-basemodel)
     - [Using `cog.BaseModel`](#using-cogbasemodel)
     - [Using Pydantic `BaseModel`](#using-pydantic-basemodel)
@@ -672,6 +673,31 @@ class Predictor(BasePredictor):
 
 > [!NOTE]
 > `dict` inputs and outputs are represented as `{"type": "object"}` in the OpenAPI schema with no additional structure. For structured data with validated fields, use a [`BaseModel`](#structured-output-with-basemodel) instead.
+
+#### `cog.Opaque`
+
+Cog statically analyzes `predict()` type annotations to generate schemas. Some third-party package types, such as vLLM `TypedDict` definitions, may not be visible to that static analyzer even though they represent JSON-shaped object values at runtime.
+
+Use `typing.Annotated` with `cog.Opaque` when you want Cog to accept or return those third-party object values without inspecting their fields:
+
+```python
+from typing import Annotated
+
+from cog import BasePredictor, Opaque
+from vllm.entrypoints.chat_utils import CustomChatCompletionMessageParam
+
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        messages: Annotated[list[CustomChatCompletionMessageParam], Opaque],
+    ) -> str:
+        return str(messages)
+```
+
+`Opaque` emits an object schema for the wrapped type and preserves the container shape. For example, `Annotated[list[T], Opaque]` is represented as an array of opaque objects.
+
+`Opaque` does not inspect, validate, encode, decode, or transform values. It only tells Cog's schema generator to treat the wrapped type as an opaque JSON object. If your type needs custom serialization or deserialization, provide that separately; `Opaque` only affects schema generation.
 
 ### Structured output with `BaseModel`
 

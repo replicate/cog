@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/model/weightsource"
 	"github.com/replicate/cog/pkg/weights/store"
 )
@@ -292,8 +293,8 @@ func TestPack_CustomThresholds(t *testing.T) {
 func TestPack_SkipsDotCogDirectory(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "config.json", 100)
-	createTestFile(t, dir, ".cog/manifest.json", 50)
-	createTestFile(t, dir, ".cog/ready", 0)
+	createTestFile(t, dir, dotcog.Name+"/manifest.json", 50)
+	createTestFile(t, dir, dotcog.Name+"/ready", 0)
 
 	results, st, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)

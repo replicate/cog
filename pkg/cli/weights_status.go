@@ -97,6 +97,7 @@ func weightsStatusCommand(cmd *cobra.Command, jsonOutput, verbose bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
+	defer src.Close()
 
 	// Load lockfile — missing is fine (weights may not be built yet), but
 	// a present-but-corrupt file gets a warning so it doesn't fail silently.

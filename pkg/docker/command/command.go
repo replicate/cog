@@ -47,6 +47,23 @@ type ImageBuildOptions struct {
 	BuildContexts  map[string]string
 	Labels         map[string]string
 
+	// ExcludePatterns are fsutil glob patterns applied to the context
+	// mount at the BuildKit session level. Matched paths are never sent
+	// to the daemon, regardless of what the user's .dockerignore says.
+	ExcludePatterns []string
+
+	// BuildCacheDir is the directory used to stage build artifacts
+	// (the generated Dockerfile, wheels, requirements.txt, schemas,
+	// etc.). When set, the Dockerfile is written here and the
+	// "dockerfile" BuildKit mount points at this directory. When
+	// empty, a temporary directory is created and cleaned up after
+	// the build.
+	//
+	// Typically equals BuildContexts["cog_build"] when both are set,
+	// since the same directory serves as both the Dockerfile location
+	// and the named build context for COPY --from=cog_build.
+	BuildCacheDir string
+
 	// only supported on buildkit client, not cli client
 	BuildArgs map[string]*string
 }

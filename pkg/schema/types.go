@@ -267,6 +267,27 @@ func (ctx *ImportContext) IsTypedDict(name string) bool {
 	return false
 }
 
+// IsOpaque returns true if name resolves specifically to cog.Opaque.
+func (ctx *ImportContext) IsOpaque(name string) bool {
+	if resolved, entry, ok := ctx.ResolveQualifiedName(name); ok {
+		return resolved == "Opaque" && entry.Module == "cog"
+	}
+	if e, ok := ctx.Names.Get(name); ok {
+		return e.Module == "cog" && e.Original == "Opaque"
+	}
+	return false
+}
+
+func (ctx *ImportContext) isAnnotated(name string) bool {
+	if resolved, entry, ok := ctx.ResolveQualifiedName(name); ok {
+		return resolved == "Annotated" && (entry.Module == "typing" || entry.Module == "typing_extensions") && entry.Original == entry.Module
+	}
+	if e, ok := ctx.Names.Get(name); ok {
+		return (e.Module == "typing" || e.Module == "typing_extensions") && e.Original == "Annotated"
+	}
+	return false
+}
+
 // IsTypedDictFieldQualifier returns true if name resolves to Required or NotRequired.
 func (ctx *ImportContext) IsTypedDictFieldQualifier(name string) bool {
 	if e, ok := ctx.Names.Get(name); ok {
@@ -299,6 +320,10 @@ func (ctx *ImportContext) ResolveQualifiedName(name string) (string, ImportEntry
 
 // ResolveFieldType resolves a TypeAnnotation into a FieldType.
 func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[string]bool) (FieldType, error) {
+	if inner, ok := unwrapOpaqueAnnotated(ann, ctx); ok {
+		return opaqueFieldType(inner, ctx), nil
+	}
+
 	switch ann.Kind {
 	case TypeAnnotSimple:
 		name := ann.Name
@@ -318,6 +343,9 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[str
 		if !ok {
 			if qualifiedEntry.Module != "" {
 				return FieldType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
+			}
+			if entry, imported := ctx.Names.Get(name); imported {
+				return FieldType{}, errUnresolvableImportedType(name, entry.Module)
 			}
 			return FieldType{}, errUnsupportedType(name)
 		}
@@ -354,9 +382,22 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[str
 			// typing.Union[X, Y] → treat as union type
 			return ResolveFieldType(TypeAnnotation{Kind: TypeAnnotUnion, Args: ann.Args}, ctx, typedDicts)
 		}
+		if ctx.isAnnotated(ann.Name) {
+			if len(ann.Args) == 0 {
+				return FieldType{}, errUnsupportedType("Annotated expects at least 1 type argument")
+			}
+			return ResolveFieldType(ann.Args[0], ctx, typedDicts)
+		}
 		if outer == "List" || outer == "list" {
 			if len(ann.Args) != 1 {
 				return FieldType{}, errUnsupportedType(fmt.Sprintf("List expects exactly 1 type argument, got %d", len(ann.Args)))
+			}
+			if opaqueInner, ok := unwrapOpaqueAnnotated(ann.Args[0], ctx); ok {
+				inner := opaqueFieldType(opaqueInner, ctx)
+				if inner.Repetition != Required {
+					return FieldType{}, errUnsupportedType("nested generics like List[Optional[X]] are not supported")
+				}
+				return FieldType{Primitive: inner.Primitive, Repetition: Repeated}, nil
 			}
 			inner, err := ResolveFieldType(ann.Args[0], ctx, typedDicts)
 			if err != nil {
@@ -384,6 +425,121 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[str
 		return FieldType{}, errUnsupportedType("union types other than X | None are not supported")
 	}
 	return FieldType{}, errUnsupportedType("unknown type annotation")
+}
+
+func unwrapOpaqueAnnotated(ann TypeAnnotation, ctx *ImportContext) (TypeAnnotation, bool) {
+	if ann.Kind != TypeAnnotGeneric || !ctx.isAnnotated(ann.Name) || len(ann.Args) < 2 {
+		return ann, false
+	}
+	for _, metadata := range ann.Args[1:] {
+		if metadata.Kind == TypeAnnotSimple && ctx.IsOpaque(metadata.Name) {
+			return ann.Args[0], true
+		}
+	}
+	return ann, false
+}
+
+func opaqueFieldType(inner TypeAnnotation, ctx *ImportContext) FieldType {
+	if unwrapped, ok := unwrapOpaqueAnnotated(inner, ctx); ok {
+		return opaqueFieldType(unwrapped, ctx)
+	}
+
+	if inner.Kind == TypeAnnotSimple {
+		if name, ok := opaqueContainerName(inner.Name, ctx); ok && (name == "List" || name == "list") {
+			return FieldType{Primitive: TypeAny, Repetition: Repeated}
+		}
+	}
+
+	if inner.Kind == TypeAnnotGeneric {
+		outer, outerIsContainer := opaqueContainerName(inner.Name, ctx)
+		if optionalInner, ok := unwrapOpaqueOptional(inner, ctx); ok {
+			fieldType := opaqueFieldType(optionalInner, ctx)
+			repetition := Optional
+			if fieldType.Repetition == Repeated {
+				repetition = OptionalRepeated
+			}
+			return FieldType{Primitive: TypeAny, Repetition: repetition}
+		}
+		if !outerIsContainer {
+			return FieldType{Primitive: TypeAny, Repetition: Required}
+		}
+		switch outer {
+		case "List", "list":
+			return FieldType{Primitive: TypeAny, Repetition: Repeated}
+		case "Optional":
+			if len(inner.Args) == 1 {
+				fieldType := opaqueFieldType(inner.Args[0], ctx)
+				repetition := Optional
+				if fieldType.Repetition == Repeated {
+					repetition = OptionalRepeated
+				}
+				return FieldType{Primitive: TypeAny, Repetition: repetition}
+			}
+		}
+	}
+
+	if inner.Kind == TypeAnnotUnion {
+		if optionalInner, ok := UnwrapOptional(inner); ok {
+			fieldType := opaqueFieldType(optionalInner, ctx)
+			repetition := Optional
+			if fieldType.Repetition == Repeated {
+				repetition = OptionalRepeated
+			}
+			return FieldType{Primitive: TypeAny, Repetition: repetition}
+		}
+	}
+
+	return FieldType{Primitive: TypeAny, Repetition: Required}
+}
+
+func opaqueContainerName(name string, ctx *ImportContext) (string, bool) {
+	if resolved, entry, ok := ctx.ResolveQualifiedName(name); ok {
+		if isTypingModule(entry.Module) && entry.Original == entry.Module && isTypingContainer(resolved) {
+			return resolved, true
+		}
+		return "", false
+	}
+	if entry, ok := ctx.Names.Get(name); ok {
+		if entry.Module == "builtins" && entry.Original == "list" {
+			return "list", true
+		}
+		if isTypingModule(entry.Module) && isTypingContainer(entry.Original) {
+			return entry.Original, true
+		}
+		return "", false
+	}
+	if name == "list" {
+		return "list", true
+	}
+	return "", false
+}
+
+func isTypingModule(module string) bool {
+	return module == "typing" || module == "typing_extensions"
+}
+
+func isTypingContainer(name string) bool {
+	return name == "List" || name == "Optional" || name == "Union"
+}
+
+func unwrapOpaqueOptional(ann TypeAnnotation, ctx *ImportContext) (TypeAnnotation, bool) {
+	if ann.Kind == TypeAnnotGeneric {
+		name, ok := opaqueContainerName(ann.Name, ctx)
+		if !ok {
+			return ann, false
+		}
+		if name == "Optional" && len(ann.Args) == 1 {
+			return ann.Args[0], true
+		}
+		if name == "Union" && len(ann.Args) == 2 {
+			for i := range ann.Args {
+				if ann.Args[i].Kind == TypeAnnotSimple && ann.Args[i].Name == "None" {
+					return ann.Args[1-i], true
+				}
+			}
+		}
+	}
+	return UnwrapOptional(ann)
 }
 
 // UnwrapOptional checks if a type annotation represents Optional[X] or Union[X, None].

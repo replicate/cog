@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -15,6 +16,7 @@ type Source struct {
 	ProjectDir     string
 	ConfigFilename string // Base filename like "cog.yaml" or "my-config.yaml"
 	Warnings       []config.DeprecationWarning
+	DotCog         *dotcog.Dir // .cog/ project state directory; nil when created via NewSourceFromConfig
 }
 
 // NewSource loads configuration from the given path and returns a Source.
@@ -53,22 +55,37 @@ func NewSource(configPath string) (*Source, error) {
 		console.Warnf("%s", w.Error())
 	}
 
+	dc, err := dotcog.Open(result.RootDir)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Source{
 		Config:         result.Config,
 		ProjectDir:     result.RootDir,
 		ConfigFilename: filepath.Base(configPath),
 		Warnings:       result.Warnings,
+		DotCog:         dc,
 	}, nil
 }
 
 // NewSourceFromConfig creates a Source from an existing Config.
 // Use this when you already have a parsed config and know the project directory.
+// DotCog is not initialized; callers that need it should set it separately.
 func NewSourceFromConfig(cfg *config.Config, projectDir string) *Source {
 	return &Source{
 		Config:         cfg,
 		ProjectDir:     projectDir,
 		ConfigFilename: "cog.yaml",
 	}
+}
+
+// Close releases resources held by the Source, including the .cog/ directory handle.
+func (s *Source) Close() error {
+	if s.DotCog == nil {
+		return nil
+	}
+	return s.DotCog.Close()
 }
 
 // ArtifactSpecs returns the artifact declarations derived from this

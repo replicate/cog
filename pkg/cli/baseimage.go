@@ -12,7 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/dockercontext"
+
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
@@ -187,7 +187,7 @@ func newBaseImageBuildCommand() *cobra.Command {
 				NoCache:            buildNoCache,
 				ProgressOutput:     buildProgressOutput,
 				Epoch:              &config.BuildSourceEpochTimestamp,
-				ContextDir:         dockercontext.StandardBuildDirectory,
+				ContextDir:         ".",
 			}
 			if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 				return err

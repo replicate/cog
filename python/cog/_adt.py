@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
+from ._opaque import Opaque, _OpaqueMarker
 from .coder import Coder
 from .types import File, Path, Secret
 
@@ -53,6 +54,39 @@ def _is_dict_like(tpe: Any) -> bool:
 
     is_typeddict = getattr(typing, "is_typeddict", None)
     return callable(is_typeddict) and is_typeddict(tpe)
+
+
+def _unwrap_opaque(tpe: Any) -> tuple[Any, bool]:
+    """Return (inner, True) for Annotated[inner, Opaque, ...]."""
+    if typing.get_origin(tpe) is not typing.Annotated:
+        return tpe, False
+
+    args = typing.get_args(tpe)
+    if len(args) < 2:
+        return tpe, False
+
+    inner = args[0]
+    for meta in args[1:]:
+        if meta is Opaque or isinstance(meta, _OpaqueMarker):
+            return inner, True
+    return tpe, False
+
+
+def _opaque_field_type(inner: Any) -> "FieldType":
+    """Build a FieldType for an opaque JSON object, preserving list/optional shape."""
+    origin = typing.get_origin(inner)
+    if inner is list or origin in (list, List):
+        return FieldType(PrimitiveType.ANY, Repetition.REPEATED, None)
+
+    if _is_union(inner):
+        args = typing.get_args(inner)
+        if len(args) == 2 and type(None) in args:
+            non_none = args[0] if args[1] is type(None) else args[1]
+            if non_none is list or typing.get_origin(non_none) in (list, List):
+                return FieldType(PrimitiveType.ANY, Repetition.OPTIONAL_REPEATED, None)
+            return FieldType(PrimitiveType.ANY, Repetition.OPTIONAL, None)
+
+    return FieldType(PrimitiveType.ANY, Repetition.REQUIRED, None)
 
 
 class PrimitiveType(Enum):
@@ -227,6 +261,10 @@ class FieldType:
     @staticmethod
     def from_type(tpe: type) -> "FieldType":
         """Create a FieldType from a Python type annotation."""
+        inner, is_opaque = _unwrap_opaque(tpe)
+        if is_opaque:
+            return _opaque_field_type(inner)
+
         origin = typing.get_origin(tpe)
 
         # Handle bare collection types
@@ -255,6 +293,13 @@ class FieldType:
                 if len(t_args) != 1:
                     raise ValueError("List must have one type argument")
                 elem_t = t_args[0]
+                _, elem_is_opaque = _unwrap_opaque(elem_t)
+                if elem_is_opaque:
+                    return FieldType(
+                        primitive=PrimitiveType.ANY,
+                        repetition=Repetition.REPEATED,
+                        coder=None,
+                    )
                 # dict elements in lists → treat as ANY (opaque JSON objects)
                 if _is_dict_like(elem_t) or typing.get_origin(elem_t) is dict:
                     return FieldType(
@@ -276,6 +321,9 @@ class FieldType:
             if not (len(t_args) == 2 and type(None) in t_args):
                 raise ValueError(f"unsupported union type {tpe}")
             elem_t = t_args[0] if t_args[1] is type(None) else t_args[1]
+            inner, elem_is_opaque = _unwrap_opaque(elem_t)
+            if elem_is_opaque:
+                return _opaque_field_type(inner | None)
             nested_t = typing.get_origin(elem_t)
             if nested_t in (list, List):
                 # list[X] | None  →  optional repeated
@@ -284,6 +332,13 @@ class FieldType:
                     if len(list_args) != 1:
                         raise ValueError("List must have one type argument")
                     elem_t = list_args[0]
+                    _, elem_is_opaque = _unwrap_opaque(elem_t)
+                    if elem_is_opaque:
+                        return FieldType(
+                            primitive=PrimitiveType.ANY,
+                            repetition=Repetition.OPTIONAL_REPEATED,
+                            coder=None,
+                        )
                     # dict elements in optional lists → ANY
                     if _is_dict_like(elem_t) or typing.get_origin(elem_t) is dict:
                         return FieldType(
@@ -458,16 +513,20 @@ class OutputType:
         elif self.kind is OutputKind.OBJECT:
             assert self.fields is not None
             props = {}
+            required = []
             for name, field_type in self.fields.items():
-                props[name] = field_type.primitive.json_type()
+                props[name] = field_type.json_type()
+                if field_type.repetition in (
+                    Repetition.OPTIONAL,
+                    Repetition.OPTIONAL_REPEATED,
+                ):
+                    props[name]["nullable"] = True
+                else:
+                    required.append(name)
                 props[name]["title"] = name.replace("_", " ").title()
-            jt.update(
-                {
-                    "type": "object",
-                    "properties": props,
-                    "required": list(self.fields.keys()),
-                }
-            )
+            jt.update({"type": "object", "properties": props})
+            if required:
+                jt["required"] = required
 
         return jt
 

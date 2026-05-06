@@ -7,11 +7,5 @@
 # to the docker daemon on every build.
 weights/
 
-# Packed layer cache written by `cog weights build`. Do NOT exclude all of
-# .cog/ — `cog build` stages the SDK + coglet wheels and CA cert under
-# .cog/tmp/ and references them from its generated Dockerfile, so excluding
-# the whole directory breaks the image build.
-.cog/weights-cache/
-
 # Git metadata doesn't belong in the image.
 .git/

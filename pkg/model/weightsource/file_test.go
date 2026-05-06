@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/dotcog"
 )
 
 func TestNormalizeURI(t *testing.T) {
@@ -235,8 +237,8 @@ func TestFileSource_Inventory_SkipsDotCog(t *testing.T) {
 
 	withCog := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(withCog, "a.txt"), []byte("hello"), 0o644))
-	require.NoError(t, os.MkdirAll(filepath.Join(withCog, ".cog"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(withCog, ".cog", "state"), []byte("stuff"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(withCog, dotcog.Name), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(withCog, dotcog.Name, "state"), []byte("stuff"), 0o644))
 
 	src1, err := NewFileSource("file://"+withoutCog, "")
 	require.NoError(t, err)

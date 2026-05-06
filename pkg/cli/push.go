@@ -65,6 +65,7 @@ func push(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer src.Close()
 
 	if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
 		return err

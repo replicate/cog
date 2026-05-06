@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weights/store"
 )
@@ -75,7 +76,7 @@ func TestPrepare_HappyPath(t *testing.T) {
 	require.Len(t, mounts.Specs, 1)
 	spec := mounts.Specs[0]
 	assert.Equal(t, "/src/weights/parakeet", spec.Target)
-	assert.Contains(t, spec.Source, filepath.Join(".cog", "mounts"))
+	assert.Contains(t, spec.Source, filepath.Join(dotcog.Name, "mounts"))
 	assert.True(t, filepath.IsAbs(spec.Source))
 
 	for _, f := range lock.Weights[0].Files {
@@ -152,7 +153,7 @@ func TestPrepare_CleansUpOnFailure(t *testing.T) {
 	_, err := mgr.Prepare(ctx)
 	require.Error(t, err)
 
-	entries, err := os.ReadDir(filepath.Join(mgr.ProjectDir(), ".cog", "mounts"))
+	entries, err := os.ReadDir(filepath.Join(mgr.ProjectDir(), dotcog.Name, "mounts"))
 	if err == nil {
 		assert.Empty(t, entries, "failed Prepare must not leave invocation dirs behind")
 	} else {

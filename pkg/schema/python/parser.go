@@ -882,10 +882,15 @@ func parseTypeFromString(s string) (schema.TypeAnnotation, bool) {
 		return schema.TypeAnnotation{Kind: schema.TypeAnnotGeneric, Name: outer, Args: args}, true
 	}
 
-	// Simple identifier
-	for _, c := range s {
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
+	// Simple or qualified identifier.
+	for part := range strings.SplitSeq(s, ".") {
+		if part == "" {
 			return schema.TypeAnnotation{}, false
+		}
+		for _, c := range part {
+			if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
+				return schema.TypeAnnotation{}, false
+			}
 		}
 	}
 	return schema.TypeAnnotation{Kind: schema.TypeAnnotSimple, Name: s}, true

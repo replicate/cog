@@ -1,0 +1,36 @@
+# Test that the legacy runtime schema path omits empty required arrays for
+# BaseModel outputs where every field is optional.
+
+env COG_LEGACY_SCHEMA=1
+
+cog build -t $TEST_IMAGE
+stderr 'Validating model schema'
+
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout '"maybe":{"nullable":true,"title":"Maybe","type":"string"}'
+stdout '"values":{"items":{"type":"string"},"nullable":true,"title":"Values","type":"array"}'
+! stdout '"required":\[\]'
+
+cog predict $TEST_IMAGE -i name=alice
+stdout '"maybe": "alice"'
+stdout '"values": null'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import List, Optional
+
+from cog import BaseModel, BasePredictor
+
+
+class Output(BaseModel):
+    maybe: Optional[str]
+    values: Optional[List[str]]
+
+
+class Predictor(BasePredictor):
+    def predict(self, name: str) -> Output:
+        return Output(maybe=name, values=None)

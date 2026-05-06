@@ -12,7 +12,7 @@ import sys
 import typing
 from dataclasses import MISSING, Field
 from enum import Enum
-from types import ModuleType
+from types import ModuleType, UnionType
 from typing import Any, AsyncIterator, Callable, Dict, Iterator, Type
 
 from . import _adt as adt
@@ -269,8 +269,53 @@ class _AnyType:
 _any_type = _AnyType()
 
 
+def _strip_non_opaque_annotated(tpe: Any) -> Any:
+    """Strip non-opaque Annotated metadata preserved by get_type_hints."""
+    _, is_opaque = adt._unwrap_opaque(tpe)
+    if is_opaque:
+        return tpe
+
+    origin = typing.get_origin(tpe)
+    if origin is typing.Annotated:
+        return _strip_non_opaque_annotated(typing.get_args(tpe)[0])
+
+    args = typing.get_args(tpe)
+    if not args:
+        return tpe
+
+    stripped_args = tuple(_strip_non_opaque_annotated(arg) for arg in args)
+    if stripped_args == args:
+        return tpe
+
+    if origin is typing.Union:
+        return typing.cast(Any, typing.Union).__getitem__(stripped_args)
+    if origin is UnionType:
+        result = stripped_args[0]
+        for arg in stripped_args[1:]:
+            result |= arg
+        return result
+
+    copy_with = getattr(tpe, "copy_with", None)
+    if callable(copy_with):
+        return copy_with(stripped_args)
+
+    try:
+        return origin[stripped_args]
+    except TypeError:
+        return tpe
+
+
 def _create_output_type(tpe: type) -> adt.OutputType:
     """Create an OutputType from a return type annotation."""
+    _, is_opaque = adt._unwrap_opaque(tpe)
+    if is_opaque:
+        ft = adt.FieldType.from_type(tpe)
+        if ft.repetition in (adt.Repetition.OPTIONAL, adt.Repetition.OPTIONAL_REPEATED):
+            raise ValueError("output must not be Optional")
+        if ft.repetition is adt.Repetition.REPEATED:
+            return adt.OutputType(kind=adt.OutputKind.LIST, type=adt.PrimitiveType.ANY)
+        return adt.OutputType(kind=adt.OutputKind.SINGLE, type=adt.PrimitiveType.ANY)
+
     if tpe is Any:
         print(
             "Warning: use of Any as output type is error-prone and highly discouraged"
@@ -279,7 +324,9 @@ def _create_output_type(tpe: type) -> adt.OutputType:
 
     if inspect.isclass(tpe) and _check_parent(tpe, BaseModel):
         fields = {}
-        for name, t in tpe.__annotations__.items():
+        field_hints = typing.get_type_hints(tpe, include_extras=True)
+        for name, t in field_hints.items():
+            t = _strip_non_opaque_annotated(t)
             ft = adt.FieldType.from_type(t)
             fields[name] = ft
         return adt.OutputType(kind=adt.OutputKind.OBJECT, fields=fields)
@@ -290,8 +337,11 @@ def _create_output_type(tpe: type) -> adt.OutputType:
         and _check_parent(tpe, PydanticBaseModel)
     ):
         fields = {}
+        field_hints = typing.get_type_hints(tpe, include_extras=True)
         for name, field_info in tpe.model_fields.items():
-            ft = adt.FieldType.from_type(field_info.annotation)
+            field_type = field_hints.get(name, field_info.annotation)
+            field_type = _strip_non_opaque_annotated(field_type)
+            ft = adt.FieldType.from_type(field_type)
             fields[name] = ft
         return adt.OutputType(kind=adt.OutputKind.OBJECT, fields=fields)
 
@@ -345,10 +395,11 @@ def _create_predictor_info(
 
     # Use get_type_hints to resolve string annotations (from __future__ import annotations)
     try:
-        type_hints = typing.get_type_hints(f)
+        type_hints = typing.get_type_hints(f, include_extras=True)
     except Exception:
         # Fall back to raw annotations if get_type_hints fails
         type_hints = spec.annotations
+    type_hints = {k: _strip_non_opaque_annotated(v) for k, v in type_hints.items()}
 
     # Skip 'self' for class methods
     names = spec.args[1:] if is_class_fn else spec.args

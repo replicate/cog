@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/mitchellh/go-homedir"
@@ -79,6 +80,52 @@ func WriteDataURLToFile(url string, destination string) (string, error) {
 	}
 
 	return path, nil
+}
+
+// AtomicWrite writes data to path via a temp file + fsync + rename so
+// readers never see a partial file. Parent directories are created as
+// needed. Modeled after tailscale.com/atomicfile.
+func AtomicWrite(path string, data []byte) (err error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create directory for %s: %w", path, err)
+	}
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file for %s: %w", path, err)
+	}
+	tmpPath := f.Name()
+	defer func() {
+		if err != nil {
+			_ = f.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", path, err)
+	}
+	return os.Rename(tmpPath, filepath.Clean(path)) //nolint:gosec // path is constructed internally
+}
+
+// Copy copies src to dst, creating parent directories as needed.
+func Copy(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("create directory for %s: %w", dst, err)
+	}
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	return nil
 }
 
 func WriteFile(output []byte, outputPath string) (string, error) {

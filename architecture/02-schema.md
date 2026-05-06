@@ -136,6 +136,8 @@ external types cannot be statically analyzed. Define it as a BaseModel
 subclass in your predict file, or provide a .pyi stub
 ```
 
+For external values that are already JSON-shaped but not visible to the schema resolver, `Annotated[..., cog.Opaque]` is the escape hatch. It tells Cog to treat the value as an opaque JSON object while preserving container shape: `Annotated[ExternalType, cog.Opaque]` becomes an object, and `Annotated[list[ExternalType], cog.Opaque]` becomes an array of objects. The same shape is preserved for fields inside `cog.BaseModel` outputs and for supported pydantic models on the runtime fallback path.
+
 ## SchemaType: The Type System
 
 Output types are represented as a recursive algebraic data type (`SchemaType`) that composes arbitrarily:
@@ -213,6 +215,8 @@ Each `SchemaType` produces its JSON Schema fragment via `JSONSchema()`:
 | `dict[str, V]`             | `SchemaDict`             | `{"type": "object", "additionalProperties": V}`                 |
 | `list` (bare)              | `SchemaArray(SchemaAny)` | `{"type": "array", "items": {"type": "object"}}`                |
 | `list[T]`                  | `SchemaArray`            | `{"type": "array", "items": T}`                                 |
+| `Annotated[T, cog.Opaque]` | `SchemaPrimitive(TypeAny)` | `{"type": "object"}`                                            |
+| `Annotated[list[T], cog.Opaque]` | `SchemaArray(SchemaPrimitive(TypeAny))` | `{"type": "array", "items": {"type": "object"}}`                |
 | `BaseModel` subclass       | `SchemaObject`           | `{"type": "object", "properties": {...}}`                       |
 | `Iterator[T]`              | `SchemaIterator`         | `{"type": "array", "items": T, "x-cog-array-type": "iterator"}` |
 | `ConcatenateIterator[str]` | `SchemaConcatIterator`   | Streaming token output                                          |
@@ -224,7 +228,7 @@ Each `SchemaType` produces its JSON Schema fragment via `JSONSchema()`:
 | --------------------------- | -------------------------------------------------------------------- |
 | `Optional[T]` / `T \| None` | Predictions must succeed with a value or fail with an error          |
 | `Union[A, B]`               | Ambiguous for downstream consumers                                   |
-| External package types      | Cannot be statically analyzed — define as BaseModel or use .pyi stub |
+| External package types      | Cannot be statically analyzed — define as BaseModel, use .pyi stub, or mark JSON-shaped values with `Annotated[..., cog.Opaque]` |
 
 ## Cog-Specific Extensions
 

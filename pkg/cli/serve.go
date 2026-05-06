@@ -82,6 +82,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	if err != nil {
 		return err
 	}
+	defer src.Close()
 
 	console.Info("Building Docker image from environment in cog.yaml...")
 	console.Info("")

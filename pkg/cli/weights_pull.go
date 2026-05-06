@@ -58,6 +58,7 @@ func weightsPullCommand(cmd *cobra.Command, args []string, verbose bool, imageOv
 	if err != nil {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
+	defer src.Close()
 
 	if len(src.Config.Weights) == 0 {
 		return fmt.Errorf("no weights defined in %s", configFilename)

@@ -237,6 +237,19 @@ func ResolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClass
 }
 
 func resolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
+	if inner, ok := unwrapOpaqueAnnotated(ann, ctx); ok {
+		if _, ok := unwrapOpaqueOptional(inner, ctx); ok {
+			return SchemaType{}, errOptionalOutput()
+		}
+		return opaqueSchemaType(inner, ctx), nil
+	}
+	if ann.Kind == TypeAnnotGeneric && ctx.isAnnotated(ann.Name) {
+		if len(ann.Args) == 0 {
+			return SchemaType{}, errUnsupportedType("Annotated expects at least 1 type argument")
+		}
+		return resolveSchemaType(ann.Args[0], ctx, models, seen)
+	}
+
 	switch ann.Kind {
 	case TypeAnnotSimple:
 		return resolveSimpleSchemaType(ann, ctx, models, seen)
@@ -246,6 +259,23 @@ func resolveSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClass
 		return resolveUnionSchemaType(ann)
 	}
 	return SchemaType{}, errUnsupportedType("unknown type annotation")
+}
+
+func opaqueSchemaType(inner TypeAnnotation, ctx *ImportContext) SchemaType {
+	if inner.Kind == TypeAnnotSimple {
+		outer, ok := opaqueContainerName(inner.Name, ctx)
+		if ok && (outer == "list" || outer == "List") {
+			return SchemaArrayOf(SchemaPrim(TypeAny))
+		}
+	}
+
+	if inner.Kind == TypeAnnotGeneric {
+		outer, ok := opaqueContainerName(inner.Name, ctx)
+		if ok && (outer == "list" || outer == "List") && len(inner.Args) == 1 {
+			return SchemaArrayOf(SchemaPrim(TypeAny))
+		}
+	}
+	return SchemaPrim(TypeAny)
 }
 
 func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
@@ -276,7 +306,7 @@ func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mode
 	}
 
 	// Unparameterized list → array of opaque objects
-	if name == "list" || name == "List" {
+	if outer, ok := opaqueContainerName(ann.Name, ctx); ok && (outer == "list" || outer == "List") {
 		return SchemaArrayOf(SchemaAnyType()), nil
 	}
 
@@ -331,7 +361,7 @@ func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mod
 	}
 
 	// list[X] / List[X]
-	if outer == "List" || outer == "list" {
+	if listName, ok := opaqueContainerName(ann.Name, ctx); ok && (listName == "List" || listName == "list") {
 		if len(ann.Args) != 1 {
 			return SchemaType{}, errUnsupportedType("list expects exactly 1 type argument")
 		}
@@ -409,7 +439,22 @@ func resolveModelToSchemaType(modelFields []ModelField, ctx *ImportContext, mode
 // Unlike ResolveSchemaType (which rejects Optional as a top-level output),
 // this allows Optional[X] and Union[X, None] for fields, setting Nullable.
 func resolveFieldSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, bool, error) {
-	if inner, ok := UnwrapOptional(ann); ok {
+	if inner, ok := unwrapOpaqueAnnotated(ann, ctx); ok {
+		if optionalInner, ok := unwrapFieldOptional(inner, ctx); ok {
+			st := opaqueSchemaType(optionalInner, ctx)
+			st.Nullable = true
+			return st, false, nil
+		}
+		return opaqueSchemaType(inner, ctx), true, nil
+	}
+	if ann.Kind == TypeAnnotGeneric && ctx.isAnnotated(ann.Name) {
+		if len(ann.Args) == 0 {
+			return SchemaType{}, false, errUnsupportedType("Annotated expects at least 1 type argument")
+		}
+		return resolveFieldSchemaType(ann.Args[0], ctx, models, seen)
+	}
+
+	if inner, ok := unwrapFieldOptional(ann, ctx); ok {
 		st, err := resolveSchemaType(inner, ctx, models, seen)
 		if err != nil {
 			return SchemaType{}, false, err
@@ -423,4 +468,11 @@ func resolveFieldSchemaType(ann TypeAnnotation, ctx *ImportContext, models Model
 		return SchemaType{}, false, err
 	}
 	return st, true, nil
+}
+
+func unwrapFieldOptional(ann TypeAnnotation, ctx *ImportContext) (TypeAnnotation, bool) {
+	if inner, ok := unwrapOpaqueOptional(ann, ctx); ok {
+		return inner, true
+	}
+	return UnwrapOptional(ann)
 }

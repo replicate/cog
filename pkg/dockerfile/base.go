@@ -8,6 +8,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/version"
@@ -188,7 +189,18 @@ func (g *BaseImageGenerator) GenerateDockerfile(ctx context.Context) (string, er
 		return "", err
 	}
 
-	generator, err := NewGenerator(conf, "", "", g.command, g.client, false)
+	dc, err := dotcog.OpenTemp()
+	if err != nil {
+		return "", err
+	}
+	defer dc.Close()
+
+	buildDir, err := dc.Path("build")
+	if err != nil {
+		return "", err
+	}
+
+	generator, err := NewStandardGenerator(conf, "", buildDir, "", g.command, g.client, false)
 	if err != nil {
 		return "", err
 	}

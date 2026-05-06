@@ -5,8 +5,5 @@
 # image index — they must NOT be baked into the model image by `cog build`.
 weights/
 
-# Packed layer cache written by `cog weights build`.
-.cog/weights-cache/
-
 # Git metadata doesn't belong in the image.
 .git/

@@ -247,8 +247,7 @@ Commands delegate to packages under `pkg/`:
 
 **Utilities:**
 
-- `pkg/dockercontext/` -- Docker build context directory management
-- `pkg/dockerignore/` -- `.dockerignore` parsing
+- `pkg/dotcog/` -- `.cog/` project state directory (path accessors, advisory lock, cleanup)
 - `pkg/requirements/` -- `requirements.txt` parsing
 - `pkg/env/` -- `R8_*` environment variable config
 - `pkg/update/` -- CLI version update checker

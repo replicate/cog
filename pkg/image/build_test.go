@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
@@ -284,12 +285,12 @@ func TestWriteRuntimeWeightsManifest(t *testing.T) {
 	}
 	require.NoError(t, lock.Save(filepath.Join(dir, lockfile.WeightsLockFilename)))
 
-	// writeRuntimeWeightsManifest writes to the CWD-relative bundledWeightsFile.
-	t.Chdir(t.TempDir())
+	buildDir := t.TempDir()
+	weightsFile := filepath.Join(buildDir, "weights.json")
 
-	require.NoError(t, writeRuntimeWeightsManifest(dir))
+	require.NoError(t, writeRuntimeWeightsManifest(dir, weightsFile))
 
-	data, err := os.ReadFile(bundledWeightsFile)
+	data, err := os.ReadFile(weightsFile)
 	require.NoError(t, err)
 
 	var manifest lockfile.RuntimeWeightsManifest
@@ -321,38 +322,46 @@ func TestWriteRuntimeWeightsManifest(t *testing.T) {
 }
 
 func TestWriteRuntimeWeightsManifest_MissingLockfile(t *testing.T) {
-	err := writeRuntimeWeightsManifest(t.TempDir())
+	err := writeRuntimeWeightsManifest(t.TempDir(), filepath.Join(t.TempDir(), "weights.json"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "managed weights configured but no lockfile found")
 }
 
-func TestCollectBundleFiles_SchemaOnly(t *testing.T) {
-	t.Chdir(t.TempDir())
+func testBuildPaths(t *testing.T) buildPaths {
+	t.Helper()
+	buildDir := t.TempDir()
+	return buildPaths{
+		buildDir:        buildDir,
+		schemaFile:      filepath.Join(buildDir, "openapi_schema.json"),
+		weightsFile:     filepath.Join(buildDir, "weights.json"),
+		weightsManifest: filepath.Join(buildDir, "weights_manifest.json"),
+	}
+}
 
-	files := collectBundleFiles([]byte(`{"openapi":"3.0.0"}`))
-	assert.Equal(t, []string{bundledSchemaFile}, files)
+func TestCollectBundleFiles_SchemaOnly(t *testing.T) {
+	bp := testBuildPaths(t)
+	files := collectBundleFiles([]byte(`{"openapi":"3.0.0"}`), &bp)
+	assert.Equal(t, []string{bp.schemaFile}, files)
 }
 
 func TestCollectBundleFiles_Nothing(t *testing.T) {
-	t.Chdir(t.TempDir())
-
-	files := collectBundleFiles(nil)
+	bp := testBuildPaths(t)
+	files := collectBundleFiles(nil, &bp)
 	assert.Empty(t, files)
 }
 
 func TestCollectBundleFiles_WithWeightsFile(t *testing.T) {
-	t.Chdir(t.TempDir())
+	bp := testBuildPaths(t)
+	require.NoError(t, os.WriteFile(bp.weightsFile, []byte(`{"weights":[]}`), 0o644))
 
-	require.NoError(t, os.MkdirAll(".cog", 0o755))
-	require.NoError(t, os.WriteFile(bundledWeightsFile, []byte(`{"weights":[]}`), 0o644))
-
-	files := collectBundleFiles([]byte(`{"openapi":"3.0.0"}`))
-	assert.Equal(t, []string{bundledSchemaFile, bundledWeightsFile}, files)
+	files := collectBundleFiles([]byte(`{"openapi":"3.0.0"}`), &bp)
+	assert.Equal(t, []string{bp.schemaFile, bp.weightsFile}, files)
 }
 
 func TestBundleDockerfile(t *testing.T) {
-	df := bundleDockerfile("myimage:latest", []string{bundledSchemaFile, bundledWeightsFile})
+	bp := testBuildPaths(t)
+	df := bundleDockerfile("myimage:latest", []string{bp.schemaFile, bp.weightsFile})
 	assert.Contains(t, df, "FROM myimage:latest")
-	assert.Contains(t, df, "COPY .cog/openapi_schema.json .cog/")
-	assert.Contains(t, df, "COPY .cog/weights.json .cog/")
+	assert.Contains(t, df, "COPY --from=cog_build openapi_schema.json "+dotcog.Name+"/")
+	assert.Contains(t, df, "COPY --from=cog_build weights.json "+dotcog.Name+"/")
 }

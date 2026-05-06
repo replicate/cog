@@ -1,9 +1,10 @@
 """Tests for cog._adt module (FieldType, PrimitiveType)."""
 
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Annotated, Any, Dict, List, Optional, TypedDict
 
 from typing_extensions import TypedDict as ExtensionsTypedDict
 
+from cog import Opaque
 from cog._adt import FieldType, PrimitiveType, Repetition
 
 
@@ -19,6 +20,66 @@ class ExampleExtensionsTypedDict(ExtensionsTypedDict):
 
 class ExampleDictSubclass(dict[str, int]):
     pass
+
+
+class ThirdPartyObject:
+    pass
+
+
+def test_opaque_is_public_cog_export() -> None:
+    cog_module = __import__("cog")
+
+    assert repr(cog_module.Opaque) == "cog.Opaque"
+    assert cog_module.Opaque is Opaque
+
+
+def test_opaque_simple_field_type() -> None:
+    ft = FieldType.from_type(Annotated[ThirdPartyObject, Opaque])
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.REQUIRED
+    assert ft.coder is None
+
+
+def test_opaque_list_field_type() -> None:
+    ft = FieldType.from_type(Annotated[List[ThirdPartyObject], Opaque])
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.REPEATED
+    assert ft.coder is None
+
+
+def test_opaque_bare_list_field_type() -> None:
+    ft = FieldType.from_type(Annotated[list, Opaque])
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.REPEATED
+    assert ft.coder is None
+
+
+def test_opaque_inside_list_field_type() -> None:
+    ft = FieldType.from_type(List[Annotated[ThirdPartyObject, Opaque]])
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.REPEATED
+    assert ft.coder is None
+
+
+def test_opaque_optional_field_type() -> None:
+    ft = FieldType.from_type(Annotated[ThirdPartyObject, Opaque] | None)
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.OPTIONAL
+    assert ft.coder is None
+
+
+def test_opaque_optional_list_field_type() -> None:
+    ft = FieldType.from_type(Annotated[List[ThirdPartyObject], Opaque] | None)
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.OPTIONAL_REPEATED
+    assert ft.coder is None
+
+
+def test_opaque_optional_bare_list_field_type() -> None:
+    ft = FieldType.from_type(Annotated[list, Opaque] | None)
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.OPTIONAL_REPEATED
+    assert ft.coder is None
 
 
 class TestDictInputTypes:
