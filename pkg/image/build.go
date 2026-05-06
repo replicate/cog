@@ -55,6 +55,12 @@ type buildPaths struct {
 	schemaFile      string // .cog/build/openapi_schema.json
 	weightsFile     string // .cog/build/weights.json
 	weightsManifest string // .cog/cache/weights_manifest.json (legacy separate-weights)
+	// rootSchemaFile and rootWeightsFile are copies at .cog/ root level.
+	// When cog predict/train/serve volume-mounts the project dir at /src,
+	// the host's .cog/ shadows the image's .cog/ -- so coglet needs these
+	// files on the host filesystem, not just in the image layer.
+	rootSchemaFile  string // .cog/openapi_schema.json
+	rootWeightsFile string // .cog/weights.json
 }
 
 // Build a Cog model from a config and returns the image ID (sha256:...) on success.
@@ -101,6 +107,12 @@ func Build(
 		schemaFile:      filepath.Join(buildDir, "openapi_schema.json"),
 		weightsFile:     filepath.Join(buildDir, "weights.json"),
 		weightsManifest: filepath.Join(dc.Root(), "cache", "weights_manifest.json"),
+		// Schema and weights also go under .cog/ root so they're visible
+		// when the project dir is volume-mounted at /src (cog predict/train/serve).
+		// The bundle step COPYs from .cog/build/ via the cog_build context,
+		// but the volume mount shadows the image's /src/.cog/ with the host's.
+		rootSchemaFile:  filepath.Join(dc.Root(), "openapi_schema.json"),
+		rootWeightsFile: filepath.Join(dc.Root(), "weights.json"),
 	}
 
 	// Determine whether to use the static schema generator (Go tree-sitter) or
@@ -161,6 +173,11 @@ func Build(
 		if err := writeAndValidateSchema(schemaJSON, bp.schemaFile); err != nil {
 			return "", err
 		}
+		// Also write to .cog/ root so the schema is visible when the project
+		// dir is volume-mounted at /src (cog predict/train/serve).
+		if err := writeAndValidateSchema(schemaJSON, bp.rootSchemaFile); err != nil {
+			return "", err
+		}
 	}
 
 	// --- Runtime weights manifest (/.cog/weights.json) ---
@@ -169,6 +186,10 @@ func Build(
 	// the build context so it ends up at /.cog/weights.json in the image.
 	if len(cfg.Weights) > 0 {
 		if err := writeRuntimeWeightsManifest(dir, bp.weightsFile); err != nil {
+			return "", err
+		}
+		// Mirror to .cog/ root for volume-mount visibility.
+		if err := writeRuntimeWeightsManifest(dir, bp.rootWeightsFile); err != nil {
 			return "", err
 		}
 	}
@@ -323,6 +344,9 @@ func Build(
 		schemaJSON = data
 
 		if err := writeAndValidateSchema(schemaJSON, bp.schemaFile); err != nil {
+			return "", err
+		}
+		if err := writeAndValidateSchema(schemaJSON, bp.rootSchemaFile); err != nil {
 			return "", err
 		}
 	}
