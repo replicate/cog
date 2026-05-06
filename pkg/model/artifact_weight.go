@@ -20,56 +20,69 @@ import (
 // without parsing annotations.
 const MediaTypeWeightArtifact = "application/vnd.cog.weight.v1"
 
-// WeightSpec is the normalized, user-declared description of a weight:
-// target mount path, source URI, and include/exclude filters. Construct
-// via WeightSpecFromConfig or WeightSpecFromLock; compare with Equal.
-//
-// Include and Exclude are sorted at construction time. They describe a
-// set of glob patterns applied by the packer, so order is not part of
-// the user's intent — reordering patterns in cog.yaml must not trigger
-// a rebuild.
-type WeightSpec struct {
-	name    string
-	Target  string   // container mount path
-	URI     string   // normalized source URI (file://./weights, hf://org/repo)
+// SourceSpec describes one source within a weight declaration. Each
+// source has its own URI and include/exclude filters.
+type SourceSpec struct {
+	URI     string   // normalized source URI (file://./weights, hf://org/repo, https://...)
 	Include []string // sorted glob patterns
 	Exclude []string // sorted glob patterns
 }
 
+// WeightSpec is the normalized, user-declared description of a weight:
+// target mount path and one or more source specifications. Construct
+// via WeightSpecFromConfig or WeightSpecFromLock; compare with Equal.
+//
+// Include and Exclude within each SourceSpec are sorted at construction
+// time. They describe a set of glob patterns applied by the packer, so
+// order is not part of the user's intent — reordering patterns in
+// cog.yaml must not trigger a rebuild.
+type WeightSpec struct {
+	name    string
+	Target  string       // container mount path
+	Sources []SourceSpec // one per source in declaration order
+}
+
 // WeightSpecFromConfig builds a WeightSpec from a cog.yaml weight entry,
-// normalizing the URI and cloning+sorting Include/Exclude. Returns an
-// error if the URI is empty or uses an unknown scheme.
+// normalizing URIs and cloning+sorting Include/Exclude for each source.
+// Returns an error if any URI is empty or uses an unknown scheme.
 func WeightSpecFromConfig(w config.WeightSource) (*WeightSpec, error) {
-	uri, err := weightsource.NormalizeURI(w.SourceURI())
-	if err != nil {
-		return nil, fmt.Errorf("weight %q: %w", w.Name, err)
-	}
-	var include, exclude []string
-	if w.Source != nil {
-		include = sortedClone(w.Source.Include)
-		exclude = sortedClone(w.Source.Exclude)
+	sources := make([]SourceSpec, len(w.Source.Items))
+	for i, src := range w.Source.Items {
+		uri, err := weightsource.NormalizeURI(src.URI)
+		if err != nil {
+			return nil, fmt.Errorf("weight %q source[%d]: %w", w.Name, i, err)
+		}
+		sources[i] = SourceSpec{
+			URI:     uri,
+			Include: sortedClone(src.Include),
+			Exclude: sortedClone(src.Exclude),
+		}
 	}
 	return &WeightSpec{
 		name:    w.Name,
 		Target:  w.Target,
-		URI:     uri,
-		Include: include,
-		Exclude: exclude,
+		Sources: sources,
 	}, nil
 }
 
-// WeightSpecFromLock extracts the user-intent fields (target, URI,
-// include/exclude) from a lockfile entry. Fields are copied as stored:
-// no re-normalization. A lockfile whose on-disk form differs from what
-// we would write today — whether in URI form, include/exclude order, or
+// WeightSpecFromLock extracts the user-intent fields (target, sources)
+// from a lockfile entry. Fields are copied as stored: no
+// re-normalization. A lockfile whose on-disk form differs from what we
+// would write today — whether in URI form, include/exclude order, or
 // anything else — must report as drift so the next build rewrites it.
 func WeightSpecFromLock(e lockfile.WeightLockEntry) *WeightSpec {
+	sources := make([]SourceSpec, len(e.Sources))
+	for i, s := range e.Sources {
+		sources[i] = SourceSpec{
+			URI:     s.URI,
+			Include: slices.Clone(s.Include),
+			Exclude: slices.Clone(s.Exclude),
+		}
+	}
 	return &WeightSpec{
 		name:    e.Name,
 		Target:  e.Target,
-		URI:     e.Source.URI,
-		Include: slices.Clone(e.Source.Include),
-		Exclude: slices.Clone(e.Source.Exclude),
+		Sources: sources,
 	}
 }
 
@@ -92,10 +105,25 @@ func sortedClone(s []string) []string {
 // Equal reports whether two specs describe the same user intent.
 // Name is excluded: callers only compare specs for the same weight name.
 func (s *WeightSpec) Equal(other *WeightSpec) bool {
-	return s.Target == other.Target &&
-		s.URI == other.URI &&
-		slices.Equal(s.Include, other.Include) &&
-		slices.Equal(s.Exclude, other.Exclude)
+	if s.Target != other.Target {
+		return false
+	}
+	if len(s.Sources) != len(other.Sources) {
+		return false
+	}
+	for i := range s.Sources {
+		a, b := s.Sources[i], other.Sources[i]
+		if a.URI != b.URI {
+			return false
+		}
+		if !slices.Equal(a.Include, b.Include) {
+			return false
+		}
+		if !slices.Equal(a.Exclude, b.Exclude) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *WeightSpec) Type() ArtifactType { return ArtifactTypeWeight }
@@ -107,12 +135,18 @@ func (s *WeightSpec) Name() string       { return s.name }
 // WeightSpec requires updating this method, and the compiler will
 // surface any field mismatches.
 func (s *WeightSpec) ConfigWeight() lockfile.ConfigWeight {
+	sources := make([]lockfile.ConfigSourceEntry, len(s.Sources))
+	for i, src := range s.Sources {
+		sources[i] = lockfile.ConfigSourceEntry{
+			URI:     src.URI,
+			Include: src.Include,
+			Exclude: src.Exclude,
+		}
+	}
 	return lockfile.ConfigWeight{
 		Name:    s.name,
 		Target:  s.Target,
-		URI:     s.URI,
-		Include: s.Include,
-		Exclude: s.Exclude,
+		Sources: sources,
 	}
 }
 

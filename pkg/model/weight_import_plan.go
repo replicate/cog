@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/replicate/cog/pkg/model/weightsource"
+	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
 // WeightImportPlanStatus describes what would happen to a weight on import.
@@ -38,13 +39,13 @@ type WeightImportPlan struct {
 
 // FilteredFiles returns the filtered inventory files.
 func (p *WeightImportPlan) FilteredFiles() []weightsource.InventoryFile {
-	return p.Resolved.filtered.Files
+	return p.Resolved.merged.Files
 }
 
 // TotalSize returns the sum of filtered file sizes.
 func (p *WeightImportPlan) TotalSize() int64 {
 	var total int64
-	for _, f := range p.Resolved.filtered.Files {
+	for _, f := range p.Resolved.merged.Files {
 		total += f.Size
 	}
 	return total
@@ -56,8 +57,8 @@ func (p *WeightImportPlan) ExcludedFiles() []weightsource.InventoryFile {
 	if len(p.UnfilteredFiles) == 0 {
 		return nil
 	}
-	included := make(map[string]bool, len(p.Resolved.filtered.Files))
-	for _, f := range p.Resolved.filtered.Files {
+	included := make(map[string]bool, len(p.Resolved.merged.Files))
+	for _, f := range p.Resolved.merged.Files {
 		included[f.Path] = true
 	}
 	var excluded []weightsource.InventoryFile
@@ -83,9 +84,16 @@ func (b *WeightBuilder) PlanImport(ctx context.Context, ws *WeightSpec) (*Weight
 		Resolved: resolved,
 	}
 
-	// Keep the unfiltered set if patterns are active.
-	if len(ws.Include) > 0 || len(ws.Exclude) > 0 {
-		plan.UnfilteredFiles = resolved.full.Files
+	// Keep the unfiltered set if any source has patterns active.
+	hasPatterns := false
+	for _, src := range ws.Sources {
+		if len(src.Include) > 0 || len(src.Exclude) > 0 {
+			hasPatterns = true
+			break
+		}
+	}
+	if hasPatterns {
+		plan.UnfilteredFiles = resolved.unfilteredFiles()
 	}
 
 	// Compare against lockfile.
@@ -107,10 +115,9 @@ func (b *WeightBuilder) PlanImport(ctx context.Context, ws *WeightSpec) (*Weight
 		return plan, nil
 	}
 
-	if existing.Source.Fingerprint != resolved.full.Fingerprint {
+	if fingerprintsChanged(existing, resolved) {
 		plan.Status = PlanStatusUpstreamChanged
-		plan.Changes = []string{fmt.Sprintf("fingerprint: %s → %s",
-			existing.Source.Fingerprint, resolved.full.Fingerprint)}
+		plan.Changes = describeFingerprintDrift(existing, resolved)
 		return plan, nil
 	}
 
@@ -120,19 +127,66 @@ func (b *WeightBuilder) PlanImport(ctx context.Context, ws *WeightSpec) (*Weight
 
 // describeSpecDrift returns human-readable descriptions of what differs
 // between the config spec and the lockfile spec.
-func describeSpecDrift(config, lock *WeightSpec) []string {
+func describeSpecDrift(cfg, lock *WeightSpec) []string {
 	var changes []string
-	if config.URI != lock.URI {
-		changes = append(changes, fmt.Sprintf("uri: %q → %q", lock.URI, config.URI))
+	if cfg.Target != lock.Target {
+		changes = append(changes, fmt.Sprintf("target: %q → %q", lock.Target, cfg.Target))
 	}
-	if config.Target != lock.Target {
-		changes = append(changes, fmt.Sprintf("target: %q → %q", lock.Target, config.Target))
+	if len(cfg.Sources) != len(lock.Sources) {
+		changes = append(changes, fmt.Sprintf("source count: %d → %d", len(lock.Sources), len(cfg.Sources)))
+	} else {
+		for i := range cfg.Sources {
+			cs, ls := cfg.Sources[i], lock.Sources[i]
+			prefix := ""
+			if len(cfg.Sources) > 1 {
+				prefix = fmt.Sprintf("source[%d].", i)
+			}
+			if cs.URI != ls.URI {
+				changes = append(changes, fmt.Sprintf("%suri: %q → %q", prefix, ls.URI, cs.URI))
+			}
+			if !slices.Equal(cs.Include, ls.Include) {
+				changes = append(changes, fmt.Sprintf("%sinclude: %v → %v", prefix, ls.Include, cs.Include))
+			}
+			if !slices.Equal(cs.Exclude, ls.Exclude) {
+				changes = append(changes, fmt.Sprintf("%sexclude: %v → %v", prefix, ls.Exclude, cs.Exclude))
+			}
+		}
 	}
-	if !slices.Equal(config.Include, lock.Include) {
-		changes = append(changes, fmt.Sprintf("include: %v → %v", lock.Include, config.Include))
+	return changes
+}
+
+// fingerprintsChanged reports whether any source's fingerprint differs
+// between the lockfile entry and the resolved inventory.
+func fingerprintsChanged(existing *lockfile.WeightLockEntry, resolved *resolvedInventory) bool {
+	if len(existing.Sources) != len(resolved.perSource) {
+		return true
 	}
-	if !slices.Equal(config.Exclude, lock.Exclude) {
-		changes = append(changes, fmt.Sprintf("exclude: %v → %v", lock.Exclude, config.Exclude))
+	for i := range existing.Sources {
+		if existing.Sources[i].Fingerprint != resolved.perSource[i].full.Fingerprint {
+			return true
+		}
+	}
+	return false
+}
+
+// describeFingerprintDrift returns human-readable descriptions of which
+// source fingerprints changed.
+func describeFingerprintDrift(existing *lockfile.WeightLockEntry, resolved *resolvedInventory) []string {
+	var changes []string
+	n := min(len(existing.Sources), len(resolved.perSource))
+	for i := range n {
+		if existing.Sources[i].Fingerprint != resolved.perSource[i].full.Fingerprint {
+			prefix := ""
+			if len(existing.Sources) > 1 {
+				prefix = fmt.Sprintf("source[%d] ", i)
+			}
+			changes = append(changes, fmt.Sprintf("%sfingerprint: %s → %s",
+				prefix, existing.Sources[i].Fingerprint, resolved.perSource[i].full.Fingerprint))
+		}
+	}
+	if len(existing.Sources) != len(resolved.perSource) {
+		changes = append(changes, fmt.Sprintf("source count: %d → %d",
+			len(existing.Sources), len(resolved.perSource)))
 	}
 	return changes
 }

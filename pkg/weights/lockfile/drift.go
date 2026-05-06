@@ -29,6 +29,14 @@ type DriftResult struct {
 	Details string // human-readable detail, e.g. "target: /old → /new"
 }
 
+// ConfigSourceEntry is the lockfile package's view of a single source
+// declaration within a cog.yaml weight entry.
+type ConfigSourceEntry struct {
+	URI     string
+	Include []string
+	Exclude []string
+}
+
 // ConfigWeight is the lockfile package's view of a weight declaration
 // from cog.yaml. It carries only the user-intent fields that affect
 // whether a lockfile entry is stale. Callers must normalize URI and
@@ -36,10 +44,8 @@ type DriftResult struct {
 // does byte-exact comparison.
 type ConfigWeight struct {
 	Name    string
-	URI     string
 	Target  string
-	Include []string
-	Exclude []string
+	Sources []ConfigSourceEntry
 }
 
 // CheckDrift compares config declarations against lockfile entries and
@@ -96,17 +102,28 @@ func CheckDrift(lock *WeightsLock, configWeights []ConfigWeight) []DriftResult {
 // "" when they match.
 func configChanged(cw ConfigWeight, le *WeightLockEntry) string {
 	var diffs []string
-	if cw.URI != le.Source.URI {
-		diffs = append(diffs, fmt.Sprintf("uri: %s → %s", le.Source.URI, cw.URI))
-	}
 	if cw.Target != le.Target {
 		diffs = append(diffs, fmt.Sprintf("target: %s → %s", le.Target, cw.Target))
 	}
-	if !slices.Equal(cw.Include, le.Source.Include) {
-		diffs = append(diffs, fmt.Sprintf("include: %v → %v", le.Source.Include, cw.Include))
-	}
-	if !slices.Equal(cw.Exclude, le.Source.Exclude) {
-		diffs = append(diffs, fmt.Sprintf("exclude: %v → %v", le.Source.Exclude, cw.Exclude))
+	if len(cw.Sources) != len(le.Sources) {
+		diffs = append(diffs, fmt.Sprintf("source count: %d → %d", len(le.Sources), len(cw.Sources)))
+	} else {
+		for i := range cw.Sources {
+			cs, ls := cw.Sources[i], le.Sources[i]
+			prefix := ""
+			if len(cw.Sources) > 1 {
+				prefix = fmt.Sprintf("source[%d].", i)
+			}
+			if cs.URI != ls.URI {
+				diffs = append(diffs, fmt.Sprintf("%suri: %s → %s", prefix, ls.URI, cs.URI))
+			}
+			if !slices.Equal(cs.Include, ls.Include) {
+				diffs = append(diffs, fmt.Sprintf("%sinclude: %v → %v", prefix, ls.Include, cs.Include))
+			}
+			if !slices.Equal(cs.Exclude, ls.Exclude) {
+				diffs = append(diffs, fmt.Sprintf("%sexclude: %v → %v", prefix, ls.Exclude, cs.Exclude))
+			}
+		}
 	}
 	return strings.Join(diffs, "; ")
 }

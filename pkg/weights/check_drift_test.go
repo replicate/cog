@@ -25,10 +25,12 @@ func TestCheckDrift(t *testing.T) {
 				{
 					Name:   "my-model",
 					Target: "/src/weights",
-					Source: lockfile.WeightLockSource{
-						URI:     "file://./weights",
-						Include: []string{},
-						Exclude: []string{},
+					Sources: []lockfile.WeightLockSource{
+						{
+							URI:     "file://./weights",
+							Include: []string{},
+							Exclude: []string{},
+						},
 					},
 				},
 			},
@@ -39,11 +41,13 @@ func TestCheckDrift(t *testing.T) {
 			{
 				Name:   "my-model",
 				Target: "/src/weights",
-				Source: &config.WeightSourceConfig{
-					URI:     "./weights",
-					Include: []string{},
-					Exclude: []string{},
-				},
+				Source: config.WeightSourceList{Items: []config.WeightSourceConfig{
+					{
+						URI:     "./weights",
+						Include: []string{},
+						Exclude: []string{},
+					},
+				}},
 			},
 		}
 		require.NoError(t, CheckDrift(dir, ws))
@@ -58,7 +62,9 @@ func TestCheckDrift(t *testing.T) {
 			{
 				Name:   "new-model",
 				Target: "/src/weights",
-				Source: &config.WeightSourceConfig{URI: "./weights"},
+				Source: config.WeightSourceList{Items: []config.WeightSourceConfig{
+					{URI: "./weights"},
+				}},
 			},
 		}
 
@@ -78,19 +84,23 @@ func TestCheckDrift(t *testing.T) {
 				{
 					Name:   "kept",
 					Target: "/src/kept",
-					Source: lockfile.WeightLockSource{
-						URI:     "file://./kept",
-						Include: []string{},
-						Exclude: []string{},
+					Sources: []lockfile.WeightLockSource{
+						{
+							URI:     "file://./kept",
+							Include: []string{},
+							Exclude: []string{},
+						},
 					},
 				},
 				{
 					Name:   "removed",
 					Target: "/src/removed",
-					Source: lockfile.WeightLockSource{
-						URI:     "file://./removed",
-						Include: []string{},
-						Exclude: []string{},
+					Sources: []lockfile.WeightLockSource{
+						{
+							URI:     "file://./removed",
+							Include: []string{},
+							Exclude: []string{},
+						},
 					},
 				},
 			},
@@ -101,7 +111,9 @@ func TestCheckDrift(t *testing.T) {
 			{
 				Name:   "kept",
 				Target: "/src/kept",
-				Source: &config.WeightSourceConfig{URI: "./kept"},
+				Source: config.WeightSourceList{Items: []config.WeightSourceConfig{
+					{URI: "./kept"},
+				}},
 			},
 		}
 
@@ -119,10 +131,12 @@ func TestCheckDrift(t *testing.T) {
 				{
 					Name:   "my-model",
 					Target: "/src/old-path",
-					Source: lockfile.WeightLockSource{
-						URI:     "file://./weights",
-						Include: []string{},
-						Exclude: []string{},
+					Sources: []lockfile.WeightLockSource{
+						{
+							URI:     "file://./weights",
+							Include: []string{},
+							Exclude: []string{},
+						},
 					},
 				},
 			},
@@ -133,7 +147,9 @@ func TestCheckDrift(t *testing.T) {
 			{
 				Name:   "my-model",
 				Target: "/src/new-path",
-				Source: &config.WeightSourceConfig{URI: "./weights"},
+				Source: config.WeightSourceList{Items: []config.WeightSourceConfig{
+					{URI: "./weights"},
+				}},
 			},
 		}
 
@@ -148,7 +164,9 @@ func TestCheckDrift(t *testing.T) {
 			{
 				Name:   "my-model",
 				Target: "/src/weights",
-				Source: &config.WeightSourceConfig{URI: "./weights"},
+				Source: config.WeightSourceList{Items: []config.WeightSourceConfig{
+					{URI: "./weights"},
+				}},
 			},
 		}
 
@@ -169,10 +187,12 @@ func TestCheckDrift(t *testing.T) {
 				{
 					Name:   "my-model",
 					Target: "/src/weights",
-					Source: lockfile.WeightLockSource{
-						URI:     "file://./weights",
-						Include: []string{"*.bin"},
-						Exclude: []string{"*.tmp"},
+					Sources: []lockfile.WeightLockSource{
+						{
+							URI:     "file://./weights",
+							Include: []string{"*.bin"},
+							Exclude: []string{"*.tmp"},
+						},
 					},
 				},
 			},
@@ -183,11 +203,13 @@ func TestCheckDrift(t *testing.T) {
 			{
 				Name:   "my-model",
 				Target: "/src/weights",
-				Source: &config.WeightSourceConfig{
-					URI:     "./weights",
-					Include: []string{"  *.bin  "},
-					Exclude: []string{"  *.tmp  "},
-				},
+				Source: config.WeightSourceList{Items: []config.WeightSourceConfig{
+					{
+						URI:     "./weights",
+						Include: []string{"  *.bin  "},
+						Exclude: []string{"  *.tmp  "},
+					},
+				}},
 			},
 		}
 		require.NoError(t, CheckDrift(dir, ws),
@@ -206,7 +228,9 @@ func TestCheckDrift(t *testing.T) {
 			{
 				Name:   "my-model",
 				Target: "/src/weights",
-				Source: &config.WeightSourceConfig{URI: "./weights"},
+				Source: config.WeightSourceList{Items: []config.WeightSourceConfig{
+					{URI: "./weights"},
+				}},
 			},
 		}
 

@@ -204,7 +204,7 @@ func (s *HFSource) Inventory(ctx context.Context) (Inventory, error) {
 		return Inventory{}, err
 	}
 
-	sortInventoryFiles(files)
+	SortInventoryFiles(files)
 
 	console.Debugf("hf: inventory complete — %d files, fingerprint commit:%s", len(files), commitSHA[:12])
 	return Inventory{

@@ -189,27 +189,27 @@ func TestValidateWeights(t *testing.T) {
 			name:  "valid with two weights",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/base"}},
-				{Name: "lora", Target: "/src/lora", Source: &WeightSourceConfig{URI: "hf://acme/lora"}},
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/base"}}}},
+				{Name: "lora", Target: "/src/lora", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/lora"}}}},
 			},
 		},
 		{
 			name:  "valid with source",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model", Exclude: []string{"*.onnx"}}},
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model", Exclude: []string{"*.onnx"}}}}},
 			},
 		},
 		{
 			name:    "missing source",
 			image:   image,
 			weights: []weightFile{{Name: "base", Target: "/src/weights"}},
-			wantErr: "source is required",
+			wantErr: "must be a mapping",
 		},
 		{
 			name: "weights without image",
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 			wantErr: "image is required when weights are configured",
 		},
@@ -217,7 +217,7 @@ func TestValidateWeights(t *testing.T) {
 			name:  "missing name",
 			image: image,
 			weights: []weightFile{
-				{Name: "", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 			wantErr: "name is required",
 		},
@@ -225,7 +225,7 @@ func TestValidateWeights(t *testing.T) {
 			name:  "uppercase name",
 			image: image,
 			weights: []weightFile{
-				{Name: "MyModel", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "MyModel", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 			wantErr: "must contain only lowercase",
 		},
@@ -233,7 +233,7 @@ func TestValidateWeights(t *testing.T) {
 			name:  "name with spaces",
 			image: image,
 			weights: []weightFile{
-				{Name: "my model", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "my model", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 			wantErr: "must contain only lowercase",
 		},
@@ -241,7 +241,7 @@ func TestValidateWeights(t *testing.T) {
 			name:  "name starting with hyphen",
 			image: image,
 			weights: []weightFile{
-				{Name: "-base", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "-base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 			wantErr: "must contain only lowercase",
 		},
@@ -249,15 +249,15 @@ func TestValidateWeights(t *testing.T) {
 			name:  "valid name with separators",
 			image: image,
 			weights: []weightFile{
-				{Name: "z-image.turbo_v1", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "z-image.turbo_v1", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 		},
 		{
 			name:  "duplicate name",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
-				{Name: "base", Target: "/src/other", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
+				{Name: "base", Target: "/src/other", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 			wantErr: "duplicate weight name",
 		},
@@ -265,7 +265,7 @@ func TestValidateWeights(t *testing.T) {
 			name:  "missing target",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "base", Target: "", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 			wantErr: "target is required",
 		},
@@ -273,7 +273,7 @@ func TestValidateWeights(t *testing.T) {
 			name:  "relative target",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "base", Target: "src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 			wantErr: "target must be an absolute path",
 		},
@@ -281,8 +281,8 @@ func TestValidateWeights(t *testing.T) {
 			name:  "duplicate target",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
-				{Name: "lora", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
+				{Name: "lora", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 			wantErr: "duplicate weight target",
 		},
@@ -290,8 +290,8 @@ func TestValidateWeights(t *testing.T) {
 			name:  "overlapping targets parent then child",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
-				{Name: "lora", Target: "/src/weights/lora", Source: &WeightSourceConfig{URI: "hf://acme/lora"}},
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
+				{Name: "lora", Target: "/src/weights/lora", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/lora"}}}},
 			},
 			wantErr: "target overlaps with",
 		},
@@ -299,8 +299,8 @@ func TestValidateWeights(t *testing.T) {
 			name:  "overlapping targets child then parent",
 			image: image,
 			weights: []weightFile{
-				{Name: "lora", Target: "/src/weights/lora", Source: &WeightSourceConfig{URI: "hf://acme/lora"}},
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/model"}},
+				{Name: "lora", Target: "/src/weights/lora", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/lora"}}}},
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 			wantErr: "target overlaps with",
 		},
@@ -308,29 +308,29 @@ func TestValidateWeights(t *testing.T) {
 			name:  "disjoint targets no false positive",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{URI: "hf://acme/base"}},
-				{Name: "lora", Target: "/src/weights2", Source: &WeightSourceConfig{URI: "hf://acme/lora"}},
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/base"}}}},
+				{Name: "lora", Target: "/src/weights2", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/lora"}}}},
 			},
 		},
 		{
 			name:  "valid include and exclude patterns",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
 					Include: []string{"*.safetensors", "*.json"},
 					Exclude: []string{"*.onnx", "*.bin"},
-				}},
+				}}}},
 			},
 		},
 		{
 			name:  "empty string in include pattern",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
 					Include: []string{"*.safetensors", ""},
-				}},
+				}}}},
 			},
 			wantErr: "pattern must not be empty",
 		},
@@ -338,10 +338,10 @@ func TestValidateWeights(t *testing.T) {
 			name:  "empty string in exclude pattern",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
 					Exclude: []string{""},
-				}},
+				}}}},
 			},
 			wantErr: "pattern must not be empty",
 		},
@@ -349,10 +349,10 @@ func TestValidateWeights(t *testing.T) {
 			name:  "negation pattern in include",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
 					Include: []string{"!*.bin"},
-				}},
+				}}}},
 			},
 			wantErr: "negation patterns",
 		},
@@ -360,10 +360,10 @@ func TestValidateWeights(t *testing.T) {
 			name:  "negation pattern in exclude",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
 					Exclude: []string{"!*.safetensors"},
-				}},
+				}}}},
 			},
 			wantErr: "negation patterns",
 		},
@@ -371,10 +371,10 @@ func TestValidateWeights(t *testing.T) {
 			name:  "whitespace-only pattern rejected after trim",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
 					Include: []string{"  "},
-				}},
+				}}}},
 			},
 			wantErr: "pattern must not be empty",
 		},
@@ -382,10 +382,10 @@ func TestValidateWeights(t *testing.T) {
 			name:  "backslash in pattern rejected",
 			image: image,
 			weights: []weightFile{
-				{Name: "base", Target: "/src/weights", Source: &WeightSourceConfig{
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
 					Exclude: []string{`onnx\*.bin`},
-				}},
+				}}}},
 			},
 			wantErr: "must use forward slashes",
 		},

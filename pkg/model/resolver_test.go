@@ -1119,9 +1119,9 @@ func TestResolver_Build_PopulatesWeights(t *testing.T) {
 				SetDigest:      "sha256:setdigest123",
 				Size:           4096,
 				SizeCompressed: 2048,
-				Source: lockfile.WeightLockSource{
-					URI: "file://./weights/model",
-				},
+			Sources: []lockfile.WeightLockSource{{
+				URI: "file://./weights/model",
+			}},
 			},
 		},
 	}
@@ -1131,7 +1131,7 @@ func TestResolver_Build_PopulatesWeights(t *testing.T) {
 		Config: &config.Config{
 			Build: &config.Build{},
 			Weights: []config.WeightSource{
-				{Name: "my-model", Target: "/srv/weights/model", Source: &config.WeightSourceConfig{URI: "weights/model"}},
+				{Name: "my-model", Target: "/srv/weights/model", Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "weights/model"}}}},
 			},
 		},
 		ProjectDir: dir,
@@ -1200,9 +1200,9 @@ func TestResolver_Build_WithWeightsIsBundle(t *testing.T) {
 				Digest:    "sha256:abc",
 				SetDigest: "sha256:set123",
 				Size:      1024,
-				Source: lockfile.WeightLockSource{
-					URI: "file://./weights",
-				},
+			Sources: []lockfile.WeightLockSource{{
+				URI: "file://./weights",
+			}},
 			},
 		},
 	}
@@ -1212,7 +1212,7 @@ func TestResolver_Build_WithWeightsIsBundle(t *testing.T) {
 		Config: &config.Config{
 			Build: &config.Build{},
 			Weights: []config.WeightSource{
-				{Name: "my-model", Target: "/src/weights", Source: &config.WeightSourceConfig{URI: "weights"}},
+				{Name: "my-model", Target: "/src/weights", Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "weights"}}}},
 			},
 		},
 		ProjectDir: dir,

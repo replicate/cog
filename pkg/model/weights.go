@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
-// newWeightLockEntry assembles a lockfile.WeightLockEntry from a source
-// description, the packed file index, and the set of packed layers
+// newWeightLockEntry assembles a lockfile.WeightLockEntry from source
+// descriptions, the packed file index, and the set of packed layers
 // produced by pack.
 //
 // The set digest (spec §2.4) is computed from the canonical file index.
@@ -18,7 +19,8 @@ import (
 // buildWeightManifestV1 assembles the manifest from this entry.
 func newWeightLockEntry(
 	name, target string,
-	source lockfile.WeightLockSource,
+	sources []lockfile.WeightLockSource,
+	importedAt time.Time,
 	files []packedFile,
 	layers []packedLayer,
 ) lockfile.WeightLockEntry {
@@ -48,7 +50,8 @@ func newWeightLockEntry(
 	entry := lockfile.WeightLockEntry{
 		Name:           name,
 		Target:         target,
-		Source:         source,
+		Sources:        sources,
+		ImportedAt:     importedAt,
 		Size:           totalSize,
 		SizeCompressed: totalCompressed,
 		Files:          lockFiles,

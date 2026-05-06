@@ -25,13 +25,15 @@ func sampleEntry() WeightLockEntry {
 	return WeightLockEntry{
 		Name:   "z-image-turbo",
 		Target: "/src/weights",
-		Source: WeightLockSource{
-			URI:         "file://./weights",
-			Fingerprint: weightsource.Fingerprint("sha256:def456"),
-			Include:     []string{},
-			Exclude:     []string{},
-			ImportedAt:  time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC),
+		Sources: []WeightLockSource{
+			{
+				URI:         "file://./weights",
+				Fingerprint: weightsource.Fingerprint("sha256:def456"),
+				Include:     []string{},
+				Exclude:     []string{},
+			},
 		},
+		ImportedAt:      time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC),
 		Digest:         "sha256:abc123",
 		SetDigest:      "sha256:def456",
 		Size:           1500,
@@ -54,13 +56,15 @@ func TestWeightsLock_ParseValid(t *testing.T) {
 			{
 				"name": "z-image-turbo",
 				"target": "/src/weights",
-				"source": {
-					"uri": "file://./weights",
-					"fingerprint": "sha256:def456",
-					"include": [],
-					"exclude": [],
-					"importedAt": "2026-04-16T17:27:07Z"
-				},
+				"sources": [
+					{
+						"uri": "file://./weights",
+						"fingerprint": "sha256:def456",
+						"include": [],
+						"exclude": []
+					}
+				],
+				"importedAt": "2026-04-16T17:27:07Z",
 				"digest": "sha256:abc123",
 				"setDigest": "sha256:def456",
 				"size": 1500,
@@ -88,8 +92,9 @@ func TestWeightsLock_ParseValid(t *testing.T) {
 	assert.Equal(t, int64(1500), w.Size)
 	assert.Equal(t, int64(1200), w.SizeCompressed)
 
-	assert.Equal(t, "file://./weights", w.Source.URI)
-	assert.Equal(t, weightsource.Fingerprint("sha256:def456"), w.Source.Fingerprint)
+	require.Len(t, w.Sources, 1)
+	assert.Equal(t, "file://./weights", w.Sources[0].URI)
+	assert.Equal(t, weightsource.Fingerprint("sha256:def456"), w.Sources[0].Fingerprint)
 
 	require.Len(t, w.Files, 1)
 	assert.Equal(t, "a.json", w.Files[0].Path)
@@ -214,7 +219,7 @@ func TestWeightsLock_Marshal_NormalizesEmptyPatterns(t *testing.T) {
 	lock := &WeightsLock{
 		Version: Version,
 		Weights: []WeightLockEntry{
-			{Name: "w", Source: WeightLockSource{URI: "file://./x"}},
+			{Name: "w", Sources: []WeightLockSource{{URI: "file://./x"}}},
 		},
 	}
 	data, err := lock.Marshal()
@@ -302,7 +307,7 @@ func TestWeightsLock_RoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &decoded))
 	assert.Equal(t, original.Version, decoded.Version)
 	require.Len(t, decoded.Weights, 1)
-	assert.Equal(t, original.Weights[0].Source.Fingerprint, decoded.Weights[0].Source.Fingerprint)
+	assert.Equal(t, original.Weights[0].Sources[0].Fingerprint, decoded.Weights[0].Sources[0].Fingerprint)
 	assert.Equal(t, original.Weights[0].Files, decoded.Weights[0].Files)
 	assert.Equal(t, original.Weights[0].Layers, decoded.Weights[0].Layers)
 }
@@ -333,23 +338,23 @@ func TestEntriesSourceEqual(t *testing.T) {
 	a := sampleEntry()
 	b := sampleEntry()
 	// Different importedAt must still be source-equal.
-	b.Source.ImportedAt = a.Source.ImportedAt.Add(1 * time.Hour)
+	b.ImportedAt = a.ImportedAt.Add(1 * time.Hour)
 	assert.True(t, entriesSourceEqual(&a, &b), "importedAt must not affect source equality")
 
 	c := sampleEntry()
-	c.Source.URI = "file://./different"
+	c.Sources[0].URI = "file://./different"
 	assert.False(t, entriesSourceEqual(&a, &c), "differing URI breaks source equality")
 
 	d := sampleEntry()
-	d.Source.Fingerprint = "sha256:different"
+	d.Sources[0].Fingerprint = "sha256:different"
 	assert.False(t, entriesSourceEqual(&a, &d), "differing fingerprint breaks source equality")
 
 	e := sampleEntry()
-	e.Source.Include = []string{"*.safetensors"}
+	e.Sources[0].Include = []string{"*.safetensors"}
 	assert.False(t, entriesSourceEqual(&a, &e), "differing include patterns break source equality")
 
 	f := sampleEntry()
-	f.Source.Exclude = []string{"README*"}
+	f.Sources[0].Exclude = []string{"README*"}
 	assert.False(t, entriesSourceEqual(&a, &f), "differing exclude patterns break source equality")
 }
 
@@ -360,7 +365,7 @@ func TestEntriesEqual_RequiresBothContentAndSource(t *testing.T) {
 
 	// Same content, different source — not equal.
 	c := sampleEntry()
-	c.Source.URI = "file://./other"
+	c.Sources[0].URI = "file://./other"
 	assert.False(t, EntriesEqual(&a, &c))
 
 	// Same source, different content — not equal.
@@ -440,11 +445,13 @@ func TestRuntimeManifest_ProjectsSpecFields(t *testing.T) {
 				SetDigest:      "sha256:def456",
 				Size:           32600000000,
 				SizeCompressed: 32457803776,
-				Source: WeightLockSource{
-					URI:         "file://./weights",
-					Fingerprint: "sha256:def456",
-					Include:     []string{},
-					Exclude:     []string{},
+				Sources: []WeightLockSource{
+					{
+						URI:         "file://./weights",
+						Fingerprint: "sha256:def456",
+						Include:     []string{},
+						Exclude:     []string{},
+					},
 				},
 				Files: []WeightLockFile{
 					{Path: "config.json", Size: 1234, Digest: "sha256:f01", Layer: "sha256:aaa"},

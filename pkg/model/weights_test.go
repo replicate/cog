@@ -21,12 +21,15 @@ func TestWeightLockEntry_JSONFieldNames(t *testing.T) {
 		Target:    "/src/weights",
 		Digest:    "sha256:abc",
 		SetDigest: "sha256:def",
-		Source: lockfile.WeightLockSource{
-			URI:         "file://./weights",
-			Fingerprint: weightsource.Fingerprint("sha256:def"),
-			Include:     []string{},
-			Exclude:     []string{},
+		Sources: []lockfile.WeightLockSource{
+			{
+				URI:         "file://./weights",
+				Fingerprint: weightsource.Fingerprint("sha256:def"),
+				Include:     []string{},
+				Exclude:     []string{},
+			},
 		},
+		ImportedAt: time.Now(),
 		Files: []lockfile.WeightLockFile{
 			{Path: "a.json", Size: 100, Digest: "sha256:f01", Layer: "sha256:aaa"},
 		},
@@ -45,7 +48,7 @@ func TestWeightLockEntry_JSONFieldNames(t *testing.T) {
 		`"target":"/src/weights"`,
 		`"digest":"sha256:abc"`,
 		`"setDigest":"sha256:def"`,
-		`"source":`,
+		`"sources":`,
 		`"uri":"file://./weights"`,
 		`"fingerprint":"sha256:def"`,
 		`"files":`,
@@ -129,8 +132,8 @@ func TestSetDigest_StableAcrossRepacks(t *testing.T) {
 	pr2, _, err := packTestDir(t, dir, &packOptions{BundleFileMax: 1, BundleSizeMax: 1})
 	require.NoError(t, err)
 
-	entry1 := newWeightLockEntry("w", "/w", lockfile.WeightLockSource{}, pr1.Files, pr1.Layers)
-	entry2 := newWeightLockEntry("w", "/w", lockfile.WeightLockSource{}, pr2.Files, pr2.Layers)
+	entry1 := newWeightLockEntry("w", "/w", []lockfile.WeightLockSource{{}}, time.Time{}, pr1.Files, pr1.Layers)
+	entry2 := newWeightLockEntry("w", "/w", []lockfile.WeightLockSource{{}}, time.Time{}, pr2.Files, pr2.Layers)
 
 	assert.Equal(t, entry1.SetDigest, entry2.SetDigest,
 		"set digest must be stable across different packing strategies")
@@ -150,8 +153,8 @@ func TestConfigBlob_DiffersAcrossRepacks(t *testing.T) {
 	pr2, _, err := packTestDir(t, dir, &packOptions{BundleFileMax: 1, BundleSizeMax: 1})
 	require.NoError(t, err)
 
-	entry1 := newWeightLockEntry("w", "/w", lockfile.WeightLockSource{}, pr1.Files, pr1.Layers)
-	entry2 := newWeightLockEntry("w", "/w", lockfile.WeightLockSource{}, pr2.Files, pr2.Layers)
+	entry1 := newWeightLockEntry("w", "/w", []lockfile.WeightLockSource{{}}, time.Time{}, pr1.Files, pr1.Layers)
+	entry2 := newWeightLockEntry("w", "/w", []lockfile.WeightLockSource{{}}, time.Time{}, pr2.Files, pr2.Layers)
 
 	cfg1, err := buildWeightConfigBlob("w", "/w", entry1.SetDigest, entry1.Files)
 	require.NoError(t, err)
@@ -186,10 +189,10 @@ func TestNewWeightLockEntry_PopulatesFromPackResult(t *testing.T) {
 		Fingerprint: weightsource.Fingerprint("sha256:setdigest"),
 		Include:     []string{},
 		Exclude:     []string{},
-		ImportedAt:  time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC),
 	}
+	importedAt := time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC)
 
-	entry := newWeightLockEntry("w", "/src/w", src, files, layers)
+	entry := newWeightLockEntry("w", "/src/w", []lockfile.WeightLockSource{src}, importedAt, files, layers)
 
 	assert.Equal(t, "w", entry.Name)
 	assert.Equal(t, "/src/w", entry.Target)
@@ -202,7 +205,9 @@ func TestNewWeightLockEntry_PopulatesFromPackResult(t *testing.T) {
 
 	require.Len(t, entry.Files, 2)
 	require.Len(t, entry.Layers, 2)
-	assert.Equal(t, src, entry.Source)
+	require.Len(t, entry.Sources, 1)
+	assert.Equal(t, src, entry.Sources[0])
+	assert.Equal(t, importedAt, entry.ImportedAt)
 
 	// Files sorted by path, layers sorted by digest.
 	assert.Equal(t, "a.json", entry.Files[0].Path)
@@ -224,7 +229,7 @@ func TestSetDigest_CrossPath(t *testing.T) {
 	// Path 1: pack, convert to lock entry, compute from the entry.
 	pr, _, err := packTestDir(t, dir, nil)
 	require.NoError(t, err)
-	entry := newWeightLockEntry("w", "/w", lockfile.WeightLockSource{}, pr.Files, pr.Layers)
+	entry := newWeightLockEntry("w", "/w", []lockfile.WeightLockSource{{}}, time.Time{}, pr.Files, pr.Layers)
 	packerSetDigest := entry.ComputeSetDigest()
 
 	// Path 2: inventory fingerprint from directory walk (the weightsource path).

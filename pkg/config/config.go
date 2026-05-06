@@ -74,18 +74,17 @@ type WeightSourceConfig struct {
 	Exclude []string `json:"exclude,omitempty" yaml:"exclude,omitempty"`
 }
 
-// WeightSource defines a weight directory to include in the model.
-type WeightSource struct {
-	Name   string              `json:"name" yaml:"name"`
-	Target string              `json:"target" yaml:"target"`
-	Source *WeightSourceConfig `json:"source,omitempty" yaml:"source,omitempty"`
+// WeightSourceList accepts a single object or an array in YAML/JSON
+// and normalizes to a slice. Custom unmarshalers are in config_file.go.
+type WeightSourceList struct {
+	Items []WeightSourceConfig
 }
 
-func (w *WeightSource) SourceURI() string {
-	if w.Source == nil {
-		return ""
-	}
-	return w.Source.URI
+// WeightSource defines a weight directory to include in the model.
+type WeightSource struct {
+	Name   string           `json:"name" yaml:"name"`
+	Target string           `json:"target" yaml:"target"`
+	Source WeightSourceList `json:"source" yaml:"source"`
 }
 
 // WeightNames returns the names of the given weight sources.

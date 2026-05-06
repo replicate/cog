@@ -62,7 +62,7 @@ type WeightsLock struct {
 // WeightLockEntry is one declared weight in the lockfile.
 //
 // The entry carries everything needed to reproduce the OCI artifacts:
-//   - identity of the source (Source block)
+//   - identity of the sources (Sources block)
 //   - content-addressable identity of the file set (SetDigest)
 //   - per-file index mapping each file to its layer (Files)
 //   - intrinsic layer properties for the manifest (Layers)
@@ -76,8 +76,14 @@ type WeightLockEntry struct {
 	Name string `json:"name"`
 	// Target is the container mount path for this weight.
 	Target string `json:"target"`
-	// Source records where the weight came from and how it was filtered.
-	Source WeightLockSource `json:"source"`
+	// Sources records where the weight came from and how it was filtered.
+	// Multi-source weights have multiple entries; single-source weights
+	// have exactly one.
+	Sources []WeightLockSource `json:"sources"`
+	// ImportedAt is the wall-clock time of the import that produced this
+	// entry. It is informational only — it never participates in
+	// equality checks (see EntriesEqual).
+	ImportedAt time.Time `json:"importedAt"`
 	// Digest is the sha256 digest of the assembled OCI manifest.
 	Digest string `json:"digest"`
 	// SetDigest is the weight set digest (spec §2.4): a content-addressable
@@ -98,16 +104,17 @@ type WeightLockEntry struct {
 	Layers []WeightLockLayer `json:"layers"`
 }
 
-// WeightLockSource records provenance for a WeightLockEntry.
+// WeightLockSource records provenance for one source within a
+// WeightLockEntry.
 //
 // An import is a pure function of (source URI, source fingerprint,
-// include/exclude). Recording all four inputs plus the import timestamp
-// makes the lockfile self-contained: given these fields and the source at
-// Fingerprint, you can deterministically reproduce the Files/Layers that
-// the entry describes.
+// include/exclude). Recording all inputs makes the lockfile
+// self-contained: given these fields and the source at Fingerprint, you
+// can deterministically reproduce the Files/Layers that the entry
+// describes.
 type WeightLockSource struct {
 	// URI is the normalized source URI (e.g. file://./weights,
-	// hf://org/model, s3://bucket/prefix/).
+	// hf://org/model, https://example.com/model.pth).
 	URI string `json:"uri"`
 	// Fingerprint is the source's version identity at import time.
 	// Scheme-prefixed (sha256:, commit:, etag:, …).
@@ -120,10 +127,6 @@ type WeightLockSource struct {
 	Include []string `json:"include"`
 	// Exclude is the sorted list of exclude patterns, same shape as Include.
 	Exclude []string `json:"exclude"`
-	// ImportedAt is the wall-clock time of the import that produced this
-	// entry. It is informational only — it never participates in
-	// equality checks (see EntriesEqual).
-	ImportedAt time.Time `json:"importedAt"`
 }
 
 // WeightLockFile is a single file in a WeightLockEntry's Files index.
@@ -355,11 +358,13 @@ func (wl *WeightsLock) RuntimeManifest() *RuntimeWeightsManifest {
 func canonicalize(e *WeightLockEntry) {
 	sort.Slice(e.Files, func(i, j int) bool { return e.Files[i].Path < e.Files[j].Path })
 	sort.Slice(e.Layers, func(i, j int) bool { return e.Layers[i].Digest < e.Layers[j].Digest })
-	if e.Source.Include == nil {
-		e.Source.Include = []string{}
-	}
-	if e.Source.Exclude == nil {
-		e.Source.Exclude = []string{}
+	for i := range e.Sources {
+		if e.Sources[i].Include == nil {
+			e.Sources[i].Include = []string{}
+		}
+		if e.Sources[i].Exclude == nil {
+			e.Sources[i].Exclude = []string{}
+		}
 	}
 }
 
@@ -466,20 +471,26 @@ func entriesContentEqual(a, b *WeightLockEntry) bool {
 }
 
 // entriesSourceEqual reports whether two entries have identical source
-// metadata: same URI, same fingerprint, same include/exclude patterns.
+// metadata: same sources (URI, fingerprint, include/exclude per source).
 // ImportedAt is intentionally excluded.
 func entriesSourceEqual(a, b *WeightLockEntry) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	if a.Source.URI != b.Source.URI || a.Source.Fingerprint != b.Source.Fingerprint {
+	if len(a.Sources) != len(b.Sources) {
 		return false
 	}
-	if !slices.Equal(a.Source.Include, b.Source.Include) {
-		return false
-	}
-	if !slices.Equal(a.Source.Exclude, b.Source.Exclude) {
-		return false
+	for i := range a.Sources {
+		sa, sb := a.Sources[i], b.Sources[i]
+		if sa.URI != sb.URI || sa.Fingerprint != sb.Fingerprint {
+			return false
+		}
+		if !slices.Equal(sa.Include, sb.Include) {
+			return false
+		}
+		if !slices.Equal(sa.Exclude, sb.Exclude) {
+			return false
+		}
 	}
 	return true
 }

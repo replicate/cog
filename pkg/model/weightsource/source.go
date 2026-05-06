@@ -67,9 +67,9 @@ func (f InventoryFile) DirhashParts() DirhashPart {
 	return DirhashPart{Path: f.Path, Digest: f.Digest}
 }
 
-// sortInventoryFiles sorts files by path. Every Source implementation
+// SortInventoryFiles sorts files by path. Every Source implementation
 // must return a sorted inventory; this helper enforces the convention.
-func sortInventoryFiles(files []InventoryFile) {
+func SortInventoryFiles(files []InventoryFile) {
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 }
 
@@ -98,6 +98,8 @@ func NormalizeURI(uri string) (string, error) {
 		return normalizeFileURI(path)
 	case HFScheme, HFSchemeLong:
 		return normalizeHFURI(uri)
+	case "https", "http":
+		return normalizeHTTPURI(uri)
 	default:
 		return "", fmt.Errorf("unsupported weight source scheme %q in URI %q", scheme, uri)
 	}
@@ -126,8 +128,10 @@ func For(uri, projectDir string) (Source, error) {
 		return NewFileSource(uri, projectDir)
 	case HFScheme, HFSchemeLong:
 		return NewHFSource(uri)
+	case "https", "http":
+		return NewHTTPSource(uri)
 	default:
-		return nil, fmt.Errorf("unsupported weight source scheme %q (supported: file, hf, huggingface)", scheme)
+		return nil, fmt.Errorf("unsupported weight source scheme %q (supported: file, hf, huggingface, https, http)", scheme)
 	}
 }
 

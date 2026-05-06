@@ -696,16 +696,15 @@ weights:
 
 	require.Equal(t, "model-v1", config.Weights[0].Name)
 	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
-	require.NotNil(t, config.Weights[0].Source)
-	require.Equal(t, "hf://acme/model-v1", config.Weights[0].Source.URI)
-	require.Equal(t, "hf://acme/model-v1", config.Weights[0].SourceURI())
-	require.Equal(t, []string{"*.onnx"}, config.Weights[0].Source.Exclude)
-	require.Empty(t, config.Weights[0].Source.Include)
+	require.NotEmpty(t, config.Weights[0].Source.Items)
+	require.Equal(t, "hf://acme/model-v1", config.Weights[0].Source.Items[0].URI)
+	require.Equal(t, []string{"*.onnx"}, config.Weights[0].Source.Items[0].Exclude)
+	require.Empty(t, config.Weights[0].Source.Items[0].Include)
 
 	require.Equal(t, "model-v2", config.Weights[1].Name)
 	require.Equal(t, "/weights/model-v2", config.Weights[1].Target)
-	require.NotNil(t, config.Weights[1].Source)
-	require.Equal(t, "./local-weights/", config.Weights[1].Source.URI)
+	require.NotEmpty(t, config.Weights[1].Source.Items)
+	require.Equal(t, "./local-weights/", config.Weights[1].Source.Items[0].URI)
 }
 
 func TestWeightsWithoutSourceYAML(t *testing.T) {
@@ -725,9 +724,8 @@ weights:
 	require.NoError(t, err, "parsing should succeed even without source")
 	require.Len(t, config.Weights, 1)
 
-	// Source is nil at the Go level — the schema enforces it, not the parser.
-	require.Nil(t, config.Weights[0].Source)
-	require.Equal(t, "", config.Weights[0].SourceURI())
+	// Source is empty at the Go level — the schema enforces it, not the parser.
+	require.Empty(t, config.Weights[0].Source.Items)
 }
 
 func TestWeightsWithSourceJSON(t *testing.T) {
@@ -764,14 +762,14 @@ func TestWeightsWithSourceJSON(t *testing.T) {
 
 	require.Equal(t, "model-v1", config.Weights[0].Name)
 	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
-	require.NotNil(t, config.Weights[0].Source)
-	require.Equal(t, "hf://acme/model-v1", config.Weights[0].Source.URI)
-	require.Equal(t, []string{"*.onnx"}, config.Weights[0].Source.Exclude)
+	require.NotEmpty(t, config.Weights[0].Source.Items)
+	require.Equal(t, "hf://acme/model-v1", config.Weights[0].Source.Items[0].URI)
+	require.Equal(t, []string{"*.onnx"}, config.Weights[0].Source.Items[0].Exclude)
 
 	require.Equal(t, "model-v2", config.Weights[1].Name)
 	require.Equal(t, "/weights/model-v2", config.Weights[1].Target)
-	require.NotNil(t, config.Weights[1].Source)
-	require.Equal(t, "./local-weights/", config.Weights[1].Source.URI)
+	require.NotEmpty(t, config.Weights[1].Source.Items)
+	require.Equal(t, "./local-weights/", config.Weights[1].Source.Items[0].URI)
 }
 
 func TestSDKVersionConfig(t *testing.T) {

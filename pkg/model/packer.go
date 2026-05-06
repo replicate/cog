@@ -376,16 +376,12 @@ func packedFilesFromPlan(layers []packedLayer) []packedFile {
 	return out
 }
 
-// ingressFromInventory streams each file in inv from src into st,
-// hash-verifying as bytes flow through. Files already present in the
-// store are skipped — store.PutFile is idempotent and drains the
-// reader to io.Discard for already-stored digests, but we don't even
-// open the source for those. Open() on remote sources is expensive
-// (HTTP round trip); the cheap Exists() probe avoids it.
-//
-// Hash mismatches surface here, loudly, instead of silently producing
-// a tar whose member digest disagrees with the inventory.
-func ingressFromInventory(ctx context.Context, src weightsource.Source, st store.Store, inv weightsource.Inventory) error {
+// ingressFromInventory streams each file in inv into st using the owners
+// map to call the correct source's Open(). Files already present in the
+// store are skipped. Hash mismatches surface here, loudly, instead of
+// silently producing a tar whose member digest disagrees with the
+// inventory.
+func ingressFromInventory(ctx context.Context, owners map[string]weightsource.Source, st store.Store, inv weightsource.Inventory) error {
 	for _, f := range inv.Files {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -396,6 +392,10 @@ func ingressFromInventory(ctx context.Context, src weightsource.Source, st store
 		}
 		if ok {
 			continue
+		}
+		src, ok := owners[f.Path]
+		if !ok {
+			return fmt.Errorf("no source owner for file %s", f.Path)
 		}
 		if err := ingressOne(ctx, src, st, f); err != nil {
 			return fmt.Errorf("ingress %s: %w", f.Path, err)

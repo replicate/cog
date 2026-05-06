@@ -23,6 +23,16 @@ import (
 	"github.com/replicate/cog/pkg/weights/store"
 )
 
+// sourceOwners builds an owners map from a single source and inventory.
+// Test convenience for the common single-source case.
+func sourceOwners(src weightsource.Source, inv weightsource.Inventory) map[string]weightsource.Source {
+	owners := make(map[string]weightsource.Source, len(inv.Files))
+	for _, f := range inv.Files {
+		owners[f.Path] = src
+	}
+	return owners
+}
+
 // packTestDir is a convenience test helper that wires a local
 // directory through the new Source/Inventory + ingress +
 // computeLayerDigests pipeline. It hides the boilerplate so test
@@ -53,7 +63,7 @@ func packTestDirCtx(t *testing.T, ctx context.Context, dir string, opts *packOpt
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := ingressFromInventory(ctx, src, st, inv); err != nil {
+	if err := ingressFromInventory(ctx, sourceOwners(src, inv), st, inv); err != nil {
 		return nil, nil, err
 	}
 	pkr := newPacker(opts)

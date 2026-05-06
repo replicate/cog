@@ -109,7 +109,7 @@ func computeInventory(ctx context.Context, dir string) (Inventory, error) {
 		return Inventory{}, err
 	}
 
-	sortInventoryFiles(files)
+	SortInventoryFiles(files)
 
 	return Inventory{
 		Files:       files,

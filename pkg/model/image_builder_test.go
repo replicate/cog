@@ -79,7 +79,7 @@ func TestImageBuilder_ErrorWrongSpecType(t *testing.T) {
 	weightSpec, err := WeightSpecFromConfig(config.WeightSource{
 		Name:   "model",
 		Target: "/weights/model.bin",
-		Source: &config.WeightSourceConfig{URI: "model.bin"},
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "model.bin"}}},
 	})
 	require.NoError(t, err)
 	_, err = ib.Build(context.Background(), weightSpec)

@@ -19,13 +19,13 @@ func TestCheckDrift(t *testing.T) {
 			lock: &WeightsLock{
 				Version: Version,
 				Weights: []WeightLockEntry{
-					{Name: "model-a", Target: "/weights/a", Source: WeightLockSource{URI: "file://./a", Include: []string{}, Exclude: []string{}}},
-					{Name: "model-b", Target: "/weights/b", Source: WeightLockSource{URI: "file://./b", Include: []string{"*.bin"}, Exclude: []string{"README*"}}},
+					{Name: "model-a", Target: "/weights/a", Sources: []WeightLockSource{{URI: "file://./a", Include: []string{}, Exclude: []string{}}}},
+					{Name: "model-b", Target: "/weights/b", Sources: []WeightLockSource{{URI: "file://./b", Include: []string{"*.bin"}, Exclude: []string{"README*"}}}},
 				},
 			},
 			config: []ConfigWeight{
-				{Name: "model-a", URI: "file://./a", Target: "/weights/a", Include: []string{}, Exclude: []string{}},
-				{Name: "model-b", URI: "file://./b", Target: "/weights/b", Include: []string{"*.bin"}, Exclude: []string{"README*"}},
+				{Name: "model-a", Target: "/weights/a", Sources: []ConfigSourceEntry{{URI: "file://./a", Include: []string{}, Exclude: []string{}}}},
+				{Name: "model-b", Target: "/weights/b", Sources: []ConfigSourceEntry{{URI: "file://./b", Include: []string{"*.bin"}, Exclude: []string{"README*"}}}},
 			},
 			want: []DriftResult{},
 		},
@@ -34,12 +34,12 @@ func TestCheckDrift(t *testing.T) {
 			lock: &WeightsLock{
 				Version: Version,
 				Weights: []WeightLockEntry{
-					{Name: "kept", Target: "/kept", Source: WeightLockSource{URI: "file://./kept", Include: []string{}, Exclude: []string{}}},
-					{Name: "removed", Target: "/removed", Source: WeightLockSource{URI: "file://./removed", Include: []string{}, Exclude: []string{}}},
+					{Name: "kept", Target: "/kept", Sources: []WeightLockSource{{URI: "file://./kept", Include: []string{}, Exclude: []string{}}}},
+					{Name: "removed", Target: "/removed", Sources: []WeightLockSource{{URI: "file://./removed", Include: []string{}, Exclude: []string{}}}},
 				},
 			},
 			config: []ConfigWeight{
-				{Name: "kept", URI: "file://./kept", Target: "/kept", Include: []string{}, Exclude: []string{}},
+				{Name: "kept", Target: "/kept", Sources: []ConfigSourceEntry{{URI: "file://./kept", Include: []string{}, Exclude: []string{}}}},
 			},
 			want: []DriftResult{
 				{Name: "removed", Kind: DriftOrphaned},
@@ -50,12 +50,12 @@ func TestCheckDrift(t *testing.T) {
 			lock: &WeightsLock{
 				Version: Version,
 				Weights: []WeightLockEntry{
-					{Name: "existing", Target: "/existing", Source: WeightLockSource{URI: "file://./existing", Include: []string{}, Exclude: []string{}}},
+					{Name: "existing", Target: "/existing", Sources: []WeightLockSource{{URI: "file://./existing", Include: []string{}, Exclude: []string{}}}},
 				},
 			},
 			config: []ConfigWeight{
-				{Name: "existing", URI: "file://./existing", Target: "/existing", Include: []string{}, Exclude: []string{}},
-				{Name: "new-weight", URI: "file://./new", Target: "/new"},
+				{Name: "existing", Target: "/existing", Sources: []ConfigSourceEntry{{URI: "file://./existing", Include: []string{}, Exclude: []string{}}}},
+				{Name: "new-weight", Target: "/new", Sources: []ConfigSourceEntry{{URI: "file://./new"}}},
 			},
 			want: []DriftResult{
 				{Name: "new-weight", Kind: DriftPending},
@@ -66,11 +66,11 @@ func TestCheckDrift(t *testing.T) {
 			lock: &WeightsLock{
 				Version: Version,
 				Weights: []WeightLockEntry{
-					{Name: "w", Target: "/w", Source: WeightLockSource{URI: "file://./old", Include: []string{}, Exclude: []string{}}},
+					{Name: "w", Target: "/w", Sources: []WeightLockSource{{URI: "file://./old", Include: []string{}, Exclude: []string{}}}},
 				},
 			},
 			config: []ConfigWeight{
-				{Name: "w", URI: "file://./new", Target: "/w", Include: []string{}, Exclude: []string{}},
+				{Name: "w", Target: "/w", Sources: []ConfigSourceEntry{{URI: "file://./new", Include: []string{}, Exclude: []string{}}}},
 			},
 			want: []DriftResult{
 				{Name: "w", Kind: DriftConfigChanged, Details: "uri: file://./old → file://./new"},
@@ -81,11 +81,11 @@ func TestCheckDrift(t *testing.T) {
 			lock: &WeightsLock{
 				Version: Version,
 				Weights: []WeightLockEntry{
-					{Name: "w", Target: "/old-path", Source: WeightLockSource{URI: "file://./w", Include: []string{}, Exclude: []string{}}},
+					{Name: "w", Target: "/old-path", Sources: []WeightLockSource{{URI: "file://./w", Include: []string{}, Exclude: []string{}}}},
 				},
 			},
 			config: []ConfigWeight{
-				{Name: "w", URI: "file://./w", Target: "/new-path", Include: []string{}, Exclude: []string{}},
+				{Name: "w", Target: "/new-path", Sources: []ConfigSourceEntry{{URI: "file://./w", Include: []string{}, Exclude: []string{}}}},
 			},
 			want: []DriftResult{
 				{Name: "w", Kind: DriftConfigChanged, Details: "target: /old-path → /new-path"},
@@ -96,11 +96,11 @@ func TestCheckDrift(t *testing.T) {
 			lock: &WeightsLock{
 				Version: Version,
 				Weights: []WeightLockEntry{
-					{Name: "w", Target: "/w", Source: WeightLockSource{URI: "file://./w", Include: []string{"*.bin"}, Exclude: []string{}}},
+					{Name: "w", Target: "/w", Sources: []WeightLockSource{{URI: "file://./w", Include: []string{"*.bin"}, Exclude: []string{}}}},
 				},
 			},
 			config: []ConfigWeight{
-				{Name: "w", URI: "file://./w", Target: "/w", Include: []string{"*.safetensors"}, Exclude: []string{}},
+				{Name: "w", Target: "/w", Sources: []ConfigSourceEntry{{URI: "file://./w", Include: []string{"*.safetensors"}, Exclude: []string{}}}},
 			},
 			want: []DriftResult{
 				{Name: "w", Kind: DriftConfigChanged, Details: "include: [*.bin] → [*.safetensors]"},
@@ -111,11 +111,11 @@ func TestCheckDrift(t *testing.T) {
 			lock: &WeightsLock{
 				Version: Version,
 				Weights: []WeightLockEntry{
-					{Name: "w", Target: "/w", Source: WeightLockSource{URI: "file://./w", Include: []string{}, Exclude: []string{}}},
+					{Name: "w", Target: "/w", Sources: []WeightLockSource{{URI: "file://./w", Include: []string{}, Exclude: []string{}}}},
 				},
 			},
 			config: []ConfigWeight{
-				{Name: "w", URI: "file://./w", Target: "/w", Include: []string{}, Exclude: []string{"README*"}},
+				{Name: "w", Target: "/w", Sources: []ConfigSourceEntry{{URI: "file://./w", Include: []string{}, Exclude: []string{"README*"}}}},
 			},
 			want: []DriftResult{
 				{Name: "w", Kind: DriftConfigChanged, Details: "exclude: [] → [README*]"},
@@ -126,14 +126,14 @@ func TestCheckDrift(t *testing.T) {
 			lock: &WeightsLock{
 				Version: Version,
 				Weights: []WeightLockEntry{
-					{Name: "w", Target: "/old-path", Source: WeightLockSource{URI: "file://./old", Include: []string{}, Exclude: []string{}}},
+					{Name: "w", Target: "/old-path", Sources: []WeightLockSource{{URI: "file://./old", Include: []string{}, Exclude: []string{}}}},
 				},
 			},
 			config: []ConfigWeight{
-				{Name: "w", URI: "file://./new", Target: "/new-path", Include: []string{}, Exclude: []string{}},
+				{Name: "w", Target: "/new-path", Sources: []ConfigSourceEntry{{URI: "file://./new", Include: []string{}, Exclude: []string{}}}},
 			},
 			want: []DriftResult{
-				{Name: "w", Kind: DriftConfigChanged, Details: "uri: file://./old → file://./new; target: /old-path → /new-path"},
+				{Name: "w", Kind: DriftConfigChanged, Details: "target: /old-path → /new-path; uri: file://./old → file://./new"},
 			},
 		},
 		{
@@ -146,8 +146,8 @@ func TestCheckDrift(t *testing.T) {
 			name: "nil lockfile with config weights: all pending",
 			lock: nil,
 			config: []ConfigWeight{
-				{Name: "a", URI: "file://./a", Target: "/a"},
-				{Name: "b", URI: "file://./b", Target: "/b"},
+				{Name: "a", Target: "/a", Sources: []ConfigSourceEntry{{URI: "file://./a"}}},
+				{Name: "b", Target: "/b", Sources: []ConfigSourceEntry{{URI: "file://./b"}}},
 			},
 			want: []DriftResult{
 				{Name: "a", Kind: DriftPending},
@@ -158,7 +158,7 @@ func TestCheckDrift(t *testing.T) {
 			name: "empty lockfile with config weights: all pending",
 			lock: &WeightsLock{Version: Version, Weights: []WeightLockEntry{}},
 			config: []ConfigWeight{
-				{Name: "a", URI: "file://./a", Target: "/a"},
+				{Name: "a", Target: "/a", Sources: []ConfigSourceEntry{{URI: "file://./a"}}},
 			},
 			want: []DriftResult{
 				{Name: "a", Kind: DriftPending},
@@ -169,15 +169,15 @@ func TestCheckDrift(t *testing.T) {
 			lock: &WeightsLock{
 				Version: Version,
 				Weights: []WeightLockEntry{
-					{Name: "ok", Target: "/ok", Source: WeightLockSource{URI: "file://./ok", Include: []string{}, Exclude: []string{}}},
-					{Name: "stale", Target: "/stale", Source: WeightLockSource{URI: "file://./old-uri", Include: []string{}, Exclude: []string{}}},
-					{Name: "orphan", Target: "/orphan", Source: WeightLockSource{URI: "file://./orphan", Include: []string{}, Exclude: []string{}}},
+					{Name: "ok", Target: "/ok", Sources: []WeightLockSource{{URI: "file://./ok", Include: []string{}, Exclude: []string{}}}},
+					{Name: "stale", Target: "/stale", Sources: []WeightLockSource{{URI: "file://./old-uri", Include: []string{}, Exclude: []string{}}}},
+					{Name: "orphan", Target: "/orphan", Sources: []WeightLockSource{{URI: "file://./orphan", Include: []string{}, Exclude: []string{}}}},
 				},
 			},
 			config: []ConfigWeight{
-				{Name: "ok", URI: "file://./ok", Target: "/ok", Include: []string{}, Exclude: []string{}},
-				{Name: "stale", URI: "file://./new-uri", Target: "/stale", Include: []string{}, Exclude: []string{}},
-				{Name: "brand-new", URI: "file://./brand-new", Target: "/brand-new"},
+				{Name: "ok", Target: "/ok", Sources: []ConfigSourceEntry{{URI: "file://./ok", Include: []string{}, Exclude: []string{}}}},
+				{Name: "stale", Target: "/stale", Sources: []ConfigSourceEntry{{URI: "file://./new-uri", Include: []string{}, Exclude: []string{}}}},
+				{Name: "brand-new", Target: "/brand-new", Sources: []ConfigSourceEntry{{URI: "file://./brand-new"}}},
 			},
 			want: []DriftResult{
 				{Name: "stale", Kind: DriftConfigChanged, Details: "uri: file://./old-uri → file://./new-uri"},

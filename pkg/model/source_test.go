@@ -60,8 +60,8 @@ func TestSource_ArtifactSpecs_WithWeights(t *testing.T) {
 		Image: "r8.im/user/model",
 		Build: &config.Build{PythonVersion: "3.11"},
 		Weights: []config.WeightSource{
-			{Name: "llama-7b", Target: "/weights/llama-7b", Source: &config.WeightSourceConfig{URI: "/data/llama-7b"}},
-			{Name: "embeddings", Target: "/weights/embeddings", Source: &config.WeightSourceConfig{URI: "/data/embeddings"}},
+			{Name: "llama-7b", Target: "/weights/llama-7b", Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "/data/llama-7b"}}}},
+			{Name: "embeddings", Target: "/weights/embeddings", Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "/data/embeddings"}}}},
 		},
 	}
 	src := NewSourceFromConfig(cfg, "/path/to/project")
@@ -81,13 +81,13 @@ func TestSource_ArtifactSpecs_WithWeights(t *testing.T) {
 	require.True(t, ok, "second spec should be *WeightSpec")
 	require.Equal(t, ArtifactTypeWeight, w1.Type())
 	require.Equal(t, "llama-7b", w1.Name())
-	require.Equal(t, "file:///data/llama-7b", w1.URI)
+	require.Equal(t, "file:///data/llama-7b", w1.Sources[0].URI)
 	require.Equal(t, "/weights/llama-7b", w1.Target)
 
 	w2, ok := specs[2].(*WeightSpec)
 	require.True(t, ok, "third spec should be *WeightSpec")
 	require.Equal(t, "embeddings", w2.Name())
-	require.Equal(t, "file:///data/embeddings", w2.URI)
+	require.Equal(t, "file:///data/embeddings", w2.Sources[0].URI)
 	require.Equal(t, "/weights/embeddings", w2.Target)
 }
 
@@ -120,7 +120,7 @@ func TestSource_ArtifactSpecs_MalformedWeightURI(t *testing.T) {
 		Image: "r8.im/user/model",
 		Build: &config.Build{PythonVersion: "3.11"},
 		Weights: []config.WeightSource{
-			{Name: "bad", Target: "/w", Source: &config.WeightSourceConfig{URI: "bogus://nope"}},
+			{Name: "bad", Target: "/w", Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "bogus://nope"}}}},
 		},
 	}
 	src := NewSourceFromConfig(cfg, "/path/to/project")

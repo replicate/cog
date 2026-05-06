@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -72,7 +73,7 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 	require.NoError(t, err, "source")
 	inv, err := src.Inventory(ctx)
 	require.NoError(t, err, "inventory")
-	require.NoError(t, ingressFromInventory(ctx, src, st, inv))
+	require.NoError(t, ingressFromInventory(ctx, sourceOwners(src, inv), st, inv))
 
 	pkr := newPacker(&packOptions{BundleFileMax: 1024})
 	pl := pkr.planLayers(inv)
@@ -82,7 +83,7 @@ func TestWeightPipeline_EndToEnd(t *testing.T) {
 	files := packedFilesFromPlan(layers)
 
 	// Build a lock entry and artifact (manifest + descriptor + digest backfill).
-	entry := newWeightLockEntry("my-model", "/src/weights", lockfile.WeightLockSource{}, files, layers)
+	entry := newWeightLockEntry("my-model", "/src/weights", []lockfile.WeightLockSource{{}}, time.Time{}, files, layers)
 	artifact, err := buildWeightArtifact(&entry, layers, st)
 	require.NoError(t, err)
 	setDigest := entry.SetDigest

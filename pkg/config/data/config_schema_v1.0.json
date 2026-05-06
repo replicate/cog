@@ -227,30 +227,43 @@
             "description": "Absolute path where the weight directory is mounted in the container."
           },
           "source": {
-            "type": "object",
-            "description": "Import configuration for this weight entry. Documents provenance and re-import settings.",
-            "required": ["uri"],
-            "additionalProperties": false,
-            "properties": {
-              "uri": {
-                "type": "string",
-                "description": "Source location. Supported schemes: hf:// (HuggingFace Hub), file:// (local directory), or a bare local filesystem path."
-              },
-              "include": {
+            "description": "Import configuration for this weight entry. Accepts a single source object or a list of source objects for multi-source weights.",
+            "oneOf": [
+              { "$ref": "#/$defs/weightSourceConfig" },
+              {
                 "type": "array",
-                "description": "Glob patterns for files to include (allowlist mode).",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "exclude": {
-                "type": "array",
-                "description": "Glob patterns for files to skip during import.",
-                "items": {
-                  "type": "string"
-                }
+                "items": { "$ref": "#/$defs/weightSourceConfig" },
+                "minItems": 1
               }
-            }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "weightSourceConfig": {
+      "type": "object",
+      "description": "A single weight source describing where to import weights from.",
+      "required": ["uri"],
+      "additionalProperties": false,
+      "properties": {
+        "uri": {
+          "type": "string",
+          "description": "Source location. Supported schemes: hf:// (HuggingFace Hub), file:// (local directory), https:// (HTTP download), or a bare local filesystem path."
+        },
+        "include": {
+          "type": "array",
+          "description": "Glob patterns for files to include (allowlist mode).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "description": "Glob patterns for files to skip during import.",
+          "items": {
+            "type": "string"
           }
         }
       }

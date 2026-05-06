@@ -16,7 +16,7 @@ func TestWeightSpecFromConfig_ImplementsArtifactSpec(t *testing.T) {
 	spec, err := WeightSpecFromConfig(config.WeightSource{
 		Name:   "my-model-weights",
 		Target: "/src/weights",
-		Source: &config.WeightSourceConfig{URI: "/data/weights"},
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "/data/weights"}}},
 	})
 	require.NoError(t, err)
 
@@ -30,18 +30,18 @@ func TestWeightSpecFromConfig_NormalizesURI(t *testing.T) {
 	spec, err := WeightSpecFromConfig(config.WeightSource{
 		Name:   "llama-7b",
 		Target: "/src/weights/llama-7b",
-		Source: &config.WeightSourceConfig{URI: "weights/llama-7b"},
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "weights/llama-7b"}}},
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, "file://./weights/llama-7b", spec.URI)
+	require.Equal(t, "file://./weights/llama-7b", spec.Sources[0].URI)
 	require.Equal(t, "/src/weights/llama-7b", spec.Target)
-	require.Empty(t, spec.Include)
-	require.Empty(t, spec.Exclude)
+	require.Empty(t, spec.Sources[0].Include)
+	require.Empty(t, spec.Sources[0].Exclude)
 }
 
 func TestWeightSpecFromConfig_CopiesIncludeExclude(t *testing.T) {
-	src := &config.WeightSourceConfig{
+	src := config.WeightSourceConfig{
 		URI:     "weights/mw",
 		Include: []string{"*.safetensors"},
 		Exclude: []string{"*.onnx"},
@@ -49,27 +49,30 @@ func TestWeightSpecFromConfig_CopiesIncludeExclude(t *testing.T) {
 	spec, err := WeightSpecFromConfig(config.WeightSource{
 		Name:   "mw",
 		Target: "/src/weights/mw",
-		Source: src,
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{src}},
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, []string{"*.safetensors"}, spec.Include)
-	require.Equal(t, []string{"*.onnx"}, spec.Exclude)
+	require.Equal(t, []string{"*.safetensors"}, spec.Sources[0].Include)
+	require.Equal(t, []string{"*.onnx"}, spec.Sources[0].Exclude)
 
 	// Mutating the config after construction must not affect the spec.
 	src.Include[0] = "changed"
-	require.Equal(t, []string{"*.safetensors"}, spec.Include)
+	require.Equal(t, []string{"*.safetensors"}, spec.Sources[0].Include)
 }
 
 func TestWeightSpecFromConfig_EmptyURIError(t *testing.T) {
-	_, err := WeightSpecFromConfig(config.WeightSource{Name: "w", Target: "/w"})
+	_, err := WeightSpecFromConfig(config.WeightSource{
+		Name: "w", Target: "/w",
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: ""}}},
+	})
 	require.Error(t, err)
 }
 
 func TestWeightSpecFromConfig_InvalidSchemeError(t *testing.T) {
 	_, err := WeightSpecFromConfig(config.WeightSource{
 		Name: "w", Target: "/w",
-		Source: &config.WeightSourceConfig{URI: "bogus://nope"},
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "bogus://nope"}}},
 	})
 	require.Error(t, err)
 }
@@ -78,23 +81,25 @@ func TestWeightSpecFromLock_ExtractsIntent(t *testing.T) {
 	entry := lockfile.WeightLockEntry{
 		Name:   "w",
 		Target: "/src/w",
-		Source: lockfile.WeightLockSource{
-			URI:         "file://./w",
-			Fingerprint: weightsource.Fingerprint("sha256:abc"),
-			Include:     []string{"*.safetensors"},
-			Exclude:     []string{"*.onnx"},
-			ImportedAt:  time.Now(),
+		Sources: []lockfile.WeightLockSource{
+			{
+				URI:         "file://./w",
+				Fingerprint: weightsource.Fingerprint("sha256:abc"),
+				Include:     []string{"*.safetensors"},
+				Exclude:     []string{"*.onnx"},
+			},
 		},
-		Digest: "sha256:manifest",
+		ImportedAt: time.Now(),
+		Digest:     "sha256:manifest",
 	}
 
 	spec := WeightSpecFromLock(entry)
 
 	require.Equal(t, "w", spec.Name())
 	require.Equal(t, "/src/w", spec.Target)
-	require.Equal(t, "file://./w", spec.URI)
-	require.Equal(t, []string{"*.safetensors"}, spec.Include)
-	require.Equal(t, []string{"*.onnx"}, spec.Exclude)
+	require.Equal(t, "file://./w", spec.Sources[0].URI)
+	require.Equal(t, []string{"*.safetensors"}, spec.Sources[0].Include)
+	require.Equal(t, []string{"*.onnx"}, spec.Sources[0].Exclude)
 }
 
 func TestWeightSpec_Equal(t *testing.T) {
@@ -102,11 +107,11 @@ func TestWeightSpec_Equal(t *testing.T) {
 		s, err := WeightSpecFromConfig(config.WeightSource{
 			Name:   "w",
 			Target: "/src/w",
-			Source: &config.WeightSourceConfig{
+			Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{
 				URI:     "weights",
 				Include: []string{"*.safetensors"},
 				Exclude: []string{"*.onnx"},
-			},
+			}}},
 		})
 		require.NoError(t, err)
 		return s
@@ -119,9 +124,9 @@ func TestWeightSpec_Equal(t *testing.T) {
 		mutate func(*WeightSpec)
 	}{
 		{"target differs", func(s *WeightSpec) { s.Target = "/src/other" }},
-		{"URI differs", func(s *WeightSpec) { s.URI = "file://./other" }},
-		{"include differs", func(s *WeightSpec) { s.Include = []string{"*.bin"} }},
-		{"exclude differs", func(s *WeightSpec) { s.Exclude = []string{"*.md"} }},
+		{"URI differs", func(s *WeightSpec) { s.Sources[0].URI = "file://./other" }},
+		{"include differs", func(s *WeightSpec) { s.Sources[0].Include = []string{"*.bin"} }},
+		{"exclude differs", func(s *WeightSpec) { s.Sources[0].Exclude = []string{"*.md"} }},
 	}
 
 	for _, tc := range cases {
@@ -139,20 +144,20 @@ func TestWeightSpec_EqualIgnoresIncludeExcludeOrder(t *testing.T) {
 	// cog.yaml must not count as drift.
 	a, err := WeightSpecFromConfig(config.WeightSource{
 		Name: "w", Target: "/w",
-		Source: &config.WeightSourceConfig{
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{
 			URI:     "weights",
 			Include: []string{"*.safetensors", "*.json"},
 			Exclude: []string{"*.onnx", "*.md"},
-		},
+		}}},
 	})
 	require.NoError(t, err)
 	b, err := WeightSpecFromConfig(config.WeightSource{
 		Name: "w", Target: "/w",
-		Source: &config.WeightSourceConfig{
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{
 			URI:     "weights",
 			Include: []string{"*.json", "*.safetensors"},
 			Exclude: []string{"*.md", "*.onnx"},
-		},
+		}}},
 	})
 	require.NoError(t, err)
 	require.True(t, a.Equal(b))
@@ -162,13 +167,13 @@ func TestWeightSpec_EqualURINormalization(t *testing.T) {
 	a, err := WeightSpecFromConfig(config.WeightSource{
 		Name:   "w",
 		Target: "/w",
-		Source: &config.WeightSourceConfig{URI: "weights"},
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "weights"}}},
 	})
 	require.NoError(t, err)
 	b, err := WeightSpecFromConfig(config.WeightSource{
 		Name:   "w",
 		Target: "/w",
-		Source: &config.WeightSourceConfig{URI: "file://./weights"},
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "file://./weights"}}},
 	})
 	require.NoError(t, err)
 	require.True(t, a.Equal(b))
@@ -177,12 +182,12 @@ func TestWeightSpec_EqualURINormalization(t *testing.T) {
 func TestWeightSpec_EqualIgnoresName(t *testing.T) {
 	a, err := WeightSpecFromConfig(config.WeightSource{
 		Name: "a", Target: "/w",
-		Source: &config.WeightSourceConfig{URI: "weights"},
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "weights"}}},
 	})
 	require.NoError(t, err)
 	b, err := WeightSpecFromConfig(config.WeightSource{
 		Name: "b", Target: "/w",
-		Source: &config.WeightSourceConfig{URI: "weights"},
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{{URI: "weights"}}},
 	})
 	require.NoError(t, err)
 	require.True(t, a.Equal(b))

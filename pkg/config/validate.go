@@ -492,10 +492,14 @@ func validateWeights(cfg *configFile, result *ValidationResult) {
 			seenNames[w.Name] = true
 		}
 
-		// Validate include/exclude patterns if source is present.
-		if w.Source != nil {
-			validateWeightPatterns(idx+".source.include", w.Source.Include, result)
-			validateWeightPatterns(idx+".source.exclude", w.Source.Exclude, result)
+		// Validate each source entry's patterns.
+		for j, src := range w.Source.Items {
+			srcIdx := fmt.Sprintf("%s.source[%d]", idx, j)
+			if len(w.Source.Items) == 1 {
+				srcIdx = idx + ".source"
+			}
+			validateWeightPatterns(srcIdx+".include", src.Include, result)
+			validateWeightPatterns(srcIdx+".exclude", src.Exclude, result)
 		}
 
 		// Target is required, must be absolute, must not be the

@@ -32,7 +32,8 @@ func TestFor(t *testing.T) {
 		{"hf scheme", "hf://org/repo", "", "hf", ""},
 		{"huggingface scheme", "huggingface://org/repo", "", "hf", ""},
 		{"s3 scheme rejected", "s3://bucket/key", "", "", "unsupported"},
-		{"http scheme rejected", "http://example.com/x", "", "", "unsupported"},
+		{"http scheme", "http://example.com/model.pth", "", "http", ""},
+		{"https scheme", "https://example.com/model.pth", "", "http", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -49,6 +50,9 @@ func TestFor(t *testing.T) {
 			case "hf":
 				_, ok := s.(*HFSource)
 				assert.True(t, ok, "expected *HFSource, got %T", s)
+			case "http":
+				_, ok := s.(*HTTPSource)
+				assert.True(t, ok, "expected *HTTPSource, got %T", s)
 			}
 		})
 	}

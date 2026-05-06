@@ -38,7 +38,7 @@ func packDir(t *testing.T, sourceDir string, opts *packOptions) ([]packedLayer, 
 	require.NoError(t, err)
 	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	require.NoError(t, ingressFromInventory(t.Context(), src, st, inv))
+	require.NoError(t, ingressFromInventory(t.Context(), sourceOwners(src, inv), st, inv))
 	pkr := newPacker(opts)
 	pl := pkr.planLayers(inv)
 	require.NotEmpty(t, pl.Layers)

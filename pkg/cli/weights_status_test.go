@@ -24,7 +24,7 @@ func TestStatusResultsToEntries(t *testing.T) {
 				Layers:         []lockfile.WeightLockLayer{{Digest: "sha256:l1"}, {Digest: "sha256:l2"}},
 				Files:          []lockfile.WeightLockFile{{Path: "a.bin"}, {Path: "b.bin"}, {Path: "c.bin"}},
 				Digest:         "sha256:manifest123",
-				Source:         lockfile.WeightLockSource{URI: "file://./weights"},
+				Sources:        []lockfile.WeightLockSource{{URI: "file://./weights"}},
 			},
 			Layers: []model.LayerStatusResult{
 				{Digest: "sha256:l1", Size: 2048, Status: model.LayerStatusReady},

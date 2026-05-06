@@ -36,7 +36,7 @@ func packTestLayers(t *testing.T, filename string, content []byte) (sourceDir st
 	require.NoError(t, err)
 	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	require.NoError(t, ingressFromInventory(t.Context(), src, st, inv))
+	require.NoError(t, ingressFromInventory(t.Context(), sourceOwners(src, inv), st, inv))
 
 	pkr := newPacker(nil)
 	pl := pkr.planLayers(inv)
@@ -60,7 +60,7 @@ func newTestWeightArtifact(t *testing.T, name, target string) *WeightArtifact {
 		Digest:      layers[0].Digest.String(),
 		LayerDigest: layers[0].Digest.String(),
 	}}
-	entry := newWeightLockEntry(name, target, lockfile.WeightLockSource{}, files, layers)
+	entry := newWeightLockEntry(name, target, []lockfile.WeightLockSource{{}}, time.Time{}, files, layers)
 	artifact, err := buildWeightArtifact(&entry, layers, st)
 	require.NoError(t, err)
 	return artifact
@@ -361,7 +361,7 @@ func TestWeightPusher_Push_HonoursConcurrencyLimit(t *testing.T) {
 	require.NoError(t, err)
 	inv, err := src.Inventory(t.Context())
 	require.NoError(t, err)
-	require.NoError(t, ingressFromInventory(t.Context(), src, st, inv))
+	require.NoError(t, ingressFromInventory(t.Context(), sourceOwners(src, inv), st, inv))
 	pkr := newPacker(&packOptions{
 		BundleFileMax: 1, // every file becomes its own layer
 	})
@@ -371,7 +371,7 @@ func TestWeightPusher_Push_HonoursConcurrencyLimit(t *testing.T) {
 	files := packedFilesFromPlan(layers)
 	require.GreaterOrEqual(t, len(layers), n, "expected a layer per file")
 
-	entry := newWeightLockEntry("model", "/src/weights", lockfile.WeightLockSource{}, files, layers)
+	entry := newWeightLockEntry("model", "/src/weights", []lockfile.WeightLockSource{{}}, time.Time{}, files, layers)
 	artifact, err := buildWeightArtifact(&entry, layers, st)
 	require.NoError(t, err)
 

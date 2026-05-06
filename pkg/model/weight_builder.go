@@ -18,39 +18,104 @@ import (
 	"github.com/replicate/cog/pkg/weights/store"
 )
 
-// resolvedInventory holds the results of walking a weight source and
-// applying include/exclude filters. Both PlanImport and Build share
-// this step; caching the result avoids re-walking the source when the
-// CLI plans first and then builds.
-type resolvedInventory struct {
+// resolvedSource holds the resolved inventory for a single source
+// within a multi-source weight.
+type resolvedSource struct {
 	source   weightsource.Source
 	full     weightsource.Inventory // before filtering (carries fingerprint)
 	filtered weightsource.Inventory // after include/exclude
 }
 
-// resolveInventory walks the source, applies filters, and returns the
-// resolved inventory. This is the shared preamble for PlanImport and Build.
+// resolvedInventory holds the results of walking one or more weight
+// sources and applying include/exclude filters. Both PlanImport and
+// Build share this step; caching the result avoids re-walking the
+// source when the CLI plans first and then builds.
+type resolvedInventory struct {
+	perSource []resolvedSource
+	// merged is the combined filtered inventory from all sources with a
+	// combined fingerprint. For single-source weights this equals
+	// perSource[0].filtered.
+	merged weightsource.Inventory
+	// owners maps each file path to the source that provides it, so
+	// ingressFromInventory knows which Source.Open() to call.
+	owners map[string]weightsource.Source
+}
+
+// unfilteredFiles returns the de-duplicated, sorted union of all
+// per-source full (unfiltered) inventories. Used by PlanImport to
+// show the user which files were excluded by include/exclude patterns.
+func (r *resolvedInventory) unfilteredFiles() []weightsource.InventoryFile {
+	seen := make(map[string]weightsource.InventoryFile)
+	for _, ps := range r.perSource {
+		for _, f := range ps.full.Files {
+			seen[f.Path] = f // last-in-wins like the merge loop
+		}
+	}
+	files := make([]weightsource.InventoryFile, 0, len(seen))
+	for _, f := range seen {
+		files = append(files, f)
+	}
+	weightsource.SortInventoryFiles(files)
+	return files
+}
+
+// resolveInventory walks each source, applies per-source filters, merges
+// the results, and returns the resolved inventory. This is the shared
+// preamble for PlanImport and Build.
 func (b *WeightBuilder) resolveInventory(ctx context.Context, ws *WeightSpec) (*resolvedInventory, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	src, err := weightsource.For(ws.URI, b.projectDir())
-	if err != nil {
-		return nil, err
+	perSource := make([]resolvedSource, len(ws.Sources))
+	owners := make(map[string]weightsource.Source)
+	mergedFiles := make(map[string]weightsource.InventoryFile)
+
+	for i, srcSpec := range ws.Sources {
+		src, err := weightsource.For(srcSpec.URI, b.projectDir())
+		if err != nil {
+			return nil, err
+		}
+
+		full, err := src.Inventory(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("inventory weight %q source[%d]: %w", ws.Name(), i, err)
+		}
+
+		filtered, err := weightsource.FilterInventory(full, srcSpec.Include, srcSpec.Exclude)
+		if err != nil {
+			return nil, fmt.Errorf("filter weight %q source[%d]: %w", ws.Name(), i, err)
+		}
+
+		perSource[i] = resolvedSource{source: src, full: full, filtered: filtered}
+
+		// Merge filtered files: last-in-wins for conflicts (declaration order).
+		for _, f := range filtered.Files {
+			mergedFiles[f.Path] = f
+			owners[f.Path] = src
+		}
 	}
 
-	full, err := src.Inventory(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("inventory weight %q: %w", ws.Name(), err)
+	// Build sorted merged file list.
+	files := make([]weightsource.InventoryFile, 0, len(mergedFiles))
+	for _, f := range mergedFiles {
+		files = append(files, f)
 	}
+	weightsource.SortInventoryFiles(files)
 
-	filtered, err := weightsource.FilterInventory(full, ws.Include, ws.Exclude)
-	if err != nil {
-		return nil, fmt.Errorf("filter weight %q: %w", ws.Name(), err)
-	}
+	// Combined fingerprint: hash of ordered per-source fingerprints.
+	combinedFP := weightsource.CombineFingerprints(perSource, func(rs resolvedSource) weightsource.Fingerprint {
+		return rs.full.Fingerprint
+	})
 
-	return &resolvedInventory{source: src, full: full, filtered: filtered}, nil
+	return &resolvedInventory{
+		perSource: perSource,
+		merged: weightsource.Inventory{
+			Files:       files,
+			Fingerprint: combinedFP,
+		},
+		owners: owners,
+	}, nil
 }
 
 // WeightBuilder is the weight factory: given a WeightSpec (source URI +
@@ -128,10 +193,10 @@ func (b *WeightBuilder) buildWithResolved(ctx context.Context, spec ArtifactSpec
 			return nil, err
 		}
 	}
-	inv := resolved.filtered
+	inv := resolved.merged
 
 	// Step 2: ingress the filtered files into the local store.
-	if err := ingressFromInventory(ctx, resolved.source, b.store, inv); err != nil {
+	if err := ingressFromInventory(ctx, resolved.owners, b.store, inv); err != nil {
 		return nil, fmt.Errorf("populate store for weight %q: %w", ws.Name(), err)
 	}
 
@@ -154,7 +219,7 @@ func (b *WeightBuilder) buildWithResolved(ctx context.Context, spec ArtifactSpec
 	}
 
 	var layers []packedLayer
-	if canFastPath(lock, currentEnvelope, existing, ws, inv) {
+	if canFastPath(lock, currentEnvelope, existing, ws, resolved) {
 		layers, err = layersFromLockfile(existing, plan)
 		if err != nil {
 			// Recompute to recover; log so a real cog bug (envelope
@@ -171,15 +236,20 @@ func (b *WeightBuilder) buildWithResolved(ctx context.Context, spec ArtifactSpec
 		}
 	}
 
+	lockSources := make([]lockfile.WeightLockSource, len(resolved.perSource))
+	for i, rs := range resolved.perSource {
+		lockSources[i] = lockfile.WeightLockSource{
+			URI:         ws.Sources[i].URI,
+			Fingerprint: rs.full.Fingerprint,
+			Include:     ws.Sources[i].Include,
+			Exclude:     ws.Sources[i].Exclude,
+		}
+	}
+
 	entry := newWeightLockEntry(
 		ws.Name(), ws.Target,
-		lockfile.WeightLockSource{
-			URI:         ws.URI,
-			Fingerprint: inv.Fingerprint,
-			Include:     ws.Include,
-			Exclude:     ws.Exclude,
-			ImportedAt:  time.Now().UTC(),
-		},
+		lockSources,
+		time.Now().UTC(),
 		packedFilesFromPlan(layers),
 		layers,
 	)
@@ -197,7 +267,7 @@ func (b *WeightBuilder) buildWithResolved(ctx context.Context, spec ArtifactSpec
 	// answers "would the lockfile diff be only the timestamp?"
 	entryEqualsExisting := lockfile.EntriesEqual(existing, &entry)
 	if entryEqualsExisting {
-		entry.Source.ImportedAt = existing.Source.ImportedAt
+		entry.ImportedAt = existing.ImportedAt
 	}
 
 	// Step 5: stamp envelope + rewrite iff anything changed.
@@ -246,7 +316,7 @@ func canFastPath(
 	currentEnvelope string,
 	existing *lockfile.WeightLockEntry,
 	ws *WeightSpec,
-	inv weightsource.Inventory,
+	resolved *resolvedInventory,
 ) bool {
 	if lock.EnvelopeFormat != currentEnvelope {
 		return false
@@ -254,14 +324,28 @@ func canFastPath(
 	if existing == nil {
 		return false
 	}
-	if existing.Target != ws.Target ||
-		existing.Source.URI != ws.URI ||
-		!slices.Equal(existing.Source.Include, ws.Include) ||
-		!slices.Equal(existing.Source.Exclude, ws.Exclude) {
+	if existing.Target != ws.Target {
 		return false
 	}
-	if existing.Source.Fingerprint != inv.Fingerprint {
+	if len(existing.Sources) != len(ws.Sources) {
 		return false
+	}
+	for i := range ws.Sources {
+		es := existing.Sources[i]
+		ss := ws.Sources[i]
+		if es.URI != ss.URI ||
+			!slices.Equal(es.Include, ss.Include) ||
+			!slices.Equal(es.Exclude, ss.Exclude) {
+			return false
+		}
+	}
+	// Check fingerprints per-source. Length equality is guaranteed by
+	// the guard above (len(ws.Sources) == len(resolved.perSource) by
+	// construction in resolveInventory).
+	for i := range existing.Sources {
+		if existing.Sources[i].Fingerprint != resolved.perSource[i].full.Fingerprint {
+			return false
+		}
 	}
 	return true
 }

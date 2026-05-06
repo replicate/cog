@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -189,7 +190,8 @@ func buildWeightArtifactsFromPlans(ctx context.Context, builder *model.WeightBui
 func printImportPlan(plans []*model.WeightImportPlan, verbose bool) {
 	for _, p := range plans {
 		statusIcon := planStatusIcon(p.Status)
-		console.Infof("%s %s  %s → %s", statusIcon, p.Spec.Name(), p.Spec.URI, p.Spec.Target)
+		sourceDesc := formatSourceURIs(p.Spec.Sources)
+		console.Infof("%s %s  %s → %s", statusIcon, p.Spec.Name(), sourceDesc, p.Spec.Target)
 		console.Infof("  status: %s", p.Status)
 
 		if len(p.Changes) > 0 {
@@ -355,6 +357,18 @@ func pushWeightArtifacts(ctx context.Context, repo string, artifacts []*model.We
 	console.Infof("Total: %s", formatSize(totalSize))
 
 	return nil
+}
+
+// formatSourceURIs returns a human-readable summary of source URIs.
+func formatSourceURIs(sources []model.SourceSpec) string {
+	if len(sources) == 1 {
+		return sources[0].URI
+	}
+	uris := make([]string, len(sources))
+	for i, s := range sources {
+		uris[i] = s.URI
+	}
+	return "[" + strings.Join(uris, ", ") + "]"
 }
 
 func formatSize(bytes int64) string {
