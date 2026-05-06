@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -64,7 +65,7 @@ func Open(projectDir string) (*Dir, error) {
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve absolute path for %s: %w", root, err)
 	}
 	return &Dir{root: abs}, nil
 }
@@ -160,10 +161,8 @@ func (d *Dir) Close() error {
 		d.mu.Unlock()
 
 		var errs []error
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			if err := cleanups[i](); err != nil {
-				errs = append(errs, err)
-			}
+		for _, fn := range slices.Backward(cleanups) {
+			errs = append(errs, fn())
 		}
 		d.closeErr = errors.Join(errs...)
 	})

@@ -82,6 +82,9 @@ func NewSourceFromConfig(cfg *config.Config, projectDir string) *Source {
 
 // Close releases resources held by the Source, including the .cog/ directory handle.
 func (s *Source) Close() error {
+	if s.DotCog == nil {
+		return nil
+	}
 	return s.DotCog.Close()
 }
 
