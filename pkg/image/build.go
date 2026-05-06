@@ -30,14 +30,18 @@ import (
 	"github.com/replicate/cog/pkg/schema/python"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
+	cogversion "github.com/replicate/cog/pkg/util/version"
 	weightslockfile "github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weightslegacy"
+	"github.com/replicate/cog/pkg/wheels"
 )
 
 // cogBuildContextName is the named build context for build staging
 // artifacts (.cog/build/). Dockerfile COPY instructions reference it
 // via --from=cog_build.
 const cogBuildContextName = "cog_build"
+
+const minimumStaticSchemaSDKVersion = "0.17.0"
 
 // defaultExcludePatterns filters .cog/ out of the project context mount
 // so weight blobs, mount dirs, and build caches are never sent to the
@@ -122,6 +126,9 @@ func Build(
 	var schemaJSON []byte
 	switch {
 	case needsSchema:
+		if err := validateStaticSchemaSDKVersion(cfg); err != nil {
+			return "", err
+		}
 		console.Debug("Generating model schema (static)...")
 		data, err := generateStaticSchema(cfg, dir)
 		if err != nil {
@@ -440,6 +447,41 @@ func generateStaticSchema(cfg *config.Config, dir string) ([]byte, error) {
 	}
 	return schema.GenerateCombined(dir, cfg.Predict, cfg.Train, python.ParsePredictor)
 
+}
+
+func validateStaticSchemaSDKVersion(cfg *config.Config) error {
+	sdkVersion := explicitSDKVersion(cfg)
+	if sdkVersion == "" {
+		return nil
+	}
+
+	base := sdkVersion
+	if m := wheels.BaseVersionRe.FindString(base); m != "" {
+		base = m
+	}
+	ver, err := cogversion.NewVersion(base)
+	if err != nil {
+		return nil
+	}
+	minVer := cogversion.MustVersion(minimumStaticSchemaSDKVersion)
+	if ver.GreaterOrEqual(minVer) {
+		return nil
+	}
+	return fmt.Errorf("SDK version %s is not supported by static schema generation; use %s or newer", sdkVersion, minimumStaticSchemaSDKVersion)
+}
+
+func explicitSDKVersion(cfg *config.Config) string {
+	if envVal := os.Getenv(wheels.CogSDKWheelEnvVar); envVal != "" {
+		wc := wheels.ParseWheelValue(envVal)
+		if wc != nil && wc.Source == wheels.WheelSourcePyPI && wc.Version != "" {
+			return wc.Version
+		}
+		return ""
+	}
+	if cfg.Build != nil && cfg.Build.SDKVersion != "" && cfg.Build.SDKVersion != wheels.PreReleaseSentinel {
+		return cfg.Build.SDKVersion
+	}
+	return ""
 }
 
 // writeAndValidateSchema validates the schema JSON as a well-formed OpenAPI 3.0

@@ -118,7 +118,7 @@ external types cannot be statically analyzed. Define it as a BaseModel
 subclass in your predict file, or provide a .pyi stub
 ```
 
-For external values that are already JSON-shaped but not visible to the schema resolver, `Annotated[..., cog.Opaque]` is the escape hatch. It tells Cog to treat the value as an opaque JSON object while preserving container shape: `Annotated[ExternalType, cog.Opaque]` becomes an object, and `Annotated[list[ExternalType], cog.Opaque]` becomes an array of objects. The same shape is preserved for fields inside `cog.BaseModel` outputs and for supported pydantic models on the runtime fallback path.
+For external values that are already JSON-shaped but not visible to the schema resolver, `Annotated[..., cog.Opaque]` is the escape hatch. It tells Cog to treat the value as an opaque JSON object while preserving container shape: `Annotated[ExternalType, cog.Opaque]` becomes an object, and `Annotated[list[ExternalType], cog.Opaque]` becomes an array of objects. The same shape is preserved for fields inside `cog.BaseModel` outputs and supported pydantic models.
 
 ## SchemaType: The Type System
 

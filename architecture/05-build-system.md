@@ -221,13 +221,12 @@ Local wheel files are copied into `.cog/build/` and referenced via the `cog_buil
 
 ---
 
-### 6. Post-Build: Labels & Schema
+### 6. Post-Build: Labels
 
 After the main build, Cog:
 
-1. **Runs the container** to generate OpenAPI schema
-2. **Runs pip freeze** to capture installed packages
-3. **Applies labels** with metadata
+1. **Runs pip freeze** to capture installed packages
+2. **Applies labels** with metadata, including the pre-build OpenAPI schema
 
 #### Image Labels
 
@@ -235,7 +234,7 @@ After the main build, Cog:
 | ------------------------ | ---------------------------- |
 | `run.cog.version`        | Cog CLI version              |
 | `run.cog.config`         | Serialized cog.yaml          |
-| `run.cog.openapi_schema` | OpenAPI spec from type hints |
+| `run.cog.openapi_schema` | OpenAPI spec from static schema generation |
 | `run.cog.pip_freeze`     | Installed package versions   |
 
 These labels can be fetched from a remote registry or local image store (like containerd) without pulling the full image. This allows tooling - both the Cog CLI during development and production infrastructure - to inspect model metadata and make decisions about how to run a model before booting it.
