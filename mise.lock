@@ -450,13 +450,22 @@ backend = "core:zig"
 checksum = "sha256:958ed7d1e00d0ea76590d27666efbf7a932281b3d7ba0c6b01b0ff26498f667f"
 url = "https://ziglang.org/download/0.15.2/zig-aarch64-linux-0.15.2.tar.xz"
 
+[tools.zig."platforms.linux-arm64-musl"]
+checksum = "sha256:958ed7d1e00d0ea76590d27666efbf7a932281b3d7ba0c6b01b0ff26498f667f"
+url = "https://ziglang.org/download/0.15.2/zig-aarch64-linux-0.15.2.tar.xz"
+
 [tools.zig."platforms.linux-x64"]
+checksum = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
+url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
+
+[tools.zig."platforms.linux-x64-musl"]
 checksum = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
 url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
 
 [tools.zig."platforms.macos-arm64"]
 checksum = "sha256:3cc2bab367e185cdfb27501c4b30b1b0653c28d9f73df8dc91488e66ece5fa6b"
 url = "https://ziglang.org/download/0.15.2/zig-aarch64-macos-0.15.2.tar.xz"
+provenance = "minisign"
 
 [tools.zig."platforms.macos-x64"]
 checksum = "sha256:375b6909fc1495d16fc2c7db9538f707456bfc3373b14ee83fdd3e22b3d43f7f"
