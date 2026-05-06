@@ -513,14 +513,22 @@ class OutputType:
         elif self.kind is OutputKind.OBJECT:
             assert self.fields is not None
             props = {}
+            required = []
             for name, field_type in self.fields.items():
                 props[name] = field_type.json_type()
+                if field_type.repetition in (
+                    Repetition.OPTIONAL,
+                    Repetition.OPTIONAL_REPEATED,
+                ):
+                    props[name]["nullable"] = True
+                else:
+                    required.append(name)
                 props[name]["title"] = name.replace("_", " ").title()
             jt.update(
                 {
                     "type": "object",
                     "properties": props,
-                    "required": list(self.fields.keys()),
+                    "required": required,
                 }
             )
 

@@ -313,9 +313,7 @@ def _create_output_type(tpe: type) -> adt.OutputType:
         if ft.repetition in (adt.Repetition.OPTIONAL, adt.Repetition.OPTIONAL_REPEATED):
             raise ValueError("output must not be Optional")
         if ft.repetition is adt.Repetition.REPEATED:
-            return adt.OutputType(
-                kind=adt.OutputKind.LIST, type=adt.PrimitiveType.ANY
-            )
+            return adt.OutputType(kind=adt.OutputKind.LIST, type=adt.PrimitiveType.ANY)
         return adt.OutputType(kind=adt.OutputKind.SINGLE, type=adt.PrimitiveType.ANY)
 
     if tpe is Any:

@@ -95,6 +95,35 @@ def test_inspector_supports_basemodel_opaque_list_output_field_schema() -> None:
     assert payload_schema["items"] == {"type": "object"}
 
 
+def test_inspector_basemodel_optional_output_fields_schema() -> None:
+    class Output(BaseModel):
+        required: str
+        maybe: Optional[str]
+        maybe_values: Optional[List[str]]
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(required=value, maybe=None, maybe_values=None)
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    output_schema = info.output.json_type()
+
+    assert output_schema["required"] == ["required"]
+
+    maybe_schema = output_schema["properties"]["maybe"]
+    assert maybe_schema["type"] == "string"
+    assert maybe_schema["nullable"] is True
+    assert maybe_schema["title"] == "Maybe"
+
+    maybe_values_schema = output_schema["properties"]["maybe_values"]
+    assert maybe_values_schema["type"] == "array"
+    assert maybe_values_schema["items"] == {"type": "string"}
+    assert maybe_values_schema["nullable"] is True
+    assert maybe_values_schema["title"] == "Maybe Values"
+
+
 def test_inspector_supports_basemodel_string_opaque_output_field() -> None:
     class Output(BaseModel):
         payload: "Annotated[ExternalObject, Opaque]"
@@ -146,9 +175,9 @@ def test_inspector_rejects_optional_opaque_output_metadata() -> None:
 
 def test_inspector_preserves_non_opaque_annotated_behavior() -> None:
     class Predictor:
-        def predict(self, value: Annotated[str, "metadata"]) -> Annotated[
-            str, "metadata"
-        ]:
+        def predict(
+            self, value: Annotated[str, "metadata"]
+        ) -> Annotated[str, "metadata"]:
             return value
 
     info = _create_predictor_info(
