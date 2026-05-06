@@ -29,6 +29,7 @@ import (
 	"github.com/replicate/cog/pkg/schema"
 	"github.com/replicate/cog/pkg/schema/python"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 	cogversion "github.com/replicate/cog/pkg/util/version"
 	weightslockfile "github.com/replicate/cog/pkg/weights/lockfile"
 	"github.com/replicate/cog/pkg/weightslegacy"
@@ -169,13 +170,14 @@ func Build(
 	}
 
 	// Write and validate pre-build schema (static or from file).
+	// Written atomically to .cog/ root (visible via volume mount for
+	// cog predict/train/serve), then copied to .cog/build/ for the
+	// cog_build named build context.
 	if len(schemaJSON) > 0 {
-		if err := writeAndValidateSchema(schemaJSON, bp.schemaFile); err != nil {
+		if err := writeAndValidateSchema(schemaJSON, bp.rootSchemaFile); err != nil {
 			return "", err
 		}
-		// Also write to .cog/ root so the schema is visible when the project
-		// dir is volume-mounted at /src (cog predict/train/serve).
-		if err := writeAndValidateSchema(schemaJSON, bp.rootSchemaFile); err != nil {
+		if err := files.Copy(bp.rootSchemaFile, bp.schemaFile); err != nil {
 			return "", err
 		}
 	}
@@ -185,11 +187,10 @@ func Build(
 	// lockfile to the minimal runtime manifest (spec §3.3) and write it into
 	// the build context so it ends up at /.cog/weights.json in the image.
 	if len(cfg.Weights) > 0 {
-		if err := writeRuntimeWeightsManifest(dir, bp.weightsFile); err != nil {
+		if err := writeRuntimeWeightsManifest(dir, bp.rootWeightsFile); err != nil {
 			return "", err
 		}
-		// Mirror to .cog/ root for volume-mount visibility.
-		if err := writeRuntimeWeightsManifest(dir, bp.rootWeightsFile); err != nil {
+		if err := files.Copy(bp.rootWeightsFile, bp.weightsFile); err != nil {
 			return "", err
 		}
 	}
@@ -343,10 +344,10 @@ func Build(
 		}
 		schemaJSON = data
 
-		if err := writeAndValidateSchema(schemaJSON, bp.schemaFile); err != nil {
+		if err := writeAndValidateSchema(schemaJSON, bp.rootSchemaFile); err != nil {
 			return "", err
 		}
-		if err := writeAndValidateSchema(schemaJSON, bp.rootSchemaFile); err != nil {
+		if err := files.Copy(bp.rootSchemaFile, bp.schemaFile); err != nil {
 			return "", err
 		}
 	}
@@ -575,16 +576,9 @@ func generateStaticSchema(cfg *config.Config, dir string) ([]byte, error) {
 
 }
 
-// writeAndValidateSchema writes the schema JSON to the bundled schema file and
-// validates it as a well-formed OpenAPI 3.0 specification.
+// writeAndValidateSchema validates the schema JSON as a well-formed OpenAPI 3.0
+// specification, then atomically writes it to schemaPath (write-to-temp + rename).
 func writeAndValidateSchema(schemaJSON []byte, schemaPath string) error {
-	if err := os.MkdirAll(filepath.Dir(schemaPath), 0o755); err != nil {
-		return fmt.Errorf("failed to create directory for %s: %w", schemaPath, err)
-	}
-	if err := os.WriteFile(schemaPath, schemaJSON, 0o644); err != nil {
-		return fmt.Errorf("failed to store bundled schema file %s: %w", schemaPath, err)
-	}
-
 	loader := openapi3.NewLoader()
 	loader.IsExternalRefsAllowed = true
 	doc, err := loader.LoadFromData(schemaJSON)
@@ -594,7 +588,7 @@ func writeAndValidateSchema(schemaJSON []byte, schemaPath string) error {
 	if err := doc.Validate(loader.Context); err != nil {
 		return fmt.Errorf("Model schema is invalid: %w\n\n%s", err, string(schemaJSON))
 	}
-	return nil
+	return files.AtomicWrite(schemaPath, schemaJSON)
 }
 
 // writeRuntimeWeightsManifest projects the lockfile to /.cog/weights.json (spec §3.3).
@@ -611,11 +605,8 @@ func writeRuntimeWeightsManifest(dir string, weightsPath string) error {
 		return fmt.Errorf("failed to serialize runtime weights manifest: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(weightsPath), 0o755); err != nil {
-		return fmt.Errorf("failed to create directory for %s: %w", weightsPath, err)
-	}
-	if err := os.WriteFile(weightsPath, data, 0o644); err != nil { //nolint:gosec // bundled into image, not a secret
-		return fmt.Errorf("failed to write runtime weights manifest %s: %w", weightsPath, err)
+	if err := files.AtomicWrite(weightsPath, data); err != nil {
+		return fmt.Errorf("write runtime weights manifest: %w", err)
 	}
 	console.Debugf("Wrote runtime weights manifest to %s (%d weights)", weightsPath, len(manifest.Weights))
 	return nil
