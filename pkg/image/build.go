@@ -43,7 +43,7 @@ const cogBuildContextName = "cog_build"
 // defaultExcludePatterns filters .cog/ out of the project context mount
 // so weight blobs, mount dirs, and build caches are never sent to the
 // Docker daemon.
-var defaultExcludePatterns = []string{dotcog.Name}
+var defaultExcludePatterns = []string{dotcog.Name + "/"}
 
 var errGit = errors.New("git error")
 
