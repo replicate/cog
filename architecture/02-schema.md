@@ -215,8 +215,8 @@ Each `SchemaType` produces its JSON Schema fragment via `JSONSchema()`:
 | `dict[str, V]`             | `SchemaDict`             | `{"type": "object", "additionalProperties": V}`                 |
 | `list` (bare)              | `SchemaArray(SchemaAny)` | `{"type": "array", "items": {"type": "object"}}`                |
 | `list[T]`                  | `SchemaArray`            | `{"type": "array", "items": T}`                                 |
-| `Annotated[T, cog.Opaque]` | `SchemaAny`              | `{"type": "object"}`                                            |
-| `Annotated[list[T], cog.Opaque]` | `SchemaArray(SchemaAny)` | `{"type": "array", "items": {"type": "object"}}`                |
+| `Annotated[T, cog.Opaque]` | `SchemaPrimitive(TypeAny)` | `{"type": "object"}`                                            |
+| `Annotated[list[T], cog.Opaque]` | `SchemaArray(SchemaPrimitive(TypeAny))` | `{"type": "array", "items": {"type": "object"}}`                |
 | `BaseModel` subclass       | `SchemaObject`           | `{"type": "object", "properties": {...}}`                       |
 | `Iterator[T]`              | `SchemaIterator`         | `{"type": "array", "items": T, "x-cog-array-type": "iterator"}` |
 | `ConcatenateIterator[str]` | `SchemaConcatIterator`   | Streaming token output                                          |

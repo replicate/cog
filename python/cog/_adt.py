@@ -524,13 +524,9 @@ class OutputType:
                 else:
                     required.append(name)
                 props[name]["title"] = name.replace("_", " ").title()
-            jt.update(
-                {
-                    "type": "object",
-                    "properties": props,
-                    "required": required,
-                }
-            )
+            jt.update({"type": "object", "properties": props})
+            if required:
+                jt["required"] = required
 
         return jt
 

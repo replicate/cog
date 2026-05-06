@@ -124,6 +124,23 @@ def test_inspector_basemodel_optional_output_fields_schema() -> None:
     assert maybe_values_schema["title"] == "Maybe Values"
 
 
+def test_inspector_basemodel_all_optional_output_fields_omits_required_schema() -> None:
+    class Output(BaseModel):
+        maybe: Optional[str]
+        maybe_values: Optional[List[str]]
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(maybe=value, maybe_values=None)
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    output_schema = info.output.json_type()
+
+    assert "required" not in output_schema
+
+
 def test_inspector_supports_basemodel_string_opaque_output_field() -> None:
     class Output(BaseModel):
         payload: "Annotated[ExternalObject, Opaque]"
