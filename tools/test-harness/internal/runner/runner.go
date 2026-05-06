@@ -3,7 +3,6 @@ package runner
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -24,8 +23,6 @@ import (
 	"github.com/replicate/cog/tools/test-harness/internal/report"
 	"github.com/replicate/cog/tools/test-harness/internal/validator"
 )
-
-const openapiSchemaLabel = "run.cog.openapi_schema"
 
 // maxPrefixBuf is the maximum size of the prefixWriter line buffer before
 // it is force-flushed. This prevents unbounded memory growth when a
@@ -128,8 +125,7 @@ type Options struct {
 }
 
 // Runner orchestrates the test lifecycle.
-// It is safe to call RunModel, BuildModel, and CompareSchema concurrently
-// from multiple goroutines.
+// It is safe to call RunModel and BuildModel concurrently from multiple goroutines.
 type Runner struct {
 	opts        Options
 	fixturesDir string
@@ -364,127 +360,6 @@ func (r *Runner) BuildModel(ctx context.Context, model manifest.Model) *report.M
 	return result
 }
 
-// CompareSchema builds model twice and compares schemas
-func (r *Runner) CompareSchema(ctx context.Context, model manifest.Model) *report.SchemaCompareResult {
-	result := &report.SchemaCompareResult{
-		Name:   model.Name,
-		Passed: true,
-	}
-
-	// Prepare model
-	modelDir, err := r.prepareModel(ctx, model)
-	if err != nil {
-		result.Passed = false
-		result.Error = fmt.Sprintf("Preparation failed: %v", err)
-		return result
-	}
-
-	staticTag := fmt.Sprintf("cog-harness-%s:static", model.Name)
-	runtimeTag := fmt.Sprintf("cog-harness-%s:runtime", model.Name)
-
-	// Always clean up schema comparison images when done
-	defer func() {
-		_ = exec.Command("docker", "rmi", "-f", staticTag).Run()
-		_ = exec.Command("docker", "rmi", "-f", runtimeTag).Run()
-	}()
-
-	staticDir := filepath.Join(r.workDir, fmt.Sprintf("schema-static-%s", model.Name))
-	runtimeDir := filepath.Join(r.workDir, fmt.Sprintf("schema-runtime-%s", model.Name))
-	if err := copyDir(modelDir, staticDir); err != nil {
-		result.Passed = false
-		result.Error = fmt.Sprintf("preparing static schema dir failed: %v", err)
-		return result
-	}
-	if err := copyDir(modelDir, runtimeDir); err != nil {
-		result.Passed = false
-		result.Error = fmt.Sprintf("preparing runtime schema dir failed: %v", err)
-		return result
-	}
-
-	// Build the two variants sequentially rather than concurrently.
-	//
-	// Running them in parallel doubles peak memory and disk I/O inside the
-	// Docker VM, which consistently OOM-kills the `cog build` process on
-	// heavy ML models (torch + cuda + diffusers + transformers, etc.) when
-	// running on Docker Desktop / Colima with a bounded VM memory budget.
-	// The failure mode surfaces as `signal: killed` from the outer
-	// exec.Command.
-	//
-	// Serial execution is only modestly slower in practice because the
-	// Docker layer cache populated by the first build makes most steps of
-	// the second build near-instant (same base image, same python_packages,
-	// same user run commands — the only CLI-side difference is the
-	// COG_LEGACY_SCHEMA env var, which affects pre-build schema generation,
-	// not the Docker layers themselves).
-	staticStart := time.Now()
-	// Static schema generation is the default — no env var required.
-	staticErr := r.quietBuildModelWithEnv(ctx, staticDir, model, staticTag, map[string]string{})
-	var staticSchema string
-	var staticSchemaErr error
-	if staticErr == nil {
-		staticSchema, staticSchemaErr = r.extractSchemaLabel(ctx, staticTag)
-	}
-	result.StaticBuild = time.Since(staticStart).Seconds()
-
-	runtimeStart := time.Now()
-	// COG_LEGACY_SCHEMA=1 opts back into the legacy runtime schema path.
-	runtimeErr := r.quietBuildModelWithEnv(ctx, runtimeDir, model, runtimeTag, map[string]string{"COG_LEGACY_SCHEMA": "1"})
-	var runtimeSchema string
-	var runtimeSchemaErr error
-	if runtimeErr == nil {
-		runtimeSchema, runtimeSchemaErr = r.extractSchemaLabel(ctx, runtimeTag)
-	}
-	result.RuntimeBuild = time.Since(runtimeStart).Seconds()
-
-	// Check for build errors
-	if staticErr != nil {
-		result.Passed = false
-		result.Error = fmt.Sprintf("Static build failed: %v", staticErr)
-		return result
-	}
-	if runtimeErr != nil {
-		result.Passed = false
-		result.Error = fmt.Sprintf("Runtime build failed: %v", runtimeErr)
-		return result
-	}
-	if staticSchemaErr != nil {
-		result.Passed = false
-		result.Error = fmt.Sprintf("extracting static schema label failed: %v", staticSchemaErr)
-		return result
-	}
-	if runtimeSchemaErr != nil {
-		result.Passed = false
-		result.Error = fmt.Sprintf("extracting runtime schema label failed: %v", runtimeSchemaErr)
-		return result
-	}
-
-	// Parse and compare schemas
-	var staticJSON, runtimeJSON map[string]any
-	if err := json.Unmarshal([]byte(staticSchema), &staticJSON); err != nil {
-		result.Passed = false
-		result.Error = fmt.Sprintf("Static schema is not valid JSON: %v", err)
-		return result
-	}
-	if err := json.Unmarshal([]byte(runtimeSchema), &runtimeJSON); err != nil {
-		result.Passed = false
-		result.Error = fmt.Sprintf("Runtime schema is not valid JSON: %v", err)
-		return result
-	}
-
-	// Compare and classify differences
-	cmp := jsonCompare(staticJSON, runtimeJSON)
-
-	if len(cmp.Real) > 0 {
-		result.Passed = false
-		result.Diff = formatDiffHunks(cmp.Real)
-	}
-	if len(cmp.Expected) > 0 {
-		result.ExpectedDiff = formatDiffHunks(cmp.Expected)
-	}
-
-	return result
-}
-
 func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string, error) {
 	var modelDir string
 
@@ -641,14 +516,6 @@ func (r *Runner) buildModelWithEnv(ctx context.Context, modelDir string, model m
 	return r.doBuild(ctx, modelDir, model, imageTag, extraEnv, stderr, capture, flush)
 }
 
-// quietBuildModelWithEnv builds a model image without streaming output to
-// the terminal. Output is captured for inclusion in error messages on failure.
-// Used by CompareSchema where build logs would interleave with diff results.
-func (r *Runner) quietBuildModelWithEnv(ctx context.Context, modelDir string, model manifest.Model, imageTag string, extraEnv map[string]string) error {
-	var capture bytes.Buffer
-	return r.doBuild(ctx, modelDir, model, imageTag, extraEnv, &capture, &capture, func() {})
-}
-
 func (r *Runner) doBuild(ctx context.Context, modelDir string, model manifest.Model, imageTag string, extraEnv map[string]string, output io.Writer, capture *bytes.Buffer, flush func()) error {
 	// Set timeout
 	timeout := model.Timeout
@@ -701,15 +568,6 @@ func (r *Runner) doBuild(ctx context.Context, modelDir string, model manifest.Mo
 		return fmt.Errorf("%w\n%s", err, out)
 	}
 	return nil
-}
-
-func (r *Runner) extractSchemaLabel(ctx context.Context, imageTag string) (string, error) {
-	cmd := exec.CommandContext(ctx, "docker", "inspect", imageTag, "--format", fmt.Sprintf("{{index .Config.Labels \"%s\"}}", openapiSchemaLabel))
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
 }
 
 func (r *Runner) runPredictTest(ctx context.Context, modelDir string, model manifest.Model, tc manifest.TestCase) report.TestResult {
@@ -891,193 +749,4 @@ func copyDir(src, dst string) error {
 
 		return os.WriteFile(dstPath, data, info.Mode())
 	})
-}
-
-// diffResult contains classified diff hunks from a schema comparison.
-type diffResult struct {
-	Real     []diffHunk // Genuine mismatches that indicate a bug
-	Expected []diffHunk // Known limitations (dynamic descriptions, training schemas)
-}
-
-// jsonCompare compares two JSON schemas and classifies differences as
-// "real" (genuine mismatches) or "expected" (known static-gen limitations).
-//
-// Expected differences:
-//   - Training schemas/paths present in static but absent in runtime
-//     (runtime only generates predict schema)
-//   - Descriptions present in runtime but absent in static
-//     (static can't resolve dynamically-constructed descriptions)
-func jsonCompare(a, b map[string]any) diffResult {
-	var hunks []diffHunk
-	collectDiffs(a, b, "$", &hunks)
-
-	var result diffResult
-	for _, h := range hunks {
-		if isExpectedDiff(h) {
-			result.Expected = append(result.Expected, h)
-		} else {
-			result.Real = append(result.Real, h)
-		}
-	}
-	return result
-}
-
-// isExpectedDiff returns true if a diff hunk represents a known limitation
-// of static schema generation rather than a real bug.
-func isExpectedDiff(h diffHunk) bool {
-	// Static generates training schemas; runtime only generates predict.
-	// Training-related schemas/paths are expected to be missing in runtime.
-	if h.Kind == "missing_in_runtime" {
-		if strings.Contains(h.Path, "Training") ||
-			strings.Contains(h.Path, "trainings") {
-			return true
-		}
-	}
-
-	// Static can't resolve dynamically-constructed descriptions (e.g.
-	// f-strings with conditional logic in class methods).
-	if h.Kind == "missing_in_static" && strings.HasSuffix(h.Path, ".description") {
-		return true
-	}
-
-	return false
-}
-
-// formatDiffHunks formats a slice of hunks as a unified-diff-style string.
-func formatDiffHunks(hunks []diffHunk) string {
-	if len(hunks) == 0 {
-		return ""
-	}
-	var buf strings.Builder
-	buf.WriteString("--- static schema\n")
-	buf.WriteString("+++ runtime schema\n")
-	for _, h := range hunks {
-		buf.WriteString("\n")
-		buf.WriteString(h.String())
-	}
-	return buf.String()
-}
-
-// jsonDiff produces a unified-diff-style comparison between two JSON objects.
-// Only includes "real" differences (not expected/known limitations).
-func jsonDiff(a, b map[string]any) string {
-	result := jsonCompare(a, b)
-	return formatDiffHunks(result.Real)
-}
-
-// diffHunk represents a single difference between two JSON values.
-type diffHunk struct {
-	Path     string
-	Kind     string // "missing_in_static", "missing_in_runtime", "changed", "type_mismatch", "array_length"
-	StaticV  any    // value in static (nil if missing)
-	RuntimeV any    // value in runtime (nil if missing)
-}
-
-func (h diffHunk) String() string {
-	var buf strings.Builder
-	fmt.Fprintf(&buf, "@@ %s @@\n", h.Path)
-	switch h.Kind {
-	case "missing_in_runtime":
-		// Present in static, absent in runtime
-		for _, line := range prettyLines(h.StaticV) {
-			fmt.Fprintf(&buf, "-%s\n", line)
-		}
-	case "missing_in_static":
-		// Absent in static, present in runtime
-		for _, line := range prettyLines(h.RuntimeV) {
-			fmt.Fprintf(&buf, "+%s\n", line)
-		}
-	case "changed", "type_mismatch":
-		for _, line := range prettyLines(h.StaticV) {
-			fmt.Fprintf(&buf, "-%s\n", line)
-		}
-		for _, line := range prettyLines(h.RuntimeV) {
-			fmt.Fprintf(&buf, "+%s\n", line)
-		}
-	case "array_length":
-		for _, line := range prettyLines(h.StaticV) {
-			fmt.Fprintf(&buf, "-%s\n", line)
-		}
-		for _, line := range prettyLines(h.RuntimeV) {
-			fmt.Fprintf(&buf, "+%s\n", line)
-		}
-	}
-	return buf.String()
-}
-
-// prettyLines returns a compact JSON representation split into lines.
-func prettyLines(v any) []string {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return []string{fmt.Sprintf("%v", v)}
-	}
-	return strings.Split(string(data), "\n")
-}
-
-func collectDiffs(a, b any, path string, hunks *[]diffHunk) {
-	if a == nil && b == nil {
-		return
-	}
-	if a == nil {
-		*hunks = append(*hunks, diffHunk{Path: path, Kind: "missing_in_static", RuntimeV: b})
-		return
-	}
-	if b == nil {
-		*hunks = append(*hunks, diffHunk{Path: path, Kind: "missing_in_runtime", StaticV: a})
-		return
-	}
-
-	switch av := a.(type) {
-	case map[string]any:
-		bv, ok := b.(map[string]any)
-		if !ok {
-			*hunks = append(*hunks, diffHunk{Path: path, Kind: "type_mismatch", StaticV: a, RuntimeV: b})
-			return
-		}
-		// Collect all keys, sorted for deterministic output
-		allKeys := make(map[string]bool)
-		for k := range av {
-			allKeys[k] = true
-		}
-		for k := range bv {
-			allKeys[k] = true
-		}
-		sortedKeys := make([]string, 0, len(allKeys))
-		for k := range allKeys {
-			sortedKeys = append(sortedKeys, k)
-		}
-		sort.Strings(sortedKeys)
-
-		for _, k := range sortedKeys {
-			childPath := fmt.Sprintf("%s.%s", path, k)
-			aVal, aOK := av[k]
-			bVal, bOK := bv[k]
-			switch {
-			case !aOK:
-				*hunks = append(*hunks, diffHunk{Path: childPath, Kind: "missing_in_static", RuntimeV: bVal})
-			case !bOK:
-				*hunks = append(*hunks, diffHunk{Path: childPath, Kind: "missing_in_runtime", StaticV: aVal})
-			default:
-				collectDiffs(aVal, bVal, childPath, hunks)
-			}
-		}
-	case []any:
-		bv, ok := b.([]any)
-		if !ok {
-			*hunks = append(*hunks, diffHunk{Path: path, Kind: "type_mismatch", StaticV: a, RuntimeV: b})
-			return
-		}
-		if len(av) != len(bv) {
-			*hunks = append(*hunks, diffHunk{Path: path, Kind: "array_length", StaticV: a, RuntimeV: b})
-			return
-		}
-		for i := range av {
-			childPath := fmt.Sprintf("%s[%d]", path, i)
-			collectDiffs(av[i], bv[i], childPath, hunks)
-		}
-	default:
-		if fmt.Sprint(a) != fmt.Sprint(b) {
-			*hunks = append(*hunks, diffHunk{Path: path, Kind: "changed", StaticV: a, RuntimeV: b})
-		}
-	}
 }

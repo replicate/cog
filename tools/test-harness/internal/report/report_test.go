@@ -130,18 +130,3 @@ func TestJSONReportEmptyResults(t *testing.T) {
 	require.True(t, ok)
 	assert.Empty(t, models)
 }
-
-func TestSchemaCompareJSONReport(t *testing.T) {
-	results := []SchemaCompareResult{
-		{Name: "model-a", Passed: true, StaticBuild: 5.0, RuntimeBuild: 8.0},
-		{Name: "model-b", Passed: false, Error: "build failed"},
-	}
-
-	report := SchemaCompareJSONReport(results, "v0.17.2")
-
-	summary, ok := report["summary"].(map[string]int)
-	require.True(t, ok)
-	assert.Equal(t, 2, summary["total"])
-	assert.Equal(t, 1, summary["passed"])
-	assert.Equal(t, 1, summary["failed"])
-}
