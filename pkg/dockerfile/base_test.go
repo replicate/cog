@@ -1,6 +1,8 @@
 package dockerfile
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -80,6 +82,38 @@ func TestGenerateDockerfileWithBreakSystemPackages(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Contains(t, dockerfile, "uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt")
+}
+
+func TestGenerateDockerfileWritesDurableBuildContext(t *testing.T) {
+	cudaVersion := "12.1"
+	pythonVersion := "3.10"
+	torchVersion := "2.1.0"
+	client := registrytest.NewMockRegistryClient()
+	client.AddMockImage(BaseImageName(cudaVersion, pythonVersion, torchVersion))
+	command := dockertest.NewMockCommand()
+	generator, err := NewBaseImageGenerator(
+		t.Context(),
+		client,
+		cudaVersion,
+		pythonVersion,
+		torchVersion,
+		command,
+		false,
+	)
+	require.NoError(t, err)
+	buildContextDir := filepath.Join(t.TempDir(), "cog_build")
+	generator.SetBuildContextDir(buildContextDir)
+
+	dockerfile, err := generator.GenerateDockerfile(t.Context())
+
+	require.NoError(t, err)
+	require.Contains(t, dockerfile, "COPY --from=cog_build requirements.txt /tmp/requirements.txt")
+	contents, err := os.ReadFile(filepath.Join(buildContextDir, "requirements.txt"))
+	require.NoError(t, err)
+	require.Contains(t, string(contents), "torch==2.1.0")
+	require.Contains(t, string(contents), "torchvision==0.16.0")
+	require.Contains(t, string(contents), "torchaudio==2.1.0")
+	require.Contains(t, string(contents), "opencv-python==4.12.0.88")
 }
 
 func TestBaseImageNameWithVersionModifier(t *testing.T) {

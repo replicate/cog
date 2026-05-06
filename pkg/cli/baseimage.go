@@ -25,6 +25,7 @@ var (
 	baseImagePythonVersion       string
 	baseImageTorchVersion        string
 	baseImageBreakSystemPackages bool
+	baseImageBuildContextDir     string
 )
 
 func NewBaseImageRootCommand() (*cobra.Command, error) {
@@ -208,6 +209,8 @@ func addBaseImageFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&baseImageTorchVersion, "torch", "", "Torch version")
 	cmd.Flags().BoolVar(&baseImageBreakSystemPackages, "break-system-packages", false, "Allow pip to modify uv-managed Python installs")
 	_ = cmd.Flags().MarkHidden("break-system-packages")
+	cmd.Flags().StringVar(&baseImageBuildContextDir, "build-context-dir", "", "Directory for generated Docker build context artifacts")
+	_ = cmd.Flags().MarkHidden("build-context-dir")
 	addBuildTimestampFlag(cmd)
 }
 
@@ -230,5 +233,6 @@ func baseImageGeneratorFromFlags(ctx context.Context) (*dockerfile.BaseImageGene
 		return nil, err
 	}
 	generator.SetBreakSystemPackages(baseImageBreakSystemPackages)
+	generator.SetBuildContextDir(baseImageBuildContextDir)
 	return generator, nil
 }
