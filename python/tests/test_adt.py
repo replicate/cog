@@ -27,10 +27,10 @@ class ThirdPartyObject:
 
 
 def test_opaque_is_public_cog_export() -> None:
-    import cog
+    cog_module = __import__("cog")
 
-    assert repr(cog.Opaque) == "cog.Opaque"
-    assert cog.Opaque is Opaque
+    assert repr(cog_module.Opaque) == "cog.Opaque"
+    assert cog_module.Opaque is Opaque
 
 
 def test_opaque_simple_field_type() -> None:

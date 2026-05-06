@@ -3388,6 +3388,21 @@ class Predictor(c.BasePredictor):
 	require.Equal(t, schema.Required, value.FieldType.Repetition)
 }
 
+func TestQualifiedOpaqueFromImportAliasDoesNotMatch(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, BaseModel as c
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: Annotated[ThirdPartyType, c.Opaque]) -> str:
+        return "ok"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnresolvableType, se.Kind)
+	require.Contains(t, se.Message, "ThirdPartyType")
+}
+
 func TestOtherOpaqueDoesNotMatchCogOpaque(t *testing.T) {
 	source := `
 from typing import Annotated

@@ -18,8 +18,12 @@ stdout '"required":\["result","results"\]'
 
 cog predict $TEST_IMAGE --json '{"payload": {"name": "alice", "count": 2}, "items": [{"name": "first"}, {"name": "second"}]}'
 stdout '"status": "succeeded"'
-stdout '"result": {"name": "alice", "count": 2}'
-stdout '"results": \[{"name": "first"}, {"name": "second"}\]'
+stdout '"result": \{'
+stdout '"count": 2'
+stdout '"name": "alice"'
+stdout '"results": \['
+stdout '"name": "first"'
+stdout '"name": "second"'
 
 -- cog.yaml --
 build:

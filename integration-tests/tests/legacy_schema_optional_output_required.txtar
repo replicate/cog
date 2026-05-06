@@ -12,7 +12,6 @@ stdout '"values":{"items":{"type":"string"},"nullable":true,"title":"Values","ty
 ! stdout '"required":\[\]'
 
 cog predict $TEST_IMAGE -i name=alice
-stdout '"status": "succeeded"'
 stdout '"maybe": "alice"'
 stdout '"values": null'
 

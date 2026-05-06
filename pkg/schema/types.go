@@ -270,7 +270,7 @@ func (ctx *ImportContext) IsTypedDict(name string) bool {
 // IsOpaque returns true if name resolves specifically to cog.Opaque.
 func (ctx *ImportContext) IsOpaque(name string) bool {
 	if resolved, entry, ok := ctx.ResolveQualifiedName(name); ok {
-		return resolved == "Opaque" && entry.Module == "cog" && entry.Original == "cog"
+		return resolved == "Opaque" && entry.Module == "cog" && entry.Original == entry.Module
 	}
 	if e, ok := ctx.Names.Get(name); ok {
 		return e.Module == "cog" && e.Original == "Opaque"
