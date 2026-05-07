@@ -30,12 +30,18 @@ type resolvedSource struct {
 // sources and applying include/exclude filters. Both PlanImport and
 // Build share this step; caching the result avoids re-walking the
 // source when the CLI plans first and then builds.
+//
+// There is deliberately no combined fingerprint at this level: every
+// drift/fast-path check operates on per-source fingerprints
+// (perSource[i].full.Fingerprint), which preserves the v1 lockfile
+// format for single-source weights and lets multi-source weights
+// surface drift on individual sources rather than on an opaque hash.
 type resolvedInventory struct {
 	perSource []resolvedSource
-	// merged is the combined filtered inventory from all sources with a
-	// combined fingerprint. For single-source weights this equals
-	// perSource[0].filtered.
-	merged weightsource.Inventory
+	// mergedFiles is the union of every source's filtered files,
+	// de-duplicated by path with last-in-wins (declaration-order
+	// layering) and sorted. This is what the packer/planner consume.
+	mergedFiles []weightsource.InventoryFile
 	// owners maps each file path to the source that provides it, so
 	// ingressFromInventory knows which Source.Open() to call.
 	owners map[string]weightsource.Source
@@ -89,8 +95,14 @@ func (b *WeightBuilder) resolveInventory(ctx context.Context, ws *WeightSpec) (*
 
 		perSource[i] = resolvedSource{source: src, full: full, filtered: filtered}
 
-		// Merge filtered files: last-in-wins for conflicts (declaration order).
+		// Merge filtered files: last-in-wins for conflicts (declaration
+		// order = layering order, like CSS). Surface overrides at info
+		// level — silent shadowing is easy to miss in cog.yaml diffs.
 		for _, f := range filtered.Files {
+			if _, exists := mergedFiles[f.Path]; exists {
+				console.Infof("weight %q: source[%d] (%s) overrides %s",
+					ws.Name(), i, srcSpec.URI, f.Path)
+			}
 			mergedFiles[f.Path] = f
 			owners[f.Path] = src
 		}
@@ -103,18 +115,10 @@ func (b *WeightBuilder) resolveInventory(ctx context.Context, ws *WeightSpec) (*
 	}
 	weightsource.SortInventoryFiles(files)
 
-	// Combined fingerprint: hash of ordered per-source fingerprints.
-	combinedFP := weightsource.CombineFingerprints(perSource, func(rs resolvedSource) weightsource.Fingerprint {
-		return rs.full.Fingerprint
-	})
-
 	return &resolvedInventory{
-		perSource: perSource,
-		merged: weightsource.Inventory{
-			Files:       files,
-			Fingerprint: combinedFP,
-		},
-		owners: owners,
+		perSource:   perSource,
+		mergedFiles: files,
+		owners:      owners,
 	}, nil
 }
 
@@ -193,7 +197,7 @@ func (b *WeightBuilder) buildWithResolved(ctx context.Context, spec ArtifactSpec
 			return nil, err
 		}
 	}
-	inv := resolved.merged
+	inv := weightsource.Inventory{Files: resolved.mergedFiles}
 
 	// Step 2: ingress the filtered files into the local store.
 	if err := ingressFromInventory(ctx, resolved.owners, b.store, inv); err != nil {

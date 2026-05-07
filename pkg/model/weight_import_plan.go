@@ -39,13 +39,13 @@ type WeightImportPlan struct {
 
 // FilteredFiles returns the filtered inventory files.
 func (p *WeightImportPlan) FilteredFiles() []weightsource.InventoryFile {
-	return p.Resolved.merged.Files
+	return p.Resolved.mergedFiles
 }
 
 // TotalSize returns the sum of filtered file sizes.
 func (p *WeightImportPlan) TotalSize() int64 {
 	var total int64
-	for _, f := range p.Resolved.merged.Files {
+	for _, f := range p.Resolved.mergedFiles {
 		total += f.Size
 	}
 	return total
@@ -57,8 +57,8 @@ func (p *WeightImportPlan) ExcludedFiles() []weightsource.InventoryFile {
 	if len(p.UnfilteredFiles) == 0 {
 		return nil
 	}
-	included := make(map[string]bool, len(p.Resolved.merged.Files))
-	for _, f := range p.Resolved.merged.Files {
+	included := make(map[string]bool, len(p.Resolved.mergedFiles))
+	for _, f := range p.Resolved.mergedFiles {
 		included[f.Path] = true
 	}
 	var excluded []weightsource.InventoryFile

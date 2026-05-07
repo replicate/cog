@@ -12,9 +12,6 @@
 package weightsource
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
 	"strings"
 )
 
@@ -64,22 +61,3 @@ func (f Fingerprint) String() string { return string(f) }
 // distinguish "no fingerprint" from a real fingerprint whose scheme or
 // value happens to be empty.
 func (f Fingerprint) isZero() bool { return f == "" }
-
-// CombineFingerprints hashes an ordered list of fingerprints (extracted
-// from items via fn) into a single combined fingerprint. For single-item
-// slices, the original fingerprint is returned as-is. Multi-item slices
-// produce a sha256 digest of the concatenated fingerprints (null-byte
-// separated), consistent with the Fingerprint contract.
-func CombineFingerprints[T any](items []T, fn func(T) Fingerprint) Fingerprint {
-	if len(items) == 1 {
-		return fn(items[0])
-	}
-	h := sha256.New()
-	for i, item := range items {
-		if i > 0 {
-			_, _ = h.Write([]byte{0}) // null-byte separator
-		}
-		_, _ = io.WriteString(h, string(fn(item)))
-	}
-	return Fingerprint("sha256:" + hex.EncodeToString(h.Sum(nil)))
-}

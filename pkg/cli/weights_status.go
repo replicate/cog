@@ -181,15 +181,20 @@ func lockSourcesToStatus(sources []lockfile.WeightLockSource) *WeightStatusSourc
 	if len(sources) == 0 {
 		return nil
 	}
-	// For display, show the first source's URI and fingerprint.
-	// Multi-source details are visible in the lockfile.
+	// For display, show the first source's URI and fingerprint, with
+	// a "(+N more)" indicator for multi-source weights so the
+	// truncation is visible. Full details are in the lockfile.
 	s := sources[0]
 	fp := string(s.Fingerprint)
 	if s.URI == "" && fp == "" {
 		return nil
 	}
+	uri := s.URI
+	if len(sources) > 1 {
+		uri = fmt.Sprintf("%s (+%d more)", s.URI, len(sources)-1)
+	}
 	return &WeightStatusSource{
-		URI:         s.URI,
+		URI:         uri,
 		Fingerprint: fp,
 	}
 }

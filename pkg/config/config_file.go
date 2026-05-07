@@ -204,6 +204,18 @@ func (wsl WeightSourceList) MarshalJSON() ([]byte, error) {
 	return json.Marshal(wsl.Items)
 }
 
+// MarshalYAML serializes WeightSourceList symmetrically with
+// UnmarshalYAML: a single-element list becomes a plain mapping, a
+// multi-element list becomes a sequence. Without this, round-tripping
+// a single-source weight through YAML would produce a one-element
+// sequence instead of the original mapping shape.
+func (wsl WeightSourceList) MarshalYAML() (any, error) {
+	if len(wsl.Items) == 1 {
+		return wsl.Items[0], nil
+	}
+	return wsl.Items, nil
+}
+
 // Helper functions for working with configFile
 
 // GetGPU returns the GPU setting, defaulting to false if not set.

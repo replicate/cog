@@ -33,7 +33,7 @@ func sampleEntry() WeightLockEntry {
 				Exclude:     []string{},
 			},
 		},
-		ImportedAt:      time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC),
+		ImportedAt:     time.Date(2026, 4, 16, 17, 27, 7, 0, time.UTC),
 		Digest:         "sha256:abc123",
 		SetDigest:      "sha256:def456",
 		Size:           1500,

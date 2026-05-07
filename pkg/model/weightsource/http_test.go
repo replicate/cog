@@ -43,6 +43,27 @@ func TestNewHTTPSource_WrongScheme(t *testing.T) {
 	assert.Contains(t, err.Error(), "expected https or http")
 }
 
+func TestNewHTTPSource_RejectsCredentials(t *testing.T) {
+	tests := []string{
+		"https://user:pass@example.com/model.pth",
+		"https://token@example.com/model.pth",
+		"http://user:pass@example.com/model.bin",
+	}
+	for _, uri := range tests {
+		t.Run(uri, func(t *testing.T) {
+			_, err := NewHTTPSource(uri)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "must not embed credentials")
+		})
+	}
+}
+
+func TestNormalizeHTTPURI_RejectsCredentials(t *testing.T) {
+	_, err := normalizeHTTPURI("https://token:secret@github.com/org/repo/releases/download/v1/model.pth")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must not embed credentials")
+}
+
 func TestHTTPSource_Inventory_WithETag(t *testing.T) {
 	body := []byte("fake model weights")
 	h := sha256.Sum256(body)

@@ -24,8 +24,16 @@ import (
 // ONNX Model Zoo, and any plain HTTP download.
 //
 // Fingerprint strategy:
-//   - HEAD request: use ETag if present → "etag:<value>"
-//   - No ETag: fall back to GET + sha256 hash → "sha256:<hex>"
+//   - HEAD request: use a strong ETag if present → "etag:<value>"
+//   - No usable ETag: fall back to GET + sha256 hash → "sha256:<hex>"
+//
+// ETag is treated as a *cache hint*, not a content identity. A change
+// in ETag triggers re-verification; a stable ETag short-circuits it.
+// Two HTTP sources with identical content but different ETags will
+// re-import unnecessarily but produce the same final artifact — the
+// worst case is wasted work, never wrong content. Weak ETags
+// (W/-prefixed, RFC 7232 §2.3) explicitly do not promise content
+// identity, so we ignore them and fall through to sha256.
 type HTTPSource struct {
 	uri      string
 	parsed   *url.URL
@@ -34,15 +42,18 @@ type HTTPSource struct {
 }
 
 // NewHTTPSource constructs an HTTPSource bound to the given URL.
-// It validates the URL parses correctly and has a non-empty path
-// component. No network calls are made at construction time.
+// It validates the URL parses correctly, has a non-empty path
+// component, and does not embed credentials. No network calls are
+// made at construction time.
+//
+// URIs with userinfo (https://user:pass@host/...) are rejected: the
+// URI is recorded verbatim in weights.lock, which is checked into
+// git, so embedded credentials would leak. Use a separate auth
+// mechanism (Authorization header support is on the roadmap).
 func NewHTTPSource(uri string) (*HTTPSource, error) {
-	parsed, err := url.Parse(uri)
+	parsed, err := parseHTTPURI(uri)
 	if err != nil {
-		return nil, fmt.Errorf("invalid HTTP URI %q: %w", uri, err)
-	}
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return nil, fmt.Errorf("expected https or http scheme, got %q", parsed.Scheme)
+		return nil, err
 	}
 	filename := path.Base(parsed.Path)
 	if filename == "" || filename == "." || filename == "/" {
@@ -54,6 +65,25 @@ func NewHTTPSource(uri string) (*HTTPSource, error) {
 		filename: filename,
 		client:   newHTTPSourceClient(),
 	}, nil
+}
+
+// parseHTTPURI parses uri and rejects anything outside the http/https
+// scheme set or with embedded credentials. Centralizes the rules so
+// that NewHTTPSource and normalizeHTTPURI cannot drift apart. The
+// "no userinfo" rule exists because the URI lands in weights.lock —
+// see NewHTTPSource for the full rationale.
+func parseHTTPURI(uri string) (*url.URL, error) {
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return nil, fmt.Errorf("invalid HTTP URI %q: %w", uri, err)
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return nil, fmt.Errorf("expected https or http scheme, got %q", parsed.Scheme)
+	}
+	if parsed.User != nil {
+		return nil, fmt.Errorf("HTTP URI must not embed credentials (user:pass@host)")
+	}
+	return parsed, nil
 }
 
 // newHTTPSourceClient returns an *http.Client with retry behavior
@@ -81,13 +111,15 @@ func httpSourceCheckRetry(ctx context.Context, resp *http.Response, err error) (
 	return false, nil
 }
 
-// normalizeHTTPURI lowercases the scheme and validates the URL parses.
+// normalizeHTTPURI runs the same validation as NewHTTPSource (scheme
+// allowlist, no userinfo) and returns the canonical string form.
+// url.Parse already lowercases the scheme per RFC 3986, so no
+// additional case normalization is needed.
 func normalizeHTTPURI(uri string) (string, error) {
-	parsed, err := url.Parse(uri)
+	parsed, err := parseHTTPURI(uri)
 	if err != nil {
-		return "", fmt.Errorf("invalid HTTP URI %q: %w", uri, err)
+		return "", err
 	}
-	parsed.Scheme = strings.ToLower(parsed.Scheme)
 	return parsed.String(), nil
 }
 
@@ -140,28 +172,51 @@ func (s *HTTPSource) Inventory(ctx context.Context) (Inventory, error) {
 	}, nil
 }
 
-// headMetadata does a best-effort HEAD request to extract ETag and
-// Content-Length. Returns empty/zero on any failure — the caller
-// falls back to GET+hash.
+// headMetadata does a best-effort HEAD request to extract a strong
+// ETag and Content-Length. Returns empty/zero on any failure — the
+// caller falls back to GET+hash. Weak ETags (W/"...") are dropped;
+// see HTTPSource doc for why.
+//
+// Failures are logged at debug level to aid retro debugging without
+// surfacing as user-visible errors.
 func (s *HTTPSource) headMetadata(ctx context.Context) (etag string, size int64) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, s.uri, nil)
 	if err != nil {
+		console.Debugf("http: HEAD %s: build request failed: %v", s.uri, err)
 		return "", -1
 	}
 	resp, err := s.client.Do(req) //nolint:gosec // URL from parsed http:// URI
 	if err != nil {
+		console.Debugf("http: HEAD %s: %v", s.uri, err)
 		return "", -1
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		console.Debugf("http: HEAD %s returned HTTP %d (will GET+hash)", s.uri, resp.StatusCode)
 		return "", -1
 	}
-	return resp.Header.Get("ETag"), resp.ContentLength
+	rawETag := resp.Header.Get("ETag")
+	if strings.HasPrefix(rawETag, "W/") {
+		console.Debugf("http: HEAD %s returned weak ETag %s (ignored)", s.uri, rawETag)
+		rawETag = ""
+	}
+	return rawETag, resp.ContentLength
 }
 
 // Open returns a reader that streams the file from the URL. Go's
 // http.Client follows redirects by default, handling GitHub's
 // 302→CDN pattern transparently.
+//
+// Open does NOT verify the response body against the inventory digest;
+// the store performs that verification on PutFile (see store.PutFile).
+// If a mutable URL serves different bytes between Inventory() and
+// Open(), the digest mismatch will surface during ingress, not here.
+//
+// For HTTP sources without ETag and without Content-Length the file
+// is hashed once during Inventory() and then streamed again on Open()
+// — a 2x bandwidth cost. We accept that today rather than caching to
+// disk between phases; for multi-GB downloads from sources like that,
+// expect a re-download on every import.
 func (s *HTTPSource) Open(ctx context.Context, _ string) (io.ReadCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

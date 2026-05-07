@@ -492,6 +492,17 @@ func validateWeights(cfg *configFile, result *ValidationResult) {
 			seenNames[w.Name] = true
 		}
 
+		// Source is required. The schema's oneOf would also reject
+		// a missing source, but with a less actionable error
+		// ("must be a mapping"). Catch the missing case here so the
+		// user sees "source is required".
+		if len(w.Source.Items) == 0 {
+			result.AddError(&ValidationError{
+				Field:   idx + ".source",
+				Message: "source is required",
+			})
+		}
+
 		// Validate each source entry's patterns.
 		for j, src := range w.Source.Items {
 			srcIdx := fmt.Sprintf("%s.source[%d]", idx, j)

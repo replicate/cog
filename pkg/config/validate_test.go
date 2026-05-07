@@ -201,10 +201,37 @@ func TestValidateWeights(t *testing.T) {
 			},
 		},
 		{
+			// Multi-source weights are valid: include/exclude
+			// patterns are validated per-source, and the array
+			// form must pass the same checks as the single-source
+			// case.
+			name:  "valid with multiple sources",
+			image: image,
+			weights: []weightFile{
+				{Name: "merged", Target: "/src/weights/merged", Source: WeightSourceList{Items: []WeightSourceConfig{
+					{URI: "hf://acme/base", Include: []string{"*.safetensors"}},
+					{URI: "https://example.com/extras.bin"},
+				}}},
+			},
+		},
+		{
+			// A bad pattern in any source surfaces with that
+			// source's index, not the weight's.
+			name:  "invalid pattern in second source",
+			image: image,
+			weights: []weightFile{
+				{Name: "merged", Target: "/src/w", Source: WeightSourceList{Items: []WeightSourceConfig{
+					{URI: "hf://acme/base"},
+					{URI: "https://example.com/extras.bin", Include: []string{"!*.bin"}},
+				}}},
+			},
+			wantErr: "negation patterns",
+		},
+		{
 			name:    "missing source",
 			image:   image,
 			weights: []weightFile{{Name: "base", Target: "/src/weights"}},
-			wantErr: "must be a mapping",
+			wantErr: "source is required",
 		},
 		{
 			name: "weights without image",

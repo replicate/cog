@@ -1119,9 +1119,9 @@ func TestResolver_Build_PopulatesWeights(t *testing.T) {
 				SetDigest:      "sha256:setdigest123",
 				Size:           4096,
 				SizeCompressed: 2048,
-			Sources: []lockfile.WeightLockSource{{
-				URI: "file://./weights/model",
-			}},
+				Sources: []lockfile.WeightLockSource{{
+					URI: "file://./weights/model",
+				}},
 			},
 		},
 	}
@@ -1200,9 +1200,9 @@ func TestResolver_Build_WithWeightsIsBundle(t *testing.T) {
 				Digest:    "sha256:abc",
 				SetDigest: "sha256:set123",
 				Size:      1024,
-			Sources: []lockfile.WeightLockSource{{
-				URI: "file://./weights",
-			}},
+				Sources: []lockfile.WeightLockSource{{
+					URI: "file://./weights",
+				}},
 			},
 		},
 	}

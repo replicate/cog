@@ -116,10 +116,10 @@ func TestWeightStatuses_BarePathNormalization(t *testing.T) {
 		Version: 1,
 		Weights: []lockfile.WeightLockEntry{
 			{
-				Name:   "parakeet",
-				Target: "/src/weights",
+				Name:    "parakeet",
+				Target:  "/src/weights",
 				Sources: []lockfile.WeightLockSource{{URI: "file://./weights", Include: []string{}, Exclude: []string{}}},
-				Digest: "sha256:abc", SetDigest: "sha256:abc",
+				Digest:  "sha256:abc", SetDigest: "sha256:abc",
 				Layers: []lockfile.WeightLockLayer{layer("sha256:l1", 1024)},
 			},
 		},
@@ -346,7 +346,7 @@ func TestWeightStatuses_Orphaned(t *testing.T) {
 			{
 				Name: "old-weight", Target: "/weights/old",
 				Sources: []lockfile.WeightLockSource{{URI: "file://./old", Include: []string{}, Exclude: []string{}}},
-				Digest: "sha256:def", Size: 2048,
+				Digest:  "sha256:def", Size: 2048,
 			},
 		},
 	}
@@ -396,7 +396,7 @@ func TestWeightStatuses_NilSourceIsStale(t *testing.T) {
 			{
 				Name: "base", Target: "/w",
 				Sources: []lockfile.WeightLockSource{{URI: "", Include: []string{}, Exclude: []string{}}},
-				Digest: "sha256:abc",
+				Digest:  "sha256:abc",
 			},
 		},
 	}
