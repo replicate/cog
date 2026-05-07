@@ -1,16 +1,19 @@
 package internal
 
 import (
+	"cmp"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/env"
 )
 
@@ -224,4 +227,48 @@ func TestPythonMVersion(t *testing.T) {
 	require.Equal(t, "", variant)
 	require.Equal(t, "36", pythonVersion)
 	require.Equal(t, "linux_x86_64", platform)
+}
+
+func TestTorchCompatibilitySortingIsDeterministic(t *testing.T) {
+	cuda126 := "12.6"
+	cuda128 := "12.8"
+	cpu := "cpu"
+
+	compats := []config.TorchCompatibility{
+		{Torch: "2.10.0+cu128", Torchvision: "0.25.0", Torchaudio: "2.10.0", CUDA: &cuda128, ExtraIndexURL: "https://download.pytorch.org/whl/cu128/"},
+		{Torch: "2.10.0+cpu", Torchvision: "0.25.0", Torchaudio: "2.10.0", CUDA: &cpu, ExtraIndexURL: "https://download.pytorch.org/whl/cpu/"},
+		{Torch: "2.11.0+cu126", Torchvision: "0.26.0", Torchaudio: "2.11.0", CUDA: &cuda126, ExtraIndexURL: "https://download.pytorch.org/whl/cu126/"},
+		{Torch: "2.10.0+cu126", Torchvision: "0.25.0", Torchaudio: "2.10.0", CUDA: &cuda126, ExtraIndexURL: "https://download.pytorch.org/whl/cu126/"},
+		{Torch: "2.11.0+cpu", Torchvision: "0.26.0", Torchaudio: "2.11.0", CUDA: nil, ExtraIndexURL: "https://download.pytorch.org/whl/cpu/"},
+		{Torch: "2.11.0+cu128", Torchvision: "0.26.0", Torchaudio: "2.11.0", CUDA: &cuda128, ExtraIndexURL: "https://download.pytorch.org/whl/cu128/"},
+	}
+
+	// Apply the same sort logic used in FetchTorchCompatibilityMatrix
+	slices.SortFunc(compats, func(a, b config.TorchCompatibility) int {
+		aCuda := ""
+		bCuda := ""
+		if a.CUDA != nil {
+			aCuda = *a.CUDA
+		}
+		if b.CUDA != nil {
+			bCuda = *b.CUDA
+		}
+		return cmp.Or(
+			cmp.Compare(a.Torch, b.Torch),
+			cmp.Compare(a.Torchvision, b.Torchvision),
+			cmp.Compare(a.Torchaudio, b.Torchaudio),
+			cmp.Compare(aCuda, bCuda),
+			cmp.Compare(a.ExtraIndexURL, b.ExtraIndexURL),
+			cmp.Compare(a.FindLinks, b.FindLinks),
+		)
+	})
+
+	require.Equal(t, []config.TorchCompatibility{
+		{Torch: "2.10.0+cpu", Torchvision: "0.25.0", Torchaudio: "2.10.0", CUDA: &cpu, ExtraIndexURL: "https://download.pytorch.org/whl/cpu/"},
+		{Torch: "2.10.0+cu126", Torchvision: "0.25.0", Torchaudio: "2.10.0", CUDA: &cuda126, ExtraIndexURL: "https://download.pytorch.org/whl/cu126/"},
+		{Torch: "2.10.0+cu128", Torchvision: "0.25.0", Torchaudio: "2.10.0", CUDA: &cuda128, ExtraIndexURL: "https://download.pytorch.org/whl/cu128/"},
+		{Torch: "2.11.0+cpu", Torchvision: "0.26.0", Torchaudio: "2.11.0", CUDA: nil, ExtraIndexURL: "https://download.pytorch.org/whl/cpu/"},
+		{Torch: "2.11.0+cu126", Torchvision: "0.26.0", Torchaudio: "2.11.0", CUDA: &cuda126, ExtraIndexURL: "https://download.pytorch.org/whl/cu126/"},
+		{Torch: "2.11.0+cu128", Torchvision: "0.26.0", Torchaudio: "2.11.0", CUDA: &cuda128, ExtraIndexURL: "https://download.pytorch.org/whl/cu128/"},
+	}, compats)
 }

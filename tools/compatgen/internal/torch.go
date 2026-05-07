@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/url"
@@ -48,6 +49,26 @@ func FetchTorchCompatibilityMatrix() ([]config.TorchCompatibility, error) {
 	if len(compats) < 21 {
 		return nil, fmt.Errorf("PyTorch compatibility matrix only had %d rows, has the html changed?", len(compats))
 	}
+
+	// stable sort for deterministic output
+	slices.SortFunc(compats, func(a, b config.TorchCompatibility) int {
+		aCuda := ""
+		bCuda := ""
+		if a.CUDA != nil {
+			aCuda = *a.CUDA
+		}
+		if b.CUDA != nil {
+			bCuda = *b.CUDA
+		}
+		return cmp.Or(
+			cmp.Compare(a.Torch, b.Torch),
+			cmp.Compare(a.Torchvision, b.Torchvision),
+			cmp.Compare(a.Torchaudio, b.Torchaudio),
+			cmp.Compare(aCuda, bCuda),
+			cmp.Compare(a.ExtraIndexURL, b.ExtraIndexURL),
+			cmp.Compare(a.FindLinks, b.FindLinks),
+		)
+	})
 
 	return compats, nil
 }
