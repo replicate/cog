@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -278,4 +279,46 @@ func TestPlanImport_NoLockfile(t *testing.T) {
 	plan, err := planner.PlanImport(context.Background(), spec)
 	require.NoError(t, err)
 	assert.Equal(t, PlanStatusNew, plan.Status)
+}
+
+// TestPlanImport_DescribesPerSourceDrift verifies that drift caused by
+// mutating one source surfaces in plan.Changes against that specific
+// source index, not as an opaque combined-fingerprint diff.
+func TestPlanImport_DescribesPerSourceDrift(t *testing.T) {
+	projectDir := t.TempDir()
+	makeWeightDir(t, projectDir, "src-a", map[string][]byte{"a.json": []byte(`{"v":1}`)})
+	makeWeightDir(t, projectDir, "src-b", map[string][]byte{"b.json": []byte(`{"v":1}`)})
+
+	weights := []config.WeightSource{{
+		Name:   "w",
+		Target: "/src/w",
+		Source: config.WeightSourceList{Items: []config.WeightSourceConfig{
+			{URI: "src-a"}, {URI: "src-b"},
+		}},
+	}}
+	wb, _ := newTestBuilder(t, projectDir, weights)
+	spec, err := WeightSpecFromConfig(weights[0])
+	require.NoError(t, err)
+
+	_, err = wb.Build(context.Background(), spec)
+	require.NoError(t, err)
+
+	makeWeightDir(t, projectDir, "src-b", map[string][]byte{"b.json": []byte(`{"v":2}`)})
+
+	plan, err := wb.PlanImport(context.Background(), spec)
+	require.NoError(t, err)
+	assert.Equal(t, PlanStatusUpstreamChanged, plan.Status)
+	require.NotEmpty(t, plan.Changes)
+
+	var b1Mentioned, a0Mentioned bool
+	for _, c := range plan.Changes {
+		if strings.Contains(c, "source[1]") {
+			b1Mentioned = true
+		}
+		if strings.Contains(c, "source[0]") {
+			a0Mentioned = true
+		}
+	}
+	assert.True(t, b1Mentioned, "drift must name source[1]: got %v", plan.Changes)
+	assert.False(t, a0Mentioned, "drift must not name source[0] (unchanged): got %v", plan.Changes)
 }

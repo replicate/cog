@@ -5,9 +5,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/go-version"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v4"
 )
@@ -770,6 +772,135 @@ func TestWeightsWithSourceJSON(t *testing.T) {
 	require.Equal(t, "/weights/model-v2", config.Weights[1].Target)
 	require.NotEmpty(t, config.Weights[1].Source.Items)
 	require.Equal(t, "./local-weights/", config.Weights[1].Source.Items[0].URI)
+}
+
+// TestWeightsMultiSourceYAML verifies that the array form of `source:`
+// parses into a multi-element WeightSourceList in declaration order.
+func TestWeightsMultiSourceYAML(t *testing.T) {
+	yamlString := `build:
+  python_version: "3.12"
+image: "registry.example.com/acme/my-model"
+predict: "predict.py:Predictor"
+
+weights:
+  - name: merged
+    target: "/weights/merged"
+    source:
+      - uri: "hf://acme/base"
+        include: ["*.safetensors"]
+      - uri: "https://example.com/extras/extras.bin"
+`
+
+	config, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+	require.Len(t, config.Weights, 1)
+
+	w := config.Weights[0]
+	require.Len(t, w.Source.Items, 2)
+	require.Equal(t, "hf://acme/base", w.Source.Items[0].URI)
+	require.Equal(t, []string{"*.safetensors"}, w.Source.Items[0].Include)
+	require.Equal(t, "https://example.com/extras/extras.bin", w.Source.Items[1].URI)
+	require.Empty(t, w.Source.Items[1].Include)
+}
+
+// TestWeightsMultiSourceJSON mirrors TestWeightsMultiSourceYAML for the
+// JSON parser path, which has its own UnmarshalJSON implementation.
+func TestWeightsMultiSourceJSON(t *testing.T) {
+	jsonString := `{
+		"build": {"python_version": "3.12"},
+		"image": "registry.example.com/acme/my-model",
+		"predict": "predict.py:Predictor",
+		"weights": [
+			{
+				"name": "merged",
+				"target": "/weights/merged",
+				"source": [
+					{"uri": "hf://acme/base"},
+					{"uri": "https://example.com/extras/extras.bin"}
+				]
+			}
+		]
+	}`
+
+	var cfg Config
+	require.NoError(t, json.Unmarshal([]byte(jsonString), &cfg))
+	require.Len(t, cfg.Weights, 1)
+	require.Len(t, cfg.Weights[0].Source.Items, 2)
+	require.Equal(t, "hf://acme/base", cfg.Weights[0].Source.Items[0].URI)
+	require.Equal(t, "https://example.com/extras/extras.bin", cfg.Weights[0].Source.Items[1].URI)
+}
+
+// TestWeightSourceList_MarshalRoundTrip verifies that single-element
+// lists serialize as a plain mapping/object and multi-element lists as
+// a sequence/array, in both YAML and JSON. The contract is that input
+// shape round-trips without surprise — a single-source weight written
+// as `source: {uri: ...}` should not come back as `source: [{uri:
+// ...}]` after a Marshal/Unmarshal cycle.
+func TestWeightSourceList_MarshalRoundTrip(t *testing.T) {
+	tests := []struct {
+		name       string
+		list       WeightSourceList
+		isMulti    bool // true: must serialize as a sequence/array
+		wantURISub string
+	}{
+		{
+			name: "single source emits mapping not sequence",
+			list: WeightSourceList{Items: []WeightSourceConfig{
+				{URI: "hf://acme/base"},
+			}},
+			isMulti:    false,
+			wantURISub: "hf://acme/base",
+		},
+		{
+			name: "multi source emits sequence",
+			list: WeightSourceList{Items: []WeightSourceConfig{
+				{URI: "hf://acme/base"},
+				{URI: "https://example.com/extras.bin"},
+			}},
+			isMulti:    true,
+			wantURISub: "hf://acme/base",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// YAML: a sequence starts with "- ", a mapping does not.
+			// Trim leading whitespace before checking the first byte
+			// so doc-level YAML headers don't trip the assertion.
+			yamlBytes, err := yaml.Marshal(tc.list)
+			require.NoError(t, err)
+			yamlStr := strings.TrimSpace(string(yamlBytes))
+			assert.Contains(t, yamlStr, tc.wantURISub)
+			if tc.isMulti {
+				assert.True(t, strings.HasPrefix(yamlStr, "- "),
+					"multi-element list must serialize as YAML sequence, got: %s", yamlStr)
+			} else {
+				assert.False(t, strings.HasPrefix(yamlStr, "- "),
+					"single-element list must serialize as YAML mapping, got: %s", yamlStr)
+			}
+
+			// JSON: an array starts with '[', an object with '{'.
+			jsonBytes, err := json.Marshal(tc.list)
+			require.NoError(t, err)
+			assert.Contains(t, string(jsonBytes), tc.wantURISub)
+			if tc.isMulti {
+				assert.Equal(t, byte('['), jsonBytes[0],
+					"multi-element list must serialize as JSON array, got: %s", jsonBytes)
+			} else {
+				assert.Equal(t, byte('{'), jsonBytes[0],
+					"single-element list must serialize as JSON object, got: %s", jsonBytes)
+			}
+
+			// Round-trip back through the unmarshaler and verify
+			// the Items slice matches the original.
+			var roundtrip WeightSourceList
+			require.NoError(t, yaml.Unmarshal(yamlBytes, &roundtrip))
+			assert.Equal(t, tc.list.Items, roundtrip.Items)
+
+			var roundtripJSON WeightSourceList
+			require.NoError(t, json.Unmarshal(jsonBytes, &roundtripJSON))
+			assert.Equal(t, tc.list.Items, roundtripJSON.Items)
+		})
+	}
 }
 
 func TestSDKVersionConfig(t *testing.T) {
