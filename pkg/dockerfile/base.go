@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
@@ -82,6 +83,7 @@ type BaseImageGenerator struct {
 	command             command.Command
 	client              registry.Client
 	breakSystemPackages bool
+	buildContextDir     string
 }
 
 func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
@@ -189,16 +191,11 @@ func (g *BaseImageGenerator) GenerateDockerfile(ctx context.Context) (string, er
 		return "", err
 	}
 
-	dc, err := dotcog.OpenTemp()
+	buildDir, cleanup, err := g.buildDir()
 	if err != nil {
 		return "", err
 	}
-	defer dc.Close()
-
-	buildDir, err := dc.Path("build")
-	if err != nil {
-		return "", err
-	}
+	defer cleanup()
 
 	generator, err := NewStandardGenerator(conf, "", buildDir, "", g.command, g.client, false)
 	if err != nil {
@@ -218,6 +215,30 @@ func (g *BaseImageGenerator) GenerateDockerfile(ctx context.Context) (string, er
 
 func (g *BaseImageGenerator) SetBreakSystemPackages(breakSystemPackages bool) {
 	g.breakSystemPackages = breakSystemPackages
+}
+
+func (g *BaseImageGenerator) SetBuildContextDir(buildContextDir string) {
+	g.buildContextDir = buildContextDir
+}
+
+func (g *BaseImageGenerator) buildDir() (string, func(), error) {
+	if g.buildContextDir != "" {
+		if err := os.MkdirAll(g.buildContextDir, 0o755); err != nil {
+			return "", func() {}, fmt.Errorf("create build context dir: %w", err)
+		}
+		return g.buildContextDir, func() {}, nil
+	}
+
+	dc, err := dotcog.OpenTemp()
+	if err != nil {
+		return "", func() {}, err
+	}
+	buildDir, err := dc.Path("build")
+	if err != nil {
+		_ = dc.Close()
+		return "", func() {}, err
+	}
+	return buildDir, func() { _ = dc.Close() }, nil
 }
 
 func (g *BaseImageGenerator) makeConfig() (*config.Config, error) {
