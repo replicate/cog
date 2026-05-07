@@ -318,12 +318,13 @@ func torchGPUPackage(ver string, cuda string) (name, cpuVersion, findLinks, extr
 		if latest == nil {
 			latest = &compat
 		} else {
-			greater, err := versionGreater(*compat.CUDA, *latest.CUDA)
+			cudaGreater, err := versionGreater(*compat.CUDA, *latest.CUDA)
 			if err != nil {
 				// should never happen
 				panic(fmt.Sprintf("Invalid CUDA version: %s", err))
 			}
-			if greater {
+			cudaEqual := *compat.CUDA == *latest.CUDA
+			if cudaGreater || (cudaEqual && version.Greater(compat.TorchVersion(), latest.TorchVersion())) {
 				latest = &compat
 			}
 		}
