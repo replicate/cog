@@ -174,9 +174,9 @@ models:
         expect:
           type: file_exists
 
-  # ── Local fixture models (schema comparison) ─────────────────────────
+  # ── Local fixture models ─────────────────────────────────────────────
   # These use repo: local and path: relative to fixtures/models/.
-  # They cover the full input type matrix for schema-compare testing.
+  # They cover the full input type matrix for build and prediction testing.
 
   - name: fixture-scalar-types
     repo: local

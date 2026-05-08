@@ -57,7 +57,6 @@ It reads the same manifest.yaml format as the Python version.`,
 	rootCmd.AddCommand(newRunCommand())
 	rootCmd.AddCommand(newBuildCommand())
 	rootCmd.AddCommand(newListCommand())
-	rootCmd.AddCommand(newSchemaCompareCommand())
 
 	return rootCmd
 }

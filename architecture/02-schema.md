@@ -33,27 +33,9 @@ Without the schema, consumers would have no way to know:
 
 ## How It's Generated
 
-Cog supports two schema generation paths:
+Cog generates schemas statically. The Go schema generator parses Python source code at `cog build` time using [tree-sitter](https://tree-sitter.github.io/tree-sitter/). No Python process is invoked and no container boots to discover the model interface. The schema is produced from the model's source files before Docker build begins, which keeps schema generation deterministic, fast, and independent of the model's installed dependencies.
 
-### Static Path (default)
-
-The **static path** parses Python source code at `cog build` time using [tree-sitter](https://tree-sitter.github.io/tree-sitter/) in Go. No Python runtime is invoked, no container boots — the schema is produced from the model's source files before Docker build even begins. This makes schema generation deterministic, fast, and independent of the model's runtime dependencies. Static generation is the default for all commands and requires SDK >= 0.17.0.
-
-If the static parser encounters a type it can't resolve (for example, a `BaseModel` subclass exported from a package `__init__.py` that the file-based resolver can't find), it **falls back to the runtime path** automatically with a warning — so builds don't break due to static-parser limitations. Hard user errors (parse errors, unsupported features like `default_factory`) still fail fast with a clear static-generator error rather than being swept into the fallback.
-
-### Runtime Path (legacy fallback)
-
-The **runtime path** boots the built Docker container and runs `python -m cog.command.openapi_schema` to introspect the model at runtime. It uses Python's `inspect` module and `typing.get_type_hints()` to extract parameter types, then builds OpenAPI JSON from a hand-rolled ADT type system (dataclasses in `_adt.py`). No pydantic is involved in schema generation -- `cog.BaseModel` is a dataclass wrapper, not pydantic.
-
-The runtime path is the default for SDK versions < 0.17.0 (pydantic-based schemas the static parser cannot analyze) and for the static-path fallback described above. It can be forced globally by setting `COG_LEGACY_SCHEMA=1`:
-
-```bash
-COG_LEGACY_SCHEMA=1 cog build -t my-model
-```
-
-This opt-out exists as a lifeline for users pinned to old SDKs or hitting static-parser bugs that haven't been resolved yet.
-
-Local commands (`cog serve`, `cog predict`, `cog train`) need a schema to parse `-i` input flags into correctly-typed Python objects. Because those commands run before the post-build legacy runtime generation step, they only work when the static path produced a schema — setting `COG_LEGACY_SCHEMA=1` for a `cog predict` build leaves the image without a bundled schema and `-i` parsing is unavailable.
+If the static parser encounters a type it can't resolve, the build fails with a typed schema error. Hard user errors such as parse failures and unsupported features like `default_factory` also fail before Docker build starts.
 
 ```mermaid
 flowchart LR
@@ -90,7 +72,7 @@ flowchart LR
 7. **Resolve output type** — recursively resolve the return type annotation into a `SchemaType`
 8. **Generate OpenAPI** — convert the extracted `PredictorInfo` into a full OpenAPI 3.0.2 JSON document
 
-If any step fails with an unresolvable type, the build falls back to the runtime path.
+If any step fails, the build stops before Docker starts.
 
 ### Cross-File Resolution
 
@@ -136,7 +118,7 @@ external types cannot be statically analyzed. Define it as a BaseModel
 subclass in your predict file, or provide a .pyi stub
 ```
 
-For external values that are already JSON-shaped but not visible to the schema resolver, `Annotated[..., cog.Opaque]` is the escape hatch. It tells Cog to treat the value as an opaque JSON object while preserving container shape: `Annotated[ExternalType, cog.Opaque]` becomes an object, and `Annotated[list[ExternalType], cog.Opaque]` becomes an array of objects. The same shape is preserved for fields inside `cog.BaseModel` outputs and for supported pydantic models on the runtime fallback path.
+For external values that are already JSON-shaped but not visible to the schema resolver, `Annotated[..., cog.Opaque]` is the escape hatch. It tells Cog to treat the value as an opaque JSON object while preserving container shape: `Annotated[ExternalType, cog.Opaque]` becomes an object, and `Annotated[list[ExternalType], cog.Opaque]` becomes an array of objects. The same shape is preserved for fields inside `cog.BaseModel` outputs and supported pydantic models.
 
 ## SchemaType: The Type System
 
@@ -259,17 +241,13 @@ Also written to `.cog/openapi_schema.json` inside the image for the runtime to s
 
 ### Override and Configuration
 
-| Environment Variable      | Purpose                                                                                                                                         |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `COG_LEGACY_SCHEMA=1`     | Force the legacy runtime schema path (opt-out of the default static generator). Use when pinned to SDK < 0.17.0 or hitting a static-parser bug. |
-| `COG_OPENAPI_SCHEMA=path` | Skip generation entirely and use a pre-built schema file.                                                                                       |
+| Environment Variable      | Purpose                                                   |
+| ------------------------- | --------------------------------------------------------- |
+| `COG_OPENAPI_SCHEMA=path` | Skip generation entirely and use a pre-built schema file. |
 
 ```bash
-# Default: static schema generation, falls back to runtime on parser limits
+# Default: static schema generation
 cog build -t my-model
-
-# Force the legacy runtime path (pinned to old SDK, debugging static parser, etc.)
-COG_LEGACY_SCHEMA=1 cog build -t my-model
 
 # Use a pre-built schema file
 COG_OPENAPI_SCHEMA=my_schema.json cog build
@@ -333,17 +311,12 @@ A simplified example showing a multi-file predictor with structured output:
 
 ## Code References
 
-| File                                   | Purpose                                                                                                                              |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `pkg/schema/schema_type.go`            | `SchemaType` ADT, `ResolveSchemaType()`, `JSONSchema()` generation                                                                   |
-| `pkg/schema/types.go`                  | `PredictorInfo`, `PrimitiveType`, `FieldType`, `InputField`, `ImportContext`                                                         |
-| `pkg/schema/python/parser.go`          | Tree-sitter Python parser, `ParsePredictor()`, cross-file resolution                                                                 |
-| `pkg/schema/openapi.go`                | OpenAPI document assembly from `PredictorInfo`                                                                                       |
-| `pkg/schema/generator.go`              | Top-level `Generate()`, `GenerateCombined()`, `Parser` type                                                                          |
-| `pkg/schema/errors.go`                 | Typed error kinds (`ErrUnresolvableType`, `ErrOptionalOutput`, etc.)                                                                 |
-| `pkg/image/build.go`                   | `canUseStaticSchemaGen()` -- opt-in gate, `generateStaticSchema()` -- entry point, fallback to runtime path on `ErrUnresolvableType` |
-| `pkg/image/openapi_schema.go`          | `GenerateOpenAPISchema()` -- runtime path (boots container, runs `python -m cog.command.openapi_schema`)                             |
-| `python/cog/_adt.py`                   | Internal ADT types for Python-side predictor introspection                                                                           |
-| `python/cog/_inspector.py`             | Python-side predictor inspector (runtime introspection)                                                                              |
-| `python/cog/_schemas.py`               | Python-side OpenAPI schema generation from inspected predictor info                                                                  |
-| `python/cog/command/openapi_schema.py` | CLI entry point for `python -m cog.command.openapi_schema` (invoked by runtime path)                                                 |
+| File                          | Purpose                                                              |
+| ----------------------------- | -------------------------------------------------------------------- |
+| `pkg/schema/schema_type.go`   | `SchemaType` ADT, `ResolveSchemaType()`, `JSONSchema()` generation   |
+| `pkg/schema/types.go`         | `PredictorInfo`, `PrimitiveType`, `FieldType`, `InputField`, imports |
+| `pkg/schema/python/`          | Tree-sitter Python parser and cross-file resolution                  |
+| `pkg/schema/openapi.go`       | OpenAPI document assembly from `PredictorInfo`                       |
+| `pkg/schema/generator.go`     | Top-level `Generate()`, `GenerateCombined()`, `Parser` type          |
+| `pkg/schema/errors.go`        | Typed schema error kinds                                             |
+| `pkg/image/build.go`          | Build-time schema generation entry point and schema file validation  |

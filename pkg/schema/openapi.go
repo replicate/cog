@@ -274,12 +274,8 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 
 	info.Inputs.Entries(func(name string, field InputField) {
 		// Each input property is a plain map[string]any. Go's encoding/json
-		// emits map keys in alphabetical order on marshal, which matches the
-		// observable order of the legacy runtime path (it round-trips
-		// through map[string]any in pkg/image/openapi_schema.go). Preserving
-		// that order across the two generators keeps the bundled schema
-		// byte-identical between static and runtime for the same predictor
-		// and avoids breaking integration tests that assert exact substrings
+		// emits map keys in alphabetical order on marshal, keeping bundled
+		// schema output deterministic for tests that assert exact substrings
 		// (see dict_input.txtar, list_dict_input.txtar, typing_dict_input.txtar).
 		prop := map[string]any{
 			"x-order": field.Order,
@@ -287,8 +283,7 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 
 		if len(field.Choices) > 0 {
 			// Choices -> use allOf with $ref to enum schema.
-			// Use the parameter name as-is (lowercase) to match runtime schema
-			// generation, which uses the Python attribute name directly.
+			// Use the parameter name as-is because it is the schema component name.
 			enumName := name
 			enumType := field.FieldType.Primitive.JSONType()
 			typeStr, _ := enumType["type"].(string)
@@ -322,9 +317,8 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 
 		// Determine effective default. A default of None on a non-nullable
 		// field is not a real default — it's a Python pattern meaning "this
-		// field has no default; generate one at runtime" (e.g. random seeds).
-		// The runtime schema generator treats these as required with no default,
-		// so we match that behavior by ignoring the None default.
+		// field has no default; generate one when the predictor runs" (e.g. random
+		// seeds). Treat these as required with no default by ignoring the None.
 		//
 		// Secret is the one exception: `api_key: Secret = Input(default=None)`
 		// is a widespread, documented idiom for an optional credential that
@@ -407,7 +401,7 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 }
 
 // ---------------------------------------------------------------------------
-// Post-processing (mirrors openapi_schema.py fixups)
+// Post-processing for OpenAPI 3.0 compatibility
 // ---------------------------------------------------------------------------
 
 // removeTitleNextToRef removes "title" from any map that also has "$ref".

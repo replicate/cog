@@ -1,0 +1,31 @@
+# Test that unresolvable static schema types fail the build.
+#
+# The predictor returns a BaseModel subclass imported from a local package
+# (mypackage/__init__.py). The static parser resolves file-backed modules, not
+# package __init__.py exports, so this import stays unresolved and the build
+# should stop before Docker starts.
+
+! cog build -t $TEST_IMAGE
+stderr 'cannot resolve type .Output. .imported from .mypackage.'
+! stderr 'Falling back'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- mypackage/__init__.py --
+from cog import BaseModel
+
+
+class Output(BaseModel):
+    text: str
+
+-- predict.py --
+from cog import BasePredictor
+from mypackage import Output
+
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> Output:
+        return Output(text=prompt + " world")

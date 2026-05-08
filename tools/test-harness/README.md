@@ -27,9 +27,6 @@ go run . run --no-gpu --output json --output-file results/report.json
 # Build images only (no predictions)
 go run . build --no-gpu
 
-# Compare static vs runtime schema generation
-go run . schema-compare --no-gpu
-
 # Use a locally-built cog binary
 go run . run --no-gpu --cog-binary ../../dist/go/darwin-arm64/cog
 
@@ -66,13 +63,12 @@ inputs:
 ## CLI Reference
 
 ```text
-usage: test-harness {run,build,list,schema-compare} [options]
+usage: test-harness {run,build,list} [options]
 
 Commands:
   run              Build and test models (full pipeline)
   build            Build Docker images only (no predictions)
   list             List models defined in the manifest
-  schema-compare   Compare static vs runtime schema generation
 
 Common options:
   --manifest PATH       Path to manifest.yaml
@@ -87,7 +83,7 @@ Common options:
   --clean-images        Remove Docker images after run (default: keep them)
   --keep-outputs        Preserve prediction outputs and print the work directory path
 
-Run/schema-compare options:
+Run options:
   --output {console,json}   Output format
   --output-file PATH        Write JSON report to file
 ```

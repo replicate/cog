@@ -2,8 +2,7 @@
 Internal ADT (Abstract Data Types) for predictor introspection.
 
 This module defines the type system used internally for introspecting
-predictor inputs and outputs, generating OpenAPI schemas, and validating
-input values.
+predictor inputs and outputs, and validating input values.
 """
 
 import dataclasses

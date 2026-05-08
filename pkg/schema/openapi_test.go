@@ -201,7 +201,7 @@ func TestInputDefaultValue(t *testing.T) {
 func TestNoneDefaultOnRequiredTypeIsRequired(t *testing.T) {
 	// When a non-optional field has default=None (e.g. seed: int = Input(default=None)),
 	// the None is not a valid default — the field should be treated as required
-	// with no default emitted, matching the runtime schema behavior.
+	// with no default emitted.
 	inputs := NewOrderedMap[string, InputField]()
 	inputs.Set("prompt", InputField{
 		Name:      "prompt",

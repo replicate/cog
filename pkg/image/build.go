@@ -41,6 +41,8 @@ import (
 // via --from=cog_build.
 const cogBuildContextName = "cog_build"
 
+const minimumStaticSchemaSDKVersion = "0.17.0"
+
 // defaultExcludePatterns filters .cog/ out of the project context mount
 // so weight blobs, mount dirs, and build caches are never sent to the
 // Docker daemon.
@@ -116,48 +118,23 @@ func Build(
 		rootWeightsFile: filepath.Join(dc.Root(), "weights.json"),
 	}
 
-	// Determine whether to use the static schema generator (Go tree-sitter) or
-	// the legacy runtime path (boot container + python introspection).
-	//
-	// Static generation is the default for all commands. The legacy runtime
-	// path (boot container + `python -m cog.command.openapi_schema`) is opt-in
-	// via COG_LEGACY_SCHEMA=1 for users pinned to SDKs < 0.17.0 or hitting
-	// static-parser edge cases that haven't been resolved yet. On static-
-	// parser errors that look like incomplete type resolution rather than
-	// hard user bugs (ErrUnresolvableType), `cog build` automatically falls
-	// back to the runtime path — the opt-out flag is only needed when users
-	// want to force the runtime path from the start.
-	//
-	// For SDK versions < 0.17.0 (pydantic-based schemas), the static parser
-	// cannot analyze the model and we silently route to the runtime path.
 	needsSchema := !skipSchemaValidation && schemaFile == ""
-	useStatic := needsSchema && useStaticSchemaGen(cfg)
 
 	// --- Pre-build static schema generation ---
-	// When using the static path, generate schema BEFORE the Docker build so we
-	// fail fast on schema errors and the schema file is in the build context.
+	// Generate schema before the Docker build so schema errors fail fast and the
+	// schema file is available in the build context.
 	var schemaJSON []byte
 	switch {
-	case useStatic:
+	case needsSchema:
+		if err := validateStaticSchemaSDKVersion(cfg); err != nil {
+			return "", err
+		}
 		console.Debug("Generating model schema (static)...")
 		data, err := generateStaticSchema(cfg, dir)
-		if err == nil {
-			schemaJSON = data
-			break
+		if err != nil {
+			return "", fmt.Errorf("image build failed: %w", err)
 		}
-
-		// For `cog build` only: fall back to the post-build legacy runtime
-		// schema generation which can handle types that require Python import
-		// (e.g. package __init__.py modules, pydantic v2 BaseModel subclasses).
-		var se *schema.SchemaError
-		if !skipLabels && errors.As(err, &se) && se.Kind == schema.ErrUnresolvableType {
-			console.Warnf("Static schema generation failed: %s", err)
-			console.Warn("Falling back to legacy runtime schema generation...")
-			// leave schemaJSON nil — the post-build legacy path will handle it
-			break
-		}
-
-		return "", fmt.Errorf("image build failed: %w", err)
+		schemaJSON = data
 	case !skipSchemaValidation && schemaFile != "":
 		console.Infof("Validating model schema from %s...", schemaFile)
 		data, err := os.ReadFile(schemaFile)
@@ -320,38 +297,6 @@ func Build(
 		}
 	}
 
-	// --- Post-build legacy schema generation ---
-	// For SDK < 0.17.0 (or when static gen was not used), generate the schema
-	// by running the built image with python -m cog.command.openapi_schema.
-	// This must run before the skipLabels early return so that cog train/predict/serve
-	// have a schema available for input validation and -i flag parsing.
-	if len(schemaJSON) == 0 && !skipSchemaValidation {
-		console.Info("Validating model schema...")
-		enableGPU := cfg.Build != nil && cfg.Build.GPU
-		// When excludeSource is true (cog serve/predict/train), /src was not
-		// COPYed into the image, so volume-mount the project directory.
-		sourceDir := ""
-		if excludeSource {
-			sourceDir = dir
-		}
-		legacySchema, err := GenerateOpenAPISchema(ctx, dockerCommand, tmpImageId, enableGPU, sourceDir)
-		if err != nil {
-			return "", fmt.Errorf("Failed to get type signature: %w", err)
-		}
-		data, err := json.Marshal(legacySchema)
-		if err != nil {
-			return "", fmt.Errorf("Failed to convert type signature to JSON: %w", err)
-		}
-		schemaJSON = data
-
-		if err := writeAndValidateSchema(schemaJSON, bp.rootSchemaFile); err != nil {
-			return "", err
-		}
-		if err := files.Copy(bp.rootSchemaFile, bp.schemaFile); err != nil {
-			return "", err
-		}
-	}
-
 	bundleFiles := collectBundleFiles(schemaJSON, &bp)
 
 	// When skipLabels is true (cog exec/predict/serve/train), skip the expensive
@@ -494,78 +439,6 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 	return imageID, nil
 }
 
-// staticSchemaGenMinSDKVersion is the minimum SDK version that supports
-// static schema generation. Older SDK versions use pydantic-based runtime
-// introspection and must fall back to the legacy Docker-based path.
-const staticSchemaGenMinSDKVersion = "0.17.0"
-
-// legacySchemaEnvVar is the opt-out toggle: setting it to a truthy value
-// forces the legacy runtime schema path instead of the default static path.
-// Kept as a lifeline for users pinned to old SDKs or hitting static-parser
-// bugs that haven't been resolved yet.
-const legacySchemaEnvVar = "COG_LEGACY_SCHEMA"
-
-// useStaticSchemaGen returns true when the static schema generator should
-// run. Static generation is the default; the user can force the legacy
-// runtime path by setting COG_LEGACY_SCHEMA=1 (or "true"). The static path
-// is also bypassed when the configured SDK version is explicitly pinned
-// below staticSchemaGenMinSDKVersion (older SDKs use pydantic-based
-// schemas the static parser cannot analyze).
-func useStaticSchemaGen(cfg *config.Config) bool {
-	if isTruthyEnv(legacySchemaEnvVar) {
-		return false
-	}
-
-	sdkVersion := resolveSDKVersion(cfg)
-	if sdkVersion != "" {
-		base := sdkVersion
-		if m := wheels.BaseVersionRe.FindString(base); m != "" {
-			base = m
-		}
-		if ver, err := cogversion.NewVersion(base); err == nil {
-			minVer := cogversion.MustVersion(staticSchemaGenMinSDKVersion)
-			if !ver.GreaterOrEqual(minVer) {
-				console.Infof("SDK version %s < %s, using legacy runtime schema generation", sdkVersion, staticSchemaGenMinSDKVersion)
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// isTruthyEnv reports whether the named env var is set to a truthy value
-// ("1" or "true", case-insensitive). Empty and unset are both false.
-func isTruthyEnv(name string) bool {
-	v := strings.ToLower(os.Getenv(name))
-	return v == "1" || v == "true"
-}
-
-// resolveSDKVersion determines the SDK version that will be installed in the
-// container, using the same precedence as the Dockerfile generator:
-//  1. COG_SDK_WHEEL env var (parse version from "pypi:X.Y.Z")
-//  2. build.sdk_version in cog.yaml
-//  3. Auto-detect from dist/ wheel filename
-//  4. Empty string (latest/unpinned)
-func resolveSDKVersion(cfg *config.Config) string {
-	if envVal := os.Getenv(wheels.CogSDKWheelEnvVar); envVal != "" {
-		wc := wheels.ParseWheelValue(envVal)
-		if wc != nil && wc.Source == wheels.WheelSourcePyPI && wc.Version != "" {
-			return wc.Version
-		}
-		return ""
-	}
-	if cfg.Build != nil && cfg.Build.SDKVersion != "" {
-		if cfg.Build.SDKVersion == wheels.PreReleaseSentinel {
-			return "" // unpinned; latest pre-release resolved at build time
-		}
-		return cfg.Build.SDKVersion
-	}
-	if v := wheels.DetectLocalSDKVersion(); v != "" {
-		return v
-	}
-	return ""
-}
-
 // generateStaticSchema runs the Go tree-sitter parser to produce the OpenAPI schema.
 // When both predict and train are configured, it generates both and merges them.
 func generateStaticSchema(cfg *config.Config, dir string) ([]byte, error) {
@@ -574,6 +447,41 @@ func generateStaticSchema(cfg *config.Config, dir string) ([]byte, error) {
 	}
 	return schema.GenerateCombined(dir, cfg.Predict, cfg.Train, python.ParsePredictor)
 
+}
+
+func validateStaticSchemaSDKVersion(cfg *config.Config) error {
+	sdkVersion := explicitSDKVersion(cfg)
+	if sdkVersion == "" {
+		return nil
+	}
+
+	base := sdkVersion
+	if m := wheels.BaseVersionRe.FindString(base); m != "" {
+		base = m
+	}
+	ver, err := cogversion.NewVersion(base)
+	if err != nil {
+		return nil
+	}
+	minVer := cogversion.MustVersion(minimumStaticSchemaSDKVersion)
+	if ver.GreaterOrEqual(minVer) {
+		return nil
+	}
+	return fmt.Errorf("SDK version %s is not supported by static schema generation; use %s or newer", sdkVersion, minimumStaticSchemaSDKVersion)
+}
+
+func explicitSDKVersion(cfg *config.Config) string {
+	if envVal := os.Getenv(wheels.CogSDKWheelEnvVar); envVal != "" {
+		wc := wheels.ParseWheelValue(envVal)
+		if wc != nil && wc.Source == wheels.WheelSourcePyPI && wc.Version != "" {
+			return wc.Version
+		}
+		return ""
+	}
+	if cfg.Build != nil && cfg.Build.SDKVersion != "" && cfg.Build.SDKVersion != wheels.PreReleaseSentinel {
+		return cfg.Build.SDKVersion
+	}
+	return ""
 }
 
 // writeAndValidateSchema validates the schema JSON as a well-formed OpenAPI 3.0
