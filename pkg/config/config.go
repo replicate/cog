@@ -433,6 +433,11 @@ func validateCudaVersion(cudaVersion string) error {
 		return fmt.Errorf("invalid major version in CUDA version %q", cudaVersion)
 	}
 
+	_, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return fmt.Errorf("invalid minor version in CUDA version %q", cudaVersion)
+	}
+
 	if major < MinimumMajorCudaVersion {
 		return fmt.Errorf("minimum supported CUDA version is %d, requested %q", MinimumMajorCudaVersion, cudaVersion)
 	}
