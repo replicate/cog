@@ -119,6 +119,35 @@ func TestHTTPSource_Inventory_NoETag_FallsBackToSHA256(t *testing.T) {
 	assert.Equal(t, Fingerprint(expectedDigest), inv.Fingerprint)
 }
 
+func TestHTTPSource_Inventory_WeakETag_FallsBackToSHA256(t *testing.T) {
+	body := []byte("fake model weights")
+	h := sha256.Sum256(body)
+	expectedDigest := "sha256:" + hex.EncodeToString(h[:])
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", `W/"weak-etag-123"`)
+		w.Header().Set("Content-Length", "18")
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	src, err := NewHTTPSource(srv.URL + "/model.pth")
+	require.NoError(t, err)
+
+	inv, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+
+	require.Len(t, inv.Files, 1)
+	assert.Equal(t, expectedDigest, inv.Files[0].Digest)
+	assert.Equal(t, Fingerprint(expectedDigest), inv.Fingerprint,
+		"weak ETag must be ignored; fingerprint should fall back to sha256")
+}
+
 func TestHTTPSource_Open(t *testing.T) {
 	body := []byte("model data here")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
