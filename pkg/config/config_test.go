@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path"
 	"path/filepath"
@@ -48,6 +49,11 @@ func TestValidateCudaVersion(t *testing.T) {
 		{
 			name:        "LessThanMinimum",
 			input:       "9.1",
+			expectedErr: true,
+		},
+		{
+			name:        "InvalidMinorVersion",
+			input:       "11.A",
 			expectedErr: true,
 		},
 	}
@@ -962,4 +968,24 @@ predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
 	require.Equal(t, "prerelease", conf.Build.SDKVersion)
+}
+
+// TestInvalidWeightsSourceDoesNotStackOverflow is a regression test for a
+// stack overflow caused by the yaml v4 library's LoadErrors.Is() method,
+// which has infinite recursion when errors.Is traverses the error chain.
+// When weights.source is an array of strings (not objects), yaml.Unmarshal
+// returns a LoadErrors. If we wrap it with %w, any caller doing errors.Is
+// on the returned error triggers the recursion. We use %v instead.
+func TestInvalidWeightsSourceDoesNotStackOverflow(t *testing.T) {
+	data := []byte(`weights:
+  - name: openai-privacy-filter
+    source:
+      - hf://openai/privacy-filter
+    target: /src/weights/openai-privacy-filter`)
+
+	_, err := FromYAML(data)
+	require.Error(t, err)
+
+	// This must not panic or stack overflow
+	require.False(t, errors.Is(err, errors.New("some error")))
 }

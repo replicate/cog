@@ -29,8 +29,13 @@ func parseBytes(contents []byte) (*configFile, error) {
 	}
 
 	if err := yaml.Unmarshal(contents, cfg); err != nil {
+		// NOTE: We intentionally use %v instead of %w here.
+		// The yaml v4 library's LoadErrors type has a buggy Is() method
+		// that causes infinite recursion when errors.Is traverses the
+		// error chain. By using %v we break the chain and prevent
+		// stack overflows when callers check the error.
 		return nil, &ParseError{
-			Err: fmt.Errorf("invalid YAML: %w", err),
+			Err: fmt.Errorf("invalid YAML: %v", err),
 		}
 	}
 
