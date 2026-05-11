@@ -219,6 +219,7 @@ func (a *ImageArtifact) ToModel() (*Model, error) {
 	}
 
 	return &Model{
+		Format:     FormatImage,
 		Image:      a,
 		Config:     cfg,
 		Schema:     schema,

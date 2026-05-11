@@ -26,7 +26,8 @@ const (
 // testBundleModel builds a Model with a fixed image ref and optional weights.
 func testBundleModel(weights ...Weight) *Model {
 	return &Model{
-		Image: &ImageArtifact{Reference: testImageRef},
+		Format: FormatBundle,
+		Image:  &ImageArtifact{Reference: testImageRef},
 		Artifacts: []Artifact{
 			&ImageArtifact{name: "model", Reference: testImageRef},
 		},
@@ -397,7 +398,7 @@ func descriptorFromRef(ref string) v1.Descriptor {
 // =============================================================================
 
 func TestResolver_Push(t *testing.T) {
-	t.Run("default uses docker push", func(t *testing.T) {
+	t.Run("FormatImage uses docker push", func(t *testing.T) {
 		var dockerPushed bool
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error {
@@ -408,25 +409,41 @@ func TestResolver_Push(t *testing.T) {
 		reg := &mockRegistry{}
 		resolver := NewResolver(docker, reg)
 
-		err := resolver.Push(context.Background(), testBundleModel(), PushOptions{})
+		m := &Model{
+			Format: FormatImage,
+			Image:  &ImageArtifact{Reference: testImageRef},
+			Artifacts: []Artifact{
+				&ImageArtifact{name: "model", Reference: testImageRef},
+			},
+		}
+
+		err := resolver.Push(context.Background(), m, PushOptions{})
 		require.NoError(t, err)
-		require.True(t, dockerPushed, "standalone should use docker push")
+		require.True(t, dockerPushed, "FormatImage should use docker push")
 	})
 
-	t.Run("no weights uses docker push", func(t *testing.T) {
-		var dockerPushed bool
+	t.Run("FormatBundle with no weights produces a single-entry index", func(t *testing.T) {
+		// Behavioral change: a FormatBundle model with zero weights is
+		// still pushed as an OCI index (containing only the image
+		// manifest), not as a legacy single image.
+		var indexPushed bool
 		docker := &mockDocker{
-			pushFunc: func(ctx context.Context, ref string) error {
-				dockerPushed = true
+			pushFunc: func(ctx context.Context, ref string) error { return nil },
+		}
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				return descriptorFromRef(ref), nil
+			},
+			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
+				indexPushed = true
 				return nil
 			},
 		}
-		reg := &mockRegistry{}
 		resolver := NewResolver(docker, reg)
 
 		err := resolver.Push(context.Background(), testBundleModel(), PushOptions{})
 		require.NoError(t, err)
-		require.True(t, dockerPushed, "model without weights should use docker push")
+		require.True(t, indexPushed, "FormatBundle should push an OCI index even with no weights")
 	})
 
 	t.Run("bundle with weights produces an OCI index", func(t *testing.T) {
@@ -473,6 +490,7 @@ func TestResolver_Push(t *testing.T) {
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
+			Format: FormatBundle,
 			Weights: []Weight{
 				{Name: "w1", Target: "/src/weights/w1", Digest: testW1Digest, SetDigest: "sha256:abc"},
 			},

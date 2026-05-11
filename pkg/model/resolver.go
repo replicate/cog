@@ -239,12 +239,19 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 
 	m.Artifacts = []Artifact{ia}
 
+	// Build's format is driven by the resolved config: a model: ref or any
+	// managed weights select FormatBundle, otherwise the default FormatImage
+	// (set by modelFromImage) stands.
 	if len(src.Config.Weights) > 0 {
 		weights, weightErr := WeightsFromLockfile(src.ProjectDir)
 		if weightErr != nil {
 			return nil, weightErr
 		}
 		m.Weights = weights
+		m.Format = FormatBundle
+	}
+	if src.Config.Model != "" {
+		m.Format = FormatBundle
 	}
 
 	return m, nil
@@ -309,6 +316,7 @@ func (r *Resolver) modelFromImage(img *ImageArtifact, cfg *config.Config) (*Mode
 	}
 
 	return &Model{
+		Format:     FormatImage,
 		Image:      img,
 		Config:     cfg,
 		Schema:     schema,
@@ -382,6 +390,9 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 	if err != nil {
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
+	// Override the FormatImage default from ToModel — an OCI index is
+	// always a bundle, regardless of how many weight manifests it carries.
+	m.Format = FormatBundle
 
 	return m, nil
 }

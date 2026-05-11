@@ -230,13 +230,14 @@ func TestModel_ArtifactsByType(t *testing.T) {
 }
 
 func TestModel_IsBundle(t *testing.T) {
-	t.Run("returns false with no artifacts", func(t *testing.T) {
+	t.Run("returns false for zero-value model", func(t *testing.T) {
 		m := &Model{}
 		require.False(t, m.IsBundle())
 	})
 
-	t.Run("returns false with only image artifact", func(t *testing.T) {
+	t.Run("returns false for FormatImage", func(t *testing.T) {
 		m := &Model{
+			Format: FormatImage,
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
 			},
@@ -244,8 +245,9 @@ func TestModel_IsBundle(t *testing.T) {
 		require.False(t, m.IsBundle())
 	})
 
-	t.Run("returns true with weights", func(t *testing.T) {
+	t.Run("returns true for FormatBundle with weights", func(t *testing.T) {
 		m := &Model{
+			Format: FormatBundle,
 			Artifacts: []Artifact{
 				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
 			},
@@ -255,4 +257,46 @@ func TestModel_IsBundle(t *testing.T) {
 		}
 		require.True(t, m.IsBundle())
 	})
+
+	t.Run("returns true for FormatBundle with no weights", func(t *testing.T) {
+		// FormatBundle is now driven by Format, not by weight count — a
+		// model with model: in cog.yaml but no managed weights still
+		// produces a bundle (an OCI index containing only the image).
+		m := &Model{
+			Format: FormatBundle,
+			Artifacts: []Artifact{
+				&ImageArtifact{name: "model", Reference: "r8.im/user/model:latest"},
+			},
+		}
+		require.True(t, m.IsBundle())
+	})
+
+	t.Run("ignores weights when Format is FormatImage", func(t *testing.T) {
+		// Format is the single source of truth. Weights alone do not
+		// promote a model to FormatBundle.
+		m := &Model{
+			Format: FormatImage,
+			Weights: []Weight{
+				{Name: "w1", Target: "/src/weights/w1", SetDigest: "sha256:abc123"},
+			},
+		}
+		require.False(t, m.IsBundle())
+	})
+}
+
+func TestFormat_String(t *testing.T) {
+	tests := []struct {
+		format Format
+		want   string
+	}{
+		{FormatImage, "image"},
+		{FormatBundle, "bundle"},
+		{Format(0), "unknown"},
+		{Format(99), "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.format.String())
+		})
+	}
 }

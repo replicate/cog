@@ -11,8 +11,42 @@ import (
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
+// Format identifies the output format produced for a Model.
+//
+// On Build, it is derived from the resolved configuration (cog.yaml plus
+// any COG_MODEL* env var overrides) — a model ref resolving to a
+// registry/repo selects FormatBundle even when there are no managed
+// weights. On load (Inspect/Pull), it is derived from the underlying
+// manifest shape: an OCI image index is FormatBundle, anything else is
+// FormatImage.
+type Format int
+
+const (
+	// FormatImage is the legacy single Docker image output.
+	FormatImage Format = iota + 1
+	// FormatBundle is an OCI image index containing an image manifest
+	// and zero or more weight artifact manifests.
+	FormatBundle
+)
+
+// String returns the canonical name for the format.
+func (f Format) String() string {
+	switch f {
+	case FormatImage:
+		return "image"
+	case FormatBundle:
+		return "bundle"
+	default:
+		return "unknown"
+	}
+}
+
 // Model represents a Cog model extracted from an image.
 type Model struct {
+	// Format is the output format for this model. FormatImage is the
+	// legacy single-image output; FormatBundle is the OCI index output.
+	Format Format
+
 	Image      *ImageArtifact // Underlying OCI image
 	Config     *config.Config // Parsed cog.yaml
 	Schema     *openapi3.T    // OpenAPI schema
@@ -94,9 +128,13 @@ func (m *Model) ImageRef() string {
 	return m.Image.Reference
 }
 
-// IsBundle returns true if this model has managed weights.
+// IsBundle returns true if this model uses the OCI index output format.
+//
+// A FormatBundle model may have zero weights — in that case the bundle
+// is an OCI index containing only the image manifest. This is the
+// forward-compatible shape for all models migrating off FormatImage.
 func (m *Model) IsBundle() bool {
-	return len(m.Weights) > 0
+	return m.Format == FormatBundle
 }
 
 // GetImageArtifact returns the first ImageArtifact from the artifacts collection,
