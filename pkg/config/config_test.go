@@ -682,7 +682,7 @@ func TestAbsolutePathInPythonRequirements(t *testing.T) {
 func TestWeightsWithSourceYAML(t *testing.T) {
 	yamlString := `build:
   python_version: "3.12"
-image: "registry.example.com/acme/my-model"
+model: "registry.example.com/acme/my-model"
 predict: "predict.py:Predictor"
 
 weights:
@@ -700,7 +700,7 @@ weights:
 	config, err := FromYAML([]byte(yamlString))
 	require.NoError(t, err)
 	require.Len(t, config.Weights, 2)
-	require.Equal(t, "registry.example.com/acme/my-model", config.Image)
+	require.Equal(t, "registry.example.com/acme/my-model", config.Model)
 
 	require.Equal(t, "model-v1", config.Weights[0].Name)
 	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
@@ -720,7 +720,7 @@ func TestWeightsWithoutSourceYAML(t *testing.T) {
 	// parses (Go doesn't enforce JSON schema) but fails validation.
 	yamlString := `build:
   python_version: "3.12"
-image: "registry.example.com/acme/my-model"
+model: "registry.example.com/acme/my-model"
 predict: "predict.py:Predictor"
 
 weights:
@@ -741,7 +741,7 @@ func TestWeightsWithSourceJSON(t *testing.T) {
 	"build": {
 		"python_version": "3.12"
 	},
-	"image": "registry.example.com/acme/my-model",
+	"model": "registry.example.com/acme/my-model",
 	"predict": "predict.py:Predictor",
 	"weights": [
 		{
@@ -766,7 +766,7 @@ func TestWeightsWithSourceJSON(t *testing.T) {
 	err := json.Unmarshal([]byte(jsonString), &config)
 	require.NoError(t, err)
 	require.Len(t, config.Weights, 2)
-	require.Equal(t, "registry.example.com/acme/my-model", config.Image)
+	require.Equal(t, "registry.example.com/acme/my-model", config.Model)
 
 	require.Equal(t, "model-v1", config.Weights[0].Name)
 	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
@@ -988,4 +988,41 @@ func TestInvalidWeightsSourceDoesNotStackOverflow(t *testing.T) {
 
 	// This must not panic or stack overflow
 	require.False(t, errors.Is(err, errors.New("some error")))
+}
+
+func TestModelFieldYAML(t *testing.T) {
+	// model is parsed into Config.Model.
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+model: "registry.example.com/acme/my-model"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.Equal(t, "registry.example.com/acme/my-model", conf.Model)
+	require.Empty(t, conf.Image)
+}
+
+func TestModelFieldPartialNoRegistry(t *testing.T) {
+	// A bare repo without a registry parses fine — the registry will be
+	// supplied later by env vars or defaults.
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+model: "user/project"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.Equal(t, "user/project", conf.Model)
+}
+
+func TestModelFieldOmittedLeavesEmpty(t *testing.T) {
+	// Omitting model leaves Config.Model as the zero value.
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.Empty(t, conf.Model)
 }

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/xeipuuv/gojsonschema"
 
 	"github.com/replicate/cog/pkg/requirements"
@@ -59,6 +60,7 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	validateBuild(cfg, options, result)
 	validateEnvironment(cfg, result)
 	validateConcurrency(cfg, result)
+	validateModel(cfg, result)
 	validateWeights(cfg, result)
 
 	// Check deprecated fields
@@ -443,9 +445,55 @@ func validateConcurrency(cfg *configFile, result *ValidationResult) {
 	}
 }
 
-// weightNameRegex matches OCI-safe path components: lowercase alphanumeric,
-// separated by hyphens, dots, or underscores. Weight names become registry
-// path components (<image>/weights/<name>), so they must follow OCI rules.
+// validateModel validates the model field. It enforces:
+//   - 'model' and 'image' are mutually exclusive.
+//   - 'model' must be a bare repository (no tag, no digest).
+//
+// The "model is required when weights are present" check is intentionally
+// not done here, because environment variables can supply the model ref at
+// command-time. That check belongs to the commands that actually need a
+// resolved ref (push, weights import).
+func validateModel(cfg *configFile, result *ValidationResult) {
+	modelSet := cfg.Model != nil && *cfg.Model != ""
+	imageSet := cfg.Image != nil && *cfg.Image != ""
+
+	if modelSet && imageSet {
+		result.AddError(&ValidationError{
+			Field:   "model",
+			Message: "'model' and 'image' cannot both be set",
+		})
+	}
+
+	if !modelSet {
+		return
+	}
+
+	model := *cfg.Model
+
+	// name.NewRepository accepts host:port repos (e.g. localhost:5000/foo).
+	// If it rejects the string, retry with ParseReference to disambiguate
+	// "looks like repo:tag or repo@digest" from "malformed" so we can give
+	// a more useful error.
+	if _, err := name.NewRepository(model); err != nil {
+		if _, refErr := name.ParseReference(model); refErr == nil {
+			result.AddError(&ValidationError{
+				Field:   "model",
+				Value:   model,
+				Message: "must be a bare repository — tags and digests are not allowed",
+			})
+			return
+		}
+		result.AddError(&ValidationError{
+			Field:   "model",
+			Value:   model,
+			Message: fmt.Sprintf("invalid repository: %v", err),
+		})
+	}
+}
+
+// weightNameRegex matches OCI-safe tag segments: lowercase alphanumeric,
+// separated by hyphens, dots, or underscores. Weight names appear in
+// registry tags (cog-weight.<name>.<digest>), so they must be OCI-safe.
 var weightNameRegex = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
 
 // validateWeights validates the weights stanza.
@@ -454,11 +502,22 @@ func validateWeights(cfg *configFile, result *ValidationResult) {
 		return
 	}
 
-	// Weights require an image field.
-	if cfg.Image == nil || *cfg.Image == "" {
+	// Weights belong to the model's OCI bundle, so they require 'model'.
+	modelSet := cfg.Model != nil && *cfg.Model != ""
+	imageSet := cfg.Image != nil && *cfg.Image != ""
+
+	switch {
+	case imageSet && !modelSet:
+		// User is on the legacy image: path but tried to add weights.
+		// Point them at the rename.
 		result.AddError(&ValidationError{
 			Field:   "image",
-			Message: "image is required when weights are configured",
+			Message: "weights require 'model', not 'image' — rename 'image' to 'model'",
+		})
+	case !modelSet:
+		result.AddError(&ValidationError{
+			Field:   "model",
+			Message: "weights require 'model' in cog.yaml — rename 'image' to 'model'",
 		})
 	}
 

@@ -99,6 +99,7 @@ func WeightNames(ws []WeightSource) []string {
 type Config struct {
 	Build       *Build         `json:"build" yaml:"build"`
 	Image       string         `json:"image,omitempty" yaml:"image,omitempty"`
+	Model       string         `json:"model,omitempty" yaml:"model,omitempty"`
 	Predict     string         `json:"predict,omitempty" yaml:"predict"`
 	Train       string         `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *Concurrency   `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
