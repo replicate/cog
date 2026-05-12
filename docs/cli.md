@@ -30,7 +30,7 @@ https://github.com/replicate/cog
 Build a Docker image from the cog.yaml in the current directory.
 
 The generated image contains your model code, dependencies, and the Cog
-runtime. It can be run locally with 'cog predict' or pushed to a registry
+runtime. It can be run locally with 'cog run' or pushed to a registry
 with 'cog push'.
 
 ```

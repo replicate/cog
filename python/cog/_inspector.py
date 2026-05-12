@@ -20,7 +20,7 @@ from . import _adt as adt
 from .coder import Coder
 from .input import FieldInfo
 from .model import BaseModel
-from .predictor import BasePredictor, BaseRunner, _user_method_owner
+from .predictor import BasePredictor, _user_method_owner
 from .types import AsyncConcatenateIterator, ConcatenateIterator
 
 try:

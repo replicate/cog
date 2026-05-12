@@ -50,7 +50,7 @@ class BaseRunner:
         """
         pass
 
-    def run(self, **kwargs: Any) -> Any:
+    def run(self, *args: Any, **kwargs: Any) -> Any:
         """
         Run the model once.
 
@@ -59,7 +59,8 @@ class BaseRunner:
         use Input() for additional metadata.
 
         Args:
-            **kwargs: Run inputs as defined by the method signature.
+            *args: Positional run inputs as defined by the method signature.
+            **kwargs: Keyword run inputs as defined by the method signature.
 
         Returns:
             The prediction output.
@@ -67,19 +68,15 @@ class BaseRunner:
         Raises:
             NotImplementedError: If run is not implemented.
         """
-        # Check if predict() was overridden by a subclass (legacy compatibility)
-        # We check the MRO excluding BaseRunner/BasePredictor to see if predict
-        # was overridden without run being overridden.
-        for cls in self.__class__.__mro__:
-            if cls in (BaseRunner, BasePredictor):
-                break
-            if "predict" in cls.__dict__ and "run" not in cls.__dict__:
-                return self.predict(**kwargs)
+        run_owner = _user_method_owner(self.__class__, "run")
+        predict_owner = _user_method_owner(self.__class__, "predict")
+        if predict_owner is not None and run_owner is None:
+            return self.predict(*args, **kwargs)
         raise NotImplementedError("run has not been implemented by parent class.")
 
-    def predict(self, **kwargs: Any) -> Any:
+    def predict(self, *args: Any, **kwargs: Any) -> Any:
         """Deprecated compatibility bridge to run()."""
-        return self.run(**kwargs)
+        return self.run(*args, **kwargs)
 
     @property
     def scope(self) -> Any:

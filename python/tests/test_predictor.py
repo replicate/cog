@@ -15,7 +15,18 @@ def test_base_runner_run_and_predict_bridge() -> None:
 
     runner = MyRunner()
     assert runner.run(text="hello") == "HELLO"
+    assert runner.predict("hello") == "HELLO"
     assert runner.predict(text="hello") == "HELLO"
+
+
+def test_base_runner_run_delegates_to_legacy_predict_with_positional_args() -> None:
+    class MyRunner(BaseRunner):
+        def predict(self, text: str) -> str:
+            return text.upper()
+
+    runner = MyRunner()
+    assert runner.run("hello") == "HELLO"
+    assert runner.run(text="hello") == "HELLO"
 
 
 def test_base_predictor_is_legacy_subclass() -> None:

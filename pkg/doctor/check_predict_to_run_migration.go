@@ -67,7 +67,7 @@ func (c *PredictToRunMigrationCheck) Fix(ctx *CheckContext, findings []Finding) 
 		return fmt.Errorf("cannot migrate predict.py because no legacy Predictor/BasePredictor/predict() names were found")
 	}
 	if countRegexMatches(predictorClassPattern, source) != 1 || countRegexMatches(predictMethodPattern, source) != 1 {
-		return fmt.Errorf("automatic migration only supports a single Predictor class with a single predict method")
+		return fmt.Errorf("Manual migration required: automatic migration only supports a single Predictor class with a single predict method")
 	}
 
 	source = basePredictorPattern.ReplaceAll(source, []byte("BaseRunner"))
@@ -128,7 +128,7 @@ func preflightPredictToRunCollisions(ctx *CheckContext) error {
 		return fmt.Errorf("automatic migration cannot run when run is already set")
 	}
 	if !predictRefPattern.Match(ctx.ConfigFile) {
-		return fmt.Errorf("automatic migration only supports predict.py:Predictor")
+		return fmt.Errorf("Manual migration required: automatic migration only supports predict.py:Predictor")
 	}
 	candidate := filepath.Join(ctx.ProjectDir, "run.py")
 	if _, err := os.Stat(candidate); err == nil {

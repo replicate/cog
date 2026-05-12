@@ -1,9 +1,9 @@
 cog doctor
-stdout 'Deprecated predict interface names'
-stdout 'predict in cog.yaml is deprecated'
+stderr 'Deprecated predict interface names'
+stderr 'predict in cog.yaml is deprecated'
 
 cog doctor --fix
-stdout 'Fixed: Deprecated predict interface names'
+stderr 'Fixed: Deprecated predict interface names'
 
 grep 'run: "run.py:Runner"' cog.yaml
 grep 'class Runner(BaseRunner):' run.py

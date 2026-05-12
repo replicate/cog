@@ -426,7 +426,9 @@ class Predictor(BasePredictor):
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, findings)
-	require.Error(t, check.Fix(ctx, findings))
+	err = check.Fix(ctx, findings)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Manual migration required")
 
 	cogYAML, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
 	require.NoError(t, err)
@@ -453,7 +455,9 @@ class Helper:
 	findings, err := check.Check(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, findings)
-	require.Error(t, check.Fix(ctx, findings))
+	err = check.Fix(ctx, findings)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Manual migration required")
 
 	cogYAML, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
 	require.NoError(t, err)
