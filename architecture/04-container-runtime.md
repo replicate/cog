@@ -39,7 +39,7 @@ flowchart TB
     subgraph worker["Worker Subprocess (Python)"]
         subgraph predictor["Predictor"]
             setup["setup() → runs once at startup"]
-            predict["predict() → handles SlotRequest#colon;#colon;Predict"]
+            predict["run() → handles SlotRequest#colon;#colon;Predict"]
         end
     end
 
@@ -85,7 +85,7 @@ The `Prediction` struct is itself a state machine -- its mutation methods (`set_
 - **Responsibilities**:
   - Load user's predictor module
   - Run `setup()` once at startup
-  - Execute `predict()` method
+  - Execute selected `run()` method, or legacy `predict()` method for older models
   - Capture stdout/stderr via ContextVar-based log routing
   - Send events back to parent via slot sockets
 
@@ -110,7 +110,7 @@ stateDiagram-v2
     setup --> dead: setup() raises
 
     idle --> predicting: SlotRequest#colon;#colon;Predict
-    predicting --> idle: predict() returns/raises
+    predicting --> idle: run() returns/raises
 
     idle --> dead: Shutdown / crash
 
@@ -121,13 +121,13 @@ stateDiagram-v2
 
 - **`setup()` runs exactly once**, before any prediction is accepted. Use it to load weights, initialize GPU contexts, and warm caches. If it raises an exception, the worker exits and health becomes `SETUP_FAILED` -- there is no retry.
 
-- **`self` state persists across all `predict()` calls.** Storing your loaded model on `self.model` in `setup()` and using it in every `predict()` call is the intended pattern.
+- **`self` state persists across all `run()` calls.** Storing your loaded model on `self.model` in `setup()` and using it in every `run()` call is the intended pattern.
 
 - **No teardown hook.** There is no `teardown()`, `cleanup()`, or `__del__` contract. When the container shuts down, the process exits. If you need cleanup (e.g., flushing a log buffer), use `atexit`.
 
-- **`predict()` is sequential by default.** With `COG_MAX_CONCURRENCY=1` (the default), `predict()` is never called concurrently -- each call completes before the next begins.
+- **`run()` is sequential by default.** With `COG_MAX_CONCURRENCY=1` (the default), `run()` is never called concurrently -- each call completes before the next begins.
 
-- **With `COG_MAX_CONCURRENCY > 1`, concurrent `predict()` calls share `self`.** Async predictors run multiple coroutines on a shared asyncio event loop -- not truly parallel, but interleaved at `await` points. If your model stores mutable state on `self` that could be accessed across `await` boundaries, take care. If your model isn't safe to call concurrently, leave concurrency at 1.
+- **With `COG_MAX_CONCURRENCY > 1`, concurrent `run()` calls share `self`.** Async runners run multiple coroutines on a shared asyncio event loop -- not truly parallel, but interleaved at `await` points. If your model stores mutable state on `self` that could be accessed across `await` boundaries, take care. If your model isn't safe to call concurrently, leave concurrency at 1.
 
 - **A worker crash is terminal.** If the worker process crashes (segfault, OOM kill), the runtime fails all in-flight predictions and stops accepting new ones. The HTTP server stays up (health endpoints still respond) but the container must be restarted externally -- there is no automatic worker respawn.
 
@@ -175,15 +175,15 @@ Per-prediction data. Using separate sockets per slot avoids head-of-line blockin
 
 **Worker → Parent:**
 
-| Message                                        | Purpose                                                              |
-| ---------------------------------------------- | -------------------------------------------------------------------- |
-| `Log { source, data }`                         | Log line from predict()                                              |
-| `Output { output }`                            | Yielded output value (for generators/streaming)                      |
-| `FileOutput { filename, kind, mime_type }`     | File produced by predict() -- referenced by path, uploaded by parent |
-| `Metric { name, value, mode }`                 | Custom metric (mode: `replace`, `increment`, or `append`)            |
-| `Done { id, output, predict_time, is_stream }` | Prediction completed successfully                                    |
-| `Failed { id, error }`                         | Prediction failed                                                    |
-| `Cancelled { id }`                             | Prediction was cancelled                                             |
+| Message                                        | Purpose                                                          |
+| ---------------------------------------------- | ---------------------------------------------------------------- |
+| `Log { source, data }`                         | Log line from run()                                              |
+| `Output { output }`                            | Yielded output value (for generators/streaming)                  |
+| `FileOutput { filename, kind, mime_type }`     | File produced by run() -- referenced by path, uploaded by parent |
+| `Metric { name, value, mode }`                 | Custom metric (mode: `replace`, `increment`, or `append`)        |
+| `Done { id, output, predict_time, is_stream }` | Prediction completed successfully                                |
+| `Failed { id, error }`                         | Prediction failed                                                |
+| `Cancelled { id }`                             | Prediction was cancelled                                         |
 
 ## Health State Machine
 
@@ -311,7 +311,7 @@ Following a single prediction from HTTP request to response:
 
 9. **Response assembled.** The `Prediction` state machine transitions to `succeeded`, the slot permit is released, and the response is returned to the client (or delivered via webhook for async requests).
 
-**On error:** If `predict()` raises an exception, the worker sends a `Failed` message. The prediction is marked `failed`, the slot returns to idle, and the predictor instance survives -- it handles the next request normally. Only a process-level crash (segfault, OOM kill) destroys the instance; see [Predictor Lifecycle](#predictor-lifecycle) for what happens then.
+**On error:** If `run()` raises an exception, the worker sends a `Failed` message. The prediction is marked `failed`, the slot returns to idle, and the runner instance survives -- it handles the next request normally. Only a process-level crash (segfault, OOM kill) destroys the instance; see [Predictor Lifecycle](#predictor-lifecycle) for what happens then.
 
 ## Invocation Path
 
@@ -319,7 +319,7 @@ How coglet gets invoked when running a Cog container:
 
 ```mermaid
 flowchart TB
-    cli["cog predict / cog exec\n(CLI)"]
+    cli["cog run / cog exec\n(CLI)"]
 
     launcher["python -m cog.server.http\nimport coglet\ncoglet.server.serve(predictor_ref, port=5000)"]
 
@@ -327,7 +327,7 @@ flowchart TB
         direction TB
         axum["HTTP Server (axum) #colon;5000\n/predictions, /health-check, etc."]
         svc["PredictionService\n(state, webhooks, permits)"]
-        worker_sub["Worker subprocess (Python)\n- loads predictor_ref\n- runs setup()\n- handles predict() requests"]
+        worker_sub["Worker subprocess (Python)\n- loads runner ref\n- runs setup()\n- handles run() requests"]
 
         axum --> svc
         svc -- "Unix socket + pipes" --> worker_sub
@@ -371,7 +371,7 @@ When a prediction input exceeds 6MiB, it's too large to send inline through the 
 
 ## File Outputs
 
-When predict() produces file outputs (`cog.Path`), the worker sends a `FileOutput` message with the filename and MIME type. The parent handles uploading the file (or base64-encoding it for inline responses). The `output_dir` field in the `Predict` request tells the worker where to write output files.
+When run() produces file outputs (`cog.Path`), the worker sends a `FileOutput` message with the filename and MIME type. The parent handles uploading the file (or base64-encoding it for inline responses). The `output_dir` field in the `Predict` request tells the worker where to write output files.
 
 `FileOutputKind` distinguishes between normal file outputs (`FileType`) and oversized outputs (`Oversized`) that exceeded an inline size limit.
 

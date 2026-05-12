@@ -94,6 +94,47 @@ func TestValidateConfigFilePredictFormat(t *testing.T) {
 	require.Contains(t, result.Err().Error(), "predict.py:Predictor")
 }
 
+func TestValidateConfigFileRunPredictCompatibility(t *testing.T) {
+	t.Run("run is valid", func(t *testing.T) {
+		cfg := &configFile{Build: &buildFile{PythonVersion: ptr("3.10")}, Run: ptr("run.py:Runner")}
+		result := ValidateConfigFile(cfg)
+		require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
+		require.Empty(t, result.Warnings)
+	})
+
+	t.Run("run validates reference format", func(t *testing.T) {
+		cfg := &configFile{Build: &buildFile{PythonVersion: ptr("3.10")}, Run: ptr("invalid_format")}
+		result := ValidateConfigFile(cfg)
+		require.True(t, result.HasErrors())
+		require.Contains(t, result.Err().Error(), "run.py:Runner")
+	})
+
+	t.Run("predict warns", func(t *testing.T) {
+		cfg := &configFile{Build: &buildFile{PythonVersion: ptr("3.10")}, Predict: ptr("predict.py:Predictor")}
+		result := ValidateConfigFile(cfg)
+		require.False(t, result.HasErrors())
+		require.Len(t, result.Warnings, 1)
+		require.Equal(t, "predict", result.Warnings[0].Field)
+		require.Equal(t, "run", result.Warnings[0].Replacement)
+	})
+
+	t.Run("predict warns without build", func(t *testing.T) {
+		cfg := &configFile{Predict: ptr("predict.py:Predictor")}
+		result := ValidateConfigFile(cfg)
+		require.False(t, result.HasErrors())
+		require.Len(t, result.Warnings, 1)
+		require.Equal(t, "predict", result.Warnings[0].Field)
+		require.Equal(t, "run", result.Warnings[0].Replacement)
+	})
+
+	t.Run("both fields error", func(t *testing.T) {
+		cfg := &configFile{Build: &buildFile{PythonVersion: ptr("3.10")}, Run: ptr("run.py:Runner"), Predict: ptr("predict.py:Predictor")}
+		result := ValidateConfigFile(cfg)
+		require.True(t, result.HasErrors())
+		require.Contains(t, result.Err().Error(), "only one of run or predict can be set")
+	})
+}
+
 func TestValidateConfigFileConcurrencyType(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{

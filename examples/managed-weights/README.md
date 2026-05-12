@@ -9,9 +9,9 @@ If you're looking for a starting point for a real model, see
 
 ## What this does
 
-The predictor doesn't do inference. Instead, it reads `weights.lock` at setup,
+The runner doesn't do inference. Instead, it reads `weights.lock` at setup,
 validates that every expected file exists on disk with the correct size and
-digest, and returns a per-weight status summary from `predict()`. It's a
+digest, and returns a per-weight status summary from `run()`. It's a
 smoke test for the weight pipeline.
 
 The `cog.yaml` declares two weight sources to exercise both code paths:

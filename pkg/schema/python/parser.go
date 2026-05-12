@@ -64,6 +64,10 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	if err != nil {
 		return nil, err
 	}
+	actualMethodName := methodName
+	if nameNode := funcNode.ChildByFieldName("name"); nameNode != nil {
+		actualMethodName = Content(nameNode, source)
+	}
 
 	// 6. Check if method (has self first param)
 	paramsNode := funcNode.ChildByFieldName("parameters")
@@ -74,7 +78,7 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 
 	// 7. Extract parameters
 	paramCtx := &inputParseContext{
-		methodName: methodName,
+		methodName: actualMethodName,
 		imports:    imports,
 		registry:   inputRegistry,
 		scope:      moduleScope,
@@ -88,7 +92,7 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	// 8. Extract return type
 	returnAnn := funcNode.ChildByFieldName("return_type")
 	if returnAnn == nil {
-		return nil, schema.WrapError(schema.ErrMissingReturnType, methodName, nil)
+		return nil, schema.WrapError(schema.ErrMissingReturnType, actualMethodName, nil)
 	}
 	returnTypeAnn, err := parseTypeAnnotation(returnAnn, source)
 	if err != nil {
@@ -1191,6 +1195,9 @@ func findTargetFunction(root *sitter.Node, source []byte, predictRef, methodName
 		}
 		nameNode := classNode.ChildByFieldName("name")
 		if nameNode != nil && Content(nameNode, source) == predictRef {
+			if methodName == "predict" {
+				return findPredictMethodInClass(root, classNode, source, predictRef)
+			}
 			return findMethodInClass(classNode, source, predictRef, methodName)
 		}
 	}
@@ -1211,6 +1218,95 @@ func findTargetFunction(root *sitter.Node, source []byte, predictRef, methodName
 	}
 
 	return nil, schema.WrapError(schema.ErrPredictorNotFound, predictRef, nil)
+}
+
+func findPredictMethodInClass(root, classNode *sitter.Node, source []byte, className string) (*sitter.Node, error) {
+	runNode, predictNode := collectPredictMethods(root, classNode, source, className, map[string]bool{})
+	if runNode != nil && predictNode != nil {
+		return nil, schema.WrapError(schema.ErrMethodConflict, fmt.Sprintf("%s must define either run() or predict(), not both", className), nil)
+	}
+	if runNode != nil {
+		return runNode, nil
+	}
+	if predictNode != nil {
+		fmt.Fprintf(os.Stderr, "cog: warning: %s.predict() is deprecated; use run() instead\n", className)
+		return predictNode, nil
+	}
+	return nil, schema.WrapError(schema.ErrMethodNotFound, fmt.Sprintf("%s must define run() or predict()", className), nil)
+}
+
+func collectPredictMethods(root, classNode *sitter.Node, source []byte, className string, seen map[string]bool) (*sitter.Node, *sitter.Node) {
+	if seen[className] {
+		return nil, nil
+	}
+	seen[className] = true
+
+	body := classNode.ChildByFieldName("body")
+	if body == nil {
+		return nil, nil
+	}
+
+	var runNode *sitter.Node
+	var predictNode *sitter.Node
+	for _, child := range NamedChildren(body) {
+		funcNode := UnwrapFunction(child)
+		if funcNode == nil {
+			continue
+		}
+		nameNode := funcNode.ChildByFieldName("name")
+		if nameNode == nil {
+			continue
+		}
+		switch Content(nameNode, source) {
+		case "run":
+			runNode = funcNode
+		case "predict":
+			predictNode = funcNode
+		}
+	}
+
+	for _, parent := range classParentNames(classNode, source) {
+		parentNode := findClassByName(root, source, parent)
+		if parentNode == nil {
+			continue
+		}
+		parentRun, parentPredict := collectPredictMethods(root, parentNode, source, parent, seen)
+		if runNode == nil {
+			runNode = parentRun
+		}
+		if predictNode == nil {
+			predictNode = parentPredict
+		}
+	}
+	return runNode, predictNode
+}
+
+func findClassByName(root *sitter.Node, source []byte, name string) *sitter.Node {
+	for _, child := range NamedChildren(root) {
+		classNode := UnwrapClass(child)
+		if classNode == nil {
+			continue
+		}
+		nameNode := classNode.ChildByFieldName("name")
+		if nameNode != nil && Content(nameNode, source) == name {
+			return classNode
+		}
+	}
+	return nil
+}
+
+func classParentNames(classNode *sitter.Node, source []byte) []string {
+	supers := classNode.ChildByFieldName("superclasses")
+	if supers == nil {
+		return nil
+	}
+	parents := []string{}
+	for _, child := range NamedChildren(supers) {
+		if child.Type() == "identifier" {
+			parents = append(parents, Content(child, source))
+		}
+	}
+	return parents
 }
 
 func findMethodInClass(classNode *sitter.Node, source []byte, className, methodName string) (*sitter.Node, error) {

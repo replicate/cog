@@ -660,6 +660,26 @@ predict: ""
 `, string(data))
 }
 
+func TestFromYAMLRunPopulatesPredict(t *testing.T) {
+	t.Run("non-empty run wins", func(t *testing.T) {
+		cfg, err := FromYAML([]byte("build:\n  python_version: \"3.13\"\nrun: \"run.py:Runner\"\n"))
+		require.NoError(t, err)
+		require.Equal(t, "run.py:Runner", cfg.Predict)
+	})
+
+	t.Run("empty run falls back to predict", func(t *testing.T) {
+		cfg, err := FromYAML([]byte("build:\n  python_version: \"3.13\"\nrun: \"\"\npredict: \"predict.py:Predictor\"\n"))
+		require.NoError(t, err)
+		require.Equal(t, "predict.py:Predictor", cfg.Predict)
+	})
+}
+
+func TestFromYAMLRunAndPredictConflict(t *testing.T) {
+	_, err := FromYAML([]byte("build:\n  python_version: \"3.13\"\nrun: \"run.py:Runner\"\npredict: \"predict.py:Predictor\"\n"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "only one of run or predict can be set")
+}
+
 func TestAbsolutePathInPythonRequirements(t *testing.T) {
 	dir := t.TempDir()
 	requirementsFilePath := filepath.Join(dir, "requirements.txt")

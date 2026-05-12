@@ -55,7 +55,7 @@ func TestConfigDeprecatedFieldsCheck_Clean(t *testing.T) {
 	writeFile(t, dir, "cog.yaml", `build:
   python_version: "3.12"
   python_requirements: "requirements.txt"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 `)
 	writeFile(t, dir, "requirements.txt", "torch==2.0.0\n")
 
@@ -72,7 +72,7 @@ func TestConfigDeprecatedFieldsCheck_PythonPackages(t *testing.T) {
   python_version: "3.12"
   python_packages:
     - torch==2.0.0
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 `)
 
 	ctx := buildTestCheckContext(t, dir)
@@ -90,7 +90,7 @@ func TestConfigDeprecatedFieldsCheck_PreInstall(t *testing.T) {
   python_version: "3.12"
   pre_install:
     - pip install something
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 `)
 
 	ctx := buildTestCheckContext(t, dir)
@@ -201,6 +201,329 @@ predict: "predict.py:Predictor"
 	// parse error) or an empty result; both are acceptable.
 	_, err := check.Check(ctx)
 	require.NoError(t, err)
+}
+
+func TestPredictToRunMigrationCheck_CleanRunProject(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+run: "run.py:Runner"
+`)
+	writeFile(t, dir, "run.py", `from cog import BaseRunner
+class Runner(BaseRunner):
+    def run(self, text: str) -> str:
+        return text
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestPredictToRunMigrationCheck_DetectsLegacyPredictUsage(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, findings)
+	require.Equal(t, SeverityWarning, findings[0].Severity)
+	require.Contains(t, findings[0].Message, "deprecated")
+	require.Contains(t, findings[0].Remediation, "cog doctor --fix")
+}
+
+func TestPredictToRunMigrationCheck_FixMigratesConfigAndPython(t *testing.T) {
+	tests := []struct {
+		name      string
+		classLine string
+		wantLine  string
+	}{
+		{name: "class with base", classLine: "class Predictor(BasePredictor):", wantLine: "class Runner(BaseRunner):"},
+		{name: "class without base", classLine: "class Predictor:", wantLine: "class Runner:"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+			writeFile(t, dir, "predict.py", `from cog import BasePredictor
+
+`+tt.classLine+`
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+			ctx := buildTestCheckContext(t, dir)
+			check := &PredictToRunMigrationCheck{}
+			findings, err := check.Check(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, findings)
+			require.NoError(t, check.Fix(ctx, findings))
+
+			cogYAML, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
+			require.NoError(t, err)
+			require.Contains(t, string(cogYAML), `run: "run.py:Runner"`)
+			require.NotContains(t, string(cogYAML), `predict: "predict.py:Predictor"`)
+
+			_, err = os.Stat(filepath.Join(dir, "predict.py"))
+			require.ErrorIs(t, err, os.ErrNotExist)
+
+			runPy, err := os.ReadFile(filepath.Join(dir, "run.py"))
+			require.NoError(t, err)
+			require.Contains(t, string(runPy), "from cog import BaseRunner")
+			require.Contains(t, string(runPy), tt.wantLine)
+			require.Contains(t, string(runPy), "def run(")
+			require.NotContains(t, string(runPy), "BasePredictor")
+			require.NotContains(t, string(runPy), "class Predictor")
+			require.NotContains(t, string(runPy), "def predict(")
+		})
+	}
+}
+
+func TestPredictToRunMigrationCheck_FixRefusesFileCollision(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+	writeFile(t, dir, "run.py", `class Runner:
+    def run(self) -> str:
+        return "existing"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Error(t, check.Fix(ctx, findings))
+
+	cogYAML, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
+	require.NoError(t, err)
+	require.Contains(t, string(cogYAML), `predict: "predict.py:Predictor"`)
+	require.NotContains(t, string(cogYAML), `run: "run.py:Runner"`)
+}
+
+func TestPredictToRunMigrationCheck_FixRefusesConfigOnlyFileCollision(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "run.py", `class Runner:
+    def run(self) -> str:
+        return "existing"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Error(t, check.Fix(ctx, findings))
+
+	cogYAML, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
+	require.NoError(t, err)
+	require.Contains(t, string(cogYAML), `predict: "predict.py:Predictor"`)
+	require.NotContains(t, string(cogYAML), `run: "run.py:Runner"`)
+}
+
+func TestPredictToRunMigrationCheck_FixRefusesMissingPredictFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Error(t, check.Fix(ctx, findings))
+
+	cogYAML, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
+	require.NoError(t, err)
+	require.Contains(t, string(cogYAML), `predict: "predict.py:Predictor"`)
+	require.NotContains(t, string(cogYAML), `run: "run.py:Runner"`)
+}
+
+func TestPredictToRunMigrationCheck_DoesNotRewriteTrainFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+run: "run.py:Runner"
+train: "train.py:Trainer"
+`)
+	writeFile(t, dir, "run.py", `from cog import BaseRunner
+class Runner(BaseRunner):
+    def run(self, text: str) -> str:
+        return text
+`)
+	writeFile(t, dir, "train.py", `class Trainer:
+    def predict(self) -> str:
+        return "helper"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	parsePythonRef(ctx, "train.py:Trainer")
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestPredictToRunMigrationCheck_IgnoresStrayPredictFileWithoutLegacyConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+run: "run.py:Runner"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
+func TestPredictToRunMigrationCheck_FixRefusesCustomPredictRef(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "foo.py:Predictor"
+`)
+	writeFile(t, dir, "foo.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, findings)
+	require.Error(t, check.Fix(ctx, findings))
+
+	cogYAML, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
+	require.NoError(t, err)
+	require.Contains(t, string(cogYAML), `predict: "foo.py:Predictor"`)
+}
+
+func TestPredictToRunMigrationCheck_FixRefusesMultiplePredictMethods(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+class Helper:
+    def predict(self) -> str:
+        return "helper"
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, findings)
+	require.Error(t, check.Fix(ctx, findings))
+
+	cogYAML, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
+	require.NoError(t, err)
+	require.Contains(t, string(cogYAML), `predict: "predict.py:Predictor"`)
+}
+
+func TestPredictToRunMigrationCheck_FixRefusesExistingRunField(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+run: "run.py:Runner"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, findings)
+	require.Error(t, check.Fix(ctx, findings))
+}
+
+func TestPredictToRunMigrationCheck_RunFixesContextForFollowingChecks(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	result, err := Run(context.Background(), RunOptions{Fix: true, ProjectDir: dir}, []Check{
+		&PredictToRunMigrationCheck{},
+		&ConfigPredictRefCheck{},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Results, 2)
+	require.True(t, result.Results[0].Fixed)
+	require.NoError(t, result.Results[1].Err)
+	require.Empty(t, result.Results[1].Findings)
+}
+
+func TestPredictToRunMigrationCheck_RunFixSuppressesStalePredictDeprecation(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+	result, err := Run(context.Background(), RunOptions{Fix: true, ProjectDir: dir}, []Check{
+		&PredictToRunMigrationCheck{},
+		&ConfigDeprecatedFieldsCheck{},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Results, 2)
+	require.True(t, result.Results[0].Fixed)
+	require.Empty(t, result.Results[1].Findings)
 }
 
 // buildTestCheckContext creates a CheckContext by loading the cog.yaml in the given dir.

@@ -165,10 +165,15 @@
       "type": "string",
       "description": "The repository where this model's image and weights are pushed. Must be a bare repository (no tag or digest)."
     },
+    "run": {
+      "$id": "#/properties/run",
+      "type": "string",
+      "description": "The pointer to the Runner object in your code, which defines how runs are executed on your model."
+    },
     "predict": {
       "$id": "#/properties/predict",
       "type": "string",
-      "description": "The pointer to the `Predictor` object in your code, which defines how predictions are run on your model."
+      "description": "Deprecated compatibility field for run. Use run instead."
     },
     "train": {
       "$id": "#/properties/train",

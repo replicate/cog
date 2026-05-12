@@ -23,10 +23,10 @@ func newInitCommand() *cobra.Command {
 		Use:        "init",
 		SuggestFor: []string{"new", "start"},
 		Short:      "Configure your project for use with Cog",
-		Long: `Create a cog.yaml and predict.py in the current directory.
+		Long: `Create a cog.yaml and run.py in the current directory.
 
 These files provide a starting template for defining your model's environment
-and prediction interface. Edit them to match your model's requirements.`,
+and run interface. Edit them to match your model's requirements.`,
 		Example: `  # Set up a new Cog project in the current directory
   cog init`,
 		RunE: initCommand,

@@ -1,8 +1,209 @@
 """Tests for cog.predictor module (BasePredictor)."""
 
+from pathlib import Path as FilePath
 from typing import Optional
 
-from cog import BasePredictor, Path
+import pytest
+
+from cog import BasePredictor, BaseRunner, Path
+
+
+def test_base_runner_run_and_predict_bridge() -> None:
+    class MyRunner(BaseRunner):
+        def run(self, text: str) -> str:
+            return text.upper()
+
+    runner = MyRunner()
+    assert runner.run(text="hello") == "HELLO"
+    assert runner.predict(text="hello") == "HELLO"
+
+
+def test_base_predictor_is_legacy_subclass() -> None:
+    assert issubclass(BasePredictor, BaseRunner)
+
+
+def test_load_predictor_from_ref_defaults_to_runner(tmp_path: FilePath) -> None:
+    model = tmp_path / "run.py"
+    model.write_text(
+        "from cog import BaseRunner\n"
+        "class Runner(BaseRunner):\n"
+        "    def run(self, text: str) -> str:\n"
+        "        return text.upper()\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    runner = load_predictor_from_ref(str(model))
+    assert runner.run(text="hello") == "HELLO"
+
+
+def test_load_predictor_from_ref_warns_for_legacy_predictor_class(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "predict.py"
+    model.write_text(
+        "from cog import BaseRunner\n"
+        "class Predictor(BaseRunner):\n"
+        "    def run(self, text: str) -> str:\n"
+        "        return text.upper()\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    with pytest.warns(DeprecationWarning, match="Predictor is deprecated"):
+        runner = load_predictor_from_ref(str(model))
+    assert runner.run(text="hello") == "HELLO"
+
+
+def test_load_predictor_from_ref_prefers_runner_when_both_default_classes_exist(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "run.py"
+    model.write_text(
+        "from cog import BaseRunner\n"
+        "class Runner(BaseRunner):\n"
+        "    def run(self, text: str) -> str:\n"
+        "        return 'runner:' + text\n"
+        "class Predictor(BaseRunner):\n"
+        "    def run(self, text: str) -> str:\n"
+        "        return 'predictor:' + text\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    with pytest.warns(UserWarning, match="Both Runner and Predictor"):
+        runner = load_predictor_from_ref(str(model))
+    assert runner.run(text="hello") == "runner:hello"
+
+
+def test_load_predictor_from_ref_rejects_run_and_predict(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "run.py"
+    model.write_text(
+        "from cog import BaseRunner\n"
+        "class Runner(BaseRunner):\n"
+        "    def run(self, text: str) -> str:\n"
+        "        return text\n"
+        "    def predict(self, text: str) -> str:\n"
+        "        return text\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    with pytest.raises(
+        ValueError, match=r"define either run\(\) or predict\(\), not both"
+    ):
+        load_predictor_from_ref(str(model))
+
+
+def test_load_predictor_from_ref_rejects_missing_run_or_predict(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "run.py"
+    model.write_text(
+        "from cog import BaseRunner\nclass Runner(BaseRunner):\n    pass\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    with pytest.raises(ValueError, match="run or predict"):
+        load_predictor_from_ref(str(model))
+
+
+def test_load_predictor_from_ref_warns_for_class_predict_method(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "run.py"
+    model.write_text(
+        "from cog import BaseRunner\n"
+        "class Runner(BaseRunner):\n"
+        "    def predict(self, text: str) -> str:\n"
+        "        return text.upper()\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    with pytest.warns(DeprecationWarning, match=r"Runner\.predict\(\) is deprecated"):
+        runner = load_predictor_from_ref(str(model))
+    assert runner.predict(text="hello") == "HELLO"
+
+
+def test_load_predictor_from_ref_warns_for_base_predictor_inheritance(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "run.py"
+    model.write_text(
+        "from cog import BasePredictor\n"
+        "class Runner(BasePredictor):\n"
+        "    def run(self, text: str) -> str:\n"
+        "        return text.upper()\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    with pytest.warns(DeprecationWarning, match="BasePredictor is deprecated"):
+        runner = load_predictor_from_ref(str(model))
+    assert runner.run(text="hello") == "HELLO"
+
+
+def test_load_predictor_from_ref_supports_inherited_run(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "run.py"
+    model.write_text(
+        "from cog import BaseRunner\n"
+        "class Shared(BaseRunner):\n"
+        "    def run(self, text: str) -> str:\n"
+        "        return text.upper()\n"
+        "class Runner(Shared):\n"
+        "    pass\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    runner = load_predictor_from_ref(str(model))
+    assert runner.run(text="hello") == "HELLO"
+
+
+def test_load_predictor_from_ref_rejects_inherited_run_and_direct_predict(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "run.py"
+    model.write_text(
+        "from cog import BaseRunner\n"
+        "class Shared(BaseRunner):\n"
+        "    def run(self, text: str) -> str:\n"
+        "        return text\n"
+        "class Runner(Shared):\n"
+        "    def predict(self, text: str) -> str:\n"
+        "        return text\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    with pytest.raises(ValueError, match=r"either run\(\) or predict\(\)"):
+        load_predictor_from_ref(str(model))
+
+
+def test_load_predictor_from_ref_warns_for_inherited_legacy_predict(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "predict.py"
+    model.write_text(
+        "from cog import BasePredictor\n"
+        "class Shared(BasePredictor):\n"
+        "    def predict(self, text: str) -> str:\n"
+        "        return text.upper()\n"
+        "class Predictor(Shared):\n"
+        "    pass\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    with pytest.warns(DeprecationWarning, match=r"predict\(\) is deprecated"):
+        runner = load_predictor_from_ref(str(model))
+    assert runner.predict(text="hello") == "HELLO"
 
 
 class TestBasePredictor:
@@ -23,7 +224,7 @@ class TestBasePredictor:
             predictor.predict()
             assert False, "Should have raised NotImplementedError"
         except NotImplementedError as e:
-            assert "predict has not been implemented" in str(e)
+            assert "run has not been implemented" in str(e)
 
     def test_setup_is_optional(self) -> None:
         class MyPredictor(BasePredictor):

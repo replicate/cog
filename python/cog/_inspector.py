@@ -10,6 +10,7 @@ import inspect
 import re
 import sys
 import typing
+import warnings
 from dataclasses import MISSING, Field
 from enum import Enum
 from types import ModuleType, UnionType
@@ -19,6 +20,7 @@ from . import _adt as adt
 from .coder import Coder
 from .input import FieldInfo
 from .model import BaseModel
+from .predictor import BasePredictor, BaseRunner, _user_method_owner
 from .types import AsyncConcatenateIterator, ConcatenateIterator
 
 try:
@@ -91,6 +93,36 @@ def _validate_predict(f: Callable[..., Any], f_name: str, is_class_fn: bool) -> 
         raise ValueError(f"{f_name}() must not have keyword-only defaults")
     if spec.annotations.get("return") is None:
         raise ValueError(f"{f_name}() must have a return type annotation")
+
+
+def _selected_predict_method(
+    cls: type[Any], fullname: str
+) -> tuple[str, Callable[..., Any]]:
+    run_owner = _user_method_owner(cls, "run")
+    predict_owner = _user_method_owner(cls, "predict")
+    defines_run = run_owner is not None
+    defines_predict = predict_owner is not None
+    if defines_run and defines_predict:
+        raise ValueError(f"{fullname} must define either run() or predict(), not both")
+    if defines_run:
+        return "run", cls.run
+    if defines_predict:
+        warnings.warn(
+            f"{fullname}.predict() is deprecated; use run() instead",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return "predict", cls.predict
+    raise ValueError(f"run or predict method not found: {fullname}")
+
+
+def _warn_if_base_predictor_in_mro(cls: type[Any]) -> None:
+    if any(base is BasePredictor for base in inspect.getmro(cls)[1:]):
+        warnings.warn(
+            "BasePredictor is deprecated; use BaseRunner instead",
+            DeprecationWarning,
+            stacklevel=3,
+        )
 
 
 def _validate_input_constraints(
@@ -483,14 +515,12 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
     p = getattr(module, predictor_name)
 
     if inspect.isclass(p):
-        if not hasattr(p, "predict"):
-            raise ValueError(f"predict method not found: {fullname}")
-
         if hasattr(p, "setup"):
             _validate_setup(_unwrap(p.setup))
 
-        predict_fn_name = "predict"
-        predict_fn = _unwrap(getattr(p, predict_fn_name))
+        _warn_if_base_predictor_in_mro(p)
+        predict_fn_name, selected_predict_fn = _selected_predict_method(p, fullname)
+        predict_fn = _unwrap(selected_predict_fn)
         is_class_fn = True
 
     elif inspect.isfunction(p):

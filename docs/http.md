@@ -135,7 +135,7 @@ This produces a random identifier that is 26 ASCII characters long.
 
 ## File uploads
 
-A model's `predict` function can produce file output by yielding or returning
+A model's `run` function can produce file output by yielding or returning
 a `cog.Path` or `cog.File` value.
 
 By default,
@@ -306,13 +306,13 @@ The request body is a JSON object with the following fields:
 
 - `input`:
   A JSON object with the same keys as the
-  [arguments to the `predict()` function](python.md).
+  [arguments to the `run()` function](python.md).
   Any `File` or `Path` inputs are passed as URLs.
 
 The response body is a JSON object with the following fields:
 
 - `status`: Either `succeeded` or `failed`.
-- `output`: The return value of the `predict()` function.
+- `output`: The return value of the `run()` function.
 - `error`: If `status` is `failed`, the error message.
 - `metrics`: An object containing prediction metrics.
   Always includes `predict_time` (elapsed seconds).
@@ -458,10 +458,10 @@ After cleanup, the exception must be re-raised using a bare `raise` statement.
 Failure to re-raise the exception may result in the termination of the container.
 
 ```python
-from cog import BasePredictor, CancelationException, Input, Path
+from cog import BaseRunner, CancelationException, Input, Path
 
-class Predictor(BasePredictor):
-    def predict(self, image: Path = Input(description="Image to process")) -> Path:
+class Runner(BaseRunner):
+    def run(self, image: Path = Input(description="Image to process")) -> Path:
         try:
             return self.process(image)
         except CancelationException:

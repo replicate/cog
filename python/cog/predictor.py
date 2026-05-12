@@ -10,27 +10,27 @@ import importlib.util
 import inspect
 import os
 import sys
+import warnings
 from typing import Any, Optional, Union
 
 from .types import Path
 
 
-class BasePredictor:
+class BaseRunner:
     """
-    Base class for Cog predictors.
+    Base class for Cog runners.
 
-    Subclass this to define your model's prediction interface. Override
-    the `setup` method to load your model, and the `predict` method to
-    run predictions.
+    Subclass this to define your model's run interface. Override the `setup`
+    method to load your model, and the `run` method to execute it.
 
     Example:
-        from cog import BasePredictor, Input, Path
+        from cog import BaseRunner, Input, Path
 
-        class Predictor(BasePredictor):
+        class Runner(BaseRunner):
             def setup(self):
                 self.model = load_model()
 
-            def predict(self, prompt: str = Input(description="Input text")) -> str:
+            def run(self, prompt: str = Input(description="Input text")) -> str:
                 self.record_metric("temperature", 0.7)
                 return self.model.generate(prompt)
     """
@@ -40,9 +40,9 @@ class BasePredictor:
         weights: Optional[Union[Path, str]] = None,
     ) -> None:
         """
-        Prepare the model for predictions.
+        Prepare the model for runs.
 
-        This method is called once when the predictor is initialized. Use it
+        This method is called once when the runner is initialized. Use it
         to load model weights and do any other one-time setup.
 
         Args:
@@ -50,24 +50,36 @@ class BasePredictor:
         """
         pass
 
-    def predict(self, **kwargs: Any) -> Any:
+    def run(self, **kwargs: Any) -> Any:
         """
-        Run a single prediction.
+        Run the model once.
 
         Override this method to implement your model's prediction logic.
         Input parameters should be annotated with types and optionally
         use Input() for additional metadata.
 
         Args:
-            **kwargs: Prediction inputs as defined by the method signature.
+            **kwargs: Run inputs as defined by the method signature.
 
         Returns:
             The prediction output.
 
         Raises:
-            NotImplementedError: If predict is not implemented.
+            NotImplementedError: If run is not implemented.
         """
-        raise NotImplementedError("predict has not been implemented by parent class.")
+        # Check if predict() was overridden by a subclass (legacy compatibility)
+        # We check the MRO excluding BaseRunner/BasePredictor to see if predict
+        # was overridden without run being overridden.
+        for cls in self.__class__.__mro__:
+            if cls in (BaseRunner, BasePredictor):
+                break
+            if "predict" in cls.__dict__ and "run" not in cls.__dict__:
+                return self.predict(**kwargs)
+        raise NotImplementedError("run has not been implemented by parent class.")
+
+    def predict(self, **kwargs: Any) -> Any:
+        """Deprecated compatibility bridge to run()."""
+        return self.run(**kwargs)
 
     @property
     def scope(self) -> Any:
@@ -106,8 +118,8 @@ class BasePredictor:
 
         Example::
 
-            class Predictor(BasePredictor):
-                def predict(self, prompt: str) -> str:
+            class Runner(BaseRunner):
+                def run(self, prompt: str) -> str:
                     self.record_metric("temperature", 0.7)
                     self.record_metric("token_count", 1, mode="incr")
                     return self.model.generate(prompt)
@@ -115,9 +127,48 @@ class BasePredictor:
         self.scope.record_metric(key, value, mode=mode)
 
 
-def load_predictor_from_ref(ref: str) -> BasePredictor:
+class BasePredictor(BaseRunner):
+    """Deprecated compatibility alias for BaseRunner."""
+
+
+def _user_method_owner(cls: type[Any], method_name: str) -> type[Any] | None:
+    for owner in inspect.getmro(cls):
+        if owner in {BaseRunner, BasePredictor, object}:
+            break
+        value = owner.__dict__.get(method_name)
+        if callable(value):
+            return owner
+    return None
+
+
+def _validate_runner_class(cls: type[Any], class_name: str) -> None:
+    run_owner = _user_method_owner(cls, "run")
+    predict_owner = _user_method_owner(cls, "predict")
+    defines_run = run_owner is not None
+    defines_predict = predict_owner is not None
+    if defines_run and defines_predict:
+        raise ValueError(
+            f"{class_name} must define either run() or predict(), not both"
+        )
+    if not defines_run and not defines_predict:
+        raise ValueError(f"run or predict method not found: {class_name}")
+    if defines_predict:
+        warnings.warn(
+            f"{class_name}.predict() is deprecated; use run() instead",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+    if any(base is BasePredictor for base in inspect.getmro(cls)[1:]):
+        warnings.warn(
+            "BasePredictor is deprecated; use BaseRunner instead",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+
+def load_predictor_from_ref(ref: str) -> BaseRunner:
     """Load a predictor from a module:class reference (e.g. 'predict.py:Predictor')."""
-    module_path, class_name = ref.split(":", 1) if ":" in ref else (ref, "Predictor")
+    module_path, explicit_class_name = ref.split(":", 1) if ":" in ref else (ref, None)
     module_name = os.path.basename(module_path).replace(".py", "")
 
     # Use spec_from_file_location to load from file path
@@ -129,14 +180,37 @@ def load_predictor_from_ref(ref: str) -> BasePredictor:
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
 
+    if explicit_class_name is None:
+        if hasattr(module, "Runner"):
+            if hasattr(module, "Predictor"):
+                warnings.warn(
+                    "Both Runner and Predictor are defined; using Runner. Specify a class "
+                    "name explicitly if this is not intended.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            class_name = "Runner"
+        elif hasattr(module, "Predictor"):
+            warnings.warn(
+                "Predictor is deprecated; use Runner instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            class_name = "Predictor"
+        else:
+            raise AttributeError(f"module {module_name!r} has no Runner or Predictor")
+    else:
+        class_name = explicit_class_name
+
     predictor = getattr(module, class_name)
     # It could be a class or a function (for training)
     if inspect.isclass(predictor):
+        _validate_runner_class(predictor, class_name)
         return predictor()
     return predictor
 
 
-def has_setup_weights(predictor: BasePredictor) -> bool:
+def has_setup_weights(predictor: BaseRunner) -> bool:
     """Check if predictor's setup accepts a weights parameter."""
     if not hasattr(predictor, "setup"):
         return False
@@ -144,7 +218,7 @@ def has_setup_weights(predictor: BasePredictor) -> bool:
     return "weights" in sig.parameters
 
 
-def extract_setup_weights(predictor: BasePredictor) -> Optional[Union[Path, str]]:
+def extract_setup_weights(predictor: BaseRunner) -> Optional[Union[Path, str]]:
     """Extract weights from environment for setup."""
     weights = os.environ.get("COG_WEIGHTS")
     if weights:

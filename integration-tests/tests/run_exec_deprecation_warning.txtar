@@ -1,0 +1,15 @@
+cog run python -c 'print("hello")'
+stderr '"cog run <command>" is deprecated, use "cog exec <command>"'
+stdout 'hello'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+run: "run.py:Runner"
+
+-- run.py --
+from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def run(self) -> str:
+        return "unused"
