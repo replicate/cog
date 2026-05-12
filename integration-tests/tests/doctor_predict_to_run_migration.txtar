@@ -6,9 +6,9 @@ cog doctor --fix
 stderr 'Fixed: Deprecated predict interface names'
 
 grep 'run: "run.py:Runner"' cog.yaml
-grep 'class Runner(BaseRunner):' run.py
-grep 'def run(' run.py
-! test -f predict.py
+grep 'class Runner\(BaseRunner\):' run.py
+grep 'def run\(' run.py
+! exists predict.py
 
 -- cog.yaml --
 build:
