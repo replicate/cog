@@ -40,11 +40,6 @@ const (
 	EnvModelTag = "COG_MODEL_TAG"
 )
 
-// reservedTagPrefix guards auto-generated image/weight tags
-// (cog-image.*, cog-weight.*) from colliding with a tag the user
-// picked. User-supplied tags using this prefix are rejected.
-const reservedTagPrefix = "cog-"
-
 // timestampTagFormat is ISO 8601 basic (compact) form, UTC. Example:
 // 20260508T153042Z. The basic form has no separators so the value is
 // a valid OCI tag as-is; Go's stdlib only ships the extended form
@@ -223,8 +218,8 @@ func validateTagEnv(v string) error {
 	if v == "" {
 		return nil
 	}
-	if strings.HasPrefix(v, reservedTagPrefix) {
-		return fmt.Errorf("invalid %s %q: %q is a reserved prefix — choose a different tag", EnvModelTag, v, reservedTagPrefix)
+	if IsReservedTag(v) {
+		return fmt.Errorf("invalid %s %q: %q is a reserved prefix — choose a different tag", EnvModelTag, v, ReservedTagPrefix)
 	}
 	if !tagRegex.MatchString(v) {
 		return fmt.Errorf("invalid %s %q: must match OCI tag regex %s", EnvModelTag, v, tagRegex.String())
