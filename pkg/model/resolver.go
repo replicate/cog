@@ -221,6 +221,20 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 	opts = opts.WithDefaults(src)
 
+	// Resolve the model ref up front so any user-facing config or env
+	// errors (malformed COG_MODEL_TAG, reserved prefix, etc.) surface
+	// before we kick off a Docker build that could take minutes.
+	// ErrNoModelRef is not an error here — it just means we fall back
+	// to FormatImage.
+	format := FormatImage
+	if _, err := ResolveModelRef(src.Config.Model); err != nil {
+		if !errors.Is(err, ErrNoModelRef) {
+			return nil, err
+		}
+	} else {
+		format = FormatBundle
+	}
+
 	ib := NewImageBuilder(r.factory, r.docker, src, opts)
 	imageSpec := NewImageSpec("model", opts.ImageName)
 	imgResult, err := ib.Build(ctx, imageSpec)
@@ -238,20 +252,19 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 
 	m.Artifacts = []Artifact{ia}
+	// modelFromImage defaults Format to FormatImage; override with the
+	// format chosen by resolution.
+	m.Format = format
 
-	// Build's format is driven by the resolved config: a model: ref or any
-	// managed weights select FormatBundle, otherwise the default FormatImage
-	// (set by modelFromImage) stands.
+	// Load managed weights when declared. Config validation enforces
+	// "weights require model", so a healthy config only reaches this
+	// branch when Format == FormatBundle.
 	if len(src.Config.Weights) > 0 {
 		weights, weightErr := WeightsFromLockfile(src.ProjectDir)
 		if weightErr != nil {
 			return nil, weightErr
 		}
 		m.Weights = weights
-		m.Format = FormatBundle
-	}
-	if src.Config.Model != "" {
-		m.Format = FormatBundle
 	}
 
 	return m, nil
