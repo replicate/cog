@@ -953,7 +953,17 @@ async fn run_event_loop(
 
             Some((slot_id, result)) = slot_msg_rx.recv() => {
                 match result {
-                    Ok(SlotResponse::Log { source, data }) => {
+                    Ok(SlotResponse::ProtocolVersion { version }) => {
+                        if version != crate::bridge::protocol::SLOT_RESPONSE_PROTOCOL_VERSION {
+                            tracing::warn!(
+                                %slot_id,
+                                version,
+                                expected = crate::bridge::protocol::SLOT_RESPONSE_PROTOCOL_VERSION,
+                                "Worker reported unexpected slot response protocol version"
+                            );
+                        }
+                    }
+                    Ok(SlotResponse::LogLine { source, data }) => {
                         let (prediction_id, poisoned) = if let Some(pred) = predictions.get(&slot_id) {
                             if let Some(mut p) = try_lock_prediction(pred) {
                                 p.append_log(&data);
@@ -1005,7 +1015,7 @@ async fn run_event_loop(
                             predictions.remove(&slot_id);
                         }
                     }
-                    Ok(SlotResponse::Output { output }) => {
+                    Ok(SlotResponse::OutputChunk { output, index: _ }) => {
                         let poisoned = if let Some(pred) = predictions.get(&slot_id) {
                             if let Some(mut p) = try_lock_prediction(pred) {
                                 p.append_output(output);
@@ -1020,6 +1030,14 @@ async fn run_event_loop(
                         if poisoned {
                             predictions.remove(&slot_id);
                         }
+                    }
+                    Ok(SlotResponse::BinaryChunk { mime_type, data }) => {
+                        tracing::debug!(
+                            %slot_id,
+                            %mime_type,
+                            bytes = data.len(),
+                            "Ignoring binary chunk until WebSocket streaming is implemented"
+                        );
                     }
                     Ok(SlotResponse::FileOutput { filename, kind, mime_type }) => {
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");

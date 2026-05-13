@@ -294,13 +294,30 @@ pub enum MetricMode {
     Append,
 }
 
+/// Current slot response protocol version.
+///
+/// The response enum is already serde-tagged with `type`, so this constant and
+/// the optional `ProtocolVersion` message give future protocol changes an
+/// explicit marker without adding a second envelope around every message.
+pub const SLOT_RESPONSE_PROTOCOL_VERSION: u32 = 1;
+
 /// Messages from worker to parent on slot socket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SlotResponse {
-    Log {
+    ProtocolVersion {
+        version: u32,
+    },
+
+    LogLine {
         source: LogSource,
         data: String,
+    },
+
+    /// Raw binary payload for future WebSocket streaming.
+    BinaryChunk {
+        mime_type: String,
+        data: Vec<u8>,
     },
 
     /// Output for a file/path-like output return type or an output that exceeds the size threshold
@@ -313,9 +330,10 @@ pub enum SlotResponse {
         mime_type: Option<String>,
     },
 
-    /// Streaming output chunk (for generators).
-    Output {
+    /// Streaming output chunk for generator and iterator output.
+    OutputChunk {
         output: serde_json::Value,
+        index: u64,
     },
 
     /// User-emitted metric from the prediction.
@@ -338,7 +356,7 @@ pub enum SlotResponse {
         output: Option<serde_json::Value>,
         predict_time: f64,
         /// Predictor signal: true when the output is a list, generator, or
-        /// iterator — used as fallback when the schema Output type is `Any`
+        /// iterator, used as fallback when the schema Output type is `Any`
         /// or unavailable.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         is_stream: bool,
@@ -499,20 +517,67 @@ mod tests {
     }
 
     #[test]
-    fn slot_log_serializes() {
-        let resp = SlotResponse::Log {
+    fn slot_log_line_serializes() {
+        let resp = SlotResponse::LogLine {
             source: LogSource::Stdout,
             data: "Processing...".to_string(),
         };
-        insta::assert_json_snapshot!(resp);
+
+        assert_eq!(
+            serde_json::to_value(resp).unwrap(),
+            json!({
+                "type": "log_line",
+                "source": "stdout",
+                "data": "Processing..."
+            })
+        );
     }
 
     #[test]
-    fn slot_output_serializes() {
-        let resp = SlotResponse::Output {
+    fn slot_output_chunk_serializes() {
+        let resp = SlotResponse::OutputChunk {
             output: json!("chunk 1"),
+            index: 7,
         };
-        insta::assert_json_snapshot!(resp);
+
+        assert_eq!(
+            serde_json::to_value(resp).unwrap(),
+            json!({
+                "type": "output_chunk",
+                "output": "chunk 1",
+                "index": 7
+            })
+        );
+    }
+
+    #[test]
+    fn slot_protocol_version_serializes() {
+        let resp = SlotResponse::ProtocolVersion { version: 1 };
+
+        assert_eq!(
+            serde_json::to_value(resp).unwrap(),
+            json!({
+                "type": "protocol_version",
+                "version": 1
+            })
+        );
+    }
+
+    #[test]
+    fn slot_binary_chunk_serializes() {
+        let resp = SlotResponse::BinaryChunk {
+            mime_type: "audio/opus".to_string(),
+            data: vec![1, 2, 3, 4],
+        };
+
+        assert_eq!(
+            serde_json::to_value(resp).unwrap(),
+            json!({
+                "type": "binary_chunk",
+                "mime_type": "audio/opus",
+                "data": [1, 2, 3, 4]
+            })
+        );
     }
 
     #[test]
