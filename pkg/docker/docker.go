@@ -260,6 +260,17 @@ func (c *apiClient) ImageSave(ctx context.Context, imageRef string) (io.ReadClos
 	return c.client.ImageSave(ctx, []string{imageRef})
 }
 
+func (c *apiClient) Tag(ctx context.Context, source, target string) error {
+	console.Debugf("=== APIClient.Tag %s -> %s", source, target)
+	if err := c.client.ImageTag(ctx, source, target); err != nil {
+		if errdefs.IsNotFound(err) {
+			return &command.NotFoundError{Ref: source, Object: "image"}
+		}
+		return fmt.Errorf("tag %q as %q: %w", source, target, err)
+	}
+	return nil
+}
+
 // TODO[md]: this doesn't need to be on the interface, move to auth handler
 func (c *apiClient) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	console.Debugf("=== APIClient.LoadUserInformation %s", registryHost)

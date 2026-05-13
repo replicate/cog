@@ -112,6 +112,61 @@ func TestDockerClient(t *testing.T) {
 		})
 	})
 
+	t.Run("Tag", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("tag existing image", func(t *testing.T) {
+			t.Parallel()
+
+			source := dockertest.NewRef(t)
+			dockerHelper.ImageFixture(t, "alpine", source.String())
+
+			target := dockertest.NewRef(t).String()
+			t.Cleanup(func() {
+				_ = dockerClient.RemoveImage(t.Context(), target)
+			})
+
+			err := dockerClient.Tag(t.Context(), source.String(), target)
+			require.NoError(t, err, "Tag should succeed for existing image")
+
+			// Both refs should now resolve to the same image ID.
+			sourceInspect := dockerHelper.InspectImage(t, source.String())
+			targetInspect := dockerHelper.InspectImage(t, target)
+			assert.Equal(t, sourceInspect.ID, targetInspect.ID,
+				"source and target should resolve to the same image")
+		})
+
+		t.Run("tag by image ID", func(t *testing.T) {
+			t.Parallel()
+
+			source := dockertest.NewRef(t)
+			dockerHelper.ImageFixture(t, "alpine", source.String())
+			sourceInspect := dockerHelper.InspectImage(t, source.String())
+
+			target := dockertest.NewRef(t).String()
+			t.Cleanup(func() {
+				_ = dockerClient.RemoveImage(t.Context(), target)
+			})
+
+			err := dockerClient.Tag(t.Context(), sourceInspect.ID, target)
+			require.NoError(t, err, "Tag should accept an image ID as source")
+
+			targetInspect := dockerHelper.InspectImage(t, target)
+			assert.Equal(t, sourceInspect.ID, targetInspect.ID)
+		})
+
+		t.Run("missing source", func(t *testing.T) {
+			t.Parallel()
+
+			missing := "not-a-real-image:nope"
+			target := dockertest.NewRef(t).String()
+
+			err := dockerClient.Tag(t.Context(), missing, target)
+			require.Error(t, err)
+			assertNotFoundError(t, err, missing, "image")
+		})
+	})
+
 	t.Run("ContainerStop", func(t *testing.T) {
 		t.Parallel()
 
