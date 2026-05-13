@@ -20,6 +20,94 @@ const (
 	testWeightRef2  = testRepo + "@sha256:e4f5a60000000000000000000000000000000000000000000000000000000000"
 )
 
+// clearModelEnv blanks out the COG_MODEL* env vars for the duration
+// of the test so a developer shell with custom overrides can't change
+// the resolver's behavior under test. Mirrors the unexported helper in
+// pkg/model/resolve_test.go.
+func clearModelEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv(model.EnvModel, "")
+	t.Setenv(model.EnvModelRegistry, "")
+	t.Setenv(model.EnvModelRepo, "")
+	t.Setenv(model.EnvModelTag, "")
+}
+
+func TestValidatePushArgs(t *testing.T) {
+	const bundleModel = "registry.example.com/user/model"
+
+	tests := []struct {
+		name        string
+		configModel string
+		envRepo     string // COG_MODEL_REPO override
+		envTag      string // COG_MODEL_TAG override
+		args        []string
+		errContains []string // empty = expect no error
+	}{
+		{
+			// cog.yaml `model:` means FormatBundle. The legacy
+			// positional IMAGE arg is ambiguous here — error message
+			// must direct the user to the env var overrides instead.
+			name:        "FormatBundle with positional arg rejected with helpful message",
+			configModel: bundleModel,
+			args:        []string{"some/other:tag"},
+			errContains: []string{"positional image argument not supported", model.EnvModel, model.EnvModelTag},
+		},
+		{
+			name:        "FormatBundle with no args proceeds",
+			configModel: bundleModel,
+		},
+		{
+			// FormatImage path: positional arg is the legacy way to
+			// specify the image ref and must keep working.
+			name: "FormatImage with positional arg proceeds",
+			args: []string{"r8.im/user/model"},
+		},
+		{
+			// validatePushArgs is not responsible for the "no image:
+			// and no arg" error — that's the downstream caller's job.
+			name: "FormatImage with no args proceeds",
+		},
+		{
+			// COG_MODEL_REPO alone is enough to flip to FormatBundle —
+			// the CI override path. Same rejection applies.
+			name:        "env var promotion to FormatBundle rejects positional arg",
+			envRepo:     "user/model",
+			args:        []string{"r8.im/user/model"},
+			errContains: []string{"positional image argument not supported"},
+		},
+		{
+			// Validation errors surface fast, even with no positional
+			// arg — the whole point of the pre-flight check.
+			name:        "invalid env var surfaces before positional check",
+			configModel: bundleModel,
+			envTag:      "cog-reserved",
+			errContains: []string{"reserved prefix"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearModelEnv(t)
+			if tt.envRepo != "" {
+				t.Setenv(model.EnvModelRepo, tt.envRepo)
+			}
+			if tt.envTag != "" {
+				t.Setenv(model.EnvModelTag, tt.envTag)
+			}
+
+			err := validatePushArgs(tt.configModel, tt.args)
+			if len(tt.errContains) == 0 {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			for _, s := range tt.errContains {
+				assert.Contains(t, err.Error(), s)
+			}
+		})
+	}
+}
+
 func TestFormatPushResult_FormatBundle_NoWeights(t *testing.T) {
 	img := &model.ImageArtifact{Reference: testImageRef}
 	m := &model.Model{

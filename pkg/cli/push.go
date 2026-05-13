@@ -74,6 +74,10 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := validatePushArgs(src.Config.Model, args); err != nil {
+		return err
+	}
+
 	imageName := src.Config.Image
 	if len(args) > 0 {
 		imageName = args[0]
@@ -104,13 +108,6 @@ func push(cmd *cobra.Command, args []string) error {
 
 	regClient := registry.NewRegistryClient()
 	resolver := model.NewResolver(dockerClient, regClient)
-
-	// Validate the model ref before kicking off a Docker build so
-	// COG_MODEL_TAG or cog.yaml mistakes surface in seconds, not
-	// minutes. Resolver.Build re-resolves and is authoritative.
-	if _, err := model.ResolveModelRef(src.Config.Model); err != nil && !errors.Is(err, model.ErrNoModelRef) {
-		return err
-	}
 
 	// Build the model
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(imageName))
@@ -187,6 +184,27 @@ func push(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to push image: %w", pushErr)
 	}
 
+	return nil
+}
+
+// validatePushArgs runs the user-input checks `cog push` needs before
+// touching Docker: resolve the model ref so a malformed COG_MODEL_TAG
+// fails in seconds instead of after a multi-minute build, and reject
+// the legacy positional [IMAGE] arg in FormatBundle mode where its
+// meaning is ambiguous. The arg is still valid for FormatImage models,
+// so the rejection is conditional on a resolvable model ref.
+func validatePushArgs(configModel string, args []string) error {
+	ref, err := model.ResolveModelRef(configModel)
+	if err != nil && !errors.Is(err, model.ErrNoModelRef) {
+		return err
+	}
+	if ref != nil && len(args) > 0 {
+		return errors.New(
+			"positional image argument not supported with 'model' config\n" +
+				"  use COG_MODEL to override the full reference\n" +
+				"  use COG_MODEL_TAG to override just the tag",
+		)
+	}
 	return nil
 }
 
