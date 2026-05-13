@@ -90,8 +90,10 @@ If the model already exists, you may be getting this error because you're not lo
 		return pushErr
 	}
 
-	// Success - show Replicate model URL
-	console.Successf("Image %s pushed", console.Bold(opts.Image))
+	// Success — the CLI prints a structured ref tree as the success
+	// indicator (see pkg/cli/push.go:printPushResult). We add the
+	// Replicate-specific model URL on top of that so users get a
+	// direct link to their published model.
 	replicatePage := fmt.Sprintf("https://%s", strings.Replace(opts.Image, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
 	console.Infof("\nRun your model on Replicate:\n    %s", console.Bold(replicatePage))
 

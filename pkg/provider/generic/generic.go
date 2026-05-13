@@ -71,11 +71,10 @@ func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions)
 }
 
 func (p *GenericProvider) PostPush(ctx context.Context, opts provider.PushOptions, pushErr error) error {
-	// No special post-push handling for generic registries
-	// Just show a simple success message if push succeeded
-	if pushErr == nil {
-		console.Successf("Image %s pushed", console.Bold(opts.Image))
-	}
+	// No special post-push handling for generic registries.
+	// Success output is the structured ref tree printed by the CLI
+	// (see pkg/cli/push.go:printPushResult); we have nothing to add
+	// here.
 	return nil
 }
 

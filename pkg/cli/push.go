@@ -3,6 +3,8 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -126,8 +128,12 @@ func push(cmd *cobra.Command, args []string) error {
 		console.Infof("\n%d managed weight(s)", len(m.Weights))
 	}
 
-	// Push the model (image + optional weights)
-	console.Infof("\nPushing image %s...", console.Bold(m.ImageRef()))
+	// Prefer the resolved bundle ref; fall back to the image ref for FormatImage.
+	pushTarget := m.ImageRef()
+	if m.Ref != nil {
+		pushTarget = m.Ref.String()
+	}
+	console.Infof("\nPushing to %s...", console.Bold(pushTarget))
 
 	// Set up progress display using Docker's jsonmessage rendering. This uses the
 	// same cursor movement and progress display as `docker push`, which handles
@@ -160,14 +166,17 @@ func push(cmd *cobra.Command, args []string) error {
 
 	pw.Close()
 
-	// pushed.Ref is set only when a model reference resolved during
-	// Build (i.e. FormatBundle); FormatImage pushes have no model-ref
-	// concept and rely on per-layer progress output alone.
-	if pushErr == nil && pushed != nil && pushed.Ref != nil {
-		console.Infof("Pushed %s", console.Bold(pushed.Ref.String()))
+	// Bypass console.InfoUnformatted: it wraps at terminal width and
+	// would hard-break the digest refs we want to be copy-pasteable.
+	if pushErr == nil && pushed != nil {
+		if tree := formatPushResult(pushed); tree != "" {
+			_, _ = fmt.Fprintln(os.Stderr)
+			_, _ = fmt.Fprintln(os.Stderr, tree)
+		}
 	}
 
-	// PostPush: the provider handles formatting errors and showing success messages
+	// PostPush: the provider handles formatting errors and any
+	// provider-specific success output (e.g. the Replicate model URL).
 	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {
 		return err
 	}
@@ -180,3 +189,66 @@ func push(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
+
+// formatPushResult renders a tree of the digest-pinned refs published
+// by a successful push. Returns "" for nil models or FormatImage with
+// no image artifact.
+//
+// Output uses space-padded columns (survives copy-paste) and has no
+// leading or trailing newlines — callers add separators. Refs are
+// assumed digest-pinned per Resolver.Push's post-condition; the tests
+// assert this invariant.
+func formatPushResult(m *model.Model) string {
+	if m == nil {
+		return ""
+	}
+
+	img := m.GetImageArtifact()
+
+	if m.Format != model.FormatBundle {
+		if img == nil || img.Reference == "" {
+			return ""
+		}
+		return fmt.Sprintf("  image  %s", img.Reference)
+	}
+
+	// Count siblings so we know which row gets └─ vs ├─.
+	hasImage := img != nil && img.Reference != ""
+	totalChildren := len(m.Weights)
+	if hasImage {
+		totalChildren++
+	}
+
+	// "weight" is the longest kind label; align weight names so refs
+	// line up across rows.
+	const labelWidth = len("weight")
+	nameWidth := 0
+	for _, w := range m.Weights {
+		if len(w.Name) > nameWidth {
+			nameWidth = len(w.Name)
+		}
+	}
+
+	var b strings.Builder
+	if m.Ref != nil {
+		fmt.Fprintf(&b, "  %-*s  %s\n", labelWidth, "model", m.Ref.String())
+	}
+
+	i := 0
+	branch := func() string {
+		i++
+		if i == totalChildren {
+			return "└─"
+		}
+		return "├─"
+	}
+
+	if hasImage {
+		fmt.Fprintf(&b, "  %s %-*s  %s\n", branch(), labelWidth, "image", img.Reference)
+	}
+	for _, w := range m.Weights {
+		fmt.Fprintf(&b, "  %s %-*s  %-*s  %s\n", branch(), labelWidth, "weight", nameWidth, w.Name, w.Reference)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
