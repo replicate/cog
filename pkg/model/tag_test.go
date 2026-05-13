@@ -137,11 +137,11 @@ func TestSanitizeTagSegment_TruncationTrimsTrailingHyphen(t *testing.T) {
 
 func TestParseWeightTag(t *testing.T) {
 	tests := []struct {
-		name         string
-		input        string
-		wantName     string
-		wantDigest   string
-		wantOK       bool
+		name       string
+		input      string
+		wantName   string
+		wantDigest string
+		wantOK     bool
 	}{
 		{
 			name:       "valid weight tag",
