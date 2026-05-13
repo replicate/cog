@@ -11,6 +11,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 // Option configures how Resolver methods behave.
@@ -221,17 +222,16 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 	opts = opts.WithDefaults(src)
 
-	// Resolve the model ref up front so any user-facing config or env
+	// Resolve the model ref up front so user-facing config or env
 	// errors (malformed COG_MODEL_TAG, reserved prefix, etc.) surface
-	// before we kick off a Docker build that could take minutes.
-	// ErrNoModelRef is not an error here — it just means we fall back
-	// to FormatImage.
+	// before kicking off a Docker build. ErrNoModelRef just means
+	// there's no model field — fall back to FormatImage.
 	format := FormatImage
-	if _, err := ResolveModelRef(src.Config.Model); err != nil {
-		if !errors.Is(err, ErrNoModelRef) {
-			return nil, err
-		}
-	} else {
+	ref, err := ResolveModelRef(src.Config.Model)
+	if err != nil && !errors.Is(err, ErrNoModelRef) {
+		return nil, err
+	}
+	if ref != nil {
 		format = FormatBundle
 	}
 
@@ -252,9 +252,8 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 
 	m.Artifacts = []Artifact{ia}
-	// modelFromImage defaults Format to FormatImage; override with the
-	// format chosen by resolution.
 	m.Format = format
+	m.Ref = ref
 
 	// Load managed weights when declared. Config validation enforces
 	// "weights require model", so a healthy config only reaches this
@@ -270,12 +269,15 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	return m, nil
 }
 
-// Push pushes a Model to a container registry.
+// Push pushes a Model to a container registry and returns an
+// enriched copy of the Model with all registry references populated
+// (Model.Ref pinned to the resulting digest, image artifact and
+// weights carrying repo@digest references).
 //
-// Uses the OCI chunked push path (via ImagePusher) which bypasses Docker's
-// monolithic push and supports layers of any size through chunked uploads.
-// Falls back to legacy Docker push if OCI push is not available.
-func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
+// FormatBundle delegates to BundlePusher; FormatImage falls back to
+// the legacy single-image push and the returned Model has only the
+// image artifact's repo@digest captured.
+func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) (*Model, error) {
 	if m.IsBundle() {
 		pusher := NewBundlePusher(r.docker, r.registry)
 		return pusher.Push(ctx, m, opts)
@@ -283,7 +285,7 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 
 	imgArtifact := m.GetImageArtifact()
 	if imgArtifact == nil {
-		return fmt.Errorf("no image artifact in model")
+		return nil, fmt.Errorf("no image artifact in model")
 	}
 
 	var imagePushOpts []ImagePushOption
@@ -293,7 +295,24 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 	if opts.OnFallback != nil {
 		imagePushOpts = append(imagePushOpts, WithOnFallback(opts.OnFallback))
 	}
-	return r.imagePusher.Push(ctx, imgArtifact, imagePushOpts...)
+	if err := r.imagePusher.Push(ctx, imgArtifact, imagePushOpts...); err != nil {
+		return nil, err
+	}
+
+	// Enrich the image artifact with the pushed digest. On registries
+	// that don't support HEAD on tags, fall back to the original Model
+	// rather than failing a successful push. FormatImage is the legacy
+	// single-image path; bundle pushes surface HEAD failures as errors.
+	desc, err := r.registry.GetDescriptor(ctx, imgArtifact.Reference)
+	if err != nil {
+		console.Debugf("post-push HEAD on %q failed; returning Model without digest enrichment: %v", imgArtifact.Reference, err)
+		return m, nil
+	}
+
+	enrichedImage := imgArtifact.WithDigest(repoFromReference(imgArtifact.Reference), desc)
+	out := *m
+	out.Image, out.Artifacts = replaceImageArtifact(imgArtifact, m.Artifacts, enrichedImage)
+	return &out, nil
 }
 
 // loadLocal loads a Model from the local docker daemon.

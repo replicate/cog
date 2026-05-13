@@ -72,9 +72,16 @@ type ResolvedRef struct {
 // "registry/repo@digest" form.
 func (r *ResolvedRef) String() string {
 	if r.Digest != "" {
-		return r.Registry + "/" + r.Repo + "@" + r.Digest
+		return r.Repository() + "@" + r.Digest
 	}
-	return r.Registry + "/" + r.Repo + ":" + r.Tag
+	return r.Repository() + ":" + r.Tag
+}
+
+// Repository returns the bare "registry/repo" prefix, with no tag or
+// digest. Use this as the base for constructing related refs (image
+// manifest tag, weight manifest tag, weight repo@digest).
+func (r *ResolvedRef) Repository() string {
+	return r.Registry + "/" + r.Repo
 }
 
 // ErrNoModelRef is returned when no model reference can be determined

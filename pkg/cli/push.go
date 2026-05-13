@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -102,6 +103,13 @@ func push(cmd *cobra.Command, args []string) error {
 	regClient := registry.NewRegistryClient()
 	resolver := model.NewResolver(dockerClient, regClient)
 
+	// Validate the model ref before kicking off a Docker build so
+	// COG_MODEL_TAG or cog.yaml mistakes surface in seconds, not
+	// minutes. Resolver.Build re-resolves and is authoritative.
+	if _, err := model.ResolveModelRef(src.Config.Model); err != nil && !errors.Is(err, model.ErrNoModelRef) {
+		return err
+	}
+
 	// Build the model
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(imageName))
 	console.Info("")
@@ -128,7 +136,7 @@ func push(cmd *cobra.Command, args []string) error {
 	pw := docker.NewProgressWriter()
 	defer pw.Close()
 
-	pushErr := resolver.Push(ctx, m, model.PushOptions{
+	pushed, pushErr := resolver.Push(ctx, m, model.PushOptions{
 		ImageProgressFn: func(prog model.PushProgress) {
 			if prog.Phase != "" {
 				switch prog.Phase {
@@ -151,6 +159,13 @@ func push(cmd *cobra.Command, args []string) error {
 	})
 
 	pw.Close()
+
+	// pushed.Ref is set only when a model reference resolved during
+	// Build (i.e. FormatBundle); FormatImage pushes have no model-ref
+	// concept and rely on per-layer progress output alone.
+	if pushErr == nil && pushed != nil && pushed.Ref != nil {
+		console.Infof("Pushed %s", console.Bold(pushed.Ref.String()))
+	}
 
 	// PostPush: the provider handles formatting errors and showing success messages
 	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {

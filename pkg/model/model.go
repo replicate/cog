@@ -47,6 +47,18 @@ type Model struct {
 	// legacy single-image output; FormatBundle is the OCI index output.
 	Format Format
 
+	// Ref is the canonical model reference for this model: registry,
+	// repo, and either a tag or a digest. Set by Resolver.Build from
+	// the resolved cog.yaml + COG_MODEL* env vars; consumed by
+	// Resolver.Push to decide where to push.
+	//
+	// Resolver.Push does not mutate the input Model; the digest-pinned
+	// post-push Ref lives on the returned Model.
+	//
+	// Nil for FormatImage models loaded from the legacy `image:`
+	// field, which have no model reference to resolve.
+	Ref *ResolvedRef
+
 	Image      *ImageArtifact // Underlying OCI image
 	Config     *config.Config // Parsed cog.yaml
 	Schema     *openapi3.T    // OpenAPI schema
@@ -54,6 +66,16 @@ type Model struct {
 
 	// Artifacts is the collection of all artifacts produced by building this model.
 	// Populated by Resolver.Build(). Contains ImageArtifact instances only.
+	//
+	// Invariant: when both Image and Artifacts are populated by the
+	// build path, the *ImageArtifact in Image is the same instance as
+	// the first ImageArtifact in Artifacts. Push preserves this by
+	// rebuilding both with the enriched copy.
+	//
+	// Models produced by Inspect/Pull leave Artifacts nil because no
+	// build ran; ImageArtifact.ToModel only sets Image. Code that
+	// relies on the invariant must therefore also tolerate a nil
+	// Artifacts slice.
 	Artifacts []Artifact
 
 	// Weights are the model's managed weights, loaded from the lockfile
@@ -76,6 +98,17 @@ type Weight struct {
 	Size      int64
 	// SizeCompressed is the total compressed (over-the-wire) size.
 	SizeCompressed int64
+
+	// Reference is the fully-qualified registry reference for this
+	// weight manifest, in digest form ("registry/repo@sha256:..."),
+	// populated after a successful push verifies the manifest exists.
+	// Empty until then.
+	Reference string
+
+	// Tag is the registry tag the weight manifest was pushed under,
+	// of the form "cog-weight.{name}.{short-digest}". Populated
+	// alongside Reference after verification. Empty until then.
+	Tag string
 }
 
 // WeightFromLockEntry creates a Weight from a lockfile entry.

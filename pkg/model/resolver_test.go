@@ -25,6 +25,8 @@ type mockDocker struct {
 	inspectFunc   func(ctx context.Context, ref string) (*image.InspectResponse, error)
 	pullFunc      func(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
 	pushFunc      func(ctx context.Context, ref string) error
+	tagFunc       func(ctx context.Context, source, target string) error
+	removeFunc    func(ctx context.Context, ref string) error
 	imageSaveFunc func(ctx context.Context, imageRef string) (io.ReadCloser, error)
 }
 
@@ -69,8 +71,18 @@ func (m *mockDocker) ContainerStop(ctx context.Context, containerID string) erro
 	return errors.New("mockDocker.ContainerStop not implemented")
 }
 
+func (m *mockDocker) Tag(ctx context.Context, source, target string) error {
+	if m.tagFunc != nil {
+		return m.tagFunc(ctx, source, target)
+	}
+	return nil
+}
+
 func (m *mockDocker) RemoveImage(ctx context.Context, ref string) error {
-	return errors.New("mockDocker.RemoveImage not implemented")
+	if m.removeFunc != nil {
+		return m.removeFunc(ctx, ref)
+	}
+	return nil
 }
 
 func (m *mockDocker) ImageBuild(ctx context.Context, options command.ImageBuildOptions) (string, error) {
