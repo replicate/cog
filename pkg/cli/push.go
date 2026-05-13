@@ -74,27 +74,37 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := validatePushArgs(src.Config.Model, args); err != nil {
+	// Resolve up front so user-input errors (malformed COG_MODEL_TAG,
+	// image:+env mode mix-up, bad positional arg) fail in seconds
+	// rather than after a multi-minute Docker build. We also need the
+	// resolved ref before Resolver.Build so the provider lookup below
+	// can drive credential selection from the correct host even when
+	// Build fails (the build-error path calls p.PostPush(...) for
+	// Replicate-specific guidance).
+	modelRef, err := validatePushArgs(src.Config.Image, src.Config.Model, args)
+	if err != nil {
 		return err
 	}
-
-	imageName := src.Config.Image
-	if len(args) > 0 {
-		imageName = args[0]
-	}
-
-	if imageName == "" {
-		return fmt.Errorf("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.example.com/your-username/model-name'")
+	var pushTarget string
+	switch {
+	case modelRef != nil:
+		pushTarget = modelRef.String()
+	case len(args) > 0:
+		pushTarget = args[0]
+	case src.Config.Image != "":
+		pushTarget = src.Config.Image
+	default:
+		return errors.New("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.example.com/your-username/model-name'")
 	}
 
 	// Look up the provider for the target registry
-	p := provider.DefaultRegistry().ForImage(imageName)
+	p := provider.DefaultRegistry().ForImage(pushTarget)
 	if p == nil {
-		return fmt.Errorf("no provider found for image '%s'", imageName)
+		return fmt.Errorf("no provider found for image '%s'", pushTarget)
 	}
 
 	pushOpts := provider.PushOptions{
-		Image:      imageName,
+		Image:      pushTarget,
 		Config:     src.Config,
 		ProjectDir: src.ProjectDir,
 	}
@@ -110,9 +120,9 @@ func push(cmd *cobra.Command, args []string) error {
 	resolver := model.NewResolver(dockerClient, regClient)
 
 	// Build the model
-	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(imageName))
+	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(pushTarget))
 	console.Info("")
-	buildOpts := buildOptionsFromFlags(cmd, imageName, annotations)
+	buildOpts := buildOptionsFromFlags(cmd, pushTarget, annotations)
 	m, err := resolver.Build(ctx, src, buildOpts)
 	if err != nil {
 		// Call PostPush to handle error logging/analytics
@@ -126,11 +136,11 @@ func push(cmd *cobra.Command, args []string) error {
 	}
 
 	// Prefer the resolved bundle ref; fall back to the image ref for FormatImage.
-	pushTarget := m.ImageRef()
+	announceTarget := m.ImageRef()
 	if m.Ref != nil {
-		pushTarget = m.Ref.String()
+		announceTarget = m.Ref.String()
 	}
-	console.Infof("\nPushing to %s...", console.Bold(pushTarget))
+	console.Infof("\nPushing to %s...", console.Bold(announceTarget))
 
 	// Set up progress display using Docker's jsonmessage rendering. This uses the
 	// same cursor movement and progress display as `docker push`, which handles
@@ -187,25 +197,28 @@ func push(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// validatePushArgs runs the user-input checks `cog push` needs before
-// touching Docker: resolve the model ref so a malformed COG_MODEL_TAG
-// fails in seconds instead of after a multi-minute build, and reject
-// the legacy positional [IMAGE] arg in FormatBundle mode where its
-// meaning is ambiguous. The arg is still valid for FormatImage models,
+// validatePushArgs resolves the model ref and runs the push-specific
+// user-input checks before any Docker work. Returns the resolved ref
+// (or nil for FormatImage paths) so the caller can drive the provider
+// lookup and push target from the same resolution — avoiding a second
+// call to ResolveModelRef that could disagree on the timestamp tag.
+//
+// The positional [IMAGE] arg is rejected in FormatBundle mode where
+// its meaning is ambiguous; it's still valid for FormatImage models,
 // so the rejection is conditional on a resolvable model ref.
-func validatePushArgs(configModel string, args []string) error {
-	ref, err := model.ResolveModelRef(configModel)
+func validatePushArgs(configImage, configModel string, args []string) (*model.ResolvedRef, error) {
+	ref, err := model.ResolveModelRef(configImage, configModel)
 	if err != nil && !errors.Is(err, model.ErrNoModelRef) {
-		return err
+		return nil, err
 	}
 	if ref != nil && len(args) > 0 {
-		return errors.New(
+		return nil, errors.New(
 			"positional image argument not supported with 'model' config\n" +
 				"  use COG_MODEL to override the full reference\n" +
 				"  use COG_MODEL_TAG to override just the tag",
 		)
 	}
-	return nil
+	return ref, nil
 }
 
 // formatPushResult renders a tree of the digest-pinned refs published
@@ -269,4 +282,3 @@ func formatPushResult(m *model.Model) string {
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
-

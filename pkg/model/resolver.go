@@ -223,11 +223,12 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	opts = opts.WithDefaults(src)
 
 	// Resolve the model ref up front so user-facing config or env
-	// errors (malformed COG_MODEL_TAG, reserved prefix, etc.) surface
-	// before kicking off a Docker build. ErrNoModelRef just means
-	// there's no model field — fall back to FormatImage.
+	// errors (malformed COG_MODEL_TAG, reserved prefix, image:+env
+	// mode mix-up, etc.) surface before kicking off a Docker build.
+	// ErrNoModelRef just means there's no model field — fall back to
+	// FormatImage.
 	format := FormatImage
-	ref, err := ResolveModelRef(src.Config.Model)
+	ref, err := ResolveModelRef(src.Config.Image, src.Config.Model)
 	if err != nil && !errors.Is(err, ErrNoModelRef) {
 		return nil, err
 	}

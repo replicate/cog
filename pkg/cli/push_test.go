@@ -37,11 +37,13 @@ func TestValidatePushArgs(t *testing.T) {
 
 	tests := []struct {
 		name        string
+		configImage string
 		configModel string
 		envRepo     string // COG_MODEL_REPO override
 		envTag      string // COG_MODEL_TAG override
 		args        []string
 		errContains []string // empty = expect no error
+		wantRef     bool     // expect a non-nil ResolvedRef (FormatBundle path)
 	}{
 		{
 			// cog.yaml `model:` means FormatBundle. The legacy
@@ -53,8 +55,9 @@ func TestValidatePushArgs(t *testing.T) {
 			errContains: []string{"positional image argument not supported", model.EnvModel, model.EnvModelTag},
 		},
 		{
-			name:        "FormatBundle with no args proceeds",
+			name:        "FormatBundle with no args proceeds and returns the ref",
 			configModel: bundleModel,
+			wantRef:     true,
 		},
 		{
 			// FormatImage path: positional arg is the legacy way to
@@ -83,6 +86,15 @@ func TestValidatePushArgs(t *testing.T) {
 			envTag:      "cog-reserved",
 			errContains: []string{"reserved prefix"},
 		},
+		{
+			// Smoke test that the image:+env mode-mix rejection
+			// propagates through the CLI boundary. The full matrix
+			// lives in TestResolveModelRef_ImageModelEnvConflict.
+			name:        "image: in cog.yaml + COG_MODEL_REPO is rejected",
+			configImage: "ghcr.io/owner/repo",
+			envRepo:     "acct/model",
+			errContains: []string{"'image' in cog.yaml cannot be combined with COG_MODEL"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -95,9 +107,14 @@ func TestValidatePushArgs(t *testing.T) {
 				t.Setenv(model.EnvModelTag, tt.envTag)
 			}
 
-			err := validatePushArgs(tt.configModel, tt.args)
+			ref, err := validatePushArgs(tt.configImage, tt.configModel, tt.args)
 			if len(tt.errContains) == 0 {
 				require.NoError(t, err)
+				if tt.wantRef {
+					require.NotNil(t, ref, "FormatBundle path should return a resolved ref")
+				} else {
+					require.Nil(t, ref, "FormatImage path should return nil ref")
+				}
 				return
 			}
 			require.Error(t, err)

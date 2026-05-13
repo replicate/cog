@@ -90,6 +90,16 @@ func (r *ResolvedRef) Repository() string {
 // surfacing it to the user.
 var ErrNoModelRef = errors.New("no model ref — set 'model' in cog.yaml or COG_MODEL")
 
+// ErrImageModelEnvConflict is returned when cog.yaml has `image:` set
+// and the COG_MODEL* env vars promote to a resolvable model ref.
+// cog.yaml's schema enforces image:/model: as mutex, but env-var
+// promotion bypasses that check.
+var ErrImageModelEnvConflict = errors.New(
+	"'image' in cog.yaml cannot be combined with COG_MODEL* env vars\n" +
+		"  remove 'image' from cog.yaml (use 'model' instead), or\n" +
+		"  unset COG_MODEL, COG_MODEL_REGISTRY, COG_MODEL_REPO, COG_MODEL_TAG",
+)
+
 // GenerateTimestampTag returns the current UTC time formatted as a
 // compact ISO 8601 timestamp suitable for use as an OCI tag. Calls
 // within the same second return identical values.
@@ -100,7 +110,7 @@ func GenerateTimestampTag() string {
 // ResolveModelRef composes the final model reference from the
 // cog.yaml `model` field plus any COG_MODEL* environment overrides.
 //
-// Resolution algorithm (see also: epic cog.md-model-refs-pqk7):
+// Resolution algorithm:
 //
 //  1. If COG_MODEL is set, it wins outright. Parse it and append a
 //     timestamp tag if none was supplied. All other env vars are
@@ -111,11 +121,26 @@ func GenerateTimestampTag() string {
 //     registry ← COG_MODEL_REGISTRY, repo ← COG_MODEL_REPO,
 //     tag ← COG_MODEL_TAG (or a freshly generated timestamp).
 //  3. If no repository can be determined, return ErrNoModelRef.
+//  4. If a ref resolved and `image:` is also set, return
+//     ErrImageModelEnvConflict.
 //
-// configModel is the raw cog.yaml `model` value; pass "" if absent.
-// The function only reads environment variables — it never touches
-// the filesystem or network.
-func ResolveModelRef(configModel string) (*ResolvedRef, error) {
+// configImage and configModel are the raw cog.yaml `image` and
+// `model` values; pass "" if absent. The function only reads
+// environment variables — it never touches the filesystem or network.
+func ResolveModelRef(configImage, configModel string) (*ResolvedRef, error) {
+	ref, err := resolveModelRef(configModel)
+	if err != nil {
+		return nil, err
+	}
+	if ref != nil && configImage != "" {
+		return nil, ErrImageModelEnvConflict
+	}
+	return ref, nil
+}
+
+// resolveModelRef does the env+config composition. ResolveModelRef
+// wraps it with the image:/model: mode-mix check.
+func resolveModelRef(configModel string) (*ResolvedRef, error) {
 	if full := os.Getenv(EnvModel); full != "" {
 		return resolveFromFullRef(full)
 	}
