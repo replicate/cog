@@ -9,6 +9,11 @@ env COG_CACHE_DIR=$WORK/cache
 
 registry-start
 
+# Point the model ref at the ephemeral test registry. cog.yaml carries
+# the bare repo via 'model:'; COG_MODEL_REGISTRY swaps in the host
+# now that registry-start has assigned a port.
+env COG_MODEL_REGISTRY=$TEST_REGISTRY
+
 # Build a weight directory with multiple file types.
 mkdir weights-src
 exec sh -c 'echo "safetensor-data" > weights-src/model.safetensors'
@@ -17,9 +22,6 @@ exec sh -c 'echo "tokenizer-data" > weights-src/tokenizer.json'
 exec sh -c 'echo "onnx-data" > weights-src/model.onnx'
 exec sh -c 'echo "pytorch-bin-data" > weights-src/pytorch_model.bin'
 exec sh -c 'echo "readme-text" > weights-src/README.md'
-
-# Patch image to use ephemeral test registry.
-exec sh -c 'printf "image: %s/test/filter-model\n" "$TEST_REGISTRY" >> cog.yaml'
 
 # Import with include/exclude filters.
 cog weights import
@@ -40,11 +42,13 @@ cog predict -i s=check
 stdout 'files=config.json,model.safetensors,tokenizer.json'
 
 -- cog.yaml --
-# image: is appended by the test before `cog weights import` (the
-# value depends on $TEST_REGISTRY, which varies per run).
+# 'model:' carries the bare repo. The registry host is set via
+# COG_MODEL_REGISTRY in the test body since $TEST_REGISTRY varies
+# per run.
 build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
+model: test/filter-model
 weights:
   - name: filtered
     target: /src/weights/filtered
