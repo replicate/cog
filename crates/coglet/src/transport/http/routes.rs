@@ -1,12 +1,17 @@
 //! HTTP route handlers.
 
+use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     Router,
     extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Json},
+    response::{
+        IntoResponse, Json, Response,
+        sse::{Event, KeepAlive, Sse},
+    },
     routing::{get, post, put},
 };
 use serde::{Deserialize, Serialize};
@@ -15,7 +20,9 @@ use serde::{Deserialize, Serialize};
 use crate::health::Health;
 use crate::health::{HealthResponse, SetupResult};
 use crate::predictor::PredictionError;
-use crate::service::{CreatePredictionError, HealthSnapshot, PredictionService};
+use crate::service::{
+    CreatePredictionError, HealthSnapshot, PredictionService, PredictionStreamSubscription,
+};
 use crate::version::VersionInfo;
 use crate::webhook::{TraceContext, WebhookConfig, WebhookEventType, WebhookSender};
 
@@ -376,7 +383,12 @@ async fn create_prediction_with_id(
 
     // Submit prediction: creates Prediction, acquires slot, registers in service
     let (handle, unregistered_slot) = match service
-        .submit_prediction(prediction_id.clone(), input.clone(), webhook_sender)
+        .submit_prediction(
+            prediction_id.clone(),
+            input.clone(),
+            webhook_sender,
+            respond_async,
+        )
         .await
     {
         Ok(r) => r,
@@ -557,6 +569,80 @@ async fn cancel_prediction(
     }
 }
 
+fn stream_event_to_sse(event: crate::prediction::PredictionStreamEvent) -> Event {
+    Event::default()
+        .event(event.event_name())
+        .json_data(event.json_data())
+        .expect("prediction stream events serialize to JSON")
+}
+
+fn prediction_sse_stream(
+    subscription: PredictionStreamSubscription,
+) -> impl futures::Stream<Item = Result<Event, Infallible>> {
+    let (replay, receiver, guard) = subscription.into_parts();
+
+    struct StreamState {
+        replay: std::collections::VecDeque<crate::prediction::PredictionStreamEvent>,
+        receiver: tokio::sync::broadcast::Receiver<crate::prediction::PredictionStreamEvent>,
+        _guard: crate::service::PredictionStreamGuard,
+        done: bool,
+    }
+
+    futures::stream::unfold(
+        StreamState {
+            replay: replay.into(),
+            receiver,
+            _guard: guard,
+            done: false,
+        },
+        |mut state| async move {
+            if state.done {
+                return None;
+            }
+
+            if let Some(event) = state.replay.pop_front() {
+                state.done = event.event_name() == "completed";
+                return Some((Ok(stream_event_to_sse(event)), state));
+            }
+
+            loop {
+                match state.receiver.recv().await {
+                    Ok(event) => {
+                        state.done = event.event_name() == "completed";
+                        return Some((Ok(stream_event_to_sse(event)), state));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::warn!(skipped, "SSE prediction stream receiver lagged");
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        },
+    )
+}
+
+async fn stream_prediction(
+    State(service): State<Arc<PredictionService>>,
+    Path(prediction_id): Path<String>,
+) -> Response {
+    let Some(subscription) = service.subscribe_prediction_stream(&prediction_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Prediction not found"})),
+        )
+            .into_response();
+    };
+
+    Sse::new(prediction_sse_stream(subscription))
+        .keep_alive(
+            KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("keep-alive"),
+        )
+        .into_response()
+}
+
 async fn shutdown(State(service): State<Arc<PredictionService>>) -> impl IntoResponse {
     tracing::info!("Shutdown requested via HTTP");
     service.trigger_shutdown();
@@ -679,6 +765,7 @@ pub fn routes(service: Arc<PredictionService>) -> Router {
         .route("/shutdown", post(shutdown))
         .route("/predictions", post(create_prediction))
         .route("/predictions/{id}", put(create_prediction_idempotent))
+        .route("/predictions/{id}/stream", get(stream_prediction))
         .route("/predictions/{id}/cancel", post(cancel_prediction))
         .route("/trainings", post(create_training))
         .route("/trainings/{id}", put(create_training_idempotent))
@@ -953,6 +1040,62 @@ mod tests {
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let json = response_json(response).await;
         assert_eq!(json["status"], "starting");
+    }
+
+    #[tokio::test]
+    async fn stream_prediction_unknown_id_returns_404() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::get("/predictions/missing/stream")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let json = response_json(response).await;
+        assert_eq!(json["error"], "Prediction not found");
+    }
+
+    #[tokio::test]
+    async fn stream_prediction_existing_id_returns_sse() {
+        let service = create_ready_service().await;
+        let (_handle, _slot) = service
+            .submit_prediction(
+                "stream-route".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::get("/predictions/stream-route/stream")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response.headers().get("content-type").unwrap();
+        assert!(
+            content_type
+                .to_str()
+                .unwrap()
+                .starts_with("text/event-stream"),
+            "unexpected content-type: {:?}",
+            content_type
+        );
     }
 
     #[tokio::test]

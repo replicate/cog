@@ -966,7 +966,7 @@ async fn run_event_loop(
                     Ok(SlotResponse::LogLine { source, data }) => {
                         let (prediction_id, poisoned) = if let Some(pred) = predictions.get(&slot_id) {
                             if let Some(mut p) = try_lock_prediction(pred) {
-                                p.append_log(&data);
+                                p.append_log_source(source, &data);
                                 (Some(p.id().to_string()), false)
                             } else {
                                 (None, true)
@@ -1015,10 +1015,10 @@ async fn run_event_loop(
                             predictions.remove(&slot_id);
                         }
                     }
-                    Ok(SlotResponse::OutputChunk { output, index: _ }) => {
+                    Ok(SlotResponse::OutputChunk { output, index }) => {
                         let poisoned = if let Some(pred) = predictions.get(&slot_id) {
                             if let Some(mut p) = try_lock_prediction(pred) {
-                                p.append_output(output);
+                                p.append_output_chunk(output, index);
                                 false
                             } else {
                                 true

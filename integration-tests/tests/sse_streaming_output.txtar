@@ -1,0 +1,36 @@
+# Test that async generator output is available over the SSE stream endpoint.
+
+[short] skip 'requires Docker build'
+
+cog build -t $TEST_IMAGE
+cog serve --upload-url http://unused/
+
+curl -H Prefer:respond-async PUT /predictions/sse-stream-test '{"id":"sse-stream-test","input":{}}'
+stdout '"status":"starting"'
+
+curl -N -H Accept:text/event-stream GET /predictions/sse-stream-test/stream
+stdout 'event: output'
+stdout 'data: {"chunk":"chunk-1","index":0}'
+stdout 'event: output'
+stdout 'data: {"chunk":"chunk-2","index":1}'
+stdout 'event: completed'
+stdout '"status":"succeeded"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import time
+from typing import Iterator
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Iterator[str]:
+        time.sleep(0.25)
+        yield "chunk-1"
+        time.sleep(0.25)
+        yield "chunk-2"
