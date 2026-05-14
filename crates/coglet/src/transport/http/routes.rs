@@ -430,7 +430,7 @@ async fn create_prediction_with_id(
             prediction_id.clone(),
             input.clone(),
             webhook_sender,
-            response_mode != PredictionResponseMode::SyncJson,
+            response_mode != PredictionResponseMode::AsyncJson,
         )
         .await
     {
@@ -462,6 +462,12 @@ async fn create_prediction_with_id(
 
     // Async mode: spawn background task, return immediately
     if response_mode != PredictionResponseMode::SyncJson {
+        let sse_subscription = if response_mode == PredictionResponseMode::AsyncSse {
+            service.subscribe_prediction_stream(&prediction_id)
+        } else {
+            None
+        };
+
         let service_clone = Arc::clone(&service);
         let id_for_cleanup = prediction_id.clone();
         let context_async = context.clone();
@@ -475,7 +481,14 @@ async fn create_prediction_with_id(
         });
 
         if response_mode == PredictionResponseMode::AsyncSse {
-            return stream_prediction_response(service, &prediction_id);
+            let Some(subscription) = sse_subscription else {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({"error": "Prediction not found"})),
+                )
+                    .into_response();
+            };
+            return stream_prediction_subscription_response(subscription);
         }
 
         return (
@@ -634,10 +647,11 @@ fn stream_event_to_sse(event: crate::prediction::PredictionStreamEvent) -> Event
 fn prediction_sse_stream(
     subscription: PredictionStreamSubscription,
 ) -> impl futures::Stream<Item = Result<Event, Infallible>> {
-    let (replay, receiver, guard) = subscription.into_parts();
+    let (replay, replay_skipped, receiver, guard) = subscription.into_parts();
 
     struct StreamState {
         replay: std::collections::VecDeque<crate::prediction::PredictionStreamEvent>,
+        replay_skipped: u64,
         receiver: tokio::sync::broadcast::Receiver<crate::prediction::PredictionStreamEvent>,
         _guard: crate::service::PredictionStreamGuard,
         done: bool,
@@ -646,6 +660,7 @@ fn prediction_sse_stream(
     futures::stream::unfold(
         StreamState {
             replay: replay.into(),
+            replay_skipped,
             receiver,
             _guard: guard,
             done: false,
@@ -655,23 +670,44 @@ fn prediction_sse_stream(
                 return None;
             }
 
+            if state.replay_skipped > 0 {
+                let skipped = state.replay_skipped;
+                state.replay_skipped = 0;
+                state.done = true;
+                let event = Event::default()
+                    .event("error")
+                    .json_data(serde_json::json!({
+                        "error": "SSE stream replay truncated; events were dropped",
+                        "skipped": skipped,
+                    }))
+                    .expect("SSE replay truncation error serializes to JSON");
+                return Some((Ok(event), state));
+            }
+
             if let Some(event) = state.replay.pop_front() {
                 state.done = event.event_name() == "completed";
                 return Some((Ok(stream_event_to_sse(event)), state));
             }
 
-            loop {
-                match state.receiver.recv().await {
-                    Ok(event) => {
-                        state.done = event.event_name() == "completed";
-                        return Some((Ok(stream_event_to_sse(event)), state));
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        tracing::warn!(skipped, "SSE prediction stream receiver lagged");
-                        continue;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            match state.receiver.recv().await {
+                Ok(event) => {
+                    state.done = event.event_name() == "completed";
+                    Some((Ok(stream_event_to_sse(event)), state))
                 }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(skipped, "SSE prediction stream receiver lagged");
+                    state.done = true;
+                    // In the future, this could become backpressure or cursor-based replay.
+                    let event = Event::default()
+                        .event("error")
+                        .json_data(serde_json::json!({
+                            "error": "SSE stream lagged; events were dropped",
+                            "skipped": skipped,
+                        }))
+                        .expect("SSE lag error serializes to JSON");
+                    Some((Ok(event), state))
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
             }
         },
     )
@@ -686,6 +722,10 @@ fn stream_prediction_response(service: Arc<PredictionService>, prediction_id: &s
             .into_response();
     };
 
+    stream_prediction_subscription_response(subscription)
+}
+
+fn stream_prediction_subscription_response(subscription: PredictionStreamSubscription) -> Response {
     Sse::new(prediction_sse_stream(subscription))
         .keep_alive(
             KeepAlive::new()
@@ -1120,6 +1160,97 @@ mod tests {
             "unexpected content-type: {:?}",
             content_type
         );
+
+        let body = response.into_body();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        let sse = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(sse.contains("event: completed"), "SSE body: {sse}");
+        assert!(sse.contains(r#""status":"succeeded""#), "SSE body: {sse}");
+    }
+
+    #[tokio::test]
+    async fn lagged_prediction_sse_stream_emits_error_and_closes() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        let (_handle, slot) = service
+            .submit_prediction(
+                "lagged-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let subscription = service
+            .subscribe_prediction_stream("lagged-stream")
+            .unwrap();
+
+        {
+            let prediction = slot.prediction();
+            let mut prediction = prediction.lock().unwrap();
+            for index in 0..1030 {
+                prediction.append_output_chunk(serde_json::json!(index), index);
+            }
+        }
+
+        let response = Sse::new(prediction_sse_stream(subscription)).into_response();
+        let collected =
+            tokio::time::timeout(Duration::from_millis(100), response.into_body().collect())
+                .await
+                .expect("lagged SSE stream should close after emitting an error")
+                .unwrap();
+        let sse = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+        assert!(sse.contains("event: error"), "SSE body: {sse}");
+        assert!(sse.contains("SSE stream lagged"), "SSE body: {sse}");
+        assert!(sse.contains("skipped"), "SSE body: {sse}");
+    }
+
+    #[tokio::test]
+    async fn truncated_replay_prediction_sse_stream_emits_error_and_closes() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        let (_handle, slot) = service
+            .submit_prediction(
+                "truncated-replay".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+
+        {
+            let prediction = slot.prediction();
+            let mut prediction = prediction.lock().unwrap();
+            for index in 0..1030 {
+                prediction.append_output_chunk(serde_json::json!(index), index);
+            }
+        }
+
+        let subscription = service
+            .subscribe_prediction_stream("truncated-replay")
+            .unwrap();
+        let response = Sse::new(prediction_sse_stream(subscription)).into_response();
+        let collected =
+            tokio::time::timeout(Duration::from_millis(100), response.into_body().collect())
+                .await
+                .expect("truncated replay SSE stream should close after emitting an error")
+                .unwrap();
+        let sse = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+        assert!(sse.contains("event: error"), "SSE body: {sse}");
+        assert!(
+            sse.contains("SSE stream replay truncated"),
+            "SSE body: {sse}"
+        );
+        assert!(sse.contains("skipped"), "SSE body: {sse}");
     }
 
     #[tokio::test]

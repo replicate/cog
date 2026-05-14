@@ -2,10 +2,9 @@
 
 [short] skip 'requires Docker build'
 
-cog build -t $TEST_IMAGE
 cog serve --upload-url http://unused/
 
-curl -N -H Accept:text/event-stream PUT /predictions/sse-stream-test '{"id":"sse-stream-test","input":{}}'
+curl -H Accept:text/event-stream PUT /predictions/sse-stream-test '{"id":"sse-stream-test","input":{}}'
 stdout 'event: output'
 stdout 'data: {"chunk":"chunk-1","index":0}'
 stdout 'event: output'

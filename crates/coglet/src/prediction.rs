@@ -92,6 +92,7 @@ pub enum PredictionStreamEvent {
 
 pub struct PredictionStreamReplay {
     pub replay: Vec<PredictionStreamEvent>,
+    pub skipped: u64,
     pub receiver: tokio::sync::broadcast::Receiver<PredictionStreamEvent>,
 }
 
@@ -144,6 +145,7 @@ pub struct Prediction {
     completion: Arc<Notify>,
     stream_tx: tokio::sync::broadcast::Sender<PredictionStreamEvent>,
     stream_history: Vec<PredictionStreamEvent>,
+    stream_history_skipped: u64,
     /// User-emitted metrics. Merged with system metrics (predict_time) in terminal response.
     metrics: HashMap<String, serde_json::Value>,
 }
@@ -165,6 +167,7 @@ impl Prediction {
             completion: Arc::new(Notify::new()),
             stream_tx,
             stream_history: Vec::new(),
+            stream_history_skipped: 0,
             metrics: HashMap::new(),
         }
     }
@@ -184,6 +187,7 @@ impl Prediction {
     pub fn subscribe_stream_replay(&self) -> PredictionStreamReplay {
         PredictionStreamReplay {
             replay: self.stream_history.clone(),
+            skipped: self.stream_history_skipped,
             receiver: self.stream_tx.subscribe(),
         }
     }
@@ -195,6 +199,7 @@ impl Prediction {
     fn emit_stream_event(&mut self, event: PredictionStreamEvent) {
         if self.stream_history.len() == MAX_STREAM_HISTORY_EVENTS {
             self.stream_history.remove(0);
+            self.stream_history_skipped += 1;
         }
         self.stream_history.push(event.clone());
         let _ = self.stream_tx.send(event);
@@ -710,6 +715,7 @@ mod tests {
             .collect();
 
         assert_eq!(events, vec!["start", "output", "completed"]);
+        assert_eq!(replay.skipped, 0);
         assert_eq!(
             replay.replay[1].json_data(),
             serde_json::json!({"chunk":"hello","index":0})
@@ -729,6 +735,7 @@ mod tests {
         let replay = prediction.subscribe_stream_replay();
 
         assert_eq!(replay.replay.len(), MAX_STREAM_HISTORY_EVENTS);
+        assert_eq!(replay.skipped, 77);
         assert_eq!(
             replay.replay[0].json_data(),
             serde_json::json!({"chunk":76,"index":76})
