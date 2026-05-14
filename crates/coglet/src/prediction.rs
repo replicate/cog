@@ -10,6 +10,8 @@ pub use tokio_util::sync::CancellationToken;
 use crate::bridge::protocol::{LogSource, MetricMode};
 use crate::webhook::{WebhookEventType, WebhookSender};
 
+const MAX_STREAM_HISTORY_EVENTS: usize = 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredictionStatus {
     Starting,
@@ -191,6 +193,9 @@ impl Prediction {
     }
 
     fn emit_stream_event(&mut self, event: PredictionStreamEvent) {
+        if self.stream_history.len() == MAX_STREAM_HISTORY_EVENTS {
+            self.stream_history.remove(0);
+        }
         self.stream_history.push(event.clone());
         let _ = self.stream_tx.send(event);
     }
@@ -710,6 +715,28 @@ mod tests {
             serde_json::json!({"chunk":"hello","index":0})
         );
         assert_eq!(replay.replay[2].json_data()["status"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn prediction_stream_replay_is_bounded_to_recent_events() {
+        let mut prediction = Prediction::new("pred_replay_bounded".to_string(), None);
+
+        prediction.set_processing();
+        for index in 0..1100 {
+            prediction.append_output_chunk(serde_json::json!(index), index);
+        }
+
+        let replay = prediction.subscribe_stream_replay();
+
+        assert_eq!(replay.replay.len(), MAX_STREAM_HISTORY_EVENTS);
+        assert_eq!(
+            replay.replay[0].json_data(),
+            serde_json::json!({"chunk":76,"index":76})
+        );
+        assert_eq!(
+            replay.replay[MAX_STREAM_HISTORY_EVENTS - 1].json_data(),
+            serde_json::json!({"chunk":1099,"index":1099})
+        );
     }
 
     #[tokio::test]
