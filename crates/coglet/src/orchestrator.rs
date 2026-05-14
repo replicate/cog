@@ -1031,14 +1031,6 @@ async fn run_event_loop(
                             predictions.remove(&slot_id);
                         }
                     }
-                    Ok(SlotResponse::BinaryChunk { mime_type, data }) => {
-                        tracing::debug!(
-                            %slot_id,
-                            %mime_type,
-                            bytes = data.len(),
-                            "Ignoring binary chunk until WebSocket streaming is implemented"
-                        );
-                    }
                     Ok(SlotResponse::FileOutput { filename, kind, mime_type }) => {
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
                         let bytes = match std::fs::read(&filename) {

@@ -305,6 +305,11 @@ pub const SLOT_RESPONSE_PROTOCOL_VERSION: u32 = 1;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SlotResponse {
+    /// Protocol version handshake message.
+    ///
+    /// Intended to be sent by the worker when the slot connection opens so the
+    /// orchestrator can detect version mismatches and adjust behavior. Currently
+    /// nothing sends this; it is scaffolding for future protocol evolution.
     ProtocolVersion {
         version: u32,
     },
@@ -312,12 +317,6 @@ pub enum SlotResponse {
     LogLine {
         source: LogSource,
         data: String,
-    },
-
-    /// Raw binary payload for future WebSocket streaming.
-    BinaryChunk {
-        mime_type: String,
-        data: Vec<u8>,
     },
 
     /// Output for a file/path-like output return type or an output that exceeds the size threshold
@@ -552,30 +551,15 @@ mod tests {
 
     #[test]
     fn slot_protocol_version_serializes() {
-        let resp = SlotResponse::ProtocolVersion { version: 1 };
+        let resp = SlotResponse::ProtocolVersion {
+            version: SLOT_RESPONSE_PROTOCOL_VERSION,
+        };
 
         assert_eq!(
             serde_json::to_value(resp).unwrap(),
             json!({
                 "type": "protocol_version",
                 "version": 1
-            })
-        );
-    }
-
-    #[test]
-    fn slot_binary_chunk_serializes() {
-        let resp = SlotResponse::BinaryChunk {
-            mime_type: "audio/opus".to_string(),
-            data: vec![1, 2, 3, 4],
-        };
-
-        assert_eq!(
-            serde_json::to_value(resp).unwrap(),
-            json!({
-                "type": "binary_chunk",
-                "mime_type": "audio/opus",
-                "data": [1, 2, 3, 4]
             })
         );
     }

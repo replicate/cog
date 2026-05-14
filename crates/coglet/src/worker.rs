@@ -133,7 +133,7 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
     ControlRequest, ControlResponse, FileOutputKind, LogSource, MAX_INLINE_IPC_SIZE, MetricMode,
-    SlotId, SlotOutcome, SlotRequest, SlotResponse,
+    SLOT_RESPONSE_PROTOCOL_VERSION, SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
 use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
@@ -658,6 +658,19 @@ pub async fn run_worker<H: PredictHandler>(
         .into_iter()
         .map(|(id, w)| (id, Arc::new(tokio::sync::Mutex::new(w))))
         .collect();
+
+    // Send protocol version on each slot so the orchestrator can detect mismatches
+    for (slot_id, writer) in &slot_writers {
+        let mut w = writer.lock().await;
+        if let Err(e) = w
+            .send(SlotResponse::ProtocolVersion {
+                version: SLOT_RESPONSE_PROTOCOL_VERSION,
+            })
+            .await
+        {
+            tracing::warn!(%slot_id, error = %e, "Failed to send protocol version");
+        }
+    }
 
     // Main event loop
     loop {
