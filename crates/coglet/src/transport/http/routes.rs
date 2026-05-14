@@ -216,6 +216,43 @@ fn should_respond_async(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PredictionResponseMode {
+    SyncJson,
+    AsyncJson,
+    AsyncSse,
+}
+
+fn wants_sse(headers: &HeaderMap) -> bool {
+    headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(|accept| {
+            accept
+                .split(',')
+                .any(|part| part.trim().split(';').next() == Some("text/event-stream"))
+        })
+        .unwrap_or(false)
+}
+
+fn prediction_response_mode(headers: &HeaderMap) -> PredictionResponseMode {
+    if wants_sse(headers) {
+        PredictionResponseMode::AsyncSse
+    } else if should_respond_async(headers) {
+        PredictionResponseMode::AsyncJson
+    } else {
+        PredictionResponseMode::SyncJson
+    }
+}
+
+fn json_response_mode(headers: &HeaderMap) -> PredictionResponseMode {
+    if should_respond_async(headers) {
+        PredictionResponseMode::AsyncJson
+    } else {
+        PredictionResponseMode::SyncJson
+    }
+}
+
 fn extract_trace_context(headers: &HeaderMap) -> TraceContext {
     TraceContext {
         traceparent: headers
@@ -233,7 +270,7 @@ async fn create_prediction(
     State(service): State<Arc<PredictionService>>,
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
-) -> impl IntoResponse {
+) -> Response {
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
@@ -242,7 +279,7 @@ async fn create_prediction(
         webhook_events_filter: default_webhook_events_filter(),
     });
     let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
-    let respond_async = should_respond_async(&headers);
+    let response_mode = prediction_response_mode(&headers);
     let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
         service,
@@ -251,7 +288,7 @@ async fn create_prediction(
         request.context,
         request.webhook,
         request.webhook_events_filter,
-        respond_async,
+        response_mode,
         trace_context,
         false,
     )
@@ -263,7 +300,7 @@ async fn create_prediction_idempotent(
     Path(prediction_id): Path<String>,
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
-) -> impl IntoResponse {
+) -> Response {
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
@@ -284,15 +321,20 @@ async fn create_prediction_idempotent(
                     "type": "value_error"
                 }]
             })),
-        );
+        )
+            .into_response();
     }
+
+    let response_mode = prediction_response_mode(&headers);
 
     // Check if prediction with this ID is already in-flight
     if let Some(response) = service.get_prediction_response(&prediction_id) {
-        return (StatusCode::ACCEPTED, Json(response));
+        if response_mode == PredictionResponseMode::AsyncSse {
+            return stream_prediction_response(service, &prediction_id);
+        }
+        return (StatusCode::ACCEPTED, Json(response)).into_response();
     }
 
-    let respond_async = should_respond_async(&headers);
     let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
         service,
@@ -301,7 +343,7 @@ async fn create_prediction_idempotent(
         request.context,
         request.webhook,
         request.webhook_events_filter,
-        respond_async,
+        response_mode,
         trace_context,
         false,
     )
@@ -340,10 +382,10 @@ async fn create_prediction_with_id(
     context: std::collections::HashMap<String, String>,
     webhook: Option<String>,
     webhook_events_filter: Vec<WebhookEventType>,
-    respond_async: bool,
+    response_mode: PredictionResponseMode,
     trace_context: TraceContext,
     is_training: bool,
-) -> (StatusCode, Json<serde_json::Value>) {
+) -> Response {
     // Strip unknown fields and validate in one pass. Unknown inputs are
     // silently dropped to match Replicate's historical API behavior.
     let (stripped, validation_result) = if is_training {
@@ -372,7 +414,8 @@ async fn create_prediction_with_id(
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(serde_json::json!({ "detail": detail })),
-        );
+        )
+            .into_response();
     }
 
     let webhook_sender = build_webhook_sender(
@@ -387,7 +430,7 @@ async fn create_prediction_with_id(
             prediction_id.clone(),
             input.clone(),
             webhook_sender,
-            respond_async,
+            response_mode != PredictionResponseMode::SyncJson,
         )
         .await
     {
@@ -400,7 +443,8 @@ async fn create_prediction_with_id(
                     "error": msg,
                     "status": "failed"
                 })),
-            );
+            )
+                .into_response();
         }
         Err(CreatePredictionError::AtCapacity) => {
             return (
@@ -409,14 +453,15 @@ async fn create_prediction_with_id(
                     "error": "At capacity - all prediction slots busy",
                     "status": "failed"
                 })),
-            );
+            )
+                .into_response();
         }
     };
 
     let prediction = unregistered_slot.prediction();
 
     // Async mode: spawn background task, return immediately
-    if respond_async {
+    if response_mode != PredictionResponseMode::SyncJson {
         let service_clone = Arc::clone(&service);
         let id_for_cleanup = prediction_id.clone();
         let context_async = context.clone();
@@ -429,13 +474,18 @@ async fn create_prediction_with_id(
             service_clone.remove_prediction(&id_for_cleanup);
         });
 
+        if response_mode == PredictionResponseMode::AsyncSse {
+            return stream_prediction_response(service, &prediction_id);
+        }
+
         return (
             StatusCode::ACCEPTED,
             Json(serde_json::json!({
                 "id": prediction_id,
                 "status": "starting"
             })),
-        );
+        )
+            .into_response();
     }
 
     // Sync mode: spawn prediction into a background task so the slot lifetime
@@ -501,6 +551,7 @@ async fn create_prediction_with_id(
                     "metrics": metrics
                 })),
             )
+                .into_response()
         }
         Err(PredictionError::InvalidInput(msg)) => {
             let metrics = build_metrics(&user_metrics);
@@ -514,6 +565,7 @@ async fn create_prediction_with_id(
                     "metrics": metrics
                 })),
             )
+                .into_response()
         }
         Err(PredictionError::NotReady) => {
             let msg = PredictionError::NotReady.to_string();
@@ -526,6 +578,7 @@ async fn create_prediction_with_id(
                     "status": "failed"
                 })),
             )
+                .into_response()
         }
         Err(PredictionError::Failed(msg)) => {
             let metrics = build_metrics(&user_metrics);
@@ -540,6 +593,7 @@ async fn create_prediction_with_id(
                     "metrics": metrics
                 })),
             )
+                .into_response()
         }
         Err(PredictionError::Cancelled) => {
             let metrics = build_metrics(&user_metrics);
@@ -552,6 +606,7 @@ async fn create_prediction_with_id(
                     "metrics": metrics
                 })),
             )
+                .into_response()
         }
     }
 }
@@ -622,11 +677,8 @@ fn prediction_sse_stream(
     )
 }
 
-async fn stream_prediction(
-    State(service): State<Arc<PredictionService>>,
-    Path(prediction_id): Path<String>,
-) -> Response {
-    let Some(subscription) = service.subscribe_prediction_stream(&prediction_id) else {
+fn stream_prediction_response(service: Arc<PredictionService>, prediction_id: &str) -> Response {
+    let Some(subscription) = service.subscribe_prediction_stream(prediction_id) else {
         return (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "Prediction not found"})),
@@ -668,7 +720,7 @@ async fn create_training(
     State(service): State<Arc<PredictionService>>,
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
-) -> impl IntoResponse {
+) -> Response {
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
@@ -677,7 +729,7 @@ async fn create_training(
         webhook_events_filter: default_webhook_events_filter(),
     });
     let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
-    let respond_async = should_respond_async(&headers);
+    let response_mode = json_response_mode(&headers);
     let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
         service,
@@ -686,7 +738,7 @@ async fn create_training(
         request.context,
         request.webhook,
         request.webhook_events_filter,
-        respond_async,
+        response_mode,
         trace_context,
         true,
     )
@@ -698,7 +750,7 @@ async fn create_training_idempotent(
     Path(training_id): Path<String>,
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
-) -> impl IntoResponse {
+) -> Response {
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
@@ -719,15 +771,16 @@ async fn create_training_idempotent(
                     "type": "value_error"
                 }]
             })),
-        );
+        )
+            .into_response();
     }
 
     // Idempotent: return existing state if already submitted
     if let Some(response) = service.get_prediction_response(&training_id) {
-        return (StatusCode::ACCEPTED, Json(response));
+        return (StatusCode::ACCEPTED, Json(response)).into_response();
     }
 
-    let respond_async = should_respond_async(&headers);
+    let response_mode = json_response_mode(&headers);
     let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
         service,
@@ -736,7 +789,7 @@ async fn create_training_idempotent(
         request.context,
         request.webhook,
         request.webhook_events_filter,
-        respond_async,
+        response_mode,
         trace_context,
         true,
     )
@@ -765,7 +818,6 @@ pub fn routes(service: Arc<PredictionService>) -> Router {
         .route("/shutdown", post(shutdown))
         .route("/predictions", post(create_prediction))
         .route("/predictions/{id}", put(create_prediction_idempotent))
-        .route("/predictions/{id}/stream", get(stream_prediction))
         .route("/predictions/{id}/cancel", post(cancel_prediction))
         .route("/trainings", post(create_training))
         .route("/trainings/{id}", put(create_training_idempotent))
@@ -1043,44 +1095,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stream_prediction_unknown_id_returns_404() {
+    async fn prediction_post_with_sse_accept_returns_sse() {
         let service = create_ready_service().await;
         let app = routes(service);
 
         let response = app
             .oneshot(
-                Request::get("/predictions/missing/stream")
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
                     .header("accept", "text/event-stream")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let json = response_json(response).await;
-        assert_eq!(json["error"], "Prediction not found");
-    }
-
-    #[tokio::test]
-    async fn stream_prediction_existing_id_returns_sse() {
-        let service = create_ready_service().await;
-        let (_handle, _slot) = service
-            .submit_prediction(
-                "stream-route".to_string(),
-                serde_json::json!({}),
-                None,
-                true,
-            )
-            .await
-            .unwrap();
-        let app = routes(service);
-
-        let response = app
-            .oneshot(
-                Request::get("/predictions/stream-route/stream")
-                    .header("accept", "text/event-stream")
-                    .body(Body::empty())
+                    .body(Body::from(r#"{"input":{}}"#))
                     .unwrap(),
             )
             .await
@@ -1096,6 +1120,98 @@ mod tests {
             "unexpected content-type: {:?}",
             content_type
         );
+    }
+
+    #[tokio::test]
+    async fn prediction_put_with_sse_accept_returns_sse() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/predictions/sse-put")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response.headers().get("content-type").unwrap();
+        assert!(
+            content_type
+                .to_str()
+                .unwrap()
+                .starts_with("text/event-stream"),
+            "unexpected content-type: {:?}",
+            content_type
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_put_existing_with_sse_accept_returns_sse() {
+        let service = create_ready_service().await;
+        let (_handle, _slot) = service
+            .submit_prediction(
+                "existing-sse-put".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/predictions/existing-sse-put")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response.headers().get("content-type").unwrap();
+        assert!(
+            content_type
+                .to_str()
+                .unwrap()
+                .starts_with("text/event-stream"),
+            "unexpected content-type: {:?}",
+            content_type
+        );
+    }
+
+    #[tokio::test]
+    async fn stream_prediction_route_is_removed() {
+        let service = create_ready_service().await;
+        let (_handle, _slot) = service
+            .submit_prediction(
+                "removed-stream-route".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::get("/predictions/removed-stream-route/stream")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

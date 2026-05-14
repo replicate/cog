@@ -2,7 +2,7 @@
 
 Streaming text generation with `HuggingFaceTB/SmolLM2-135M-Instruct`.
 
-This example shows how a Cog predictor can yield text chunks as a model generates them, and how to consume those chunks from the Server-Sent Events stream endpoint.
+This example shows how a Cog predictor can yield text chunks as a model generates them, and how to consume those chunks with Server-Sent Events.
 
 ## Run a normal prediction
 
@@ -22,20 +22,13 @@ Start the server:
 cog serve
 ```
 
-Create an async prediction with a fixed ID:
+Create a prediction and request an SSE response:
 
 ```sh
-curl -s -X PUT http://localhost:5000/predictions/streaming-demo \
+curl -N -X PUT http://localhost:5000/predictions/streaming-demo \
   -H 'Content-Type: application/json' \
-  -H 'Prefer: respond-async' \
+  -H 'Accept: text/event-stream' \
   -d '{"input":{"prompt":"Write a short haiku about databases","max_new_tokens":96}}'
-```
-
-Then subscribe to its stream:
-
-```sh
-curl -N -H 'Accept: text/event-stream' \
-  http://localhost:5000/predictions/streaming-demo/stream
 ```
 
 The response includes `output` events as chunks are generated, followed by a `completed` event:
@@ -55,4 +48,4 @@ data: {"id":"streaming-demo","status":"succeeded",...}
 
 `predict.py` returns `Iterator[str]`. Each `yield` becomes one streamed output chunk. The example uses Hugging Face `TextIteratorStreamer` to receive generated text from `model.generate()` while generation is still running.
 
-The normal prediction response still contains the accumulated output for compatibility. The stream endpoint is useful when clients want to display tokens as they arrive.
+The normal prediction response still contains the accumulated output for compatibility. Requesting `Accept: text/event-stream` is useful when clients want to display tokens as they arrive.

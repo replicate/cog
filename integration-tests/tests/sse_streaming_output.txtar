@@ -1,14 +1,11 @@
-# Test that async generator output is available over the SSE stream endpoint.
+# Test that async generator output is available when predictions are created with SSE accept.
 
 [short] skip 'requires Docker build'
 
 cog build -t $TEST_IMAGE
 cog serve --upload-url http://unused/
 
-curl -H Prefer:respond-async PUT /predictions/sse-stream-test '{"id":"sse-stream-test","input":{}}'
-stdout '"status":"starting"'
-
-curl -N -H Accept:text/event-stream GET /predictions/sse-stream-test/stream
+curl -N -H Accept:text/event-stream PUT /predictions/sse-stream-test '{"id":"sse-stream-test","input":{}}'
 stdout 'event: output'
 stdout 'data: {"chunk":"chunk-1","index":0}'
 stdout 'event: output'
