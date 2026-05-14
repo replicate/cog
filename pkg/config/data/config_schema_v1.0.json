@@ -96,6 +96,17 @@
           "type": "string",
           "description": "Pin the cog Python SDK version installed in the container (e.g. \"0.18.0\" or \"0.18.0a1\"). Use \"prerelease\" to always install the latest pre-release. Defaults to latest stable. Overridden by the COG_SDK_WHEEL environment variable."
         },
+        "environment": {
+          "$id": "#/properties/build/properties/environment",
+          "type": ["array", "null"],
+          "description": "A list of environment variables to set during builds and at runtime, in the format `NAME=value`.",
+          "additionalItems": true,
+          "items": {
+            "$id": "#/properties/build/properties/environment/items",
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*=.*$"
+          }
+        },
         "run": {
           "$id": "#/properties/build/properties/run",
           "type": [
@@ -192,15 +203,15 @@
       }
     },
     "environment": {
-      "$id": "#/properties/properties/environment",
+      "$id": "#/properties/environment",
       "type": [
         "array",
         "null"
       ],
-      "description": "A list of environment variables to make available during builds and at runtime, in the format `NAME=value`",
+      "description": "Deprecated: use build.environment instead. A list of environment variables to set during builds and at runtime, in the format `NAME=value`.",
       "additionalItems": true,
       "items": {
-        "$id": "#/properties/properties/environment/items",
+        "$id": "#/properties/environment/items",
         "type": "string",
         "pattern": "^[A-Za-z_][A-Za-z0-9_]*=.*$"
       }

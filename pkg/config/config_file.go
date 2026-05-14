@@ -17,8 +17,10 @@ type configFile struct {
 	Predict     *string          `json:"predict,omitempty" yaml:"predict,omitempty"`
 	Train       *string          `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *concurrencyFile `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
-	Environment []string         `json:"environment,omitempty" yaml:"environment,omitempty"`
 	Weights     []weightFile     `json:"weights,omitempty" yaml:"weights,omitempty"`
+
+	// Deprecated: Environment at the top level is deprecated. Use build.environment instead.
+	Environment []string `json:"environment,omitempty" yaml:"environment,omitempty"`
 }
 
 // buildFile represents the raw build configuration from cog.yaml.
@@ -31,6 +33,7 @@ type buildFile struct {
 	CUDA               *string       `json:"cuda,omitempty" yaml:"cuda,omitempty"`
 	CuDNN              *string       `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
 	SDKVersion         *string       `json:"sdk_version,omitempty" yaml:"sdk_version,omitempty"`
+	Environment        []string      `json:"environment,omitempty" yaml:"environment,omitempty"`
 
 	// Deprecated fields - parsed with warnings
 	PythonPackages []string `json:"python_packages,omitempty" yaml:"python_packages,omitempty"`
