@@ -8,6 +8,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/model/modeltest"
 )
 
 func TestResolveWeightRepo(t *testing.T) {
@@ -75,7 +76,7 @@ func TestResolveWeightRepo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clearModelEnv(t)
+			modeltest.ClearEnv(t)
 			if tt.envModel != "" {
 				t.Setenv(model.EnvModel, tt.envModel)
 			}

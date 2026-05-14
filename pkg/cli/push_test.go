@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/model"
+	"github.com/replicate/cog/pkg/model/modeltest"
 )
 
 // Refs are full 64-char digests so the assertions exercise the
@@ -19,18 +20,6 @@ const (
 	testWeightRef1  = testRepo + "@sha256:d2daaf0000000000000000000000000000000000000000000000000000000000"
 	testWeightRef2  = testRepo + "@sha256:e4f5a60000000000000000000000000000000000000000000000000000000000"
 )
-
-// clearModelEnv blanks out the COG_MODEL* env vars for the duration
-// of the test so a developer shell with custom overrides can't change
-// the resolver's behavior under test. Mirrors the unexported helper in
-// pkg/model/resolve_test.go.
-func clearModelEnv(t *testing.T) {
-	t.Helper()
-	t.Setenv(model.EnvModel, "")
-	t.Setenv(model.EnvModelRegistry, "")
-	t.Setenv(model.EnvModelRepo, "")
-	t.Setenv(model.EnvModelTag, "")
-}
 
 func TestValidatePushArgs(t *testing.T) {
 	const bundleModel = "registry.example.com/user/model"
@@ -99,7 +88,7 @@ func TestValidatePushArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clearModelEnv(t)
+			modeltest.ClearEnv(t)
 			if tt.envRepo != "" {
 				t.Setenv(model.EnvModelRepo, tt.envRepo)
 			}

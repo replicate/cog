@@ -288,12 +288,10 @@ func TestResolveModelRef_TimestampTagShape(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// clearModelEnv isolates the test from the developer's shell by
-// blanking every COG_MODEL* env var. Without this, a shell-exported
-// COG_MODEL_REPO (or similar) would leak into the test process and
-// silently change what ResolveModelRef sees. t.Setenv handles
-// restoration at cleanup; ResolveModelRef treats "" as unset, so
-// blanking is equivalent to unsetting.
+// clearModelEnv is the in-package twin of modeltest.ClearEnv. Tests
+// in package model can't import pkg/model/modeltest (which itself
+// imports pkg/model) without creating a build cycle, so this copy
+// stays local. External callers should use modeltest.ClearEnv.
 func clearModelEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv(EnvModel, "")
