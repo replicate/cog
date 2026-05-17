@@ -35,7 +35,7 @@ jobs:
 
       - name: Open pull request for changes
         id: cpr
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: chore/update-compatibility-matrices
           delete-branch: true
