@@ -22,10 +22,11 @@ predict: "predict.py:Predictor"
 import time
 from typing import Iterator
 
-from cog import BasePredictor
+from cog import BasePredictor, streaming
 
 
 class Predictor(BasePredictor):
+    @streaming
     def predict(self) -> Iterator[str]:
         time.sleep(0.25)
         yield "chunk-1"

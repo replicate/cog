@@ -245,6 +245,16 @@ fn prediction_response_mode(headers: &HeaderMap) -> PredictionResponseMode {
     }
 }
 
+fn streaming_not_supported_response() -> Response {
+    (
+        StatusCode::NOT_ACCEPTABLE,
+        Json(serde_json::json!({
+            "error": "This model does not support streaming responses. Add @cog.streaming to predict() to enable SSE."
+        })),
+    )
+        .into_response()
+}
+
 fn json_response_mode(headers: &HeaderMap) -> PredictionResponseMode {
     if should_respond_async(headers) {
         PredictionResponseMode::AsyncJson
@@ -330,6 +340,9 @@ async fn create_prediction_idempotent(
     // Check if prediction with this ID is already in-flight
     if let Some(response) = service.get_prediction_response(&prediction_id) {
         if response_mode == PredictionResponseMode::AsyncSse {
+            if !service.supports_prediction_streaming().await {
+                return streaming_not_supported_response();
+            }
             return stream_prediction_response(service, &prediction_id);
         }
         return (StatusCode::ACCEPTED, Json(response)).into_response();
@@ -386,6 +399,13 @@ async fn create_prediction_with_id(
     trace_context: TraceContext,
     is_training: bool,
 ) -> Response {
+    if !is_training
+        && response_mode == PredictionResponseMode::AsyncSse
+        && !service.supports_prediction_streaming().await
+    {
+        return streaming_not_supported_response();
+    }
+
     // Strip unknown fields and validate in one pass. Unknown inputs are
     // silently dropped to match Replicate's historical API behavior.
     let (stripped, validation_result) = if is_training {
@@ -1076,6 +1096,15 @@ mod tests {
         service
     }
 
+    async fn enable_prediction_streaming(service: &PredictionService) {
+        service
+            .set_schema(serde_json::json!({
+                "paths": {"/predictions": {"post": {"x-cog-streaming": true}}},
+                "components": {"schemas": {"Input": {"type": "object", "properties": {}}}}
+            }))
+            .await;
+    }
+
     #[tokio::test]
     async fn health_check_ready_with_orchestrator() {
         let service = create_ready_service().await;
@@ -1137,6 +1166,7 @@ mod tests {
     #[tokio::test]
     async fn prediction_post_with_sse_accept_returns_sse() {
         let service = create_ready_service().await;
+        enable_prediction_streaming(&service).await;
         let app = routes(service);
 
         let response = app
@@ -1166,6 +1196,30 @@ mod tests {
         let sse = String::from_utf8(bytes.to_vec()).unwrap();
         assert!(sse.contains("event: completed"), "SSE body: {sse}");
         assert!(sse.contains(r#""status":"succeeded""#), "SSE body: {sse}");
+    }
+
+    #[tokio::test]
+    async fn prediction_post_with_sse_accept_rejects_when_not_opted_in() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+        let json = response_json(response).await;
+        assert_eq!(
+            json["error"],
+            "This model does not support streaming responses. Add @cog.streaming to predict() to enable SSE."
+        );
     }
 
     #[tokio::test]
@@ -1256,6 +1310,7 @@ mod tests {
     #[tokio::test]
     async fn prediction_put_with_sse_accept_returns_sse() {
         let service = create_ready_service().await;
+        enable_prediction_streaming(&service).await;
         let app = routes(service);
 
         let response = app
@@ -1284,6 +1339,7 @@ mod tests {
     #[tokio::test]
     async fn prediction_put_existing_with_sse_accept_returns_sse() {
         let service = create_ready_service().await;
+        enable_prediction_streaming(&service).await;
         let (_handle, _slot) = service
             .submit_prediction(
                 "existing-sse-put".to_string(),

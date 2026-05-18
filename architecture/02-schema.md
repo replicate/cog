@@ -186,40 +186,43 @@ Each `SchemaType` produces its JSON Schema fragment via `JSONSchema()`:
 
 ### Output Types
 
-| Python                     | SchemaType               | JSON Schema                                                     |
-| -------------------------- | ------------------------ | --------------------------------------------------------------- |
-| `str`                      | `SchemaPrimitive`        | `{"type": "string"}`                                            |
-| `int`                      | `SchemaPrimitive`        | `{"type": "integer"}`                                           |
-| `float`                    | `SchemaPrimitive`        | `{"type": "number"}`                                            |
-| `bool`                     | `SchemaPrimitive`        | `{"type": "boolean"}`                                           |
-| `Path`                     | `SchemaPrimitive`        | `{"type": "string", "format": "uri"}`                           |
-| `dict` (bare)              | `SchemaAny`              | `{"type": "object"}`                                            |
-| `dict[str, V]`             | `SchemaDict`             | `{"type": "object", "additionalProperties": V}`                 |
-| `list` (bare)              | `SchemaArray(SchemaAny)` | `{"type": "array", "items": {"type": "object"}}`                |
-| `list[T]`                  | `SchemaArray`            | `{"type": "array", "items": T}`                                 |
-| `Annotated[T, cog.Opaque]` | `SchemaPrimitive(TypeAny)` | `{"type": "object"}`                                            |
+| Python                           | SchemaType                              | JSON Schema                                                     |
+| -------------------------------- | --------------------------------------- | --------------------------------------------------------------- |
+| `str`                            | `SchemaPrimitive`                       | `{"type": "string"}`                                            |
+| `int`                            | `SchemaPrimitive`                       | `{"type": "integer"}`                                           |
+| `float`                          | `SchemaPrimitive`                       | `{"type": "number"}`                                            |
+| `bool`                           | `SchemaPrimitive`                       | `{"type": "boolean"}`                                           |
+| `Path`                           | `SchemaPrimitive`                       | `{"type": "string", "format": "uri"}`                           |
+| `dict` (bare)                    | `SchemaAny`                             | `{"type": "object"}`                                            |
+| `dict[str, V]`                   | `SchemaDict`                            | `{"type": "object", "additionalProperties": V}`                 |
+| `list` (bare)                    | `SchemaArray(SchemaAny)`                | `{"type": "array", "items": {"type": "object"}}`                |
+| `list[T]`                        | `SchemaArray`                           | `{"type": "array", "items": T}`                                 |
+| `Annotated[T, cog.Opaque]`       | `SchemaPrimitive(TypeAny)`              | `{"type": "object"}`                                            |
 | `Annotated[list[T], cog.Opaque]` | `SchemaArray(SchemaPrimitive(TypeAny))` | `{"type": "array", "items": {"type": "object"}}`                |
-| `BaseModel` subclass       | `SchemaObject`           | `{"type": "object", "properties": {...}}`                       |
-| `Iterator[T]`              | `SchemaIterator`         | `{"type": "array", "items": T, "x-cog-array-type": "iterator"}` |
-| `ConcatenateIterator[str]` | `SchemaConcatIterator`   | Streaming token output                                          |
-| Nested types               | Recursive                | `dict[str, list[dict[str, int]]]` fully supported               |
+| `BaseModel` subclass             | `SchemaObject`                          | `{"type": "object", "properties": {...}}`                       |
+| `Iterator[T]`                    | `SchemaIterator`                        | `{"type": "array", "items": T, "x-cog-array-type": "iterator"}` |
+| `ConcatenateIterator[str]`       | `SchemaConcatIterator`                  | Streaming token output                                          |
+| Nested types                     | Recursive                               | `dict[str, list[dict[str, int]]]` fully supported               |
 
 ### Unsupported Output Types
 
-| Python                      | Error                                                                |
-| --------------------------- | -------------------------------------------------------------------- |
-| `Optional[T]` / `T \| None` | Predictions must succeed with a value or fail with an error          |
-| `Union[A, B]`               | Ambiguous for downstream consumers                                   |
+| Python                      | Error                                                                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `Optional[T]` / `T \| None` | Predictions must succeed with a value or fail with an error                                                                      |
+| `Union[A, B]`               | Ambiguous for downstream consumers                                                                                               |
 | External package types      | Cannot be statically analyzed — define as BaseModel, use .pyi stub, or mark JSON-shaped values with `Annotated[..., cog.Opaque]` |
 
 ## Cog-Specific Extensions
 
-| Extension             | Purpose                                           |
-| --------------------- | ------------------------------------------------- |
-| `x-order`             | Preserves parameter order from function signature |
-| `x-cog-array-type`    | Marks iterators vs regular arrays                 |
-| `x-cog-array-display` | Hints for how to display streaming output         |
-| `x-cog-secret`        | Marks sensitive inputs                            |
+| Extension             | Purpose                                             |
+| --------------------- | --------------------------------------------------- |
+| `x-order`             | Preserves parameter order from function signature   |
+| `x-cog-array-type`    | Marks iterators vs regular arrays                   |
+| `x-cog-array-display` | Hints for how to display streaming output           |
+| `x-cog-secret`        | Marks sensitive inputs                              |
+| `x-cog-streaming`     | Marks prediction operations that accept SSE clients |
+
+Iterator output types describe the shape of accumulated JSON output. SSE response support is a separate prediction operation capability and is only advertised when the prediction handler opts in with `@cog.streaming`.
 
 ## Where the Schema Lives
 
@@ -311,12 +314,12 @@ A simplified example showing a multi-file predictor with structured output:
 
 ## Code References
 
-| File                          | Purpose                                                              |
-| ----------------------------- | -------------------------------------------------------------------- |
-| `pkg/schema/schema_type.go`   | `SchemaType` ADT, `ResolveSchemaType()`, `JSONSchema()` generation   |
-| `pkg/schema/types.go`         | `PredictorInfo`, `PrimitiveType`, `FieldType`, `InputField`, imports |
-| `pkg/schema/python/`          | Tree-sitter Python parser and cross-file resolution                  |
-| `pkg/schema/openapi.go`       | OpenAPI document assembly from `PredictorInfo`                       |
-| `pkg/schema/generator.go`     | Top-level `Generate()`, `GenerateCombined()`, `Parser` type          |
-| `pkg/schema/errors.go`        | Typed schema error kinds                                             |
-| `pkg/image/build.go`          | Build-time schema generation entry point and schema file validation  |
+| File                        | Purpose                                                              |
+| --------------------------- | -------------------------------------------------------------------- |
+| `pkg/schema/schema_type.go` | `SchemaType` ADT, `ResolveSchemaType()`, `JSONSchema()` generation   |
+| `pkg/schema/types.go`       | `PredictorInfo`, `PrimitiveType`, `FieldType`, `InputField`, imports |
+| `pkg/schema/python/`        | Tree-sitter Python parser and cross-file resolution                  |
+| `pkg/schema/openapi.go`     | OpenAPI document assembly from `PredictorInfo`                       |
+| `pkg/schema/generator.go`   | Top-level `Generate()`, `GenerateCombined()`, `Parser` type          |
+| `pkg/schema/errors.go`      | Typed schema error kinds                                             |
+| `pkg/image/build.go`        | Build-time schema generation entry point and schema file validation  |

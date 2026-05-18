@@ -226,6 +226,7 @@ pub struct PredictionService {
     schema: RwLock<Option<serde_json::Value>>,
     input_validator: RwLock<Option<InputValidator>>,
     train_validator: RwLock<Option<InputValidator>>,
+    supports_prediction_streaming: RwLock<bool>,
 }
 
 impl PredictionService {
@@ -245,6 +246,7 @@ impl PredictionService {
             schema: RwLock::new(None),
             input_validator: RwLock::new(None),
             train_validator: RwLock::new(None),
+            supports_prediction_streaming: RwLock::new(false),
         }
     }
 
@@ -297,6 +299,10 @@ impl PredictionService {
     /// Whether the model supports training (has a TrainingInput schema).
     pub async fn supports_training(&self) -> bool {
         self.train_validator.read().await.is_some()
+    }
+
+    pub async fn supports_prediction_streaming(&self) -> bool {
+        *self.supports_prediction_streaming.read().await
     }
 
     /// Get the permit pool from orchestrator.
@@ -359,6 +365,9 @@ impl PredictionService {
     }
 
     pub async fn set_schema(&self, schema: serde_json::Value) {
+        let supports_prediction_streaming = Self::schema_supports_prediction_streaming(&schema);
+        *self.supports_prediction_streaming.write().await = supports_prediction_streaming;
+
         // Compile input validators from the schema components
         let validator = InputValidator::from_openapi_schema(&schema);
         if let Some(v) = &validator {
@@ -380,6 +389,16 @@ impl PredictionService {
         *self.train_validator.write().await = train_val;
 
         *self.schema.write().await = Some(schema);
+    }
+
+    fn schema_supports_prediction_streaming(schema: &serde_json::Value) -> bool {
+        schema
+            .get("paths")
+            .and_then(|paths| paths.get("/predictions"))
+            .and_then(|path| path.get("post"))
+            .and_then(|operation| operation.get("x-cog-streaming"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
     }
 
     pub async fn schema(&self) -> Option<serde_json::Value> {

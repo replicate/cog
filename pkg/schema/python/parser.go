@@ -60,9 +60,14 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 		methodName = "train"
 	}
 
-	funcNode, err := findTargetFunction(root, source, predictRef, methodName)
+	targetNode, err := findTargetFunction(root, source, predictRef, methodName)
 	if err != nil {
 		return nil, err
+	}
+	supportsStreaming := functionSupportsStreaming(targetNode, source, imports)
+	funcNode := UnwrapFunction(targetNode)
+	if funcNode == nil {
+		return nil, schema.WrapError(schema.ErrParse, "target is not a function", nil)
 	}
 
 	// 6. Check if method (has self first param)
@@ -100,9 +105,10 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	}
 
 	return &schema.PredictorInfo{
-		Inputs: inputs,
-		Output: output,
-		Mode:   mode,
+		Inputs:            inputs,
+		Output:            output,
+		Mode:              mode,
+		SupportsStreaming: supportsStreaming,
 	}, nil
 }
 
@@ -649,6 +655,39 @@ func UnwrapFunction(node *sitter.Node) *sitter.Node {
 		}
 	}
 	return nil
+}
+
+func functionSupportsStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	if node.Type() != "decorated_definition" {
+		return false
+	}
+	for _, child := range NamedChildren(node) {
+		if child.Type() != "decorator" {
+			continue
+		}
+		if decoratorIsCogStreaming(child, source, imports) {
+			return true
+		}
+	}
+	return false
+}
+
+func decoratorIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	for _, child := range NamedChildren(node) {
+		switch child.Type() {
+		case "attribute":
+			return Content(child, source) == "cog.streaming"
+		case "identifier":
+			if Content(child, source) != "streaming" {
+				return false
+			}
+			entry, ok := imports.Names.Get("streaming")
+			return ok && entry.Module == "cog" && entry.Original == "streaming"
+		case "call":
+			return false
+		}
+	}
+	return false
 }
 
 func InheritsFromBaseModel(classNode *sitter.Node, source []byte, imports *schema.ImportContext) bool {
@@ -1205,7 +1244,7 @@ func findTargetFunction(root *sitter.Node, source []byte, predictRef, methodName
 		if nameNode != nil {
 			name := Content(nameNode, source)
 			if name == predictRef || name == methodName {
-				return funcNode, nil
+				return child, nil
 			}
 		}
 	}
@@ -1226,7 +1265,7 @@ func findMethodInClass(classNode *sitter.Node, source []byte, className, methodN
 		}
 		nameNode := funcNode.ChildByFieldName("name")
 		if nameNode != nil && Content(nameNode, source) == methodName {
-			return funcNode, nil
+			return child, nil
 		}
 	}
 

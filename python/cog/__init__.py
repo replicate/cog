@@ -20,6 +20,8 @@ Example:
 """
 
 import sys as _sys
+from collections.abc import Callable
+from typing import TypeVar
 
 from coglet import CancelationException as CancelationException
 
@@ -37,6 +39,14 @@ from .types import (
     URLFile,
     URLPath,
 )
+
+F = TypeVar("F", bound=Callable[..., object])
+
+
+def streaming(fn: F) -> F:
+    """Mark a predict handler as supporting streaming responses."""
+    fn.__cog_streaming__ = True  # type: ignore[attr-defined]
+    return fn
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +143,7 @@ __all__ = [
     "CancelationException",
     # Metrics
     "current_scope",
+    "streaming",
     # Deprecated compat shims
     "ExperimentalFeatureWarning",
     "emit_metric",
