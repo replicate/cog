@@ -1043,14 +1043,15 @@ impl PythonPredictor {
             let instance = self.instance.bind(py);
             let method_name = match &self.kind {
                 PredictorKind::Class { method_name, .. } => method_name.as_str(),
-                PredictorKind::StandaloneFunction(_) => "",
+                PredictorKind::StandaloneFunction(_) => "predict",
             };
-            let coro = if method_name.is_empty() {
-                instance.call((), Some(&input_dict))
-            } else {
-                instance.call_method(method_name, (), Some(&input_dict))
+            let coro = match &self.kind {
+                PredictorKind::StandaloneFunction(_) => instance.call((), Some(&input_dict)),
+                PredictorKind::Class { .. } => {
+                    instance.call_method(method_name, (), Some(&input_dict))
+                }
             }
-            .map_err(|e| PredictionError::Failed(format!("Failed to call predict: {}", e)))?;
+            .map_err(|e| PredictionError::Failed(format!("Failed to call {method_name}: {e}")))?;
 
             // For async generators, wrap to collect all values
             let is_async_gen = matches!(

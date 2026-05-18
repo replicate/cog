@@ -1,7 +1,7 @@
 cog build -t $TEST_IMAGE
-stderr 'predict'
+stderr 'deprecated field "predict": use "run" instead'
 cog predict $TEST_IMAGE -i s=world
-stderr 'predict'
+stderr '"cog predict" is deprecated, use "cog run"'
 stdout 'hello world'
 
 -- cog.yaml --

@@ -75,7 +75,7 @@ Diagnose and fix common issues in your Cog project.
 NOTE: cog doctor is experimental. Behavior and checks may change in future versions.
 
 By default, cog doctor reports problems without modifying any files.
-Pass --fix to automatically apply safe fixes, including migrating deprecated predict names to run names when no file collision exists.
+Pass --fix to automatically apply safe fixes.
 
 ```
 cog doctor [flags]
