@@ -3,6 +3,9 @@
   "type": "object",
   "title": "Schema for cog.yaml",
   "description": "Defines how to build a Docker image and how to run predictions on your model inside that image.",
+  "not": {
+    "required": ["run", "predict"]
+  },
   "properties": {
     "build": {
       "$id": "#/properties/build",

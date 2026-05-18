@@ -87,6 +87,25 @@ def test_load_predictor_from_ref_prefers_runner_when_both_default_classes_exist(
     assert runner.run(text="hello") == "runner:hello"
 
 
+def test_load_predictor_from_ref_falls_back_to_predictor_when_default_runner_invalid(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "predict.py"
+    model.write_text(
+        "from cog import BaseRunner\n"
+        "Runner = 42\n"
+        "class Predictor(BaseRunner):\n"
+        "    def run(self, text: str) -> str:\n"
+        "        return text.upper()\n"
+    )
+
+    from cog.predictor import load_predictor_from_ref
+
+    with pytest.warns(DeprecationWarning, match="Predictor is deprecated"):
+        runner = load_predictor_from_ref(str(model))
+    assert runner.run(text="hello") == "HELLO"
+
+
 def test_load_predictor_from_ref_rejects_run_and_predict(
     tmp_path: FilePath,
 ) -> None:

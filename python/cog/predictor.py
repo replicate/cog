@@ -178,7 +178,15 @@ def load_predictor_from_ref(ref: str) -> BaseRunner:
     spec.loader.exec_module(module)
 
     if explicit_class_name is None:
-        if hasattr(module, "Runner"):
+        runner = getattr(module, "Runner", None)
+        runner_validation_error = None
+        has_valid_runner = False
+        if inspect.isclass(runner):
+            runner_validation_error = _runner_class_validation_error(runner, "Runner")
+            has_valid_runner = runner_validation_error is None
+        elif runner is not None:
+            has_valid_runner = callable(runner)
+        if has_valid_runner:
             if hasattr(module, "Predictor"):
                 warnings.warn(
                     "Both Runner and Predictor are defined; using Runner. Specify a class "
@@ -195,6 +203,8 @@ def load_predictor_from_ref(ref: str) -> BaseRunner:
             )
             class_name = "Predictor"
         else:
+            if runner_validation_error is not None:
+                raise runner_validation_error
             raise AttributeError(f"module {module_name!r} has no Runner or Predictor")
     else:
         class_name = explicit_class_name
@@ -205,6 +215,16 @@ def load_predictor_from_ref(ref: str) -> BaseRunner:
         _validate_runner_class(predictor, class_name)
         return predictor()
     return predictor
+
+
+def _runner_class_validation_error(cls: type, class_name: str) -> ValueError | None:
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            _validate_runner_class(cls, class_name)
+    except ValueError as error:
+        return error
+    return None
 
 
 def has_setup_weights(predictor: BaseRunner) -> bool:

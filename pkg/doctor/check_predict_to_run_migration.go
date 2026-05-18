@@ -14,8 +14,8 @@ import (
 
 var (
 	topLevelPredictKeyPattern = regexp.MustCompile(`(?m)^predict\s*:`)
-	topLevelRunRefPattern     = regexp.MustCompile(`(?m)^run:\s*["'][^"']+["']\s*$`)
-	predictRefPattern         = regexp.MustCompile(`(?m)^predict:\s*["']predict\.py:Predictor["']\s*$`)
+	topLevelRunKeyPattern     = regexp.MustCompile(`(?m)^run\s*:`)
+	predictRefPattern         = regexp.MustCompile(`(?m)^predict:\s*["']?predict\.py:Predictor["']?\s*(?:#.*)?$`)
 )
 
 // PredictToRunMigrationCheck detects deprecated predict interface names and
@@ -119,7 +119,7 @@ func hasLegacyPredictPythonNames(pf *ParsedFile) bool {
 }
 
 func preflightPredictToRunCollisions(ctx *CheckContext) error {
-	if topLevelRunRefPattern.Match(ctx.ConfigFile) {
+	if topLevelRunKeyPattern.Match(ctx.ConfigFile) {
 		return fmt.Errorf("automatic migration cannot run when run is already set")
 	}
 	if !predictRefPattern.Match(ctx.ConfigFile) {

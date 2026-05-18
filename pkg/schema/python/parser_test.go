@@ -133,6 +133,44 @@ class Runner(Shared):
 	require.Equal(t, 1, info.Inputs.Len())
 }
 
+func TestRunnerWithImportedInheritedRun(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "shared.py", `
+from cog import BaseRunner
+
+class SharedRunner(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s
+`)
+	writeFile(t, dir, "predict.py", `
+from shared import SharedRunner
+
+class Runner(SharedRunner):
+    pass
+`)
+	info := parseFile(t, dir, "predict.py", "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestRunnerWithQualifiedImportedInheritedRun(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "shared.py", `
+from cog import BaseRunner
+
+class SharedRunner(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s
+`)
+	writeFile(t, dir, "predict.py", `
+import shared
+
+class Runner(shared.SharedRunner):
+    pass
+`)
+	info := parseFile(t, dir, "predict.py", "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
 func TestRunnerWithInheritedRunAndDirectPredictErrors(t *testing.T) {
 	source := `
 from cog import BaseRunner

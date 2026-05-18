@@ -247,11 +247,13 @@ class Predictor(BasePredictor):
 func TestPredictToRunMigrationCheck_FixMigratesConfigAndPython(t *testing.T) {
 	tests := []struct {
 		name      string
+		configRef string
 		classLine string
 		wantLine  string
 	}{
-		{name: "class with base", classLine: "class Predictor(BasePredictor):", wantLine: "class Runner(BaseRunner):"},
-		{name: "class without base", classLine: "class Predictor:", wantLine: "class Runner:"},
+		{name: "quoted config ref with base", configRef: `"predict.py:Predictor"`, classLine: "class Predictor(BasePredictor):", wantLine: "class Runner(BaseRunner):"},
+		{name: "unquoted config ref with base", configRef: `predict.py:Predictor`, classLine: "class Predictor(BasePredictor):", wantLine: "class Runner(BaseRunner):"},
+		{name: "class without base", configRef: `"predict.py:Predictor"`, classLine: "class Predictor:", wantLine: "class Runner:"},
 	}
 
 	for _, tt := range tests {
@@ -259,7 +261,7 @@ func TestPredictToRunMigrationCheck_FixMigratesConfigAndPython(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, dir, "cog.yaml", `build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+predict: `+tt.configRef+`
 `)
 			writeFile(t, dir, "predict.py", `from cog import BasePredictor
 
@@ -291,6 +293,46 @@ predict: "predict.py:Predictor"
 			require.NotContains(t, string(runPy), "BasePredictor")
 			require.NotContains(t, string(runPy), "class Predictor")
 			require.NotContains(t, string(runPy), "def predict(")
+		})
+	}
+}
+
+func TestPredictToRunMigrationCheck_FixRefusesExistingRunKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		runLine string
+	}{
+		{name: "unquoted", runLine: `run: run.py:Runner`},
+		{name: "quoted with comment", runLine: `run: "run.py:Runner" # existing`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+`+tt.runLine+`
+predict: "predict.py:Predictor"
+`)
+			writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+
+			ctx := buildTestCheckContext(t, dir)
+			check := &PredictToRunMigrationCheck{}
+			findings, err := check.Check(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, findings)
+			err = check.Fix(ctx, findings)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "run is already set")
+
+			cogYAML, err := os.ReadFile(filepath.Join(dir, "cog.yaml"))
+			require.NoError(t, err)
+			require.Contains(t, string(cogYAML), tt.runLine)
+			require.Contains(t, string(cogYAML), `predict: "predict.py:Predictor"`)
 		})
 	}
 }
