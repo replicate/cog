@@ -74,7 +74,9 @@ def _validate_setup(f: Callable[..., Any]) -> None:
         raise ValueError("setup() must return None")
 
 
-def _validate_run_or_predict(f: Callable[..., Any], f_name: str, is_class_fn: bool) -> None:
+def _validate_run_or_predict(
+    f: Callable[..., Any], f_name: str, is_class_fn: bool
+) -> None:
     """Validate a predictor's run or predict method."""
     if not inspect.isfunction(f):
         raise ValueError(f"{f_name} is not a function")

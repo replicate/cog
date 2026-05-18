@@ -149,9 +149,7 @@ def test_inspector_preserves_opaque_input_metadata_with_run() -> None:
         def run(self, value: Annotated[ExternalObject, Opaque]) -> str:
             return "ok"
 
-    info = _create_predictor_info(
-        "run", "Runner", Runner.run, "run", True
-    )
+    info = _create_predictor_info("run", "Runner", Runner.run, "run", True)
     field = info.inputs["value"]
     assert field.type.primitive is adt.PrimitiveType.ANY
     assert field.type.repetition is adt.Repetition.REQUIRED
@@ -215,9 +213,7 @@ def test_inspector_supports_basemodel_opaque_output_field_with_run() -> None:
         def run(self, value: str) -> Output:
             return Output(payload=ExternalObject())
 
-    info = _create_predictor_info(
-        "run", "Runner", Runner.run, "run", True
-    )
+    info = _create_predictor_info("run", "Runner", Runner.run, "run", True)
     assert info.output.kind is adt.OutputKind.OBJECT
     assert info.output.fields is not None
     field = info.output.fields["payload"]

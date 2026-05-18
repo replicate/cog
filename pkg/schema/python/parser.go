@@ -1328,8 +1328,7 @@ func resolveImportedParentClass(file *pythonFileContext, parent string) (*python
 		return nil, nil, "", false
 	}
 
-	module := ""
-	var className string
+	var module, className string
 	if before, after, ok := strings.Cut(parent, "."); ok {
 		entry, ok := file.imports.Names.Get(before)
 		if !ok {
