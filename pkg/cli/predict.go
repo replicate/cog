@@ -44,18 +44,7 @@ var (
 	inputJSON            string
 )
 
-func newPredictCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "predict [image]",
-		Short: "Run a prediction",
-		Long: `Run a prediction.
-
-If 'image' is passed, it will run the prediction on that Docker image.
-It must be an image that has been built by Cog.
-
-Otherwise, it will build the model in the current directory and run
-the prediction on that.`,
-		Example: `  # Run a prediction with named inputs
+const existingPredictExamples = `  # Run a prediction with named inputs
   cog predict -i prompt="a photo of a cat"
 
   # Pass a file as input
@@ -71,10 +60,31 @@ the prediction on that.`,
   cog predict r8.im/your-username/my-model -i prompt="hello"
 
   # Pass inputs as JSON
-  echo '{"prompt": "a cat"}' | cog predict --json @-`,
+  echo '{"prompt": "a cat"}' | cog predict --json @-`
+
+func newPredictCommand() *cobra.Command {
+	return newPredictionCommand("predict", true)
+}
+
+func newPredictionCommand(use string, hidden bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   use + " [image]",
+		Short: "Run a prediction",
+		Long: `Run a prediction.
+
+If 'image' is passed, it will run the prediction on that Docker image.
+It must be an image that has been built by Cog.
+
+Otherwise, it will build the model in the current directory and run
+the prediction on that.`,
+		Example:    strings.ReplaceAll(existingPredictExamples, "cog predict", "cog "+use),
 		RunE:       cmdPredict,
 		Args:       cobra.MaximumNArgs(1),
+		Hidden:     hidden,
 		SuggestFor: []string{"infer"},
+	}
+	if hidden {
+		cmd.Short = "Run a prediction (deprecated, use cog run)"
 	}
 
 	addUseCudaBaseImageFlag(cmd)
@@ -178,6 +188,10 @@ func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
+	if cmd.CalledAs() == "predict" || cmd.Name() == "predict" {
+		console.Warn(`"cog predict" is deprecated, use "cog run"`)
+	}
+
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

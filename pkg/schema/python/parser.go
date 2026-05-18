@@ -60,9 +60,25 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 		methodName = "train"
 	}
 
-	funcNode, err := findTargetFunction(root, source, predictRef, methodName)
+	fileCtx := &pythonFileContext{
+		root:          root,
+		source:        source,
+		imports:       imports,
+		moduleScope:   moduleScope,
+		inputRegistry: inputRegistry,
+		modelClasses:  modelClasses,
+		typedDicts:    modelCtx.typedDicts,
+		sourceDir:     sourceDir,
+	}
+	target, err := findTargetFunction(fileCtx, predictRef, methodName)
 	if err != nil {
 		return nil, err
+	}
+	funcNode := target.node
+	targetSource := target.file.source
+	actualMethodName := methodName
+	if nameNode := funcNode.ChildByFieldName("name"); nameNode != nil {
+		actualMethodName = Content(nameNode, targetSource)
 	}
 
 	// 6. Check if method (has self first param)
@@ -70,17 +86,17 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	if paramsNode == nil {
 		return nil, schema.WrapError(schema.ErrParse, "function has no parameters node", nil)
 	}
-	isMethod := firstParamIsSelf(paramsNode, source)
+	isMethod := firstParamIsSelf(paramsNode, targetSource)
 
 	// 7. Extract parameters
 	paramCtx := &inputParseContext{
-		methodName: methodName,
-		imports:    imports,
-		registry:   inputRegistry,
-		scope:      moduleScope,
-		typedDicts: modelCtx.typedDicts,
+		methodName: actualMethodName,
+		imports:    target.file.imports,
+		registry:   target.file.inputRegistry,
+		scope:      target.file.moduleScope,
+		typedDicts: target.file.typedDicts,
 	}
-	inputs, err := extractInputs(paramsNode, source, isMethod, paramCtx)
+	inputs, err := extractInputs(paramsNode, targetSource, isMethod, paramCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -88,13 +104,13 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	// 8. Extract return type
 	returnAnn := funcNode.ChildByFieldName("return_type")
 	if returnAnn == nil {
-		return nil, schema.WrapError(schema.ErrMissingReturnType, methodName, nil)
+		return nil, schema.WrapError(schema.ErrMissingReturnType, actualMethodName, nil)
 	}
-	returnTypeAnn, err := parseTypeAnnotation(returnAnn, source)
+	returnTypeAnn, err := parseTypeAnnotation(returnAnn, targetSource)
 	if err != nil {
 		return nil, err
 	}
-	output, err := schema.ResolveSchemaType(returnTypeAnn, imports, modelClasses)
+	output, err := schema.ResolveSchemaType(returnTypeAnn, target.file.imports, target.file.modelClasses)
 	if err != nil {
 		return nil, err
 	}
@@ -1182,35 +1198,222 @@ func resolveInputReference(node *sitter.Node, source []byte, registry *inputRegi
 // Target function finding
 // ---------------------------------------------------------------------------
 
-func findTargetFunction(root *sitter.Node, source []byte, predictRef, methodName string) (*sitter.Node, error) {
+type pythonFileContext struct {
+	root          *sitter.Node
+	source        []byte
+	imports       *schema.ImportContext
+	moduleScope   moduleScope
+	inputRegistry *inputRegistry
+	modelClasses  schema.ModelClassMap
+	typedDicts    map[string]bool
+	sourceDir     string
+}
+
+type targetFunction struct {
+	node *sitter.Node
+	file *pythonFileContext
+}
+
+func findTargetFunction(file *pythonFileContext, predictRef, methodName string) (*targetFunction, error) {
 	// First: look for a class with this name
-	for _, child := range NamedChildren(root) {
+	for _, child := range NamedChildren(file.root) {
 		classNode := UnwrapClass(child)
 		if classNode == nil {
 			continue
 		}
 		nameNode := classNode.ChildByFieldName("name")
-		if nameNode != nil && Content(nameNode, source) == predictRef {
-			return findMethodInClass(classNode, source, predictRef, methodName)
+		if nameNode != nil && Content(nameNode, file.source) == predictRef {
+			if methodName == "predict" {
+				return findPredictMethodInClass(file, classNode, predictRef)
+			}
+			method, err := findMethodInClass(classNode, file.source, predictRef, methodName)
+			if err != nil {
+				return nil, err
+			}
+			return &targetFunction{node: method, file: file}, nil
 		}
 	}
 
 	// Second: look for standalone function
-	for _, child := range NamedChildren(root) {
+	for _, child := range NamedChildren(file.root) {
 		funcNode := UnwrapFunction(child)
 		if funcNode == nil {
 			continue
 		}
 		nameNode := funcNode.ChildByFieldName("name")
 		if nameNode != nil {
-			name := Content(nameNode, source)
+			name := Content(nameNode, file.source)
 			if name == predictRef || name == methodName {
-				return funcNode, nil
+				return &targetFunction{node: funcNode, file: file}, nil
 			}
 		}
 	}
 
 	return nil, schema.WrapError(schema.ErrPredictorNotFound, predictRef, nil)
+}
+
+func findPredictMethodInClass(file *pythonFileContext, classNode *sitter.Node, className string) (*targetFunction, error) {
+	runNode, predictNode := collectPredictMethods(file, classNode, className, map[string]bool{})
+	if runNode != nil && predictNode != nil {
+		return nil, schema.WrapError(schema.ErrMethodConflict, fmt.Sprintf("%s must define either run() or predict(), not both", className), nil)
+	}
+	if runNode != nil {
+		return runNode, nil
+	}
+	if predictNode != nil {
+		fmt.Fprintf(os.Stderr, "cog: warning: %s.predict() is deprecated; use run() instead\n", className)
+		return predictNode, nil
+	}
+	return nil, schema.WrapError(schema.ErrMethodNotFound, fmt.Sprintf("%s must define run() or predict()", className), nil)
+}
+
+func collectPredictMethods(file *pythonFileContext, classNode *sitter.Node, className string, seen map[string]bool) (*targetFunction, *targetFunction) {
+	seenKey := fmt.Sprintf("%p:%s", file.root, className)
+	if seen[seenKey] {
+		return nil, nil
+	}
+	seen[seenKey] = true
+
+	body := classNode.ChildByFieldName("body")
+	if body == nil {
+		return nil, nil
+	}
+
+	var runNode *targetFunction
+	var predictNode *targetFunction
+	for _, child := range NamedChildren(body) {
+		funcNode := UnwrapFunction(child)
+		if funcNode == nil {
+			continue
+		}
+		nameNode := funcNode.ChildByFieldName("name")
+		if nameNode == nil {
+			continue
+		}
+		switch Content(nameNode, file.source) {
+		case "run":
+			runNode = &targetFunction{node: funcNode, file: file}
+		case "predict":
+			predictNode = &targetFunction{node: funcNode, file: file}
+		}
+	}
+
+	for _, parent := range classParentNames(classNode, file.source) {
+		parentFile := file
+		parentClass := parent
+		parentNode := findClassByName(file.root, file.source, parent)
+		if parentNode == nil {
+			var ok bool
+			parentFile, parentNode, parentClass, ok = resolveImportedParentClass(file, parent)
+			if !ok {
+				continue
+			}
+		}
+		if parentNode == nil {
+			continue
+		}
+		parentRun, parentPredict := collectPredictMethods(parentFile, parentNode, parentClass, seen)
+		if runNode == nil {
+			runNode = parentRun
+		}
+		if predictNode == nil {
+			predictNode = parentPredict
+		}
+	}
+	return runNode, predictNode
+}
+
+func resolveImportedParentClass(file *pythonFileContext, parent string) (*pythonFileContext, *sitter.Node, string, bool) {
+	if file.sourceDir == "" {
+		return nil, nil, "", false
+	}
+
+	var module, className string
+	if before, after, ok := strings.Cut(parent, "."); ok {
+		entry, ok := file.imports.Names.Get(before)
+		if !ok {
+			return nil, nil, "", false
+		}
+		module = entry.Module
+		className = after
+	} else if entry, ok := file.imports.Names.Get(parent); ok {
+		module = entry.Module
+		className = entry.Original
+	} else {
+		return nil, nil, "", false
+	}
+
+	parentFile, ok := loadPythonFileContext(file.sourceDir, module)
+	if !ok {
+		return nil, nil, "", false
+	}
+	parentNode := findClassByName(parentFile.root, parentFile.source, className)
+	return parentFile, parentNode, className, parentNode != nil
+}
+
+func loadPythonFileContext(sourceDir, module string) (*pythonFileContext, bool) {
+	if isKnownExternalModule(module) {
+		return nil, false
+	}
+	pyPath := moduleToFilePath(module)
+	if pyPath == "" {
+		return nil, false
+	}
+	source, err := os.ReadFile(filepath.Join(sourceDir, pyPath))
+	if err != nil {
+		return nil, false
+	}
+	parser := sitter.NewParser()
+	parser.SetLanguage(python.GetLanguage())
+	tree, err := parser.ParseCtx(context.Background(), nil, source)
+	if err != nil {
+		return nil, false
+	}
+	root := tree.RootNode()
+	imports := CollectImports(root, source)
+	moduleScope := collectModuleScope(root, source)
+	modelCtx := &modelParseContext{imports: imports, typedDicts: make(map[string]bool)}
+	modelClasses := collectModelClasses(root, source, modelCtx)
+	resolveExternalModels(sourceDir, modelClasses, modelCtx)
+	inputRegistry := collectInputRegistry(root, source, imports, moduleScope)
+	return &pythonFileContext{
+		root:          root,
+		source:        source,
+		imports:       imports,
+		moduleScope:   moduleScope,
+		inputRegistry: inputRegistry,
+		modelClasses:  modelClasses,
+		typedDicts:    modelCtx.typedDicts,
+		sourceDir:     sourceDir,
+	}, true
+}
+
+func findClassByName(root *sitter.Node, source []byte, name string) *sitter.Node {
+	for _, child := range NamedChildren(root) {
+		classNode := UnwrapClass(child)
+		if classNode == nil {
+			continue
+		}
+		nameNode := classNode.ChildByFieldName("name")
+		if nameNode != nil && Content(nameNode, source) == name {
+			return classNode
+		}
+	}
+	return nil
+}
+
+func classParentNames(classNode *sitter.Node, source []byte) []string {
+	supers := classNode.ChildByFieldName("superclasses")
+	if supers == nil {
+		return nil
+	}
+	parents := []string{}
+	for _, child := range NamedChildren(supers) {
+		if child.Type() == "identifier" || child.Type() == "attribute" {
+			parents = append(parents, Content(child, source))
+		}
+	}
+	return parents
 }
 
 func findMethodInClass(classNode *sitter.Node, source []byte, className, methodName string) (*sitter.Node, error) {

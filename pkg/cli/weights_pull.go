@@ -20,7 +20,7 @@ func newWeightsPullCommand() *cobra.Command {
 		Use:   "pull [NAME...]",
 		Short: "Populate the local weight cache from the registry",
 		Long: `Downloads weight files from the registry into the local content-addressed
-cache so 'cog predict' and 'cog run' can mount them at runtime.
+cache so 'cog run' can mount them at runtime.
 
 You don't need to run 'cog weights pull' after 'cog weights import' —
 import already warms the local cache. Pull is for the case where

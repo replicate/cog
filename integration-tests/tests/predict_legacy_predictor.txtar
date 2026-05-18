@@ -1,0 +1,17 @@
+cog build -t $TEST_IMAGE
+stderr 'deprecated field "predict": use "run" instead'
+cog predict $TEST_IMAGE -i s=world
+stderr '"cog predict" is deprecated, use "cog run"'
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

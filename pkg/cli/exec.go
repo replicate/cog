@@ -26,9 +26,8 @@ func addGpusFlag(cmd *cobra.Command) {
 
 func newExecCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "exec <command> [arg...]",
-		Aliases: []string{"run"},
-		Short:   "Execute a command inside a Docker environment",
+		Use:   "exec <command> [arg...]",
+		Short: "Execute a command inside a Docker environment",
 		Long: `Execute a command inside a Docker environment defined by cog.yaml.
 
 Cog builds a temporary image from your cog.yaml configuration and runs the
@@ -69,10 +68,6 @@ exploring the environment your model will run in.`,
 }
 
 func execCmd(cmd *cobra.Command, args []string) error {
-	if cmd.CalledAs() == "run" {
-		console.Warn(`"cog run <command>" is deprecated, use "cog exec <command>"`)
-	}
-
 	ctx := cmd.Context()
 
 	dockerClient, err := docker.NewClient(ctx)

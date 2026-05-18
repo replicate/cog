@@ -2,25 +2,25 @@
 
 The Cog CLI is a Go binary that provides commands for the full model lifecycle: development, building, testing, and deployment. This document covers what each command does and how it connects to the systems described in previous docs.
 
-**Important**: Model code always runs inside a container, never on the host machine. Commands like `cog predict` and `cog serve` build an image, start a container, and interact with it via the [Prediction API](./03-prediction-api.md). The CLI orchestrates this, but the model execution happens in the containerized [Container Runtime](./04-container-runtime.md).
+**Important**: Model code always runs inside a container, never on the host machine. Commands like `cog run` and `cog serve` build an image, start a container, and interact with it via the [Prediction API](./03-prediction-api.md). The CLI orchestrates this, but the model execution happens in the containerized [Container Runtime](./04-container-runtime.md).
 
 ## Commands Overview
 
-| Command       | Job To Be Done                        |
-| ------------- | ------------------------------------- |
-| `cog init`    | Bootstrap a new model project         |
-| `cog build`   | Create a container image              |
-| `cog predict` | Run a prediction in a container       |
-| `cog exec`    | Run arbitrary commands in a container |
-| `cog serve`   | Start HTTP server in a container      |
-| `cog push`    | Deploy to Replicate                   |
-| `cog login`   | Authenticate with Replicate           |
+| Command     | Job To Be Done                        |
+| ----------- | ------------------------------------- |
+| `cog init`  | Bootstrap a new model project         |
+| `cog build` | Create a container image              |
+| `cog run`   | Run a prediction in a container       |
+| `cog exec`  | Run arbitrary commands in a container |
+| `cog serve` | Start HTTP server in a container      |
+| `cog push`  | Deploy to Replicate                   |
+| `cog login` | Authenticate with Replicate           |
 
 ## Development Commands
 
 ### cog init
 
-**Job**: Create a starter `cog.yaml` and `predict.py` for a new model.
+**Job**: Create a starter `cog.yaml` and `run.py` for a new model.
 
 ```bash
 cog init
@@ -29,18 +29,18 @@ cog init
 Creates:
 
 - `cog.yaml` with sensible defaults
-- `predict.py` with a skeleton Predictor class
+- `run.py` with a skeleton Runner class
 
 **Code**: `pkg/cli/init.go`
 
 ---
 
-### cog predict
+### cog run
 
 **Job**: Run a prediction in a container.
 
 ```bash
-cog predict -i prompt="A photo of a cat" -i steps=50
+cog run -i prompt="A photo of a cat" -i steps=50
 ```
 
 What happens:
@@ -58,7 +58,7 @@ Input types are inferred from the schema:
 - Files: `-i image=@photo.jpg` (uploaded to container)
 - URLs: `-i image=https://example.com/photo.jpg`
 
-**Code**: `pkg/cli/predict.go`
+**Code**: `pkg/cli/run.go` dispatches the public command; prediction execution is implemented in `pkg/cli/predict.go`.
 
 ---
 
@@ -196,7 +196,7 @@ sequenceDiagram
     end
 
     CLI->>Container: POST /predictions
-    Container->>Container: Run predict()
+    Container->>Container: Run run()
     Container-->>CLI: Response JSON
 
     CLI->>Docker: Stop container
@@ -215,7 +215,8 @@ cmd/cog/
 pkg/cli/
 ├── root.go         # Root command, subcommand registration
 ├── build.go        # cog build
-├── predict.go      # cog predict
+├── run.go          # cog run dispatch
+├── predict.go      # prediction execution and legacy cog predict
 ├── exec.go         # cog exec
 ├── serve.go        # cog serve
 ├── push.go         # cog push

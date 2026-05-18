@@ -1,5 +1,5 @@
-# Infra verification predictor for the v1 managed-weights OCI pipeline.
-# Validates weight files on disk against weights.lock at setup; predict()
+# Infra verification runner for the v1 managed-weights OCI pipeline.
+# Validates weight files on disk against weights.lock at setup; run()
 # returns a per-weight status summary.
 
 import hashlib
@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from cog import BasePredictor
+from cog import BaseRunner
 
 LOCK_PATH = Path("/src/weights.lock")
 
@@ -99,7 +99,7 @@ def _validate_weight(
     }
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self) -> None:
         if not LOCK_PATH.exists():
             raise RuntimeError(f"{LOCK_PATH} not found — cannot validate weights")
@@ -152,7 +152,7 @@ class Predictor(BasePredictor):
 
         print("all weights validated", file=sys.stderr)
 
-    def predict(self) -> str:
+    def run(self) -> str:
         summary = []
         for r in self.results:
             entry: dict[str, Any] = {
