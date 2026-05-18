@@ -430,7 +430,7 @@ async fn create_prediction_with_id(
             prediction_id.clone(),
             input.clone(),
             webhook_sender,
-            response_mode != PredictionResponseMode::AsyncJson,
+            response_mode == PredictionResponseMode::AsyncSse,
         )
         .await
     {

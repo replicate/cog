@@ -144,6 +144,9 @@ impl Drop for PredictionStreamGuard {
             return;
         }
 
+        // Prediction cleanup may remove the service entry before the SSE response
+        // finishes draining. Missing entries deliberately report zero receivers and
+        // terminal state so this guard cannot cancel an already-cleaned prediction.
         if self.service.stream_receiver_count(&self.id) == 0
             && !self.service.prediction_is_terminal(&self.id)
         {
