@@ -65,7 +65,7 @@ type WeightRetryEvent struct {
 // WeightPushResult describes a successful weight push.
 type WeightPushResult struct {
 	// Ref is the full image reference the manifest was pushed to
-	// (e.g. "registry/repo:weights-name-abc123").
+	// (e.g. "registry/repo:cog-weight.name.abc123456789").
 	Ref string
 	// Descriptor is the OCI descriptor for the pushed manifest.
 	Descriptor v1.Descriptor
@@ -226,20 +226,6 @@ func descriptorFromImage(img v1.Image) (v1.Descriptor, error) {
 		Size:      int64(len(rawManifest)),
 		Digest:    digest,
 	}, nil
-}
-
-const weightTagPrefix = "weights-"
-
-// WeightTag returns the tag for a weight manifest combining name and the
-// short prefix of a digest. digest is "sha256:…"; the 12 hex chars after
-// the algorithm prefix are used. Falls back to "weights-<name>" if digest
-// is empty or missing the algorithm prefix.
-func WeightTag(name, digest string) string {
-	short := ShortDigest(digest)
-	if short == "" {
-		return weightTagPrefix + name
-	}
-	return weightTagPrefix + name + "-" + short
 }
 
 // ShortDigest returns the 12-hex-char prefix of a "sha256:…" digest, or the

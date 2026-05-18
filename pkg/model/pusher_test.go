@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,7 +14,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testImageRef = "r8.im/user/model:latest"
+const (
+	testImageRef = "r8.im/user/model:latest"
+	testRepo     = "r8.im/user/model"
+	testModelTag = "20260512T120000Z"
+)
+
+// testCogImageRef and testModelRef are the registry destinations
+// BundlePusher should produce for a Model built from testBundleModel.
+// Derived from ImageTag/ResolvedRef.String so the fixtures track the
+// helpers; tag_test.go covers ImageTag's formatting independently.
+var (
+	testCogImageRef = testRepo + ":" + ImageTag(testModelTag)
+	testModelRef    = testRepo + ":" + testModelTag
+)
 
 // Valid 64-char hex digests for use in test fixtures. v1.NewHash
 // rejects non-hex strings, so the verifyWeights digest-equality check
@@ -23,14 +37,23 @@ const (
 	testW2Digest = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 )
 
-// testBundleModel builds a Model with a fixed image ref and optional weights.
+// testBundleModel builds a Model with a deterministic Ref so tests
+// can assert on exact destination refs. The same *ImageArtifact
+// instance is shared between Model.Image and Model.Artifacts[0] —
+// production builds (see modelFromImage) maintain this invariant
+// and Push relies on it.
 func testBundleModel(weights ...Weight) *Model {
+	img := &ImageArtifact{name: "model", Reference: testImageRef}
 	return &Model{
-		Image: &ImageArtifact{Reference: testImageRef},
-		Artifacts: []Artifact{
-			&ImageArtifact{name: "model", Reference: testImageRef},
+		Format: FormatBundle,
+		Ref: &ResolvedRef{
+			Registry: "r8.im",
+			Repo:     "user/model",
+			Tag:      testModelTag,
 		},
-		Weights: weights,
+		Image:     img,
+		Artifacts: []Artifact{img},
+		Weights:   weights,
 	}
 }
 
@@ -48,10 +71,46 @@ func TestBundlePusher_Push(t *testing.T) {
 			Artifacts: []Artifact{}, // no image artifact
 		}
 
-		err := pusher.Push(context.Background(), m, PushOptions{})
+		_, err := pusher.Push(context.Background(), m, PushOptions{})
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no image artifact")
+	})
+
+	t.Run("returns error when Model.Ref is missing", func(t *testing.T) {
+		docker := &mockDocker{}
+		reg := &mockRegistry{}
+		pusher := NewBundlePusher(docker, reg)
+		m := &Model{
+			Format: FormatBundle,
+			Image:  &ImageArtifact{Reference: testImageRef},
+			Artifacts: []Artifact{
+				&ImageArtifact{name: "model", Reference: testImageRef},
+			},
+			// Ref deliberately nil.
+		}
+
+		_, err := pusher.Push(context.Background(), m, PushOptions{})
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Model.Ref")
+	})
+
+	t.Run("returns error when Model.Ref is digest-pinned", func(t *testing.T) {
+		docker := &mockDocker{}
+		reg := &mockRegistry{}
+		pusher := NewBundlePusher(docker, reg)
+		m := testBundleModel()
+		m.Ref = &ResolvedRef{
+			Registry: "r8.im",
+			Repo:     "user/model",
+			Digest:   testW1Digest, // digest-pinned, no Tag
+		}
+
+		_, err := pusher.Push(context.Background(), m, PushOptions{})
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "digest-pinned")
 	})
 
 	t.Run("pushes image-only model as single-entry index", func(t *testing.T) {
@@ -82,7 +141,7 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		pusher := NewBundlePusher(docker, reg)
 
-		err := pusher.Push(context.Background(), testBundleModel(), PushOptions{})
+		_, err := pusher.Push(context.Background(), testBundleModel(), PushOptions{})
 		require.NoError(t, err)
 	})
 
@@ -109,6 +168,14 @@ func TestBundlePusher_Push(t *testing.T) {
 				track("docker:push:" + ref)
 				return nil
 			},
+			tagFunc: func(ctx context.Context, source, target string) error {
+				track("docker:tag:" + source + "->" + target)
+				return nil
+			},
+			removeFunc: func(ctx context.Context, ref string) error {
+				track("docker:remove:" + ref)
+				return nil
+			},
 		}
 
 		imgDesc := v1.Descriptor{
@@ -123,33 +190,42 @@ func TestBundlePusher_Push(t *testing.T) {
 			Digest:    v1.Hash{Algorithm: "sha256", Hex: "weightdigest123"},
 		}
 
-		weightRef := "r8.im/user/model@" + w.Digest
+		weightRef := testRepo + "@" + w.Digest
+
+		// Captured from pushIndexFunc; the index descriptor is
+		// derived locally from idx.Digest() so the test asserts
+		// against whatever the production code computes.
+		var pushedIndexDigest string
 
 		reg := &mockRegistry{
 			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
 				track("registry:getDescriptor:" + ref)
-				if ref == weightRef {
+				switch ref {
+				case weightRef:
 					return weightDesc, nil
+				case testCogImageRef:
+					return imgDesc, nil
 				}
-				return imgDesc, nil
+				return v1.Descriptor{}, fmt.Errorf("unexpected descriptor lookup: %s", ref)
 			},
 			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
 				track("registry:pushIndex:" + ref)
 
-				// Verify the index structure
 				idxManifest, err := idx.IndexManifest()
 				require.NoError(t, err)
 				require.Len(t, idxManifest.Manifests, 2) // image + 1 weight
 
-				// First manifest: image with platform
 				require.Equal(t, imgDesc.Digest, idxManifest.Manifests[0].Digest)
 				require.Equal(t, "linux", idxManifest.Manifests[0].Platform.OS)
 				require.Equal(t, "amd64", idxManifest.Manifests[0].Platform.Architecture)
 
-				// Second manifest: weight with annotations
 				require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.OS)
 				require.NotEmpty(t, idxManifest.Manifests[1].Annotations[AnnotationV1WeightName])
 				require.NotEmpty(t, idxManifest.Manifests[1].Annotations[AnnotationV1WeightSetDigest])
+
+				digest, err := idx.Digest()
+				require.NoError(t, err)
+				pushedIndexDigest = digest.String()
 
 				return nil
 			},
@@ -157,21 +233,91 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		pusher := NewBundlePusher(docker, reg)
 
-		err := pusher.Push(context.Background(), testBundleModel(w), PushOptions{
+		pushed, err := pusher.Push(context.Background(), testBundleModel(w), PushOptions{
 			Platform: &Platform{OS: "linux", Architecture: "amd64"},
 		})
 
 		require.NoError(t, err)
+		require.NotNil(t, pushed)
 
-		// Verify call sequence. Weight verification happens first
-		// (HEAD by digest), then docker push, then image HEAD, then
-		// index push.
-		require.Len(t, callOrder, 4)
-		require.Equal(t, "registry:getDescriptor:"+weightRef, callOrder[0],
-			"weight verification must happen before image push, by digest")
-		require.Equal(t, "docker:push:r8.im/user/model:latest", callOrder[1])
-		require.Equal(t, "registry:getDescriptor:r8.im/user/model:latest", callOrder[2])
-		require.Equal(t, "registry:pushIndex:r8.im/user/model:latest", callOrder[3])
+		// Verify call sequence: weight verified first (HEAD by digest,
+		// before anything mutates the registry), then local re-tag,
+		// then docker push, then image HEAD, then index push, then
+		// the deferred local-tag cleanup. The index descriptor is
+		// computed locally from the v1.ImageIndex bytes — no HEAD.
+		require.Equal(t,
+			[]string{
+				"registry:getDescriptor:" + weightRef,
+				"docker:tag:" + testImageRef + "->" + testCogImageRef,
+				"docker:push:" + testCogImageRef,
+				"registry:getDescriptor:" + testCogImageRef,
+				"registry:pushIndex:" + testModelRef,
+				"docker:remove:" + testCogImageRef,
+			},
+			callOrder,
+		)
+		// Negative: the local image tag must never reach the registry
+		// directly — push and HEAD always target the cog-image tag.
+		require.NotContains(t, callOrder, "docker:push:"+testImageRef)
+		require.NotContains(t, callOrder, "registry:getDescriptor:"+testImageRef)
+		require.NotContains(t, callOrder, "registry:pushIndex:"+testImageRef)
+
+		// Enriched return values.
+		require.NotNil(t, pushed.Ref)
+		require.NotEmpty(t, pushedIndexDigest, "pushIndexFunc should have captured the index digest")
+		require.Equal(t, pushedIndexDigest, pushed.Ref.Digest)
+		require.Equal(t, testModelTag, pushed.Ref.Tag)
+		require.Equal(t, testRepo+"@"+pushedIndexDigest, pushed.Ref.String())
+
+		require.NotNil(t, pushed.Image)
+		require.Equal(t, testRepo+"@"+imgDesc.Digest.String(), pushed.Image.Reference)
+		require.Equal(t, imgDesc.Digest.String(), pushed.Image.Digest)
+
+		require.Len(t, pushed.Weights, 1)
+		require.Equal(t, weightRef, pushed.Weights[0].Reference)
+		require.Equal(t, WeightTag(w.Name, w.SetDigest), pushed.Weights[0].Tag)
+
+		// Invariant: Model.Image and Model.Artifacts[0] are the same
+		// instance after enrichment, matching the production-build
+		// invariant on Model.
+		require.Len(t, pushed.Artifacts, 1)
+		require.Same(t, pushed.Image, pushed.Artifacts[0],
+			"enriched Image and Artifacts[0] should be the same instance")
+	})
+
+	t.Run("skips tag+remove when local image already at cog-image ref", func(t *testing.T) {
+		// Defends against deleting the underlying image when the
+		// build-path tag and the cog-image tag coincide.
+		var tagCalled, removeCalled bool
+		docker := &mockDocker{
+			pushFunc: func(ctx context.Context, ref string) error { return nil },
+			tagFunc: func(ctx context.Context, source, target string) error {
+				tagCalled = true
+				return nil
+			},
+			removeFunc: func(ctx context.Context, ref string) error {
+				removeCalled = true
+				return nil
+			},
+		}
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				return descriptorFromRef(ref), nil
+			},
+			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error { return nil },
+		}
+
+		m := testBundleModel()
+		// Force the local image to already live at the cog-image ref.
+		img := &ImageArtifact{name: "model", Reference: testCogImageRef}
+		m.Image = img
+		m.Artifacts = []Artifact{img}
+
+		pusher := NewBundlePusher(docker, reg)
+		_, err := pusher.Push(context.Background(), m, PushOptions{})
+		require.NoError(t, err)
+		require.False(t, tagCalled, "Tag should not be called when source == destination")
+		require.False(t, removeCalled, "RemoveImage should not be called when no tag was added")
 	})
 
 	t.Run("uses default platform when not specified", func(t *testing.T) {
@@ -194,7 +340,7 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		pusher := NewBundlePusher(docker, reg)
 
-		err := pusher.Push(context.Background(), testBundleModel(
+		_, err := pusher.Push(context.Background(), testBundleModel(
 			Weight{Name: "w1", Target: "/src/weights/w1", Digest: testW1Digest, SetDigest: "sha256:abc"},
 		), PushOptions{})
 		require.NoError(t, err)
@@ -215,7 +361,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		pusher := NewBundlePusher(docker, reg)
 		w1 := Weight{Name: "w1", Target: "/src/weights/w1", Digest: testW1Digest, SetDigest: "sha256:abc"}
 
-		err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
+		_, err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "push image")
@@ -235,7 +381,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		pusher := NewBundlePusher(docker, reg)
 		w1 := Weight{Name: "w1", Target: "/src/weights/w1", Digest: testW1Digest, SetDigest: "sha256:abc"}
 
-		err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
+		_, err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "manifest not found")
@@ -258,7 +404,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		pusher := NewBundlePusher(docker, reg)
 		w1 := Weight{Name: "w1", Target: "/src/weights/w1", Digest: testW1Digest, SetDigest: "sha256:abc"}
 
-		err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
+		_, err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "w1")
@@ -293,7 +439,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		pusher := NewBundlePusher(docker, reg)
 		w1 := Weight{Name: "w1", Target: "/src/weights/w1", Digest: testW1Digest, SetDigest: "sha256:abc"}
 
-		err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
+		_, err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "registry returned digest")
@@ -311,7 +457,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		pusher := NewBundlePusher(docker, reg)
 		w1 := Weight{Name: "w1", Target: "/src/weights/w1", SetDigest: "sha256:abc"}
 
-		err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
+		_, err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "missing manifest digest")
@@ -334,7 +480,7 @@ func TestBundlePusher_Push(t *testing.T) {
 		pusher := NewBundlePusher(docker, reg)
 		w1 := Weight{Name: "w1", Target: "/src/weights/w1", Digest: testW1Digest, SetDigest: "sha256:abc"}
 
-		err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
+		_, err := pusher.Push(context.Background(), testBundleModel(w1), PushOptions{})
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "push OCI index")
@@ -348,7 +494,8 @@ func TestBundlePusher_Push(t *testing.T) {
 		var headCheckCount atomic.Int32
 		reg := &mockRegistry{
 			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
-				if ref != "r8.im/user/model:latest" {
+				// Count weight HEADs only (those are by repo@digest).
+				if strings.Contains(ref, "@") {
 					headCheckCount.Add(1)
 				}
 				return descriptorFromRef(ref), nil
@@ -362,7 +509,7 @@ func TestBundlePusher_Push(t *testing.T) {
 
 		pusher := NewBundlePusher(docker, reg)
 
-		err := pusher.Push(context.Background(), testBundleModel(
+		_, err := pusher.Push(context.Background(), testBundleModel(
 			Weight{Name: "w1", Target: "/src/weights/w1", Digest: testW1Digest, SetDigest: "sha256:set1"},
 			Weight{Name: "w2", Target: "/src/weights/w2", Digest: testW2Digest, SetDigest: "sha256:set2"},
 		), PushOptions{})
@@ -397,7 +544,7 @@ func descriptorFromRef(ref string) v1.Descriptor {
 // =============================================================================
 
 func TestResolver_Push(t *testing.T) {
-	t.Run("default uses docker push", func(t *testing.T) {
+	t.Run("FormatImage uses docker push", func(t *testing.T) {
 		var dockerPushed bool
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error {
@@ -405,15 +552,48 @@ func TestResolver_Push(t *testing.T) {
 				return nil
 			},
 		}
-		reg := &mockRegistry{}
+		imgDesc := v1.Descriptor{
+			MediaType: types.OCIManifestSchema1,
+			Size:      1234,
+			Digest:    v1.Hash{Algorithm: "sha256", Hex: "imagedigestformatimage"},
+		}
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				return imgDesc, nil
+			},
+		}
 		resolver := NewResolver(docker, reg)
 
-		err := resolver.Push(context.Background(), testBundleModel(), PushOptions{})
+		// Share the same *ImageArtifact between Model.Image and
+		// Model.Artifacts so the post-push replacement matches
+		// production builds.
+		img := &ImageArtifact{name: "model", Reference: testImageRef}
+		m := &Model{
+			Format:    FormatImage,
+			Image:     img,
+			Artifacts: []Artifact{img},
+		}
+
+		pushed, err := resolver.Push(context.Background(), m, PushOptions{})
 		require.NoError(t, err)
-		require.True(t, dockerPushed, "standalone should use docker push")
+		require.True(t, dockerPushed, "FormatImage should use docker push")
+		require.NotNil(t, pushed)
+		require.NotNil(t, pushed.Image)
+		require.Equal(t, testRepo+"@"+imgDesc.Digest.String(), pushed.Image.Reference,
+			"FormatImage push should enrich Image.Reference to repo@digest")
+		// Invariant: Image and the first ImageArtifact in Artifacts
+		// are the same instance after enrichment.
+		require.Len(t, pushed.Artifacts, 1)
+		require.Same(t, pushed.Image, pushed.Artifacts[0],
+			"Image and Artifacts[0] should be the same enriched instance")
 	})
 
-	t.Run("no weights uses docker push", func(t *testing.T) {
+	t.Run("FormatImage falls back to unenriched Model when HEAD fails", func(t *testing.T) {
+		// A successful docker push followed by a HEAD failure should
+		// not fail the operation; Push returns the input Model
+		// unchanged so the caller keeps their original references.
+		// Legacy registries that don't support HEAD on tags hit this
+		// path.
 		var dockerPushed bool
 		docker := &mockDocker{
 			pushFunc: func(ctx context.Context, ref string) error {
@@ -421,12 +601,49 @@ func TestResolver_Push(t *testing.T) {
 				return nil
 			},
 		}
-		reg := &mockRegistry{}
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				return v1.Descriptor{}, errors.New("HEAD unsupported")
+			},
+		}
 		resolver := NewResolver(docker, reg)
 
-		err := resolver.Push(context.Background(), testBundleModel(), PushOptions{})
+		img := &ImageArtifact{name: "model", Reference: testImageRef}
+		m := &Model{
+			Format:    FormatImage,
+			Image:     img,
+			Artifacts: []Artifact{img},
+		}
+
+		pushed, err := resolver.Push(context.Background(), m, PushOptions{})
 		require.NoError(t, err)
-		require.True(t, dockerPushed, "model without weights should use docker push")
+		require.True(t, dockerPushed)
+		require.Same(t, m, pushed,
+			"on HEAD failure, Push should return the input Model unchanged")
+	})
+
+	t.Run("FormatBundle with no weights produces a single-entry index", func(t *testing.T) {
+		// Behavioral change: a FormatBundle model with zero weights is
+		// still pushed as an OCI index (containing only the image
+		// manifest), not as a legacy single image.
+		var indexPushed bool
+		docker := &mockDocker{
+			pushFunc: func(ctx context.Context, ref string) error { return nil },
+		}
+		reg := &mockRegistry{
+			getDescriptorFunc: func(ctx context.Context, ref string) (v1.Descriptor, error) {
+				return descriptorFromRef(ref), nil
+			},
+			pushIndexFunc: func(ctx context.Context, ref string, idx v1.ImageIndex) error {
+				indexPushed = true
+				return nil
+			},
+		}
+		resolver := NewResolver(docker, reg)
+
+		_, err := resolver.Push(context.Background(), testBundleModel(), PushOptions{})
+		require.NoError(t, err)
+		require.True(t, indexPushed, "FormatBundle should push an OCI index even with no weights")
 	})
 
 	t.Run("bundle with weights produces an OCI index", func(t *testing.T) {
@@ -445,7 +662,7 @@ func TestResolver_Push(t *testing.T) {
 		}
 		resolver := NewResolver(docker, reg)
 
-		err := resolver.Push(context.Background(), testBundleModel(
+		_, err := resolver.Push(context.Background(), testBundleModel(
 			Weight{Name: "w1", Target: "/src/weights/w1", Digest: testW1Digest, SetDigest: "sha256:abc"},
 		), PushOptions{})
 		require.NoError(t, err)
@@ -462,7 +679,7 @@ func TestResolver_Push(t *testing.T) {
 			Artifacts: []Artifact{},
 		}
 
-		err := resolver.Push(context.Background(), m, PushOptions{})
+		_, err := resolver.Push(context.Background(), m, PushOptions{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no image artifact")
 	})
@@ -473,12 +690,13 @@ func TestResolver_Push(t *testing.T) {
 		resolver := NewResolver(docker, reg)
 
 		m := &Model{
+			Format: FormatBundle,
 			Weights: []Weight{
 				{Name: "w1", Target: "/src/weights/w1", Digest: testW1Digest, SetDigest: "sha256:abc"},
 			},
 		}
 
-		err := resolver.Push(context.Background(), m, PushOptions{})
+		_, err := resolver.Push(context.Background(), m, PushOptions{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no image artifact")
 	})

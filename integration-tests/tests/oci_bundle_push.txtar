@@ -8,6 +8,13 @@
 
 registry-start
 
+# Drive both weight import and the final push to the same model ref.
+# COG_MODEL pins the full ref (registry + repo + tag) so the bundle
+# lands at $TEST_REGISTRY/test/bundle-model:v1 deterministically;
+# without an explicit tag, ResolveModelRef would append a fresh
+# timestamp and break registry-inspect below.
+env COG_MODEL=$TEST_REGISTRY/test/bundle-model:v1
+
 # Two weight directories. Each holds a single small file; the packer
 # emits a bundle layer for all the small files under the default
 # threshold so we end up with one layer per weight entry.
@@ -16,21 +23,23 @@ mkdir weights-beta
 exec sh -c 'printf AAAA > weights-alpha/data.bin'
 exec sh -c 'printf BBBB > weights-beta/data.bin'
 
-# image: is required in cog.yaml when weights are declared, and
-# cog weights import reads it from there.
-exec sh -c 'printf "image: %s/test/bundle-model\n" "$TEST_REGISTRY" >> cog.yaml'
-
 # Step 1: import generates weights.lock and pushes weight manifests.
 # cog push later requires the lockfile to already exist.
 cog weights import
 
 # Step 2: cog push assembles the OCI index (image + weight manifests)
-# and uploads it to the registry under the supplied tag.
-cog push $TEST_REGISTRY/test/bundle-model:v1
+# and uploads it to the same model ref. Positional [IMAGE] args are
+# rejected in model mode, so the ref comes entirely from COG_MODEL.
+cog push
 
-# Image push header — weights are pushed during `cog weights import`,
-# not during `cog push`.
-stderr 'Pushing image '
+# Push prints a structured ref tree on success: the bundle (model)
+# digest plus each contained artifact. Weights were already pushed
+# during `cog weights import`, so they only show up in the tree.
+stderr 'Pushing to localhost'
+stderr 'model   localhost'
+stderr 'image   localhost'
+stderr 'weight  alpha  localhost'
+stderr 'weight  beta   localhost'
 
 # Resolve the pushed ref and verify the top-level index shape.
 registry-inspect $TEST_REGISTRY/test/bundle-model:v1
@@ -41,13 +50,13 @@ stdout 'run.cog.weight.name.*beta'
 stdout 'run.cog.weight.set-digest'
 
 -- cog.yaml --
-# image: is appended by the test before `cog push` (the value depends
-# on $TEST_REGISTRY, which varies per run). cog push <ref> still
-# pushes to the supplied ref, but image: must be set when weights are
-# configured (validation requirement).
+# 'model:' satisfies the schema requirement that weight-bearing configs
+# declare a model ref. The full registry/repo:tag target is overridden
+# at runtime via COG_MODEL because $TEST_REGISTRY varies per run.
 build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
+model: test/bundle-model
 weights:
   - name: alpha
     target: /src/weights-alpha

@@ -9,13 +9,13 @@ import (
 func TestValidateConfigFile(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU:           ptr(true),
-			PythonVersion: ptr("3.10"),
+			GPU:           new(true),
+			PythonVersion: new("3.10"),
 			PythonPackages: []string{
 				"tensorflow==2.12.0",
 				"foo==1.0.0",
 			},
-			CUDA: ptr("11.8"),
+			CUDA: new("11.8"),
 		},
 	}
 	result := ValidateConfigFile(cfg)
@@ -25,12 +25,12 @@ func TestValidateConfigFile(t *testing.T) {
 func TestValidateConfigFileSuccess(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU: ptr(true),
+			GPU: new(true),
 			SystemPackages: []string{
 				"libgl1",
 				"libglib2.0-0",
 			},
-			PythonVersion: ptr("3.10"),
+			PythonVersion: new("3.10"),
 			PythonPackages: []string{
 				"torch==1.8.1",
 			},
@@ -44,12 +44,12 @@ func TestValidateConfigFileSuccess(t *testing.T) {
 func TestValidateConfigFilePythonVersionNumerical(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU: ptr(true),
+			GPU: new(true),
 			SystemPackages: []string{
 				"libgl1",
 				"libglib2.0-0",
 			},
-			PythonVersion: ptr("3.10"),
+			PythonVersion: new("3.10"),
 			PythonPackages: []string{
 				"torch==1.8.1",
 			},
@@ -63,8 +63,8 @@ func TestValidateConfigFilePythonVersionNumerical(t *testing.T) {
 func TestValidateConfigFileNullListsAllowed(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU:            ptr(true),
-			PythonVersion:  ptr("3.10"),
+			GPU:            new(true),
+			PythonVersion:  new("3.10"),
 			SystemPackages: nil,
 			PythonPackages: nil,
 			Run:            nil,
@@ -79,16 +79,16 @@ func TestValidateConfigFilePredictFormat(t *testing.T) {
 	// Valid predict format
 	cfg := &configFile{
 		Build: &buildFile{
-			PythonVersion: ptr("3.10"),
+			PythonVersion: new("3.10"),
 		},
-		Predict: ptr("predict.py:Predictor"),
+		Predict: new("predict.py:Predictor"),
 	}
 
 	result := ValidateConfigFile(cfg)
 	require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
 
 	// Invalid predict format
-	cfg.Predict = ptr("invalid_format")
+	cfg.Predict = new("invalid_format")
 	result = ValidateConfigFile(cfg)
 	require.True(t, result.HasErrors())
 	require.Contains(t, result.Err().Error(), "predict.py:Predictor")
@@ -97,16 +97,16 @@ func TestValidateConfigFilePredictFormat(t *testing.T) {
 func TestValidateConfigFileConcurrencyType(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU:           ptr(true),
-			CUDA:          ptr("11.8"),
-			PythonVersion: ptr("3.11"),
+			GPU:           new(true),
+			CUDA:          new("11.8"),
+			PythonVersion: new("3.11"),
 			PythonPackages: []string{
 				"torch==2.0.1",
 			},
 		},
-		Predict: ptr("predict.py:Predictor"),
+		Predict: new("predict.py:Predictor"),
 		Concurrency: &concurrencyFile{
-			Max: ptr(5),
+			Max: new(5),
 		},
 	}
 
@@ -117,7 +117,7 @@ func TestValidateConfigFileConcurrencyType(t *testing.T) {
 func TestValidateConfigFileDeprecatedPythonPackages(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			PythonVersion: ptr("3.10"),
+			PythonVersion: new("3.10"),
 			PythonPackages: []string{
 				"torch==1.8.1",
 			},
@@ -133,7 +133,7 @@ func TestValidateConfigFileDeprecatedPythonPackages(t *testing.T) {
 func TestValidateConfigFileDeprecatedPreInstall(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			PythonVersion: ptr("3.10"),
+			PythonVersion: new("3.10"),
 			PreInstall: []string{
 				"echo hello",
 			},
@@ -149,7 +149,7 @@ func TestValidateConfigFileDeprecatedPreInstall(t *testing.T) {
 func TestValidateConfigFileMissingPythonVersion(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{
-			GPU: ptr(true),
+			GPU: new(true),
 		},
 	}
 
@@ -177,17 +177,18 @@ func TestValidateConfigFileNilBuildSkipsPythonVersionCheck(t *testing.T) {
 }
 
 func TestValidateWeights(t *testing.T) {
-	image := ptr("registry.example.com/acme/my-model")
+	model := new("registry.example.com/acme/my-model")
 
 	tests := []struct {
 		name    string
 		image   *string
+		model   *string
 		weights []weightFile
 		wantErr string // empty means expect no error
 	}{
 		{
 			name:  "valid with two weights",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/base"}}}},
 				{Name: "lora", Target: "/src/lora", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/lora"}}}},
@@ -195,7 +196,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "valid with source",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model", Exclude: []string{"*.onnx"}}}}},
 			},
@@ -206,7 +207,7 @@ func TestValidateWeights(t *testing.T) {
 			// form must pass the same checks as the single-source
 			// case.
 			name:  "valid with multiple sources",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "merged", Target: "/src/weights/merged", Source: WeightSourceList{Items: []WeightSourceConfig{
 					{URI: "hf://acme/base", Include: []string{"*.safetensors"}},
@@ -218,7 +219,7 @@ func TestValidateWeights(t *testing.T) {
 			// A bad pattern in any source surfaces with that
 			// source's index, not the weight's.
 			name:  "invalid pattern in second source",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "merged", Target: "/src/w", Source: WeightSourceList{Items: []WeightSourceConfig{
 					{URI: "hf://acme/base"},
@@ -229,20 +230,28 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:    "missing source",
-			image:   image,
+			model:   model,
 			weights: []weightFile{{Name: "base", Target: "/src/weights"}},
 			wantErr: "source is required",
 		},
 		{
-			name: "weights without image",
+			name: "weights without model",
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
-			wantErr: "image is required when weights are configured",
+			wantErr: "weights require 'model' in cog.yaml",
+		},
+		{
+			name:  "weights with image instead of model",
+			image: new("registry.example.com/acme/my-model"),
+			weights: []weightFile{
+				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
+			},
+			wantErr: "weights require 'model', not 'image' — rename 'image' to 'model'",
 		},
 		{
 			name:  "missing name",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
@@ -250,7 +259,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "uppercase name",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "MyModel", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
@@ -258,7 +267,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "name with spaces",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "my model", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
@@ -266,7 +275,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "name starting with hyphen",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "-base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
@@ -274,14 +283,14 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "valid name with separators",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "z-image.turbo_v1", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
 		},
 		{
 			name:  "duplicate name",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 				{Name: "base", Target: "/src/other", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
@@ -290,7 +299,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "missing target",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
@@ -298,7 +307,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "relative target",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 			},
@@ -306,7 +315,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "duplicate target",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 				{Name: "lora", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
@@ -315,7 +324,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "overlapping targets parent then child",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
 				{Name: "lora", Target: "/src/weights/lora", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/lora"}}}},
@@ -324,7 +333,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "overlapping targets child then parent",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "lora", Target: "/src/weights/lora", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/lora"}}}},
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/model"}}}},
@@ -333,7 +342,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "disjoint targets no false positive",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/base"}}}},
 				{Name: "lora", Target: "/src/weights2", Source: WeightSourceList{Items: []WeightSourceConfig{{URI: "hf://acme/lora"}}}},
@@ -341,7 +350,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "valid include and exclude patterns",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
@@ -352,7 +361,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "empty string in include pattern",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
@@ -363,7 +372,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "empty string in exclude pattern",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
@@ -374,7 +383,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "negation pattern in include",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
@@ -385,7 +394,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "negation pattern in exclude",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
@@ -396,7 +405,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "whitespace-only pattern rejected after trim",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
@@ -407,7 +416,7 @@ func TestValidateWeights(t *testing.T) {
 		},
 		{
 			name:  "backslash in pattern rejected",
-			image: image,
+			model: model,
 			weights: []weightFile{
 				{Name: "base", Target: "/src/weights", Source: WeightSourceList{Items: []WeightSourceConfig{{
 					URI:     "hf://acme/model",
@@ -421,8 +430,9 @@ func TestValidateWeights(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &configFile{
-				Build:   &buildFile{PythonVersion: ptr("3.12")},
+				Build:   &buildFile{PythonVersion: new("3.12")},
 				Image:   tt.image,
+				Model:   tt.model,
 				Weights: tt.weights,
 			}
 			result := ValidateConfigFile(cfg)
@@ -436,5 +446,73 @@ func TestValidateWeights(t *testing.T) {
 	}
 }
 
-// ptr returns a pointer to the given value.
-func ptr[T any](v T) *T { return &v }
+func TestValidateModel(t *testing.T) {
+	tests := []struct {
+		name    string
+		image   *string
+		model   *string
+		wantErr string // empty means expect no error
+	}{
+		{
+			name:  "valid bare repo with registry",
+			model: new("registry.example.com/acme/my-model"),
+		},
+		{
+			name:  "valid bare repo without registry",
+			model: new("acme/my-model"),
+		},
+		{
+			name:  "valid single-segment repo",
+			model: new("my-model"),
+		},
+		{
+			name:  "valid host:port repo",
+			model: new("localhost:5000/acme/my-model"),
+		},
+		{
+			name:    "model with tag rejected",
+			model:   new("registry.example.com/acme/my-model:v1"),
+			wantErr: "must be a bare repository",
+		},
+		{
+			name:    "model with digest rejected",
+			model:   new("registry.example.com/acme/my-model@sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"),
+			wantErr: "must be a bare repository",
+		},
+		{
+			name:    "model and image both set",
+			model:   new("registry.example.com/acme/my-model"),
+			image:   new("registry.example.com/acme/my-image"),
+			wantErr: "'model' and 'image' cannot both be set",
+		},
+		{
+			name:    "model with invalid characters",
+			model:   new("Registry.Example.Com/ACME/Model"),
+			wantErr: "invalid repository",
+		},
+		{
+			name: "no model and no image is fine",
+		},
+		{
+			name:  "image only is fine",
+			image: new("registry.example.com/acme/my-image"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &configFile{
+				Build: &buildFile{PythonVersion: new("3.12")},
+				Image: tt.image,
+				Model: tt.model,
+			}
+			result := ValidateConfigFile(cfg)
+			if tt.wantErr == "" {
+				require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
+			} else {
+				require.True(t, result.HasErrors())
+				require.Contains(t, result.Err().Error(), tt.wantErr)
+			}
+		})
+	}
+}

@@ -103,4 +103,4 @@ crane ls localhost:5000/managed-weights
 ```
 
 Weight manifests are pushed under tags like
-`weights-<name>-<12-hex-digest>` (see `pkg/model/weight_pusher.go`).
+`cog-weight.<name>.<12-hex-digest>` (see `pkg/model/weight_pusher.go`).

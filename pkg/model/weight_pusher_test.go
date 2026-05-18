@@ -121,7 +121,7 @@ func TestWeightPusher_Push_PushesExpectedManifest(t *testing.T) {
 	require.NotNil(t, result)
 
 	// Tag derives from the set digest (12-char prefix after "sha256:").
-	require.Contains(t, pushedRef, "weights-model-v1-")
+	require.Contains(t, pushedRef, "cog-weight.model-v1.")
 	require.Equal(t, pushedRef, result.Ref)
 
 	// Manifest shape matches spec §2.2: OCI manifest, config blob, layers
@@ -173,7 +173,7 @@ func TestWeightPusher_Push_TagDerivesFromSetDigest(t *testing.T) {
 	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact)
 	require.NoError(t, err)
 
-	require.Contains(t, pushedRef, "weights-model-v1-")
+	require.Contains(t, pushedRef, "cog-weight.model-v1.")
 	require.Contains(t, pushedRef, ShortDigest(artifact.Entry.SetDigest))
 }
 

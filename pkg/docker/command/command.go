@@ -14,6 +14,14 @@ type Command interface {
 	// When force is true, it will always attempt to pull the image.
 	Pull(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
 	Push(ctx context.Context, ref string) error
+	// Tag assigns target as an additional local tag for the image
+	// referenced by source. source accepts anything `docker tag`
+	// accepts on its source side: an existing tag, a digest reference,
+	// or a raw image ID (with or without the sha256: prefix).
+	//
+	// Returns a *command.NotFoundError when source does not resolve
+	// to an image in the local daemon.
+	Tag(ctx context.Context, source, target string) error
 	RemoveImage(ctx context.Context, ref string) error
 	LoadUserInformation(ctx context.Context, registryHost string) (*UserInfo, error)
 	Inspect(ctx context.Context, ref string) (*image.InspectResponse, error)

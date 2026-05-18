@@ -94,6 +94,9 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	imageName := src.Config.Image
+	if imageName == "" {
+		imageName = src.Config.Model
+	}
 	if buildTag != "" {
 		imageName = buildTag
 	}

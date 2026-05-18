@@ -160,6 +160,11 @@
       "type": "string",
       "description": "The name given to built Docker images. If you want to push to a registry, this should also include the registry name."
     },
+    "model": {
+      "$id": "#/properties/model",
+      "type": "string",
+      "description": "The repository where this model's image and weights are pushed. Must be a bare repository (no tag or digest)."
+    },
     "predict": {
       "$id": "#/properties/predict",
       "type": "string",
@@ -219,7 +224,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "A unique identifier for this weight entry. Maps to <image>/weights/<name> in the registry.",
+            "description": "A unique identifier for this weight entry.",
             "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$"
           },
           "target": {

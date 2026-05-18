@@ -32,6 +32,10 @@ func (c *MockCommand) Push(ctx context.Context, image string) error {
 	return PushError
 }
 
+func (c *MockCommand) Tag(ctx context.Context, source, target string) error {
+	return nil
+}
+
 func (c *MockCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	userInfo := command.UserInfo{
 		Token:    "test-token",

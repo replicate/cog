@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
@@ -53,9 +52,7 @@ a repo with a checked-in weights.lock but a cold local cache.
 If weight names are provided, only those weights are imported. Otherwise all weights
 defined in cog.yaml are imported.
 
-The registry is determined from the image name, which can be:
-- Set in cog.yaml as the 'image' field
-- Overridden with the --image flag
+` + weightRegistryResolutionHelp + `
 
 Use --dry-run to preview what would change without importing anything.
 Add --verbose to see per-file details including which files pass the filter.`,
@@ -66,7 +63,6 @@ Add --verbose to see per-file details including which files pass the filter.`,
 	}
 
 	addConfigFlag(cmd)
-	cmd.Flags().String("image", "", "Registry repository (overrides cog.yaml image field)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be imported without making changes")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show per-file details")
 	return cmd
@@ -83,15 +79,7 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 
 	cfg := src.Config
 
-	imageName, _ := cmd.Flags().GetString("image")
-	if imageName == "" {
-		imageName = cfg.Image
-	}
-	if imageName == "" {
-		return fmt.Errorf("To import weights, you must either set the 'image' option in cog.yaml or pass --image. For example, 'cog weights import --image registry.example.com/your-username/model-name'")
-	}
-
-	repo, err := parseRepoOnly(imageName)
+	repo, err := resolveWeightRepo(src, configFilename)
 	if err != nil {
 		return err
 	}
@@ -277,19 +265,6 @@ func collectWeightSpecs(src *model.Source, filterNames []string) ([]*model.Weigh
 		filtered = append(filtered, ws)
 	}
 	return filtered, nil
-}
-
-// parseRepoOnly parses an image string as a bare repository, rejecting
-// tags and digests (weight tags are auto-generated).
-func parseRepoOnly(imageName string) (string, error) {
-	parsedRepo, err := name.NewRepository(imageName, name.Insecure)
-	if err != nil {
-		if ref, refErr := name.ParseReference(imageName, name.Insecure); refErr == nil {
-			return "", fmt.Errorf("image reference %q includes a tag or digest — provide only the repository (e.g., %q)", imageName, ref.Context().Name())
-		}
-		return "", fmt.Errorf("invalid repository %q: %w", imageName, err)
-	}
-	return parsedRepo.Name(), nil
 }
 
 // pushWeightArtifacts pushes weight artifacts to the registry with

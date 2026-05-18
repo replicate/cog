@@ -48,6 +48,7 @@ cargo-binstall = "1.16.6"
 "aqua:rust-cross/cargo-zigbuild" = "0.20.1"
 "aqua:gotestyourself/gotestsum" = "1.13.0"
 "aqua:golangci/golangci-lint" = "2.10.1"
+"aqua:vektra/mockery" = "3.7.0"
 ruff = "0.14.13"
 ty = "0.0.10"
 "npm:prettier" = "3.6.2"
@@ -526,7 +527,19 @@ run = "nox -s typecheck"
 
 [tasks.generate]
 description = "Run all code generation"
-run = [{ tasks = ["generate:stubs"] }]
+run = [{ tasks = ["generate:stubs", "generate:mocks"] }]
+
+[tasks."generate:mocks"]
+description = "Regenerate Go mocks via mockery (config in .mockery.yml)"
+# Source list mirrors the interfaces mockery generates from (per
+# .mockery.yml). Add to this list when adding new interfaces to that
+# config so mise's source-change detection re-runs generation.
+sources = [
+  ".mockery.yml",
+  "pkg/docker/command/*.go",
+]
+outputs = ["pkg/docker/dockertest/command_mocks.go"]
+run = "mockery"
 
 [tasks."generate:stubs"]
 alias = "stub:generate"

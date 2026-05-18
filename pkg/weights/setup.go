@@ -13,9 +13,10 @@ import (
 )
 
 // NewFromSource constructs a Manager from a model.Source and an
-// already-parsed repository string. Callers (typically CLI commands)
-// are responsible for parsing their `--image` flag / `cog.yaml image:`
-// value into a bare repo before calling.
+// already-resolved repository string. Callers (typically CLI commands)
+// are responsible for resolving the bundle ref (from `model:` in
+// cog.yaml plus any COG_MODEL* env vars) into a bare repo before
+// calling.
 //
 // repo may be empty for models that declare no weights — the returned
 // Manager is a valid no-op in that case, so CLI callers can construct
@@ -33,7 +34,7 @@ func NewFromSource(src *model.Source, repo string) (*Manager, error) {
 	var lock *lockfile.WeightsLock
 	if len(src.Config.Weights) > 0 {
 		if repo == "" {
-			return nil, errors.New("cog.yaml declares weights but no repository was resolved; set 'image:' in cog.yaml or pass --image")
+			return nil, errors.New("cog.yaml declares weights but no repository was resolved; set 'model' in cog.yaml, or export COG_MODEL / COG_MODEL_REPO")
 		}
 		lockPath := filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
 		loaded, err := lockfile.LoadWeightsLock(lockPath)

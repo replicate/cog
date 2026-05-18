@@ -11,6 +11,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 // Option configures how Resolver methods behave.
@@ -221,6 +222,20 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 	opts = opts.WithDefaults(src)
 
+	// Resolve the model ref up front so user-facing config or env
+	// errors (malformed COG_MODEL_TAG, reserved prefix, image:+env
+	// mode mix-up, etc.) surface before kicking off a Docker build.
+	// ErrNoModelRef just means there's no model field — fall back to
+	// FormatImage.
+	format := FormatImage
+	ref, err := ResolveModelRef(src.Config.Image, src.Config.Model)
+	if err != nil && !errors.Is(err, ErrNoModelRef) {
+		return nil, err
+	}
+	if ref != nil {
+		format = FormatBundle
+	}
+
 	ib := NewImageBuilder(r.factory, r.docker, src, opts)
 	imageSpec := NewImageSpec("model", opts.ImageName)
 	imgResult, err := ib.Build(ctx, imageSpec)
@@ -238,7 +253,12 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 
 	m.Artifacts = []Artifact{ia}
+	m.Format = format
+	m.Ref = ref
 
+	// Load managed weights when declared. Config validation enforces
+	// "weights require model", so a healthy config only reaches this
+	// branch when Format == FormatBundle.
 	if len(src.Config.Weights) > 0 {
 		weights, weightErr := WeightsFromLockfile(src.ProjectDir)
 		if weightErr != nil {
@@ -250,12 +270,15 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	return m, nil
 }
 
-// Push pushes a Model to a container registry.
+// Push pushes a Model to a container registry and returns an
+// enriched copy of the Model with all registry references populated
+// (Model.Ref pinned to the resulting digest, image artifact and
+// weights carrying repo@digest references).
 //
-// Uses the OCI chunked push path (via ImagePusher) which bypasses Docker's
-// monolithic push and supports layers of any size through chunked uploads.
-// Falls back to legacy Docker push if OCI push is not available.
-func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
+// FormatBundle delegates to BundlePusher; FormatImage falls back to
+// the legacy single-image push and the returned Model has only the
+// image artifact's repo@digest captured.
+func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) (*Model, error) {
 	if m.IsBundle() {
 		pusher := NewBundlePusher(r.docker, r.registry)
 		return pusher.Push(ctx, m, opts)
@@ -263,7 +286,7 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 
 	imgArtifact := m.GetImageArtifact()
 	if imgArtifact == nil {
-		return fmt.Errorf("no image artifact in model")
+		return nil, fmt.Errorf("no image artifact in model")
 	}
 
 	var imagePushOpts []ImagePushOption
@@ -273,7 +296,24 @@ func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
 	if opts.OnFallback != nil {
 		imagePushOpts = append(imagePushOpts, WithOnFallback(opts.OnFallback))
 	}
-	return r.imagePusher.Push(ctx, imgArtifact, imagePushOpts...)
+	if err := r.imagePusher.Push(ctx, imgArtifact, imagePushOpts...); err != nil {
+		return nil, err
+	}
+
+	// Enrich the image artifact with the pushed digest. On registries
+	// that don't support HEAD on tags, fall back to the original Model
+	// rather than failing a successful push. FormatImage is the legacy
+	// single-image path; bundle pushes surface HEAD failures as errors.
+	desc, err := r.registry.GetDescriptor(ctx, imgArtifact.Reference)
+	if err != nil {
+		console.Debugf("post-push HEAD on %q failed; returning Model without digest enrichment: %v", imgArtifact.Reference, err)
+		return m, nil
+	}
+
+	enrichedImage := imgArtifact.WithDigest(repoFromReference(imgArtifact.Reference), desc)
+	out := *m
+	out.Image, out.Artifacts = replaceImageArtifact(imgArtifact, m.Artifacts, enrichedImage)
+	return &out, nil
 }
 
 // loadLocal loads a Model from the local docker daemon.
@@ -309,6 +349,7 @@ func (r *Resolver) modelFromImage(img *ImageArtifact, cfg *config.Config) (*Mode
 	}
 
 	return &Model{
+		Format:     FormatImage,
 		Image:      img,
 		Config:     cfg,
 		Schema:     schema,
@@ -382,6 +423,9 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 	if err != nil {
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
+	// Override the FormatImage default from ToModel — an OCI index is
+	// always a bundle, regardless of how many weight manifests it carries.
+	m.Format = FormatBundle
 
 	return m, nil
 }

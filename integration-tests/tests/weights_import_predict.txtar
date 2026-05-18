@@ -12,12 +12,14 @@ env COG_CACHE_DIR=$WORK/cache
 
 registry-start
 
+# Point the model ref at the ephemeral test registry. cog.yaml carries
+# the bare repo via 'model:'; COG_MODEL_REGISTRY swaps in the host
+# now that registry-start has assigned a port.
+env COG_MODEL_REGISTRY=$TEST_REGISTRY
+
 # Build a deterministic weight directory.
 mkdir weights-src
 exec sh -c 'dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr "\0" "X" > weights-src/greeting.txt'
-
-# Patch cog.yaml to set image: to the ephemeral test registry.
-exec sh -c 'printf "image: %s/test/import-predict-model\n" "$TEST_REGISTRY" >> cog.yaml'
 
 # Step 1: import. After this, the local content store under
 # $COG_CACHE_DIR/weights/files/sha256/ must contain greeting.txt's
@@ -35,11 +37,13 @@ stdout 'hello world \(weight-size=1024\)'
 exec sh -c 'test ! -d .cog/mounts || test -z "$(ls -A .cog/mounts)"'
 
 -- cog.yaml --
-# image: is appended by the test before `cog weights import` (the
-# value depends on $TEST_REGISTRY, which varies per run).
+# 'model:' carries the bare repo. The registry host is set via
+# COG_MODEL_REGISTRY in the test body since $TEST_REGISTRY varies
+# per run.
 build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
+model: test/import-predict-model
 weights:
   - name: greeting
     target: /src/mounted-weights/greeting

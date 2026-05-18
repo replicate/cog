@@ -227,7 +227,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			gpus = "all"
 		}
 
-		wm, err = newWeightManager(src, "")
+		wm, err = newWeightManager(src)
 		if err != nil {
 			return err
 		}

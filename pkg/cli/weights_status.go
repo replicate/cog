@@ -74,6 +74,8 @@ Status values:
 
 Every non-ready status is resolved by running 'cog weights import'.
 
+` + weightRegistryResolutionHelp + `
+
 Use --verbose to show per-layer status for each weight.
 
 Exit code is 0 when all weights are ready, 1 otherwise.`,
@@ -99,21 +101,21 @@ func weightsStatusCommand(cmd *cobra.Command, jsonOutput, verbose bool) error {
 	}
 	defer src.Close()
 
+	if len(src.Config.Weights) == 0 {
+		return fmt.Errorf("no weights defined in %s", configFilename)
+	}
+
+	repo, err := resolveWeightRepo(src, configFilename)
+	if err != nil {
+		return err
+	}
+
 	// Load lockfile — missing is fine (weights may not be built yet), but
 	// a present-but-corrupt file gets a warning so it doesn't fail silently.
 	lockPath := filepath.Join(src.ProjectDir, lockfile.WeightsLockFilename)
 	lock, lockErr := lockfile.LoadWeightsLock(lockPath)
 	if lockErr != nil && !errors.Is(lockErr, os.ErrNotExist) {
 		console.Warnf("Failed to load %s: %s", lockfile.WeightsLockFilename, lockErr)
-	}
-
-	// Resolve registry repo — required for status checks.
-	if src.Config.Image == "" {
-		return fmt.Errorf("no 'image' configured in %s — cannot check registry state", configFilename)
-	}
-	repo, err := parseRepoOnly(src.Config.Image)
-	if err != nil {
-		return fmt.Errorf("invalid image %q: %w", src.Config.Image, err)
 	}
 
 	reg := registry.NewRegistryClient()
