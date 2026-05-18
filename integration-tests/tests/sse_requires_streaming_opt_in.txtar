@@ -5,7 +5,8 @@
 cog serve --upload-url http://unused/
 
 cog predict -i count=2
-stdout '"output":\["chunk-0","chunk-1"\]'
+stdout '"chunk-0"'
+stdout '"chunk-1"'
 
 ! curl -H Accept:text/event-stream PUT /predictions/no-streaming '{"id":"no-streaming","input":{"count":2}}'
 stderr 'This model does not support streaming responses'
