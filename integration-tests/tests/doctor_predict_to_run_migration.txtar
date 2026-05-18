@@ -1,4 +1,4 @@
-! cog doctor
+cog doctor
 stderr 'Deprecated predict interface names'
 stderr 'predict in cog.yaml is deprecated'
 
