@@ -77,10 +77,10 @@ at the following times.
   Once, when the prediction starts
   (`status` is `starting`).
 - `output`:
-  Each time a predict function generates an output
+  Each time a run function generates an output
   (either once using `return` or multiple times using `yield`)
 - `logs`:
-  Each time the predict function writes to `stdout`
+  Each time the run function writes to `stdout`
 - `completed`:
   Once, when the prediction reaches a terminal state
   (`status` is `succeeded`, `canceled`, or `failed`)

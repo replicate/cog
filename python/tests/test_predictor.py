@@ -15,8 +15,10 @@ def test_base_runner_run_and_predict_bridge() -> None:
 
     runner = MyRunner()
     assert runner.run(text="hello") == "HELLO"
-    assert runner.predict("hello") == "HELLO"
-    assert runner.predict(text="hello") == "HELLO"
+    with pytest.warns(DeprecationWarning, match=r"MyRunner\.predict\(\) is deprecated"):
+        assert runner.predict("hello") == "HELLO"
+    with pytest.warns(DeprecationWarning, match=r"MyRunner\.predict\(\) is deprecated"):
+        assert runner.predict(text="hello") == "HELLO"
 
 
 def test_base_runner_run_delegates_to_legacy_predict_with_positional_args() -> None:
@@ -236,8 +238,93 @@ def test_load_predictor_from_ref_warns_for_inherited_legacy_predict(
     assert runner.predict(text="hello") == "HELLO"
 
 
+class TestBaseRunner:
+    """Tests for BaseRunner class with run() method."""
+
+    def test_subclass_can_override_run(self) -> None:
+        class MyRunner(BaseRunner):
+            def run(self, text: str) -> str:
+                return text.upper()
+
+        runner = MyRunner()
+        result = runner.run(text="hello")
+        assert result == "HELLO"
+
+    def test_default_run_raises(self) -> None:
+        runner = BaseRunner()
+        with pytest.raises(NotImplementedError, match="run has not been implemented"):
+            runner.run()
+
+    def test_setup_is_optional(self) -> None:
+        class MyRunner(BaseRunner):
+            def run(self, x: int) -> int:
+                return x * 2
+
+        runner = MyRunner()
+        # setup() should not raise
+        runner.setup()
+        assert runner.run(x=5) == 10
+
+    def test_setup_with_weights(self) -> None:
+        class MyRunner(BaseRunner):
+            weights_path: Optional[str] = None
+
+            def setup(self, weights: Optional[str] = None) -> None:
+                self.weights_path = weights
+
+            def run(self, x: int) -> int:
+                return x
+
+        runner = MyRunner()
+        runner.setup(weights="/path/to/weights")
+        assert runner.weights_path == "/path/to/weights"
+
+    def test_setup_with_path_weights(self) -> None:
+        class MyRunner(BaseRunner):
+            weights_path: Optional[Path] = None
+
+            def setup(self, weights: Optional[Path] = None) -> None:
+                self.weights_path = weights
+
+            def run(self, x: int) -> int:
+                return x
+
+        runner = MyRunner()
+        runner.setup(weights=Path("/path/to/weights"))
+        assert str(runner.weights_path) == "/path/to/weights"
+
+    def test_runner_with_multiple_inputs(self) -> None:
+        class MyRunner(BaseRunner):
+            def run(self, a: int, b: int, c: str = "default") -> str:
+                return f"{a + b}: {c}"
+
+        runner = MyRunner()
+        result = runner.run(a=1, b=2, c="test")
+        assert result == "3: test"
+
+        result_default = runner.run(a=1, b=2)
+        assert result_default == "3: default"
+
+    def test_runner_with_state(self) -> None:
+        class StatefulRunner(BaseRunner):
+            count: int = 0
+
+            def setup(self, weights: Optional[str] = None) -> None:
+                self.count = 0
+
+            def run(self, x: int) -> int:
+                self.count += 1
+                return x * self.count
+
+        runner = StatefulRunner()
+        runner.setup()
+        assert runner.run(x=10) == 10
+        assert runner.run(x=10) == 20
+        assert runner.run(x=10) == 30
+
+
 class TestBasePredictor:
-    """Tests for BasePredictor class."""
+    """Tests for BasePredictor class (legacy backward compatibility)."""
 
     def test_subclass_can_override_predict(self) -> None:
         class MyPredictor(BasePredictor):

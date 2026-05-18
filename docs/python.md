@@ -186,9 +186,9 @@ class Runner(BaseRunner):
 
 ## Output
 
-Cog predictors can return a simple data type like a string, number, float, or boolean. Use Python's `-> <type>` syntax to annotate the return type.
+Cog runners can return a simple data type like a string, number, float, or boolean. Use Python's `-> <type>` syntax to annotate the return type.
 
-Here's an example of a predictor that returns a string:
+Here's an example of a runner that returns a string:
 
 ```py
 from cog import BaseRunner
@@ -454,9 +454,9 @@ When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predi
 from cog import CancelationException
 ```
 
-`CancelationException` is raised in **sync** predictors when a prediction is cancelled. It is a `BaseException` subclass — **not** an `Exception` subclass. This means bare `except Exception` blocks in your predict code will not accidentally catch it, matching the behavior of `KeyboardInterrupt` and `asyncio.CancelledError`.
+`CancelationException` is raised in **sync** runners when a prediction is cancelled. It is a `BaseException` subclass — **not** an `Exception` subclass. This means bare `except Exception` blocks in your run code will not accidentally catch it, matching the behavior of `KeyboardInterrupt` and `asyncio.CancelledError`.
 
-You do **not** need to handle this exception in normal predictor code — the runtime manages cancellation automatically. However, if you need to run cleanup logic when a prediction is cancelled, you can catch it explicitly:
+You do **not** need to handle this exception in normal runner code — the runtime manages cancellation automatically. However, if you need to run cleanup logic when a prediction is cancelled, you can catch it explicitly:
 
 ```python
 from cog import BaseRunner, CancelationException, Path
@@ -478,7 +478,7 @@ class Runner(BaseRunner):
 - `cog.CancelationException` (recommended)
 - `cog.exceptions.CancelationException`
 
-For **async** predictors, cancellation follows standard Python async conventions and raises `asyncio.CancelledError` instead.
+For **async** runners, cancellation follows standard Python async conventions and raises `asyncio.CancelledError` instead.
 
 ## Input and output types
 
@@ -559,7 +559,7 @@ class Runner(BaseRunner):
         print(api_token.get_secret_value())
 ```
 
-A predictor's `Secret` inputs are represented in OpenAPI with the following schema:
+A runner's `Secret` inputs are represented in OpenAPI with the following schema:
 
 ```json
 {

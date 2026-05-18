@@ -76,6 +76,11 @@ class BaseRunner:
 
     def predict(self, *args: Any, **kwargs: Any) -> Any:
         """Deprecated compatibility bridge to run()."""
+        warnings.warn(
+            f"{self.__class__.__name__}.predict() is deprecated; use run() instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.run(*args, **kwargs)
 
     @property

@@ -1,0 +1,17 @@
+cog build -t $TEST_IMAGE
+stderr 'predict'
+cog predict $TEST_IMAGE -i s=world
+stderr 'predict'
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

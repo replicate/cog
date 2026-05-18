@@ -144,6 +144,19 @@ class ExternalObject:
     pass
 
 
+def test_inspector_preserves_opaque_input_metadata_with_run() -> None:
+    class Runner:
+        def run(self, value: Annotated[ExternalObject, Opaque]) -> str:
+            return "ok"
+
+    info = _create_predictor_info(
+        "run", "Runner", Runner.run, "run", True
+    )
+    field = info.inputs["value"]
+    assert field.type.primitive is adt.PrimitiveType.ANY
+    assert field.type.repetition is adt.Repetition.REQUIRED
+
+
 def test_inspector_preserves_opaque_input_metadata() -> None:
     class Predictor:
         def predict(self, value: Annotated[ExternalObject, Opaque]) -> str:
@@ -192,6 +205,24 @@ def test_inspector_supports_opaque_list_output_metadata() -> None:
     )
     assert info.output.kind is adt.OutputKind.LIST
     assert info.output.type is adt.PrimitiveType.ANY
+
+
+def test_inspector_supports_basemodel_opaque_output_field_with_run() -> None:
+    class Output(BaseModel):
+        payload: Annotated[ExternalObject, Opaque]
+
+    class Runner:
+        def run(self, value: str) -> Output:
+            return Output(payload=ExternalObject())
+
+    info = _create_predictor_info(
+        "run", "Runner", Runner.run, "run", True
+    )
+    assert info.output.kind is adt.OutputKind.OBJECT
+    assert info.output.fields is not None
+    field = info.output.fields["payload"]
+    assert field.primitive is adt.PrimitiveType.ANY
+    assert field.repetition is adt.Repetition.REQUIRED
 
 
 def test_inspector_supports_basemodel_opaque_output_field() -> None:

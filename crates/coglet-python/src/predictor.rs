@@ -1516,4 +1516,20 @@ class Predictor(BaseRunner):
 
         assert_eq!(selected_predict_method_name(&predictor), "predict");
     }
+
+    #[test]
+    fn legacy_base_predictor_loads() {
+        let predictor = load_predictor_source(
+            r#"
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        return "ok"
+"#,
+        )
+        .expect("predictor with BasePredictor should load");
+
+        assert_eq!(selected_predict_method_name(&predictor), "predict");
+    }
 }

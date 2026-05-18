@@ -1,4 +1,4 @@
-# Test that cog init creates a buildable project
+# Test that cog init creates a buildable project with new BaseRunner template
 # Source: test_build.py::test_build_with_cog_init_templates
 
 # Initialize a new cog project
@@ -11,3 +11,14 @@ stderr 'Image built as'
 # Verify the expected files were created
 exists cog.yaml
 exists run.py
+
+# Verify the template uses the new BaseRunner/run() API
+exec cat run.py
+stdout 'BaseRunner'
+stdout 'def run'
+! stdout 'BasePredictor'
+! stdout 'def predict'
+
+exec cat cog.yaml
+stdout 'run.py:Runner'
+! stdout 'predict.py:Predictor'

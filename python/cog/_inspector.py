@@ -74,8 +74,8 @@ def _validate_setup(f: Callable[..., Any]) -> None:
         raise ValueError("setup() must return None")
 
 
-def _validate_predict(f: Callable[..., Any], f_name: str, is_class_fn: bool) -> None:
-    """Validate a predictor's predict method."""
+def _validate_run_or_predict(f: Callable[..., Any], f_name: str, is_class_fn: bool) -> None:
+    """Validate a predictor's run or predict method."""
     if not inspect.isfunction(f):
         raise ValueError(f"{f_name} is not a function")
 
@@ -421,8 +421,8 @@ def _create_predictor_info(
     f_name: str,
     is_class_fn: bool,
 ) -> adt.PredictorInfo:
-    """Create PredictorInfo from a predict function."""
-    _validate_predict(f, f_name, is_class_fn)
+    """Create PredictorInfo from a run or predict function."""
+    _validate_run_or_predict(f, f_name, is_class_fn)
     spec = inspect.getfullargspec(f)
 
     # Use get_type_hints to resolve string annotations (from __future__ import annotations)
