@@ -259,13 +259,17 @@ class Predictor(BasePredictor):
 
 Cog models can stream output as the `predict()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output images as they are being generated.
 
-To support streaming output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, or `cog.Path`.
+To define streaming-shaped output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, or `cog.Path`.
+
+To allow clients to receive chunks as server-sent events with `Accept: text/event-stream`, decorate the `predict()` method with `@cog.streaming` or `@streaming` imported from `cog`. Without the decorator, iterator outputs still work in normal JSON responses, but SSE requests return `406 Not Acceptable`.
 
 ```py
-from cog import BasePredictor, Path
 from typing import Iterator
 
+from cog import BasePredictor, Path, streaming
+
 class Predictor(BasePredictor):
+    @streaming
     def predict(self) -> Iterator[Path]:
         done = False
         while not done:
@@ -277,9 +281,11 @@ If you have an [async `predict()` method](#async-predictors-and-concurrency), us
 
 ```py
 from typing import AsyncIterator
-from cog import BasePredictor, Path
+
+from cog import BasePredictor, Path, streaming
 
 class Predictor(BasePredictor):
+    @streaming
     async def predict(self) -> AsyncIterator[Path]:
         done = False
         while not done:
@@ -290,9 +296,10 @@ class Predictor(BasePredictor):
 If you're streaming text output, you can use `ConcatenateIterator` to hint that the output should be concatenated together into a single string. This is useful on Replicate to display the output as a string instead of a list of strings.
 
 ```py
-from cog import BasePredictor, Path, ConcatenateIterator
+from cog import BasePredictor, ConcatenateIterator, streaming
 
 class Predictor(BasePredictor):
+    @streaming
     def predict(self) -> ConcatenateIterator[str]:
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:
@@ -302,9 +309,10 @@ class Predictor(BasePredictor):
 Or for async `predict()` methods, use `AsyncConcatenateIterator`:
 
 ```py
-from cog import BasePredictor, Path, AsyncConcatenateIterator
+from cog import AsyncConcatenateIterator, BasePredictor, streaming
 
 class Predictor(BasePredictor):
+    @streaming
     async def predict(self) -> AsyncConcatenateIterator[str]:
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:

@@ -7,7 +7,7 @@
 //! 4. Run event loop routing responses to predictions
 //! 5. On worker crash: fail all predictions, shut down
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -353,15 +353,18 @@ pub struct OrchestratorReady {
     pub setup_logs: String,
 }
 
+type RegisterPredictionMessage = (
+    SlotId,
+    Arc<StdMutex<Prediction>>,
+    tokio::sync::oneshot::Sender<SlotIdleToken>,
+    tokio::sync::oneshot::Sender<()>,
+);
+
 pub struct OrchestratorHandle {
     child: Child,
     ctrl_writer:
         Arc<tokio::sync::Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>>,
-    register_tx: mpsc::Sender<(
-        SlotId,
-        Arc<StdMutex<Prediction>>,
-        tokio::sync::oneshot::Sender<SlotIdleToken>,
-    )>,
+    register_tx: mpsc::Sender<RegisterPredictionMessage>,
     healthcheck_tx: mpsc::Sender<tokio::sync::oneshot::Sender<HealthcheckResult>>,
     cancel_tx: mpsc::Sender<String>,
     slot_ids: Vec<SlotId>,
@@ -375,10 +378,12 @@ impl Orchestrator for OrchestratorHandle {
         prediction: Arc<StdMutex<Prediction>>,
         idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
     ) {
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
         let _ = self
             .register_tx
-            .send((slot_id, prediction, idle_sender))
+            .send((slot_id, prediction, idle_sender, ack_tx))
             .await;
+        let _ = ack_rx.await;
     }
 
     async fn cancel_by_prediction_id(&self, prediction_id: &str) -> Result<(), OrchestratorError> {
@@ -698,11 +703,7 @@ async fn run_event_loop(
         SlotId,
         FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotResponse>>,
     )>,
-    mut register_rx: mpsc::Receiver<(
-        SlotId,
-        Arc<StdMutex<Prediction>>,
-        tokio::sync::oneshot::Sender<SlotIdleToken>,
-    )>,
+    mut register_rx: mpsc::Receiver<RegisterPredictionMessage>,
     mut healthcheck_rx: mpsc::Receiver<tokio::sync::oneshot::Sender<HealthcheckResult>>,
     mut cancel_rx: mpsc::Receiver<String>,
     pool: Arc<PermitPool>,
@@ -718,6 +719,7 @@ async fn run_event_loop(
     let mut pending_healthchecks: Vec<tokio::sync::oneshot::Sender<HealthcheckResult>> = Vec::new();
     let mut healthcheck_counter: u64 = 0;
     let mut pending_uploads: HashMap<SlotId, Vec<tokio::task::JoinHandle<()>>> = HashMap::new();
+    let mut pending_cancellations: HashSet<String> = HashSet::new();
 
     let (slot_msg_tx, mut slot_msg_rx) =
         mpsc::channel::<(SlotId, Result<SlotResponse, std::io::Error>)>(100);
@@ -923,17 +925,19 @@ async fn run_event_loop(
                         }
                     }
                     None => {
-                        tracing::debug!(%prediction_id, "Cancel requested for unknown prediction (may have already completed)");
+                        tracing::debug!(%prediction_id, "Cancel requested for unknown prediction; storing pending cancellation");
+                        pending_cancellations.insert(prediction_id);
                     }
                 }
             }
 
-            Some((slot_id, prediction, idle_sender)) = register_rx.recv() => {
+            Some((slot_id, prediction, idle_sender, registered_tx)) = register_rx.recv() => {
                 let prediction_id = match try_lock_prediction(&prediction) {
                     Some(p) => p.id().to_string(),
                     None => {
                         // Mutex poisoned during registration - prediction already failed
                         tracing::error!(%slot_id, "Prediction mutex poisoned during registration");
+                        let _ = registered_tx.send(());
                         continue;
                     }
                 };
@@ -949,6 +953,24 @@ async fn run_event_loop(
                 );
                 tracing::debug!(%slot_id, %prediction_id, "Registered prediction");
                 predictions.insert(slot_id, prediction);
+                let pending_cancel = pending_cancellations.remove(&prediction_id);
+                let _ = registered_tx.send(());
+                if pending_cancel {
+                    tracing::info!(
+                        target: "coglet::prediction",
+                        %prediction_id,
+                        %slot_id,
+                        "Applying pending cancellation"
+                    );
+                    let mut writer = ctrl_writer.lock().await;
+                    if let Err(e) = writer.send(ControlRequest::Cancel { slot: slot_id }).await {
+                        tracing::error!(
+                            %slot_id,
+                            error = %e,
+                            "Failed to send pending cancel request to worker"
+                        );
+                    }
+                }
             }
 
             Some((slot_id, result)) = slot_msg_rx.recv() => {
@@ -966,7 +988,7 @@ async fn run_event_loop(
                     Ok(SlotResponse::LogLine { source, data }) => {
                         let (prediction_id, poisoned) = if let Some(pred) = predictions.get(&slot_id) {
                             if let Some(mut p) = try_lock_prediction(pred) {
-                                p.append_log(&data);
+                                p.append_log_source(source, &data);
                                 (Some(p.id().to_string()), false)
                             } else {
                                 (None, true)
@@ -1015,10 +1037,10 @@ async fn run_event_loop(
                             predictions.remove(&slot_id);
                         }
                     }
-                    Ok(SlotResponse::OutputChunk { output, index: _ }) => {
+                    Ok(SlotResponse::OutputChunk { output, index }) => {
                         let poisoned = if let Some(pred) = predictions.get(&slot_id) {
                             if let Some(mut p) = try_lock_prediction(pred) {
-                                p.append_output(output);
+                                p.append_output_chunk(output, index);
                                 false
                             } else {
                                 true

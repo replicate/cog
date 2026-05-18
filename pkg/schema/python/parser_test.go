@@ -455,6 +455,77 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.ErrConcatIteratorNotStr, se.Kind)
 }
 
+func TestStreamingDecoratorQualifiedOptIn(t *testing.T) {
+	source := `
+import cog
+from typing import Iterator
+
+class Predictor(cog.BasePredictor):
+    @cog.streaming
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorImportedOptIn(t *testing.T) {
+	source := `
+from cog import BasePredictor, streaming
+from typing import Iterator
+
+class Predictor(BasePredictor):
+    @streaming
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorIgnoredWhenNotFromCog(t *testing.T) {
+	source := `
+from other import streaming
+from typing import Iterator
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    @streaming
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.False(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorParameterizedFormIgnored(t *testing.T) {
+	source := `
+import cog
+from typing import Iterator
+
+class Predictor(cog.BasePredictor):
+    @cog.streaming()
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.False(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorClassLevelIgnored(t *testing.T) {
+	source := `
+import cog
+from typing import Iterator
+
+@cog.streaming
+class Predictor(cog.BasePredictor):
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.False(t, info.SupportsStreaming)
+}
+
 func TestListOutput(t *testing.T) {
 	source := `
 from cog import BasePredictor, Path

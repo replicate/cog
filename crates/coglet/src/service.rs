@@ -79,6 +79,7 @@ struct PredictionEntry {
     prediction: Arc<StdMutex<Prediction>>,
     cancel_token: CancellationToken,
     input: serde_json::Value,
+    cancel_on_stream_drop: bool,
 }
 
 /// Handle to a submitted prediction for cancellation on disconnect.
@@ -103,6 +104,54 @@ impl PredictionHandle {
     /// delegates to the orchestrator to cancel the worker subprocess.
     pub fn sync_guard(&self, service: Arc<PredictionService>) -> SyncPredictionGuard {
         SyncPredictionGuard::new(self.id.clone(), service)
+    }
+}
+
+pub struct PredictionStreamSubscription {
+    id: String,
+    replay: Vec<crate::prediction::PredictionStreamEvent>,
+    skipped: u64,
+    receiver: tokio::sync::broadcast::Receiver<crate::prediction::PredictionStreamEvent>,
+    guard: PredictionStreamGuard,
+}
+
+impl PredictionStreamSubscription {
+    pub fn prediction_id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        Vec<crate::prediction::PredictionStreamEvent>,
+        u64,
+        tokio::sync::broadcast::Receiver<crate::prediction::PredictionStreamEvent>,
+        PredictionStreamGuard,
+    ) {
+        (self.replay, self.skipped, self.receiver, self.guard)
+    }
+}
+
+pub struct PredictionStreamGuard {
+    id: String,
+    service: Arc<PredictionService>,
+    cancel_on_stream_drop: bool,
+}
+
+impl Drop for PredictionStreamGuard {
+    fn drop(&mut self) {
+        if !self.cancel_on_stream_drop {
+            return;
+        }
+
+        // Prediction cleanup may remove the service entry before the SSE response
+        // finishes draining. Missing entries deliberately report zero receivers and
+        // terminal state so this guard cannot cancel an already-cleaned prediction.
+        if self.service.stream_receiver_count(&self.id) == 0
+            && !self.service.prediction_is_terminal(&self.id)
+        {
+            self.service.cancel(&self.id);
+        }
     }
 }
 
@@ -177,6 +226,7 @@ pub struct PredictionService {
     schema: RwLock<Option<serde_json::Value>>,
     input_validator: RwLock<Option<InputValidator>>,
     train_validator: RwLock<Option<InputValidator>>,
+    supports_prediction_streaming: RwLock<bool>,
 }
 
 impl PredictionService {
@@ -196,6 +246,7 @@ impl PredictionService {
             schema: RwLock::new(None),
             input_validator: RwLock::new(None),
             train_validator: RwLock::new(None),
+            supports_prediction_streaming: RwLock::new(false),
         }
     }
 
@@ -248,6 +299,10 @@ impl PredictionService {
     /// Whether the model supports training (has a TrainingInput schema).
     pub async fn supports_training(&self) -> bool {
         self.train_validator.read().await.is_some()
+    }
+
+    pub async fn supports_prediction_streaming(&self) -> bool {
+        *self.supports_prediction_streaming.read().await
     }
 
     /// Get the permit pool from orchestrator.
@@ -310,6 +365,9 @@ impl PredictionService {
     }
 
     pub async fn set_schema(&self, schema: serde_json::Value) {
+        let supports_prediction_streaming = Self::schema_supports_prediction_streaming(&schema);
+        *self.supports_prediction_streaming.write().await = supports_prediction_streaming;
+
         // Compile input validators from the schema components
         let validator = InputValidator::from_openapi_schema(&schema);
         if let Some(v) = &validator {
@@ -331,6 +389,16 @@ impl PredictionService {
         *self.train_validator.write().await = train_val;
 
         *self.schema.write().await = Some(schema);
+    }
+
+    fn schema_supports_prediction_streaming(schema: &serde_json::Value) -> bool {
+        schema
+            .get("paths")
+            .and_then(|paths| paths.get("/predictions"))
+            .and_then(|path| path.get("post"))
+            .and_then(|operation| operation.get("x-cog-streaming"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
     }
 
     pub async fn schema(&self) -> Option<serde_json::Value> {
@@ -415,6 +483,7 @@ impl PredictionService {
         id: String,
         input: serde_json::Value,
         webhook: Option<WebhookSender>,
+        cancel_on_stream_drop: bool,
     ) -> Result<(PredictionHandle, UnregisteredPredictionSlot), CreatePredictionError> {
         let health = *self.health.read().await;
         if health != Health::Ready {
@@ -442,6 +511,7 @@ impl PredictionService {
                 prediction: prediction_arc,
                 cancel_token: cancel_token.clone(),
                 input,
+                cancel_on_stream_drop,
             },
         );
 
@@ -467,6 +537,46 @@ impl PredictionService {
         response["input"] = entry.input.clone();
 
         Some(response)
+    }
+
+    pub fn subscribe_prediction_stream(
+        self: &Arc<Self>,
+        id: &str,
+    ) -> Option<PredictionStreamSubscription> {
+        let entry = self.predictions.get(id)?;
+        let stream = entry.prediction.lock().ok()?.subscribe_stream_replay();
+        let cancel_on_stream_drop = entry.cancel_on_stream_drop;
+        Some(PredictionStreamSubscription {
+            id: id.to_string(),
+            replay: stream.replay,
+            skipped: stream.skipped,
+            receiver: stream.receiver,
+            guard: PredictionStreamGuard {
+                id: id.to_string(),
+                service: Arc::clone(self),
+                cancel_on_stream_drop,
+            },
+        })
+    }
+
+    fn stream_receiver_count(&self, id: &str) -> usize {
+        self.predictions
+            .get(id)
+            .and_then(|entry| {
+                entry
+                    .prediction
+                    .lock()
+                    .ok()
+                    .map(|p| p.stream_receiver_count())
+            })
+            .unwrap_or(0)
+    }
+
+    fn prediction_is_terminal(&self, id: &str) -> bool {
+        self.predictions
+            .get(id)
+            .and_then(|entry| entry.prediction.lock().ok().map(|p| p.is_terminal()))
+            .unwrap_or(true)
     }
 
     /// Run a prediction to completion via orchestrator.
@@ -539,6 +649,22 @@ impl PredictionService {
                 "Failed to send request: {}",
                 e
             )));
+        }
+
+        let was_cancelled_before_send = try_lock_prediction(&prediction_arc)
+            .map(|p| p.is_canceled())
+            .unwrap_or(false);
+        if was_cancelled_before_send
+            && let Err(e) = state
+                .orchestrator
+                .cancel_by_prediction_id(&prediction_id)
+                .await
+        {
+            tracing::error!(
+                prediction_id = %prediction_id,
+                error = %e,
+                "Failed to forward pending cancellation after registration"
+            );
         }
 
         // Wait for prediction to complete
@@ -760,6 +886,103 @@ mod tests {
         }
     }
 
+    struct CountingCancelOrchestrator {
+        cancel_count: AtomicUsize,
+    }
+
+    impl CountingCancelOrchestrator {
+        fn new() -> Self {
+            Self {
+                cancel_count: AtomicUsize::new(0),
+            }
+        }
+
+        fn cancel_count(&self) -> usize {
+            self.cancel_count.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Orchestrator for CountingCancelOrchestrator {
+        async fn register_prediction(
+            &self,
+            _slot_id: SlotId,
+            _prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
+            _idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
+        ) {
+        }
+
+        async fn cancel_by_prediction_id(
+            &self,
+            _prediction_id: &str,
+        ) -> Result<(), crate::orchestrator::OrchestratorError> {
+            self.cancel_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        async fn healthcheck(
+            &self,
+        ) -> Result<HealthcheckResult, crate::orchestrator::OrchestratorError> {
+            Ok(HealthcheckResult::healthy())
+        }
+
+        async fn shutdown(&self) -> Result<(), crate::orchestrator::OrchestratorError> {
+            Ok(())
+        }
+    }
+
+    struct CancelRecordingOrchestrator {
+        cancel_count: AtomicUsize,
+        prediction: std::sync::Mutex<Option<Arc<std::sync::Mutex<crate::prediction::Prediction>>>>,
+    }
+
+    impl CancelRecordingOrchestrator {
+        fn new() -> Self {
+            Self {
+                cancel_count: AtomicUsize::new(0),
+                prediction: std::sync::Mutex::new(None),
+            }
+        }
+
+        fn cancel_count(&self) -> usize {
+            self.cancel_count.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Orchestrator for CancelRecordingOrchestrator {
+        async fn register_prediction(
+            &self,
+            slot_id: SlotId,
+            prediction: Arc<std::sync::Mutex<crate::prediction::Prediction>>,
+            idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
+        ) {
+            *self.prediction.lock().unwrap() = Some(prediction);
+            let _ = idle_sender.send(InactiveSlotIdleToken::new(slot_id).activate());
+        }
+
+        async fn cancel_by_prediction_id(
+            &self,
+            _prediction_id: &str,
+        ) -> Result<(), crate::orchestrator::OrchestratorError> {
+            self.cancel_count.fetch_add(1, Ordering::SeqCst);
+            if let Some(prediction) = self.prediction.lock().unwrap().as_ref() {
+                prediction.lock().unwrap().set_canceled();
+            }
+            Ok(())
+        }
+
+        async fn healthcheck(
+            &self,
+        ) -> Result<HealthcheckResult, crate::orchestrator::OrchestratorError> {
+            Ok(HealthcheckResult::healthy())
+        }
+
+        async fn shutdown(&self) -> Result<(), crate::orchestrator::OrchestratorError> {
+            Ok(())
+        }
+    }
+
     async fn create_test_pool(num_slots: usize) -> Arc<PermitPool> {
         use crate::bridge::codec::JsonCodec;
         use crate::bridge::protocol::SlotRequest;
@@ -863,7 +1086,7 @@ mod tests {
         let svc = PredictionService::new_no_pool();
 
         let result = svc
-            .submit_prediction("test".to_string(), serde_json::json!({}), None)
+            .submit_prediction("test".to_string(), serde_json::json!({}), None, false)
             .await;
         assert!(matches!(result, Err(CreatePredictionError::NotReady)));
     }
@@ -908,12 +1131,143 @@ mod tests {
         svc.set_health(Health::Ready).await;
 
         let (handle, _slot) = svc
-            .submit_prediction("test-1".to_string(), serde_json::json!({}), None)
+            .submit_prediction("test-1".to_string(), serde_json::json!({}), None, false)
             .await
             .unwrap();
 
         assert_eq!(handle.id(), "test-1");
         assert!(svc.prediction_exists("test-1"));
+    }
+
+    #[tokio::test]
+    async fn subscribe_prediction_stream_returns_receiver_for_existing_prediction() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_handle, _slot) = svc
+            .submit_prediction("stream-test".to_string(), serde_json::json!({}), None, true)
+            .await
+            .unwrap();
+
+        let subscription = svc.subscribe_prediction_stream("stream-test").unwrap();
+        assert_eq!(subscription.prediction_id(), "stream-test");
+    }
+
+    #[tokio::test]
+    async fn dropping_only_sync_stream_subscription_cancels_prediction() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(CountingCancelOrchestrator::new());
+        let orchestrator_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_handle, _slot) = svc
+            .submit_prediction("sync-stream".to_string(), serde_json::json!({}), None, true)
+            .await
+            .unwrap();
+
+        let subscription = svc.subscribe_prediction_stream("sync-stream").unwrap();
+        drop(subscription);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        assert_eq!(orchestrator_ref.cancel_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn dropping_async_json_stream_subscription_does_not_cancel_prediction() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(CountingCancelOrchestrator::new());
+        let orchestrator_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_handle, _slot) = svc
+            .submit_prediction(
+                "async-json-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        let subscription = svc
+            .subscribe_prediction_stream("async-json-stream")
+            .unwrap();
+        drop(subscription);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        assert_eq!(orchestrator_ref.cancel_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn dropping_live_sse_stream_subscription_cancels_prediction() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(CountingCancelOrchestrator::new());
+        let orchestrator_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_handle, _slot) = svc
+            .submit_prediction(
+                "live-sse-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+
+        let subscription = svc.subscribe_prediction_stream("live-sse-stream").unwrap();
+        drop(subscription);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        assert_eq!(orchestrator_ref.cancel_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn dropping_completed_sync_stream_subscription_does_not_cancel_prediction() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(CountingCancelOrchestrator::new());
+        let orchestrator_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_handle, _slot) = svc
+            .submit_prediction(
+                "completed-sync-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+
+        {
+            let entry = svc.predictions.get("completed-sync-stream").unwrap();
+            let mut prediction = entry.prediction.lock().unwrap();
+            prediction.set_succeeded(crate::PredictionOutput::Single(serde_json::json!("done")));
+        }
+
+        let subscription = svc
+            .subscribe_prediction_stream("completed-sync-stream")
+            .unwrap();
+        drop(subscription);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        assert_eq!(orchestrator_ref.cancel_count(), 0);
     }
 
     #[tokio::test]
@@ -927,13 +1281,13 @@ mod tests {
 
         // First prediction takes the only slot
         let (_handle1, _slot1) = svc
-            .submit_prediction("test-1".to_string(), serde_json::json!({}), None)
+            .submit_prediction("test-1".to_string(), serde_json::json!({}), None, false)
             .await
             .unwrap();
 
         // Second should fail with AtCapacity
         let result = svc
-            .submit_prediction("test-2".to_string(), serde_json::json!({}), None)
+            .submit_prediction("test-2".to_string(), serde_json::json!({}), None, false)
             .await;
         assert!(matches!(result, Err(CreatePredictionError::AtCapacity)));
     }
@@ -953,6 +1307,7 @@ mod tests {
                 "test-1".to_string(),
                 serde_json::json!({"prompt": "hello"}),
                 None,
+                false,
             )
             .await
             .unwrap();
@@ -971,6 +1326,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn predict_forwards_cancel_token_set_before_registration() {
+        let svc = PredictionService::new_no_pool();
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(CancelRecordingOrchestrator::new());
+        let orchestrator_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (handle, slot) = svc
+            .submit_prediction(
+                "pre-register-cancel".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        handle.cancel_token().cancel();
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            svc.predict(
+                slot,
+                serde_json::json!({}),
+                std::collections::HashMap::new(),
+            ),
+        )
+        .await
+        .expect("prediction should observe cancellation after registration");
+
+        assert!(matches!(result, Err(PredictionError::Cancelled)));
+        assert_eq!(orchestrator_ref.cancel_count(), 1);
+    }
+
+    #[tokio::test]
     async fn health_shows_busy_when_all_slots_used() {
         let svc = PredictionService::new_no_pool();
         let pool = create_test_pool(1).await;
@@ -986,7 +1377,7 @@ mod tests {
 
         // After acquiring slot
         let (_handle, _slot) = svc
-            .submit_prediction("test-1".to_string(), serde_json::json!({}), None)
+            .submit_prediction("test-1".to_string(), serde_json::json!({}), None, false)
             .await
             .unwrap();
         let health = svc.health().await;
@@ -1009,6 +1400,7 @@ mod tests {
                 "test-1".to_string(),
                 serde_json::json!({"prompt": "hello"}),
                 None,
+                false,
             )
             .await
             .unwrap();
@@ -1048,6 +1440,7 @@ mod tests {
                 "test-1".to_string(),
                 serde_json::json!({"prompt": "hello"}),
                 None,
+                false,
             )
             .await
             .unwrap();
@@ -1087,6 +1480,7 @@ mod tests {
                 "test-1".to_string(),
                 serde_json::json!({"prompt": "hello"}),
                 None,
+                false,
             )
             .await
             .unwrap();
@@ -1113,7 +1507,12 @@ mod tests {
         svc.set_health(Health::Ready).await;
 
         let (handle, _slot) = svc
-            .submit_prediction("test-cancel".to_string(), serde_json::json!({}), None)
+            .submit_prediction(
+                "test-cancel".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
             .await
             .unwrap();
 
@@ -1139,7 +1538,7 @@ mod tests {
         svc.set_health(Health::Ready).await;
 
         let (handle, _slot) = svc
-            .submit_prediction("test-guard".to_string(), serde_json::json!({}), None)
+            .submit_prediction("test-guard".to_string(), serde_json::json!({}), None, false)
             .await
             .unwrap();
 
@@ -1163,7 +1562,12 @@ mod tests {
         svc.set_health(Health::Ready).await;
 
         let (handle, _slot) = svc
-            .submit_prediction("test-disarm".to_string(), serde_json::json!({}), None)
+            .submit_prediction(
+                "test-disarm".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
             .await
             .unwrap();
 
@@ -1187,7 +1591,12 @@ mod tests {
         svc.set_health(Health::Ready).await;
 
         let (_handle, _slot) = svc
-            .submit_prediction("test-remove".to_string(), serde_json::json!({}), None)
+            .submit_prediction(
+                "test-remove".to_string(),
+                serde_json::json!({}),
+                None,
+                false,
+            )
             .await
             .unwrap();
 

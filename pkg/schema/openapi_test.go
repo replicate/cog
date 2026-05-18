@@ -657,6 +657,34 @@ func TestOutputConcatenateIterator(t *testing.T) {
 	assert.Equal(t, "concatenate", output["x-cog-array-display"])
 }
 
+func TestPredictionOperationIncludesStreamingExtensionWhenEnabled(t *testing.T) {
+	inputs := NewOrderedMap[string, InputField]()
+	info := &PredictorInfo{
+		Inputs:            inputs,
+		Output:            SchemaIteratorOf(SchemaPrim(TypeString)),
+		Mode:              ModePredict,
+		SupportsStreaming: true,
+	}
+
+	spec := parseSpec(t, info)
+	post := getPath(spec, "paths", "/predictions", "post").(map[string]any)
+	assert.Equal(t, true, post["x-cog-streaming"])
+}
+
+func TestPredictionOperationOmitsStreamingExtensionByDefault(t *testing.T) {
+	inputs := NewOrderedMap[string, InputField]()
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaIteratorOf(SchemaPrim(TypeString)),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	post := getPath(spec, "paths", "/predictions", "post").(map[string]any)
+	_, ok := post["x-cog-streaming"]
+	assert.False(t, ok)
+}
+
 func TestOutputObject(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
 	fields := NewOrderedMap[string, SchemaField]()
