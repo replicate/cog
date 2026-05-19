@@ -33,7 +33,7 @@ flowchart LR
 
 ### Model Source
 
-What the model author provides: `cog.yaml` for environment config, a Predictor class with `setup()` and `predict()` methods, and optionally model weights.
+What the model author provides: `cog.yaml` for environment config, a Runner class with `setup()` and `run()` methods, and optionally model weights.
 
 **Deep dive**: [Model Source](./01-model-source.md)
 
@@ -41,7 +41,7 @@ What the model author provides: `cog.yaml` for environment config, a Predictor c
 
 ### Python SDK
 
-The `cog` Python package that model authors import. Provides `BasePredictor`, the type system (`Input`, `Path`, `Secret`, `ConcatenateIterator`), and the thin server entry point that launches coglet. Installed inside every Cog container as a wheel.
+The `cog` Python package that model authors import. Provides `BaseRunner`, the type system (`Input`, `Path`, `Secret`, `ConcatenateIterator`), and the thin server entry point that launches coglet. Installed inside every Cog container as a wheel.
 
 **Deep dive**: [Model Source](./01-model-source.md) (covers the SDK's public API)
 
@@ -93,7 +93,7 @@ The command-line tool for building, testing, and deploying models.
 flowchart TB
     subgraph source["Model Source"]
         yaml["cog.yaml"]
-        code["predict.py"]
+        code["run.py"]
         weights["weights"]
     end
 
@@ -111,7 +111,7 @@ flowchart TB
     subgraph runtime["Runtime"]
         server["HTTP Server<br/>(Rust/Axum)"]
         worker["Worker Subprocess<br/>(Python)"]
-        predictor["Predictor"]
+        predictor["Runner"]
     end
 
     yaml --> config
@@ -130,16 +130,16 @@ flowchart TB
 
 ## Terminology
 
-| Term          | Meaning                                                                   |
-| ------------- | ------------------------------------------------------------------------- |
-| **SDK**       | The `cog` Python package -- the framework users build models on           |
-| **Predictor** | User's model class with `setup()` and `predict()` methods                 |
-| **Schema**    | OpenAPI spec describing the model's input/output interface                |
-| **Envelope**  | Fixed request/response structure wrapping model-specific data             |
-| **Worker**    | Isolated subprocess running user code                                     |
-| **Setup**     | One-time model initialization at container start                          |
-| **Coglet**    | Rust-based prediction server that runs inside containers                  |
-| **Slot**      | A concurrency unit -- one Unix socket connection to the worker subprocess |
+| Term         | Meaning                                                                   |
+| ------------ | ------------------------------------------------------------------------- |
+| **SDK**      | The `cog` Python package -- the framework users build models on           |
+| **Runner**   | User's model class with `setup()` and `run()` methods                     |
+| **Schema**   | OpenAPI spec describing the model's input/output interface                |
+| **Envelope** | Fixed request/response structure wrapping model-specific data             |
+| **Worker**   | Isolated subprocess running user code                                     |
+| **Setup**    | One-time model initialization at container start                          |
+| **Coglet**   | Rust-based prediction server that runs inside containers                  |
+| **Slot**     | A concurrency unit -- one Unix socket connection to the worker subprocess |
 
 ## Reading Order
 

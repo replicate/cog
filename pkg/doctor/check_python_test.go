@@ -38,6 +38,50 @@ class Predictor(BasePredictor):
 	require.Empty(t, findings)
 }
 
+func TestMissingTypeAnnotationsCheck_DetectsRunMissingReturn(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "run.py", `from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def run(self, text: str):
+        return text
+`)
+	ctx := &CheckContext{
+		ctx:         context.Background(),
+		ProjectDir:  dir,
+		Config:      &config.Config{Predict: "run.py:Runner"},
+		PythonFiles: parsePythonFiles(t, dir, "run.py"),
+	}
+
+	check := &MissingTypeAnnotationsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Contains(t, findings[0].Message, "Runner.run()")
+}
+
+func TestMissingTypeAnnotationsCheck_DetectsLegacyPredictMissingReturn(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, text: str):
+        return text
+`)
+	ctx := &CheckContext{
+		ctx:         context.Background(),
+		ProjectDir:  dir,
+		Config:      &config.Config{Predict: "predict.py:Predictor"},
+		PythonFiles: parsePythonFiles(t, dir, "predict.py"),
+	}
+
+	check := &MissingTypeAnnotationsCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.Len(t, findings, 1)
+	require.Contains(t, findings[0].Message, "Predictor.predict()")
+}
+
 func TestPydanticBaseModelCheck_Detects(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "predict.py", `from cog import BasePredictor, Path

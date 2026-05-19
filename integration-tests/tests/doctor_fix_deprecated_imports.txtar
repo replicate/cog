@@ -9,7 +9,7 @@ cog doctor --fix
 stderr 'Fixed'
 
 # Verify the import was removed from the file
-exec cat predict.py
+exec cat run.py
 ! stdout 'ExperimentalFeatureWarning'
 ! stdout 'cog.types'
 
@@ -20,16 +20,16 @@ stderr 'no issues found'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
+-- run.py --
 import warnings
-from cog import BasePredictor
+from cog import BaseRunner
 from cog.types import ExperimentalFeatureWarning
 
 warnings.filterwarnings("ignore", category=ExperimentalFeatureWarning)
 
 
-class Predictor(BasePredictor):
-    def predict(self, text: str) -> str:
+class Runner(BaseRunner):
+    def run(self, text: str) -> str:
         return "hello " + text

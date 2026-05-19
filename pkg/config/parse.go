@@ -117,7 +117,12 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 	if cfg.Model != nil {
 		config.Model = *cfg.Model
 	}
-	if cfg.Predict != nil {
+	if cfg.Run != nil && cfg.Predict != nil && *cfg.Run != "" && *cfg.Predict != "" {
+		return nil, &ValidationError{Field: "run", Message: "only one of run or predict can be set"}
+	}
+	if cfg.Run != nil && *cfg.Run != "" {
+		config.Predict = *cfg.Run
+	} else if cfg.Predict != nil {
 		config.Predict = *cfg.Predict
 	}
 	if cfg.Train != nil {

@@ -3,6 +3,9 @@
   "type": "object",
   "title": "Schema for cog.yaml",
   "description": "Defines how to build a Docker image and how to run predictions on your model inside that image.",
+  "not": {
+    "required": ["run", "predict"]
+  },
   "properties": {
     "build": {
       "$id": "#/properties/build",
@@ -165,15 +168,20 @@
       "type": "string",
       "description": "The repository where this model's image and weights are pushed. Must be a bare repository (no tag or digest)."
     },
+    "run": {
+      "$id": "#/properties/run",
+      "type": "string",
+      "description": "The pointer to the Runner object in your code, which defines how runs are executed on your model."
+    },
     "predict": {
       "$id": "#/properties/predict",
       "type": "string",
-      "description": "The pointer to the `Predictor` object in your code, which defines how predictions are run on your model."
+      "description": "Deprecated compatibility field for run. Use run instead."
     },
     "train": {
       "$id": "#/properties/train",
       "type": "string",
-      "description": "The pointer to the `Predictor` object in your code, which defines how predictions are run on your model."
+      "description": "The pointer to the training function in your code, which defines how training jobs are run for your model."
     },
     "concurrency": {
       "$id": "#/properties/concurrency",

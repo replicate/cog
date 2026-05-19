@@ -23,6 +23,7 @@ const (
 	ErrDefaultFactoryNotSupported
 	ErrInvalidConstraint
 	ErrInvalidPredictRef
+	ErrMethodConflict
 	ErrOptionalOutput
 	ErrConcatIteratorNotStr
 	ErrChoicesNotResolvable

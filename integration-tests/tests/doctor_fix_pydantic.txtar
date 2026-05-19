@@ -10,8 +10,8 @@ cog doctor --fix
 stderr 'Fixed'
 
 # Verify the file was modified: pydantic.BaseModel replaced with cog.BaseModel
-exec cat predict.py
-stdout 'from cog import BasePredictor, Path, BaseModel'
+exec cat run.py
+stdout 'from cog import BaseRunner, Path, BaseModel'
 ! stdout 'from pydantic import BaseModel'
 ! stdout 'ConfigDict'
 ! stdout 'arbitrary_types_allowed'
@@ -23,10 +23,10 @@ stderr 'no issues found'
 -- cog.yaml --
 build:
   python_version: "3.12"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
--- predict.py --
-from cog import BasePredictor, Path
+-- run.py --
+from cog import BaseRunner, Path
 from pydantic import BaseModel, ConfigDict
 
 
@@ -36,6 +36,6 @@ class VoiceCloningOutputs(BaseModel):
     spectrogram: Path
 
 
-class Predictor(BasePredictor):
-    def predict(self, text: str) -> VoiceCloningOutputs:
+class Runner(BaseRunner):
+    def run(self, text: str) -> VoiceCloningOutputs:
         return VoiceCloningOutputs(audio="a.wav", spectrogram="s.png")

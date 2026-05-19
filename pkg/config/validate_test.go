@@ -94,6 +94,53 @@ func TestValidateConfigFilePredictFormat(t *testing.T) {
 	require.Contains(t, result.Err().Error(), "predict.py:Predictor")
 }
 
+func TestValidateConfigFileRunPredictCompatibility(t *testing.T) {
+	t.Run("run is valid", func(t *testing.T) {
+		cfg := &configFile{Build: &buildFile{PythonVersion: new("3.10")}, Run: new("run.py:Runner")}
+		result := ValidateConfigFile(cfg)
+		require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
+		require.Empty(t, result.Warnings)
+	})
+
+	t.Run("run validates reference format", func(t *testing.T) {
+		cfg := &configFile{Build: &buildFile{PythonVersion: new("3.10")}, Run: new("invalid_format")}
+		result := ValidateConfigFile(cfg)
+		require.True(t, result.HasErrors())
+		require.Contains(t, result.Err().Error(), "run.py:Runner")
+	})
+
+	t.Run("predict warns", func(t *testing.T) {
+		cfg := &configFile{Build: &buildFile{PythonVersion: new("3.10")}, Predict: new("predict.py:Predictor")}
+		result := ValidateConfigFile(cfg)
+		require.False(t, result.HasErrors())
+		require.Len(t, result.Warnings, 1)
+		require.Equal(t, "predict", result.Warnings[0].Field)
+		require.Equal(t, "run", result.Warnings[0].Replacement)
+	})
+
+	t.Run("predict warns without build", func(t *testing.T) {
+		cfg := &configFile{Predict: new("predict.py:Predictor")}
+		result := ValidateConfigFile(cfg)
+		require.False(t, result.HasErrors())
+		require.Len(t, result.Warnings, 1)
+		require.Equal(t, "predict", result.Warnings[0].Field)
+		require.Equal(t, "run", result.Warnings[0].Replacement)
+	})
+
+	t.Run("both fields error", func(t *testing.T) {
+		cfg := &configFile{Build: &buildFile{PythonVersion: new("3.10")}, Run: new("run.py:Runner"), Predict: new("predict.py:Predictor")}
+		result := ValidateConfigFile(cfg)
+		require.True(t, result.HasErrors())
+		require.Contains(t, result.Err().Error(), "only one of run or predict can be set")
+	})
+}
+
+func TestValidateSchemaRejectsBothRunAndPredict(t *testing.T) {
+	cfg := &configFile{Build: &buildFile{PythonVersion: new("3.10")}, Run: new("run.py:Runner"), Predict: new("predict.py:Predictor")}
+	err := validateSchema(cfg)
+	require.Error(t, err)
+}
+
 func TestValidateConfigFileConcurrencyType(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{

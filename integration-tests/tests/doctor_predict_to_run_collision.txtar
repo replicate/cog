@@ -1,0 +1,24 @@
+# Test that cog doctor --fix aborts when run.py already exists
+
+cog doctor
+stderr 'Deprecated predict interface names'
+stderr 'predict in cog.yaml is deprecated'
+
+# Create a conflicting run.py
+cp predict.py run.py
+
+# doctor --fix should fail when run.py already exists
+! cog doctor --fix
+stderr 'run.py already exists'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s
