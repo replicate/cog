@@ -20,10 +20,23 @@ import (
 
 func newWeightsCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "weights",
-		Short:  "Manage model weights",
-		Long:   "Commands for managing model weight files.",
+		Use:   "weights",
+		Short: "Manage model weights (experimental)",
+		Long: `Commands for managing model weight files.
+
+NOTE: cog weights is experimental. Behavior may change in future versions.
+Do not rely on it in production workflows.`,
 		Hidden: true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// Chain the root command's PersistentPreRun (debug, color, update check)
+			// since cobra does not do this automatically.
+			if parent := cmd.Parent(); parent != nil && parent.PersistentPreRun != nil {
+				parent.PersistentPreRun(cmd, args)
+			}
+			console.Warnf("NOTE: cog weights is experimental. Behavior may change in future versions.")
+			console.Warnf("Do not rely on it in production workflows.")
+			console.Info("")
+		},
 	}
 
 	cmd.AddCommand(newWeightsImportCommand())
