@@ -303,6 +303,7 @@ dependencies = [
  "pyo3-stub-gen",
  "sentry",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-util",
  "tracing",

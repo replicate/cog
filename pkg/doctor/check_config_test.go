@@ -863,6 +863,31 @@ class Predictor(BasePredictor):
 	require.Empty(t, result.Results[1].Findings)
 }
 
+func TestPredictToRunMigrationCheck_FixPreservesPredictFileMode(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "cog.yaml", `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+`)
+	writeFile(t, dir, "predict.py", `from cog import BasePredictor
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return text
+`)
+	require.NoError(t, os.Chmod(filepath.Join(dir, "predict.py"), 0o755))
+
+	ctx := buildTestCheckContext(t, dir)
+	check := &PredictToRunMigrationCheck{}
+	findings, err := check.Check(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, findings)
+	require.NoError(t, check.Fix(ctx, findings))
+
+	info, err := os.Stat(filepath.Join(dir, "run.py"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+}
+
 // buildTestCheckContext creates a CheckContext by loading the cog.yaml in the given dir.
 func buildTestCheckContext(t *testing.T, dir string) *CheckContext {
 	t.Helper()
@@ -884,6 +909,7 @@ func buildTestCheckContext(t *testing.T, dir string) *CheckContext {
 			ctx.Config = loadResult.Config
 		}
 	}
+	t.Cleanup(ctx.Close)
 
 	return ctx
 }

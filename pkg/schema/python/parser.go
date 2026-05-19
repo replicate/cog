@@ -69,6 +69,9 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 		modelClasses:  modelClasses,
 		typedDicts:    modelCtx.typedDicts,
 		sourceDir:     sourceDir,
+		mode:          mode,
+		fileCache:     make(map[string]*pythonFileContext),
+		loading:       make(map[string]bool),
 	}
 	target, err := findTargetFunction(fileCtx, predictRef, methodName)
 	if err != nil {
@@ -1207,6 +1210,9 @@ type pythonFileContext struct {
 	modelClasses  schema.ModelClassMap
 	typedDicts    map[string]bool
 	sourceDir     string
+	mode          schema.Mode
+	fileCache     map[string]*pythonFileContext
+	loading       map[string]bool
 }
 
 type targetFunction struct {
@@ -1223,7 +1229,7 @@ func findTargetFunction(file *pythonFileContext, predictRef, methodName string) 
 		}
 		nameNode := classNode.ChildByFieldName("name")
 		if nameNode != nil && Content(nameNode, file.source) == predictRef {
-			if methodName == "predict" {
+			if file.mode == schema.ModePredict {
 				return findPredictMethodInClass(file, classNode, predictRef)
 			}
 			method, err := findMethodInClass(classNode, file.source, predictRef, methodName)
@@ -1343,7 +1349,7 @@ func resolveImportedParentClass(file *pythonFileContext, parent string) (*python
 		return nil, nil, "", false
 	}
 
-	parentFile, ok := loadPythonFileContext(file.sourceDir, module)
+	parentFile, ok := loadPythonFileContext(file.sourceDir, module, file.mode, file.fileCache, file.loading)
 	if !ok {
 		return nil, nil, "", false
 	}
@@ -1351,7 +1357,7 @@ func resolveImportedParentClass(file *pythonFileContext, parent string) (*python
 	return parentFile, parentNode, className, parentNode != nil
 }
 
-func loadPythonFileContext(sourceDir, module string) (*pythonFileContext, bool) {
+func loadPythonFileContext(sourceDir, module string, mode schema.Mode, fileCache map[string]*pythonFileContext, loading map[string]bool) (*pythonFileContext, bool) {
 	if isKnownExternalModule(module) {
 		return nil, false
 	}
@@ -1359,7 +1365,17 @@ func loadPythonFileContext(sourceDir, module string) (*pythonFileContext, bool) 
 	if pyPath == "" {
 		return nil, false
 	}
-	source, err := os.ReadFile(filepath.Join(sourceDir, pyPath))
+	fullPath := filepath.Clean(filepath.Join(sourceDir, pyPath))
+	if file, ok := fileCache[fullPath]; ok {
+		return file, true
+	}
+	if loading[fullPath] {
+		return nil, false
+	}
+	loading[fullPath] = true
+	defer delete(loading, fullPath)
+
+	source, err := os.ReadFile(fullPath)
 	if err != nil {
 		return nil, false
 	}
@@ -1376,7 +1392,7 @@ func loadPythonFileContext(sourceDir, module string) (*pythonFileContext, bool) 
 	modelClasses := collectModelClasses(root, source, modelCtx)
 	resolveExternalModels(sourceDir, modelClasses, modelCtx)
 	inputRegistry := collectInputRegistry(root, source, imports, moduleScope)
-	return &pythonFileContext{
+	fileCtx := &pythonFileContext{
 		root:          root,
 		source:        source,
 		imports:       imports,
@@ -1385,7 +1401,12 @@ func loadPythonFileContext(sourceDir, module string) (*pythonFileContext, bool) 
 		modelClasses:  modelClasses,
 		typedDicts:    modelCtx.typedDicts,
 		sourceDir:     sourceDir,
-	}, true
+		mode:          mode,
+		fileCache:     fileCache,
+		loading:       loading,
+	}
+	fileCache[fullPath] = fileCtx
+	return fileCtx, true
 }
 
 func findClassByName(root *sitter.Node, source []byte, name string) *sitter.Node {

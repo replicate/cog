@@ -11,7 +11,7 @@ import inspect
 import os
 import sys
 import warnings
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from .types import Path
 
@@ -34,6 +34,16 @@ class BaseRunner:
                 self.record_metric("temperature", 0.7)
                 return self.model.generate(prompt)
     """
+
+    _run_owner: type[Any] | None = None
+    _predict_owner: type[Any] | None = None
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        method_owner = globals().get("_user_method_owner")
+        if method_owner is not None:
+            cls._run_owner = method_owner(cls, "run")
+            cls._predict_owner = method_owner(cls, "predict")
 
     def setup(
         self,
@@ -68,8 +78,8 @@ class BaseRunner:
         Raises:
             NotImplementedError: If run is not implemented.
         """
-        run_owner = _user_method_owner(self.__class__, "run")
-        predict_owner = _user_method_owner(self.__class__, "predict")
+        run_owner = self.__class__._run_owner
+        predict_owner = self.__class__._predict_owner
         if predict_owner is not None and run_owner is None:
             return self.predict(*args, **kwargs)
         raise NotImplementedError("run has not been implemented by parent class.")
@@ -136,6 +146,8 @@ class BasePredictor(BaseRunner):
 def _user_method_owner(cls: type[Any], method_name: str) -> type[Any] | None:
     for owner in inspect.getmro(cls):
         if owner in {BaseRunner, BasePredictor, object}:
+            # Stop at framework classes so mixins listed after BaseRunner in a
+            # subclass are not treated as selected user overrides.
             break
         value = owner.__dict__.get(method_name)
         if callable(value):
@@ -143,7 +155,15 @@ def _user_method_owner(cls: type[Any], method_name: str) -> type[Any] | None:
     return None
 
 
-def _validate_runner_class(cls: type[Any], class_name: str) -> None:
+BaseRunner._run_owner = None
+BaseRunner._predict_owner = None
+BasePredictor._run_owner = None
+BasePredictor._predict_owner = None
+
+
+def _validate_runner_class(
+    cls: type[Any], class_name: str, *, stacklevel: int = 3
+) -> None:
     run_owner = _user_method_owner(cls, "run")
     predict_owner = _user_method_owner(cls, "predict")
     defines_run = run_owner is not None
@@ -158,17 +178,17 @@ def _validate_runner_class(cls: type[Any], class_name: str) -> None:
         warnings.warn(
             f"{class_name}.predict() is deprecated; use run() instead",
             DeprecationWarning,
-            stacklevel=3,
+            stacklevel=stacklevel,
         )
     if any(base is BasePredictor for base in inspect.getmro(cls)[1:]):
         warnings.warn(
             "BasePredictor is deprecated; use BaseRunner instead",
             DeprecationWarning,
-            stacklevel=3,
+            stacklevel=stacklevel,
         )
 
 
-def load_predictor_from_ref(ref: str) -> BaseRunner:
+def load_predictor_from_ref(ref: str) -> Union[BaseRunner, Callable[..., Any]]:
     """Load a predictor from a module:class reference (e.g. 'predict.py:Predictor')."""
     module_path, explicit_class_name = ref.split(":", 1) if ":" in ref else (ref, None)
     module_name = os.path.basename(module_path).replace(".py", "")
@@ -185,12 +205,17 @@ def load_predictor_from_ref(ref: str) -> BaseRunner:
     if explicit_class_name is None:
         runner = getattr(module, "Runner", None)
         runner_validation_error = None
+        runner_type_error = None
         has_valid_runner = False
         if inspect.isclass(runner):
             runner_validation_error = _runner_class_validation_error(runner, "Runner")
             has_valid_runner = runner_validation_error is None
         elif runner is not None:
             has_valid_runner = callable(runner)
+            if not has_valid_runner:
+                runner_type_error = TypeError(
+                    "Runner exists but is not a class or callable"
+                )
         if has_valid_runner:
             if hasattr(module, "Predictor"):
                 warnings.warn(
@@ -210,6 +235,8 @@ def load_predictor_from_ref(ref: str) -> BaseRunner:
         else:
             if runner_validation_error is not None:
                 raise runner_validation_error
+            if runner_type_error is not None:
+                raise runner_type_error
             raise AttributeError(f"module {module_name!r} has no Runner or Predictor")
     else:
         class_name = explicit_class_name
@@ -217,7 +244,8 @@ def load_predictor_from_ref(ref: str) -> BaseRunner:
     predictor = getattr(module, class_name)
     # It could be a class or a function (for training)
     if inspect.isclass(predictor):
-        _validate_runner_class(predictor, class_name)
+        # Point deprecation warnings at the public caller of load_predictor_from_ref().
+        _validate_runner_class(predictor, class_name, stacklevel=3)
         return predictor()
     return predictor
 

@@ -257,15 +257,30 @@ fn send_output_item(
 /// Type alias for Python object (Py<PyAny>).
 type PyObject = Py<PyAny>;
 
-/// How a predict() method executes
+/// How a run()/predict() method executes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredictKind {
-    /// Synchronous function: def predict(self, **input) -> Output
+    /// Synchronous function: def run/predict(self, **input) -> Output
     Sync,
-    /// Async coroutine: async def predict(self, **input) -> Output
+    /// Async coroutine: async def run/predict(self, **input) -> Output
     Async,
-    /// Async generator: async def predict(self, **input) -> AsyncIterator[Output]
+    /// Async generator: async def run/predict(self, **input) -> AsyncIterator[Output]
     AsyncGen,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PredictMethodName {
+    Run,
+    Predict,
+}
+
+impl PredictMethodName {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Run => "run",
+            Self::Predict => "predict",
+        }
+    }
 }
 
 /// Whether and how train() exists
@@ -282,9 +297,9 @@ pub enum TrainKind {
 /// The predictor's structure and invocation target
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PredictorKind {
-    /// Class instance with predict() method, optionally train()
+    /// Class instance with selected run()/predict() method, optionally train()
     Class {
-        method_name: String,
+        method_name: PredictMethodName,
         predict: PredictKind,
         train: TrainKind,
     },
@@ -343,15 +358,16 @@ impl PythonPredictor {
         } else {
             // Class instance - detect run()/predict() and train() methods
             let method_name = Self::selected_predict_method_name(py, &instance)?;
-            let (is_async, is_async_gen) = Self::detect_async(py, &instance, &method_name)?;
+            let method_name_str = method_name.as_str();
+            let (is_async, is_async_gen) = Self::detect_async(py, &instance, method_name_str)?;
             let predict_kind = if is_async_gen {
-                tracing::info!("Detected async generator {}()", method_name);
+                tracing::info!("Detected async generator {}()", method_name_str);
                 PredictKind::AsyncGen
             } else if is_async {
-                tracing::info!("Detected async {}()", method_name);
+                tracing::info!("Detected async {}()", method_name_str);
                 PredictKind::Async
             } else {
-                tracing::info!("Detected sync {}()", method_name);
+                tracing::info!("Detected sync {}()", method_name_str);
                 PredictKind::Sync
             };
 
@@ -401,7 +417,7 @@ impl PythonPredictor {
             Self::unwrap_field_info_defaults(py, &predictor.instance, "")?;
         } else {
             if let PredictorKind::Class { method_name, .. } = &predictor.kind {
-                Self::unwrap_field_info_defaults(py, &predictor.instance, method_name)?;
+                Self::unwrap_field_info_defaults(py, &predictor.instance, method_name.as_str())?;
             }
             if matches!(predictor.kind, PredictorKind::Class { train, .. } if train != TrainKind::None)
             {
@@ -412,19 +428,25 @@ impl PythonPredictor {
         Ok(predictor)
     }
 
-    fn selected_predict_method_name(py: Python<'_>, instance: &PyObject) -> PyResult<String> {
+    fn selected_predict_method_name(
+        py: Python<'_>,
+        instance: &PyObject,
+    ) -> PyResult<PredictMethodName> {
         let class = instance.bind(py).getattr("__class__")?;
         let mro = class.getattr("__mro__")?.cast_into::<PyTuple>()?;
         let cog_predictor = py.import("cog.predictor")?;
         let base_runner = cog_predictor.getattr("BaseRunner")?;
         let base_predictor = cog_predictor.getattr("BasePredictor")?;
-        let object = py.import("builtins")?.getattr("object")?;
-        let callable = py.import("builtins")?.getattr("callable")?;
+        let builtins = py.import("builtins")?;
+        let object = builtins.getattr("object")?;
+        let callable = builtins.getattr("callable")?;
 
         let mut has_run = false;
         let mut has_predict = false;
         for owner in mro.iter() {
             if owner.is(&base_runner) || owner.is(&base_predictor) || owner.is(&object) {
+                // Stop at framework classes so mixins listed after BaseRunner in a
+                // subclass are not treated as selected user overrides.
                 break;
             }
             let dict = owner.getattr("__dict__")?;
@@ -442,8 +464,11 @@ impl PythonPredictor {
             (true, true) => Err(PyValueError::new_err(
                 "predictor must define either run() or predict(), not both",
             )),
-            (true, false) => Ok("run".to_string()),
-            (false, true) => Ok("predict".to_string()),
+            (true, false) => Ok(PredictMethodName::Run),
+            (false, true) => {
+                tracing::warn!("predict() is deprecated; use run() instead");
+                Ok(PredictMethodName::Predict)
+            }
             (false, false) => Err(PyValueError::new_err(
                 "run() or predict() method not found on predictor",
             )),
@@ -452,7 +477,7 @@ impl PythonPredictor {
 
     /// Replace FieldInfo defaults with their `.default` values on a method's signature.
     ///
-    /// When users write `def predict(self, seed: int = Input(default=42, description="..."))`,
+    /// When users write `def run/predict(self, seed: int = Input(default=42, description="..."))`,
     /// the Python default for `seed` is a `FieldInfo(default=42, ...)` object. If `seed` is
     /// missing from the input dict, Python would use this FieldInfo as the value — not `42`.
     ///
@@ -556,7 +581,7 @@ impl PythonPredictor {
         Ok((is_coro, false))
     }
 
-    /// Returns true if this predictor has an async predict() method.
+    /// Returns true if this predictor has an async run()/predict() method.
     pub fn is_async(&self) -> bool {
         match &self.kind {
             PredictorKind::Class { predict, .. } => {
@@ -647,7 +672,7 @@ impl PythonPredictor {
     pub fn predict_func<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let instance = self.instance.bind(py);
         match &self.kind {
-            PredictorKind::Class { method_name, .. } => instance.getattr(method_name),
+            PredictorKind::Class { method_name, .. } => instance.getattr(method_name.as_str()),
             PredictorKind::StandaloneFunction(_) => Ok(instance.clone()),
         }
     }
@@ -661,7 +686,7 @@ impl PythonPredictor {
         }
     }
 
-    /// Call predict() with the given input dict, returning raw Python output.
+    /// Call run()/predict() with the given input dict, returning raw Python output.
     ///
     /// For standalone functions, calls the function directly.
     pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PyObject> {
@@ -1043,7 +1068,7 @@ impl PythonPredictor {
             let instance = self.instance.bind(py);
             let method_name = match &self.kind {
                 PredictorKind::Class { method_name, .. } => method_name.as_str(),
-                PredictorKind::StandaloneFunction(_) => "predict",
+                PredictorKind::StandaloneFunction(_) => "standalone function",
             };
             let coro = match &self.kind {
                 PredictorKind::StandaloneFunction(_) => instance.call((), Some(&input_dict)),
@@ -1351,13 +1376,9 @@ impl PythonPredictor {
 mod tests {
     use super::*;
 
-    use std::fs;
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use pyo3::types::PyList;
-
-    static TEST_FILE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     fn add_python_sdk_path(py: Python<'_>) {
         py.run(
@@ -1390,26 +1411,15 @@ sys.modules.setdefault('requests', requests)
             .expect("failed to prepend SDK path");
     }
 
-    fn write_predictor_source(source: &str) -> PathBuf {
-        let counter = TEST_FILE_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let path = std::env::temp_dir().join(format!(
-            "coglet_predictor_test_{}_{}.py",
-            std::process::id(),
-            counter
-        ));
-        fs::write(&path, source).expect("failed to write test predictor");
-        path
-    }
-
     fn load_predictor_source(source: &str) -> PyResult<PythonPredictor> {
         pyo3::Python::initialize();
-        let path = write_predictor_source(source);
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("predictor.py");
+        std::fs::write(&path, source).expect("failed to write test predictor");
         Python::attach(|py| {
             add_python_sdk_path(py);
             let predictor_ref = format!("{}:Predictor", path.display());
-            let result = PythonPredictor::load(py, &predictor_ref);
-            let _ = fs::remove_file(&path);
-            result
+            PythonPredictor::load(py, &predictor_ref)
         })
     }
 
@@ -1481,6 +1491,51 @@ class Predictor(Parent):
         .expect("predictor with inherited user run should load");
 
         assert_eq!(selected_predict_method_name(&predictor), "run");
+    }
+
+    #[test]
+    fn diamond_inherited_user_run_loads() {
+        let predictor = load_predictor_source(
+            r#"
+from cog import BaseRunner
+
+class Left(BaseRunner):
+    pass
+
+class Right(BaseRunner):
+    def run(self) -> str:
+        return "ok"
+
+class Predictor(Left, Right):
+    pass
+"#,
+        )
+        .expect("predictor with diamond-inherited user run should load");
+
+        assert_eq!(selected_predict_method_name(&predictor), "run");
+    }
+
+    #[test]
+    fn mixin_after_base_runner_is_not_user_predict() {
+        let err = match load_predictor_source(
+            r#"
+from cog import BaseRunner
+
+class PredictMixin:
+    def predict(self) -> str:
+        return "ok"
+
+class Predictor(BaseRunner, PredictMixin):
+    pass
+"#,
+        ) {
+            Ok(_) => panic!("mixin after BaseRunner should not provide selected predict"),
+            Err(err) => err,
+        };
+
+        let message = err.to_string();
+        assert!(message.contains("run"), "unexpected error: {message}");
+        assert!(message.contains("predict"), "unexpected error: {message}");
     }
 
     #[test]

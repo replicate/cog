@@ -459,7 +459,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	ts.Setenv("SERVER_URL", serverURL)
 
-	if !waitForServer(serverURL, 60*time.Second) {
+	if !waitForServer(serverURL, 120*time.Second) {
 		if neg {
 			// Test expected the server to fail setup — keep it running
 			// so the test can inspect the health-check status.

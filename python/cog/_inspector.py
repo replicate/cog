@@ -98,7 +98,7 @@ def _validate_run_or_predict(
 
 
 def _selected_predict_method(
-    cls: type[Any], fullname: str
+    cls: type[Any], fullname: str, *, stacklevel: int = 3
 ) -> tuple[str, Callable[..., Any]]:
     run_owner = _user_method_owner(cls, "run")
     predict_owner = _user_method_owner(cls, "predict")
@@ -112,18 +112,18 @@ def _selected_predict_method(
         warnings.warn(
             f"{fullname}.predict() is deprecated; use run() instead",
             DeprecationWarning,
-            stacklevel=3,
+            stacklevel=stacklevel,
         )
         return "predict", cls.predict
     raise ValueError(f"run or predict method not found: {fullname}")
 
 
-def _warn_if_base_predictor_in_mro(cls: type[Any]) -> None:
+def _warn_if_base_predictor_in_mro(cls: type[Any], *, stacklevel: int = 3) -> None:
     if any(base is BasePredictor for base in inspect.getmro(cls)[1:]):
         warnings.warn(
             "BasePredictor is deprecated; use BaseRunner instead",
             DeprecationWarning,
-            stacklevel=3,
+            stacklevel=stacklevel,
         )
 
 

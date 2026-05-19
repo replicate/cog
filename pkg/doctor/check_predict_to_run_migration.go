@@ -80,16 +80,31 @@ func (c *PredictToRunMigrationCheck) Fix(ctx *CheckContext, findings []Finding) 
 		return err
 	}
 	configBytes = predictRefPattern.ReplaceAll(configBytes, []byte(`run: "run.py:Runner"`))
-	if err := os.WriteFile(configPath, configBytes, 0o644); err != nil {
-		return err
-	}
 
 	oldPath := filepath.Join(ctx.ProjectDir, "predict.py")
 	newPath := filepath.Join(ctx.ProjectDir, "run.py")
-	if err := os.WriteFile(newPath, source, 0o644); err != nil {
+	oldInfo, err := os.Stat(oldPath)
+	if err != nil {
 		return err
 	}
-	if err := os.Remove(oldPath); err != nil {
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return err
+	}
+	rolledBack := false
+	rollback := func() {
+		if rolledBack {
+			return
+		}
+		rolledBack = true
+		_ = os.WriteFile(newPath, pf.Source, oldInfo.Mode().Perm())
+		_ = os.Rename(newPath, oldPath)
+	}
+	if err := os.WriteFile(newPath, source, oldInfo.Mode().Perm()); err != nil {
+		rollback()
+		return err
+	}
+	if err := os.WriteFile(configPath, configBytes, 0o644); err != nil {
+		rollback()
 		return err
 	}
 
@@ -106,6 +121,9 @@ func (c *PredictToRunMigrationCheck) Fix(ctx *CheckContext, findings []Finding) 
 			}
 		}
 		ctx.LoadResult.Warnings = warnings
+	}
+	if old := ctx.PythonFiles["predict.py"]; old != nil && old.Tree != nil {
+		old.Tree.Close()
 	}
 	delete(ctx.PythonFiles, "predict.py")
 	parsePythonRef(ctx, "run.py:Runner")

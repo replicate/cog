@@ -31,6 +31,44 @@ def test_base_runner_run_delegates_to_legacy_predict_with_positional_args() -> N
     assert runner.run(text="hello") == "HELLO"
 
 
+def test_base_runner_run_uses_cached_legacy_predict_owner() -> None:
+    class MyRunner(BaseRunner):
+        def predict(self, text: str) -> str:
+            return text.upper()
+
+    assert MyRunner._run_owner is None
+    assert MyRunner._predict_owner is MyRunner
+    assert MyRunner().run("hello") == "HELLO"
+
+
+def test_user_method_owner_finds_diamond_inheritance_before_framework_base() -> None:
+    class Left(BaseRunner):
+        pass
+
+    class Right(BaseRunner):
+        def run(self, text: str) -> str:
+            return text.upper()
+
+    class Diamond(Left, Right):
+        pass
+
+    assert Diamond._run_owner is Right
+    assert Diamond().run("hello") == "HELLO"
+
+
+def test_user_method_owner_ignores_mixin_after_framework_base() -> None:
+    class PredictMixin:
+        def predict(self, text: str) -> str:
+            return text.upper()
+
+    class MyRunner(BaseRunner, PredictMixin):
+        pass
+
+    assert MyRunner._predict_owner is None
+    with pytest.raises(NotImplementedError, match="run has not been implemented"):
+        MyRunner().run("hello")
+
+
 def test_base_predictor_is_legacy_subclass() -> None:
     assert issubclass(BasePredictor, BaseRunner)
 
@@ -140,6 +178,18 @@ def test_load_predictor_from_ref_rejects_missing_run_or_predict(
     from cog.predictor import load_predictor_from_ref
 
     with pytest.raises(ValueError, match="run or predict"):
+        load_predictor_from_ref(str(model))
+
+
+def test_load_predictor_from_ref_rejects_invalid_runner_without_predictor(
+    tmp_path: FilePath,
+) -> None:
+    model = tmp_path / "run.py"
+    model.write_text("Runner = 42\n")
+
+    from cog.predictor import load_predictor_from_ref
+
+    with pytest.raises(TypeError, match="Runner exists but is not a class or callable"):
         load_predictor_from_ref(str(model))
 
 
@@ -337,11 +387,11 @@ class TestBasePredictor:
 
     def test_default_predict_raises(self) -> None:
         predictor = BasePredictor()
-        try:
-            predictor.predict()
-            assert False, "Should have raised NotImplementedError"
-        except NotImplementedError as e:
-            assert "run has not been implemented" in str(e)
+        with pytest.warns(DeprecationWarning, match="BasePredictor.predict"):
+            with pytest.raises(
+                NotImplementedError, match="run has not been implemented"
+            ):
+                predictor.predict()
 
     def test_setup_is_optional(self) -> None:
         class MyPredictor(BasePredictor):

@@ -160,7 +160,7 @@ func downloadAgentsFile() ([]byte, error) {
 
 	resp, err := client.Get(agentsURL)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
