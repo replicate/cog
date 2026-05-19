@@ -64,6 +64,46 @@ func TestReplicateProvider_PostPush(t *testing.T) {
 	})
 }
 
+func TestReplicateModelURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		image    string
+		expected string
+	}{
+		{
+			name:     "no tag",
+			image:    "r8.im/simpletuner/z-image",
+			expected: "https://replicate.com/simpletuner/z-image",
+		},
+		{
+			name:     "with tag",
+			image:    "r8.im/simpletuner/z-image:latest",
+			expected: "https://replicate.com/simpletuner/z-image",
+		},
+		{
+			name:     "with versioned tag",
+			image:    "r8.im/user/model:v1.2.3",
+			expected: "https://replicate.com/user/model",
+		},
+		{
+			name:     "with digest",
+			image:    "r8.im/user/model@sha256:abcdef0123456789",
+			expected: "https://replicate.com/user/model",
+		},
+		{
+			name:     "with tag and digest",
+			image:    "r8.im/user/model:latest@sha256:abcdef0123456789",
+			expected: "https://replicate.com/user/model",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, replicateModelURL(tt.image))
+		})
+	}
+}
+
 func TestCheckTokenFormat(t *testing.T) {
 	tests := []struct {
 		name    string
