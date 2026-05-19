@@ -94,10 +94,27 @@ If the model already exists, you may be getting this error because you're not lo
 	// indicator (see pkg/cli/push.go:printPushResult). We add the
 	// Replicate-specific model URL on top of that so users get a
 	// direct link to their published model.
-	replicatePage := fmt.Sprintf("https://%s", strings.Replace(opts.Image, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
-	console.Infof("\nRun your model on Replicate:\n    %s", console.Bold(replicatePage))
+	console.Infof("\nRun your model on Replicate:\n    %s", console.Bold(replicateModelURL(opts.Image)))
 
 	return nil
+}
+
+// replicateModelURL converts a pushed image reference like
+// "r8.im/owner/model:tag" into the Replicate model page URL
+// "https://replicate.com/owner/model". The Replicate web app routes by
+// model name, so any :tag or @digest suffix must be stripped or the link
+// 404s.
+func replicateModelURL(image string) string {
+	ref := strings.Replace(image, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1)
+	if at := strings.Index(ref, "@"); at != -1 {
+		ref = ref[:at]
+	}
+	if slash := strings.LastIndex(ref, "/"); slash != -1 {
+		if colon := strings.Index(ref[slash:], ":"); colon != -1 {
+			ref = ref[:slash+colon]
+		}
+	}
+	return "https://" + ref
 }
 
 // readTokenFromStdin reads the authentication token from stdin
