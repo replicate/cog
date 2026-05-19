@@ -223,7 +223,7 @@ If you specify an image name argument when pushing (like `cog push your-username
 
 ## `run`
 
-The pointer to the `Runner` object in your code, which defines how predictions are run on your model.
+The pointer to the `Runner` object in your code, which defines how runs are executed on your model.
 
 For example:
 
