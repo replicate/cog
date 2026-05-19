@@ -313,6 +313,8 @@ func (h *Harness) Setup(env *testscript.Env) error {
 
 	// Disable update checks during tests
 	env.Setenv("COG_NO_UPDATE_CHECK", "1")
+	// Doctor tests exercise project checks, not Docker daemon availability.
+	env.Setenv("COG_SKIP_DOCKER_CHECK", "1")
 
 	// Propagate host env vars listed in propagatedEnvVars
 	for _, key := range propagatedEnvVars {

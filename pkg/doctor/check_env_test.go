@@ -19,6 +19,17 @@ func TestDockerCheck_RunsWithoutError(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestDockerCheck_SkipsWhenDisabled(t *testing.T) {
+	t.Setenv("COG_SKIP_DOCKER_CHECK", "1")
+	ctx := &CheckContext{ctx: context.Background(), ProjectDir: t.TempDir()}
+	check := &DockerCheck{}
+
+	findings, err := check.Check(ctx)
+
+	require.NoError(t, err)
+	require.Empty(t, findings)
+}
+
 func TestDockerCheck_FixReturnsNoAutoFix(t *testing.T) {
 	check := &DockerCheck{}
 	err := check.Fix(nil, nil)
