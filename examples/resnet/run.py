@@ -2,12 +2,12 @@ import torch
 from PIL import Image
 from transformers import AutoImageProcessor, ResNetForImageClassification
 
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 
 WEIGHTS_DIR = "/src/weights/resnet50"
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.processor = AutoImageProcessor.from_pretrained(WEIGHTS_DIR)
@@ -15,7 +15,7 @@ class Predictor(BasePredictor):
         self.model = self.model.to(self.device)
         self.model.eval()
 
-    def predict(self, image: Path = Input(description="Image to classify")) -> dict:
+    def run(self, image: Path = Input(description="Image to classify")) -> dict:
         img = Image.open(image).convert("RGB")
         inputs = self.processor(img, return_tensors="pt").to(self.device)
 

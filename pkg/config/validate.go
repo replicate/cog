@@ -98,16 +98,25 @@ func validateSchema(cfg *configFile) error {
 
 // validatePredict validates the predict field.
 func validatePredict(cfg *configFile, result *ValidationResult) {
-	if cfg.Predict == nil || *cfg.Predict == "" {
+	if cfg.Run != nil && *cfg.Run != "" && cfg.Predict != nil && *cfg.Predict != "" {
+		result.AddError(&ValidationError{Field: "run", Message: "only one of run or predict can be set"})
 		return
 	}
 
-	predict := *cfg.Predict
-	if len(strings.Split(predict, ".py:")) != 2 {
+	if cfg.Run != nil && *cfg.Run != "" {
+		validatePredictRef("run", *cfg.Run, "run.py:Runner", result)
+	}
+	if cfg.Predict != nil && *cfg.Predict != "" {
+		validatePredictRef("predict", *cfg.Predict, "predict.py:Predictor", result)
+	}
+}
+
+func validatePredictRef(field string, ref string, example string, result *ValidationResult) {
+	if len(strings.Split(ref, ".py:")) != 2 {
 		result.AddError(&ValidationError{
-			Field:   "predict",
-			Value:   predict,
-			Message: "must be in the form 'predict.py:Predictor'",
+			Field:   field,
+			Value:   ref,
+			Message: fmt.Sprintf("must be in the form '%s'", example),
 		})
 	}
 }
@@ -671,6 +680,14 @@ func isSubpath(child, parent string) bool {
 
 // checkDeprecatedFields checks for deprecated fields and adds warnings.
 func checkDeprecatedFields(cfg *configFile, result *ValidationResult) {
+	if cfg.Predict != nil && *cfg.Predict != "" {
+		result.AddWarning(DeprecationWarning{
+			Field:       "predict",
+			Replacement: "run",
+			Message:     "use run to point at run.py:Runner",
+		})
+	}
+
 	if cfg.Build == nil {
 		return
 	}

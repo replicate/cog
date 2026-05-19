@@ -1,14 +1,158 @@
+from pathlib import Path
 from typing import Annotated, List, Optional
 
 import pytest
 
 from cog import BaseModel, Opaque
 from cog import _adt as adt
-from cog._inspector import _create_predictor_info
+from cog._inspector import _create_predictor_info, create_predictor
+
+
+def test_inspector_uses_run_method_for_classes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_run_method"
+    (tmp_path / f"{module_name}.py").write_text(
+        "class Runner:\n    def run(self, value: str) -> str:\n        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    info = create_predictor(module_name, "Runner")
+    assert "value" in info.inputs
+
+
+def test_inspector_warns_for_legacy_predict_method(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_predict_method"
+    (tmp_path / f"{module_name}.py").write_text(
+        "class Runner:\n"
+        "    def predict(self, value: str) -> str:\n"
+        "        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.warns(DeprecationWarning, match=r"Runner\.predict\(\) is deprecated"):
+        info = create_predictor(module_name, "Runner")
+    assert "value" in info.inputs
+
+
+def test_inspector_warns_for_base_predictor_inheritance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_base_predictor"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from cog import BasePredictor\n"
+        "class Runner(BasePredictor):\n"
+        "    def run(self, value: str) -> str:\n"
+        "        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.warns(DeprecationWarning, match="BasePredictor is deprecated"):
+        info = create_predictor(module_name, "Runner")
+    assert "value" in info.inputs
+
+
+def test_inspector_supports_inherited_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_inherited_run"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from cog import BaseRunner\n"
+        "class Shared(BaseRunner):\n"
+        "    def run(self, value: str) -> str:\n"
+        "        return value\n"
+        "class Runner(Shared):\n"
+        "    pass\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    info = create_predictor(module_name, "Runner")
+    assert "value" in info.inputs
+
+
+def test_inspector_rejects_inherited_run_and_direct_predict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_inherited_conflict"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from cog import BaseRunner\n"
+        "class Shared(BaseRunner):\n"
+        "    def run(self, value: str) -> str:\n"
+        "        return value\n"
+        "class Runner(Shared):\n"
+        "    def predict(self, value: str) -> str:\n"
+        "        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(ValueError, match=r"either run\(\) or predict\(\)"):
+        create_predictor(module_name, "Runner")
+
+
+def test_inspector_warns_for_inherited_legacy_predict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_inherited_predict"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from cog import BasePredictor\n"
+        "class Shared(BasePredictor):\n"
+        "    def predict(self, value: str) -> str:\n"
+        "        return value\n"
+        "class Predictor(Shared):\n"
+        "    pass\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.warns(DeprecationWarning, match=r"predict\(\) is deprecated"):
+        info = create_predictor(module_name, "Predictor")
+    assert "value" in info.inputs
+
+
+def test_inspector_rejects_class_with_run_and_predict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_conflict"
+    (tmp_path / f"{module_name}.py").write_text(
+        "class Runner:\n"
+        "    def run(self, value: str) -> str:\n"
+        "        return value\n"
+        "    def predict(self, value: str) -> str:\n"
+        "        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(ValueError, match=r"either run\(\) or predict\(\)"):
+        create_predictor(module_name, "Runner")
+
+
+def test_inspector_errors_when_class_has_no_run_or_predict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_missing_method"
+    (tmp_path / f"{module_name}.py").write_text(
+        "class Runner:\n    def setup(self) -> None:\n        pass\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(ValueError, match="run.*predict|predict.*run"):
+        create_predictor(module_name, "Runner")
 
 
 class ExternalObject:
     pass
+
+
+def test_inspector_preserves_opaque_input_metadata_with_run() -> None:
+    class Runner:
+        def run(self, value: Annotated[ExternalObject, Opaque]) -> str:
+            return "ok"
+
+    info = _create_predictor_info("run", "Runner", Runner.run, "run", True)
+    field = info.inputs["value"]
+    assert field.type.primitive is adt.PrimitiveType.ANY
+    assert field.type.repetition is adt.Repetition.REQUIRED
 
 
 def test_inspector_preserves_opaque_input_metadata() -> None:
@@ -59,6 +203,22 @@ def test_inspector_supports_opaque_list_output_metadata() -> None:
     )
     assert info.output.kind is adt.OutputKind.LIST
     assert info.output.type is adt.PrimitiveType.ANY
+
+
+def test_inspector_supports_basemodel_opaque_output_field_with_run() -> None:
+    class Output(BaseModel):
+        payload: Annotated[ExternalObject, Opaque]
+
+    class Runner:
+        def run(self, value: str) -> Output:
+            return Output(payload=ExternalObject())
+
+    info = _create_predictor_info("run", "Runner", Runner.run, "run", True)
+    assert info.output.kind is adt.OutputKind.OBJECT
+    assert info.output.fields is not None
+    field = info.output.fields["payload"]
+    assert field.primitive is adt.PrimitiveType.ANY
+    assert field.repetition is adt.Repetition.REQUIRED
 
 
 def test_inspector_supports_basemodel_opaque_output_field() -> None:

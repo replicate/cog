@@ -67,6 +67,126 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeString, info.Output.Primitive)
 }
 
+func TestSimpleStringRunner(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def run(self, s: str) -> str:
+        return "hello " + s
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	s, ok := info.Inputs.Get("s")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, s.FieldType.Primitive)
+	require.Equal(t, schema.Required, s.FieldType.Repetition)
+	require.Nil(t, s.Default)
+	require.True(t, s.IsRequired())
+
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestRunnerWithBothRunAndPredictErrors(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def run(self, s: str) -> str:
+        return s
+
+    def predict(self, s: str) -> str:
+        return s
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrMethodConflict, se.Kind)
+	require.Contains(t, se.Message, "Predictor must define either run() or predict(), not both")
+}
+
+func TestRunnerWithNoRunOrPredictErrors(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self) -> None:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrMethodNotFound, se.Kind)
+	require.Contains(t, se.Message, "Predictor must define run() or predict()")
+}
+
+func TestRunnerWithInheritedRun(t *testing.T) {
+	source := `
+from cog import BaseRunner
+
+class Shared(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s
+
+class Runner(Shared):
+    pass
+`
+	info := parse(t, source, "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestRunnerWithImportedInheritedRun(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "shared.py", `
+from cog import BaseRunner
+
+class SharedRunner(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s
+`)
+	writeFile(t, dir, "predict.py", `
+from shared import SharedRunner
+
+class Runner(SharedRunner):
+    pass
+`)
+	info := parseFile(t, dir, "predict.py", "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestRunnerWithQualifiedImportedInheritedRun(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "shared.py", `
+from cog import BaseRunner
+
+class SharedRunner(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s
+`)
+	writeFile(t, dir, "predict.py", `
+import shared
+
+class Runner(shared.SharedRunner):
+    pass
+`)
+	info := parseFile(t, dir, "predict.py", "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestRunnerWithInheritedRunAndDirectPredictErrors(t *testing.T) {
+	source := `
+from cog import BaseRunner
+
+class Shared(BaseRunner):
+    def run(self, s: str) -> str:
+        return s
+
+class Runner(Shared):
+    def predict(self, s: str) -> str:
+        return s
+`
+	se := parseErr(t, source, "Runner", schema.ModePredict)
+	require.Equal(t, schema.ErrMethodConflict, se.Kind)
+}
+
 func TestMultipleInputsWithDefaults(t *testing.T) {
 	source := `
 from cog import BasePredictor, Input, Path

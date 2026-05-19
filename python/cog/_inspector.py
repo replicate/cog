@@ -10,6 +10,7 @@ import inspect
 import re
 import sys
 import typing
+import warnings
 from dataclasses import MISSING, Field
 from enum import Enum
 from types import ModuleType, UnionType
@@ -19,6 +20,7 @@ from . import _adt as adt
 from .coder import Coder
 from .input import FieldInfo
 from .model import BaseModel
+from .predictor import BasePredictor, _user_method_owner
 from .types import AsyncConcatenateIterator, ConcatenateIterator
 
 try:
@@ -72,8 +74,10 @@ def _validate_setup(f: Callable[..., Any]) -> None:
         raise ValueError("setup() must return None")
 
 
-def _validate_predict(f: Callable[..., Any], f_name: str, is_class_fn: bool) -> None:
-    """Validate a predictor's predict method."""
+def _validate_run_or_predict(
+    f: Callable[..., Any], f_name: str, is_class_fn: bool
+) -> None:
+    """Validate a predictor's run or predict method."""
     if not inspect.isfunction(f):
         raise ValueError(f"{f_name} is not a function")
 
@@ -91,6 +95,36 @@ def _validate_predict(f: Callable[..., Any], f_name: str, is_class_fn: bool) -> 
         raise ValueError(f"{f_name}() must not have keyword-only defaults")
     if spec.annotations.get("return") is None:
         raise ValueError(f"{f_name}() must have a return type annotation")
+
+
+def _selected_predict_method(
+    cls: type[Any], fullname: str, *, stacklevel: int = 3
+) -> tuple[str, Callable[..., Any]]:
+    run_owner = _user_method_owner(cls, "run")
+    predict_owner = _user_method_owner(cls, "predict")
+    defines_run = run_owner is not None
+    defines_predict = predict_owner is not None
+    if defines_run and defines_predict:
+        raise ValueError(f"{fullname} must define either run() or predict(), not both")
+    if defines_run:
+        return "run", cls.run
+    if defines_predict:
+        warnings.warn(
+            f"{fullname}.predict() is deprecated; use run() instead",
+            DeprecationWarning,
+            stacklevel=stacklevel,
+        )
+        return "predict", cls.predict
+    raise ValueError(f"run or predict method not found: {fullname}")
+
+
+def _warn_if_base_predictor_in_mro(cls: type[Any], *, stacklevel: int = 3) -> None:
+    if any(base is BasePredictor for base in inspect.getmro(cls)[1:]):
+        warnings.warn(
+            "BasePredictor is deprecated; use BaseRunner instead",
+            DeprecationWarning,
+            stacklevel=stacklevel,
+        )
 
 
 def _validate_input_constraints(
@@ -389,8 +423,8 @@ def _create_predictor_info(
     f_name: str,
     is_class_fn: bool,
 ) -> adt.PredictorInfo:
-    """Create PredictorInfo from a predict function."""
-    _validate_predict(f, f_name, is_class_fn)
+    """Create PredictorInfo from a run or predict function."""
+    _validate_run_or_predict(f, f_name, is_class_fn)
     spec = inspect.getfullargspec(f)
 
     # Use get_type_hints to resolve string annotations (from __future__ import annotations)
@@ -483,14 +517,12 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
     p = getattr(module, predictor_name)
 
     if inspect.isclass(p):
-        if not hasattr(p, "predict"):
-            raise ValueError(f"predict method not found: {fullname}")
-
         if hasattr(p, "setup"):
             _validate_setup(_unwrap(p.setup))
 
-        predict_fn_name = "predict"
-        predict_fn = _unwrap(getattr(p, predict_fn_name))
+        _warn_if_base_predictor_in_mro(p)
+        predict_fn_name, selected_predict_fn = _selected_predict_method(p, fullname)
+        predict_fn = _unwrap(selected_predict_fn)
         is_class_fn = True
 
     elif inspect.isfunction(p):

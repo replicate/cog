@@ -1,6 +1,6 @@
 # Build System
 
-The build system transforms [Model Source](./01-model-source.md) (cog.yaml + predict.py + weights) into a production-ready OCI image containing the [Container Runtime](./04-container-runtime.md).
+The build system transforms [Model Source](./01-model-source.md) (cog.yaml + run.py + weights) into a production-ready OCI image containing the [Container Runtime](./04-container-runtime.md).
 
 ## Build Flow
 
@@ -8,7 +8,7 @@ The build system transforms [Model Source](./01-model-source.md) (cog.yaml + pre
 flowchart TB
     subgraph input["Inputs"]
         yaml["cog.yaml"]
-        code["predict.py"]
+        code["run.py"]
         weights["weights"]
     end
 
@@ -230,12 +230,12 @@ After the main build, Cog:
 
 #### Image Labels
 
-| Label                    | Content                      |
-| ------------------------ | ---------------------------- |
-| `run.cog.version`        | Cog CLI version              |
-| `run.cog.config`         | Serialized cog.yaml          |
+| Label                    | Content                                    |
+| ------------------------ | ------------------------------------------ |
+| `run.cog.version`        | Cog CLI version                            |
+| `run.cog.config`         | Serialized cog.yaml                        |
 | `run.cog.openapi_schema` | OpenAPI spec from static schema generation |
-| `run.cog.pip_freeze`     | Installed package versions   |
+| `run.cog.pip_freeze`     | Installed package versions                 |
 
 These labels can be fetched from a remote registry or local image store (like containerd) without pulling the full image. This allows tooling - both the Cog CLI during development and production infrastructure - to inspect model metadata and make decisions about how to run a model before booting it.
 
