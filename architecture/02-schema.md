@@ -63,14 +63,16 @@ flowchart LR
 
 ### Static Path Pipeline Steps
 
-1. **Parse** the predictor file with tree-sitter (concrete syntax tree, not AST)
-2. **Collect imports** -- track where each name came from (`from cog import Path`, `from cog import BaseModel`)
-3. **Collect module scope** -- resolve module-level variable assignments (for default values, choices lists)
-4. **Collect BaseModel subclasses** -- find all classes that inherit from `BaseModel` (cog's dataclass-based version; pydantic BaseModel also supported for compatibility)
-5. **Resolve cross-file models** — for imported names not found locally, find the `.py` file on disk, parse it, and extract its BaseModel definitions
-6. **Extract inputs** — walk the `run()` method parameters, resolve types, defaults, and `Input()` metadata. Legacy class `predict()` methods are still accepted with a warning.
-7. **Resolve output type** — recursively resolve the return type annotation into a `SchemaType`
-8. **Generate OpenAPI** — convert the extracted `PredictorInfo` into a full OpenAPI 3.0.2 JSON document
+1. **Parse module** -- parse Python source with tree-sitter and store the concrete syntax tree.
+2. **Collect imports** -- track local names, aliases, Cog types, typing helpers, and builtins.
+3. **Collect module scope** -- resolve module-level constants that can be used by defaults, descriptions, and choices.
+4. **Collect local schema models** -- find local `BaseModel` and `TypedDict` classes.
+5. **Resolve imported models** -- parse each local imported module at most once and merge schema model definitions and aliases.
+6. **Collect input registry** -- record reusable class-level `Input()` attributes and helper methods.
+7. **Find target callable** -- resolve the configured runner target, preferring `run()` and falling back to legacy `predict()` for backward compatibility.
+8. **Extract inputs** -- walk the resolved callable parameters and resolve types, defaults, and `Input()` metadata.
+9. **Resolve output type** -- recursively resolve the return annotation into a `SchemaType`.
+10. **Generate OpenAPI** -- convert the extracted schema information into a full OpenAPI 3.0.2 JSON document.
 
 If any step fails, the build stops before Docker starts.
 
