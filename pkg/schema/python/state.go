@@ -99,6 +99,8 @@ type ParseState struct {
 	LoadedModules map[string]ModuleSummary
 	Registry      *inputRegistry
 	Target        *TargetCallable
+	FileCtx       *pythonFileContext
+	TargetFunc    *targetFunction
 	Inputs        *schema.OrderedMap[string, schema.InputField]
 	Output        schema.SchemaType
 	OutputSet     bool
