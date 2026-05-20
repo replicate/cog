@@ -58,21 +58,30 @@ func findTargetCallableNode(file *pythonFileContext, targetRef, methodName strin
 		}
 	}
 
+	if funcNode := findStandaloneFunction(file, targetRef); funcNode != nil {
+		return &targetFunction{node: funcNode, file: file}, nil
+	}
+	if targetRef != methodName {
+		if funcNode := findStandaloneFunction(file, methodName); funcNode != nil {
+			return &targetFunction{node: funcNode, file: file}, nil
+		}
+	}
+
+	return nil, schema.WrapError(schema.ErrPredictorNotFound, targetRef, nil)
+}
+
+func findStandaloneFunction(file *pythonFileContext, functionName string) *sitter.Node {
 	for _, child := range NamedChildren(file.root) {
 		funcNode := UnwrapFunction(child)
 		if funcNode == nil {
 			continue
 		}
 		nameNode := funcNode.ChildByFieldName("name")
-		if nameNode != nil {
-			name := Content(nameNode, file.source)
-			if name == targetRef || name == methodName {
-				return &targetFunction{node: funcNode, file: file}, nil
-			}
+		if nameNode != nil && Content(nameNode, file.source) == functionName {
+			return funcNode
 		}
 	}
-
-	return nil, schema.WrapError(schema.ErrPredictorNotFound, targetRef, nil)
+	return nil
 }
 
 func findPredictMethodInClass(file *pythonFileContext, classNode *sitter.Node, className string) (*targetFunction, error) {

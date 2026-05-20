@@ -195,6 +195,42 @@ class Runner(BaseRunner):
 	require.Contains(t, se.Error(), "predict")
 }
 
+func TestStandaloneRunTargetPreferredOverEarlierLegacyPredict(t *testing.T) {
+	source := `
+def predict(value: int) -> int:
+    return value
+
+def run(value: str) -> str:
+    return value
+`
+	info := parse(t, source, "run")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, value.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestStandaloneRunTargetPreferredOverLaterLegacyPredict(t *testing.T) {
+	source := `
+def run(value: str) -> str:
+    return value
+
+def predict(value: int) -> int:
+    return value
+`
+	info := parse(t, source, "run")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, value.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
 func TestRunnerWithInheritedRun(t *testing.T) {
 	source := `
 from cog import BaseRunner
@@ -2552,6 +2588,27 @@ class Output(BaseModel):
 	second := ctx.loadModelsFromModule(dir, "types")
 
 	require.Same(t, first, second)
+	require.Len(t, ctx.loadedModules, 1)
+}
+
+func TestLoadModelsFromModuleCachesEquivalentModulePaths(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "types.py", `
+from cog import BaseModel
+
+class Output(BaseModel):
+    value: str
+`)
+
+	ctx := &modelParseContext{
+		imports:       schema.NewImportContext(),
+		typedDicts:    make(map[string]bool),
+		loadedModules: make(map[string]ModuleSummary),
+	}
+	absolute := ctx.loadModelsFromModule(dir, "types")
+	relative := ctx.loadModelsFromModule(dir, ".types")
+
+	require.Same(t, absolute, relative)
 	require.Len(t, ctx.loadedModules, 1)
 }
 

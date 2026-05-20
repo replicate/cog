@@ -100,12 +100,6 @@ func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) sch
 	if ctx.loadedModules == nil {
 		ctx.loadedModules = make(map[string]ModuleSummary)
 	}
-	if summary, ok := ctx.loadedModules[module]; ok {
-		for name := range summary.TypedDicts {
-			ctx.typedDicts[name] = true
-		}
-		return summary.Models
-	}
 
 	if isKnownExternalModule(module) {
 		ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
@@ -117,16 +111,23 @@ func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) sch
 		ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 		return nil
 	}
+	cacheKey := filepath.Clean(pyPath)
+	if summary, ok := ctx.loadedModules[cacheKey]; ok {
+		for name := range summary.TypedDicts {
+			ctx.typedDicts[name] = true
+		}
+		return summary.Models
+	}
 
 	fullPath := filepath.Join(sourceDir, pyPath)
 	source, err := os.ReadFile(fullPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
+			ctx.loadedModules[cacheKey] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 			return nil
 		}
 		fmt.Fprintf(os.Stderr, "cog: warning: failed to read %q: %v\n", fullPath, err)
-		ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
+		ctx.loadedModules[cacheKey] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 		return nil
 	}
 
@@ -135,7 +136,7 @@ func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) sch
 	tree, err := parser.ParseCtx(context.Background(), nil, source)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cog: warning: failed to parse %q: %v\n", fullPath, err)
-		ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
+		ctx.loadedModules[cacheKey] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 		return nil
 	}
 
@@ -144,7 +145,7 @@ func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) sch
 	for name := range fileCtx.typedDicts {
 		ctx.typedDicts[name] = true
 	}
-	ctx.loadedModules[module] = ModuleSummary{Imports: fileCtx.imports, Models: fileModels, TypedDicts: fileCtx.typedDicts}
+	ctx.loadedModules[cacheKey] = ModuleSummary{Imports: fileCtx.imports, Models: fileModels, TypedDicts: fileCtx.typedDicts}
 	return fileModels
 }
 
