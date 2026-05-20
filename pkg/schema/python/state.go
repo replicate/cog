@@ -114,9 +114,9 @@ func newParseState(opts ParserOptions) *ParseState {
 	}
 }
 
-func (s *ParseState) requirePhase(min parsePhase) error {
-	if s.Phase < min {
-		return schema.WrapError(schema.ErrParse, fmt.Sprintf("parser phase %q requires %q", s.Phase, min), nil)
+func (s *ParseState) requirePhase(required parsePhase) error {
+	if s.Phase < required {
+		return schema.WrapError(schema.ErrParse, fmt.Sprintf("parser phase %q requires %q", s.Phase, required), nil)
 	}
 	return nil
 }
