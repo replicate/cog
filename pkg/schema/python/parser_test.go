@@ -89,7 +89,7 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeString, info.Output.Primitive)
 }
 
-func TestRunnerWithBothRunAndPredictErrors(t *testing.T) {
+func TestRunnerWithBothRunAndPredictUsesRun(t *testing.T) {
 	source := `
 from cog import BasePredictor
 
@@ -97,12 +97,17 @@ class Predictor(BasePredictor):
     def run(self, s: str) -> str:
         return s
 
-    def predict(self, s: str) -> str:
+    def predict(self, s: int) -> int:
         return s
 `
-	se := parseErr(t, source, "Predictor", schema.ModePredict)
-	require.Equal(t, schema.ErrMethodConflict, se.Kind)
-	require.Contains(t, se.Message, "Predictor must define either run() or predict(), not both")
+	info := parse(t, source, "Predictor")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	s, ok := info.Inputs.Get("s")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, s.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
 }
 
 func TestRunnerWithNoRunOrPredictErrors(t *testing.T) {
@@ -243,7 +248,7 @@ class Runner(shared.SharedRunner):
 	require.Equal(t, 1, info.Inputs.Len())
 }
 
-func TestRunnerWithInheritedRunAndDirectPredictErrors(t *testing.T) {
+func TestRunnerWithInheritedRunAndDirectPredictUsesRun(t *testing.T) {
 	source := `
 from cog import BaseRunner
 
@@ -252,11 +257,17 @@ class Shared(BaseRunner):
         return s
 
 class Runner(Shared):
-    def predict(self, s: str) -> str:
+    def predict(self, s: int) -> int:
         return s
 `
-	se := parseErr(t, source, "Runner", schema.ModePredict)
-	require.Equal(t, schema.ErrMethodConflict, se.Kind)
+	info := parse(t, source, "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	s, ok := info.Inputs.Get("s")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, s.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
 }
 
 func TestMultipleInputsWithDefaults(t *testing.T) {
