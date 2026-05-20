@@ -1,6 +1,6 @@
 # Run interface reference
 
-This document defines the API of the `cog` Python module, which is used to define the interface for running predictions on your model.
+This document defines the API of the `cog` Python module, which is used to define the interface for running your model.
 
 > [!TIP]
 > Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `run.py` file that can be used as a starting point for setting up your model.
@@ -49,7 +49,7 @@ This document defines the API of the `cog` Python module, which is used to defin
 
 ## `BaseRunner`
 
-You define how Cog runs predictions on your model by defining a class that inherits from `BaseRunner`. It looks something like this:
+You define how Cog runs your model by defining a class that inherits from `BaseRunner`. It looks something like this:
 
 ```python
 from cog import BaseRunner, Path, Input
@@ -57,14 +57,14 @@ import torch
 
 class Runner(BaseRunner):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Load the model into memory to make running multiple inferences efficient"""
         self.model = torch.load("weights.pth")
 
     def run(self,
             image: Path = Input(description="Image to enlarge"),
             scale: float = Input(description="Factor to scale image by", default=1.5)
     ) -> Path:
-        """Run a single prediction on the model"""
+        """Run the model"""
         # ... pre-processing ...
         output = self.model(image)
         # ... post-processing ...
@@ -77,7 +77,7 @@ Your Runner class should define two methods: `setup()` and `run()`.
 
 ### `Runner.setup()`
 
-Prepare the model so multiple predictions run efficiently.
+Prepare the model so multiple runs are efficient.
 
 Use this _optional_ method to include expensive one-off operations like loading trained models, instantiating data transformations, etc.
 
@@ -101,7 +101,7 @@ While this will increase your image size and build time, it offers other advanta
 
 ### `Runner.run(**kwargs)`
 
-Run a single prediction.
+Run the model.
 
 This _required_ method is where you call the model that was loaded during `setup()`, but you may also want to add pre- and post-processing code here.
 
@@ -127,7 +127,7 @@ class Runner(BaseRunner):
         return "hello world";
 ```
 
-Models that have an async `run()` function can run predictions concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
+Models that have an async `run()` function can run concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
 
 ## `Input(**kwargs)`
 
@@ -225,12 +225,12 @@ from cog import BaseRunner, Path
 
 class Runner(BaseRunner):
     def run(self) -> list[Path]:
-        predictions = ["foo", "bar", "baz"]
+        items = ["foo", "bar", "baz"]
         output = []
-        for i, prediction in enumerate(predictions):
+        for i, item in enumerate(items):
             out_path = Path(f"/tmp/out-{i}.txt")
             with out_path.open("w") as f:
-                f.write(prediction)
+                f.write(item)
             output.append(out_path)
         return output
 ```
@@ -315,7 +315,7 @@ class Runner(BaseRunner):
 
 ## Metrics
 
-You can record custom metrics from your `run()` function to track model-specific data like token counts, timing breakdowns, or confidence scores. Metrics are included in the prediction response alongside the output.
+You can record custom metrics from your `run()` function to track model-specific data like token counts, timing breakdowns, or confidence scores. Metrics are included in the response alongside the output.
 
 ### Recording metrics
 
@@ -340,7 +340,7 @@ self.scope.metrics["token_count"] = 42
 del self.scope.metrics["token_count"]
 ```
 
-Metrics appear in the prediction response `metrics` field:
+Metrics appear in the response `metrics` field:
 
 ```json
 {
@@ -437,11 +437,11 @@ del self.scope.metrics["count"]
 self.record_metric("count", "now a string")
 ```
 
-Outside an active prediction, `self.record_metric()` and `self.scope` are silent no-ops — no need for `None` checks.
+Outside an active run, `self.record_metric()` and `self.scope` are silent no-ops — no need for `None` checks.
 
 ## Cancellation
 
-When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `run()` function. The exception raised depends on whether the runner is sync or async:
+When a run is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `run()` function. The exception raised depends on whether the runner is sync or async:
 
 | Runner type             | Exception raised         |
 | ----------------------- | ------------------------ |
@@ -454,9 +454,9 @@ When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predi
 from cog import CancelationException
 ```
 
-`CancelationException` is raised in **sync** runners when a prediction is cancelled. It is a `BaseException` subclass — **not** an `Exception` subclass. This means bare `except Exception` blocks in your run code will not accidentally catch it, matching the behavior of `KeyboardInterrupt` and `asyncio.CancelledError`.
+`CancelationException` is raised in **sync** runners when a run is cancelled. It is a `BaseException` subclass — **not** an `Exception` subclass. This means bare `except Exception` blocks in your run code will not accidentally catch it, matching the behavior of `KeyboardInterrupt` and `asyncio.CancelledError`.
 
-You do **not** need to handle this exception in normal runner code — the runtime manages cancellation automatically. However, if you need to run cleanup logic when a prediction is cancelled, you can catch it explicitly:
+You do **not** need to handle this exception in normal runner code — the runtime manages cancellation automatically. However, if you need to run cleanup logic when a run is cancelled, you can catch it explicitly:
 
 ```python
 from cog import BaseRunner, CancelationException, Path
@@ -471,7 +471,7 @@ class Runner(BaseRunner):
 ```
 
 > [!WARNING]
-> You **must** re-raise `CancelationException` after cleanup. Swallowing it will prevent the runtime from marking the prediction as canceled, and may result in the termination of the container.
+> You **must** re-raise `CancelationException` after cleanup. Swallowing it will prevent the runtime from marking the run as canceled, and may result in the termination of the container.
 
 `CancelationException` is available as:
 
@@ -504,7 +504,7 @@ These types can be used directly as input parameter types and output return type
 
 `cog.Path` is a subclass of Python's [`pathlib.Path`](https://docs.python.org/3/library/pathlib.html#basic-use) and can be used as a drop-in replacement. Any `os.PathLike` subclass is also accepted as an input type and treated as `cog.Path`.
 
-For models that return a `cog.Path` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
+For models that return a `cog.Path` object, the output returned by Cog's built-in HTTP server will be a URL.
 
 This example takes an input file, resizes it, and returns the resized image:
 
@@ -528,7 +528,7 @@ class Runner(BaseRunner):
 > [!WARNING]  
 > `cog.File` is deprecated and will be removed in a future version of Cog. Use [`cog.Path`](#cogpath) instead.
 
-`cog.File` represents a _file handle_. For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
+`cog.File` represents a _file handle_. For models that return a `cog.File` object, the output returned by Cog's built-in HTTP server will be a URL.
 
 ```python
 from cog import BaseRunner, File, Input
@@ -569,7 +569,7 @@ A runner's `Secret` inputs are represented in OpenAPI with the following schema:
 }
 ```
 
-Models uploaded to Replicate treat secret inputs differently throughout its system. When you create a prediction on Replicate, any value passed to a `Secret` input is redacted after being sent to the model.
+Models uploaded to Replicate treat secret inputs differently throughout its system. When you create a run on Replicate, any value passed to a `Secret` input is redacted after being sent to the model.
 
 > [!WARNING]  
 > Passing secret values to untrusted models can result in
@@ -647,12 +647,12 @@ from cog import BaseRunner, Path
 
 class Runner(BaseRunner):
     def run(self) -> list[Path]:
-        predictions = ["foo", "bar", "baz"]
+        items = ["foo", "bar", "baz"]
         output = []
-        for i, prediction in enumerate(predictions):
+        for i, item in enumerate(items):
             out_path = Path(f"/tmp/out-{i}.txt")
             with out_path.open("w") as f:
-                f.write(prediction)
+                f.write(item)
             output.append(out_path)
         return output
 ```
