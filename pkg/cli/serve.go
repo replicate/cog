@@ -23,8 +23,8 @@ var (
 func newServeCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run a prediction HTTP server",
-		Long: `Run a prediction HTTP server.
+		Short: "Run an HTTP server",
+		Long: `Run an HTTP server.
 
 Builds the model and starts an HTTP server that exposes the model's inputs
 and outputs as a REST API. Compatible with the Cog HTTP protocol.`,

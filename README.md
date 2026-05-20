@@ -12,7 +12,7 @@ You can deploy your packaged model to your own infrastructure, or to [Replicate]
 
 - ✅ **Define the inputs and outputs for your model with standard Python.** Then, Cog generates an OpenAPI schema and validates the inputs and outputs.
 
-- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
+- 🎁 **Automatic HTTP inference server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
 
 - 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
 
@@ -31,7 +31,7 @@ build:
 run: "run.py:Runner"
 ```
 
-Define how predictions are run on your model with `run.py`:
+Define how your model runs with `run.py`:
 
 ```python
 from cog import BaseRunner, Input, Path
@@ -39,14 +39,14 @@ import torch
 
 class Runner(BaseRunner):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Load the model into memory to make running multiple inferences efficient"""
         self.model = torch.load("./weights.pth")
 
     # The arguments and types the model takes as input
     def run(self,
           image: Path = Input(description="Grayscale input image")
     ) -> Path:
-        """Run a single prediction on the model"""
+        """Run the model"""
         processed_image = preprocess(image)
         output = self.model(processed_image)
         return postprocess(output)
@@ -54,12 +54,12 @@ class Runner(BaseRunner):
 
 In the above we accept a path to the image as an input, and return a path to our transformed image after running it through our model.
 
-Now, you can run predictions on this model:
+Now, you can run the model:
 
 ```console
 $ cog run -i image=@input.jpg
 --> Building Docker image...
---> Running Prediction...
+--> Running...
 --> Output written to output.jpg
 ```
 
