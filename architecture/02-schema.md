@@ -69,7 +69,7 @@ flowchart LR
 4. **Collect local schema models** -- find local `BaseModel` and `TypedDict` classes.
 5. **Resolve imported models** -- parse each local imported module at most once and merge schema model definitions and aliases.
 6. **Collect input registry** -- record reusable class-level `Input()` attributes and helper methods.
-7. **Find target callable** -- resolve the configured runner target, preferring `run()` and falling back to legacy `predict()` for backward compatibility.
+7. **Find target callable** -- resolve the configured runner target. Class targets prefer `run()` and fall back to legacy `predict()` for backward compatibility; standalone targets use the configured function name first, then fall back to the mode default if absent.
 8. **Extract inputs** -- walk the resolved callable parameters and resolve types, defaults, and `Input()` metadata.
 9. **Resolve output type** -- recursively resolve the return annotation into a `SchemaType`.
 10. **Generate OpenAPI** -- convert the extracted schema information into a full OpenAPI 3.0.2 JSON document.
