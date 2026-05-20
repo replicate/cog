@@ -45,7 +45,7 @@ func newWeightsImportCommand() *cobra.Command {
 and pushes the layers to a registry.
 
 Import also warms the local content-addressed weight store as a side
-effect, so 'cog predict' can mount the weights immediately without a
+effect, so 'cog run' can mount the weights immediately without a
 separate 'cog weights pull'. Pull is still useful when someone clones
 a repo with a checked-in weights.lock but a cold local cache.
 

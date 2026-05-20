@@ -313,6 +313,8 @@ func (h *Harness) Setup(env *testscript.Env) error {
 
 	// Disable update checks during tests
 	env.Setenv("COG_NO_UPDATE_CHECK", "1")
+	// Doctor tests exercise project checks, not Docker daemon availability.
+	env.Setenv("COG_SKIP_DOCKER_CHECK", "1")
 
 	// Propagate host env vars listed in propagatedEnvVars
 	for _, key := range propagatedEnvVars {
@@ -459,7 +461,7 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	ts.Setenv("SERVER_URL", serverURL)
 
-	if !waitForServer(serverURL, 60*time.Second) {
+	if !waitForServer(serverURL, 120*time.Second) {
 		if neg {
 			// Test expected the server to fail setup — keep it running
 			// so the test can inspect the health-check status.

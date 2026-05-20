@@ -27,7 +27,7 @@ Without the schema, consumers would have no way to know:
 | ------------------------ | ------------------------------------------------------------------------------ |
 | **Replicate platform**   | Generate input forms in the web UI, validate requests before routing to models |
 | **HTTP server (coglet)** | Validate incoming JSON, reject malformed requests before they reach user code  |
-| **CLI (`cog predict`)**  | Parse `-i key=value` flags into correctly-typed Python objects                 |
+| **CLI (`cog run`)**      | Parse `-i key=value` flags into correctly-typed Python objects                 |
 | **Docker label**         | Extract model interface without running the container                          |
 | **API clients**          | Know what to send and what to expect back without reading source code          |
 
@@ -40,7 +40,7 @@ If the static parser encounters a type it can't resolve, the build fails with a 
 ```mermaid
 flowchart LR
     subgraph source["Model Source"]
-        predict["predict.py"]
+        predict["run.py"]
         types["output_types.py"]
     end
 
@@ -68,7 +68,7 @@ flowchart LR
 3. **Collect module scope** -- resolve module-level variable assignments (for default values, choices lists)
 4. **Collect BaseModel subclasses** -- find all classes that inherit from `BaseModel` (cog's dataclass-based version; pydantic BaseModel also supported for compatibility)
 5. **Resolve cross-file models** — for imported names not found locally, find the `.py` file on disk, parse it, and extract its BaseModel definitions
-6. **Extract inputs** — walk the `predict()` method parameters, resolve types, defaults, and `Input()` metadata
+6. **Extract inputs** — walk the `run()` method parameters, resolve types, defaults, and `Input()` metadata. Legacy class `predict()` methods are still accepted with a warning.
 7. **Resolve output type** — recursively resolve the return type annotation into a `SchemaType`
 8. **Generate OpenAPI** — convert the extracted `PredictorInfo` into a full OpenAPI 3.0.2 JSON document
 
@@ -89,12 +89,12 @@ class Prediction(BaseModel):
 ```
 
 ```python
-# predict.py
-from cog import BasePredictor
+# run.py
+from cog import BaseRunner
 from output_types import Prediction
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> Prediction:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Prediction:
         ...
 ```
 

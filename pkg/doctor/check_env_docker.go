@@ -3,6 +3,7 @@ package doctor
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -19,6 +20,10 @@ func (c *DockerCheck) Group() Group        { return GroupEnvironment }
 func (c *DockerCheck) Description() string { return "Docker" }
 
 func (c *DockerCheck) Check(ctx *CheckContext) ([]Finding, error) {
+	if os.Getenv("COG_SKIP_DOCKER_CHECK") != "" {
+		return nil, nil
+	}
+
 	execCtx, cancel := context.WithTimeout(ctx.ctx, envCheckTimeout)
 	defer cancel()
 

@@ -655,8 +655,7 @@ jobs:
           }
           trap cleanup INT TERM
           
-          # Build -run regex from shard pattern
-          # Pattern is "test1|test2|test3" - wrap each in TestIntegration/<name>/
+          # Build an anchored -run regex from shard pattern "test1|test2|test3".
           RUN_PATTERN="${{ matrix.shard.pattern }}"
           echo "Running tests matching: $RUN_PATTERN"
           
@@ -664,7 +663,7 @@ jobs:
             -tags integration \
             -parallel $TEST_PARALLEL \
             -timeout 30m \
-            -run "TestIntegration/($RUN_PATTERN)/" \
+            -run "^TestIntegration$/^($RUN_PATTERN)$" \
             ./integration-tests/... &
           wait $!
 

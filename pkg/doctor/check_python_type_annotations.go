@@ -24,7 +24,7 @@ func (c *MissingTypeAnnotationsCheck) Check(ctx *CheckContext) ([]Finding, error
 	var findings []Finding
 
 	if ctx.Config.Predict != "" {
-		f := checkMethodAnnotations(ctx, ctx.Config.Predict, "predict")
+		f := checkPredictMethodAnnotations(ctx, ctx.Config.Predict)
 		findings = append(findings, f...)
 	}
 
@@ -38,6 +38,25 @@ func (c *MissingTypeAnnotationsCheck) Check(ctx *CheckContext) ([]Finding, error
 
 func (c *MissingTypeAnnotationsCheck) Fix(_ *CheckContext, _ []Finding) error {
 	return ErrNoAutoFix
+}
+
+func checkPredictMethodAnnotations(ctx *CheckContext, ref string) []Finding {
+	fileName, className := splitPredictRef(ref)
+	if fileName == "" || className == "" {
+		return nil
+	}
+	pf, ok := ctx.PythonFiles[fileName]
+	if !ok {
+		return nil
+	}
+	classNode := findClass(pf.Tree.RootNode(), pf.Source, className)
+	if classNode == nil {
+		return nil
+	}
+	if findMethod(classNode, pf.Source, "run") != nil {
+		return checkMethodAnnotations(ctx, ref, "run")
+	}
+	return checkMethodAnnotations(ctx, ref, "predict")
 }
 
 // checkMethodAnnotations checks that the given method has a return type annotation.
