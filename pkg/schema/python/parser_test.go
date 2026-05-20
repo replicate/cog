@@ -118,6 +118,78 @@ class Predictor(BasePredictor):
 	require.Contains(t, se.Message, "Predictor must define run() or predict()")
 }
 
+func TestRunMethodIsPrimaryTarget(t *testing.T) {
+	source := `
+from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
+        return prompt
+`
+	info := parse(t, source, "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	prompt, ok := info.Inputs.Get("prompt")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, prompt.FieldType.Primitive)
+	require.Equal(t, schema.Required, prompt.FieldType.Repetition)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestRunMethodPreferredOverLegacyPredict(t *testing.T) {
+	source := `
+from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def predict(self, value: int) -> int:
+        return value
+
+    def run(self, value: str) -> str:
+        return value
+`
+	info := parse(t, source, "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, value.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestLegacyPredictMethodFallback(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, value: int) -> int:
+        return value
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeInteger, value.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeInteger, info.Output.Primitive)
+}
+
+func TestMissingRunAndLegacyPredictReportsBothNames(t *testing.T) {
+	source := `
+from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def setup(self) -> None:
+        pass
+`
+	se := parseErr(t, source, "Runner", schema.ModePredict)
+	require.Equal(t, schema.ErrMethodNotFound, se.Kind)
+	require.Contains(t, se.Error(), "run")
+	require.Contains(t, se.Error(), "predict")
+}
+
 func TestRunnerWithInheritedRun(t *testing.T) {
 	source := `
 from cog import BaseRunner
