@@ -59,7 +59,7 @@ class Predictor(BasePredictor):
 	// Garbage bytes.
 	f.Add([]byte{0xff, 0xfe, 0x00, 0x01, 0x80, 0x90}, "Predictor", uint8(0))
 
-	f.Fuzz(func(t *testing.T, source []byte, predictRef string, modeRaw uint8) {
+	f.Fuzz(func(t *testing.T, source []byte, targetRef string, modeRaw uint8) {
 		// Cap input size: tree-sitter can exhibit O(n^2) behavior on
 		// pathological inputs, causing the fuzz worker to exceed the
 		// per-input grace period and fail with "context deadline exceeded".
@@ -74,7 +74,7 @@ class Predictor(BasePredictor):
 		}
 
 		// Must not panic regardless of input.
-		_, _ = ParsePredictor(source, predictRef, mode, "")
+		_, _ = ParsePredictor(source, targetRef, mode, "")
 	})
 }
 

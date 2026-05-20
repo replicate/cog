@@ -17,11 +17,11 @@ import (
 )
 
 // ParsePredictor parses Python source and extracts predictor information.
-// predictRef is the class or function name (e.g. "Predictor" or "predict").
+// targetRef is the class or function name (e.g. "Predictor" or "run").
 // mode controls whether we look for predict or train method.
 // sourceDir is the project root for resolving cross-file imports. Pass "" if unknown.
-func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDir string) (*schema.PredictorInfo, error) {
-	return ParseWithOptions(defaultParserOptions(source, predictRef, mode, sourceDir))
+func ParsePredictor(source []byte, targetRef string, mode schema.Mode, sourceDir string) (*schema.PredictorInfo, error) {
+	return ParseWithOptions(defaultParserOptions(source, targetRef, mode, sourceDir))
 }
 
 func ParseWithOptions(opts ParserOptions) (*schema.PredictorInfo, error) {
@@ -104,10 +104,7 @@ func findTargetCallablePhase(state *ParseState) error {
 	if err := state.requirePhase(phaseInputRegistryCollected); err != nil {
 		return err
 	}
-	methodName := "predict"
-	if state.Options.Mode == schema.ModeTrain {
-		methodName = "train"
-	}
+	methodName := targetMethodNameForMode(state.Options.Mode)
 	fileCtx := &pythonFileContext{
 		root:          state.Root,
 		source:        state.Options.Source,
@@ -121,7 +118,7 @@ func findTargetCallablePhase(state *ParseState) error {
 		fileCache:     make(map[string]*pythonFileContext),
 		loading:       make(map[string]bool),
 	}
-	target, err := findTargetFunction(fileCtx, state.Options.TargetRef, methodName)
+	target, err := findTargetCallableNode(fileCtx, state.Options.TargetRef, methodName)
 	if err != nil {
 		return err
 	}

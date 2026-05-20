@@ -24,17 +24,17 @@ func jsonRoundTrip(t *testing.T, v map[string]any) map[string]any {
 }
 
 // helper that parses in predict mode and fails on error.
-func parse(t *testing.T, source, predictRef string) *schema.PredictorInfo {
+func parse(t *testing.T, source, targetRef string) *schema.PredictorInfo {
 	t.Helper()
-	info, err := ParsePredictor([]byte(source), predictRef, schema.ModePredict, "")
+	info, err := ParsePredictor([]byte(source), targetRef, schema.ModePredict, "")
 	require.NoError(t, err)
 	return info
 }
 
 // helper to parse and expect an error.
-func parseErr(t *testing.T, source, predictRef string, mode schema.Mode) *schema.SchemaError {
+func parseErr(t *testing.T, source, targetRef string, mode schema.Mode) *schema.SchemaError {
 	t.Helper()
-	_, err := ParsePredictor([]byte(source), predictRef, mode, "")
+	_, err := ParsePredictor([]byte(source), targetRef, mode, "")
 	require.Error(t, err)
 	var se *schema.SchemaError
 	require.True(t, errors.As(err, &se), "expected *schema.SchemaError, got %T: %v", err, err)
@@ -2341,11 +2341,11 @@ func writeFile(t *testing.T, dir, name, content string) {
 }
 
 // parseFile is a test helper that parses a file from disk with sourceDir context.
-func parseFile(t *testing.T, dir, filename, predictRef string) *schema.PredictorInfo {
+func parseFile(t *testing.T, dir, filename, targetRef string) *schema.PredictorInfo {
 	t.Helper()
 	source, err := os.ReadFile(filepath.Join(dir, filename))
 	require.NoError(t, err)
-	info, err := ParsePredictor(source, predictRef, schema.ModePredict, dir)
+	info, err := ParsePredictor(source, targetRef, schema.ModePredict, dir)
 	require.NoError(t, err)
 	return info
 }

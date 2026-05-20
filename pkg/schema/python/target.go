@@ -32,18 +32,25 @@ type targetFunction struct {
 	file *pythonFileContext
 }
 
-func findTargetFunction(file *pythonFileContext, predictRef, methodName string) (*targetFunction, error) {
+func targetMethodNameForMode(mode schema.Mode) string {
+	if mode == schema.ModeTrain {
+		return "train"
+	}
+	return "predict"
+}
+
+func findTargetCallableNode(file *pythonFileContext, targetRef, methodName string) (*targetFunction, error) {
 	for _, child := range NamedChildren(file.root) {
 		classNode := UnwrapClass(child)
 		if classNode == nil {
 			continue
 		}
 		nameNode := classNode.ChildByFieldName("name")
-		if nameNode != nil && Content(nameNode, file.source) == predictRef {
+		if nameNode != nil && Content(nameNode, file.source) == targetRef {
 			if file.mode == schema.ModePredict {
-				return findPredictMethodInClass(file, classNode, predictRef)
+				return findPredictMethodInClass(file, classNode, targetRef)
 			}
-			method, err := findMethodInClass(classNode, file.source, predictRef, methodName)
+			method, err := findNamedMethodInClass(classNode, file.source, targetRef, methodName)
 			if err != nil {
 				return nil, err
 			}
@@ -59,13 +66,13 @@ func findTargetFunction(file *pythonFileContext, predictRef, methodName string) 
 		nameNode := funcNode.ChildByFieldName("name")
 		if nameNode != nil {
 			name := Content(nameNode, file.source)
-			if name == predictRef || name == methodName {
+			if name == targetRef || name == methodName {
 				return &targetFunction{node: funcNode, file: file}, nil
 			}
 		}
 	}
 
-	return nil, schema.WrapError(schema.ErrPredictorNotFound, predictRef, nil)
+	return nil, schema.WrapError(schema.ErrPredictorNotFound, targetRef, nil)
 }
 
 func findPredictMethodInClass(file *pythonFileContext, classNode *sitter.Node, className string) (*targetFunction, error) {
@@ -244,7 +251,7 @@ func classParentNames(classNode *sitter.Node, source []byte) []string {
 	return parents
 }
 
-func findMethodInClass(classNode *sitter.Node, source []byte, className, methodName string) (*sitter.Node, error) {
+func findNamedMethodInClass(classNode *sitter.Node, source []byte, className, methodName string) (*sitter.Node, error) {
 	body := classNode.ChildByFieldName("body")
 	if body == nil {
 		return nil, schema.WrapError(schema.ErrParse, fmt.Sprintf("class %s has no body", className), nil)
