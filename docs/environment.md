@@ -44,7 +44,7 @@ The `dist` option searches for wheels in:
 
 ### `COGLET_WHEEL`
 
-Controls which coglet wheel is installed in the Docker image. Coglet is the Rust-based prediction server.
+Controls which coglet wheel is installed in the Docker image. Coglet is the Rust-based inference server.
 
 **Supported values:** Same as `COG_SDK_WHEEL`
 

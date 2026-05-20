@@ -1,11 +1,11 @@
 # Deploy models with Cog
 
 Cog containers are Docker containers that serve an HTTP server
-for running predictions on your model.
+for running your model.
 You can deploy them anywhere that Docker containers run.
 
-The server inside Cog containers is **coglet**, a Rust-based prediction server
-that handles HTTP requests, worker process management, and prediction execution.
+The server inside Cog containers is **coglet**, a Rust-based inference server
+that handles HTTP requests, worker process management, and run execution.
 
 This guide assumes you have a model packaged with Cog.
 If you don't, [follow our getting started guide](getting-started-own-model.md),
@@ -19,7 +19,7 @@ First, build your model:
 cog build -t my-model
 ```
 
-You can serve predictions locally with `cog serve`:
+You can serve your model locally with `cog serve`:
 
 ```console
 cog serve
@@ -54,7 +54,7 @@ To stop the server, run:
 docker kill my-model
 ```
 
-To run a prediction on the model,
+To run the model,
 call the `/predictions` endpoint,
 passing input in the format expected by your model:
 
@@ -79,7 +79,7 @@ The response includes a `status` field with values like `STARTING`, `READY`, `BU
 
 ## Concurrency
 
-By default, the server processes one prediction at a time. To enable concurrent predictions, set the `concurrency.max` option in `cog.yaml`:
+By default, the server processes one run at a time. To enable concurrent runs, set the `concurrency.max` option in `cog.yaml`:
 
 ```yaml
 concurrency:

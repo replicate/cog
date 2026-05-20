@@ -85,11 +85,11 @@ Type "help", "copyright", "credits" or "license" for more information.
 
 Inside this Docker environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
 
-## Run predictions on a model
+## Run a model
 
-Let's pretend we've trained a model. With Cog, we can define how to run predictions on it in a standard way, so other people can easily run predictions on it without having to hunt around for a prediction script.
+Let's pretend we've trained a model. With Cog, we can define how to run it in a standard way, so other people can easily run it without having to hunt around for a run script.
 
-We need to write some code to describe how predictions are run on the model.
+We need to write some code to describe how the model runs.
 
 Save this to `run.py`:
 
@@ -107,13 +107,13 @@ WEIGHTS = models.ResNet50_Weights.IMAGENET1K_V1
 
 class Runner(BaseRunner):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Load the model into memory to make running multiple inferences efficient"""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = models.resnet50(weights=WEIGHTS).to(self.device)
         self.model.eval()
 
     def run(self, image: Path = Input(description="Image to classify")) -> dict:
-        """Run a single prediction on the model"""
+        """Run the model"""
         img = Image.open(image).convert("RGB")
         preds = self.model(WEIGHTS.transforms()(img).unsqueeze(0).to(self.device))
         top3 = preds[0].softmax(0).topk(3)
@@ -174,7 +174,7 @@ Note: The first time you run `cog run`, the build process will be triggered to g
 
 ## Build an image
 
-We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves predictions with an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time predictions.
+We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time inference.
 
 ```bash
 cog build -t resnet

@@ -44,7 +44,7 @@ var (
 	inputJSON            string
 )
 
-const existingPredictExamples = `  # Run a prediction with named inputs
+const existingPredictExamples = `  # Run the model with named inputs
   cog predict -i prompt="a photo of a cat"
 
   # Pass a file as input
@@ -69,14 +69,15 @@ func newPredictCommand() *cobra.Command {
 func newPredictionCommand(use string, hidden bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use + " [image]",
-		Short: "Run a prediction",
-		Long: `Run a prediction.
+		Short: "Run the model",
+		Long: `Run the model.
 
-If 'image' is passed, it will run the prediction on that Docker image.
+If 'image' is passed, it will run the model on that Docker image.
 It must be an image that has been built by Cog.
 
 Otherwise, it will build the model in the current directory and run
-the prediction on that.`,
+it.`,
+
 		Example:    strings.ReplaceAll(existingPredictExamples, "cog predict", "cog "+use),
 		RunE:       cmdPredict,
 		Args:       cobra.MaximumNArgs(1),
@@ -84,7 +85,7 @@ the prediction on that.`,
 		SuggestFor: []string{"infer"},
 	}
 	if hidden {
-		cmd.Short = "Run a prediction (deprecated, use cog run)"
+		cmd.Short = "Run the model (deprecated, use cog run)"
 	}
 
 	addUseCudaBaseImageFlag(cmd)
