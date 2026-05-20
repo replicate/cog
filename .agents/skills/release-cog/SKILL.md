@@ -78,7 +78,77 @@ gh workflow view release-build.yaml
 gh run watch
 ```
 
-### 6. Publish Release (stable/pre-release only)
+### 6. Write Release Notes
+
+After the draft release is created, update the release notes to follow the project's standard format. The release notes are not auto-generated from commit messages — they must be hand-written and categorized.
+
+**To see the previous release's format:**
+
+```bash
+gh release view v0.19.0 --json body
+```
+
+**To gather commits since the last release:**
+
+```bash
+# List commits between the previous release and this one
+git log --oneline v0.19.0..v0.20.0 --no-merges
+```
+
+**Release notes structure:**
+
+Group changes into three sections. Only include sections that have items.
+
+1. **New features** — New commands, new APIs, new annotations, new capabilities.
+2. **Improvements** — Performance, reliability, DX improvements, removals of legacy paths, build improvements.
+3. **Bug fixes** — User-visible bug fixes. Prefer "Now does X correctly" over "Fixed X".
+
+**Style guidelines:**
+
+- Lead each bullet with a **bold, user-facing summary sentence** (e.g., "**`cog run` command.** ...")
+- Follow with a short explanation of what changed and why it matters
+- Reference the PR number in parentheses at the end: `(#3015)`
+- Use backticks for commands, flags, and code references
+- Omit internal refactors, dependency bumps, and CI-only changes unless they are user-facing
+- Omit version bump commits
+
+**Example:**
+
+```markdown
+### New features
+
+- **`cog run` command.** The `cog predict` command has been renamed to `cog run` with full backward compatibility. `cog predict` still works as an alias. (#3015)
+- **Model refs for `cog push` and weights commands.** You can now reference models by name (e.g., `r8.im/user/model`) instead of full image URLs when pushing or managing weights. (#3018)
+
+### Improvements
+
+- **Runtime schema generation fully removed.** The legacy runtime Python schema generation path has been completely removed. Cog exclusively uses static schema generation, making builds faster and more reliable. (#3003)
+
+### Bug fixes
+
+- **Pushing a model with a version tag now emits a clean URL.** The Replicate model URL printed after `cog push` no longer includes the image tag (e.g., `:latest`), preventing 404 errors when users click the link. (#3020)
+```
+
+**To update the draft release:**
+
+```bash
+gh release edit v0.20.0 --notes "$(cat <<'EOF'
+### New features
+
+- ...
+
+### Improvements
+
+- ...
+
+### Bug fixes
+
+- ...
+EOF
+)"
+```
+
+### 7. Publish Release (stable/pre-release only)
 
 - Go to GitHub Releases page
 - Find the draft release
