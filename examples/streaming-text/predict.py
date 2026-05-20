@@ -4,7 +4,7 @@ from typing import Iterator
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
 
-from cog import BasePredictor, Input
+from cog import BasePredictor, Input, streaming
 
 MODEL_NAME = "HuggingFaceTB/SmolLM2-135M-Instruct"
 
@@ -21,6 +21,7 @@ class Predictor(BasePredictor):
         ).to(self.device)
         self.model.eval()
 
+    @streaming
     def predict(
         self,
         prompt: str = Input(description="Prompt to complete"),

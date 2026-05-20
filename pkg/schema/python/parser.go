@@ -698,18 +698,40 @@ func decoratorIsCogStreaming(node *sitter.Node, source []byte, imports *schema.I
 	for _, child := range NamedChildren(node) {
 		switch child.Type() {
 		case "attribute":
-			return Content(child, source) == "cog.streaming"
+			return attributeIsCogStreaming(child, source, imports)
 		case "identifier":
-			if Content(child, source) != "streaming" {
+			return identifierIsCogStreaming(child, source, imports)
+		case "call":
+			callee := child.ChildByFieldName("function")
+			if callee == nil {
 				return false
 			}
-			entry, ok := imports.Names.Get("streaming")
-			return ok && entry.Module == "cog" && entry.Original == "streaming"
-		case "call":
-			return false
+			switch callee.Type() {
+			case "attribute":
+				return attributeIsCogStreaming(callee, source, imports)
+			case "identifier":
+				return identifierIsCogStreaming(callee, source, imports)
+			}
 		}
 	}
 	return false
+}
+
+func attributeIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	parts := strings.SplitN(Content(node, source), ".", 2)
+	if len(parts) != 2 || parts[1] != "streaming" {
+		return false
+	}
+	entry, ok := imports.Names.Get(parts[0])
+	return ok && entry.Module == "cog" && entry.Original == "cog"
+}
+
+func identifierIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	if Content(node, source) != "streaming" {
+		return false
+	}
+	entry, ok := imports.Names.Get("streaming")
+	return ok && entry.Module == "cog" && entry.Original == "streaming"
 }
 
 func InheritsFromBaseModel(classNode *sitter.Node, source []byte, imports *schema.ImportContext) bool {

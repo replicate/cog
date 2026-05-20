@@ -667,7 +667,9 @@ func TestPredictionOperationIncludesStreamingExtensionWhenEnabled(t *testing.T) 
 	}
 
 	spec := parseSpec(t, info)
-	post := getPath(spec, "paths", "/predictions", "post").(map[string]any)
+	postPath := getPath(spec, "paths", "/predictions", "post")
+	require.NotNil(t, postPath)
+	post := postPath.(map[string]any)
 	assert.Equal(t, true, post["x-cog-streaming"])
 }
 
@@ -680,7 +682,9 @@ func TestPredictionOperationOmitsStreamingExtensionByDefault(t *testing.T) {
 	}
 
 	spec := parseSpec(t, info)
-	post := getPath(spec, "paths", "/predictions", "post").(map[string]any)
+	postPath := getPath(spec, "paths", "/predictions", "post")
+	require.NotNil(t, postPath)
+	post := postPath.(map[string]any)
 	_, ok := post["x-cog-streaming"]
 	assert.False(t, ok)
 }

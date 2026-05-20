@@ -589,6 +589,20 @@ class Predictor(cog.BasePredictor):
 	require.True(t, info.SupportsStreaming)
 }
 
+func TestStreamingDecoratorQualifiedAliasOptIn(t *testing.T) {
+	source := `
+import cog as c
+from typing import Iterator
+
+class Predictor(c.BasePredictor):
+    @c.streaming
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
+}
+
 func TestStreamingDecoratorImportedOptIn(t *testing.T) {
 	source := `
 from cog import BasePredictor, streaming
@@ -618,7 +632,7 @@ class Predictor(BasePredictor):
 	require.False(t, info.SupportsStreaming)
 }
 
-func TestStreamingDecoratorParameterizedFormIgnored(t *testing.T) {
+func TestStreamingDecoratorParameterizedFormOptIn(t *testing.T) {
 	source := `
 import cog
 from typing import Iterator
@@ -629,7 +643,21 @@ class Predictor(cog.BasePredictor):
         yield "hello"
 `
 	info := parse(t, source, "Predictor")
-	require.False(t, info.SupportsStreaming)
+	require.True(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorImportedParameterizedFormOptIn(t *testing.T) {
+	source := `
+from cog import BasePredictor, streaming
+from typing import Iterator
+
+class Predictor(BasePredictor):
+    @streaming()
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
 }
 
 func TestStreamingDecoratorClassLevelIgnored(t *testing.T) {

@@ -29,6 +29,8 @@ use crate::bridge::transport::create_transport;
 use crate::permit::{InactiveSlotIdleToken, PermitPool, SlotIdleToken};
 use crate::prediction::Prediction;
 
+const MAX_PENDING_CANCELLATIONS: usize = 1000;
+
 /// Upload a file to a signed endpoint, returning the final URL.
 ///
 /// Matches the behavior of Python cog's `put_file_to_signed_endpoint`:
@@ -353,12 +355,12 @@ pub struct OrchestratorReady {
     pub setup_logs: String,
 }
 
-type RegisterPredictionMessage = (
-    SlotId,
-    Arc<StdMutex<Prediction>>,
-    tokio::sync::oneshot::Sender<SlotIdleToken>,
-    tokio::sync::oneshot::Sender<()>,
-);
+struct RegisterPredictionMessage {
+    slot_id: SlotId,
+    prediction: Arc<StdMutex<Prediction>>,
+    idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
+    registered_ack: tokio::sync::oneshot::Sender<()>,
+}
 
 pub struct OrchestratorHandle {
     child: Child,
@@ -381,7 +383,12 @@ impl Orchestrator for OrchestratorHandle {
         let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
         let _ = self
             .register_tx
-            .send((slot_id, prediction, idle_sender, ack_tx))
+            .send(RegisterPredictionMessage {
+                slot_id,
+                prediction,
+                idle_sender,
+                registered_ack: ack_tx,
+            })
             .await;
         let _ = ack_rx.await;
     }
@@ -693,6 +700,18 @@ pub async fn spawn_worker(
     })
 }
 
+fn record_pending_cancellation(pending_cancellations: &mut HashSet<String>, prediction_id: String) {
+    if pending_cancellations.len() >= MAX_PENDING_CANCELLATIONS {
+        tracing::warn!(
+            prediction_id = %prediction_id,
+            cap = MAX_PENDING_CANCELLATIONS,
+            "Dropping pending cancellation because the pending cancellation buffer is full"
+        );
+        return;
+    }
+    pending_cancellations.insert(prediction_id);
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_event_loop(
     mut ctrl_reader: FramedRead<tokio::process::ChildStdout, JsonCodec<ControlResponse>>,
@@ -926,18 +945,18 @@ async fn run_event_loop(
                     }
                     None => {
                         tracing::debug!(%prediction_id, "Cancel requested for unknown prediction; storing pending cancellation");
-                        pending_cancellations.insert(prediction_id);
+                        record_pending_cancellation(&mut pending_cancellations, prediction_id);
                     }
                 }
             }
 
-            Some((slot_id, prediction, idle_sender, registered_tx)) = register_rx.recv() => {
+            Some(RegisterPredictionMessage { slot_id, prediction, idle_sender, registered_ack }) = register_rx.recv() => {
                 let prediction_id = match try_lock_prediction(&prediction) {
                     Some(p) => p.id().to_string(),
                     None => {
                         // Mutex poisoned during registration - prediction already failed
                         tracing::error!(%slot_id, "Prediction mutex poisoned during registration");
-                        let _ = registered_tx.send(());
+                        let _ = registered_ack.send(());
                         continue;
                     }
                 };
@@ -954,7 +973,7 @@ async fn run_event_loop(
                 tracing::debug!(%slot_id, %prediction_id, "Registered prediction");
                 predictions.insert(slot_id, prediction);
                 let pending_cancel = pending_cancellations.remove(&prediction_id);
-                let _ = registered_tx.send(());
+                let _ = registered_ack.send(());
                 if pending_cancel {
                     tracing::info!(
                         target: "coglet::prediction",
@@ -1275,6 +1294,19 @@ mod tests {
         let result = wrap_outputs(vec![], true, true);
         assert!(result.is_stream());
         assert_eq!(result.into_values(), Vec::<serde_json::Value>::new());
+    }
+
+    #[test]
+    fn record_pending_cancellation_caps_stored_ids() {
+        let mut pending = HashSet::new();
+        for index in 0..MAX_PENDING_CANCELLATIONS {
+            record_pending_cancellation(&mut pending, format!("pred-{index}"));
+        }
+
+        record_pending_cancellation(&mut pending, "overflow".to_string());
+
+        assert_eq!(pending.len(), MAX_PENDING_CANCELLATIONS);
+        assert!(!pending.contains("overflow"));
     }
 
     #[test]

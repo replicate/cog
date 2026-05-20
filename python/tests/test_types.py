@@ -146,3 +146,12 @@ class TestStreamingDecorator:
 
         assert decorated is predict
         assert predict.__cog_streaming__ is True  # type: ignore[attr-defined]
+
+    def test_streaming_call_form_marks_function_and_returns_same_object(self) -> None:
+        def predict() -> str:
+            return "ok"
+
+        decorated = streaming()(predict)
+
+        assert decorated is predict
+        assert predict.__cog_streaming__ is True  # type: ignore[attr-defined]

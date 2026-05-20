@@ -20,7 +20,10 @@ use crate::health::{Health, SetupResult};
 use crate::input_validation::InputValidator;
 use crate::orchestrator::{HealthcheckResult, Orchestrator};
 use crate::permit::{PermitPool, PredictionSlot, UnregisteredPredictionSlot};
-use crate::prediction::{CancellationToken, Prediction, PredictionStatus};
+use crate::prediction::{
+    CancellationToken, Prediction, PredictionStatus, STREAM_CHANNEL_CAPACITY,
+    SharedPredictionStreamEvent,
+};
 use crate::predictor::{PredictionError, PredictionOutput, PredictionResult};
 use crate::version::VersionInfo;
 use crate::webhook::WebhookSender;
@@ -48,6 +51,16 @@ pub enum CreatePredictionError {
     NotReady,
     #[error("At capacity (no slots available)")]
     AtCapacity,
+}
+
+const MAX_STREAM_SUBSCRIBERS: usize = STREAM_CHANNEL_CAPACITY;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SubscribePredictionStreamError {
+    #[error("Prediction not found")]
+    NotFound,
+    #[error("Too many stream subscribers")]
+    TooManySubscribers,
 }
 
 /// Snapshot of service health for transports to query.
@@ -109,9 +122,9 @@ impl PredictionHandle {
 
 pub struct PredictionStreamSubscription {
     id: String,
-    replay: Vec<crate::prediction::PredictionStreamEvent>,
+    replay: std::collections::VecDeque<SharedPredictionStreamEvent>,
     skipped: u64,
-    receiver: tokio::sync::broadcast::Receiver<crate::prediction::PredictionStreamEvent>,
+    receiver: tokio::sync::broadcast::Receiver<SharedPredictionStreamEvent>,
     guard: PredictionStreamGuard,
 }
 
@@ -123,9 +136,9 @@ impl PredictionStreamSubscription {
     pub fn into_parts(
         self,
     ) -> (
-        Vec<crate::prediction::PredictionStreamEvent>,
+        std::collections::VecDeque<SharedPredictionStreamEvent>,
         u64,
-        tokio::sync::broadcast::Receiver<crate::prediction::PredictionStreamEvent>,
+        tokio::sync::broadcast::Receiver<SharedPredictionStreamEvent>,
         PredictionStreamGuard,
     ) {
         (self.replay, self.skipped, self.receiver, self.guard)
@@ -542,17 +555,30 @@ impl PredictionService {
     pub fn subscribe_prediction_stream(
         self: &Arc<Self>,
         id: &str,
-    ) -> Option<PredictionStreamSubscription> {
-        let entry = self.predictions.get(id)?;
-        let stream = entry.prediction.lock().ok()?.subscribe_stream_replay();
+    ) -> Result<PredictionStreamSubscription, SubscribePredictionStreamError> {
+        let entry = self
+            .predictions
+            .get(id)
+            .ok_or(SubscribePredictionStreamError::NotFound)?;
+        let stream = {
+            let prediction = entry
+                .prediction
+                .lock()
+                .map_err(|_| SubscribePredictionStreamError::NotFound)?;
+            if prediction.stream_receiver_count() >= MAX_STREAM_SUBSCRIBERS {
+                return Err(SubscribePredictionStreamError::TooManySubscribers);
+            }
+            prediction.subscribe_stream_replay()
+        };
         let cancel_on_stream_drop = entry.cancel_on_stream_drop;
-        Some(PredictionStreamSubscription {
-            id: id.to_string(),
+        let id = id.to_string();
+        Ok(PredictionStreamSubscription {
+            id: id.clone(),
             replay: stream.replay,
             skipped: stream.skipped,
             receiver: stream.receiver,
             guard: PredictionStreamGuard {
-                id: id.to_string(),
+                id,
                 service: Arc::clone(self),
                 cancel_on_stream_drop,
             },
@@ -742,15 +768,7 @@ impl PredictionService {
                 .ok()
                 .and_then(|guard| guard.as_ref().map(|s| Arc::clone(&s.orchestrator)));
             if let Some(orch) = orchestrator {
-                tokio::spawn(async move {
-                    if let Err(e) = orch.cancel_by_prediction_id(&id_owned).await {
-                        tracing::error!(
-                            prediction_id = %id_owned,
-                            error = %e,
-                            "Failed to send cancel to orchestrator"
-                        );
-                    }
-                });
+                spawn_orchestrator_cancel(orch, id_owned);
             }
             true
         } else {
@@ -770,6 +788,22 @@ impl PredictionService {
     pub fn shutdown_rx(&self) -> watch::Receiver<bool> {
         self.shutdown_rx.clone()
     }
+}
+
+fn spawn_orchestrator_cancel(orch: Arc<dyn Orchestrator>, id: String) {
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        tracing::warn!(prediction_id = %id, "No tokio runtime available to cancel prediction");
+        return;
+    };
+    handle.spawn(async move {
+        if let Err(e) = orch.cancel_by_prediction_id(&id).await {
+            tracing::error!(
+                prediction_id = %id,
+                error = %e,
+                "Failed to send cancel to orchestrator"
+            );
+        }
+    });
 }
 
 /// Build a `SlotRequest::Predict`, spilling the input to disk if it exceeds
@@ -1233,6 +1267,69 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(25)).await;
 
         assert_eq!(orchestrator_ref.cancel_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn dropping_one_of_two_sync_stream_subscriptions_does_not_cancel_prediction() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(CountingCancelOrchestrator::new());
+        let orchestrator_ref = Arc::clone(&orchestrator);
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_handle, _slot) = svc
+            .submit_prediction(
+                "multi-sse-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+
+        let first = svc.subscribe_prediction_stream("multi-sse-stream").unwrap();
+        let second = svc.subscribe_prediction_stream("multi-sse-stream").unwrap();
+        drop(first);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        assert_eq!(orchestrator_ref.cancel_count(), 0);
+
+        drop(second);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+
+        assert_eq!(orchestrator_ref.cancel_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn subscribe_prediction_stream_rejects_too_many_subscribers() {
+        let svc = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::new());
+
+        svc.set_orchestrator(pool, orchestrator).await;
+        svc.set_health(Health::Ready).await;
+
+        let (_handle, _slot) = svc
+            .submit_prediction(
+                "subscriber-cap".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+
+        let mut subscriptions = Vec::new();
+        for _ in 0..MAX_STREAM_SUBSCRIBERS {
+            subscriptions.push(svc.subscribe_prediction_stream("subscriber-cap").unwrap());
+        }
+
+        assert!(matches!(
+            svc.subscribe_prediction_stream("subscriber-cap"),
+            Err(SubscribePredictionStreamError::TooManySubscribers)
+        ));
     }
 
     #[tokio::test]

@@ -10,7 +10,8 @@ pub use tokio_util::sync::CancellationToken;
 use crate::bridge::protocol::{LogSource, MetricMode};
 use crate::webhook::{WebhookEventType, WebhookSender};
 
-const STREAM_EVENT_BUFFER_CAPACITY: usize = 1024;
+pub const STREAM_CHANNEL_CAPACITY: usize = 1024;
+pub const STREAM_HISTORY_CAPACITY: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredictionStatus {
@@ -90,10 +91,12 @@ pub enum PredictionStreamEvent {
     },
 }
 
+pub type SharedPredictionStreamEvent = Arc<PredictionStreamEvent>;
+
 pub struct PredictionStreamReplay {
-    pub replay: Vec<PredictionStreamEvent>,
+    pub replay: VecDeque<SharedPredictionStreamEvent>,
     pub skipped: u64,
-    pub receiver: tokio::sync::broadcast::Receiver<PredictionStreamEvent>,
+    pub receiver: tokio::sync::broadcast::Receiver<SharedPredictionStreamEvent>,
 }
 
 impl PredictionStreamEvent {
@@ -143,8 +146,8 @@ pub struct Prediction {
     error: Option<String>,
     webhook: Option<WebhookSender>,
     completion: Arc<Notify>,
-    stream_tx: tokio::sync::broadcast::Sender<PredictionStreamEvent>,
-    stream_history: VecDeque<PredictionStreamEvent>,
+    stream_tx: tokio::sync::broadcast::Sender<SharedPredictionStreamEvent>,
+    stream_history: VecDeque<SharedPredictionStreamEvent>,
     stream_history_skipped: u64,
     /// User-emitted metrics. Merged with system metrics (predict_time) in terminal response.
     metrics: HashMap<String, serde_json::Value>,
@@ -152,7 +155,7 @@ pub struct Prediction {
 
 impl Prediction {
     pub fn new(id: String, webhook: Option<WebhookSender>) -> Self {
-        let (stream_tx, _) = tokio::sync::broadcast::channel(STREAM_EVENT_BUFFER_CAPACITY);
+        let (stream_tx, _) = tokio::sync::broadcast::channel(STREAM_CHANNEL_CAPACITY);
 
         Self {
             id,
@@ -180,13 +183,15 @@ impl Prediction {
         self.cancel_token.clone()
     }
 
-    pub fn subscribe_stream(&self) -> tokio::sync::broadcast::Receiver<PredictionStreamEvent> {
+    pub fn subscribe_stream(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<SharedPredictionStreamEvent> {
         self.stream_tx.subscribe()
     }
 
     pub fn subscribe_stream_replay(&self) -> PredictionStreamReplay {
         PredictionStreamReplay {
-            replay: self.stream_history.iter().cloned().collect(),
+            replay: self.stream_history.clone(),
             skipped: self.stream_history_skipped,
             receiver: self.stream_tx.subscribe(),
         }
@@ -197,11 +202,12 @@ impl Prediction {
     }
 
     fn emit_stream_event(&mut self, event: PredictionStreamEvent) {
-        if self.stream_history.len() == STREAM_EVENT_BUFFER_CAPACITY {
+        if self.stream_history.len() == STREAM_HISTORY_CAPACITY {
             self.stream_history.pop_front();
             self.stream_history_skipped += 1;
         }
-        self.stream_history.push_back(event.clone());
+        let event = Arc::new(event);
+        self.stream_history.push_back(Arc::clone(&event));
         let _ = self.stream_tx.send(event);
     }
 
@@ -734,14 +740,14 @@ mod tests {
 
         let replay = prediction.subscribe_stream_replay();
 
-        assert_eq!(replay.replay.len(), STREAM_EVENT_BUFFER_CAPACITY);
+        assert_eq!(replay.replay.len(), STREAM_HISTORY_CAPACITY);
         assert_eq!(replay.skipped, 77);
         assert_eq!(
             replay.replay[0].json_data(),
             serde_json::json!({"chunk":76,"index":76})
         );
         assert_eq!(
-            replay.replay[STREAM_EVENT_BUFFER_CAPACITY - 1].json_data(),
+            replay.replay[STREAM_HISTORY_CAPACITY - 1].json_data(),
             serde_json::json!({"chunk":1099,"index":1099})
         );
     }

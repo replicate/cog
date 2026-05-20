@@ -19,9 +19,11 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use crate::health::Health;
 use crate::health::{HealthResponse, SetupResult};
+use crate::prediction::SharedPredictionStreamEvent;
 use crate::predictor::PredictionError;
 use crate::service::{
     CreatePredictionError, HealthSnapshot, PredictionService, PredictionStreamSubscription,
+    SubscribePredictionStreamError,
 };
 use crate::version::VersionInfo;
 use crate::webhook::{TraceContext, WebhookConfig, WebhookEventType, WebhookSender};
@@ -255,6 +257,16 @@ fn streaming_not_supported_response() -> Response {
         .into_response()
 }
 
+fn training_streaming_not_supported_response() -> Response {
+    (
+        StatusCode::NOT_ACCEPTABLE,
+        Json(serde_json::json!({
+            "error": "Training endpoints do not support streaming responses."
+        })),
+    )
+        .into_response()
+}
+
 fn json_response_mode(headers: &HeaderMap) -> PredictionResponseMode {
     if should_respond_async(headers) {
         PredictionResponseMode::AsyncJson
@@ -483,7 +495,7 @@ async fn create_prediction_with_id(
     // Async mode: spawn background task, return immediately
     if response_mode != PredictionResponseMode::SyncJson {
         let sse_subscription = if response_mode == PredictionResponseMode::AsyncSse {
-            service.subscribe_prediction_stream(&prediction_id)
+            Some(service.subscribe_prediction_stream(&prediction_id))
         } else {
             None
         };
@@ -501,12 +513,9 @@ async fn create_prediction_with_id(
         });
 
         if response_mode == PredictionResponseMode::AsyncSse {
-            let Some(subscription) = sse_subscription else {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({"error": "Prediction not found"})),
-                )
-                    .into_response();
+            let subscription = match sse_subscription.expect("SSE subscription requested") {
+                Ok(subscription) => subscription,
+                Err(error) => return stream_subscription_error_response(error),
             };
             return stream_prediction_subscription_response(subscription);
         }
@@ -657,7 +666,7 @@ async fn cancel_prediction(
     }
 }
 
-fn stream_event_to_sse(event: crate::prediction::PredictionStreamEvent) -> Event {
+fn stream_event_to_sse(event: SharedPredictionStreamEvent) -> Event {
     Event::default()
         .event(event.event_name())
         .json_data(event.json_data())
@@ -670,16 +679,16 @@ fn prediction_sse_stream(
     let (replay, replay_skipped, receiver, guard) = subscription.into_parts();
 
     struct StreamState {
-        replay: std::collections::VecDeque<crate::prediction::PredictionStreamEvent>,
+        replay: std::collections::VecDeque<SharedPredictionStreamEvent>,
         replay_skipped: u64,
-        receiver: tokio::sync::broadcast::Receiver<crate::prediction::PredictionStreamEvent>,
+        receiver: tokio::sync::broadcast::Receiver<SharedPredictionStreamEvent>,
         _guard: crate::service::PredictionStreamGuard,
         done: bool,
     }
 
     futures::stream::unfold(
         StreamState {
-            replay: replay.into(),
+            replay,
             replay_skipped,
             receiver,
             _guard: guard,
@@ -734,15 +743,27 @@ fn prediction_sse_stream(
 }
 
 fn stream_prediction_response(service: Arc<PredictionService>, prediction_id: &str) -> Response {
-    let Some(subscription) = service.subscribe_prediction_stream(prediction_id) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "Prediction not found"})),
-        )
-            .into_response();
+    let subscription = match service.subscribe_prediction_stream(prediction_id) {
+        Ok(subscription) => subscription,
+        Err(error) => return stream_subscription_error_response(error),
     };
 
     stream_prediction_subscription_response(subscription)
+}
+
+fn stream_subscription_error_response(error: SubscribePredictionStreamError) -> Response {
+    match error {
+        SubscribePredictionStreamError::NotFound => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Prediction not found"})),
+        )
+            .into_response(),
+        SubscribePredictionStreamError::TooManySubscribers => (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({"error": "Too many stream subscribers"})),
+        )
+            .into_response(),
+    }
 }
 
 fn stream_prediction_subscription_response(subscription: PredictionStreamSubscription) -> Response {
@@ -781,6 +802,10 @@ async fn create_training(
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
 ) -> Response {
+    if wants_sse(&headers) {
+        return training_streaming_not_supported_response();
+    }
+
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
@@ -811,6 +836,10 @@ async fn create_training_idempotent(
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
 ) -> Response {
+    if wants_sse(&headers) {
+        return training_streaming_not_supported_response();
+    }
+
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
@@ -1308,6 +1337,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn failed_prediction_sse_stream_emits_completed_event() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        let (_handle, slot) = service
+            .submit_prediction(
+                "failed-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let subscription = service
+            .subscribe_prediction_stream("failed-stream")
+            .unwrap();
+
+        {
+            let prediction = slot.prediction();
+            let mut prediction = prediction.lock().unwrap();
+            prediction.set_processing();
+            prediction.set_failed("boom".to_string());
+        }
+
+        let response = Sse::new(prediction_sse_stream(subscription)).into_response();
+        let collected = response.into_body().collect().await.unwrap();
+        let sse = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+        assert!(sse.contains("event: completed"), "SSE body: {sse}");
+        assert!(sse.contains(r#""status":"failed""#), "SSE body: {sse}");
+        assert!(sse.contains(r#""error":"boom""#), "SSE body: {sse}");
+    }
+
+    #[tokio::test]
+    async fn canceled_prediction_sse_stream_emits_completed_event() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        let (_handle, slot) = service
+            .submit_prediction(
+                "canceled-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let subscription = service
+            .subscribe_prediction_stream("canceled-stream")
+            .unwrap();
+
+        {
+            let prediction = slot.prediction();
+            let mut prediction = prediction.lock().unwrap();
+            prediction.set_processing();
+            prediction.set_canceled();
+        }
+
+        let response = Sse::new(prediction_sse_stream(subscription)).into_response();
+        let collected = response.into_body().collect().await.unwrap();
+        let sse = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+        assert!(sse.contains("event: completed"), "SSE body: {sse}");
+        assert!(sse.contains(r#""status":"canceled""#), "SSE body: {sse}");
+    }
+
+    #[tokio::test]
     async fn prediction_put_with_sse_accept_returns_sse() {
         let service = create_ready_service().await;
         enable_prediction_streaming(&service).await;
@@ -1563,6 +1663,54 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let json = response_json(response).await;
         assert_eq!(json["status"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn training_post_with_sse_accept_rejects() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/trainings")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+        let json = response_json(response).await;
+        assert_eq!(
+            json["error"],
+            "Training endpoints do not support streaming responses."
+        );
+    }
+
+    #[tokio::test]
+    async fn training_put_with_sse_accept_rejects() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/trainings/train-sse")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+        let json = response_json(response).await;
+        assert_eq!(
+            json["error"],
+            "Training endpoints do not support streaming responses."
+        );
     }
 
     #[tokio::test]
