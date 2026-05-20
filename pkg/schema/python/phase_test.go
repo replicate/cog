@@ -34,3 +34,35 @@ func TestRunPhasesRejectsOutOfOrderState(t *testing.T) {
 	require.Equal(t, schema.ErrParse, se.Kind)
 	require.Contains(t, se.Error(), "expected parser state")
 }
+
+func TestCollectImportsPhaseRequiresParsedModule(t *testing.T) {
+	state := newParseState(defaultParserOptions([]byte(""), "Runner", schema.ModePredict, ""))
+
+	err := collectImportsPhase(state)
+	require.Error(t, err)
+	var se *schema.SchemaError
+	require.True(t, errors.As(err, &se))
+	require.Equal(t, schema.ErrParse, se.Kind)
+}
+
+func TestBuildRunnerInfoPhaseRequiresInputsAndOutput(t *testing.T) {
+	state := newParseState(defaultParserOptions([]byte(""), "Runner", schema.ModePredict, ""))
+	state.Phase = phaseOutputResolved
+
+	err := buildRunnerInfoPhase(state)
+	require.Error(t, err)
+	var se *schema.SchemaError
+	require.True(t, errors.As(err, &se))
+	require.Equal(t, schema.ErrParse, se.Kind)
+	require.Contains(t, se.Error(), "without inputs or output")
+}
+
+func TestBuildRunnerInfoPhaseAcceptsCompletedState(t *testing.T) {
+	state := newParseState(defaultParserOptions([]byte(""), "Runner", schema.ModePredict, ""))
+	state.Phase = phaseOutputResolved
+	state.Inputs = schema.NewOrderedMap[string, schema.InputField]()
+	state.Output = schema.SchemaPrim(schema.TypeString)
+	state.OutputSet = true
+
+	require.NoError(t, buildRunnerInfoPhase(state))
+}
