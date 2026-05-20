@@ -83,7 +83,7 @@ func collectLocalModelsPhase(state *ParseState) error {
 	if err := state.requirePhase(phaseModuleScopeCollected); err != nil {
 		return err
 	}
-	state.ModelCtx = &modelParseContext{imports: state.Imports, typedDicts: make(map[string]bool)}
+	state.ModelCtx = &modelParseContext{imports: state.Imports, typedDicts: make(map[string]bool), loadedModules: state.LoadedModules}
 	state.Models = collectModelClasses(state.Root, state.Options.Source, state.ModelCtx)
 	return nil
 }
@@ -511,8 +511,9 @@ func resolveChoicesCall(node *sitter.Node, source []byte, scope moduleScope) ([]
 // ---------------------------------------------------------------------------
 
 type modelParseContext struct {
-	imports    *schema.ImportContext
-	typedDicts map[string]bool
+	imports       *schema.ImportContext
+	typedDicts    map[string]bool
+	loadedModules map[string]ModuleSummary
 }
 
 func collectModelClasses(root *sitter.Node, source []byte, ctx *modelParseContext) schema.ModelClassMap {
@@ -592,12 +593,24 @@ func mergeDiscoveredModels(dst, src schema.ModelClassMap) {
 }
 
 func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) schema.ModelClassMap {
+	if ctx.loadedModules == nil {
+		ctx.loadedModules = make(map[string]ModuleSummary)
+	}
+	if summary, ok := ctx.loadedModules[module]; ok {
+		for name := range summary.TypedDicts {
+			ctx.typedDicts[name] = true
+		}
+		return summary.Models
+	}
+
 	if isKnownExternalModule(module) {
+		ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 		return nil
 	}
 
 	pyPath := moduleToFilePath(module)
 	if pyPath == "" {
+		ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 		return nil
 	}
 
@@ -605,9 +618,11 @@ func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) sch
 	source, err := os.ReadFile(fullPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 			return nil
 		}
 		fmt.Fprintf(os.Stderr, "cog: warning: failed to read %q: %v\n", fullPath, err)
+		ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 		return nil
 	}
 
@@ -616,14 +631,16 @@ func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) sch
 	tree, err := parser.ParseCtx(context.Background(), nil, source)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cog: warning: failed to parse %q: %v\n", fullPath, err)
+		ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 		return nil
 	}
 
-	fileCtx := &modelParseContext{imports: CollectImports(tree.RootNode(), source), typedDicts: make(map[string]bool)}
+	fileCtx := &modelParseContext{imports: CollectImports(tree.RootNode(), source), typedDicts: make(map[string]bool), loadedModules: ctx.loadedModules}
 	fileModels := collectModelClasses(tree.RootNode(), source, fileCtx)
 	for name := range fileCtx.typedDicts {
 		ctx.typedDicts[name] = true
 	}
+	ctx.loadedModules[module] = ModuleSummary{Imports: fileCtx.imports, Models: fileModels, TypedDicts: fileCtx.typedDicts}
 	return fileModels
 }
 

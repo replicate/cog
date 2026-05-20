@@ -2505,6 +2505,56 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeFloat, score.Type.Primitive)
 }
 
+func TestImportedModelsFromSameModuleAreResolvedOnce(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "types.py", `
+from cog import BaseModel
+
+class First(BaseModel):
+    value: str
+
+class Second(BaseModel):
+    value: int
+`)
+
+	source := `
+from cog import BaseRunner, BaseModel
+from types import First, Second
+
+class Output(BaseModel):
+    first: First
+    second: Second
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Output:
+        pass
+`
+	info, err := ParseWithOptions(defaultParserOptions([]byte(source), "Runner", schema.ModePredict, dir))
+	require.NoError(t, err)
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+}
+
+func TestLoadModelsFromModuleCachesLoadedModule(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "types.py", `
+from cog import BaseModel
+
+class Output(BaseModel):
+    value: str
+`)
+
+	ctx := &modelParseContext{
+		imports:       schema.NewImportContext(),
+		typedDicts:    make(map[string]bool),
+		loadedModules: make(map[string]ModuleSummary),
+	}
+	first := ctx.loadModelsFromModule(dir, "types")
+	second := ctx.loadModelsFromModule(dir, "types")
+
+	require.Same(t, first, second)
+	require.Len(t, ctx.loadedModules, 1)
+}
+
 func TestCrossFileWithOptionalField(t *testing.T) {
 	dir := t.TempDir()
 

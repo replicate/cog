@@ -195,7 +195,7 @@ func loadPythonFileContext(sourceDir, module string, mode schema.Mode, fileCache
 	root := tree.RootNode()
 	imports := CollectImports(root, source)
 	moduleScope := collectModuleScope(root, source)
-	modelCtx := &modelParseContext{imports: imports, typedDicts: make(map[string]bool)}
+	modelCtx := &modelParseContext{imports: imports, typedDicts: make(map[string]bool), loadedModules: make(map[string]ModuleSummary)}
 	modelClasses := collectModelClasses(root, source, modelCtx)
 	resolveExternalModels(sourceDir, modelClasses, modelCtx)
 	inputRegistry := collectInputRegistry(root, source, imports, moduleScope)
