@@ -15,9 +15,11 @@ import (
 )
 
 type modelParseContext struct {
-	imports       *schema.ImportContext
-	typedDicts    map[string]bool
-	loadedModules map[string]ModuleSummary
+	imports        *schema.ImportContext
+	typedDicts     map[string]bool
+	loadedModules  map[string]ModuleSummary
+	sourcePath     string
+	resolvedModels schema.ModelClassMap
 }
 
 func collectModelClasses(root *sitter.Node, source []byte, ctx *modelParseContext) schema.ModelClassMap {
@@ -43,7 +45,7 @@ func collectModelClasses(root *sitter.Node, source []byte, ctx *modelParseContex
 
 		fields := extractClassAnnotations(classNode, source, ctx.imports, isTypedDict, requiredByDefault)
 		if isTypedDict {
-			fields = mergeModelFields(parentModelFields(models, parents), fields)
+			fields = mergeModelFields(parentModelFields(models, ctx, parents), fields)
 		}
 		models.Set(className, fields)
 		if isTypedDict {
@@ -53,11 +55,17 @@ func collectModelClasses(root *sitter.Node, source []byte, ctx *modelParseContex
 	return models
 }
 
-func parentModelFields(models schema.ModelClassMap, parents []string) [][]schema.ModelField {
+func parentModelFields(models schema.ModelClassMap, ctx *modelParseContext, parents []string) [][]schema.ModelField {
 	merged := make([][]schema.ModelField, 0, len(parents))
 	for _, parent := range parents {
 		if fields, ok := models.Get(parent); ok {
 			merged = append(merged, fields)
+			continue
+		}
+		if ctx.resolvedModels != nil {
+			if fields, ok := ctx.resolvedModels.Get(parent); ok {
+				merged = append(merged, fields)
+			}
 		}
 	}
 	return merged
@@ -96,38 +104,61 @@ func mergeDiscoveredModels(dst, src schema.ModelClassMap) {
 	})
 }
 
+func setDiscoveredModels(dst, src schema.ModelClassMap) {
+	if src == nil {
+		return
+	}
+	src.Entries(func(name string, fields []schema.ModelField) {
+		dst.Set(name, fields)
+	})
+}
+
+func setQualifiedModelAliases(dst schema.ModelClassMap, qualifier string, src schema.ModelClassMap) {
+	if qualifier == "" || src == nil {
+		return
+	}
+	src.Entries(func(name string, fields []schema.ModelField) {
+		dst.Set(qualifier+"."+name, fields)
+	})
+}
+
+func setQualifiedTypedDictAliases(dst map[string]bool, qualifier string, src map[string]bool) {
+	if qualifier == "" {
+		return
+	}
+	for name := range src {
+		dst[qualifier+"."+name] = true
+	}
+}
+
 func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) schema.ModelClassMap {
 	if ctx.loadedModules == nil {
 		ctx.loadedModules = make(map[string]ModuleSummary)
 	}
 
 	if isKnownExternalModule(module) {
-		ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 		return nil
 	}
 
-	pyPath := moduleToFilePath(module)
+	pyPath := moduleToFilePath(module, ctx.sourcePath)
 	if pyPath == "" {
-		ctx.loadedModules[module] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
 		return nil
 	}
 	cacheKey := filepath.Clean(pyPath)
 	if summary, ok := ctx.loadedModules[cacheKey]; ok {
-		for name := range summary.TypedDicts {
-			ctx.typedDicts[name] = true
-		}
 		return summary.Models
 	}
+	ctx.loadedModules[cacheKey] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField](), SourcePath: cacheKey}
 
 	fullPath := filepath.Join(sourceDir, pyPath)
 	source, err := os.ReadFile(fullPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			ctx.loadedModules[cacheKey] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
+			delete(ctx.loadedModules, cacheKey)
 			return nil
 		}
 		fmt.Fprintf(os.Stderr, "cog: warning: failed to read %q: %v\n", fullPath, err)
-		ctx.loadedModules[cacheKey] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
+		ctx.loadedModules[cacheKey] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField](), SourcePath: cacheKey}
 		return nil
 	}
 
@@ -136,30 +167,33 @@ func (ctx *modelParseContext) loadModelsFromModule(sourceDir, module string) sch
 	tree, err := parser.ParseCtx(context.Background(), nil, source)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cog: warning: failed to parse %q: %v\n", fullPath, err)
-		ctx.loadedModules[cacheKey] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField]()}
+		ctx.loadedModules[cacheKey] = ModuleSummary{TypedDicts: map[string]bool{}, Models: schema.NewOrderedMap[string, []schema.ModelField](), SourcePath: cacheKey}
 		return nil
 	}
 
-	fileCtx := &modelParseContext{imports: CollectImports(tree.RootNode(), source), typedDicts: make(map[string]bool), loadedModules: ctx.loadedModules}
+	fileCtx := &modelParseContext{imports: CollectImports(tree.RootNode(), source), typedDicts: make(map[string]bool), loadedModules: ctx.loadedModules, sourcePath: cacheKey}
 	fileModels := collectModelClasses(tree.RootNode(), source, fileCtx)
-	for name := range fileCtx.typedDicts {
-		ctx.typedDicts[name] = true
-	}
-	ctx.loadedModules[cacheKey] = ModuleSummary{Imports: fileCtx.imports, Models: fileModels, TypedDicts: fileCtx.typedDicts}
+	fileCtx.resolvedModels = fileModels
+	resolveExternalModels(sourceDir, fileModels, fileCtx)
+	fileCtx.resolvedModels = fileModels
+	setDiscoveredModels(fileModels, collectModelClasses(tree.RootNode(), source, fileCtx))
+	ctx.loadedModules[cacheKey] = ModuleSummary{Imports: fileCtx.imports, Models: fileModels, TypedDicts: fileCtx.typedDicts, SourcePath: cacheKey}
+	refreshLoadedModuleAliases(ctx.loadedModules)
+	resolveExternalModels(sourceDir, fileModels, fileCtx)
+	ctx.loadedModules[cacheKey] = ModuleSummary{Imports: fileCtx.imports, Models: fileModels, TypedDicts: fileCtx.typedDicts, SourcePath: cacheKey}
 	return fileModels
 }
 
 func propagateImportedAlias(localName string, entry schema.ImportEntry, models schema.ModelClassMap, typedDicts map[string]bool) {
-	if localName == entry.Original {
-		return
+	propagateImportedAliasFrom(localName, entry, models, models, typedDicts, typedDicts)
+}
+
+func propagateImportedAliasFrom(localName string, entry schema.ImportEntry, src schema.ModelClassMap, dst schema.ModelClassMap, srcTypedDicts map[string]bool, dstTypedDicts map[string]bool) {
+	if fields, ok := src.Get(entry.Original); ok {
+		dst.Set(localName, fields)
 	}
-	if fields, ok := models.Get(entry.Original); ok {
-		if _, exists := models.Get(localName); !exists {
-			models.Set(localName, fields)
-		}
-	}
-	if typedDicts[entry.Original] {
-		typedDicts[localName] = true
+	if srcTypedDicts[entry.Original] {
+		dstTypedDicts[localName] = true
 	}
 }
 
@@ -167,44 +201,100 @@ func propagateImportedAlias(localName string, entry schema.ImportEntry, models s
 // modelClasses, attempts to find the corresponding .py file on disk, parses
 // it, and merges any schema object classes into modelClasses.
 //
-// This handles every local import permutation:
+// This handles local import forms relative to either the project root or the
+// importing source file:
 //
-//	from .types import Output          → <sourceDir>/types.py
+//	from .types import Output          → <sourceDir>/<source-file-dir>/types.py
 //	from types import Output           → <sourceDir>/types.py
 //	from models.output import Result   → <sourceDir>/models/output.py
-//	from .models.output import Result  → <sourceDir>/models/output.py
+//	from .models.output import Result  → <sourceDir>/<source-file-dir>/models/output.py
 //	from my_app.types import Foo       → <sourceDir>/my_app/types.py
 //
 // Non-local imports (stdlib, pip packages) are skipped because the file
 // won't exist on disk.
 func resolveExternalModels(sourceDir string, models schema.ModelClassMap, ctx *modelParseContext) {
-	// Track which modules we've already tried so we don't re-parse.
-	tried := make(map[string]bool)
-
 	ctx.imports.Names.Entries(func(localName string, entry schema.ImportEntry) {
-		// Already resolved locally — skip.
-		if _, ok := models.Get(localName); ok {
+		module, moduleModels, nestedModule := ctx.loadModelsForImport(sourceDir, entry)
+		if moduleModels != nil {
+			setQualifiedModelAliases(models, localName, moduleModels)
+			if pyPath := moduleToFilePath(module, ctx.sourcePath); pyPath != "" {
+				if summary, ok := ctx.loadedModules[filepath.Clean(pyPath)]; ok {
+					setQualifiedTypedDictAliases(ctx.typedDicts, localName, summary.TypedDicts)
+				}
+			}
+			if nestedModule || entry.Original == entry.Module || entry.Module == "." {
+				return
+			}
+			summaryTypedDicts := ctx.typedDicts
+			if pyPath := moduleToFilePath(module, ctx.sourcePath); pyPath != "" {
+				if summary, ok := ctx.loadedModules[filepath.Clean(pyPath)]; ok {
+					summaryTypedDicts = summary.TypedDicts
+				}
+			}
+			propagateImportedAliasFrom(localName, entry, moduleModels, models, summaryTypedDicts, ctx.typedDicts)
+			mergeDiscoveredModels(models, moduleModels)
 			return
 		}
-
-		module := entry.Module
-		if !tried[module] {
-			tried[module] = true
-			mergeDiscoveredModels(models, ctx.loadModelsFromModule(sourceDir, module))
-		}
-
 		propagateImportedAlias(localName, entry, models, ctx.typedDicts)
 	})
 }
 
+func (ctx *modelParseContext) loadModelsForImport(sourceDir string, entry schema.ImportEntry) (string, schema.ModelClassMap, bool) {
+	if models := ctx.loadModelsFromModule(sourceDir, entry.Module); models != nil {
+		return entry.Module, models, false
+	}
+	module := nestedImportModule(entry.Module, entry.Original)
+	if module == entry.Module {
+		return entry.Module, nil, false
+	}
+	return module, ctx.loadModelsFromModule(sourceDir, module), true
+}
+
+func nestedImportModule(module string, original string) string {
+	if module == "" || original == "" {
+		return module
+	}
+	if module == "." {
+		return "." + original
+	}
+	return module + "." + original
+}
+
+func refreshLoadedModuleAliases(loadedModules map[string]ModuleSummary) {
+	for _, summary := range loadedModules {
+		if summary.Imports == nil || summary.Models == nil {
+			continue
+		}
+		summary.Imports.Names.Entries(func(localName string, entry schema.ImportEntry) {
+			pyPath := moduleToFilePath(entry.Module, summary.SourcePath)
+			if pyPath == "" {
+				return
+			}
+			imported, ok := loadedModules[filepath.Clean(pyPath)]
+			if !ok || imported.Models == nil {
+				return
+			}
+			propagateImportedAliasFrom(localName, entry, imported.Models, summary.Models, imported.TypedDicts, summary.TypedDicts)
+		})
+	}
+}
+
 // moduleToFilePath converts a Python module path to a relative .py file path.
 //
-//	".types"          → "types.py"
-//	"types"           → "types.py"
-//	".models.output"  → "models/output.py"
-//	"models.output"   → "models/output.py"
-//	"cog"             → "cog.py"  (will fail os.ReadFile → skipped)
-func moduleToFilePath(module string) string {
+//	".types", "pkg/predict.py"         → "pkg/types.py"
+//	"types", "pkg/predict.py"          → "types.py"
+//	".models.output", "pkg/predict.py" → "pkg/models/output.py"
+//	"models.output", "pkg/predict.py"  → "models/output.py"
+//	"cog", "pkg/predict.py"            → "cog.py"  (known external → skipped)
+func moduleToFilePath(module string, sourcePaths ...string) string {
+	sourcePath := ""
+	if len(sourcePaths) > 0 {
+		sourcePath = sourcePaths[0]
+	}
+	if strings.HasPrefix(module, ".") && sourcePath != "" {
+		return relativeModuleToFilePath(module, sourcePath)
+	}
+
 	// Strip leading dots (relative import markers).
 	clean := strings.TrimLeft(module, ".")
 	if clean == "" {
@@ -213,6 +303,35 @@ func moduleToFilePath(module string) string {
 	// Replace dots with path separators.
 	parts := strings.Split(clean, ".")
 	return filepath.Join(parts...) + ".py"
+}
+
+func relativeModuleToFilePath(module string, sourcePath string) string {
+	level := len(module) - len(strings.TrimLeft(module, "."))
+	clean := strings.TrimLeft(module, ".")
+	if clean == "" {
+		return ""
+	}
+
+	baseDir := filepath.Dir(sourcePath)
+	if baseDir == "." {
+		baseDir = ""
+	}
+	for range level - 1 {
+		if baseDir == "" {
+			break
+		}
+		baseDir = filepath.Dir(baseDir)
+		if baseDir == "." {
+			baseDir = ""
+		}
+	}
+
+	parts := strings.Split(clean, ".")
+	pathParts := append([]string{}, parts...)
+	if baseDir != "" {
+		pathParts = append([]string{baseDir}, pathParts...)
+	}
+	return filepath.Join(pathParts...) + ".py"
 }
 
 // isKnownExternalModule returns true for modules that are definitely not
@@ -292,7 +411,12 @@ func TypedDictClassInfo(classNode *sitter.Node, source []byte, imports *schema.I
 				isTypedDict = true
 				continue
 			}
-			if resolved, _, ok := imports.ResolveQualifiedName(text); ok && typedDicts[resolved] {
+			if typedDicts[text] {
+				isTypedDict = true
+				parents = append(parents, text)
+				continue
+			}
+			if resolved, _, ok := imports.ResolveQualifiedName(text); ok && !strings.Contains(text, ".") && typedDicts[resolved] {
 				isTypedDict = true
 				parents = append(parents, resolved)
 			}

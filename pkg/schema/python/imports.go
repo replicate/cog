@@ -65,6 +65,20 @@ func addImportFromNode(ctx *schema.ImportContext, module string, node *sitter.No
 func parseImportFrom(node *sitter.Node, source []byte, ctx *schema.ImportContext) {
 	moduleNode := node.ChildByFieldName("module_name")
 	if moduleNode == nil {
+		module, ok := importFromModulePrefix(node, source)
+		if !ok {
+			return
+		}
+		for _, child := range AllChildren(node) {
+			switch child.Type() {
+			case "dotted_name", "aliased_import":
+				addImportFromNode(ctx, module, child, source)
+			case "import_list":
+				for _, importChild := range AllChildren(child) {
+					addImportFromNode(ctx, module, importChild, source)
+				}
+			}
+		}
 		return
 	}
 	module := Content(moduleNode, source)
@@ -86,6 +100,19 @@ func parseImportFrom(node *sitter.Node, source []byte, ctx *schema.ImportContext
 			}
 		}
 	}
+}
+
+func importFromModulePrefix(node *sitter.Node, source []byte) (string, bool) {
+	text := strings.TrimSpace(Content(node, source))
+	if !strings.HasPrefix(text, "from ") {
+		return "", false
+	}
+	module, _, ok := strings.Cut(strings.TrimPrefix(text, "from "), " import ")
+	if !ok {
+		return "", false
+	}
+	module = strings.TrimSpace(module)
+	return module, module != ""
 }
 
 func parseImport(node *sitter.Node, source []byte, ctx *schema.ImportContext) {

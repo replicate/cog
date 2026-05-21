@@ -9,6 +9,9 @@ package python
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
+	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
@@ -21,10 +24,23 @@ import (
 // mode controls whether we look for predict or train method.
 // sourceDir is the project root for resolving cross-file imports. Pass "" if unknown.
 func ParsePredictor(source []byte, targetRef string, mode schema.Mode, sourceDir string) (*schema.PredictorInfo, error) {
-	return ParseWithOptions(defaultParserOptions(source, targetRef, mode, sourceDir))
+	return ParsePredictorWithSourcePath(source, targetRef, mode, sourceDir, "")
+}
+
+// ParsePredictorWithSourcePath parses Python source and uses sourcePath,
+// relative to sourceDir, to resolve package-relative imports.
+func ParsePredictorWithSourcePath(source []byte, targetRef string, mode schema.Mode, sourceDir string, sourcePath string) (*schema.PredictorInfo, error) {
+	opts := defaultParserOptions(source, targetRef, mode, sourceDir)
+	opts.SourcePath = sourcePath
+	return ParseWithOptions(opts)
 }
 
 func ParseWithOptions(opts ParserOptions) (*schema.PredictorInfo, error) {
+	sourcePath, err := normalizeSourcePath(opts.SourceDir, opts.SourcePath)
+	if err != nil {
+		return nil, err
+	}
+	opts.SourcePath = sourcePath
 	state := newParseState(opts)
 	phases := []parserPhase{
 		{Name: "parse module", From: phaseInitial, To: phaseModuleParsed, Run: parseModulePhase},
@@ -77,8 +93,9 @@ func collectLocalModelsPhase(state *ParseState) error {
 	if err := state.requirePhase(phaseModuleScopeCollected); err != nil {
 		return err
 	}
-	state.ModelCtx = &modelParseContext{imports: state.Imports, typedDicts: make(map[string]bool), loadedModules: state.LoadedModules}
+	state.ModelCtx = &modelParseContext{imports: state.Imports, typedDicts: make(map[string]bool), loadedModules: state.LoadedModules, sourcePath: state.Options.SourcePath}
 	state.Models = collectModelClasses(state.Root, state.Options.Source, state.ModelCtx)
+	state.ModelCtx.resolvedModels = state.Models
 	return nil
 }
 
@@ -88,6 +105,8 @@ func resolveImportedModelsPhase(state *ParseState) error {
 	}
 	if state.Options.SourceDir != "" {
 		resolveExternalModels(state.Options.SourceDir, state.Models, state.ModelCtx)
+		state.ModelCtx.resolvedModels = state.Models
+		setDiscoveredModels(state.Models, collectModelClasses(state.Root, state.Options.Source, state.ModelCtx))
 	}
 	return nil
 }
@@ -115,6 +134,8 @@ func findTargetCallablePhase(state *ParseState) error {
 		typedDicts:    state.ModelCtx.typedDicts,
 		sourceDir:     state.Options.SourceDir,
 		mode:          state.Options.Mode,
+		sourcePath:    state.Options.SourcePath,
+		allowLegacy:   !state.Options.DisableLegacyPredict,
 		fileCache:     make(map[string]*pythonFileContext),
 		loading:       make(map[string]bool),
 	}
@@ -125,6 +146,28 @@ func findTargetCallablePhase(state *ParseState) error {
 	state.FileCtx = fileCtx
 	state.TargetFunc = target
 	return nil
+}
+
+func normalizeSourcePath(sourceDir string, sourcePath string) (string, error) {
+	if sourcePath == "" {
+		return "", nil
+	}
+	if !filepath.IsAbs(sourcePath) || sourceDir == "" {
+		clean := filepath.Clean(sourcePath)
+		if filepath.IsAbs(clean) || pathEscapesSourceDir(clean) {
+			return "", schema.WrapError(schema.ErrParse, fmt.Sprintf("source path %q is outside source directory", sourcePath), nil)
+		}
+		return clean, nil
+	}
+	rel, err := filepath.Rel(sourceDir, sourcePath)
+	if err != nil || pathEscapesSourceDir(rel) || filepath.IsAbs(rel) {
+		return "", schema.WrapError(schema.ErrParse, fmt.Sprintf("source path %q is outside source directory", sourcePath), nil)
+	}
+	return filepath.Clean(rel), nil
+}
+
+func pathEscapesSourceDir(path string) bool {
+	return path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator))
 }
 
 func extractInputsPhase(state *ParseState) error {

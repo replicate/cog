@@ -9,20 +9,22 @@ import (
 )
 
 type ParserOptions struct {
-	Source             []byte
-	TargetRef          string
-	Mode               schema.Mode
-	SourceDir          string
-	AllowLegacyPredict bool
+	Source     []byte
+	TargetRef  string
+	Mode       schema.Mode
+	SourceDir  string
+	SourcePath string
+	// Deprecated: use DisableLegacyPredict. DisableLegacyPredict takes precedence.
+	AllowLegacyPredict   bool
+	DisableLegacyPredict bool
 }
 
 func defaultParserOptions(source []byte, targetRef string, mode schema.Mode, sourceDir string) ParserOptions {
 	return ParserOptions{
-		Source:             source,
-		TargetRef:          targetRef,
-		Mode:               mode,
-		SourceDir:          sourceDir,
-		AllowLegacyPredict: true,
+		Source:    source,
+		TargetRef: targetRef,
+		Mode:      mode,
+		SourceDir: sourceDir,
 	}
 }
 
@@ -84,6 +86,7 @@ type ModuleSummary struct {
 	Imports    *schema.ImportContext
 	Models     schema.ModelClassMap
 	TypedDicts map[string]bool
+	SourcePath string
 }
 
 type ParseState struct {

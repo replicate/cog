@@ -327,10 +327,16 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[str
 	switch ann.Kind {
 	case TypeAnnotSimple:
 		name := ann.Name
+		if typedDicts[name] {
+			return FieldType{Primitive: TypeAny, Repetition: Required}, nil
+		}
 		qualifiedEntry := ImportEntry{}
 		if resolved, entry, ok := ctx.ResolveQualifiedName(name); ok {
 			name = resolved
 			qualifiedEntry = entry
+			if typedDicts[entry.Original+"."+name] {
+				return FieldType{Primitive: TypeAny, Repetition: Required}, nil
+			}
 		}
 		if typedDicts[name] {
 			return FieldType{Primitive: TypeAny, Repetition: Required}, nil

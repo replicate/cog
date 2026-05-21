@@ -280,24 +280,25 @@ func opaqueSchemaType(inner TypeAnnotation, ctx *ImportContext) SchemaType {
 
 func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
 	name := ann.Name
+	if fields, ok := models.Get(name); ok {
+		return resolveNamedModelToSchemaType(name, fields, ctx, models, seen)
+	}
 	qualifiedEntry := ImportEntry{}
+	qualified := false
 	if resolved, entry, ok := ctx.ResolveQualifiedName(name); ok {
 		name = resolved
 		qualifiedEntry = entry
+		qualified = true
+		if fields, ok := models.Get(entry.Original + "." + name); ok {
+			return resolveNamedModelToSchemaType(entry.Original+"."+name, fields, ctx, models, seen)
+		}
 	}
 
 	// Check for BaseModel subclass
-	if fields, ok := models.Get(name); ok {
-		// Cycle detection: if we're already resolving this model, emit opaque object.
-		if seen[name] {
-			return SchemaAnyType(), nil
+	if !qualified {
+		if fields, ok := models.Get(name); ok {
+			return resolveNamedModelToSchemaType(name, fields, ctx, models, seen)
 		}
-		if seen == nil {
-			seen = make(map[string]bool)
-		}
-		seen[name] = true
-		defer delete(seen, name)
-		return resolveModelToSchemaType(fields, ctx, models, seen)
 	}
 
 	// Unparameterized dict → opaque JSON object
@@ -312,6 +313,9 @@ func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mode
 
 	prim, ok := PrimitiveFromName(name)
 	if !ok {
+		if qualified && qualifiedEntry.Module != "" {
+			return SchemaType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
+		}
 		// Check if this name was imported from an external package
 		if qualifiedEntry.Module != "" {
 			return SchemaType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
@@ -322,6 +326,19 @@ func resolveSimpleSchemaType(ann TypeAnnotation, ctx *ImportContext, models Mode
 		return SchemaType{}, errUnresolvableType(name)
 	}
 	return SchemaPrim(prim), nil
+}
+
+func resolveNamedModelToSchemaType(name string, fields []ModelField, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {
+	// Cycle detection: if we're already resolving this model, emit opaque object.
+	if seen[name] {
+		return SchemaAnyType(), nil
+	}
+	if seen == nil {
+		seen = make(map[string]bool)
+	}
+	seen[name] = true
+	defer delete(seen, name)
+	return resolveModelToSchemaType(fields, ctx, models, seen)
 }
 
 func resolveGenericSchemaType(ann TypeAnnotation, ctx *ImportContext, models ModelClassMap, seen map[string]bool) (SchemaType, error) {

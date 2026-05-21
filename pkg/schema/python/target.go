@@ -22,7 +22,9 @@ type pythonFileContext struct {
 	modelClasses  schema.ModelClassMap
 	typedDicts    map[string]bool
 	sourceDir     string
+	sourcePath    string
 	mode          schema.Mode
+	allowLegacy   bool
 	fileCache     map[string]*pythonFileContext
 	loading       map[string]bool
 }
@@ -89,11 +91,14 @@ func findPredictMethodInClass(file *pythonFileContext, classNode *sitter.Node, c
 	if runNode != nil {
 		return runNode, nil
 	}
-	if predictNode != nil {
+	if predictNode != nil && file.allowLegacy {
 		fmt.Fprintf(os.Stderr, "cog: warning: %s.predict() is deprecated; use run() instead\n", className)
 		return predictNode, nil
 	}
-	return nil, schema.WrapError(schema.ErrMethodNotFound, fmt.Sprintf("%s must define run() or predict()", className), nil)
+	if file.allowLegacy {
+		return nil, schema.WrapError(schema.ErrMethodNotFound, fmt.Sprintf("%s must define run() or predict()", className), nil)
+	}
+	return nil, schema.WrapError(schema.ErrMethodNotFound, fmt.Sprintf("%s.run not found", className), nil)
 }
 
 func collectPredictMethods(file *pythonFileContext, classNode *sitter.Node, className string, seen map[string]bool) (*targetFunction, *targetFunction) {
@@ -157,22 +162,28 @@ func resolveImportedParentClass(file *pythonFileContext, parent string) (*python
 		return nil, nil, "", false
 	}
 
-	var module, className string
+	var module, className, importedName string
 	if before, after, ok := strings.Cut(parent, "."); ok {
 		entry, ok := file.imports.Names.Get(before)
 		if !ok {
 			return nil, nil, "", false
 		}
 		module = entry.Module
+		importedName = entry.Original
 		className = after
 	} else if entry, ok := file.imports.Names.Get(parent); ok {
 		module = entry.Module
+		importedName = entry.Original
 		className = entry.Original
 	} else {
 		return nil, nil, "", false
 	}
 
-	parentFile, ok := loadPythonFileContext(file.sourceDir, module, file.mode, file.fileCache, file.loading)
+	parentFile, ok := loadPythonFileContext(file.sourceDir, file.sourcePath, module, file.mode, file.allowLegacy, file.fileCache, file.loading)
+	if !ok {
+		module = nestedImportModule(module, importedName)
+		parentFile, ok = loadPythonFileContext(file.sourceDir, file.sourcePath, module, file.mode, file.allowLegacy, file.fileCache, file.loading)
+	}
 	if !ok {
 		return nil, nil, "", false
 	}
@@ -180,11 +191,11 @@ func resolveImportedParentClass(file *pythonFileContext, parent string) (*python
 	return parentFile, parentNode, className, parentNode != nil
 }
 
-func loadPythonFileContext(sourceDir, module string, mode schema.Mode, fileCache map[string]*pythonFileContext, loading map[string]bool) (*pythonFileContext, bool) {
+func loadPythonFileContext(sourceDir, sourcePath, module string, mode schema.Mode, allowLegacy bool, fileCache map[string]*pythonFileContext, loading map[string]bool) (*pythonFileContext, bool) {
 	if isKnownExternalModule(module) {
 		return nil, false
 	}
-	pyPath := moduleToFilePath(module)
+	pyPath := moduleToFilePath(module, sourcePath)
 	if pyPath == "" {
 		return nil, false
 	}
@@ -211,9 +222,12 @@ func loadPythonFileContext(sourceDir, module string, mode schema.Mode, fileCache
 	root := tree.RootNode()
 	imports := CollectImports(root, source)
 	moduleScope := collectModuleScope(root, source)
-	modelCtx := &modelParseContext{imports: imports, typedDicts: make(map[string]bool), loadedModules: make(map[string]ModuleSummary)}
+	modelCtx := &modelParseContext{imports: imports, typedDicts: make(map[string]bool), loadedModules: make(map[string]ModuleSummary), sourcePath: pyPath}
 	modelClasses := collectModelClasses(root, source, modelCtx)
+	modelCtx.resolvedModels = modelClasses
 	resolveExternalModels(sourceDir, modelClasses, modelCtx)
+	modelCtx.resolvedModels = modelClasses
+	setDiscoveredModels(modelClasses, collectModelClasses(root, source, modelCtx))
 	inputRegistry := collectInputRegistry(root, source, imports, moduleScope)
 	fileCtx := &pythonFileContext{
 		root:          root,
@@ -224,7 +238,9 @@ func loadPythonFileContext(sourceDir, module string, mode schema.Mode, fileCache
 		modelClasses:  modelClasses,
 		typedDicts:    modelCtx.typedDicts,
 		sourceDir:     sourceDir,
+		sourcePath:    pyPath,
 		mode:          mode,
+		allowLegacy:   allowLegacy,
 		fileCache:     fileCache,
 		loading:       loading,
 	}
