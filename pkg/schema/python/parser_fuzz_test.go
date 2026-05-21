@@ -1,10 +1,26 @@
 package python
 
 import (
+	"context"
+	"runtime"
 	"testing"
+
+	sitter "github.com/smacker/go-tree-sitter"
+	sitterpython "github.com/smacker/go-tree-sitter/python"
 
 	schema "github.com/replicate/cog/pkg/schema"
 )
+
+func parseFuzzRoot(t *testing.T, source []byte) (*sitter.Tree, *sitter.Node) {
+	t.Helper()
+	parser := sitter.NewParser()
+	parser.SetLanguage(sitterpython.GetLanguage())
+	tree, err := parser.ParseCtx(context.Background(), nil, source)
+	if err != nil {
+		return nil, nil
+	}
+	return tree, tree.RootNode()
+}
 
 // FuzzParsePredictor feeds arbitrary bytes as Python source to the parser.
 // The parser should never panic regardless of input — it may return errors.
@@ -107,5 +123,84 @@ func FuzzParseTypeAnnotation(f *testing.F) {
 		source := []byte("from cog import BasePredictor\nfrom typing import *\nclass Predictor(BasePredictor):\n    def predict(self, x: str) -> " + typeName + ":\n        pass\n")
 		// Must not panic.
 		_, _ = ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	})
+}
+
+// FuzzCollectImportsAndModuleScope exercises the pre-target parser phases with
+// arbitrary Python source. These helpers should tolerate malformed or partial
+// modules and either collect known static information or ignore unsupported
+// forms without panicking.
+func FuzzCollectImportsAndModuleScope(f *testing.F) {
+	seeds := []string{
+		"from cog import Input\nVALUE = 'x'\n",
+		"import os, numpy as np\nCHOICES = ['a', 'b']\n",
+		"from .models import Output as ModelOutput\nLIMITS = {'low': 1}\n",
+		"VALUE = make_value()\n",
+		"",
+		"\xff\xfe\x00\x01",
+	}
+	for _, seed := range seeds {
+		f.Add([]byte(seed))
+	}
+
+	f.Fuzz(func(t *testing.T, source []byte) {
+		if len(source) > 64*1024 {
+			t.Skip("input too large")
+		}
+
+		tree, root := parseFuzzRoot(t, source)
+		if root == nil {
+			return
+		}
+		imports := CollectImports(root, source)
+		scope := collectModuleScope(root, source)
+		registry := collectInputRegistry(root, source, imports, scope)
+		_ = registry
+		runtime.KeepAlive(tree)
+	})
+}
+
+// FuzzParseDefaultExpression wraps arbitrary text as an assignment RHS and
+// exercises literal/default parsing plus module-scope expression resolution.
+func FuzzParseDefaultExpression(f *testing.F) {
+	seeds := []string{
+		"None",
+		"True",
+		"-3",
+		"'hello'",
+		"['a', 1]",
+		"{'low': 1, 'high': 2}",
+		"('a', 'b')",
+		"make_value()",
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, expr string) {
+		if len(expr) > 2048 {
+			t.Skip("input too large")
+		}
+
+		source := []byte("VALUE = " + expr + "\n")
+		tree, root := parseFuzzRoot(t, source)
+		if root == nil {
+			return
+		}
+		assign := findFirstNodeByType(root, "assignment")
+		if assign == nil {
+			return
+		}
+		right := assign.ChildByFieldName("right")
+		if right == nil {
+			return
+		}
+
+		_, _ = parseDefaultValue(right, source)
+		scope := collectModuleScope(root, source)
+		_, _ = resolveDefaultExpr(right, source, scope)
+		_, _ = resolveStringExpr(right, source, scope)
+		_, _ = resolveChoicesExpr(right, source, scope)
+		runtime.KeepAlive(tree)
 	})
 }
