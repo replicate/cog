@@ -9,13 +9,11 @@ import (
 )
 
 type ParserOptions struct {
-	Source     []byte
-	TargetRef  string
-	Mode       schema.Mode
-	SourceDir  string
-	SourcePath string
-	// Deprecated: use DisableLegacyPredict. DisableLegacyPredict takes precedence.
-	AllowLegacyPredict   bool
+	Source               []byte
+	TargetRef            string
+	Mode                 schema.Mode
+	SourceDir            string
+	SourcePath           string
 	DisableLegacyPredict bool
 }
 
@@ -74,12 +72,11 @@ func (p parsePhase) String() string {
 }
 
 type TargetCallable struct {
-	ClassName         string
-	FunctionName      string
-	MethodName        string
-	Node              *sitter.Node
-	IsMethod          bool
-	UsedLegacyPredict bool
+	ClassName    string
+	FunctionName string
+	MethodName   string
+	Node         *sitter.Node
+	IsMethod     bool
 }
 
 type ModuleSummary struct {
