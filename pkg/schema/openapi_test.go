@@ -689,6 +689,23 @@ func TestPredictionOperationOmitsStreamingExtensionByDefault(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestTrainingOperationOmitsStreamingExtensionWhenEnabled(t *testing.T) {
+	inputs := NewOrderedMap[string, InputField]()
+	info := &PredictorInfo{
+		Inputs:            inputs,
+		Output:            SchemaIteratorOf(SchemaPrim(TypeString)),
+		Mode:              ModeTrain,
+		SupportsStreaming: true,
+	}
+
+	spec := parseSpec(t, info)
+	postPath := getPath(spec, "paths", "/trainings", "post")
+	require.NotNil(t, postPath)
+	post := postPath.(map[string]any)
+	_, ok := post["x-cog-streaming"]
+	assert.False(t, ok)
+}
+
 func TestOutputObject(t *testing.T) {
 	inputs := NewOrderedMap[string, InputField]()
 	fields := NewOrderedMap[string, SchemaField]()

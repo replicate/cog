@@ -81,8 +81,9 @@ class Runner(BaseRunner):
             yield token
 ```
 
-The decorator can also be written as `@streaming()`,
-`@cog.streaming`, or `@cog.streaming()`.
+The decorator can also be written as `@cog.streaming`
+or, if imported directly from `cog`, `@streaming`.
+The parenthesized forms `@cog.streaming()` and `@streaming()` are also accepted.
 Without the decorator,
 iterator outputs still work in normal JSON responses,
 but requests with `Accept: text/event-stream` return `406 Not Acceptable`.
@@ -158,9 +159,7 @@ const response = await fetch("/predictions", {
   body: JSON.stringify({ input: { prompt: "Write a haiku about onions" } }),
 });
 
-const reader = response.body
-  .pipeThrough(new TextDecoderStream())
-  .getReader();
+const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
 
 while (true) {
   const { value, done } = await reader.read();

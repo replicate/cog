@@ -617,6 +617,34 @@ class Predictor(BasePredictor):
 	require.True(t, info.SupportsStreaming)
 }
 
+func TestStreamingDecoratorImportedAliasOptIn(t *testing.T) {
+	source := `
+from cog import BasePredictor, streaming as stream
+from typing import Iterator
+
+class Predictor(BasePredictor):
+    @stream
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorRequiresIteratorOutput(t *testing.T) {
+	source := `
+from cog import BasePredictor, streaming
+
+class Predictor(BasePredictor):
+    @streaming
+    def predict(self) -> str:
+        return "hello"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "@streaming requires")
+}
+
 func TestStreamingDecoratorIgnoredWhenNotFromCog(t *testing.T) {
 	source := `
 from other import streaming
@@ -754,6 +782,28 @@ def train(n: int) -> Path:
     pass
 `
 	info, err := ParsePredictor([]byte(source), "train", schema.ModeTrain, "")
+	require.NoError(t, err)
+	require.Equal(t, schema.ModeTrain, info.Mode)
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestTrainModeClassDecoratedMethod(t *testing.T) {
+	source := `
+from functools import wraps
+from cog import BasePredictor, Path
+
+def noop(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        return fn(*args, **kwargs)
+    return wrapper
+
+class Trainer(BasePredictor):
+    @noop
+    def train(self, n: int) -> Path:
+        pass
+`
+	info, err := ParsePredictor([]byte(source), "Trainer", schema.ModeTrain, "")
 	require.NoError(t, err)
 	require.Equal(t, schema.ModeTrain, info.Mode)
 	require.Equal(t, 1, info.Inputs.Len())

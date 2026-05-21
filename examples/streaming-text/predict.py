@@ -4,12 +4,12 @@ from typing import Iterator
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
 
-from cog import BasePredictor, Input, streaming
+from cog import BaseRunner, Input, streaming
 
 MODEL_NAME = "HuggingFaceTB/SmolLM2-135M-Instruct"
 
 
-class Predictor(BasePredictor):
+class Predictor(BaseRunner):
     def setup(self) -> None:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if self.device == "cuda" else torch.float32
@@ -22,7 +22,7 @@ class Predictor(BasePredictor):
         self.model.eval()
 
     @streaming
-    def predict(
+    def run(
         self,
         prompt: str = Input(description="Prompt to complete"),
         max_new_tokens: int = Input(
@@ -58,8 +58,9 @@ class Predictor(BasePredictor):
         thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
         thread.start()
 
-        for chunk in streamer:
-            if chunk:
-                yield chunk
-
-        thread.join()
+        try:
+            for chunk in streamer:
+                if chunk:
+                    yield chunk
+        finally:
+            thread.join()

@@ -76,7 +76,6 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	if err != nil {
 		return nil, err
 	}
-	supportsStreaming := functionSupportsStreaming(target.node, target.file.source, target.file.imports)
 	funcNode := target.node
 	targetSource := target.file.source
 	actualMethodName := methodName
@@ -116,6 +115,10 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	output, err := schema.ResolveSchemaType(returnTypeAnn, target.file.imports, target.file.modelClasses)
 	if err != nil {
 		return nil, err
+	}
+	supportsStreaming := functionSupportsStreaming(target.node, target.file.source, target.file.imports)
+	if supportsStreaming && !supportsStreamingOutput(output) {
+		return nil, schema.WrapError(schema.ErrUnsupportedType, "@streaming requires Iterator[...] or ConcatenateIterator[...] return type", nil)
 	}
 
 	return &schema.PredictorInfo{
@@ -727,11 +730,12 @@ func attributeIsCogStreaming(node *sitter.Node, source []byte, imports *schema.I
 }
 
 func identifierIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
-	if Content(node, source) != "streaming" {
-		return false
-	}
-	entry, ok := imports.Names.Get("streaming")
+	entry, ok := imports.Names.Get(Content(node, source))
 	return ok && entry.Module == "cog" && entry.Original == "streaming"
+}
+
+func supportsStreamingOutput(output schema.SchemaType) bool {
+	return output.Kind == schema.SchemaIterator || output.Kind == schema.SchemaConcatIterator
 }
 
 func InheritsFromBaseModel(classNode *sitter.Node, source []byte, imports *schema.ImportContext) bool {
@@ -1514,7 +1518,7 @@ func findMethodInClass(classNode *sitter.Node, source []byte, className, methodN
 		}
 		nameNode := funcNode.ChildByFieldName("name")
 		if nameNode != nil && Content(nameNode, source) == methodName {
-			return child, nil
+			return funcNode, nil
 		}
 	}
 

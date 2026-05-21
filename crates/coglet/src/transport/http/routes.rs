@@ -495,7 +495,13 @@ async fn create_prediction_with_id(
     // Async mode: spawn background task, return immediately
     if response_mode != PredictionResponseMode::SyncJson {
         let sse_subscription = if response_mode == PredictionResponseMode::AsyncSse {
-            Some(service.subscribe_prediction_stream(&prediction_id))
+            match service.subscribe_prediction_stream(&prediction_id) {
+                Ok(subscription) => Some(subscription),
+                Err(error) => {
+                    service.remove_prediction(&prediction_id);
+                    return stream_subscription_error_response(error);
+                }
+            }
         } else {
             None
         };
@@ -513,10 +519,7 @@ async fn create_prediction_with_id(
         });
 
         if response_mode == PredictionResponseMode::AsyncSse {
-            let subscription = match sse_subscription.expect("SSE subscription requested") {
-                Ok(subscription) => subscription,
-                Err(error) => return stream_subscription_error_response(error),
-            };
+            let subscription = sse_subscription.expect("SSE subscription requested");
             return stream_prediction_subscription_response(subscription);
         }
 
@@ -681,6 +684,8 @@ fn prediction_sse_stream(
     struct StreamState {
         replay: std::collections::VecDeque<SharedPredictionStreamEvent>,
         replay_skipped: u64,
+        // Drop order matters: receiver must drop before guard so stream_receiver_count()
+        // reaches zero before the guard decides whether to cancel on disconnect.
         receiver: tokio::sync::broadcast::Receiver<SharedPredictionStreamEvent>,
         _guard: crate::service::PredictionStreamGuard,
         done: bool,
@@ -761,6 +766,11 @@ fn stream_subscription_error_response(error: SubscribePredictionStreamError) -> 
         SubscribePredictionStreamError::TooManySubscribers => (
             StatusCode::TOO_MANY_REQUESTS,
             Json(serde_json::json!({"error": "Too many stream subscribers"})),
+        )
+            .into_response(),
+        SubscribePredictionStreamError::Unavailable => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Prediction stream unavailable"})),
         )
             .into_response(),
     }

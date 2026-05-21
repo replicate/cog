@@ -61,6 +61,8 @@ pub enum SubscribePredictionStreamError {
     NotFound,
     #[error("Too many stream subscribers")]
     TooManySubscribers,
+    #[error("Prediction stream unavailable")]
+    Unavailable,
 }
 
 /// Snapshot of service health for transports to query.
@@ -124,6 +126,8 @@ pub struct PredictionStreamSubscription {
     id: String,
     replay: std::collections::VecDeque<SharedPredictionStreamEvent>,
     skipped: u64,
+    // Drop order matters: receiver must drop before guard so stream_receiver_count()
+    // reaches zero before the guard decides whether to cancel on disconnect.
     receiver: tokio::sync::broadcast::Receiver<SharedPredictionStreamEvent>,
     guard: PredictionStreamGuard,
 }
@@ -561,10 +565,9 @@ impl PredictionService {
             .get(id)
             .ok_or(SubscribePredictionStreamError::NotFound)?;
         let stream = {
-            let prediction = entry
-                .prediction
-                .lock()
-                .map_err(|_| SubscribePredictionStreamError::NotFound)?;
+            let Some(prediction) = try_lock_prediction(&entry.prediction) else {
+                return Err(SubscribePredictionStreamError::Unavailable);
+            };
             if prediction.stream_receiver_count() >= MAX_STREAM_SUBSCRIBERS {
                 return Err(SubscribePredictionStreamError::TooManySubscribers);
             }
@@ -762,11 +765,13 @@ impl PredictionService {
             // Delegate to orchestrator to actually cancel the worker-side prediction.
             // This must be non-blocking since cancel() is sync, so we spawn a task.
             let id_owned = id.to_string();
-            let orchestrator = self
-                .orchestrator
-                .try_read()
-                .ok()
-                .and_then(|guard| guard.as_ref().map(|s| Arc::clone(&s.orchestrator)));
+            let orchestrator = match self.orchestrator.try_read() {
+                Ok(guard) => guard.as_ref().map(|s| Arc::clone(&s.orchestrator)),
+                Err(_) => {
+                    tracing::warn!(prediction_id = %id, "Skipped worker cancel: orchestrator lock unavailable");
+                    None
+                }
+            };
             if let Some(orch) = orchestrator {
                 spawn_orchestrator_cancel(orch, id_owned);
             }

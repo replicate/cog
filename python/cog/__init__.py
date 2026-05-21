@@ -44,18 +44,19 @@ _F = TypeVar("_F", bound=Callable[..., object])
 
 
 @overload
-def streaming(fn: _F) -> _F: ...
+def streaming(fn: _F) -> _F:
+    pass
 
 
 @overload
-def streaming(fn: None = None) -> Callable[[_F], _F]: ...
+def streaming(fn: None = None) -> Callable[[_F], _F]:
+    pass
 
 
 def streaming(fn: _F | None = None) -> _F | Callable[[_F], _F]:
     """Mark a predict handler as supporting streaming responses."""
 
     def decorate(inner: _F) -> _F:
-        inner.__cog_streaming__ = True  # type: ignore[attr-defined]
         return inner
 
     if fn is None:
