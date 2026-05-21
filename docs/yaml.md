@@ -1,6 +1,6 @@
 # `cog.yaml` reference
 
-`cog.yaml` defines how to build a Docker image and how to run predictions on your model inside that image.
+`cog.yaml` defines how to build a Docker image and how to run your model inside that image.
 
 It has three keys: [`build`](#build), [`image`](#image), and [`run`](#run). It looks a bit like this:
 
@@ -194,7 +194,7 @@ This stanza describes the concurrency capabilities of the model. It has one opti
 
 ### `max`
 
-The maximum number of concurrent predictions the model can process. If this is set, the model must specify an [async `run()` method](python.md#async-runners-and-concurrency).
+The maximum number of concurrent runs the model can process. If this is set, the model must specify an [async `run()` method](python.md#async-runners-and-concurrency).
 
 For example:
 

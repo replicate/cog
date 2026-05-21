@@ -215,13 +215,13 @@ cog push [IMAGE] [flags]
 
 ## `cog run`
 
-Run a prediction.
+Run the model.
 
-If 'image' is passed, it will run the prediction on that Docker image.
+If 'image' is passed, it will run the model on that Docker image.
 It must be an image that has been built by Cog.
 
 Otherwise, it will build the model in the current directory and run
-the prediction on that.
+it.
 
 ```
 cog run [image] [flags]
@@ -230,7 +230,7 @@ cog run [image] [flags]
 **Examples**
 
 ```
-  # Run a prediction with named inputs
+  # Run the model with named inputs
   cog run -i prompt="a photo of a cat"
 
   # Pass a file as input
@@ -268,7 +268,7 @@ cog run [image] [flags]
 
 ## `cog serve`
 
-Run a prediction HTTP server.
+Run an HTTP server.
 
 Builds the model and starts an HTTP server that exposes the model's inputs
 and outputs as a REST API. Compatible with the Cog HTTP protocol.
