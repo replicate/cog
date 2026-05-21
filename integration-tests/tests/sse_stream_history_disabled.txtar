@@ -1,0 +1,41 @@
+# Test that COG_STREAM_HISTORY_CAPACITY=0 disables SSE replay while live streaming still works.
+
+[short] skip 'requires Docker build'
+
+cog serve --upload-url http://unused/
+
+curl -H Prefer:respond-async PUT /predictions/replay-disabled '{"id":"replay-disabled","input":{"count":3,"sleep_after":1}}'
+stdout '"status":"starting"'
+
+exec sleep 0.5
+
+curl -H Accept:text/event-stream PUT /predictions/replay-disabled '{"id":"replay-disabled","input":{"count":3,"sleep_after":1}}'
+stdout 'event: completed'
+stdout '"status":"succeeded"'
+! stdout 'event: output'
+! stdout 'SSE stream replay truncated'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+environment:
+  - COG_STREAM_HISTORY_CAPACITY=0
+
+-- predict.py --
+import time
+from typing import Iterator
+
+from cog import BasePredictor, Input, streaming
+
+
+class Predictor(BasePredictor):
+    @streaming
+    def predict(
+        self,
+        count: int = Input(default=3),
+        sleep_after: float = Input(default=1.0),
+    ) -> Iterator[str]:
+        for index in range(count):
+            yield f"chunk-{index}"
+        time.sleep(sleep_after)

@@ -1,0 +1,41 @@
+# Test configurable SSE replay history capacity.
+
+[short] skip 'requires Docker build'
+
+cog serve --upload-url http://unused/
+
+# Capacity 2 should drop older replay events and close with an error for late subscribers.
+curl -H Prefer:respond-async PUT /predictions/replay-truncated '{"id":"replay-truncated","input":{"count":4,"sleep_after":2}}'
+stdout '"status":"starting"'
+
+exec sleep 1
+
+curl -H Accept:text/event-stream PUT /predictions/replay-truncated '{"id":"replay-truncated","input":{"count":4,"sleep_after":2}}'
+stdout 'event: error'
+stdout 'SSE stream replay truncated'
+stdout '"skipped":3'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+environment:
+  - COG_STREAM_HISTORY_CAPACITY=2
+
+-- predict.py --
+import time
+from typing import Iterator
+
+from cog import BasePredictor, Input, streaming
+
+
+class Predictor(BasePredictor):
+    @streaming
+    def predict(
+        self,
+        count: int = Input(default=4),
+        sleep_after: float = Input(default=2.0),
+    ) -> Iterator[str]:
+        for index in range(count):
+            yield f"chunk-{index}"
+        time.sleep(sleep_after)

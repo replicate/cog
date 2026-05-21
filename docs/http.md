@@ -17,13 +17,18 @@ The server supports both synchronous and asynchronous prediction creation:
   and processes the prediction in the background.
 
 The client can create a prediction asynchronously
-by setting the `Prefer: respond-async` header in their request.
-When provided, the server responds immediately after starting the prediction
-with `202 Accepted` status and a prediction object in status `processing`.
+by setting the `Prefer: respond-async` header in their request
+or by requesting a streamed response with `Accept: text/event-stream`.
+With `Prefer: respond-async`,
+the server responds immediately after starting the prediction
+with `202 Accepted` status and a prediction object in status `starting`.
+With `Accept: text/event-stream`,
+the server responds with `200 OK` and keeps the response open
+as a server-sent event stream.
 
 > [!NOTE]
-> The only supported way to receive updates on the status of predictions
-> started asynchronously is using [webhooks](#webhooks).
+> For JSON responses, the only supported way to receive updates on the status
+> of predictions started asynchronously is using [webhooks](#webhooks).
 > Polling for prediction status is not currently supported.
 
 You can also use certain server endpoints to create predictions idempotently,
@@ -31,27 +36,163 @@ such that if a client calls this endpoint more than once with the same ID
 (for example, due to a network interruption)
 while the prediction is still running,
 no new prediction is created.
-Instead, the client receives a `202 Accepted` response
-with the initial state of the prediction.
+Instead, the client receives the response type requested by the retry:
+JSON for regular requests or a server-sent event stream for streaming requests.
 
 ---
 
 Here's a summary of the prediction creation endpoints:
 
-| Endpoint                           | Header                  | Behavior                     |
-| ---------------------------------- | ----------------------- | ---------------------------- |
-| `POST /predictions`                | -                       | Synchronous, non-idempotent  |
-| `POST /predictions`                | `Prefer: respond-async` | Asynchronous, non-idempotent |
-| `PUT /predictions/<prediction_id>` | -                       | Synchronous, idempotent      |
-| `PUT /predictions/<prediction_id>` | `Prefer: respond-async` | Asynchronous, idempotent     |
+| Endpoint                           | Header                      | Behavior                     |
+| ---------------------------------- | --------------------------- | ---------------------------- |
+| `POST /predictions`                | -                           | Synchronous, non-idempotent  |
+| `POST /predictions`                | `Prefer: respond-async`     | Asynchronous, non-idempotent |
+| `POST /predictions`                | `Accept: text/event-stream` | Streaming, non-idempotent    |
+| `PUT /predictions/<prediction_id>` | -                           | Synchronous, idempotent      |
+| `PUT /predictions/<prediction_id>` | `Prefer: respond-async`     | Asynchronous, idempotent     |
+| `PUT /predictions/<prediction_id>` | `Accept: text/event-stream` | Streaming, idempotent        |
 
 Choose the endpoint that best fits your needs:
 
 - Use synchronous endpoints when you want to wait for the prediction result.
 - Use asynchronous endpoints when you want to start a prediction
   and receive updates via webhooks.
+- Use streaming endpoints when you want to receive prediction lifecycle events
+  over the HTTP response as they happen.
 - Use idempotent endpoints when you need to safely retry requests
   without creating duplicate predictions.
+
+## Streaming predictions with server-sent events
+
+To produce streamed prediction events,
+the model must return an iterator and opt in to SSE streaming
+with the `streaming` decorator.
+
+```python
+from typing import Iterator
+
+from cog import BaseRunner, Input, streaming
+
+
+class Runner(BaseRunner):
+    @streaming
+    def run(self, prompt: str = Input(description="Prompt")) -> Iterator[str]:
+        for token in generate_tokens(prompt):
+            yield token
+```
+
+The decorator can also be written as `@streaming()`,
+`@cog.streaming`, or `@cog.streaming()`.
+Without the decorator,
+iterator outputs still work in normal JSON responses,
+but requests with `Accept: text/event-stream` return `406 Not Acceptable`.
+
+To consume a streamed prediction,
+send the prediction request with `Accept: text/event-stream`:
+
+```http
+POST /predictions HTTP/1.1
+Content-Type: application/json; charset=utf-8
+Accept: text/event-stream
+
+{
+    "input": {"prompt": "Write a haiku about onions"}
+}
+```
+
+The server starts the prediction asynchronously
+and keeps the HTTP response open as a server-sent event stream.
+Each event has an `event` name and JSON `data` payload:
+
+```text
+event: start
+data: {"id":"abc123","status":"processing"}
+
+event: output
+data: {"chunk":"Onions","index":0}
+
+event: output
+data: {"chunk":" bloom","index":1}
+
+event: completed
+data: {"id":"abc123","status":"succeeded","output":["Onions"," bloom"],"metrics":{"predict_time":0.42}}
+```
+
+Prediction streams can emit these event types:
+
+- `start`: The prediction started processing.
+- `output`: The model yielded an output chunk.
+  The payload includes `chunk` and `index`.
+- `log`: The model wrote to `stdout` or `stderr`.
+  The payload includes `source` and `data`.
+- `metric`: The model recorded a custom metric.
+  The payload includes `name`, `value`, and `mode`.
+- `completed`: The prediction reached a terminal state.
+  The payload is the final prediction object,
+  with `status` set to `succeeded`, `failed`, or `canceled`.
+
+For command-line clients,
+use a client that prints the response as data arrives:
+
+```bash
+curl -N \
+  -H 'Accept: text/event-stream' \
+  -H 'Content-Type: application/json' \
+  -d '{"input":{"prompt":"Write a haiku about onions"}}' \
+  http://localhost:5000/predictions
+```
+
+For browser clients,
+use `fetch()` or another client that supports request bodies.
+The browser `EventSource` API only supports `GET` requests,
+so it cannot create a prediction with `POST /predictions` or
+`PUT /predictions/<prediction_id>`.
+
+```js
+const response = await fetch("/predictions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  },
+  body: JSON.stringify({ input: { prompt: "Write a haiku about onions" } }),
+});
+
+const reader = response.body
+  .pipeThrough(new TextDecoderStream())
+  .getReader();
+
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  console.log(value);
+}
+```
+
+Use `PUT /predictions/<prediction_id>` when the client needs safe retries
+or wants to reconnect to an in-flight prediction by ID:
+
+```http
+PUT /predictions/wjx3whax6rf4vphkegkhcvpv6a HTTP/1.1
+Content-Type: application/json; charset=utf-8
+Accept: text/event-stream
+
+{
+    "input": {"prompt": "Write a haiku about onions"}
+}
+```
+
+If the prediction is still running,
+the server returns a stream for the existing prediction
+instead of creating a duplicate prediction.
+If earlier events have been dropped from the replay buffer,
+the stream emits an `error` event and closes.
+The replay buffer keeps the most recent 1024 events by default.
+Set `COG_STREAM_HISTORY_CAPACITY` to change this limit,
+or set it to `0` to disable replay history while keeping live streaming enabled.
+Training endpoints do not support SSE streaming;
+requests to `/trainings` with `Accept: text/event-stream`
+return `406 Not Acceptable`.
 
 ## Webhooks
 
@@ -367,6 +508,11 @@ Content-Type: application/json
 }
 ```
 
+If the client sets the `Accept: text/event-stream` header,
+the server starts the prediction asynchronously and responds with a
+server-sent event stream.
+See [Streaming predictions with server-sent events](#streaming-predictions-with-server-sent-events).
+
 ### `PUT /predictions/<prediction_id>`
 
 Make a single prediction.
@@ -414,6 +560,13 @@ Content-Type: application/json
     "status": "starting"
 }
 ```
+
+If the client sets the `Accept: text/event-stream` header,
+the server starts the prediction asynchronously and responds with a
+server-sent event stream.
+If a prediction with the same ID is already running,
+the server returns a stream for the existing prediction.
+See [Streaming predictions with server-sent events](#streaming-predictions-with-server-sent-events).
 
 ### `POST /predictions/<prediction_id>/cancel`
 

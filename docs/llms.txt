@@ -608,13 +608,13 @@ See the [environment variables reference](environment.md) for the full list.
 
 # Environment variables
 
-This guide lists the environment variables that change how Cog functions.
+This reference lists the public Cog-specific environment variables that change how Cog behaves.
 
 ## Build-time variables
 
 ### `COG_SDK_WHEEL`
 
-Controls which cog Python SDK wheel is installed in the Docker image during `cog build`. Takes precedence over `build.sdk_version` in `cog.yaml`.
+Controls which Cog Python SDK wheel is installed in the Docker image during `cog build`. Takes precedence over `build.sdk_version` in `cog.yaml`.
 
 **Supported values:**
 
@@ -626,77 +626,39 @@ Controls which cog Python SDK wheel is installed in the Docker image during `cog
 | `https://...`        | Install from URL                                     |
 | `/path/to/wheel.whl` | Install from local file path                         |
 
-**Default behavior:**
+**Default behaviour:**
 
-- **Release builds**: Installs latest cog from PyPI
-- **Development builds**: Auto-detects wheel in `dist/` directory, falls back to latest PyPI
-
-**Examples:**
+- Release builds install the latest Cog SDK from PyPI.
+- Development builds auto-detect a wheel in `dist/`, then fall back to the latest Cog SDK from PyPI.
 
 ```console
-# Use specific PyPI version
 $ COG_SDK_WHEEL=pypi:0.11.0 cog build
-
-# Use local development wheel
 $ COG_SDK_WHEEL=dist cog build
-
-# Use wheel from URL
 $ COG_SDK_WHEEL=https://example.com/cog-0.12.0-py3-none-any.whl cog build
 ```
 
 The `dist` option searches for wheels in:
 
 1. `./dist/` (current directory)
-2. `$REPO_ROOT/dist/` (if REPO_ROOT is set)
+2. `$REPO_ROOT/dist/` (if `REPO_ROOT` is set)
 3. `<git-repo-root>/dist/` (via `git rev-parse`, useful when running from subdirectories)
 
 ### `COGLET_WHEEL`
 
-Controls which coglet wheel is installed in the Docker image. Coglet is the Rust-based prediction server.
+Controls which Coglet wheel is installed in the Docker image. Coglet is the Rust-based prediction server.
 
-**Supported values:** Same as `COG_SDK_WHEEL`
+**Supported values:** Same as `COG_SDK_WHEEL`.
 
-**Default behavior:** For development builds, auto-detects a wheel in `dist/`. For release builds, installs the latest version from PyPI. Can be overridden with an explicit value.
-
-**Examples:**
+**Default behaviour:** For development builds, auto-detects a wheel in `dist/`. For release builds, installs the latest version from PyPI.
 
 ```console
-# Use local development wheel
 $ COGLET_WHEEL=dist cog build
-
-# Use specific version from PyPI
 $ COGLET_WHEEL=pypi:0.1.0 cog build
-```
-
-## Runtime variables
-
-### `COG_NO_UPDATE_CHECK`
-
-By default, Cog automatically checks for updates
-and notifies you if there is a new version available.
-
-To disable this behavior,
-set the `COG_NO_UPDATE_CHECK` environment variable to any value.
-
-```console
-$ COG_NO_UPDATE_CHECK=1 cog build  # runs without automatic update check
-```
-
-### `COG_SETUP_TIMEOUT`
-
-Controls the maximum time (in seconds) allowed for the model's `setup()` method to complete. If setup exceeds this timeout, the server will report a setup failure.
-
-By default, there is no timeout — setup runs indefinitely.
-
-Set to `0` to disable the timeout (same as default). Invalid values are ignored with a warning.
-
-```console
-$ COG_SETUP_TIMEOUT=300 docker run -p 5000:5000 my-model  # 5-minute setup timeout
 ```
 
 ### `COG_CA_CERT`
 
-Injects a custom CA certificate into the Docker image during `cog build`. This is useful when building behind a corporate proxy or VPN that uses custom certificate authorities (e.g. Cloudflare WARP).
+Injects a custom CA certificate into the Docker image during `cog build`. This is useful when building behind a corporate proxy or VPN that uses custom certificate authorities (for example, Cloudflare WARP).
 
 **Supported values:**
 
@@ -709,17 +671,219 @@ Injects a custom CA certificate into the Docker image during `cog build`. This i
 
 The certificate is installed into the system CA store and the `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` environment variables are set automatically in the built image.
 
-**Examples:**
+```console
+$ COG_CA_CERT=/usr/local/share/ca-certificates/corporate-ca.crt cog build
+$ COG_CA_CERT=/etc/custom-certs/ cog build
+$ COG_CA_CERT="$(cat /path/to/cert.pem)" cog build
+```
+
+### `COG_OPENAPI_SCHEMA`
+
+Uses a pre-built OpenAPI schema instead of generating one from the configured predict or train reference.
+
+The value must be a path to a JSON schema file. Cog reads that file during schema generation and embeds it in the built image.
 
 ```console
-# From a file
-$ COG_CA_CERT=/usr/local/share/ca-certificates/corporate-ca.crt cog build
+$ COG_OPENAPI_SCHEMA=./openapi.json cog build
+```
 
-# From a directory of certs
-$ COG_CA_CERT=/etc/custom-certs/ cog build
+## CLI and local cache variables
 
-# Inline (e.g. from a CI secret)
-$ COG_CA_CERT="$(cat /path/to/cert.pem)" cog build
+### `COG_NO_UPDATE_CHECK`
+
+Disables Cog's automatic update check. Set it to any non-empty value.
+
+```console
+$ COG_NO_UPDATE_CHECK=1 cog build
+```
+
+### `COG_NO_COLOR`
+
+Disables coloured CLI output. Set it to any non-empty value.
+
+Cog also honours the standard `NO_COLOR` environment variable.
+
+```console
+$ COG_NO_COLOR=1 cog predict -i prompt="hello"
+```
+
+### `COG_SKIP_DOCKER_CHECK`
+
+Skips the `cog doctor` Docker environment check. Set it to any non-empty value.
+
+```console
+$ COG_SKIP_DOCKER_CHECK=1 cog doctor
+```
+
+### `COG_CACHE_DIR`
+
+Overrides Cog's local cache root.
+
+Cog currently uses this cache for the content-addressed weights store. If unset, Cog uses `$XDG_CACHE_HOME/cog` when `XDG_CACHE_HOME` is set, otherwise `$HOME/.cache/cog`.
+
+```console
+$ COG_CACHE_DIR=/mnt/fast-cache cog weights pull
+```
+
+## Model reference and registry variables
+
+### `COG_MODEL`
+
+Overrides the full model reference used by commands that need a model destination, such as `cog push` and weights commands.
+
+The value is parsed as a complete model reference (`registry/repo`, `registry/repo:tag`, or `registry/repo@digest`). If no tag is supplied, Cog generates a timestamp tag.
+
+When `COG_MODEL` is set, it takes precedence over `COG_MODEL_REGISTRY`, `COG_MODEL_REPO`, and `COG_MODEL_TAG`.
+
+```console
+$ COG_MODEL=r8.im/acme/my-model:v1 cog push
+```
+
+### `COG_MODEL_REGISTRY`
+
+Overrides only the registry host of the model reference.
+
+```console
+$ COG_MODEL_REGISTRY=registry.example.com cog push
+```
+
+### `COG_MODEL_REPO`
+
+Overrides only the repository path of the model reference. The value must not include a registry host, tag, or digest.
+
+```console
+$ COG_MODEL_REPO=acme/my-model cog push
+```
+
+### `COG_MODEL_TAG`
+
+Overrides only the tag of the model reference.
+
+Tags starting with `cog-` are reserved for tags that Cog generates internally and are rejected.
+
+```console
+$ COG_MODEL_TAG=staging cog push
+```
+
+### `COG_REGISTRY_HOST`
+
+Changes the default Replicate-compatible registry host used by commands such as `cog login`, base image resolution, and model reference resolution.
+
+The default is `r8.im`.
+
+```console
+$ COG_REGISTRY_HOST=registry.example.com cog login
+```
+
+## Runtime server variables
+
+These variables affect a running model server. Set them in `cog.yaml` under `environment`, pass them with `cog predict -e` or `cog serve -e`, or set them when running the built Docker image.
+
+### `COG_MAX_CONCURRENCY`
+
+Controls how many predictions the model server can run concurrently.
+
+By default, Cog runs one prediction at a time. Invalid values are ignored and the default of `1` is used.
+
+```console
+$ COG_MAX_CONCURRENCY=4 docker run -p 5000:5000 my-model
+```
+
+### `COG_SETUP_TIMEOUT`
+
+Controls the maximum time, in seconds, allowed for the model's `setup()` method to complete. If setup exceeds this timeout, the server reports setup failure.
+
+By default, there is no timeout. Set to `0` to disable the timeout. Invalid values are ignored with a warning.
+
+```console
+$ COG_SETUP_TIMEOUT=300 docker run -p 5000:5000 my-model
+```
+
+### `COG_LOG_LEVEL`
+
+Controls Coglet runtime log verbosity when `RUST_LOG` is not set.
+
+Supported values are `debug`, `info`, `warn`, `warning`, and `error`. The default is `info`.
+
+```console
+$ COG_LOG_LEVEL=debug docker run -p 5000:5000 my-model
+```
+
+### `COG_THROTTLE_RESPONSE_INTERVAL`
+
+Controls how often asynchronous webhook `output` and `logs` events are sent, in seconds.
+
+The default is `0.5` seconds. Invalid values are ignored and the default is used. `start` and `completed` webhook events are always sent immediately.
+
+```console
+$ COG_THROTTLE_RESPONSE_INTERVAL=1 docker run -p 5000:5000 my-model
+```
+
+### `COG_STREAM_HISTORY_CAPACITY`
+
+Controls how many server-sent event stream events are retained per prediction for replay when a client reconnects with `Accept: text/event-stream`.
+
+By default, Cog retains the most recent 1024 events per prediction. Set to `0` to disable replay history while keeping live streaming enabled. Invalid values are ignored with a warning and the default is used.
+
+```console
+$ COG_STREAM_HISTORY_CAPACITY=0 docker run -p 5000:5000 my-model
+$ COG_STREAM_HISTORY_CAPACITY=4096 docker run -p 5000:5000 my-model
+```
+
+### `COG_WEIGHTS`
+
+Provides a weights path or URL to a model whose `setup()` method accepts a `weights` parameter.
+
+```console
+$ cog run -e COG_WEIGHTS=https://example.com/weights.tar -i prompt="hello"
+```
+
+### `COG_USER_AGENT`
+
+Sets the `User-Agent` header used by Cog when downloading URL-backed `File` inputs.
+
+```console
+$ COG_USER_AGENT="my-service/1.0" docker run -p 5000:5000 my-model
+```
+
+## Push tuning variables
+
+### `COG_PUSH_OCI`
+
+Enables Cog's OCI chunked push path for container image layers when set to `1`. If the OCI push fails with a non-fatal error, Cog falls back to Docker's native push path.
+
+```console
+$ COG_PUSH_OCI=1 cog push
+```
+
+### `COG_PUSH_CONCURRENCY`
+
+Controls how many image layers or weight blobs Cog uploads concurrently during push operations.
+
+The default is `5`. Invalid values and values less than `1` are ignored.
+
+```console
+$ COG_PUSH_CONCURRENCY=2 cog push
+```
+
+### `COG_PUSH_DEFAULT_CHUNK_SIZE`
+
+Sets the default multipart upload chunk size, in bytes, when the registry does not advertise a maximum chunk size.
+
+The default is 96 MiB. Invalid values and values less than `1` are ignored.
+
+```console
+$ COG_PUSH_DEFAULT_CHUNK_SIZE=67108864 cog push
+```
+
+### `COG_PUSH_MULTIPART_THRESHOLD`
+
+Sets the minimum blob size, in bytes, before Cog uses multipart upload.
+
+The default is 128 MiB. Invalid values and values less than `1` are ignored.
+
+```console
+$ COG_PUSH_MULTIPART_THRESHOLD=268435456 cog push
 ```
 
 
@@ -1158,13 +1322,18 @@ The server supports both synchronous and asynchronous prediction creation:
   and processes the prediction in the background.
 
 The client can create a prediction asynchronously
-by setting the `Prefer: respond-async` header in their request.
-When provided, the server responds immediately after starting the prediction
-with `202 Accepted` status and a prediction object in status `processing`.
+by setting the `Prefer: respond-async` header in their request
+or by requesting a streamed response with `Accept: text/event-stream`.
+With `Prefer: respond-async`,
+the server responds immediately after starting the prediction
+with `202 Accepted` status and a prediction object in status `starting`.
+With `Accept: text/event-stream`,
+the server responds with `200 OK` and keeps the response open
+as a server-sent event stream.
 
 > [!NOTE]
-> The only supported way to receive updates on the status of predictions
-> started asynchronously is using [webhooks](#webhooks).
+> For JSON responses, the only supported way to receive updates on the status
+> of predictions started asynchronously is using [webhooks](#webhooks).
 > Polling for prediction status is not currently supported.
 
 You can also use certain server endpoints to create predictions idempotently,
@@ -1172,27 +1341,163 @@ such that if a client calls this endpoint more than once with the same ID
 (for example, due to a network interruption)
 while the prediction is still running,
 no new prediction is created.
-Instead, the client receives a `202 Accepted` response
-with the initial state of the prediction.
+Instead, the client receives the response type requested by the retry:
+JSON for regular requests or a server-sent event stream for streaming requests.
 
 ---
 
 Here's a summary of the prediction creation endpoints:
 
-| Endpoint                           | Header                  | Behavior                     |
-| ---------------------------------- | ----------------------- | ---------------------------- |
-| `POST /predictions`                | -                       | Synchronous, non-idempotent  |
-| `POST /predictions`                | `Prefer: respond-async` | Asynchronous, non-idempotent |
-| `PUT /predictions/<prediction_id>` | -                       | Synchronous, idempotent      |
-| `PUT /predictions/<prediction_id>` | `Prefer: respond-async` | Asynchronous, idempotent     |
+| Endpoint                           | Header                      | Behavior                     |
+| ---------------------------------- | --------------------------- | ---------------------------- |
+| `POST /predictions`                | -                           | Synchronous, non-idempotent  |
+| `POST /predictions`                | `Prefer: respond-async`     | Asynchronous, non-idempotent |
+| `POST /predictions`                | `Accept: text/event-stream` | Streaming, non-idempotent    |
+| `PUT /predictions/<prediction_id>` | -                           | Synchronous, idempotent      |
+| `PUT /predictions/<prediction_id>` | `Prefer: respond-async`     | Asynchronous, idempotent     |
+| `PUT /predictions/<prediction_id>` | `Accept: text/event-stream` | Streaming, idempotent        |
 
 Choose the endpoint that best fits your needs:
 
 - Use synchronous endpoints when you want to wait for the prediction result.
 - Use asynchronous endpoints when you want to start a prediction
   and receive updates via webhooks.
+- Use streaming endpoints when you want to receive prediction lifecycle events
+  over the HTTP response as they happen.
 - Use idempotent endpoints when you need to safely retry requests
   without creating duplicate predictions.
+
+## Streaming predictions with server-sent events
+
+To produce streamed prediction events,
+the model must return an iterator and opt in to SSE streaming
+with the `streaming` decorator.
+
+```python
+from typing import Iterator
+
+from cog import BaseRunner, Input, streaming
+
+
+class Runner(BaseRunner):
+    @streaming
+    def run(self, prompt: str = Input(description="Prompt")) -> Iterator[str]:
+        for token in generate_tokens(prompt):
+            yield token
+```
+
+The decorator can also be written as `@streaming()`,
+`@cog.streaming`, or `@cog.streaming()`.
+Without the decorator,
+iterator outputs still work in normal JSON responses,
+but requests with `Accept: text/event-stream` return `406 Not Acceptable`.
+
+To consume a streamed prediction,
+send the prediction request with `Accept: text/event-stream`:
+
+```http
+POST /predictions HTTP/1.1
+Content-Type: application/json; charset=utf-8
+Accept: text/event-stream
+
+{
+    "input": {"prompt": "Write a haiku about onions"}
+}
+```
+
+The server starts the prediction asynchronously
+and keeps the HTTP response open as a server-sent event stream.
+Each event has an `event` name and JSON `data` payload:
+
+```text
+event: start
+data: {"id":"abc123","status":"processing"}
+
+event: output
+data: {"chunk":"Onions","index":0}
+
+event: output
+data: {"chunk":" bloom","index":1}
+
+event: completed
+data: {"id":"abc123","status":"succeeded","output":["Onions"," bloom"],"metrics":{"predict_time":0.42}}
+```
+
+Prediction streams can emit these event types:
+
+- `start`: The prediction started processing.
+- `output`: The model yielded an output chunk.
+  The payload includes `chunk` and `index`.
+- `log`: The model wrote to `stdout` or `stderr`.
+  The payload includes `source` and `data`.
+- `metric`: The model recorded a custom metric.
+  The payload includes `name`, `value`, and `mode`.
+- `completed`: The prediction reached a terminal state.
+  The payload is the final prediction object,
+  with `status` set to `succeeded`, `failed`, or `canceled`.
+
+For command-line clients,
+use a client that prints the response as data arrives:
+
+```bash
+curl -N \
+  -H 'Accept: text/event-stream' \
+  -H 'Content-Type: application/json' \
+  -d '{"input":{"prompt":"Write a haiku about onions"}}' \
+  http://localhost:5000/predictions
+```
+
+For browser clients,
+use `fetch()` or another client that supports request bodies.
+The browser `EventSource` API only supports `GET` requests,
+so it cannot create a prediction with `POST /predictions` or
+`PUT /predictions/<prediction_id>`.
+
+```js
+const response = await fetch("/predictions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  },
+  body: JSON.stringify({ input: { prompt: "Write a haiku about onions" } }),
+});
+
+const reader = response.body
+  .pipeThrough(new TextDecoderStream())
+  .getReader();
+
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  console.log(value);
+}
+```
+
+Use `PUT /predictions/<prediction_id>` when the client needs safe retries
+or wants to reconnect to an in-flight prediction by ID:
+
+```http
+PUT /predictions/wjx3whax6rf4vphkegkhcvpv6a HTTP/1.1
+Content-Type: application/json; charset=utf-8
+Accept: text/event-stream
+
+{
+    "input": {"prompt": "Write a haiku about onions"}
+}
+```
+
+If the prediction is still running,
+the server returns a stream for the existing prediction
+instead of creating a duplicate prediction.
+If earlier events have been dropped from the replay buffer,
+the stream emits an `error` event and closes.
+The replay buffer keeps the most recent 1024 events by default.
+Set `COG_STREAM_HISTORY_CAPACITY` to change this limit,
+or set it to `0` to disable replay history while keeping live streaming enabled.
+Training endpoints do not support SSE streaming;
+requests to `/trainings` with `Accept: text/event-stream`
+return `406 Not Acceptable`.
 
 ## Webhooks
 
@@ -1508,6 +1813,11 @@ Content-Type: application/json
 }
 ```
 
+If the client sets the `Accept: text/event-stream` header,
+the server starts the prediction asynchronously and responds with a
+server-sent event stream.
+See [Streaming predictions with server-sent events](#streaming-predictions-with-server-sent-events).
+
 ### `PUT /predictions/<prediction_id>`
 
 Make a single prediction.
@@ -1555,6 +1865,13 @@ Content-Type: application/json
     "status": "starting"
 }
 ```
+
+If the client sets the `Accept: text/event-stream` header,
+the server starts the prediction asynchronously and responds with a
+server-sent event stream.
+If a prediction with the same ID is already running,
+the server returns a stream for the existing prediction.
+See [Streaming predictions with server-sent events](#streaming-predictions-with-server-sent-events).
 
 ### `POST /predictions/<prediction_id>/cancel`
 
