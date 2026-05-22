@@ -197,9 +197,10 @@ func (f *InputField) IsRequired() bool {
 
 // PredictorInfo is the top-level extraction result.
 type PredictorInfo struct {
-	Inputs *OrderedMap[string, InputField]
-	Output SchemaType
-	Mode   Mode
+	Inputs            *OrderedMap[string, InputField]
+	Output            SchemaType
+	Mode              Mode
+	SupportsStreaming bool
 }
 
 // TypeAnnotation is a parsed Python type annotation (intermediate, before resolution).

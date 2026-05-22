@@ -59,7 +59,6 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	if mode == schema.ModeTrain {
 		methodName = "train"
 	}
-
 	fileCtx := &pythonFileContext{
 		root:          root,
 		source:        source,
@@ -117,11 +116,16 @@ func ParsePredictor(source []byte, predictRef string, mode schema.Mode, sourceDi
 	if err != nil {
 		return nil, err
 	}
+	supportsStreaming := functionSupportsStreaming(target.node, target.file.source, target.file.imports)
+	if supportsStreaming && !supportsStreamingOutput(output) {
+		return nil, schema.WrapError(schema.ErrUnsupportedType, "@streaming requires Iterator[...] or ConcatenateIterator[...] return type", nil)
+	}
 
 	return &schema.PredictorInfo{
-		Inputs: inputs,
-		Output: output,
-		Mode:   mode,
+		Inputs:            inputs,
+		Output:            output,
+		Mode:              mode,
+		SupportsStreaming: supportsStreaming,
 	}, nil
 }
 
@@ -668,6 +672,70 @@ func UnwrapFunction(node *sitter.Node) *sitter.Node {
 		}
 	}
 	return nil
+}
+
+func functionSupportsStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	if node.Type() == "function_definition" {
+		parent := node.Parent()
+		if parent == nil || parent.Type() != "decorated_definition" {
+			return false
+		}
+		node = parent
+	}
+
+	if node.Type() != "decorated_definition" {
+		return false
+	}
+	for _, child := range NamedChildren(node) {
+		if child.Type() != "decorator" {
+			continue
+		}
+		if decoratorIsCogStreaming(child, source, imports) {
+			return true
+		}
+	}
+	return false
+}
+
+func decoratorIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	for _, child := range NamedChildren(node) {
+		switch child.Type() {
+		case "attribute":
+			return attributeIsCogStreaming(child, source, imports)
+		case "identifier":
+			return identifierIsCogStreaming(child, source, imports)
+		case "call":
+			callee := child.ChildByFieldName("function")
+			if callee == nil {
+				return false
+			}
+			switch callee.Type() {
+			case "attribute":
+				return attributeIsCogStreaming(callee, source, imports)
+			case "identifier":
+				return identifierIsCogStreaming(callee, source, imports)
+			}
+		}
+	}
+	return false
+}
+
+func attributeIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	parts := strings.SplitN(Content(node, source), ".", 2)
+	if len(parts) != 2 || parts[1] != "streaming" {
+		return false
+	}
+	entry, ok := imports.Names.Get(parts[0])
+	return ok && entry.Module == "cog" && entry.Original == "cog"
+}
+
+func identifierIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	entry, ok := imports.Names.Get(Content(node, source))
+	return ok && entry.Module == "cog" && entry.Original == "streaming"
+}
+
+func supportsStreamingOutput(output schema.SchemaType) bool {
+	return output.Kind == schema.SchemaIterator || output.Kind == schema.SchemaConcatIterator
 }
 
 func InheritsFromBaseModel(classNode *sitter.Node, source []byte, imports *schema.ImportContext) bool {
