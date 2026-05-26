@@ -266,13 +266,15 @@ func decoratorIsCogStreaming(node *sitter.Node, source []byte, imports *schema.I
 }
 
 func decoratorExpression(node *sitter.Node) *sitter.Node {
-	for _, child := range NamedChildren(node) {
-		if child.Type() == "call" {
-			return child.ChildByFieldName("function")
-		}
-		return child
+	children := NamedChildren(node)
+	if len(children) == 0 {
+		return nil
 	}
-	return nil
+	child := children[0]
+	if child.Type() == "call" {
+		return child.ChildByFieldName("function")
+	}
+	return child
 }
 
 func expressionIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
