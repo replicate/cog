@@ -92,18 +92,19 @@ type ParseState struct {
 	Tree    *sitter.Tree
 	Root    *sitter.Node
 
-	Imports       *schema.ImportContext
-	Scope         moduleScope
-	ModelCtx      *modelParseContext
-	Models        schema.ModelClassMap
-	LoadedModules map[string]ModuleSummary
-	Registry      *inputRegistry
-	Target        *TargetCallable
-	FileCtx       *pythonFileContext
-	TargetFunc    *targetFunction
-	Inputs        *schema.OrderedMap[string, schema.InputField]
-	Output        schema.SchemaType
-	OutputSet     bool
+	Imports           *schema.ImportContext
+	Scope             moduleScope
+	ModelCtx          *modelParseContext
+	Models            schema.ModelClassMap
+	LoadedModules     map[string]ModuleSummary
+	Registry          *inputRegistry
+	Target            *TargetCallable
+	FileCtx           *pythonFileContext
+	TargetFunc        *targetFunction
+	Inputs            *schema.OrderedMap[string, schema.InputField]
+	Output            schema.SchemaType
+	SupportsStreaming bool
+	OutputSet         bool
 }
 
 func newParseState(opts ParserOptions) *ParseState {

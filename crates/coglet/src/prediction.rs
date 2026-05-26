@@ -1,14 +1,18 @@
 //! Prediction state tracking.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::sync::Notify;
 pub use tokio_util::sync::CancellationToken;
 
-use crate::bridge::protocol::MetricMode;
+use crate::bridge::protocol::{LogSource, MetricMode};
 use crate::webhook::{WebhookEventType, WebhookSender};
+
+pub const STREAM_CHANNEL_CAPACITY: usize = 1024;
+pub const DEFAULT_STREAM_HISTORY_CAPACITY: usize = 1024;
+const STREAM_HISTORY_CAPACITY_ENV: &str = "COG_STREAM_HISTORY_CAPACITY";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredictionStatus {
@@ -64,6 +68,73 @@ impl PredictionOutput {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum PredictionStreamEvent {
+    Start {
+        id: String,
+        status: String,
+    },
+    Output {
+        chunk: serde_json::Value,
+        index: u64,
+    },
+    Log {
+        source: LogSource,
+        data: String,
+    },
+    Metric {
+        name: String,
+        value: serde_json::Value,
+        mode: MetricMode,
+    },
+    Completed {
+        payload: serde_json::Value,
+    },
+}
+
+pub type SharedPredictionStreamEvent = Arc<PredictionStreamEvent>;
+
+pub struct PredictionStreamReplay {
+    pub replay: VecDeque<SharedPredictionStreamEvent>,
+    pub skipped: u64,
+    pub receiver: tokio::sync::broadcast::Receiver<SharedPredictionStreamEvent>,
+}
+
+impl PredictionStreamEvent {
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            Self::Start { .. } => "start",
+            Self::Output { .. } => "output",
+            Self::Log { .. } => "log",
+            Self::Metric { .. } => "metric",
+            Self::Completed { .. } => "completed",
+        }
+    }
+
+    pub fn json_data(&self) -> serde_json::Value {
+        match self {
+            Self::Start { id, status } => serde_json::json!({
+                "id": id,
+                "status": status,
+            }),
+            Self::Output { chunk, index } => serde_json::json!({
+                "chunk": chunk,
+                "index": index,
+            }),
+            Self::Log { source, data } => serde_json::json!({
+                "source": source,
+                "data": data,
+            }),
+            Self::Metric { name, value, mode } => serde_json::json!({
+                "name": name,
+                "value": value,
+                "mode": mode,
+            }),
+            Self::Completed { payload } => payload.clone(),
+        }
+    }
+}
+
 /// Prediction lifecycle state.
 pub struct Prediction {
     id: String,
@@ -76,12 +147,19 @@ pub struct Prediction {
     error: Option<String>,
     webhook: Option<WebhookSender>,
     completion: Arc<Notify>,
+    stream_tx: tokio::sync::broadcast::Sender<SharedPredictionStreamEvent>,
+    stream_history: VecDeque<SharedPredictionStreamEvent>,
+    stream_history_capacity: usize,
+    stream_history_skipped: u64,
     /// User-emitted metrics. Merged with system metrics (predict_time) in terminal response.
     metrics: HashMap<String, serde_json::Value>,
 }
 
 impl Prediction {
     pub fn new(id: String, webhook: Option<WebhookSender>) -> Self {
+        let (stream_tx, _) = tokio::sync::broadcast::channel(STREAM_CHANNEL_CAPACITY);
+        let stream_history_capacity = stream_history_capacity_from_env();
+
         Self {
             id,
             cancel_token: CancellationToken::new(),
@@ -93,6 +171,10 @@ impl Prediction {
             error: None,
             webhook,
             completion: Arc::new(Notify::new()),
+            stream_tx,
+            stream_history: VecDeque::new(),
+            stream_history_capacity,
+            stream_history_skipped: 0,
             metrics: HashMap::new(),
         }
     }
@@ -105,6 +187,66 @@ impl Prediction {
         self.cancel_token.clone()
     }
 
+    pub fn subscribe_stream(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<SharedPredictionStreamEvent> {
+        self.stream_tx.subscribe()
+    }
+
+    pub fn subscribe_stream_replay(&self) -> PredictionStreamReplay {
+        PredictionStreamReplay {
+            replay: self.stream_history.clone(),
+            skipped: self.stream_history_skipped,
+            receiver: self.stream_tx.subscribe(),
+        }
+    }
+
+    pub fn stream_receiver_count(&self) -> usize {
+        self.stream_tx.receiver_count()
+    }
+
+    fn emit_stream_event(&mut self, event: PredictionStreamEvent) {
+        let event = Arc::new(event);
+        if self.stream_history_capacity > 0 {
+            if self.stream_history.len() == self.stream_history_capacity {
+                self.stream_history.pop_front();
+                self.stream_history_skipped += 1;
+            }
+            self.stream_history.push_back(Arc::clone(&event));
+        }
+        let _ = self.stream_tx.send(event);
+    }
+}
+
+fn stream_history_capacity_from_env() -> usize {
+    match std::env::var(STREAM_HISTORY_CAPACITY_ENV) {
+        Ok(value) => match value.parse::<usize>() {
+            Ok(capacity) => capacity,
+            Err(error) => {
+                tracing::warn!(
+                    env_var = STREAM_HISTORY_CAPACITY_ENV,
+                    value,
+                    error = %error,
+                    default = DEFAULT_STREAM_HISTORY_CAPACITY,
+                    "Invalid stream history capacity; using default"
+                );
+                DEFAULT_STREAM_HISTORY_CAPACITY
+            }
+        },
+        Err(std::env::VarError::NotPresent) => DEFAULT_STREAM_HISTORY_CAPACITY,
+        Err(error) => {
+            tracing::warn!(
+                env_var = STREAM_HISTORY_CAPACITY_ENV,
+                error = %error,
+                default = DEFAULT_STREAM_HISTORY_CAPACITY,
+                "Invalid stream history capacity; using default"
+            );
+            DEFAULT_STREAM_HISTORY_CAPACITY
+        }
+    }
+}
+
+impl Prediction {
     pub fn is_canceled(&self) -> bool {
         self.cancel_token.is_cancelled()
     }
@@ -119,6 +261,10 @@ impl Prediction {
 
     pub fn set_processing(&mut self) {
         self.status = PredictionStatus::Processing;
+        self.emit_stream_event(PredictionStreamEvent::Start {
+            id: self.id.clone(),
+            status: self.status.as_str().to_string(),
+        });
         self.fire_webhook(WebhookEventType::Start);
     }
 
@@ -128,6 +274,9 @@ impl Prediction {
         }
         self.status = PredictionStatus::Succeeded;
         self.output = Some(output);
+        self.emit_stream_event(PredictionStreamEvent::Completed {
+            payload: self.build_state_snapshot(),
+        });
         self.fire_terminal_webhook();
         // notify_one stores a permit so a future .notified().await will
         // consume it immediately.  notify_waiters only wakes currently-
@@ -144,6 +293,9 @@ impl Prediction {
         }
         self.status = PredictionStatus::Failed;
         self.error = Some(error);
+        self.emit_stream_event(PredictionStreamEvent::Completed {
+            payload: self.build_state_snapshot(),
+        });
         self.fire_terminal_webhook();
         self.completion.notify_one();
     }
@@ -153,6 +305,9 @@ impl Prediction {
             return;
         }
         self.status = PredictionStatus::Canceled;
+        self.emit_stream_event(PredictionStreamEvent::Completed {
+            payload: self.build_state_snapshot(),
+        });
         self.fire_terminal_webhook();
         self.completion.notify_one();
     }
@@ -162,7 +317,15 @@ impl Prediction {
     }
 
     pub fn append_log(&mut self, data: &str) {
+        self.append_log_source(LogSource::Stdout, data);
+    }
+
+    pub fn append_log_source(&mut self, source: LogSource, data: &str) {
         self.logs.push_str(data);
+        self.emit_stream_event(PredictionStreamEvent::Log {
+            source,
+            data: data.to_string(),
+        });
         self.fire_webhook(WebhookEventType::Logs);
     }
 
@@ -183,6 +346,12 @@ impl Prediction {
             tracing::warn!(key = %name, "Ignoring metric with empty key or empty dot-path segment");
             return;
         }
+
+        self.emit_stream_event(PredictionStreamEvent::Metric {
+            name: name.clone(),
+            value: value.clone(),
+            mode,
+        });
 
         // Dot-path resolution: "a.b.c" → nested objects
         let parts: Vec<&str> = name.split('.').collect();
@@ -297,7 +466,16 @@ impl Prediction {
     }
 
     pub fn append_output(&mut self, output: serde_json::Value) {
-        self.outputs.push(output);
+        let index = self.outputs.len() as u64;
+        self.append_output_chunk(output, index);
+    }
+
+    pub fn append_output_chunk(&mut self, output: serde_json::Value, index: u64) {
+        self.outputs.push(output.clone());
+        self.emit_stream_event(PredictionStreamEvent::Output {
+            chunk: output,
+            index,
+        });
         self.fire_webhook(WebhookEventType::Output);
     }
 
@@ -411,6 +589,36 @@ impl Prediction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    struct StreamHistoryCapacityEnvGuard {
+        previous: Option<OsString>,
+        _lock: MutexGuard<'static, ()>,
+    }
+
+    impl Drop for StreamHistoryCapacityEnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe { std::env::set_var(STREAM_HISTORY_CAPACITY_ENV, value) },
+                None => unsafe { std::env::remove_var(STREAM_HISTORY_CAPACITY_ENV) },
+            }
+        }
+    }
+
+    fn set_stream_history_capacity(value: Option<&str>) -> StreamHistoryCapacityEnvGuard {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let lock = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let previous = std::env::var_os(STREAM_HISTORY_CAPACITY_ENV);
+        match value {
+            Some(value) => unsafe { std::env::set_var(STREAM_HISTORY_CAPACITY_ENV, value) },
+            None => unsafe { std::env::remove_var(STREAM_HISTORY_CAPACITY_ENV) },
+        }
+        StreamHistoryCapacityEnvGuard {
+            previous,
+            _lock: lock,
+        }
+    }
 
     #[test]
     fn status_is_terminal() {
@@ -482,6 +690,184 @@ mod tests {
         pred.append_output(serde_json::json!("chunk1"));
         pred.append_output(serde_json::json!("chunk2"));
         assert_eq!(pred.outputs().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn prediction_stream_emits_start_output_log_and_completed() {
+        let mut prediction = Prediction::new("pred_stream".to_string(), None);
+        let mut rx = prediction.subscribe_stream();
+
+        prediction.set_processing();
+        prediction.append_output_chunk(serde_json::json!("hello"), 0);
+        prediction.append_log("loading\n");
+        prediction.set_succeeded(PredictionOutput::Stream(vec![serde_json::json!("hello")]));
+
+        let start = rx.recv().await.unwrap();
+        assert_eq!(start.event_name(), "start");
+        assert_eq!(
+            start.json_data(),
+            serde_json::json!({"id":"pred_stream","status":"processing"})
+        );
+
+        let output = rx.recv().await.unwrap();
+        assert_eq!(output.event_name(), "output");
+        assert_eq!(
+            output.json_data(),
+            serde_json::json!({"chunk":"hello","index":0})
+        );
+
+        let log = rx.recv().await.unwrap();
+        assert_eq!(log.event_name(), "log");
+        assert_eq!(
+            log.json_data(),
+            serde_json::json!({"source":"stdout","data":"loading\n"})
+        );
+
+        let completed = rx.recv().await.unwrap();
+        assert_eq!(completed.event_name(), "completed");
+        assert_eq!(completed.json_data()["id"], "pred_stream");
+        assert_eq!(completed.json_data()["status"], "succeeded");
+        assert_eq!(
+            completed.json_data()["output"],
+            serde_json::json!(["hello"])
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_stream_emits_metric_event() {
+        let mut prediction = Prediction::new("pred_metric".to_string(), None);
+        let mut rx = prediction.subscribe_stream();
+
+        prediction.set_metric(
+            "tokens".to_string(),
+            serde_json::json!(1),
+            MetricMode::Increment,
+        );
+
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.event_name(), "metric");
+        assert_eq!(
+            event.json_data(),
+            serde_json::json!({
+                "name":"tokens",
+                "value":1,
+                "mode":"increment"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_stream_preserves_log_source() {
+        let mut prediction = Prediction::new("pred_log_source".to_string(), None);
+        let mut rx = prediction.subscribe_stream();
+
+        prediction.append_log_source(crate::bridge::protocol::LogSource::Stderr, "warning\n");
+
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.event_name(), "log");
+        assert_eq!(
+            event.json_data(),
+            serde_json::json!({"source":"stderr","data":"warning\n"})
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_stream_replay_includes_already_emitted_events() {
+        let _guard = set_stream_history_capacity(None);
+        let mut prediction = Prediction::new("pred_replay".to_string(), None);
+
+        prediction.set_processing();
+        prediction.append_output_chunk(serde_json::json!("hello"), 0);
+        prediction.set_succeeded(PredictionOutput::Stream(vec![serde_json::json!("hello")]));
+
+        let replay = prediction.subscribe_stream_replay();
+        let events: Vec<&str> = replay
+            .replay
+            .iter()
+            .map(|event| event.event_name())
+            .collect();
+
+        assert_eq!(events, vec!["start", "output", "completed"]);
+        assert_eq!(replay.skipped, 0);
+        assert_eq!(
+            replay.replay[1].json_data(),
+            serde_json::json!({"chunk":"hello","index":0})
+        );
+        assert_eq!(replay.replay[2].json_data()["status"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn prediction_stream_replay_is_bounded_to_recent_events() {
+        let _guard = set_stream_history_capacity(None);
+        let mut prediction = Prediction::new("pred_replay_bounded".to_string(), None);
+
+        prediction.set_processing();
+        for index in 0..1100 {
+            prediction.append_output_chunk(serde_json::json!(index), index);
+        }
+
+        let replay = prediction.subscribe_stream_replay();
+
+        assert_eq!(replay.replay.len(), DEFAULT_STREAM_HISTORY_CAPACITY);
+        assert_eq!(replay.skipped, 77);
+        assert_eq!(
+            replay.replay[0].json_data(),
+            serde_json::json!({"chunk":76,"index":76})
+        );
+        assert_eq!(
+            replay.replay[DEFAULT_STREAM_HISTORY_CAPACITY - 1].json_data(),
+            serde_json::json!({"chunk":1099,"index":1099})
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_stream_replay_uses_configured_history_capacity() {
+        let _guard = set_stream_history_capacity(Some("2"));
+        let mut prediction = Prediction::new("pred_replay_configured".to_string(), None);
+
+        prediction.append_output_chunk(serde_json::json!(0), 0);
+        prediction.append_output_chunk(serde_json::json!(1), 1);
+        prediction.append_output_chunk(serde_json::json!(2), 2);
+
+        let replay = prediction.subscribe_stream_replay();
+
+        assert_eq!(replay.replay.len(), 2);
+        assert_eq!(replay.skipped, 1);
+        assert_eq!(
+            replay.replay[0].json_data(),
+            serde_json::json!({"chunk":1,"index":1})
+        );
+        assert_eq!(
+            replay.replay[1].json_data(),
+            serde_json::json!({"chunk":2,"index":2})
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_stream_replay_can_be_disabled_with_zero_capacity() {
+        let _guard = set_stream_history_capacity(Some("0"));
+        let mut prediction = Prediction::new("pred_replay_disabled".to_string(), None);
+
+        prediction.append_output_chunk(serde_json::json!(0), 0);
+        prediction.append_output_chunk(serde_json::json!(1), 1);
+
+        let replay = prediction.subscribe_stream_replay();
+
+        assert!(replay.replay.is_empty());
+        assert_eq!(replay.skipped, 0);
+    }
+
+    #[tokio::test]
+    async fn prediction_stream_replay_uses_default_for_invalid_capacity() {
+        let _guard = set_stream_history_capacity(Some("nope"));
+        let mut prediction = Prediction::new("pred_replay_invalid".to_string(), None);
+
+        prediction.append_output_chunk(serde_json::json!(0), 0);
+
+        let replay = prediction.subscribe_stream_replay();
+
+        assert_eq!(replay.replay.len(), 1);
+        assert_eq!(replay.skipped, 0);
     }
 
     #[tokio::test]

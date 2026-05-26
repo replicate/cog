@@ -218,12 +218,15 @@ Each `SchemaType` produces its JSON Schema fragment via `JSONSchema()`:
 
 ## Cog-Specific Extensions
 
-| Extension             | Purpose                                           |
-| --------------------- | ------------------------------------------------- |
-| `x-order`             | Preserves parameter order from function signature |
-| `x-cog-array-type`    | Marks iterators vs regular arrays                 |
-| `x-cog-array-display` | Hints for how to display streaming output         |
-| `x-cog-secret`        | Marks sensitive inputs                            |
+| Extension             | Purpose                                             |
+| --------------------- | --------------------------------------------------- |
+| `x-order`             | Preserves parameter order from function signature   |
+| `x-cog-array-type`    | Marks iterators vs regular arrays                   |
+| `x-cog-array-display` | Hints for how to display streaming output           |
+| `x-cog-secret`        | Marks sensitive inputs                              |
+| `x-cog-streaming`     | Marks prediction operations that accept SSE clients |
+
+Iterator output types describe the shape of accumulated JSON output. SSE response support is a separate prediction operation capability and is only advertised when the prediction handler opts in with `@cog.streaming`.
 
 ## Where the Schema Lives
 

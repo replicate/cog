@@ -57,7 +57,12 @@ func ParseWithOptions(opts ParserOptions) (*schema.PredictorInfo, error) {
 	if err := runPhases(state, phases); err != nil {
 		return nil, err
 	}
-	return &schema.PredictorInfo{Inputs: state.Inputs, Output: state.Output, Mode: opts.Mode}, nil
+	return &schema.PredictorInfo{
+		Inputs:            state.Inputs,
+		Output:            state.Output,
+		Mode:              opts.Mode,
+		SupportsStreaming: state.SupportsStreaming,
+	}, nil
 }
 
 func parseModulePhase(state *ParseState) error {
@@ -222,7 +227,12 @@ func resolveOutputPhase(state *ParseState) error {
 	if err != nil {
 		return err
 	}
+	supportsStreaming := functionSupportsStreaming(state.TargetFunc.node, state.TargetFunc.file.source, state.TargetFunc.file.imports)
+	if supportsStreaming && !supportsStreamingOutput(output) {
+		return schema.WrapError(schema.ErrUnsupportedType, "@streaming requires Iterator[...] or ConcatenateIterator[...] return type", nil)
+	}
 	state.Output = output
+	state.SupportsStreaming = supportsStreaming
 	state.OutputSet = true
 	return nil
 }
@@ -235,4 +245,68 @@ func buildRunnerInfoPhase(state *ParseState) error {
 		return schema.WrapError(schema.ErrParse, "parser reached build phase without inputs or output", nil)
 	}
 	return nil
+}
+
+func functionSupportsStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	if node.Type() == "function_definition" {
+		parent := node.Parent()
+		if parent == nil || parent.Type() != "decorated_definition" {
+			return false
+		}
+		node = parent
+	}
+
+	if node.Type() != "decorated_definition" {
+		return false
+	}
+	for _, child := range NamedChildren(node) {
+		if child.Type() != "decorator" {
+			continue
+		}
+		if decoratorIsCogStreaming(child, source, imports) {
+			return true
+		}
+	}
+	return false
+}
+
+func decoratorIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	for _, child := range NamedChildren(node) {
+		switch child.Type() {
+		case "attribute":
+			return attributeIsCogStreaming(child, source, imports)
+		case "identifier":
+			return identifierIsCogStreaming(child, source, imports)
+		case "call":
+			callee := child.ChildByFieldName("function")
+			if callee == nil {
+				return false
+			}
+			switch callee.Type() {
+			case "attribute":
+				return attributeIsCogStreaming(callee, source, imports)
+			case "identifier":
+				return identifierIsCogStreaming(callee, source, imports)
+			}
+		}
+	}
+	return false
+}
+
+func attributeIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	parts := strings.SplitN(Content(node, source), ".", 2)
+	if len(parts) != 2 || parts[1] != "streaming" {
+		return false
+	}
+	entry, ok := imports.Names.Get(parts[0])
+	return ok && entry.Module == "cog" && entry.Original == "cog"
+}
+
+func identifierIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	entry, ok := imports.Names.Get(Content(node, source))
+	return ok && entry.Module == "cog" && entry.Original == "streaming"
+}
+
+func supportsStreamingOutput(output schema.SchemaType) bool {
+	return output.Kind == schema.SchemaIterator || output.Kind == schema.SchemaConcatIterator
 }

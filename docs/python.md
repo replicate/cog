@@ -263,11 +263,14 @@ Cog models can stream output as the `run()` method is running. For example, a la
 
 To support streaming output in your Cog model, add `from typing import Iterator` to your `run.py` file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `run()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, or `cog.Path`.
 
+To allow clients to receive chunks as server-sent events with `Accept: text/event-stream`, decorate the prediction method (`run()` or `predict()`) with `@cog.streaming` (or `@streaming` if imported directly from `cog`). The parenthesized forms `@cog.streaming()` and `@streaming()` are also accepted. The decorated method must return `Iterator[...]`, `AsyncIterator[...]`, `ConcatenateIterator[...]`, or `AsyncConcatenateIterator[...]`. Without the decorator, iterator outputs still work in normal JSON responses, but SSE requests return `406 Not Acceptable`.
+
 ```py
-from cog import BaseRunner, Path
 from typing import Iterator
+from cog import BaseRunner, Path, streaming
 
 class Runner(BaseRunner):
+    @streaming
     def run(self) -> Iterator[Path]:
         done = False
         while not done:
@@ -279,9 +282,10 @@ If you have an [async `run()` method](#async-runners-and-concurrency), use `Asyn
 
 ```py
 from typing import AsyncIterator
-from cog import BaseRunner, Path
+from cog import BaseRunner, Path, streaming
 
 class Runner(BaseRunner):
+    @streaming
     async def run(self) -> AsyncIterator[Path]:
         done = False
         while not done:
@@ -292,9 +296,10 @@ class Runner(BaseRunner):
 If you're streaming text output, you can use `ConcatenateIterator` to hint that the output should be concatenated together into a single string. This is useful on Replicate to display the output as a string instead of a list of strings.
 
 ```py
-from cog import BaseRunner, Path, ConcatenateIterator
+from cog import BaseRunner, ConcatenateIterator, streaming
 
 class Runner(BaseRunner):
+    @streaming
     def run(self) -> ConcatenateIterator[str]:
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:
@@ -304,9 +309,10 @@ class Runner(BaseRunner):
 Or for async `run()` methods, use `AsyncConcatenateIterator`:
 
 ```py
-from cog import BaseRunner, Path, AsyncConcatenateIterator
+from cog import AsyncConcatenateIterator, BaseRunner, streaming
 
 class Runner(BaseRunner):
+    @streaming
     async def run(self) -> AsyncConcatenateIterator[str]:
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:

@@ -1,0 +1,28 @@
+# Test that SSE requires @cog.streaming while undecorated iterators still work as JSON.
+
+[short] skip 'requires Docker build'
+
+cog serve --upload-url http://unused/
+
+cog predict -i count=2
+stdout '"chunk-0"'
+stdout '"chunk-1"'
+
+! curl -H Accept:text/event-stream PUT /predictions/no-streaming '{"id":"no-streaming","input":{"count":2}}'
+stderr 'This model does not support streaming responses'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import Iterator
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, count: int) -> Iterator[str]:
+        for index in range(count):
+            yield f"chunk-{index}"

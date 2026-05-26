@@ -187,38 +187,40 @@ func buildOpenAPISpec(info *PredictorInfo) map[string]any {
 	})
 
 	// Main endpoint (predict or train)
-	paths.Set(endpoint, map[string]any{
-		"post": map[string]any{
-			"summary":     summary,
-			"description": description,
-			"operationId": opID,
-			"requestBody": map[string]any{
+	mainOperation := map[string]any{
+		"summary":     summary,
+		"description": description,
+		"operationId": opID,
+		"requestBody": map[string]any{
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": map[string]any{"$ref": requestRef},
+				},
+			},
+		},
+		"responses": map[string]any{
+			"200": map[string]any{
+				"description": "Successful Response",
 				"content": map[string]any{
 					"application/json": map[string]any{
-						"schema": map[string]any{"$ref": requestRef},
+						"schema": map[string]any{"$ref": responseRef},
 					},
 				},
 			},
-			"responses": map[string]any{
-				"200": map[string]any{
-					"description": "Successful Response",
-					"content": map[string]any{
-						"application/json": map[string]any{
-							"schema": map[string]any{"$ref": responseRef},
-						},
-					},
-				},
-				"422": map[string]any{
-					"description": "Validation Error",
-					"content": map[string]any{
-						"application/json": map[string]any{
-							"schema": map[string]any{"$ref": "#/components/schemas/HTTPValidationError"},
-						},
+			"422": map[string]any{
+				"description": "Validation Error",
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": map[string]any{"$ref": "#/components/schemas/HTTPValidationError"},
 					},
 				},
 			},
 		},
-	})
+	}
+	if !isTrain && info.SupportsStreaming {
+		mainOperation["x-cog-streaming"] = true
+	}
+	paths.Set(endpoint, map[string]any{"post": mainOperation})
 
 	// Cancel endpoint
 	paths.Set(cancelEP, map[string]any{
