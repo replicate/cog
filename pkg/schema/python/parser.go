@@ -229,7 +229,7 @@ func resolveOutputPhase(state *ParseState) error {
 	}
 	supportsStreaming := functionSupportsStreaming(state.TargetFunc.node, state.TargetFunc.file.source, state.TargetFunc.file.imports)
 	if supportsStreaming && !supportsStreamingOutput(output) {
-		return schema.WrapError(schema.ErrUnsupportedType, "@streaming requires Iterator[...] or ConcatenateIterator[...] return type", nil)
+		return schema.WrapError(schema.ErrUnsupportedType, "@streaming requires Iterator[...], AsyncIterator[...], ConcatenateIterator[...] or AsyncConcatenateIterator[...] return type", nil)
 	}
 	state.Output = output
 	state.SupportsStreaming = supportsStreaming
