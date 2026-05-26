@@ -151,8 +151,12 @@ func printDoctorResults(result *doctor.Result, fix bool, hasFixableErrors bool) 
 			}
 			console.Infof("  %s%s", location, f.Message)
 
-			if fix && !cr.Fixed && f.Remediation != "" {
-				console.Infof("  (no auto-fix available)")
+			if fix && !cr.Fixed {
+				if f.Remediation != "" {
+					console.Infof("  Remediation: %s", f.Remediation)
+				} else {
+					console.Infof("  (no auto-fix available)")
+				}
 			}
 		}
 	}
