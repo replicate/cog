@@ -229,6 +229,81 @@ func parseTypeAnnotation(node *sitter.Node, source []byte) (schema.TypeAnnotatio
 	}
 }
 
+func functionSupportsStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	decorated := decoratedFunctionNode(node)
+	if decorated == nil {
+		return false
+	}
+
+	for _, child := range NamedChildren(decorated) {
+		if child.Type() == "decorator" && decoratorIsCogStreaming(child, source, imports) {
+			return true
+		}
+	}
+	return false
+}
+
+func decoratedFunctionNode(node *sitter.Node) *sitter.Node {
+	if node.Type() == "decorated_definition" {
+		return node
+	}
+	if node.Type() != "function_definition" {
+		return nil
+	}
+	parent := node.Parent()
+	if parent == nil || parent.Type() != "decorated_definition" {
+		return nil
+	}
+	return parent
+}
+
+func decoratorIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	expr := decoratorExpression(node)
+	if expr == nil {
+		return false
+	}
+	return expressionIsCogStreaming(expr, source, imports)
+}
+
+func decoratorExpression(node *sitter.Node) *sitter.Node {
+	for _, child := range NamedChildren(node) {
+		if child.Type() == "call" {
+			return child.ChildByFieldName("function")
+		}
+		return child
+	}
+	return nil
+}
+
+func expressionIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	switch node.Type() {
+	case "attribute":
+		return attributeIsCogStreaming(node, source, imports)
+	case "identifier":
+		return identifierIsCogStreaming(node, source, imports)
+	default:
+		return false
+	}
+}
+
+func attributeIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	name, attr, ok := strings.Cut(Content(node, source), ".")
+	if !ok || attr != "streaming" {
+		return false
+	}
+	entry, ok := imports.Names.Get(name)
+	return ok && entry.Module == "cog" && entry.Original == "cog"
+}
+
+func identifierIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	entry, ok := imports.Names.Get(Content(node, source))
+	return ok && entry.Module == "cog" && entry.Original == "streaming"
+}
+
+func supportsStreamingOutput(output schema.SchemaType) bool {
+	return output.Kind == schema.SchemaIterator || output.Kind == schema.SchemaConcatIterator
+}
+
 func errUnsupported(msg string) error {
 	return &schema.SchemaError{Kind: schema.ErrUnsupportedType, Message: fmt.Sprintf("unsupported type: %s", msg)}
 }
