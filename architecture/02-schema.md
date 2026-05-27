@@ -63,14 +63,16 @@ flowchart LR
 
 ### Static Path Pipeline Steps
 
-1. **Parse** the predictor file with tree-sitter (concrete syntax tree, not AST)
-2. **Collect imports** -- track where each name came from (`from cog import Path`, `from cog import BaseModel`)
-3. **Collect module scope** -- resolve module-level variable assignments (for default values, choices lists)
-4. **Collect BaseModel subclasses** -- find all classes that inherit from `BaseModel` (cog's dataclass-based version; pydantic BaseModel also supported for compatibility)
-5. **Resolve cross-file models** — for imported names not found locally, find the `.py` file on disk, parse it, and extract its BaseModel definitions
-6. **Extract inputs** — walk the `run()` method parameters, resolve types, defaults, and `Input()` metadata. Legacy class `predict()` methods are still accepted with a warning.
-7. **Resolve output type** — recursively resolve the return type annotation into a `SchemaType`
-8. **Generate OpenAPI** — convert the extracted `PredictorInfo` into a full OpenAPI 3.0.2 JSON document
+1. **Parse module** -- parse Python source with tree-sitter and store the concrete syntax tree.
+2. **Collect imports** -- track local names, aliases, Cog types, typing helpers, and builtins.
+3. **Collect module scope** -- resolve module-level constants that can be used by defaults, descriptions, and choices.
+4. **Collect local schema models** -- find local `BaseModel` and `TypedDict` classes.
+5. **Resolve imported models** -- parse each local imported module at most once and merge schema model definitions and aliases.
+6. **Collect input registry** -- record reusable class-level `Input()` attributes and helper methods.
+7. **Find target callable** -- resolve the configured runner target. Predict-mode class targets prefer `run()` and fall back to legacy `predict()` for backward compatibility; train-mode class targets resolve `train()`. Standalone targets use the configured function name first, then fall back to the mode default if absent.
+8. **Extract inputs** -- walk the resolved callable parameters and resolve types, defaults, and `Input()` metadata.
+9. **Resolve output type** -- recursively resolve the return annotation into a `SchemaType`.
+10. **Generate OpenAPI** -- convert the extracted schema information into a full OpenAPI 3.0.2 JSON document.
 
 If any step fails, the build stops before Docker starts.
 
@@ -98,15 +100,17 @@ class Runner(BaseRunner):
         ...
 ```
 
-The resolver handles every permutation of local imports:
+The resolver handles local imports relative to the predictor file and project root:
 
-| Import Style                      | File Resolved                               |
-| --------------------------------- | ------------------------------------------- |
-| `from output_types import X`      | `<project>/output_types.py`                 |
-| `from .output_types import X`     | `<project>/output_types.py`                 |
-| `from models.output import X`     | `<project>/models/output.py`                |
-| `from .models.output import X`    | `<project>/models/output.py`                |
-| `from output_types import X as Y` | `<project>/output_types.py` (alias tracked) |
+| Import Style                         | File Resolved                                               |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `from output_types import X`         | `<project>/output_types.py`                                 |
+| `from .output_types import X`        | `<predictor-dir>/output_types.py`                           |
+| `from models.output import X`        | `<project>/models/output.py`                                |
+| `from .models.output import X`       | `<predictor-dir>/models/output.py`                          |
+| `from output_types import X as Y`    | `<project>/output_types.py` (alias tracked)                 |
+| `from .output_types import X as Y`   | `<predictor-dir>/output_types.py` (alias tracked)           |
+| `from . import output_types`         | `<predictor-dir>/output_types.py` (module alias tracked)    |
 
 **How it distinguishes local from external**: the resolver converts the module path to a filesystem path and checks if the file exists. If `output_types.py` exists in the project directory, it's local. If not (e.g., `from transformers import ...`), it's external. Known external packages (stdlib, torch, numpy, etc.) are skipped without a filesystem check.
 

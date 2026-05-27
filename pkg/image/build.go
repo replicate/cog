@@ -445,7 +445,7 @@ func generateStaticSchema(cfg *config.Config, dir string) ([]byte, error) {
 	if cfg.Predict == "" && cfg.Train == "" {
 		return nil, fmt.Errorf("no predict or train reference found in cog.yaml")
 	}
-	return schema.GenerateCombined(dir, cfg.Predict, cfg.Train, python.ParsePredictor)
+	return schema.GenerateCombined(dir, cfg.Predict, cfg.Train, schema.PathAwareParser(python.ParsePredictorWithSourcePath))
 
 }
 
