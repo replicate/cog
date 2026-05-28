@@ -124,17 +124,19 @@ func Build(
 	// Generate schema before the Docker build so schema errors fail fast and the
 	// schema file is available in the build context.
 	var schemaJSON []byte
+	var decoratorConcurrency *int
 	switch {
 	case needsSchema:
 		if err := validateStaticSchemaSDKVersion(cfg); err != nil {
 			return "", err
 		}
 		console.Debug("Generating model schema (static)...")
-		data, err := generateStaticSchema(cfg, dir)
+		result, err := generateStaticSchema(cfg, dir)
 		if err != nil {
 			return "", fmt.Errorf("image build failed: %w", err)
 		}
-		schemaJSON = data
+		schemaJSON = result.JSON
+		decoratorConcurrency = result.ConcurrentMax
 	case !skipSchemaValidation && schemaFile != "":
 		console.Infof("Validating model schema from %s...", schemaFile)
 		data, err := os.ReadFile(schemaFile)
@@ -207,7 +209,11 @@ func Build(
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
 	} else {
-		generator, err := dockerfile.NewStandardGenerator(cfg, dir, bp.buildDir, configFilename, dockerCommand, client, true)
+		buildCfg, err := buildConfigWithDecoratorConcurrency(cfg, decoratorConcurrency)
+		if err != nil {
+			return "", err
+		}
+		generator, err := dockerfile.NewStandardGenerator(buildCfg, dir, bp.buildDir, configFilename, dockerCommand, client, true)
 		if err != nil {
 			return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}
@@ -441,12 +447,92 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 
 // generateStaticSchema runs the Go tree-sitter parser to produce the OpenAPI schema.
 // When both predict and train are configured, it generates both and merges them.
-func generateStaticSchema(cfg *config.Config, dir string) ([]byte, error) {
+type staticSchemaResult struct {
+	JSON          []byte
+	ConcurrentMax *int
+}
+
+func generateStaticSchema(cfg *config.Config, dir string) (*staticSchemaResult, error) {
 	if cfg.Predict == "" && cfg.Train == "" {
 		return nil, fmt.Errorf("no predict or train reference found in cog.yaml")
 	}
-	return schema.GenerateCombined(dir, cfg.Predict, cfg.Train, schema.PathAwareParser(python.ParsePredictorWithSourcePath))
+	data, err := schema.GenerateCombined(dir, cfg.Predict, cfg.Train, schema.PathAwareParser(python.ParsePredictorWithSourcePath))
+	if err != nil {
+		return nil, err
+	}
+	result := &staticSchemaResult{JSON: data}
+	if cfg.Predict == "" || os.Getenv("COG_OPENAPI_SCHEMA") != "" {
+		return result, nil
+	}
+	info, err := predictorInfoFromRef(cfg.Predict, dir)
+	if err != nil {
+		return nil, err
+	}
+	result.ConcurrentMax = info.ConcurrentMax
+	return result, nil
 
+}
+
+func predictorInfoFromRef(predictRef string, dir string) (*schema.PredictorInfo, error) {
+	filePath, targetRef, err := parsePredictRef(predictRef)
+	if err != nil {
+		return nil, err
+	}
+	fullPath := filepath.Join(dir, filePath)
+	source, err := os.ReadFile(fullPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read predictor source %s: %w", fullPath, err)
+	}
+	return python.ParsePredictorWithSourcePath(source, targetRef, schema.ModePredict, dir, filePath)
+}
+
+func buildConfigWithDecoratorConcurrency(cfg *config.Config, decoratorConcurrency *int) (*config.Config, error) {
+	if cfg.Concurrency != nil || decoratorConcurrency == nil {
+		return cfg, nil
+	}
+	if err := validateDecoratorConcurrency(cfg, *decoratorConcurrency); err != nil {
+		return nil, err
+	}
+	buildCfg := *cfg
+	buildCfg.Concurrency = &config.Concurrency{Max: *decoratorConcurrency}
+	return &buildCfg, nil
+}
+
+func validateDecoratorConcurrency(cfg *config.Config, maxConcurrency int) error {
+	if maxConcurrency <= 1 || cfg.Build == nil || cfg.Build.PythonVersion == "" {
+		return nil
+	}
+	major, minor, err := splitPythonVersion(cfg.Build.PythonVersion)
+	if err != nil || major > config.MinimumMajorPythonVersion || (major == config.MinimumMajorPythonVersion && minor >= config.MinimumMinorPythonVersionForConcurrency) {
+		return nil
+	}
+	return fmt.Errorf("concurrency requires Python %d.%d or higher", config.MinimumMajorPythonVersion, config.MinimumMinorPythonVersionForConcurrency)
+}
+
+func splitPythonVersion(version string) (major int, minor int, err error) {
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return 0, 0, fmt.Errorf("invalid Python version %q", version)
+	}
+	if _, err := fmt.Sscanf(parts[0], "%d", &major); err != nil {
+		return 0, 0, err
+	}
+	if _, err := fmt.Sscanf(parts[1], "%d", &minor); err != nil {
+		return 0, 0, err
+	}
+	return major, minor, nil
+}
+
+func parsePredictRef(ref string) (filePath string, name string, err error) {
+	filePath, name, ok := strings.Cut(ref, ":")
+	if !ok || filePath == "" || name == "" {
+		return "", "", fmt.Errorf("invalid predict reference %q", ref)
+	}
+	clean := filepath.Clean(filePath)
+	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("predictor source path %q is outside source directory", filePath)
+	}
+	return clean, name, nil
 }
 
 func validateStaticSchemaSDKVersion(cfg *config.Config) error {

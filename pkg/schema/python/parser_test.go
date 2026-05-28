@@ -840,6 +840,126 @@ class Predictor(cog.BasePredictor):
 	require.False(t, info.SupportsStreaming)
 }
 
+func TestConcurrentDecoratorQualifiedMax(t *testing.T) {
+	source := `
+import cog
+
+class Predictor(cog.BasePredictor):
+    @cog.concurrent(max=5)
+    def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrentMax)
+	require.Equal(t, 5, *info.ConcurrentMax)
+}
+
+func TestConcurrentDecoratorBareDefaultsToOne(t *testing.T) {
+	source := `
+import cog
+
+class Predictor(cog.BasePredictor):
+    @cog.concurrent
+    def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrentMax)
+	require.Equal(t, 1, *info.ConcurrentMax)
+}
+
+func TestConcurrentDecoratorImportedAliasMax(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent as cc
+
+class Predictor(BasePredictor):
+    @cc(max=3)
+    def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrentMax)
+	require.Equal(t, 3, *info.ConcurrentMax)
+}
+
+func TestConcurrentDecoratorIgnoredWhenNotFromCog(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "imported from another module",
+			source: `
+from other import concurrent
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    @concurrent(max=5)
+    def predict(self) -> str:
+        return "hello"
+`,
+		},
+		{
+			name: "undefined local name",
+			source: `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    @concurrent(max=5)
+    def predict(self) -> str:
+        return "hello"
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := parse(t, tt.source, "Predictor")
+			require.Nil(t, info.ConcurrentMax)
+		})
+	}
+}
+
+func TestConcurrentDecoratorRejectsInvalidMax(t *testing.T) {
+	tests := []struct {
+		name    string
+		maxExpr string
+	}{
+		{name: "zero", maxExpr: "0"},
+		{name: "identifier", maxExpr: "MAX"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := `
+import cog
+
+class Predictor(cog.BasePredictor):
+    @cog.concurrent(max=` + tt.maxExpr + `)
+    def predict(self) -> str:
+        return "hello"
+`
+			se := parseErr(t, source, "Predictor", schema.ModePredict)
+			require.Equal(t, schema.ErrParse, se.Kind)
+			require.Contains(t, se.Message, "@cog.concurrent")
+		})
+	}
+}
+
+func TestConcurrentDecoratorDoesNotValidateAsyncAtSchemaParseTime(t *testing.T) {
+	source := `
+import cog
+
+class Predictor(cog.BasePredictor):
+    @cog.concurrent(max=2)
+    def predict(self) -> str:
+        return "sync is validated by the Python decorator"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrentMax)
+	require.Equal(t, 2, *info.ConcurrentMax)
+}
+
 func TestListOutput(t *testing.T) {
 	source := `
 from cog import BasePredictor, Path

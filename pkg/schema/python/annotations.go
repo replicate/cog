@@ -2,6 +2,7 @@ package python
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -243,6 +244,24 @@ func functionSupportsStreaming(node *sitter.Node, source []byte, imports *schema
 	return false
 }
 
+func functionConcurrentMax(node *sitter.Node, source []byte, imports *schema.ImportContext) (*int, error) {
+	decorated := decoratedFunctionNode(node)
+	if decorated == nil {
+		return nil, nil
+	}
+
+	for _, child := range NamedChildren(decorated) {
+		if child.Type() != "decorator" {
+			continue
+		}
+		max, ok, err := decoratorConcurrentMax(child, source, imports)
+		if err != nil || ok {
+			return max, err
+		}
+	}
+	return nil, nil
+}
+
 func decoratedFunctionNode(node *sitter.Node) *sitter.Node {
 	if node.Type() == "decorated_definition" {
 		return node
@@ -263,6 +282,32 @@ func decoratorIsCogStreaming(node *sitter.Node, source []byte, imports *schema.I
 		return false
 	}
 	return expressionIsCogStreaming(expr, source, imports)
+}
+
+func decoratorConcurrentMax(node *sitter.Node, source []byte, imports *schema.ImportContext) (*int, bool, error) {
+	children := NamedChildren(node)
+	if len(children) == 0 {
+		return nil, false, nil
+	}
+
+	expr := children[0]
+	var args *sitter.Node
+	if expr.Type() == "call" {
+		args = expr.ChildByFieldName("arguments")
+		expr = expr.ChildByFieldName("function")
+		if expr == nil {
+			return nil, false, nil
+		}
+	}
+	if !expressionIsCogConcurrent(expr, source, imports) {
+		return nil, false, nil
+	}
+
+	max, err := parseConcurrentMaxArguments(args, source)
+	if err != nil {
+		return nil, true, err
+	}
+	return &max, true, nil
 }
 
 func decoratorExpression(node *sitter.Node) *sitter.Node {
@@ -288,18 +333,85 @@ func expressionIsCogStreaming(node *sitter.Node, source []byte, imports *schema.
 	}
 }
 
+func expressionIsCogConcurrent(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	switch node.Type() {
+	case "attribute":
+		return attributeIsCogDecorator(node, source, imports, "concurrent")
+	case "identifier":
+		return identifierIsCogDecorator(node, source, imports, "concurrent")
+	default:
+		return false
+	}
+}
+
 func attributeIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	return attributeIsCogDecorator(node, source, imports, "streaming")
+}
+
+func identifierIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	return identifierIsCogDecorator(node, source, imports, "streaming")
+}
+
+func attributeIsCogDecorator(node *sitter.Node, source []byte, imports *schema.ImportContext, decoratorName string) bool {
 	name, attr, ok := strings.Cut(Content(node, source), ".")
-	if !ok || attr != "streaming" {
+	if !ok || attr != decoratorName {
 		return false
 	}
 	entry, ok := imports.Names.Get(name)
 	return ok && entry.Module == "cog" && entry.Original == "cog"
 }
 
-func identifierIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+func identifierIsCogDecorator(node *sitter.Node, source []byte, imports *schema.ImportContext, decoratorName string) bool {
 	entry, ok := imports.Names.Get(Content(node, source))
-	return ok && entry.Module == "cog" && entry.Original == "streaming"
+	return ok && entry.Module == "cog" && entry.Original == decoratorName
+}
+
+func parseConcurrentMaxArguments(args *sitter.Node, source []byte) (int, error) {
+	if args == nil || len(NamedChildren(args)) == 0 {
+		return 1, nil
+	}
+
+	var max *int
+	for _, child := range NamedChildren(args) {
+		if child.Type() != "keyword_argument" {
+			return 0, concurrentDecoratorError("only the max keyword argument is supported")
+		}
+		keyNode := child.ChildByFieldName("name")
+		valNode := child.ChildByFieldName("value")
+		if keyNode == nil || valNode == nil {
+			return 0, concurrentDecoratorError("arguments must be keyword arguments")
+		}
+		if key := Content(keyNode, source); key != "max" {
+			return 0, concurrentDecoratorError(fmt.Sprintf("unknown keyword argument %q", key))
+		}
+		if max != nil {
+			return 0, concurrentDecoratorError("max can only be specified once")
+		}
+		parsed, err := parsePositiveIntegerLiteral(valNode, source)
+		if err != nil {
+			return 0, err
+		}
+		max = &parsed
+	}
+	if max == nil {
+		return 1, nil
+	}
+	return *max, nil
+}
+
+func parsePositiveIntegerLiteral(node *sitter.Node, source []byte) (int, error) {
+	if node.Type() != "integer" {
+		return 0, concurrentDecoratorError("max must be a positive integer literal")
+	}
+	value, err := strconv.ParseInt(Content(node, source), 0, 0)
+	if err != nil || value <= 0 {
+		return 0, concurrentDecoratorError("max must be a positive integer literal")
+	}
+	return int(value), nil
+}
+
+func concurrentDecoratorError(message string) error {
+	return schema.WrapError(schema.ErrParse, fmt.Sprintf("@cog.concurrent %s", message), nil)
 }
 
 func supportsStreamingOutput(output schema.SchemaType) bool {

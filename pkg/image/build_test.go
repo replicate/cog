@@ -197,6 +197,79 @@ func TestValidateStaticSchemaSDKVersion(t *testing.T) {
 	}
 }
 
+func TestGenerateStaticSchemaSkipsDecoratorConcurrencyWithExternalSchema(t *testing.T) {
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.json")
+	require.NoError(t, os.WriteFile(schemaPath, []byte(`{"openapi":"3.0.2"}`), 0o644))
+	t.Setenv("COG_OPENAPI_SCHEMA", schemaPath)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "predict.py"), []byte(`this is not valid python`), 0o644))
+
+	cfg := &config.Config{Predict: "predict.py:Predictor"}
+
+	result, err := generateStaticSchema(cfg, dir)
+	require.NoError(t, err)
+	require.Nil(t, result.ConcurrentMax)
+	require.JSONEq(t, `{"openapi":"3.0.2"}`, string(result.JSON))
+}
+
+func TestBuildConfigWithDecoratorConcurrencySetsCopyWhenMissing(t *testing.T) {
+	max := 4
+	cfg := &config.Config{
+		Predict: "predict.py:Predictor",
+		Build:   &config.Build{PythonVersion: "3.11"},
+	}
+
+	buildCfg, err := buildConfigWithDecoratorConcurrency(cfg, &max)
+	require.NoError(t, err)
+	require.Nil(t, cfg.Concurrency)
+	require.NotSame(t, cfg, buildCfg)
+	require.NotNil(t, buildCfg.Concurrency)
+	require.Equal(t, 4, buildCfg.Concurrency.Max)
+}
+
+func TestBuildConfigWithDecoratorConcurrencyDoesNotOverrideConfig(t *testing.T) {
+	max := 4
+	cfg := &config.Config{
+		Predict:     "predict.py:Predictor",
+		Build:       &config.Build{PythonVersion: "3.11"},
+		Concurrency: &config.Concurrency{Max: 9},
+	}
+
+	buildCfg, err := buildConfigWithDecoratorConcurrency(cfg, &max)
+	require.NoError(t, err)
+	require.Same(t, cfg, buildCfg)
+	require.Equal(t, 9, buildCfg.Concurrency.Max)
+}
+
+func TestBuildConfigWithDecoratorConcurrencyValidatesPythonVersion(t *testing.T) {
+	max := 4
+	cfg := &config.Config{
+		Predict: "predict.py:Predictor",
+		Build:   &config.Build{PythonVersion: "3.10"},
+	}
+
+	_, err := buildConfigWithDecoratorConcurrency(cfg, &max)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "concurrency requires Python 3.11 or higher")
+}
+
+func TestPredictorInfoFromRefExtractsDecoratorConcurrency(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "predict.py"), []byte(`
+import cog
+
+class Predictor(cog.BasePredictor):
+    @cog.concurrent(max=4)
+    async def predict(self) -> str:
+        return "hello"
+`), 0o644))
+
+	info, err := predictorInfoFromRef("predict.py:Predictor", dir)
+	require.NoError(t, err)
+	require.NotNil(t, info.ConcurrentMax)
+	require.Equal(t, 4, *info.ConcurrentMax)
+}
+
 func TestWriteRuntimeWeightsManifest(t *testing.T) {
 	dir := t.TempDir()
 

@@ -104,6 +104,7 @@ type ParseState struct {
 	Inputs            *schema.OrderedMap[string, schema.InputField]
 	Output            schema.SchemaType
 	SupportsStreaming bool
+	ConcurrentMax     *int
 	OutputSet         bool
 }
 

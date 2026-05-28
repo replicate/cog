@@ -62,6 +62,7 @@ func ParseWithOptions(opts ParserOptions) (*schema.PredictorInfo, error) {
 		Output:            state.Output,
 		Mode:              opts.Mode,
 		SupportsStreaming: state.SupportsStreaming,
+		ConcurrentMax:     state.ConcurrentMax,
 	}, nil
 }
 
@@ -150,6 +151,11 @@ func findTargetCallablePhase(state *ParseState) error {
 	}
 	state.FileCtx = fileCtx
 	state.TargetFunc = target
+	concurrentMax, err := functionConcurrentMax(target.node, target.file.source, target.file.imports)
+	if err != nil {
+		return err
+	}
+	state.ConcurrentMax = concurrentMax
 	return nil
 }
 
