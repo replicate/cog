@@ -190,11 +190,13 @@ build:
 
 > Added in cog 0.14.0.
 
+> Deprecated: use [`@cog.concurrent`](python.md#async-runners-and-concurrency) on your async `run()` method instead.
+
 This stanza describes the concurrency capabilities of the model. It has one option:
 
 ### `max`
 
-The maximum number of concurrent runs the model can process. If this is set, the model must specify an [async `run()` method](python.md#async-runners-and-concurrency).
+The maximum number of concurrent runs the model can process. If this is set, the model must specify an [async `run()` method](python.md#async-runners-and-concurrency). Existing configs continue to work, but new models should use `@cog.concurrent(max=N)` instead.
 
 For example:
 

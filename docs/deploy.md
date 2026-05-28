@@ -79,14 +79,20 @@ The response includes a `status` field with values like `STARTING`, `READY`, `BU
 
 ## Concurrency
 
-By default, the server processes one run at a time. To enable concurrent runs, set the `concurrency.max` option in `cog.yaml`:
+By default, the server processes one run at a time. For async runners, use `@cog.concurrent(max=N)` on your `run()` method to enable concurrent runs:
 
-```yaml
-concurrency:
-  max: 4
+```python
+import cog
+from cog import BaseRunner
+
+
+class Runner(BaseRunner):
+    @cog.concurrent(max=4)
+    async def run(self) -> str:
+        return "hello world"
 ```
 
-See the [`cog.yaml` reference](yaml.md#concurrency) for more details.
+See [`async` runners and concurrency](python.md#async-runners-and-concurrency) for more details.
 
 ## Environment variables
 

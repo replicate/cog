@@ -127,7 +127,20 @@ class Runner(BaseRunner):
         return "hello world";
 ```
 
-Models that have an async `run()` function can run concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
+Models that have an async `run()` function can run concurrently. Use `@cog.concurrent(max=N)` to declare how many runs Cog may process at the same time:
+
+```py
+import cog
+from cog import BaseRunner
+
+
+class Runner(BaseRunner):
+    @cog.concurrent(max=4)
+    async def run(self) -> str:
+        return "hello world"
+```
+
+Attempting to exceed this limit will return a 409 Conflict response. Operators can override this value at runtime with [`COG_MAX_CONCURRENCY`](environment.md#cog_max_concurrency).
 
 ## `Input(**kwargs)`
 

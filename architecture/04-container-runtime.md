@@ -125,9 +125,9 @@ stateDiagram-v2
 
 - **No teardown hook.** There is no `teardown()`, `cleanup()`, or `__del__` contract. When the container shuts down, the process exits. If you need cleanup (e.g., flushing a log buffer), use `atexit`.
 
-- **`run()` is sequential by default.** With `COG_MAX_CONCURRENCY=1` (the default), `run()` is never called concurrently -- each call completes before the next begins.
+- **`run()` is sequential by default.** With max concurrency 1, `run()` is never called concurrently -- each call completes before the next begins.
 
-- **With `COG_MAX_CONCURRENCY > 1`, concurrent `run()` calls share `self`.** Async runners run multiple coroutines on a shared asyncio event loop -- not truly parallel, but interleaved at `await` points. If your model stores mutable state on `self` that could be accessed across `await` boundaries, take care. If your model isn't safe to call concurrently, leave concurrency at 1.
+- **With `@cog.concurrent(max=N)`, concurrent `run()` calls share `self`.** Effective max concurrency is resolved as `COG_MAX_CONCURRENCY` environment override, then decorator metadata, then default `1`. Deprecated `concurrency.max` is legacy config that bakes an environment value into images. Async runners run multiple coroutines on a shared asyncio event loop -- not truly parallel, but interleaved at `await` points. If your model stores mutable state on `self` that could be accessed across `await` boundaries, take care. If your model isn't safe to call concurrently, leave concurrency at 1.
 
 - **A worker crash is terminal.** If the worker process crashes (segfault, OOM kill), the runtime fails all in-flight predictions and stops accepting new ones. The HTTP server stays up (health endpoints still respond) but the container must be restarted externally -- there is no automatic worker respawn.
 
@@ -397,7 +397,7 @@ If the healthcheck fails, the HTTP `/health-check` endpoint returns `UNHEALTHY` 
 | -------------------------------- | ------- | ------------------------------------------------ |
 | `PORT`                           | 5000    | HTTP server port                                 |
 | `COG_LOG_LEVEL`                  | INFO    | Logging verbosity (ignored if `RUST_LOG` is set) |
-| `COG_MAX_CONCURRENCY`            | 1       | Number of concurrent prediction slots            |
+| `COG_MAX_CONCURRENCY`            | 1       | Environment override for concurrent prediction slots; decorator metadata is used when unset |
 | `COG_SETUP_TIMEOUT`              | none    | Setup timeout in seconds (0 is ignored)          |
 | `COG_THROTTLE_RESPONSE_INTERVAL` | 0.5s    | Webhook response throttling interval             |
 | `LOG_FORMAT`                     | json    | Set to `console` for human-readable log output   |

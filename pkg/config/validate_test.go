@@ -161,6 +161,40 @@ func TestValidateConfigFileConcurrencyType(t *testing.T) {
 	require.False(t, result.HasErrors(), "expected no errors, got: %v", result.Errors)
 }
 
+func TestValidateConfigFileConcurrencyDeprecated(t *testing.T) {
+	cfg := &configFile{
+		Build: &buildFile{
+			PythonVersion: new("3.11"),
+		},
+		Run: new("run.py:Runner"),
+		Concurrency: &concurrencyFile{
+			Max: new(5),
+		},
+	}
+
+	result := ValidateConfigFile(cfg)
+	require.Len(t, result.Warnings, 1)
+	require.Equal(t, "concurrency", result.Warnings[0].Field)
+	require.Equal(t, "@cog.concurrent(max=5)", result.Warnings[0].Replacement)
+	require.Contains(t, result.Warnings[0].Message, "@cog.concurrent")
+}
+
+func TestValidateConfigFileConcurrencyDeprecatedWithoutMax(t *testing.T) {
+	cfg := &configFile{
+		Build: &buildFile{
+			PythonVersion: new("3.11"),
+		},
+		Run:         new("run.py:Runner"),
+		Concurrency: &concurrencyFile{},
+	}
+
+	result := ValidateConfigFile(cfg)
+	require.Len(t, result.Warnings, 1)
+	require.Equal(t, "concurrency", result.Warnings[0].Field)
+	require.Equal(t, "@cog.concurrent(max=N)", result.Warnings[0].Replacement)
+	require.Contains(t, result.Warnings[0].Message, "@cog.concurrent")
+}
+
 func TestValidateConfigFileDeprecatedPythonPackages(t *testing.T) {
 	cfg := &configFile{
 		Build: &buildFile{

@@ -27,6 +27,7 @@ from coglet import CancelationException as CancelationException
 
 from ._opaque import Opaque
 from ._version import __version__
+from .concurrent import concurrent
 from .input import FieldInfo, Input
 from .model import BaseModel
 from .predictor import BasePredictor, BaseRunner
@@ -161,6 +162,7 @@ __all__ = [
     "current_scope",
     # Decorators
     "streaming",
+    "concurrent",
     # Deprecated compat shims
     "ExperimentalFeatureWarning",
     "emit_metric",

@@ -173,7 +173,7 @@ These variables affect a running model server. Set them in `cog.yaml` under `env
 
 ### `COG_MAX_CONCURRENCY`
 
-Controls how many predictions the model server can run concurrently.
+Controls how many predictions the model server can run concurrently. This overrides concurrency declared with `@cog.concurrent(max=N)` or the deprecated `cog.yaml` `concurrency.max` field.
 
 By default, Cog runs one prediction at a time. Invalid values are ignored and the default of `1` is used.
 

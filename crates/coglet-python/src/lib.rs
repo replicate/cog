@@ -32,6 +32,8 @@ use coglet_core::{
     transport::{ServerConfig, serve as http_serve},
 };
 
+use crate::predictor::PythonPredictor;
+
 /// Global flag: true when running inside a worker subprocess.
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 
@@ -186,10 +188,13 @@ fn detect_version(py: Python<'_>, build: &BuildInfo) -> VersionInfo {
     version
 }
 
-fn read_max_concurrency() -> usize {
+fn read_max_concurrency(decorator_max: Option<usize>) -> usize {
     match std::env::var("COG_MAX_CONCURRENCY") {
-        Ok(val) => val.parse::<usize>().unwrap_or(1),
-        Err(_) => 1,
+        Ok(val) => match val.parse::<usize>() {
+            Ok(max) if max > 0 => max,
+            _ => 1,
+        },
+        Err(_) => decorator_max.unwrap_or(1),
     }
 }
 
@@ -398,10 +403,11 @@ fn serve_subprocess(
     mut setup_log_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
     upload_url: Option<String>,
 ) -> PyResult<()> {
-    let max_concurrency = read_max_concurrency();
+    let decorator_max = PythonPredictor::concurrent_max_from_ref(py, &pred_ref)?;
+    let max_concurrency = read_max_concurrency(decorator_max);
     info!(
         max_concurrency,
-        "Configuring subprocess worker via orchestrator"
+        decorator_max, "Configuring subprocess worker via orchestrator"
     );
 
     // Enrich Sentry scope with model/server metadata
@@ -610,4 +616,81 @@ fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_submodule(&sdk)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::read_max_concurrency;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn new(key: &'static str) -> Self {
+            Self {
+                key,
+                previous: std::env::var(key).ok(),
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe { std::env::set_var(self.key, value) },
+                None => unsafe { std::env::remove_var(self.key) },
+            }
+        }
+    }
+
+    #[test]
+    fn max_concurrency_defaults_to_one() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _env_guard = EnvVarGuard::new("COG_MAX_CONCURRENCY");
+        unsafe { std::env::remove_var("COG_MAX_CONCURRENCY") };
+
+        assert_eq!(read_max_concurrency(None), 1);
+    }
+
+    #[test]
+    fn max_concurrency_uses_decorator_fallback() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _env_guard = EnvVarGuard::new("COG_MAX_CONCURRENCY");
+        unsafe { std::env::remove_var("COG_MAX_CONCURRENCY") };
+
+        assert_eq!(read_max_concurrency(Some(5)), 5);
+    }
+
+    #[test]
+    fn max_concurrency_env_takes_precedence() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _env_guard = EnvVarGuard::new("COG_MAX_CONCURRENCY");
+        unsafe { std::env::set_var("COG_MAX_CONCURRENCY", "7") };
+
+        assert_eq!(read_max_concurrency(Some(5)), 7);
+    }
+
+    #[test]
+    fn invalid_max_concurrency_env_preserves_current_default() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _env_guard = EnvVarGuard::new("COG_MAX_CONCURRENCY");
+        unsafe { std::env::set_var("COG_MAX_CONCURRENCY", "not-a-number") };
+
+        assert_eq!(read_max_concurrency(Some(5)), 1);
+    }
+
+    #[test]
+    fn zero_max_concurrency_env_preserves_current_default() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let _env_guard = EnvVarGuard::new("COG_MAX_CONCURRENCY");
+        unsafe { std::env::set_var("COG_MAX_CONCURRENCY", "0") };
+
+        assert_eq!(read_max_concurrency(Some(5)), 1);
+    }
 }

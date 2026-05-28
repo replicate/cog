@@ -30,20 +30,17 @@ build:
     - curl -o /src/model.bin https://example.com/model.bin
 
 run: "run.py:Runner"
-
-concurrency:
-  max: 1
 ```
 
-| Field                   | Purpose                                     |
-| ----------------------- | ------------------------------------------- |
-| `build.python_version`  | Python interpreter version (3.10-3.13)      |
-| `build.gpu`             | Enable CUDA support                         |
-| `build.python_packages` | pip packages to install                     |
-| `build.system_packages` | apt packages to install                     |
-| `build.run`             | Arbitrary shell commands during build       |
-| `run`                   | Path to runner class (`module:ClassName`)   |
-| `concurrency.max`       | Max concurrent predictions (requires async) |
+| Field                   | Purpose                                           |
+| ----------------------- | ------------------------------------------------- |
+| `build.python_version`  | Python interpreter version (3.10-3.13)            |
+| `build.gpu`             | Enable CUDA support                               |
+| `build.python_packages` | pip packages to install                           |
+| `build.system_packages` | apt packages to install                           |
+| `build.run`             | Arbitrary shell commands during build             |
+| `run`                   | Path to runner class (`module:ClassName`)         |
+| `concurrency.max`       | Deprecated legacy max-concurrency configuration   |
 
 The [Build System](./05-build-system.md) uses this configuration to produce an image containing all necessary dependencies, libraries, and the correct Python/CUDA versions.
 
@@ -310,13 +307,16 @@ The choice depends on your deployment needs - bundled weights make images larger
 
 ## Async Predictors
 
-For concurrent predictions, use async:
+For concurrent predictions, use async and mark the callable as safe to run concurrently:
 
 ```python
+import cog
+
 class Runner(BaseRunner):
     async def setup(self):
         self.model = await load_model_async()
 
+    @cog.concurrent(max=4)
     async def run(self, prompt: str) -> str:
         return await self.model.generate(prompt)
 ```
@@ -324,7 +324,9 @@ class Runner(BaseRunner):
 Requires:
 
 - Python 3.11+
-- `concurrency.max > 1` in cog.yaml
+- `@cog.concurrent(max=N)` on the selected `run` or `predict` function
+
+The older `concurrency.max` field in `cog.yaml` is retained as deprecated legacy configuration. New models should express concurrency in source so the runtime metadata lives with the function it describes.
 
 See [Container Runtime](./04-container-runtime.md) for concurrency details.
 

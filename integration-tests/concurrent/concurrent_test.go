@@ -3,6 +3,7 @@
 package concurrent_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -76,6 +77,9 @@ func TestConcurrentPredictions(t *testing.T) {
 	serveCmd := exec.Command(cogBinary, "serve", "-p", fmt.Sprintf("%d", port))
 	serveCmd.Dir = tmpDir
 	serveCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+	var serveOutput bytes.Buffer
+	serveCmd.Stdout = &serveOutput
+	serveCmd.Stderr = &serveOutput
 
 	err = serveCmd.Start()
 	require.NoError(t, err, "failed to start server")
@@ -140,6 +144,83 @@ func TestConcurrentPredictions(t *testing.T) {
 	}
 }
 
+func TestConcurrentPredictionsWithDecorator(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
+	tmpParent, err := os.MkdirTemp("", "cog-concurrent-decorator-parent-*")
+	require.NoError(t, err, "failed to create temp dir")
+	defer os.RemoveAll(tmpParent)
+	tmpDir := filepath.Join(tmpParent, fmt.Sprintf("cog-deco-%d", time.Now().UnixNano()))
+	require.NoError(t, os.Mkdir(tmpDir, 0o755), "failed to create temp project dir")
+
+	imageName := fmt.Sprintf("cog-deco-%d", time.Now().UnixNano())
+	defer func() {
+		exec.Command("docker", "rmi", "-f", imageName).Run()
+	}()
+
+	err = os.WriteFile(filepath.Join(tmpDir, "cog.yaml"), []byte(decoratorCogYAML(imageName)), 0o644)
+	require.NoError(t, err, "failed to write cog.yaml")
+	err = os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte(decoratorPredictPy), 0o644)
+	require.NoError(t, err, "failed to write predict.py")
+
+	cogBinary, err := harness.ResolveCogBinary()
+	require.NoError(t, err, "failed to resolve cog binary")
+
+	buildCmd := exec.Command(cogBinary, "build", "-t", imageName)
+	buildCmd.Dir = tmpDir
+	buildCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+	output, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "failed to build image\n%s", output)
+
+	port, err := allocatePort()
+	require.NoError(t, err, "failed to allocate port")
+
+	serveCmd := exec.Command(cogBinary, "serve", "-p", fmt.Sprintf("%d", port))
+	serveCmd.Dir = tmpDir
+	serveCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+	var serveOutput bytes.Buffer
+	serveCmd.Stdout = &serveOutput
+	serveCmd.Stderr = &serveOutput
+
+	err = serveCmd.Start()
+	require.NoError(t, err, "failed to start server")
+	defer func() {
+		serveCmd.Process.Kill()
+		serveCmd.Wait()
+	}()
+
+	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	require.True(t, waitForServerReady(serverURL, 60*time.Second), "server did not become ready within timeout")
+
+	const numPredictions = 5
+	var wg sync.WaitGroup
+	results := make([]predictionResult, numPredictions)
+	start := time.Now()
+
+	for i := range numPredictions {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			results[idx] = makePrediction(serverURL, idx)
+		}(i)
+	}
+
+	wg.Wait()
+	elapsed := time.Since(start)
+	assert.Less(t, elapsed, 3*time.Second, "predictions took too long (%v), expected < 3s for concurrent execution", elapsed)
+
+	for i, result := range results {
+		if !assert.NoError(t, result.err, "prediction %d failed", i) {
+			continue
+		}
+		assert.Equal(t, http.StatusOK, result.statusCode, "prediction %d returned unexpected status", i)
+		expectedOutput := fmt.Sprintf("wake up sleepyhead%d", i)
+		assert.Equal(t, expectedOutput, result.output, "prediction %d output mismatch", i)
+	}
+}
+
 type predictionResult struct {
 	statusCode int
 	output     string
@@ -147,7 +228,11 @@ type predictionResult struct {
 }
 
 func makePrediction(serverURL string, idx int) predictionResult {
-	reqBody := fmt.Sprintf(`{"id":"id-%d","input":{"s":"sleepyhead%d","sleep":1.0}}`, idx, idx)
+	return makePredictionWithSleep(serverURL, idx, 1.0)
+}
+
+func makePredictionWithSleep(serverURL string, idx int, sleep float64) predictionResult {
+	reqBody := fmt.Sprintf(`{"id":"id-%d","input":{"s":"sleepyhead%d","sleep":%.1f}}`, idx, idx, sleep)
 
 	resp, err := http.Post(
 		serverURL+"/predictions",
@@ -273,6 +358,26 @@ class Predictor(BasePredictor):
         return f"wake up {s}"
 `
 
+func decoratorCogYAML(imageName string) string {
+	return fmt.Sprintf(`build:
+  python_version: "3.11"
+predict: "predict.py:Predictor"
+image: %q
+`, imageName)
+}
+
+const decoratorPredictPy = `import asyncio
+import cog
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    @cog.concurrent(max=5)
+    async def predict(self, s: str, sleep: float) -> str:
+        await asyncio.sleep(sleep)
+        return f"wake up {s}"
+`
+
 // TestConcurrentAboveLimit tests that sending more predictions than max_concurrency
 // returns a 409 Conflict for the excess prediction.
 func TestConcurrentAboveLimit(t *testing.T) {
@@ -311,6 +416,9 @@ func TestConcurrentAboveLimit(t *testing.T) {
 	serveCmd := exec.Command(cogBinary, "serve", "-p", fmt.Sprintf("%d", port))
 	serveCmd.Dir = tmpDir
 	serveCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+	var serveOutput bytes.Buffer
+	serveCmd.Stdout = &serveOutput
+	serveCmd.Stderr = &serveOutput
 
 	err = serveCmd.Start()
 	require.NoError(t, err, "failed to start server")
@@ -322,26 +430,30 @@ func TestConcurrentAboveLimit(t *testing.T) {
 	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 
 	t.Log("Waiting for server to be ready...")
-	require.True(t, waitForServerReady(serverURL, 60*time.Second), "server did not become ready within timeout")
+	require.True(t, waitForServerReady(serverURL, 60*time.Second), "server did not become ready within timeout\n%s", serveOutput.String())
 
-	// Fill all 2 slots with long-running predictions (each sleeps 1s)
+	// Fill all 2 slots with long-running predictions.
 	const maxConcurrency = 2
 	var wg sync.WaitGroup
+	results := make([]predictionResult, maxConcurrency)
 	for i := range maxConcurrency {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			makePrediction(serverURL, idx)
+			results[idx] = makePredictionWithSleep(serverURL, idx, 3.0)
 		}(i)
 	}
+	require.True(t, waitForServerStatus(serverURL, "BUSY", 10*time.Second), "server did not report BUSY after filler predictions started")
 
 	// Poll with an overflow request until we get a 409, meaning both slots
 	// are occupied. This avoids a fixed sleep that can flake on slow CI.
 	t.Log("Polling for 409 (all slots occupied)...")
 	deadline := time.Now().Add(10 * time.Second)
 	var resp *http.Response
+	overflowAttempt := 0
 	for time.Now().Before(deadline) {
-		extraBody := `{"id":"extra","input":{"s":"overflow","sleep":1.0}}`
+		extraBody := fmt.Sprintf(`{"id":"extra-%d","input":{"s":"overflow","sleep":0.1}}`, overflowAttempt)
+		overflowAttempt++
 		resp, err = http.Post(
 			serverURL+"/predictions",
 			"application/json",
@@ -369,6 +481,127 @@ func TestConcurrentAboveLimit(t *testing.T) {
 	assert.Contains(t, strings.ToLower(errResp.Error), "capacity", "error response error = %q, want string containing \"capacity\"", errResp.Error)
 
 	wg.Wait()
+	for i, result := range results {
+		if !assert.NoError(t, result.err, "filler prediction %d failed", i) {
+			continue
+		}
+		if !assert.Equal(t, http.StatusOK, result.statusCode, "filler prediction %d returned unexpected status", i) {
+			continue
+		}
+		expectedOutput := fmt.Sprintf("wake up sleepyhead%d", i)
+		assert.Equal(t, expectedOutput, result.output, "filler prediction %d output mismatch", i)
+	}
+}
+
+func TestConcurrentDecoratorAboveLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
+	tmpParent, err := os.MkdirTemp("", "cog-decorator-above-limit-parent-*")
+	require.NoError(t, err, "failed to create temp dir")
+	defer os.RemoveAll(tmpParent)
+	tmpDir := filepath.Join(tmpParent, fmt.Sprintf("cog-deco-limit-%d", time.Now().UnixNano()))
+	require.NoError(t, os.Mkdir(tmpDir, 0o755), "failed to create temp project dir")
+
+	imageName := fmt.Sprintf("cog-deco-limit-%d", time.Now().UnixNano())
+	defer func() {
+		exec.Command("docker", "rmi", "-f", imageName).Run()
+	}()
+
+	err = os.WriteFile(filepath.Join(tmpDir, "cog.yaml"), []byte(decoratorCogYAML(imageName)), 0o644)
+	require.NoError(t, err, "failed to write cog.yaml")
+	err = os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte(decoratorAboveLimitPredictPy), 0o644)
+	require.NoError(t, err, "failed to write predict.py")
+
+	cogBinary, err := harness.ResolveCogBinary()
+	require.NoError(t, err, "failed to resolve cog binary")
+
+	t.Log("Building image...")
+	buildCmd := exec.Command(cogBinary, "build", "-t", imageName)
+	buildCmd.Dir = tmpDir
+	buildCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+	output, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "failed to build image\n%s", output)
+
+	t.Log("Starting server...")
+	port, err := allocatePort()
+	require.NoError(t, err, "failed to allocate port")
+
+	serveCmd := exec.Command(cogBinary, "serve", "-p", fmt.Sprintf("%d", port))
+	serveCmd.Dir = tmpDir
+	serveCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+	var serveOutput bytes.Buffer
+	serveCmd.Stdout = &serveOutput
+	serveCmd.Stderr = &serveOutput
+
+	err = serveCmd.Start()
+	require.NoError(t, err, "failed to start server")
+	defer func() {
+		serveCmd.Process.Kill()
+		serveCmd.Wait()
+	}()
+
+	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	t.Log("Waiting for server to be ready...")
+	require.True(t, waitForServerReady(serverURL, 60*time.Second), "server did not become ready within timeout\n%s", serveOutput.String())
+
+	const maxConcurrency = 2
+	var wg sync.WaitGroup
+	results := make([]predictionResult, maxConcurrency)
+	for i := range maxConcurrency {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			results[idx] = makePredictionWithSleep(serverURL, idx, 3.0)
+		}(i)
+	}
+	require.True(t, waitForServerStatus(serverURL, "BUSY", 10*time.Second), "server did not report BUSY after filler predictions started")
+
+	t.Log("Polling for 409 (all slots occupied)...")
+	deadline := time.Now().Add(10 * time.Second)
+	var resp *http.Response
+	overflowAttempt := 0
+	for time.Now().Before(deadline) {
+		extraBody := fmt.Sprintf(`{"id":"extra-%d","input":{"s":"overflow","sleep":0.1}}`, overflowAttempt)
+		overflowAttempt++
+		resp, err = http.Post(
+			serverURL+"/predictions",
+			"application/json",
+			strings.NewReader(extraBody),
+		)
+		require.NoError(t, err, "failed to send extra prediction")
+		if resp.StatusCode == http.StatusConflict {
+			break
+		}
+		resp.Body.Close()
+		time.Sleep(100 * time.Millisecond)
+	}
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusConflict, resp.StatusCode, "extra prediction status = %d, want %d (409 Conflict); slots never filled within timeout", resp.StatusCode, http.StatusConflict)
+
+	var errResp struct {
+		Error  string `json:"error"`
+		Status string `json:"status"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&errResp)
+	require.NoError(t, err, "failed to decode error response")
+	assert.Equal(t, "failed", errResp.Status, "error response status mismatch")
+	assert.Contains(t, strings.ToLower(errResp.Error), "capacity", "error response error = %q, want string containing \"capacity\"", errResp.Error)
+
+	wg.Wait()
+	for i, result := range results {
+		if !assert.NoError(t, result.err, "filler prediction %d failed", i) {
+			continue
+		}
+		if !assert.Equal(t, http.StatusOK, result.statusCode, "filler prediction %d returned unexpected status", i) {
+			continue
+		}
+		expectedOutput := fmt.Sprintf("wake up sleepyhead%d", i)
+		assert.Equal(t, expectedOutput, result.output, "filler prediction %d output mismatch", i)
+	}
 }
 
 const aboveLimitCogYAML = `build:
@@ -376,6 +609,18 @@ const aboveLimitCogYAML = `build:
 predict: "predict.py:Predictor"
 concurrency:
   max: 2
+`
+
+const decoratorAboveLimitPredictPy = `import asyncio
+import cog
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    @cog.concurrent(max=2)
+    async def predict(self, s: str, sleep: float) -> str:
+        await asyncio.sleep(sleep)
+        return f"wake up {s}"
 `
 
 // TestConcurrentAsyncMetrics tests that metrics recorded via current_scope().record_metric()

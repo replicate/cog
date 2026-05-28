@@ -2,9 +2,9 @@
 
 use std::sync::{Arc, OnceLock};
 
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::{PyAny, PyDict, PyTuple};
 
 use coglet_core::worker::SlotSender;
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
@@ -318,6 +318,7 @@ pub struct PythonPredictor {
     kind: PredictorKind,
     /// Whether the setup() method is an async def
     setup_is_async: bool,
+    concurrent_max: Option<usize>,
 }
 
 // PyObject is Send in PyO3 0.23+
@@ -403,11 +404,16 @@ impl PythonPredictor {
             false
         };
 
+        let concurrent_max = Self::read_concurrent_max(py, &instance, &kind)?;
+
         let predictor = Self {
             instance,
             kind,
             setup_is_async,
+            concurrent_max,
         };
+
+        tracing::debug!(concurrent_max = ?predictor.concurrent_max(), "Loaded predictor concurrency metadata");
 
         // Patch FieldInfo defaults on predict/train methods so Python uses actual
         // default values instead of FieldInfo wrapper objects for missing inputs.
@@ -428,11 +434,291 @@ impl PythonPredictor {
         Ok(predictor)
     }
 
+    fn read_concurrent_max(
+        py: Python<'_>,
+        instance: &PyObject,
+        kind: &PredictorKind,
+    ) -> PyResult<Option<usize>> {
+        let func = match kind {
+            PredictorKind::Class { method_name, .. } => {
+                instance.bind(py).getattr(method_name.as_str())?
+            }
+            PredictorKind::StandaloneFunction(_) => instance.bind(py).clone(),
+        };
+        Self::extract_concurrent_max(&func)
+    }
+
+    fn extract_concurrent_max(func: &Bound<'_, PyAny>) -> PyResult<Option<usize>> {
+        if let Ok(value) = func.getattr("__cog_concurrent_max__") {
+            return value.extract::<usize>().map(Some);
+        }
+        if let Ok(raw_func) = func.getattr("__func__")
+            && let Ok(value) = raw_func.getattr("__cog_concurrent_max__")
+        {
+            return value.extract::<usize>().map(Some);
+        }
+        Ok(None)
+    }
+
+    pub fn concurrent_max(&self) -> Option<usize> {
+        self.concurrent_max
+    }
+
+    pub fn concurrent_max_from_ref(py: Python<'_>, predictor_ref: &str) -> PyResult<Option<usize>> {
+        let (module_path, explicit_name) = match predictor_ref.split_once(':') {
+            Some((module_path, "")) => (module_path, None),
+            Some((module_path, name)) => (module_path, Some(name)),
+            None => (predictor_ref, None),
+        };
+        let source = std::fs::read_to_string(module_path).map_err(|err| {
+            PyIOError::new_err(format!(
+                "failed to read predictor source {module_path}: {err}"
+            ))
+        })?;
+
+        let globals = PyDict::new(py);
+        py.run(
+            c"\
+import ast
+
+def _cog_concurrent_max_from_source(source, explicit_name):
+    tree = ast.parse(source)
+    definitions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    def bound_names(node):
+        names = set()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.asname or alias.name.split('.')[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                names.add(alias.asname or alias.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        return names
+
+    def bindings_before(lineno, class_body=None):
+        cog_aliases = set()
+        concurrent_aliases = set()
+        for node in tree.body:
+            if getattr(node, 'lineno', 0) >= lineno:
+                break
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    local_name = alias.asname or alias.name.split('.')[0]
+                    cog_aliases.discard(local_name)
+                    concurrent_aliases.discard(local_name)
+                    if alias.name == 'cog':
+                        cog_aliases.add(local_name)
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    local_name = alias.asname or alias.name
+                    cog_aliases.discard(local_name)
+                    concurrent_aliases.discard(local_name)
+                    if node.module == 'cog' and alias.name == 'concurrent':
+                        concurrent_aliases.add(local_name)
+
+            for name in bound_names(node):
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    continue
+                cog_aliases.discard(name)
+                concurrent_aliases.discard(name)
+        if class_body is not None:
+            for node in class_body:
+                if getattr(node, 'lineno', 0) >= lineno:
+                    break
+                for name in bound_names(node):
+                    cog_aliases.discard(name)
+                    concurrent_aliases.discard(name)
+        return cog_aliases, concurrent_aliases
+
+    def base_name(base):
+        if isinstance(base, ast.Name):
+            return base.id
+        if isinstance(base, ast.Attribute):
+            return base.attr
+        return None
+
+    def constants_before(lineno):
+        constants = {}
+        for node in tree.body:
+            if getattr(node, 'lineno', 0) >= lineno:
+                break
+            names = bound_names(node)
+            if not names:
+                continue
+
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                name = node.targets[0].id
+                if isinstance(node.value, ast.Constant) and type(node.value.value) is int:
+                    constants[name] = node.value.value
+                else:
+                    constants.pop(name, None)
+                continue
+
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                if node.value is None:
+                    continue
+                name = node.target.id
+                if isinstance(node.value, ast.Constant) and type(node.value.value) is int:
+                    constants[name] = node.value.value
+                else:
+                    constants.pop(name, None)
+                continue
+
+            for name in names:
+                constants.pop(name, None)
+        return constants
+
+    def max_value(node, lineno):
+        if isinstance(node, ast.Constant) and type(node.value) is int:
+            value = node.value
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub) and isinstance(node.operand, ast.Constant) and type(node.operand.value) is int:
+            value = -node.operand.value
+        elif isinstance(node, ast.Name):
+            constants = constants_before(lineno)
+            if node.id not in constants:
+                raise ValueError('max must be an integer literal or module-level integer constant')
+            value = constants[node.id]
+        else:
+            raise ValueError('max must be an integer literal or module-level integer constant')
+        if value < 1:
+            raise ValueError('max must be at least 1')
+        return value
+
+    def decorator_max(decorators, class_body=None):
+        for decorator in decorators:
+            call = decorator if isinstance(decorator, ast.Call) else None
+            target = call.func if call is not None else decorator
+            cog_aliases, concurrent_aliases = bindings_before(decorator.lineno, class_body)
+            if isinstance(target, ast.Name):
+                if target.id in concurrent_aliases:
+                    is_concurrent = True
+                elif target.id == 'concurrent':
+                    raise ValueError('concurrent decorator is not imported from cog')
+                else:
+                    is_concurrent = False
+            elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
+                if target.attr == 'concurrent' and target.value.id in cog_aliases:
+                    is_concurrent = True
+                elif target.attr == 'concurrent' and target.value.id == 'cog':
+                    raise ValueError('concurrent decorator is not imported from cog')
+                else:
+                    is_concurrent = False
+            else:
+                is_concurrent = False
+            if not is_concurrent:
+                continue
+            if call is None:
+                return 1
+            if call.args:
+                raise ValueError('concurrent decorator arguments must be literal')
+            for keyword in call.keywords:
+                if keyword.arg is None:
+                    raise ValueError('concurrent decorator arguments must be literal')
+                if keyword.arg == 'max':
+                    return max_value(keyword.value, decorator.lineno)
+            return 1
+        return None
+
+    def direct_methods(class_node):
+        return [
+            node
+            for node in class_node.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {'run', 'predict'}
+        ]
+
+    def selected_method(class_node, seen=None):
+        methods = direct_methods(class_node)
+        if len(methods) > 1:
+            return None
+
+        seen = set() if seen is None else seen
+        if class_node.name in seen:
+            return None
+        seen.add(class_node.name)
+
+        inherited = []
+        for base in class_node.bases:
+            name = base_name(base)
+            if name in {'BaseRunner', 'BasePredictor', 'object'}:
+                break
+            base_node = definitions.get(name)
+            if isinstance(base_node, ast.ClassDef):
+                method = selected_method(base_node, seen)
+                if method is not None:
+                    inherited.append(method)
+        candidates = methods + inherited
+        method_names = {method.name for method in candidates}
+        if len(candidates) == 1 or len(method_names) == 1:
+            return methods[0] if methods else candidates[0]
+        return None
+
+    def class_max(class_node):
+        method = selected_method(class_node)
+        if method is None:
+            return None
+        class_body = class_node.body
+        for owner in definitions.values():
+            if isinstance(owner, ast.ClassDef) and any(item is method for item in owner.body):
+                class_body = owner.body
+                break
+        return decorator_max(method.decorator_list, class_body)
+
+    def object_max(name):
+        node = definitions.get(name)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return decorator_max(node.decorator_list)
+        if isinstance(node, ast.ClassDef):
+            return class_max(node)
+        return None
+
+    if explicit_name:
+        return object_max(explicit_name)
+
+    runner = definitions.get('Runner')
+    if isinstance(runner, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return decorator_max(runner.decorator_list)
+    if isinstance(runner, ast.ClassDef) and selected_method(runner) is not None:
+        return class_max(runner)
+
+    predictor = definitions.get('Predictor')
+    if isinstance(predictor, ast.ClassDef):
+        return class_max(predictor)
+    return None
+",
+            Some(&globals),
+            None,
+        )?;
+        let helper = globals
+            .get_item("_cog_concurrent_max_from_source")?
+            .expect("helper should be defined");
+        helper.call1((source, explicit_name))?.extract()
+    }
+
     fn selected_predict_method_name(
         py: Python<'_>,
         instance: &PyObject,
     ) -> PyResult<PredictMethodName> {
         let class = instance.bind(py).getattr("__class__")?;
+        Self::selected_predict_method_name_for_class(py, &class)
+    }
+
+    fn selected_predict_method_name_for_class(
+        py: Python<'_>,
+        class: &Bound<'_, PyAny>,
+    ) -> PyResult<PredictMethodName> {
         let mro = class.getattr("__mro__")?.cast_into::<PyTuple>()?;
         let cog_predictor = py.import("cog.predictor")?;
         let base_runner = cog_predictor.getattr("BaseRunner")?;
@@ -1423,6 +1709,34 @@ sys.modules.setdefault('requests', requests)
         })
     }
 
+    fn load_predictor_source_with_ref(source: &str, ref_name: &str) -> PyResult<PythonPredictor> {
+        pyo3::Python::initialize();
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("predictor.py");
+        std::fs::write(&path, source).expect("failed to write test predictor");
+        Python::attach(|py| {
+            add_python_sdk_path(py);
+            let predictor_ref = format!("{}:{}", path.display(), ref_name);
+            PythonPredictor::load(py, &predictor_ref)
+        })
+    }
+
+    fn concurrent_max_from_source(source: &str, ref_name: &str) -> PyResult<Option<usize>> {
+        pyo3::Python::initialize();
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("predictor.py");
+        std::fs::write(&path, source).expect("failed to write test predictor");
+        Python::attach(|py| {
+            add_python_sdk_path(py);
+            let predictor_ref = if ref_name.is_empty() {
+                path.display().to_string()
+            } else {
+                format!("{}:{}", path.display(), ref_name)
+            };
+            PythonPredictor::concurrent_max_from_ref(py, &predictor_ref)
+        })
+    }
+
     fn selected_predict_method_name(predictor: &PythonPredictor) -> String {
         Python::attach(|py| {
             predictor
@@ -1449,6 +1763,604 @@ class Predictor(BaseRunner):
         .expect("predictor with run should load");
 
         assert_eq!(selected_predict_method_name(&predictor), "run");
+    }
+
+    #[test]
+    fn class_run_concurrent_max_loads_from_decorator() {
+        let predictor = load_predictor_source(
+            r#"
+import cog
+from cog import BaseRunner
+
+class Predictor(BaseRunner):
+    @cog.concurrent(max=3)
+    async def run(self) -> str:
+        return "ok"
+"#,
+        )
+        .expect("predictor with concurrent run should load");
+
+        assert_eq!(predictor.concurrent_max(), Some(3));
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_does_not_instantiate_class_predictor() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+class Predictor(BaseRunner):
+    def __init__(self):
+        raise RuntimeError("constructor should not run")
+
+    @cog.concurrent(max=3)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let concurrent_max = concurrent_max_from_source(source, "Predictor")
+            .expect("metadata inspection should not instantiate predictor");
+
+        assert_eq!(concurrent_max, Some(3));
+        assert!(
+            load_predictor_source(source).is_err(),
+            "full predictor load should still instantiate and fail"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_does_not_execute_module_top_level_code() {
+        let source = r#"
+import cog
+
+raise RuntimeError("module top-level code should not run")
+
+class Predictor:
+    @cog.concurrent(max=3)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let concurrent_max = concurrent_max_from_source(source, "Predictor")
+            .expect("metadata inspection should not execute predictor module");
+
+        assert_eq!(concurrent_max, Some(3));
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_falls_back_to_predictor_when_runner_invalid() {
+        let source = r#"
+import cog
+
+class Runner:
+    def run(self) -> str:
+        return "run"
+
+    def predict(self) -> str:
+        return "predict"
+
+class Predictor:
+    @cog.concurrent(max=4)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let concurrent_max = concurrent_max_from_source(source, "")
+            .expect("metadata inspection should fall back to Predictor");
+
+        assert_eq!(concurrent_max, Some(4));
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_supports_runner_function() {
+        let source = r#"
+from cog import concurrent
+
+@concurrent(max=5)
+async def Runner() -> str:
+    return "ok"
+"#;
+
+        let concurrent_max = concurrent_max_from_source(source, "")
+            .expect("metadata inspection should support Runner function");
+
+        assert_eq!(concurrent_max, Some(5));
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_supports_import_aliases() {
+        let source = r#"
+import cog as c
+from cog import concurrent as cog_concurrent
+
+class Runner:
+    @c.concurrent(max=4)
+    async def run(self) -> str:
+        return "ok"
+
+class Predictor:
+    @cog_concurrent(max=5)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let runner_max = concurrent_max_from_source(source, "Runner")
+            .expect("metadata inspection should support import cog aliases");
+        let predictor_max = concurrent_max_from_source(source, "Predictor")
+            .expect("metadata inspection should support concurrent import aliases");
+
+        assert_eq!(runner_max, Some(4));
+        assert_eq!(predictor_max, Some(5));
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_user_defined_concurrent_decorator() {
+        let source = r#"
+def concurrent(fn=None, *, max=1):
+    return fn if fn is not None else lambda inner: inner
+
+class Predictor:
+    @concurrent(max=3)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("ambiguous concurrent decorator should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("concurrent decorator is not imported from cog"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_shadowed_cog_import() {
+        let source = r#"
+import cog
+
+cog = object()
+
+class Predictor:
+    @cog.concurrent(max=3)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("shadowed cog import should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("concurrent decorator is not imported from cog"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_class_body_shadowed_cog_import() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+def fake_concurrent(*, max):
+    return lambda fn: fn
+
+class Predictor(BaseRunner):
+    cog = type("X", (), {"concurrent": fake_concurrent})
+
+    @cog.concurrent(max=4)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("class-body shadowed cog import should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("concurrent decorator is not imported from cog"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_rebound_concurrent_import() {
+        let source = r#"
+from cog import concurrent
+from other import concurrent
+
+class Predictor:
+    @concurrent(max=3)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("rebound concurrent import should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("concurrent decorator is not imported from cog"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_rebound_cog_import() {
+        let source = r#"
+import cog
+import other as cog
+
+class Predictor:
+    @cog.concurrent(max=3)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("rebound cog import should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("concurrent decorator is not imported from cog"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_kwargs_expansion() {
+        let source = r#"
+import cog
+
+OPTS = {"max": 3}
+
+class Predictor:
+    @cog.concurrent(**OPTS)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("kwargs expansion should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("concurrent decorator arguments must be literal"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_falls_back_when_runner_direct_and_inherited_conflict() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+class PredictMixin:
+    async def predict(self) -> str:
+        return "predict"
+
+class Runner(PredictMixin, BaseRunner):
+    async def run(self) -> str:
+        return "run"
+
+class Predictor(BaseRunner):
+    @cog.concurrent(max=6)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let concurrent_max = concurrent_max_from_source(source, "")
+            .expect("metadata inspection should fall back to Predictor");
+
+        assert_eq!(concurrent_max, Some(6));
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_zero_max() {
+        let source = r#"
+import cog
+
+class Predictor:
+    @cog.concurrent(max=0)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("zero max should be rejected");
+
+        assert!(
+            err.to_string().contains("max must be at least 1"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_negative_max() {
+        let source = r#"
+import cog
+
+class Predictor:
+    @cog.concurrent(max=-1)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("negative max should be rejected");
+
+        assert!(
+            err.to_string().contains("max must be at least 1"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_supports_module_constant_max() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+MAX_CONCURRENCY = 4
+
+class Predictor(BaseRunner):
+    @cog.concurrent(max=MAX_CONCURRENCY)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let concurrent_max = concurrent_max_from_source(source, "Predictor")
+            .expect("metadata inspection should resolve module constants");
+
+        assert_eq!(concurrent_max, Some(4));
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_uses_constant_value_before_decorator() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+MAX_CONCURRENCY = 4
+
+class Predictor(BaseRunner):
+    @cog.concurrent(max=MAX_CONCURRENCY)
+    async def run(self) -> str:
+        return "ok"
+
+MAX_CONCURRENCY = 8
+"#;
+
+        let concurrent_max = concurrent_max_from_source(source, "Predictor")
+            .expect("metadata inspection should use constant value before decorator");
+
+        assert_eq!(concurrent_max, Some(4));
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_prior_non_integer_constant_rebind() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+MAX_CONCURRENCY = 4
+MAX_CONCURRENCY = "bad"
+
+class Predictor(BaseRunner):
+    @cog.concurrent(max=MAX_CONCURRENCY)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("non-integer constant rebind should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("max must be an integer literal or module-level integer constant"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_prior_annotated_constant_rebind() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+MAX_CONCURRENCY = 4
+MAX_CONCURRENCY: str = "bad"
+
+class Predictor(BaseRunner):
+    @cog.concurrent(max=MAX_CONCURRENCY)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("annotated non-integer constant rebind should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("max must be an integer literal or module-level integer constant"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_prior_function_constant_rebind() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+MAX_CONCURRENCY = 4
+
+def MAX_CONCURRENCY():
+    return 8
+
+class Predictor(BaseRunner):
+    @cog.concurrent(max=MAX_CONCURRENCY)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("function constant rebind should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("max must be an integer literal or module-level integer constant"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_prior_import_constant_rebind() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+MAX_CONCURRENCY = 4
+import other as MAX_CONCURRENCY
+
+class Predictor(BaseRunner):
+    @cog.concurrent(max=MAX_CONCURRENCY)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("import constant rebind should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("max must be an integer literal or module-level integer constant"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_prior_augmented_constant_rebind() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+MAX_CONCURRENCY = 4
+MAX_CONCURRENCY += 1
+
+class Predictor(BaseRunner):
+    @cog.concurrent(max=MAX_CONCURRENCY)
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("augmented constant rebind should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("max must be an integer literal or module-level integer constant"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_rejects_unresolved_max_expression() {
+        let source = r#"
+import cog
+
+class Predictor:
+    @cog.concurrent(max=get_max())
+    async def run(self) -> str:
+        return "ok"
+"#;
+
+        let err = concurrent_max_from_source(source, "Predictor")
+            .expect_err("unresolved max expression should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("max must be an integer literal or module-level integer constant"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_uses_mixin_before_base_runner() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+class RunMixin:
+    @cog.concurrent(max=4)
+    async def run(self) -> str:
+        return "ok"
+
+class Runner(RunMixin, BaseRunner):
+    pass
+"#;
+
+        let concurrent_max = concurrent_max_from_source(source, "Runner")
+            .expect("metadata inspection should inspect same-file mixins");
+
+        assert_eq!(concurrent_max, Some(4));
+    }
+
+    #[test]
+    fn concurrent_max_from_ref_ignores_mixin_after_base_runner() {
+        let source = r#"
+import cog
+from cog import BaseRunner
+
+class PredictMixin:
+    @cog.concurrent(max=4)
+    async def predict(self) -> str:
+        return "ok"
+
+class Runner(BaseRunner, PredictMixin):
+    pass
+"#;
+
+        let concurrent_max = concurrent_max_from_source(source, "Runner")
+            .expect("metadata inspection should ignore mixins after BaseRunner");
+
+        assert_eq!(concurrent_max, None);
+    }
+
+    #[test]
+    fn function_run_concurrent_max_loads_from_decorator() {
+        let predictor = load_predictor_source_with_ref(
+            r#"
+import cog
+
+@cog.concurrent(max=4)
+async def run() -> str:
+    return "ok"
+"#,
+            "run",
+        )
+        .expect("function predictor with concurrent decorator should load");
+
+        assert_eq!(predictor.concurrent_max(), Some(4));
+    }
+
+    #[test]
+    fn undecorated_predictor_has_no_concurrent_max() {
+        let predictor = load_predictor_source(
+            r#"
+from cog import BaseRunner
+
+class Predictor(BaseRunner):
+    async def run(self) -> str:
+        return "ok"
+"#,
+        )
+        .expect("undecorated predictor should load");
+
+        assert_eq!(predictor.concurrent_max(), None);
     }
 
     #[test]

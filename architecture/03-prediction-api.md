@@ -153,11 +153,11 @@ Prediction endpoints return 503 when health is not `READY`.
 
 ### Slot-Based Permits
 
-The runtime uses explicit permit tokens for concurrency control:
+The runtime uses explicit permit tokens for concurrency control. Prediction creation tries to acquire a slot immediately; if none is available, the request returns `409 Conflict` rather than waiting in a runtime queue.
 
 ```rust
-// Acquire permit (blocks if all slots busy)
-let permit = permit_pool.acquire().await?;
+// Try to acquire a permit; return 409 if all slots are busy
+let permit = permit_pool.try_acquire()?;
 
 // Permit is held during prediction
 let slot_id = permit.slot_id();
@@ -170,19 +170,22 @@ drop(permit);
 Advantages:
 
 - Fixed, predictable concurrency
-- Fair queuing (FIFO permit acquisition)
+- Immediate backpressure at capacity
 - Observable slot usage in metrics
 - No task explosion
 
 ### Configuration
 
-```yaml
-# cog.yaml
-concurrency:
-  max: 5
+```python
+import cog
+
+class Runner(BaseRunner):
+    @cog.concurrent(max=5)
+    async def run(self, prompt: str) -> str:
+        ...
 ```
 
-This creates 5 slots in the PermitPool. Each slot corresponds to one Unix socket connection to the worker subprocess.
+This creates 5 slots in the PermitPool. Each slot corresponds to one Unix socket connection to the worker subprocess. The deprecated `concurrency.max` config path is translated into the same runtime setting for legacy models.
 
 ## Dynamic Payload Handling
 
