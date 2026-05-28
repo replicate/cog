@@ -25,12 +25,13 @@ import (
 
 // ociMockClient implements registry.Client for testing ImagePusher.
 type ociMockClient struct {
-	mu              sync.Mutex
-	writtenLayers   []v1.Hash
-	pushedImages    []string
-	writeLayerErr   error
-	pushImageErr    error
-	writeLayerCount int
+	mu                    sync.Mutex
+	writtenLayers         []v1.Hash
+	layerMediaTypeHeaders []string
+	pushedImages          []string
+	writeLayerErr         error
+	pushImageErr          error
+	writeLayerCount       int
 }
 
 func (m *ociMockClient) WriteLayer(_ context.Context, opts registry.WriteLayerOptions) error {
@@ -45,6 +46,7 @@ func (m *ociMockClient) WriteLayer(_ context.Context, opts registry.WriteLayerOp
 		return err
 	}
 	m.writtenLayers = append(m.writtenLayers, digest)
+	m.layerMediaTypeHeaders = append(m.layerMediaTypeHeaders, opts.LayerMediaTypeHeader)
 
 	// Send progress if channel is provided
 	if opts.ProgressCh != nil {
@@ -122,6 +124,7 @@ func TestImagePusher_Push(t *testing.T) {
 
 		// Should have pushed 2 layers + 1 config blob = 3 WriteLayer calls
 		assert.Equal(t, 3, mock.writeLayerCount)
+		assert.Equal(t, []string{"", "", ""}, mock.layerMediaTypeHeaders)
 
 		// Should have pushed the manifest
 		require.Len(t, mock.pushedImages, 1)

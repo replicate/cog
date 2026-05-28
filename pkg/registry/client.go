@@ -49,12 +49,18 @@ type RetryConfig struct {
 	OnRetry RetryCallback
 }
 
+const OCILayerMediaTypeHeader = "OCI-Layer-Media-Type"
+
 // WriteLayerOptions configures the WriteLayer operation.
 type WriteLayerOptions struct {
 	// Repo is the repository to push to.
 	Repo string
 	// Layer is the layer to push.
 	Layer v1.Layer
+	// LayerMediaTypeHeader, when set, is sent as OCI-Layer-Media-Type on the
+	// final upload commit request. This is intentionally opt-in so image layers
+	// keep registry image-layer size enforcement.
+	LayerMediaTypeHeader string
 	// ProgressCh receives progress updates. Use a buffered channel to avoid deadlocks.
 	// If nil, no progress updates are sent.
 	ProgressCh chan<- v1.Update

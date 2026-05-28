@@ -274,6 +274,28 @@ func TestWeightPusher_Push_ReportsProgressPerLayer(t *testing.T) {
 	}
 }
 
+func TestWeightPusher_Push_SendsLayerMediaTypeHeader(t *testing.T) {
+	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
+
+	var mediaTypes []string
+	reg := &mockRegistry{
+		writeLayerFunc: func(ctx context.Context, opts registry.WriteLayerOptions) error {
+			mediaTypes = append(mediaTypes, opts.LayerMediaTypeHeader)
+			return nil
+		},
+		pushImageFunc: func(ctx context.Context, ref string, img v1.Image) error { return nil },
+	}
+
+	pusher := NewWeightPusher(reg)
+	_, err := pusher.Push(context.Background(), "r8.im/user/model", artifact)
+	require.NoError(t, err)
+	require.NotEmpty(t, mediaTypes)
+
+	for i, lr := range artifact.Layers {
+		require.Equal(t, string(lr.MediaType), mediaTypes[i])
+	}
+}
+
 func TestWeightPusher_Push_ForwardsRetryCallback(t *testing.T) {
 	artifact := newTestWeightArtifact(t, "model-v1", "/src/weights")
 
