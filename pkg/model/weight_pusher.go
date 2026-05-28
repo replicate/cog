@@ -194,9 +194,10 @@ func (p *WeightPusher) pushSingleLayer(
 	}
 
 	err := writeLayerWithProgress(ctx, p.registry, registry.WriteLayerOptions{
-		Repo:  repo,
-		Layer: layer,
-		Retry: retryConfig,
+		Repo:                 repo,
+		Layer:                layer,
+		LayerMediaTypeHeader: string(lr.MediaType),
+		Retry:                retryConfig,
 	}, onProgress)
 	if err != nil {
 		return fmt.Errorf("push layer %s: %w", digestStr, err)

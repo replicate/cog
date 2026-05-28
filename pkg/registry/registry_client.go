@@ -571,7 +571,7 @@ func (c *RegistryClient) writeLayerMultipart(ctx context.Context, repo name.Repo
 	}
 
 	// Commit the upload using the final location (which contains updated state hash)
-	err = c.commitUpload(ctx, client, finalLocation, digest)
+	err = c.commitUpload(ctx, client, finalLocation, digest, opts.LayerMediaTypeHeader)
 	if err != nil {
 		return fmt.Errorf("committing upload: %w", err)
 	}
@@ -998,7 +998,7 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 }
 
 // commitUpload finalizes the upload by sending a PUT request with the digest.
-func (c *RegistryClient) commitUpload(ctx context.Context, client *http.Client, location string, digest v1.Hash) error {
+func (c *RegistryClient) commitUpload(ctx context.Context, client *http.Client, location string, digest v1.Hash, layerMediaType string) error {
 	u, err := url.Parse(location)
 	if err != nil {
 		return fmt.Errorf("parsing location URL: %w", err)
@@ -1015,6 +1015,9 @@ func (c *RegistryClient) commitUpload(ctx context.Context, client *http.Client, 
 	}
 
 	req.Header.Set("Content-Type", "application/octet-stream")
+	if layerMediaType != "" {
+		req.Header.Set(OCILayerMediaTypeHeader, layerMediaType)
+	}
 
 	resp, err := client.Do(req) //nolint:gosec // G704: URL from registry upload session, not user input
 	if err != nil {
