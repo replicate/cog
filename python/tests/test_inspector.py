@@ -391,3 +391,47 @@ def test_inspector_preserves_nested_non_opaque_annotated_optional_behavior() -> 
     field = info.inputs["value"]
     assert field.type.primitive is adt.PrimitiveType.STRING
     assert field.type.repetition is adt.Repetition.OPTIONAL
+
+
+def test_inspector_accepts_setup_with_none_return_annotation_and_future_annotations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """setup() -> None must be accepted even when from __future__ import annotations is active.
+
+    With PEP 563 string annotations, -> None is stored as the string "None" rather than
+    the NoneType object, so a naive `is not None` check incorrectly rejects it.
+    """
+    module_name = "future_annotations_setup"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from __future__ import annotations\n"
+        "class Runner:\n"
+        "    def setup(self) -> None:\n"
+        "        pass\n"
+        "    def run(self, value: str) -> str:\n"
+        "        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    info = create_predictor(module_name, "Runner")
+    assert "value" in info.inputs
+
+
+def test_inspector_rejects_predict_with_none_return_annotation_and_future_annotations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """predict() -> None must be rejected even when from __future__ import annotations is active.
+
+    With PEP 563 string annotations, -> None is stored as the string "None" rather than
+    the NoneType object, so a naive `is None` check incorrectly accepts it.
+    """
+    module_name = "future_annotations_predict_none"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from __future__ import annotations\n"
+        "class Runner:\n"
+        "    def run(self, value: str) -> None:\n"
+        "        pass\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(ValueError, match="return type annotation"):
+        create_predictor(module_name, "Runner")
