@@ -70,7 +70,10 @@ def _validate_setup(f: Callable[..., Any]) -> None:
         raise ValueError("setup() must not have keyword-only args")
     if spec.kwonlydefaults:
         raise ValueError("setup() must not have keyword-only defaults")
-    if spec.annotations.get("return") is not None:
+    # With `from __future__ import annotations` (PEP 563), `-> None` is stored as
+    # the string "None" rather than the None value, so check both forms.
+    return_annotation = spec.annotations.get("return")
+    if return_annotation is not None and return_annotation != "None":
         raise ValueError("setup() must return None")
 
 
@@ -93,7 +96,10 @@ def _validate_run_or_predict(
         raise ValueError(f"{f_name}() must not have keyword-only args")
     if spec.kwonlydefaults:
         raise ValueError(f"{f_name}() must not have keyword-only defaults")
-    if spec.annotations.get("return") is None:
+    # With `from __future__ import annotations` (PEP 563), `-> None` is stored as
+    # the string "None" rather than the None value, so treat both as missing.
+    return_annotation = spec.annotations.get("return")
+    if return_annotation is None or return_annotation == "None":
         raise ValueError(f"{f_name}() must have a return type annotation")
 
 
