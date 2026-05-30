@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -168,4 +170,45 @@ func TestExtractOutputSchemaFromValidSchema(t *testing.T) {
 	outputSchema := safeExtractOutputSchema(s, "/predictions")
 	require.NotNil(t, outputSchema, "expected non-nil output schema for valid input")
 	require.Contains(t, outputSchema.Type.Slice(), "string", "expected string type")
+}
+
+func TestTransformPathsToBase64URLsRecursesIntoNestedJSON(t *testing.T) {
+	dir := t.TempDir()
+	fileA := filepath.Join(dir, "a.txt")
+	fileB := filepath.Join(dir, "b.txt")
+	fileC := filepath.Join(dir, "c.txt")
+	require.NoError(t, os.WriteFile(fileA, []byte("alpha"), 0o644))
+	require.NoError(t, os.WriteFile(fileB, []byte("beta"), 0o644))
+	require.NoError(t, os.WriteFile(fileC, []byte("gamma"), 0o644))
+
+	inputs := map[string]any{
+		"single": "@" + fileA,
+		"files": []any{
+			"@" + fileB,
+			map[string]any{
+				"inner": "@" + fileC,
+			},
+		},
+		"count": float64(3),
+		"plain": "hello",
+	}
+
+	transformed, err := transformPathsToBase64URLs(inputs)
+	require.NoError(t, err)
+
+	require.IsType(t, "", transformed["single"])
+	require.Contains(t, transformed["single"].(string), "data:text/plain;base64,")
+
+	files, ok := transformed["files"].([]any)
+	require.True(t, ok)
+	require.IsType(t, "", files[0])
+	require.Contains(t, files[0].(string), "data:text/plain;base64,")
+
+	innerObj, ok := files[1].(map[string]any)
+	require.True(t, ok)
+	require.IsType(t, "", innerObj["inner"])
+	require.Contains(t, innerObj["inner"].(string), "data:text/plain;base64,")
+
+	require.Equal(t, float64(3), transformed["count"])
+	require.Equal(t, "hello", transformed["plain"])
 }

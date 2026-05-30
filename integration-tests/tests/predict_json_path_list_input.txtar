@@ -1,0 +1,28 @@
+# Test `--json` with list[Path] input
+
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE --json '{"paths": ["@1.txt", "@2.txt"]}'
+stdout '"status": "succeeded"'
+stdout '"output": "test1test2"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Path
+
+
+class Predictor(BasePredictor):
+    def predict(self, paths: list[Path]) -> str:
+        output_parts = []
+        for path in paths:
+            with open(path) as f:
+                output_parts.append(f.read())
+        return "".join(output_parts)
+
+-- 1.txt --
+test1
+-- 2.txt --
+test2

@@ -159,33 +159,59 @@ func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
 	result := make(map[string]any)
 
 	for key, value := range inputs {
-		if strValue, ok := value.(string); ok && strings.HasPrefix(strValue, "@") {
-			// This is a file path, convert to base64 data URL
-			filePath := strValue[1:]
-
-			// Read file
-			data, err := os.ReadFile(filePath)
-			if err != nil {
-				return nil, fmt.Errorf("Failed to read file %q: %w", filePath, err)
-			}
-
-			// Get MIME type
-			mimeType := mime.TypeByExtension(filepath.Ext(filePath))
-			if mimeType == "" {
-				mimeType = "application/octet-stream"
-			}
-
-			// Create base64 data URL
-			base64Data := base64.StdEncoding.EncodeToString(data)
-			dataURL := fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data)
-
-			result[key] = dataURL
-		} else {
-			result[key] = value
+		transformed, err := transformJSONValuePathsToBase64URLs(value)
+		if err != nil {
+			return nil, err
 		}
+		result[key] = transformed
 	}
 
 	return result, nil
+}
+
+func transformJSONValuePathsToBase64URLs(value any) (any, error) {
+	switch v := value.(type) {
+	case string:
+		if !strings.HasPrefix(v, "@") {
+			return v, nil
+		}
+
+		filePath := v[1:]
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to read file %q: %w", filePath, err)
+		}
+
+		mimeType := mime.TypeByExtension(filepath.Ext(filePath))
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+
+		base64Data := base64.StdEncoding.EncodeToString(data)
+		return fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data), nil
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			transformed, err := transformJSONValuePathsToBase64URLs(item)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = transformed
+		}
+		return out, nil
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, item := range v {
+			transformed, err := transformJSONValuePathsToBase64URLs(item)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = transformed
+		}
+		return out, nil
+	default:
+		return value, nil
+	}
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
