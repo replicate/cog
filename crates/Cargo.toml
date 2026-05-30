@@ -37,7 +37,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-sentry = { version = "0.47", default-features = false, features = ["backtrace", "contexts", "panic", "tracing", "reqwest"] }
+sentry = { version = "0.48", default-features = false, features = ["backtrace", "contexts", "panic", "tracing", "reqwest"] }
 
 # Error handling
 thiserror = "2"
