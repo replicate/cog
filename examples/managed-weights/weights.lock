@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "envelopeFormat": "sha256:ce2d53f8dd962ace393450e0abadbe227304897be87753a503b61f9c8525726e",
+  "weights": [
+    {
+      "name": "parakeet",
+      "target": "/src/weights/parakeet",
+      "source": {
+        "uri": "file://./weights",
+        "fingerprint": "sha256:7ebdcfebeca9a959621601570f1beec20729f23ec721694f2432939789cfad86",
+        "include": [
+          "*.json",
+          "*.safetensors"
+        ],
+        "exclude": [],
+        "importedAt": "2026-04-29T17:23:00.414483Z"
+      },
+      "digest": "sha256:f2c88df678c449d8fca7def7afd5d9c17bb8963096108a51fd8fb9a92bf6fc8a",
+      "setDigest": "sha256:05933849eadc5067660cf0d164375fc9a80cf11a2be19a663017af62f5284bf2",
+      "size": 2509473151,
+      "sizeCompressed": 2508595098,
+      "files": [
+        {
+          "path": "config.json",
+          "size": 1153,
+          "digest": "sha256:e747b85e1bdfd300c8b8ac63bac8dd5221f8fe9bc275b48d06c735fcd6971b6e",
+          "layer": "sha256:5f33cdfadfaf568afd41ce78ac566bda102564454e8211f11370281e9ee9619a"
+        },
+        {
+          "path": "generation_config.json",
+          "size": 268,
+          "digest": "sha256:fc78f636b071231420356dbf70140a81a389132eb49bc81bcb2efdbe8293e7ad",
+          "layer": "sha256:5f33cdfadfaf568afd41ce78ac566bda102564454e8211f11370281e9ee9619a"
+        },
+        {
+          "path": "model.safetensors",
+          "size": 2508311120,
+          "digest": "sha256:3a2026366188c8c68598edbbff92f8d11590a08e0ae2e6775544e7b07d6a5e11",
+          "layer": "sha256:65f11b0713429c604eb159d02a1c805815d599414e10c1c295e1937472db3a2f"
+        },
+        {
+          "path": "processor_config.json",
+          "size": 392,
+          "digest": "sha256:8346a93a3b987fa1dec57a78f045cd0817d21786589a5a096b41a57a446fd1d7",
+          "layer": "sha256:5f33cdfadfaf568afd41ce78ac566bda102564454e8211f11370281e9ee9619a"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 1159960,
+          "digest": "sha256:bd321b096832a3f270bd3b2a88823957920f1a5c5ada71114a26ea729d0cbe91",
+          "layer": "sha256:5f33cdfadfaf568afd41ce78ac566bda102564454e8211f11370281e9ee9619a"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 258,
+          "digest": "sha256:5e04ae3487a5533224c295622cb206cc6e53914be527503978ce81f2cc75c559",
+          "layer": "sha256:5f33cdfadfaf568afd41ce78ac566bda102564454e8211f11370281e9ee9619a"
+        }
+      ],
+      "layers": [
+        {
+          "digest": "sha256:5f33cdfadfaf568afd41ce78ac566bda102564454e8211f11370281e9ee9619a",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+          "size": 280986,
+          "sizeUncompressed": 1162031
+        },
+        {
+          "digest": "sha256:65f11b0713429c604eb159d02a1c805815d599414e10c1c295e1937472db3a2f",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "size": 2508314112,
+          "sizeUncompressed": 2508311120
+        }
+      ]
+    },
+    {
+      "name": "minilm",
+      "target": "/src/weights/minilm",
+      "source": {
+        "uri": "hf://sentence-transformers/all-MiniLM-L6-v2",
+        "fingerprint": "commit:c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+        "include": [],
+        "exclude": [
+          ".gitattributes",
+          "README.md",
+          "data_config.json",
+          "onnx/",
+          "openvino/",
+          "pytorch_model.bin",
+          "rust_model.ot",
+          "tf_model.h5",
+          "train_script.py"
+        ],
+        "importedAt": "2026-04-29T22:43:36.709798Z"
+      },
+      "digest": "sha256:6b15a4ac4f7e4dec39939043d32e7c51238516356f810b496735c50d0d7310be",
+      "setDigest": "sha256:18074874da7fd77e7cf1fefcbb2fc7edee0c38417f2255962e8a4fff5567b1d2",
+      "size": 91567913,
+      "sizeCompressed": 91174861,
+      "files": [
+        {
+          "path": "1_Pooling/config.json",
+          "size": 190,
+          "digest": "sha256:4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23",
+          "layer": "sha256:7ff2b72da0831598b639d05ed0e1ea64f2623cc5055245501b2c50f63a28cd0a"
+        },
+        {
+          "path": "config.json",
+          "size": 612,
+          "digest": "sha256:953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41",
+          "layer": "sha256:7ff2b72da0831598b639d05ed0e1ea64f2623cc5055245501b2c50f63a28cd0a"
+        },
+        {
+          "path": "config_sentence_transformers.json",
+          "size": 116,
+          "digest": "sha256:061ca9d39661d6c6d6de5ba27f79a1cd5770ea247f8d46412a68a498dc5ac9f3",
+          "layer": "sha256:7ff2b72da0831598b639d05ed0e1ea64f2623cc5055245501b2c50f63a28cd0a"
+        },
+        {
+          "path": "model.safetensors",
+          "size": 90868376,
+          "digest": "sha256:53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db",
+          "layer": "sha256:69482828980bf1c74078f5a7bf0ba03bf719f525a60e2e32a5b369417d19bcef"
+        },
+        {
+          "path": "modules.json",
+          "size": 349,
+          "digest": "sha256:84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf",
+          "layer": "sha256:7ff2b72da0831598b639d05ed0e1ea64f2623cc5055245501b2c50f63a28cd0a"
+        },
+        {
+          "path": "sentence_bert_config.json",
+          "size": 53,
+          "digest": "sha256:fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7",
+          "layer": "sha256:7ff2b72da0831598b639d05ed0e1ea64f2623cc5055245501b2c50f63a28cd0a"
+        },
+        {
+          "path": "special_tokens_map.json",
+          "size": 112,
+          "digest": "sha256:303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3",
+          "layer": "sha256:7ff2b72da0831598b639d05ed0e1ea64f2623cc5055245501b2c50f63a28cd0a"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 466247,
+          "digest": "sha256:be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037",
+          "layer": "sha256:7ff2b72da0831598b639d05ed0e1ea64f2623cc5055245501b2c50f63a28cd0a"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 350,
+          "digest": "sha256:acb92769e8195aabd29b7b2137a9e6d6e25c476a4f15aa4355c233426c61576b",
+          "layer": "sha256:7ff2b72da0831598b639d05ed0e1ea64f2623cc5055245501b2c50f63a28cd0a"
+        },
+        {
+          "path": "vocab.txt",
+          "size": 231508,
+          "digest": "sha256:07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+          "layer": "sha256:7ff2b72da0831598b639d05ed0e1ea64f2623cc5055245501b2c50f63a28cd0a"
+        }
+      ],
+      "layers": [
+        {
+          "digest": "sha256:69482828980bf1c74078f5a7bf0ba03bf719f525a60e2e32a5b369417d19bcef",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "size": 90871296,
+          "sizeUncompressed": 90868376
+        },
+        {
+          "digest": "sha256:7ff2b72da0831598b639d05ed0e1ea64f2623cc5055245501b2c50f63a28cd0a",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+          "size": 303565,
+          "sizeUncompressed": 699537
+        }
+      ]
+    }
+  ]
+}

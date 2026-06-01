@@ -4,7 +4,10 @@ before:
     - go mod tidy
 dist: ./dist/go
 env:
-  - CGO_ENABLED=0
+  # CGo required for go-tree-sitter (static Python schema parser).
+  # Linux cross-compilation uses zig cc — see per-build overrides.
+  # Darwin builds use the native compiler (zig lacks macOS SDK stubs).
+  - CGO_ENABLED=1
 builds:
   - binary: cog
     id: cog
@@ -16,7 +19,18 @@ builds:
       - arm64
     main: ./cmd/cog
     ldflags:
-      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+      # COG_VERSION (from VERSION.txt via mise build:cog or CI) overrides git-derived version for snapshots.
+      # For tagged releases, COG_VERSION is unset and envOrDefault falls back to .Version (from tag).
+      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{ envOrDefault \"COG_VERSION\" .Version }} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=zig cc -target x86_64-linux-gnu
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=zig cc -target aarch64-linux-gnu
   - binary: base-image
     id: base-image
     goos:
@@ -27,7 +41,16 @@ builds:
       - arm64
     main: ./cmd/base-image
     ldflags:
-      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{.Version}} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+      - "-s -w -X github.com/replicate/cog/pkg/global.Version={{ envOrDefault \"COG_VERSION\" .Version }} -X github.com/replicate/cog/pkg/global.Commit={{.Commit}} -X github.com/replicate/cog/pkg/global.BuildTime={{.Date}}"
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=zig cc -target x86_64-linux-gnu
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=zig cc -target aarch64-linux-gnu
 archives:
   - formats: [binary]
     ids:
@@ -41,7 +64,8 @@ archives:
 checksum:
   name_template: "checksums.txt"
 snapshot:
-  version_template: "{{ incpatch .Version }}-dev+g{{ .ShortCommit }}{{ if .IsGitDirty }}.d{{ .Now.Format \"20060102\" }}{{ end }}"
+  version_template: '{{ envOrDefault "COG_VERSION" (printf "%s-dev+g%s" (incpatch .Version) .ShortCommit) }}'
+  # COG_VERSION is set from VERSION.txt by mise or CI; without it, goreleaser derives a dev version from the last tag.
 changelog:
   sort: asc
   filters:
@@ -49,6 +73,7 @@ changelog:
       - "^docs:"
       - "^test:"
 release:
+  draft: true
   # If set to auto, will mark the release as not ready for production
   # in case there is an indicator for this in the tag e.g. v1.0.0-alpha
   # If set to true, will mark the release as not ready for production.

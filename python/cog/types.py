@@ -376,14 +376,3 @@ class AsyncConcatenateIterator(AsyncIterator[Item]):
 
     @abstractmethod
     async def __anext__(self) -> Item: ...
-
-
-########################################
-# Warnings
-########################################
-
-
-class ExperimentalFeatureWarning(UserWarning):
-    """Warning for experimental features that may change or be removed."""
-
-    pass

@@ -1,0 +1,33 @@
+# Test that a predictor using the deprecated emit_metric() still builds,
+# runs, and records metrics correctly.
+#
+# emit_metric() was dropped without a compat shim in 0.17.0, causing a hard
+# ImportError on startup for models that use it. This test covers the two
+# call styles used across replicate/* models:
+#
+#   from cog import emit_metric; emit_metric("key", value)
+#   cog.emit_metric("key", value)
+
+cog serve
+
+# Prediction works and the metric appears in the response
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+stdout '"output_tokens":42'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import cog
+from cog import BasePredictor, emit_metric
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        # Both call styles should work
+        emit_metric("output_tokens", 42)
+        cog.emit_metric("input_tokens", 10)
+        return "ok"

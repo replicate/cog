@@ -85,3 +85,27 @@ func TestGreaterThanOrEqualToWithInvalidPatch(t *testing.T) {
 	rightVersion := "1.1.0b2"
 	require.True(t, GreaterOrEqual(leftVersion, rightVersion))
 }
+
+// TestInvalidVersionsDoNotPanic verifies that the version helper functions
+// handle invalid version strings gracefully instead of panicking.
+// This is important for config parsing where user-provided versions may
+// be malformed.
+func TestInvalidVersionsDoNotPanic(t *testing.T) {
+	invalid := "11.A"
+	valid := "11.8"
+
+	// None of these should panic
+	require.False(t, Equal(invalid, valid))
+	require.False(t, Equal(valid, invalid))
+	require.False(t, EqualMinor(invalid, valid))
+	require.False(t, EqualMinor(valid, invalid))
+	require.False(t, Greater(invalid, valid))
+	require.False(t, Greater(valid, invalid))
+	require.False(t, Matches(invalid, valid))
+	require.False(t, Matches(valid, invalid))
+	require.Equal(t, invalid, StripPatch(invalid))
+
+	// GreaterOrEqual falls back to string equality for invalid versions
+	require.True(t, GreaterOrEqual(invalid, invalid))
+	require.False(t, GreaterOrEqual(invalid, valid))
+}

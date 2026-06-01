@@ -21,19 +21,12 @@ requires-python = ">=3.10"
 dependencies = [
   "typing_extensions>=4.0",
   "pyyaml>=6.0",
-  # Server deps
-  "fastapi>=0.100.0",
-  "uvicorn>=0.20.0",
   "structlog>=21.0.0",
   "requests>=2.25.0",
+  "coglet>=0.1.0,<1.0",
 ]
 
 dynamic = ["version"]
-
-[project.optional-dependencies]
-# Rust-based prediction server (alpha)
-# Lower bound ensures SDK shim compatibility; upper bound allows breaking changes at major version
-coglet = ["coglet>=0.1.0,<1.0"]
 
 [dependency-groups]
 dev = [
@@ -43,18 +36,10 @@ dev = [
 ]
 
 test = [
-    "httpx",
-    "hypothesis",
-    "numpy",
-    "pillow",
     "pytest",
-    "pytest-asyncio",
-    "pytest-httpserver",
     "pytest-timeout",
     "pytest-xdist",
     "pytest-cov",
-    "responses",
-    "pexpect",
 ]
 
 [tool.setuptools_scm]
@@ -71,7 +56,7 @@ reportMissingParameterType = "error"
 reportUnknownLambdaType = "error"
 reportUnnecessaryIsInstance = "warning"
 reportUnnecessaryComparison = "warning"
-reportUnneesssaryContains = "warning"
+reportUnnecessaryContains = "warning"
 reportMissingTypeArgument = "error"
 reportUnusedExpression = "warning"
 
@@ -123,7 +108,7 @@ lint.ignore = [
 ]
 extend-exclude = [
   "python/tests/server/fixtures/*",
-  "crates/coglet-python/*.pyi",
+  "crates/coglet-python/**/*.pyi",
   "crates/coglet-python/scripts/*",
 ]
 src = ["python"]
@@ -140,6 +125,7 @@ src = ["python"]
   "S108", # Probable insecure usage of temp file
   "S110", # try-except-pass
   "S301", # pickle can be unsafe when used to deserialize untrusted data
+  "S603", # subprocess call — tests use subprocess for isolation
   "ANN",  # Type annotations not required in tests
   "B011", # Do not assert False
 ]
@@ -150,4 +136,10 @@ src = ["python"]
   "S603", # subprocess call
   "ANN",  # Type annotations not required in tests
   "B904", # raise from
+]
+"tools/test-harness/*" = [
+  "S310", # URL open — URLs are hardcoded to https://
+  "S603", # subprocess call — harness invokes cog/docker/git by design
+  "S607", # partial executable path — cog/docker/git resolved via PATH
+  "ANN",  # Type annotations not required in tooling
 ]

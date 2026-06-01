@@ -54,6 +54,10 @@ type Build struct {
 	PreInstall         []string  `json:"pre_install,omitempty" yaml:"pre_install,omitempty"` // Deprecated, but included for backwards compatibility
 	CUDA               string    `json:"cuda,omitempty" yaml:"cuda,omitempty"`
 	CuDNN              string    `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
+	// SDKVersion pins the cog Python SDK version installed in the container.
+	// Accepts a PEP 440 version string (e.g. "0.18.0" or "0.18.0a1").
+	// When empty the latest release is installed. Overridden by COG_SDK_WHEEL env var.
+	SDKVersion string `json:"sdk_version,omitempty" yaml:"sdk_version,omitempty"`
 
 	pythonRequirementsContent []string
 }
@@ -62,16 +66,40 @@ type Concurrency struct {
 	Max int `json:"max,omitempty" yaml:"max"`
 }
 
-// WeightSource defines a weight file or directory to include in the model.
+// WeightSourceConfig describes where to import weights from.
+// This is the "source" sub-object inside a weights entry.
+type WeightSourceConfig struct {
+	URI     string   `json:"uri,omitempty" yaml:"uri,omitempty"`
+	Include []string `json:"include,omitempty" yaml:"include,omitempty"`
+	Exclude []string `json:"exclude,omitempty" yaml:"exclude,omitempty"`
+}
+
+// WeightSourceList accepts a single object or an array in YAML/JSON
+// and normalizes to a slice. Custom unmarshalers are in config_file.go.
+type WeightSourceList struct {
+	Items []WeightSourceConfig
+}
+
+// WeightSource defines a weight directory to include in the model.
 type WeightSource struct {
-	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
-	Source string `json:"source" yaml:"source"`
-	Target string `json:"target,omitempty" yaml:"target,omitempty"`
+	Name   string           `json:"name" yaml:"name"`
+	Target string           `json:"target" yaml:"target"`
+	Source WeightSourceList `json:"source" yaml:"source"`
+}
+
+// WeightNames returns the names of the given weight sources.
+func WeightNames(ws []WeightSource) []string {
+	names := make([]string, len(ws))
+	for i, w := range ws {
+		names[i] = w.Name
+	}
+	return names
 }
 
 type Config struct {
 	Build       *Build         `json:"build" yaml:"build"`
 	Image       string         `json:"image,omitempty" yaml:"image,omitempty"`
+	Model       string         `json:"model,omitempty" yaml:"model,omitempty"`
 	Predict     string         `json:"predict,omitempty" yaml:"predict"`
 	Train       string         `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *Concurrency   `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
@@ -79,15 +107,6 @@ type Config struct {
 	Weights     []WeightSource `json:"weights,omitempty" yaml:"weights,omitempty"`
 
 	parsedEnvironment map[string]string
-}
-
-func defaultConfig() *Config {
-	return &Config{
-		Build: &Build{
-			GPU:           false,
-			PythonVersion: "3.13",
-		},
-	}
 }
 
 func (r *RunItem) UnmarshalYAML(unmarshal func(any) error) error {
@@ -182,11 +201,6 @@ func (c *Config) TorchaudioVersion() (string, bool) {
 
 func (c *Config) TensorFlowVersion() (string, bool) {
 	return c.pythonPackageVersion("tensorflow")
-}
-
-func (c *Config) ContainsCoglet() bool {
-	_, ok := c.pythonPackageVersion("coglet")
-	return ok
 }
 
 func (c *Config) cudasFromTorch() (torchVersion string, torchCUDAs []string, err error) {
@@ -418,6 +432,11 @@ func validateCudaVersion(cudaVersion string) error {
 	major, err := strconv.Atoi(parts[0])
 	if err != nil {
 		return fmt.Errorf("invalid major version in CUDA version %q", cudaVersion)
+	}
+
+	_, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return fmt.Errorf("invalid minor version in CUDA version %q", cudaVersion)
 	}
 
 	if major < MinimumMajorCudaVersion {

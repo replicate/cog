@@ -48,7 +48,11 @@ pub enum SlotState {
     #[default]
     Idle,
     /// Sync prediction in progress
-    SyncPrediction { cancelled: bool },
+    SyncPrediction {
+        cancelled: bool,
+        /// Python thread identifier (for `PyThreadState_SetAsyncExc`)
+        py_thread_id: std::ffi::c_long,
+    },
     /// Async prediction in progress
     AsyncPrediction {
         /// Future for cancellation
@@ -60,7 +64,7 @@ pub enum SlotState {
 impl SlotState {
     pub fn is_cancelled(&self) -> bool {
         match self {
-            SlotState::SyncPrediction { cancelled } => *cancelled,
+            SlotState::SyncPrediction { cancelled, .. } => *cancelled,
             SlotState::AsyncPrediction { cancelled, .. } => *cancelled,
             SlotState::Idle => false,
         }
@@ -68,7 +72,7 @@ impl SlotState {
 
     pub fn mark_cancelled(&mut self) {
         match self {
-            SlotState::SyncPrediction { cancelled } => *cancelled = true,
+            SlotState::SyncPrediction { cancelled, .. } => *cancelled = true,
             SlotState::AsyncPrediction { cancelled, .. } => *cancelled = true,
             SlotState::Idle => { /* no-op */ }
         }
@@ -170,18 +174,20 @@ impl PythonPredictHandler {
         })
     }
 
-    // NOTE: All mutex locks in this file use expect() with clear messages.
-    // If a mutex is poisoned (another thread panicked while holding it), the worker
-    // is in an unrecoverable state. We panic with a clear message - the orchestrator
-    // will see the worker exit and fail all in-flight predictions.
-    // Future: Could add a "last gasp" control message to signal why we're dying.
+    // NOTE: All mutex locks in this file use .expect().
+    // See log_writer.rs for the full rationale. Short version: poisoned mutex
+    // means slot isolation is compromised. The panic hook installed by
+    // coglet_core::worker sends a Fatal IPC message and aborts.
+
+    /// Check the cancelled flag for a slot without clearing it.
+    fn is_cancelled(&self, slot: SlotId) -> bool {
+        let slots = self.slots.lock().expect("slots mutex poisoned");
+        slots.get(&slot).is_some_and(|s| s.is_cancelled())
+    }
 
     /// Check and clear the cancelled flag for a slot.
     fn take_cancelled(&self, slot: SlotId) -> bool {
-        let mut slots = self
-            .slots
-            .lock()
-            .expect("Worker internal error: slots mutex poisoned");
+        let mut slots = self.slots.lock().expect("slots mutex poisoned");
         let state = slots.entry(slot).or_default();
         let was_cancelled = state.is_cancelled();
         // Reset to idle after checking cancellation
@@ -192,20 +198,23 @@ impl PythonPredictHandler {
     }
 
     /// Mark a slot as having a sync prediction in progress.
-    fn start_sync_prediction(&self, slot: SlotId) {
-        let mut slots = self
-            .slots
-            .lock()
-            .expect("Worker internal error: slots mutex poisoned");
-        slots.insert(slot, SlotState::SyncPrediction { cancelled: false });
+    ///
+    /// `py_thread_id` is the Python thread identifier of the thread that will
+    /// run the prediction, for use with `PyThreadState_SetAsyncExc` on cancel.
+    fn start_sync_prediction(&self, slot: SlotId, py_thread_id: std::ffi::c_long) {
+        let mut slots = self.slots.lock().expect("slots mutex poisoned");
+        slots.insert(
+            slot,
+            SlotState::SyncPrediction {
+                cancelled: false,
+                py_thread_id,
+            },
+        );
     }
 
     /// Mark a slot as having an async prediction in progress.
     fn start_async_prediction(&self, slot: SlotId, future: Py<PyAny>) {
-        let mut slots = self
-            .slots
-            .lock()
-            .expect("Worker internal error: slots mutex poisoned");
+        let mut slots = self.slots.lock().expect("slots mutex poisoned");
         slots.insert(
             slot,
             SlotState::AsyncPrediction {
@@ -217,10 +226,7 @@ impl PythonPredictHandler {
 
     /// Clear prediction state for a slot.
     fn finish_prediction(&self, slot: SlotId) {
-        let mut slots = self
-            .slots
-            .lock()
-            .expect("Worker internal error: slots mutex poisoned");
+        let mut slots = self.slots.lock().expect("slots mutex poisoned");
         slots.insert(slot, SlotState::Idle);
     }
 
@@ -229,10 +235,7 @@ impl PythonPredictHandler {
     fn cancel_async_future(&self, slot: SlotId) -> bool {
         Python::attach(|py| {
             let future = {
-                let slots = self
-                    .slots
-                    .lock()
-                    .expect("Worker internal error: slots mutex poisoned");
+                let slots = self.slots.lock().expect("slots mutex poisoned");
                 if let Some(SlotState::AsyncPrediction { future, .. }) = slots.get(&slot) {
                     Some(future.clone_ref(py))
                 } else {
@@ -263,7 +266,7 @@ impl PythonPredictHandler {
         Python::attach(|py| {
             self.async_loop
                 .lock()
-                .expect("Worker internal error: async_loop mutex poisoned")
+                .expect("async_loop mutex poisoned")
                 .as_ref()
                 .map(|l| l.clone_ref(py))
         })
@@ -280,20 +283,26 @@ impl PredictHandler for PythonPredictHandler {
                 .map_err(|e| SetupError::load(e.to_string()))?;
 
             // Detect SDK implementation
-            let sdk_impl = match py.import("cog._adt") {
-                Ok(_) => SdkImplementation::Cog,
+            let sdk_impl = match py.import("cog") {
+                Ok(cog) => match cog.getattr("BasePredictor") {
+                    Ok(_) => SdkImplementation::Cog,
+                    Err(_) => SdkImplementation::Unknown,
+                },
                 Err(_) => SdkImplementation::Unknown,
             };
             tracing::info!(sdk_implementation = %sdk_impl, "Detected Cog SDK implementation");
 
             tracing::info!("Running setup");
-            pred.setup(py)
+            let async_loop = self
+                .async_loop
+                .lock()
+                .expect("async_loop mutex poisoned")
+                .as_ref()
+                .map(|l| l.clone_ref(py));
+            pred.setup(py, async_loop.as_ref())
                 .map_err(|e| SetupError::setup(e.to_string()))?;
 
-            let mut guard = self
-                .predictor
-                .lock()
-                .expect("Worker internal error: predictor mutex poisoned");
+            let mut guard = self.predictor.lock().expect("predictor mutex poisoned");
             *guard = Some(Arc::new(pred));
 
             tracing::info!("Setup complete");
@@ -307,15 +316,13 @@ impl PredictHandler for PythonPredictHandler {
         id: String,
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
+        context: HashMap<String, String>,
     ) -> PredictResult {
         tracing::trace!(%slot, %id, "PythonPredictHandler::predict starting");
 
         // Get predictor
         let pred = {
-            let guard = self
-                .predictor
-                .lock()
-                .expect("Worker internal error: predictor mutex poisoned");
+            let guard = self.predictor.lock().expect("predictor mutex poisoned");
             match guard.as_ref() {
                 Some(p) => Arc::clone(p),
                 None => {
@@ -326,9 +333,12 @@ impl PredictHandler for PythonPredictHandler {
         let is_async = pred.is_async();
         tracing::trace!(%slot, %id, is_async, "Got predictor");
 
-        // Track that we're starting a prediction on this slot
-        // Note: we'll update with the actual future later if async
-        self.start_sync_prediction(slot);
+        // Track that we're starting a prediction on this slot.
+        // Capture the Python thread ID for this thread (used by
+        // PyThreadState_SetAsyncExc to inject CancelationException on cancel).
+        // For async predictions, the slot state is updated later with the future.
+        let py_thread_id = crate::cancel::current_py_thread_id();
+        self.start_sync_prediction(slot, py_thread_id);
 
         // Check cancellation first (in case cancel was called before we started)
         if self.take_cancelled(slot) {
@@ -353,6 +363,20 @@ impl PredictHandler for PythonPredictHandler {
                 None
             }
         };
+
+        // Enter metric scope - sets Scope ContextVar for metric recording
+        let slot_sender_for_metrics = slot_sender.clone();
+        let scope_guard = Python::attach(|py| {
+            crate::metric_scope::ScopeGuard::enter(py, slot_sender_for_metrics, context)
+        });
+        let scope_guard = match scope_guard {
+            Ok(g) => Some(g),
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to enter metric scope");
+                None
+            }
+        };
+
         tracing::trace!(%slot, %id, "Prediction context entered");
 
         // Run prediction or training based on mode.
@@ -382,8 +406,9 @@ impl PredictHandler for PythonPredictHandler {
                     };
 
                     // Submit coroutine and get future + prepared input for cleanup
+                    let scope_ref = scope_guard.as_ref().map(|g| g.scope());
                     let (future, is_async_gen, prepared) = match pred
-                        .train_async_worker(input, &loop_obj, &id)
+                        .train_async_worker(input, &loop_obj, &id, scope_ref)
                     {
                         Ok(f) => f,
                         Err(e) => {
@@ -403,8 +428,14 @@ impl PredictHandler for PythonPredictHandler {
                     });
 
                     // Block on future.result()
+                    let sender_for_async = slot_sender.clone();
                     let result = Python::attach(|py| match future.call_method0(py, "result") {
-                        Ok(result) => pred.process_async_result(py, result.bind(py), is_async_gen),
+                        Ok(result) => pred.process_async_result(
+                            py,
+                            result.bind(py),
+                            is_async_gen,
+                            &sender_for_async,
+                        ),
                         Err(e) => {
                             let err_str = e.to_string();
                             if err_str.contains("CancelledError") || err_str.contains("cancelled") {
@@ -425,10 +456,17 @@ impl PredictHandler for PythonPredictHandler {
                 } else {
                     // Sync train - set sync prediction ID for log routing
                     crate::log_writer::set_sync_prediction_id(Some(&id));
-                    let _cancelable = crate::cancel::enter_cancelable();
-                    let r = pred.train_worker(input);
+                    let r = pred.train_worker(input, slot_sender.clone());
                     crate::log_writer::set_sync_prediction_id(None);
-                    r
+
+                    // Upgrade to Cancelled if the slot was marked cancelled
+                    // (same logic as sync predict above)
+                    match r {
+                        Err(_) if self.is_cancelled(slot) => {
+                            Err(coglet_core::PredictionError::Cancelled)
+                        }
+                        other => other,
+                    }
                 }
             }
             HandlerMode::Predict => {
@@ -447,8 +485,9 @@ impl PredictHandler for PythonPredictHandler {
                     };
 
                     // Submit coroutine and get future + prepared input for cleanup
+                    let scope_ref = scope_guard.as_ref().map(|g| g.scope());
                     let (future, is_async_gen, prepared) = match pred
-                        .predict_async_worker(input, &loop_obj, &id)
+                        .predict_async_worker(input, &loop_obj, &id, scope_ref)
                     {
                         Ok(f) => f,
                         Err(e) => {
@@ -468,8 +507,14 @@ impl PredictHandler for PythonPredictHandler {
                     });
 
                     // Block on future.result()
+                    let sender_for_async = slot_sender.clone();
                     let result = Python::attach(|py| match future.call_method0(py, "result") {
-                        Ok(result) => pred.process_async_result(py, result.bind(py), is_async_gen),
+                        Ok(result) => pred.process_async_result(
+                            py,
+                            result.bind(py),
+                            is_async_gen,
+                            &sender_for_async,
+                        ),
                         Err(e) => {
                             let err_str = e.to_string();
                             if err_str.contains("CancelledError") || err_str.contains("cancelled") {
@@ -490,12 +535,21 @@ impl PredictHandler for PythonPredictHandler {
                 } else {
                     // Sync predict - set sync prediction ID for log routing
                     crate::log_writer::set_sync_prediction_id(Some(&id));
-                    let _cancelable = crate::cancel::enter_cancelable();
                     tracing::trace!(%slot, %id, "Calling predict_worker");
-                    let r = pred.predict_worker(input);
+                    let r = pred.predict_worker(input, slot_sender.clone());
                     tracing::trace!(%slot, %id, "predict_worker returned");
                     crate::log_writer::set_sync_prediction_id(None);
-                    r
+
+                    // If the prediction failed AND the slot was marked cancelled,
+                    // treat it as a cancellation. PyThreadState_SetAsyncExc injects
+                    // CancelationException which predict_worker sees as a generic
+                    // PyErr — we upgrade it to Cancelled here.
+                    match r {
+                        Err(_) if self.is_cancelled(slot) => {
+                            Err(coglet_core::PredictionError::Cancelled)
+                        }
+                        other => other,
+                    }
                 }
             }
         };
@@ -504,11 +558,17 @@ impl PredictHandler for PythonPredictHandler {
         self.finish_prediction(slot);
 
         // Exit prediction context
+        drop(scope_guard);
         drop(log_guard);
 
         match result {
             Ok(r) => {
-                PredictResult::success(output_to_json(r.output), start.elapsed().as_secs_f64())
+                let is_stream = r.output.is_stream();
+                PredictResult::success(
+                    output_to_json(r.output),
+                    start.elapsed().as_secs_f64(),
+                    is_stream,
+                )
             }
             Err(e) => {
                 if matches!(e, coglet_core::PredictionError::Cancelled) {
@@ -522,10 +582,7 @@ impl PredictHandler for PythonPredictHandler {
 
     fn cancel(&self, slot: SlotId) {
         // Mark slot as cancelled and determine how to cancel based on state
-        let mut slots = self
-            .slots
-            .lock()
-            .expect("Worker internal error: slots mutex poisoned");
+        let mut slots = self.slots.lock().expect("slots mutex poisoned");
 
         if let Some(state) = slots.get_mut(&slot) {
             state.mark_cancelled();
@@ -538,12 +595,12 @@ impl PredictHandler for PythonPredictHandler {
                         tracing::trace!(%slot, "No async future to cancel (prediction may have completed)");
                     }
                 }
-                SlotState::SyncPrediction { .. } => {
+                SlotState::SyncPrediction { py_thread_id, .. } => {
+                    let py_thread_id = *py_thread_id;
                     drop(slots); // Release lock
-                    // Sync: send SIGUSR1 to interrupt Python code
-                    if let Err(e) = crate::cancel::send_cancel_signal() {
-                        tracing::warn!(%slot, error = %e, "Failed to send cancel signal");
-                    }
+                    // Sync: inject CancelationException into the Python thread
+                    // via PyThreadState_SetAsyncExc (fires at next bytecode boundary)
+                    crate::cancel::cancel_sync_thread(py_thread_id);
                 }
                 SlotState::Idle => {
                     // Already idle, nothing to cancel
@@ -555,21 +612,10 @@ impl PredictHandler for PythonPredictHandler {
         }
     }
 
-    fn schema(&self) -> Option<serde_json::Value> {
-        let guard = self
-            .predictor
-            .lock()
-            .expect("Worker internal error: predictor mutex poisoned");
-        guard.as_ref().and_then(|pred| pred.schema(self.mode))
-    }
-
     async fn healthcheck(&self) -> coglet_core::orchestrator::HealthcheckResult {
         // Get predictor
         let pred = {
-            let guard = self
-                .predictor
-                .lock()
-                .expect("Worker internal error: predictor mutex poisoned");
+            let guard = self.predictor.lock().expect("predictor mutex poisoned");
             match guard.as_ref() {
                 Some(p) => Arc::clone(p),
                 None => {
@@ -616,7 +662,7 @@ impl Drop for PythonPredictHandler {
         if let Some(loop_obj) = self
             .async_loop
             .lock()
-            .expect("Worker internal error: async_loop mutex poisoned during drop")
+            .expect("async_loop mutex poisoned")
             .take()
         {
             Python::attach(|py| {
@@ -641,7 +687,7 @@ impl Drop for PythonPredictHandler {
         if let Some(thread) = self
             .async_thread
             .lock()
-            .expect("Worker internal error: async_thread mutex poisoned during drop")
+            .expect("async_thread mutex poisoned")
             .take()
             && let Err(e) = thread.join()
         {

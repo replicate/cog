@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/url"
@@ -33,10 +34,41 @@ func FetchTorchCompatibilityMatrix() ([]config.TorchCompatibility, error) {
 		return nil, err
 	}
 
+	// Remove entries with no supported Python versions
+	filtered := make([]config.TorchCompatibility, 0, len(compats))
+	for _, c := range compats {
+		if len(c.Pythons) > 0 {
+			filtered = append(filtered, c)
+		} else {
+			console.Warnf("Dropping %s: no supported Python versions", c.Torch)
+		}
+	}
+	compats = filtered
+
 	// sanity check
 	if len(compats) < 21 {
 		return nil, fmt.Errorf("PyTorch compatibility matrix only had %d rows, has the html changed?", len(compats))
 	}
+
+	// stable sort for deterministic output
+	slices.SortFunc(compats, func(a, b config.TorchCompatibility) int {
+		aCuda := ""
+		bCuda := ""
+		if a.CUDA != nil {
+			aCuda = *a.CUDA
+		}
+		if b.CUDA != nil {
+			bCuda = *b.CUDA
+		}
+		return cmp.Or(
+			cmp.Compare(a.Torch, b.Torch),
+			cmp.Compare(a.Torchvision, b.Torchvision),
+			cmp.Compare(a.Torchaudio, b.Torchaudio),
+			cmp.Compare(aCuda, bCuda),
+			cmp.Compare(a.ExtraIndexURL, b.ExtraIndexURL),
+			cmp.Compare(a.FindLinks, b.FindLinks),
+		)
+	})
 
 	return compats, nil
 }
@@ -170,6 +202,9 @@ func parseTorchInstallString(s string, defaultVersions map[string]string, cuda *
 	}
 	torchaudio := libVersions["torchaudio"]
 
+	extraIndexURL = normalizePytorchIndexURL(extraIndexURL)
+	torch = normalizeTorchVersionForIndexURL(torch, extraIndexURL)
+
 	pythons, err := FindCompatiblePythonVersions(torch, torchvision, torchaudio, extraIndexURL, findLinks)
 	if err != nil {
 		return nil, err
@@ -277,6 +312,29 @@ func basePytorchURL() string {
 func pytorchURL(name string) string {
 	url := fmt.Sprintf(basePytorchURL()+"/%s/", name)
 	return url
+}
+
+func normalizePytorchIndexURL(indexURL string) string {
+	if indexURL == "" {
+		return ""
+	}
+	return strings.TrimRight(indexURL, "/") + "/"
+}
+
+func normalizeTorchVersionForIndexURL(torchVersion string, indexURL string) string {
+	if indexURL == "" || strings.Contains(torchVersion, "+") {
+		return torchVersion
+	}
+	u, err := url.Parse(indexURL)
+	if err != nil {
+		return torchVersion
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	variant := parts[len(parts)-1]
+	if strings.HasPrefix(variant, "cu") || variant == "cpu" {
+		return torchVersion + "+" + variant
+	}
+	return torchVersion
 }
 
 func ExtractSubFeaturesFromPytorchVersion(pytorchVersion string) (string, string, string, string, string, error) {
@@ -395,7 +453,12 @@ func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
 	links := doc.FindAll("a")
 	packages := []TorchPackage{}
 	for _, link := range links {
-		name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion(link.Text())
+		filename := strings.TrimSpace(link.Text())
+		if !strings.HasSuffix(filename, ".whl") {
+			continue
+		}
+
+		name, version, variant, pythonVersion, platform, err := ExtractSubFeaturesFromPytorchVersion(filename)
 		if err != nil {
 			console.Warnf("Failed to parse pytorch version: %v", err)
 			continue
@@ -420,6 +483,10 @@ func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
 			continue
 		}
 
+		if !isDigits(pythonVersion) {
+			continue
+		}
+
 		// 310 -> 3.10
 		pythonVersion = pythonVersion[:1] + "." + pythonVersion[1:]
 		if minor, ok := strings.CutPrefix(pythonVersion, "3."); ok {
@@ -430,6 +497,8 @@ func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
 			if minorInt < config.MinimumMinorPythonVersion {
 				continue
 			}
+		} else {
+			continue
 		}
 
 		pkg := TorchPackage{
@@ -456,9 +525,21 @@ func fetchTorchPackagesFromURL(url string) ([]TorchPackage, error) {
 	return packages, nil
 }
 
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func findTorchPackagesWithVersion(pkgName string, url string, version string, appendPkg bool) ([]TorchPackage, error) {
 	if appendPkg {
-		url = url + "/" + pkgName
+		url = strings.TrimRight(url, "/") + "/" + pkgName
 	}
 	pkgs, err := fetchTorchPackagesFromURL(url)
 	if err != nil {

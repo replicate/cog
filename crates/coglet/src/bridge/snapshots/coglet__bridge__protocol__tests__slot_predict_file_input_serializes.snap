@@ -1,0 +1,11 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: req
+---
+{
+  "type": "predict",
+  "id": "pred_456",
+  "input_file": "/tmp/coglet/predictions/pred_456/inputs/spill_abc.json",
+  "output_dir": "/tmp/coglet/predictions/pred_456/outputs",
+  "context": {}
+}

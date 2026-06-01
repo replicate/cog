@@ -23,15 +23,22 @@ func newInitCommand() *cobra.Command {
 		Use:        "init",
 		SuggestFor: []string{"new", "start"},
 		Short:      "Configure your project for use with Cog",
-		RunE:       initCommand,
-		Args:       cobra.MaximumNArgs(0),
+		Long: `Create a cog.yaml and run.py in the current directory.
+
+These files provide a starting template for defining your model's environment
+and run interface. Edit them to match your model's requirements.`,
+		Example: `  # Set up a new Cog project in the current directory
+  cog init`,
+		RunE: initCommand,
+		Args: cobra.MaximumNArgs(0),
 	}
 
 	return cmd
 }
 
 func initCommand(cmd *cobra.Command, args []string) error {
-	console.Infof("\nSetting up the current directory for use with Cog...\n")
+	console.Info("Setting up the current directory for use with Cog...")
+	console.Info("")
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -62,7 +69,7 @@ func initCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	console.Infof("\nDone! For next steps, check out the docs at https://cog.run/getting-started")
+	console.Successf("\nDone! For next steps, check out the docs at https://cog.run/getting-started")
 
 	return nil
 }
@@ -136,11 +143,11 @@ func processTemplateFile(fs embed.FS, templateDir, filename, cwd string) error {
 		}
 	}
 
+	console.Infof("Creating %s", console.Bold(filename))
+
 	if err := os.WriteFile(filePath, content, 0o644); err != nil {
 		return fmt.Errorf("Error writing %s: %w", filePath, err)
 	}
-
-	console.Infof("✅ Created %s", filePath)
 	return nil
 }
 
@@ -153,7 +160,7 @@ func downloadAgentsFile() ([]byte, error) {
 
 	resp, err := client.Get(agentsURL)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 

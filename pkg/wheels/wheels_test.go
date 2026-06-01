@@ -6,9 +6,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/replicate/cog/pkg/global"
 )
+
+func TestCogSDKWheelEnvVarName(t *testing.T) {
+	require.Equal(t, "COG_SDK_WHEEL", CogSDKWheelEnvVar)
+}
 
 func TestWheelSourceString(t *testing.T) {
 	tests := []struct {
@@ -68,16 +70,22 @@ func TestParseWheelValue(t *testing.T) {
 			expected: &WheelConfig{Source: WheelSourcePyPI, Version: "1.0.0"},
 		},
 
-		// dist keyword
+		// relative directory paths (e.g. "dist") are resolved to absolute
 		{
-			name:     "dist keyword",
-			input:    "dist",
-			expected: &WheelConfig{Source: WheelSourceFile, Path: "dist"},
+			name:  "dist as relative path",
+			input: "dist",
+			expected: &WheelConfig{
+				Source: WheelSourceFile,
+				// Path will be converted to absolute
+			},
 		},
 		{
-			name:     "dist uppercase",
-			input:    "DIST",
-			expected: &WheelConfig{Source: WheelSourceFile, Path: "dist"},
+			name:  "dist uppercase as relative path",
+			input: "DIST",
+			expected: &WheelConfig{
+				Source: WheelSourceFile,
+				// Path will be converted to absolute
+			},
 		},
 
 		// URLs
@@ -155,20 +163,17 @@ func TestParseWheelValue(t *testing.T) {
 }
 
 func TestGetCogWheelConfig(t *testing.T) {
-	// Save and restore global.Version
-	origVersion := global.Version
-	defer func() { global.Version = origVersion }()
-
 	// Create temp dir for file path tests and to avoid auto-detect from repo root
 	tmpDir := t.TempDir()
 	wheelFile := filepath.Join(tmpDir, "custom.whl")
 	require.NoError(t, os.WriteFile(wheelFile, []byte("fake wheel"), 0o600))
 
-	// Change to temp dir to prevent auto-detection from repo dist/
+	// Change to temp dir and clear REPO_ROOT to prevent auto-detection from repo dist/
 	origDir, err := os.Getwd()
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(tmpDir))
 	defer func() { require.NoError(t, os.Chdir(origDir)) }()
+	t.Setenv("REPO_ROOT", "")
 
 	tests := []struct {
 		name           string
@@ -179,26 +184,26 @@ func TestGetCogWheelConfig(t *testing.T) {
 		expectedURL    string
 		expectedVer    string
 	}{
-		// Release build defaults to PyPI with version
+		// Release build defaults to PyPI latest (no version pin)
 		{
-			name:           "release build defaults to PyPI with version",
+			name:           "release build defaults to PyPI latest",
 			envValue:       "",
 			globalVersion:  "0.12.0",
 			expectedSource: WheelSourcePyPI,
-			expectedVer:    "0.12.0",
+			expectedVer:    "",
 		},
-		// Dev build defaults to PyPI (no local wheel in this temp dir)
+		// Dev build with explicit pypi (auto-detection tested separately in TestGetCogWheelConfigAutoDetect)
 		{
 			name:           "dev build defaults to PyPI without version",
-			envValue:       "",
+			envValue:       "pypi",
 			globalVersion:  "dev",
 			expectedSource: WheelSourcePyPI,
 			expectedVer:    "",
 		},
-		// Snapshot build (goreleaser) defaults to PyPI without version
+		// Snapshot build with explicit pypi
 		{
 			name:           "snapshot build defaults to PyPI without version",
-			envValue:       "",
+			envValue:       "pypi",
 			globalVersion:  "0.16.12-dev+g6793b492",
 			expectedSource: WheelSourcePyPI,
 			expectedVer:    "",
@@ -238,12 +243,7 @@ func TestGetCogWheelConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			global.Version = tt.globalVersion
-			if tt.envValue != "" {
-				t.Setenv(CogWheelEnvVar, tt.envValue)
-			}
-
-			result, err := GetCogWheelConfig()
+			result, err := ResolveCogWheel(tt.envValue, tt.globalVersion)
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			require.Equal(t, tt.expectedSource, result.Source)
@@ -257,18 +257,14 @@ func TestGetCogWheelConfig(t *testing.T) {
 func TestGetCogWheelConfigErrors(t *testing.T) {
 	// Test error cases for wheel config
 	t.Run("file not found", func(t *testing.T) {
-		t.Setenv(CogWheelEnvVar, "/nonexistent/path/wheel.whl")
+		t.Setenv(CogSDKWheelEnvVar, "/nonexistent/path/wheel.whl")
 		_, err := GetCogWheelConfig()
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "wheel file not found")
+		require.Contains(t, err.Error(), "path not found")
 	})
 }
 
 func TestGetCogWheelConfigAutoDetect(t *testing.T) {
-	// Save and restore global.Version
-	origVersion := global.Version
-	defer func() { global.Version = origVersion }()
-
 	// Create a temp directory with a wheel file
 	tmpDir := t.TempDir()
 	distDir := filepath.Join(tmpDir, "dist")
@@ -284,49 +280,90 @@ func TestGetCogWheelConfigAutoDetect(t *testing.T) {
 	defer func() { require.NoError(t, os.Chdir(origDir)) }()
 
 	// Test auto-detection in dev mode
-	global.Version = "dev"
-	result, err := GetCogWheelConfig()
+	result, err := ResolveCogWheel("", "dev")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, WheelSourceFile, result.Source)
 	require.Contains(t, result.Path, "cog-0.1.0-py3-none-any.whl")
 
-	// Test that release mode does NOT auto-detect
-	global.Version = "0.12.0"
-	result, err = GetCogWheelConfig()
+	// Test that release mode does NOT auto-detect (and has no version pin)
+	result, err = ResolveCogWheel("", "0.12.0")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, WheelSourcePyPI, result.Source)
-	require.Equal(t, "0.12.0", result.Version)
+	require.Equal(t, "", result.Version)
+}
+
+func TestResolveCogWheelUsesExecutableDist(t *testing.T) {
+	rootDir := t.TempDir()
+	distDir := filepath.Join(rootDir, "dist")
+	require.NoError(t, os.MkdirAll(distDir, 0o750))
+
+	wheelPath := filepath.Join(distDir, "cog-0.1.0-py3-none-any.whl")
+	require.NoError(t, os.WriteFile(wheelPath, []byte("fake wheel content"), 0o600))
+
+	fakeExe := filepath.Join(distDir, "go", "linux_amd64", "cog")
+	require.NoError(t, os.MkdirAll(filepath.Dir(fakeExe), 0o750))
+	require.NoError(t, os.WriteFile(fakeExe, []byte("binary"), 0o600))
+
+	origExecutablePath := executablePath
+	origEvalSymlinks := evalSymlinks
+	defer func() {
+		executablePath = origExecutablePath
+		evalSymlinks = origEvalSymlinks
+	}()
+
+	executablePath = func() (string, error) {
+		return fakeExe, nil
+	}
+	evalSymlinks = func(path string) (string, error) {
+		return path, nil
+	}
+
+	cwd := t.TempDir()
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(cwd))
+	defer func() { require.NoError(t, os.Chdir(origDir)) }()
+
+	result, err := ResolveCogWheel("", "dev")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, WheelSourceFile, result.Source)
+	require.Contains(t, result.Path, "cog-0.1.0-py3-none-any.whl")
 }
 
 func TestGetCogletWheelConfig(t *testing.T) {
-	// Save and restore global.Version
-	origVersion := global.Version
-	defer func() { global.Version = origVersion }()
+	// Change to temp dir to prevent auto-detection from repo dist/
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { require.NoError(t, os.Chdir(origDir)) }()
 
 	tests := []struct {
 		name           string
 		envValue       string
 		globalVersion  string
-		expectedNil    bool
 		expectedSource WheelSource
 		expectedPath   string
 		expectedURL    string
 		expectedVer    string
 	}{
-		// Default: coglet not installed
+		// Default: coglet from PyPI latest (release build, no version pin)
 		{
-			name:          "default returns nil (coglet optional)",
-			envValue:      "",
-			globalVersion: "0.12.0",
-			expectedNil:   true,
+			name:           "release default uses PyPI latest",
+			envValue:       "",
+			globalVersion:  "0.12.0",
+			expectedSource: WheelSourcePyPI,
+			expectedVer:    "",
 		},
 		{
-			name:          "dev mode default returns nil",
-			envValue:      "",
-			globalVersion: "dev",
-			expectedNil:   true,
+			name:           "dev default falls back to PyPI without version",
+			envValue:       "",
+			globalVersion:  "dev",
+			expectedSource: WheelSourcePyPI,
+			expectedVer:    "",
 		},
 		// Explicit pypi
 		{
@@ -355,17 +392,8 @@ func TestGetCogletWheelConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			global.Version = tt.globalVersion
-			if tt.envValue != "" {
-				t.Setenv(CogletWheelEnvVar, tt.envValue)
-			}
-
-			result, err := GetCogletWheelConfig()
+			result, err := ResolveCogletWheel(tt.envValue, tt.globalVersion, "amd64")
 			require.NoError(t, err)
-			if tt.expectedNil {
-				require.Nil(t, result)
-				return
-			}
 			require.NotNil(t, result)
 			require.Equal(t, tt.expectedSource, result.Source)
 			require.Equal(t, tt.expectedURL, result.URL)
@@ -400,6 +428,30 @@ func TestPyPIPackageURL(t *testing.T) {
 			packageName: "coglet",
 			expected:    "coglet==0.1.0",
 		},
+		{
+			name:        "alpha pre-release converted to PEP 440",
+			config:      &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0-alpha1"},
+			packageName: "cog",
+			expected:    "cog==0.17.0a1",
+		},
+		{
+			name:        "beta pre-release converted to PEP 440",
+			config:      &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0-beta2"},
+			packageName: "cog",
+			expected:    "cog==0.17.0b2",
+		},
+		{
+			name:        "rc pre-release converted to PEP 440",
+			config:      &WheelConfig{Source: WheelSourcePyPI, Version: "1.0.0-rc1"},
+			packageName: "cog",
+			expected:    "cog==1.0.0rc1",
+		},
+		{
+			name:        "dev pre-release converted to PEP 440",
+			config:      &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0-dev1"},
+			packageName: "cog",
+			expected:    "cog==0.17.0.dev1",
+		},
 	}
 
 	for _, tt := range tests {
@@ -408,4 +460,85 @@ func TestPyPIPackageURL(t *testing.T) {
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestIsPreRelease(t *testing.T) {
+	tests := []struct {
+		version  string
+		expected bool
+	}{
+		// semver format
+		{"0.17.0-alpha1", true},
+		{"0.17.0-beta2", true},
+		{"0.17.0-rc1", true},
+		{"0.17.0-dev1", true},
+		// PEP 440 format
+		{"0.17.0a1", true},
+		{"0.17.0b2", true},
+		{"0.17.0rc1", true},
+		{"0.17.0.dev1", true},
+		// stable
+		{"0.17.0", false},
+		{"1.0.0", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			require.Equal(t, tt.expected, IsPreRelease(tt.version))
+		})
+	}
+}
+
+func TestValidateSDKVersion(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    *WheelConfig
+		label     string
+		expectErr bool
+		errMsg    string
+	}{
+		{name: "exact minimum valid", config: &WheelConfig{Source: WheelSourcePyPI, Version: "0.16.0"}, label: "cog"},
+		{name: "above minimum valid", config: &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0"}, label: "cog"},
+		{name: "nil config valid", config: nil, label: "cog"},
+		{name: "no version pin valid", config: &WheelConfig{Source: WheelSourcePyPI, Version: ""}, label: "cog"},
+		{name: "URL source not checked", config: &WheelConfig{Source: WheelSourceURL, URL: "https://example.com/old.whl"}, label: "cog"},
+		{name: "file source not checked", config: &WheelConfig{Source: WheelSourceFile, Path: "/tmp/old.whl"}, label: "cog"},
+		{
+			name: "below minimum errors", config: &WheelConfig{Source: WheelSourcePyPI, Version: "0.15.0"},
+			label: "cog", expectErr: true,
+			errMsg: "cog version 0.15.0 is below the minimum required version 0.16.0",
+		},
+		{
+			name: "pre-release of old version errors", config: &WheelConfig{Source: WheelSourcePyPI, Version: "0.15.0-rc1"},
+			label: "cog", expectErr: true,
+			errMsg: "cog version 0.15.0-rc1 is below the minimum required version 0.16.0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateSDKVersion(tt.config, tt.label)
+			if tt.expectErr {
+				require.Error(t, err)
+				require.Equal(t, tt.errMsg, err.Error())
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestPyPIPackageURLPreRelease(t *testing.T) {
+	cfg := &WheelConfig{Source: WheelSourcePyPI, Version: "0.17.0-alpha1"}
+	require.Equal(t, "cog==0.17.0a1", cfg.PyPIPackageURL("cog"))
+}
+
+func TestPreReleaseSentinelPyPIPackageURL(t *testing.T) {
+	// PreRelease flag with no version returns bare package name (no ==pin)
+	cfg := &WheelConfig{Source: WheelSourcePyPI, PreRelease: true}
+	require.Equal(t, "cog", cfg.PyPIPackageURL("cog"))
+}
+
+func TestValidateSDKVersionPreReleaseSentinel(t *testing.T) {
+	// PreRelease sentinel (empty version) passes validation
+	cfg := &WheelConfig{Source: WheelSourcePyPI, PreRelease: true}
+	require.NoError(t, ValidateSDKVersion(cfg, "cog"))
 }

@@ -44,7 +44,7 @@ func ReadCACert() ([]byte, error) {
 	value = strings.TrimSpace(value)
 
 	// Check if it's a file path
-	if info, err := os.Stat(value); err == nil {
+	if info, err := os.Stat(value); err == nil { //nolint:gosec // G703: path from trusted COG_CA_CERT env var
 		if info.IsDir() {
 			return readCACertDirectory(value)
 		}
@@ -67,7 +67,7 @@ func ReadCACert() ([]byte, error) {
 
 // readCACertFile reads a single certificate file
 func readCACertFile(path string) ([]byte, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G703: path from trusted COG_CA_CERT env var
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to read file %s: %w", CACertEnvVar, path, err)
 	}
@@ -93,7 +93,7 @@ func readCACertDirectory(dir string) ([]byte, error) {
 		}
 
 		path := filepath.Join(dir, entry.Name())
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) //nolint:gosec // G703: path from trusted COG_CA_CERT env var directory
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to read file %s: %w", CACertEnvVar, path, err)
 		}
@@ -157,9 +157,11 @@ func GenerateCACertInstall(certData []byte, writeTemp func(filename string, cont
 	lines := []string{}
 	lines = append(lines, copyLines...)
 
-	// Copy to system CA directory, update the certificate store, and set env vars
+	// Copy to system CA directory, update the certificate store, and set env vars.
+	// Also append the cert directly to the bundle file as a fallback for images
+	// where update-ca-certificates may not work as expected.
 	lines = append(lines,
-		fmt.Sprintf("RUN cp /tmp/%s %s && update-ca-certificates", CACertFilename, CACertContainerPath),
+		fmt.Sprintf("RUN cp /tmp/%s %s && update-ca-certificates && cat /tmp/%s >> %s", CACertFilename, CACertContainerPath, CACertFilename, SystemCertBundle),
 		fmt.Sprintf("ENV SSL_CERT_FILE=%s", SystemCertBundle),
 		fmt.Sprintf("ENV REQUESTS_CA_BUNDLE=%s", SystemCertBundle),
 	)

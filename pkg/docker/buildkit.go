@@ -13,6 +13,7 @@ import (
 	"github.com/moby/buildkit/session/auth"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
+	"github.com/tonistiigi/fsutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -73,15 +74,50 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 		frontendAttrs["build-arg:SOURCE_DATE_EPOCH"] = fmt.Sprintf("%d", *opts.Epoch)
 	}
 
-	// Use WorkingDir as context if ContextDir is relative to ensure consistency with CLI client
+	localMounts := make(map[string]fsutil.FS)
+
+	// Dockerfile mount — filtered to only the Dockerfile so that other
+	// files in the same directory (e.g. when DockerfileDir points at
+	// .cog/build/ alongside wheels and requirements) are not exposed
+	// through this mount.
+	dockerfileFS, err := fsutil.NewFS(filepath.Dir(dockerfilePath))
+	if err != nil {
+		return buildkitclient.SolveOpt{}, fmt.Errorf("create dockerfile fs: %w", err)
+	}
+	dockerfileFS, err = fsutil.NewFilterFS(dockerfileFS, &fsutil.FilterOpt{
+		IncludePatterns: []string{filepath.Base(dockerfilePath)},
+	})
+	if err != nil {
+		return buildkitclient.SolveOpt{}, fmt.Errorf("filter dockerfile fs: %w", err)
+	}
+	localMounts["dockerfile"] = dockerfileFS
+
+	// Context mount — optionally filtered by ExcludePatterns so callers
+	// can prevent large directories (e.g. .cog/) from being sent to the
+	// daemon without mutating .dockerignore on disk.
+
 	contextDir := opts.ContextDir
+
+	// Use WorkingDir as context if ContextDir is relative to ensure consistency with CLI client
 	if opts.WorkingDir != "" && !filepath.IsAbs(opts.ContextDir) {
 		contextDir = filepath.Join(opts.WorkingDir, opts.ContextDir)
 	}
 
-	localDirs := map[string]string{
-		"dockerfile": filepath.Dir(dockerfilePath),
-		"context":    contextDir,
+	if contextDir != "" {
+		var contextFS fsutil.FS
+		contextFS, err = fsutil.NewFS(contextDir)
+		if err != nil {
+			return buildkitclient.SolveOpt{}, fmt.Errorf("create context fs: %w", err)
+		}
+		if len(opts.ExcludePatterns) > 0 {
+			contextFS, err = fsutil.NewFilterFS(contextFS, &fsutil.FilterOpt{
+				ExcludePatterns: opts.ExcludePatterns,
+			})
+			if err != nil {
+				return buildkitclient.SolveOpt{}, fmt.Errorf("create filtered context fs: %w", err)
+			}
+		}
+		localMounts["context"] = contextFS
 	}
 
 	// Add user-supplied build contexts, but don't overwrite 'dockerfile' or 'context'
@@ -90,7 +126,11 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 			console.Warnf("build context name collision: %q", name)
 			continue
 		}
-		localDirs[name] = dir
+		bcFS, fsErr := fsutil.NewFS(dir)
+		if fsErr != nil {
+			return buildkitclient.SolveOpt{}, fmt.Errorf("create build context fs %q: %w", name, fsErr)
+		}
+		localMounts[name] = bcFS
 		// Tell the dockerfile frontend about this build context
 		frontendAttrs["context:"+name] = "local:" + name
 	}
@@ -108,7 +148,7 @@ func solveOptFromImageOptions(buildDir string, opts command.ImageBuildOptions) (
 	solveOpts := buildkitclient.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
-		LocalDirs:     localDirs,
+		LocalMounts:   localMounts,
 		// Docker Engine's worker only supports three exporters.
 		// "moby" exporter works best for cog, since we want to keep images in
 		// Docker Engine's image store. The others are exporting images to somewhere else.

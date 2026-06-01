@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/version"
@@ -75,11 +77,13 @@ type BaseImageConfiguration struct {
 }
 
 type BaseImageGenerator struct {
-	cudaVersion   string
-	pythonVersion string
-	torchVersion  string
-	command       command.Command
-	client        registry.Client
+	cudaVersion         string
+	pythonVersion       string
+	torchVersion        string
+	command             command.Command
+	client              registry.Client
+	breakSystemPackages bool
+	buildContextDir     string
 }
 
 func (b BaseImageConfiguration) MarshalJSON() ([]byte, error) {
@@ -170,7 +174,7 @@ func NewBaseImageGenerator(ctx context.Context, client registry.Client, cudaVers
 		return nil, err
 	}
 	if valid {
-		return &BaseImageGenerator{cudaVersion, pythonVersion, torchVersion, command, client}, nil
+		return &BaseImageGenerator{cudaVersion: cudaVersion, pythonVersion: pythonVersion, torchVersion: torchVersion, command: command, client: client}, nil
 	}
 	printNone := func(s string) string {
 		if s == "" {
@@ -187,12 +191,19 @@ func (g *BaseImageGenerator) GenerateDockerfile(ctx context.Context) (string, er
 		return "", err
 	}
 
-	generator, err := NewGenerator(conf, "", "", g.command, g.client, false)
+	buildDir, cleanup, err := g.buildDir()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	generator, err := NewStandardGenerator(conf, "", buildDir, "", g.command, g.client, false)
 	if err != nil {
 		return "", err
 	}
 	useCogBaseImage := false
 	generator.SetUseCogBaseImagePtr(&useCogBaseImage)
+	generator.SetBreakSystemPackages(g.breakSystemPackages)
 
 	dockerfile, err := generator.GenerateInitialSteps(ctx)
 	if err != nil {
@@ -200,6 +211,34 @@ func (g *BaseImageGenerator) GenerateDockerfile(ctx context.Context) (string, er
 	}
 
 	return dockerfile, nil
+}
+
+func (g *BaseImageGenerator) SetBreakSystemPackages(breakSystemPackages bool) {
+	g.breakSystemPackages = breakSystemPackages
+}
+
+func (g *BaseImageGenerator) SetBuildContextDir(buildContextDir string) {
+	g.buildContextDir = buildContextDir
+}
+
+func (g *BaseImageGenerator) buildDir() (string, func(), error) {
+	if g.buildContextDir != "" {
+		if err := os.MkdirAll(g.buildContextDir, 0o755); err != nil {
+			return "", func() {}, fmt.Errorf("create build context dir: %w", err)
+		}
+		return g.buildContextDir, func() {}, nil
+	}
+
+	dc, err := dotcog.OpenTemp()
+	if err != nil {
+		return "", func() {}, err
+	}
+	buildDir, err := dc.Path("build")
+	if err != nil {
+		_ = dc.Close()
+		return "", func() {}, err
+	}
+	return buildDir, func() { _ = dc.Close() }, nil
 }
 
 func (g *BaseImageGenerator) makeConfig() (*config.Config, error) {

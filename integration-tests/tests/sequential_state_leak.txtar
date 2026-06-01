@@ -1,0 +1,41 @@
+# Test that module-level state persists across sequential predictions.
+#
+# This is intentional behavior — the worker process is long-lived and
+# module-level state IS shared. This test documents that behavior:
+# a module-level list that gets appended to on each call accumulates.
+
+cog serve
+
+# First prediction — list starts empty, appends "a"
+# Note: "." in regexes below matches Python's single-quote characters
+# (testscript single-quoted args cannot embed literal single quotes)
+curl POST /predictions '{"input":{"item":"a"}}'
+stdout '"status":"succeeded"'
+stdout '"output":"\[.a.\]"'
+
+# Second prediction — list now has ["a"], appends "b"
+curl POST /predictions '{"input":{"item":"b"}}'
+stdout '"status":"succeeded"'
+stdout '"output":"\[.a., .b.\]"'
+
+# Third prediction — list now has ["a", "b"], appends "c"
+curl POST /predictions '{"input":{"item":"c"}}'
+stdout '"status":"succeeded"'
+stdout '"output":"\[.a., .b., .c.\]"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+# Module-level state — persists across predictions in the same worker
+_state: list = []
+
+
+class Predictor(BasePredictor):
+    def predict(self, item: str) -> str:
+        _state.append(item)
+        return str(_state)

@@ -4,8 +4,10 @@ mod audit;
 mod cancel;
 mod input;
 mod log_writer;
+mod metric_scope;
 mod output;
 mod predictor;
+mod sentry_integration;
 mod worker_bridge;
 
 use std::sync::Arc;
@@ -19,6 +21,12 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 // Define stub info gatherer for generating .pyi files
 pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
 
+// Module-level attributes (pyo3-stub-gen can't see m.add() calls).
+// Uses "coglet" because that's the module key in StubInfo for the native module.
+pyo3_stub_gen::module_variable!("coglet", "__version__", &str);
+pyo3_stub_gen::module_variable!("coglet", "__build__", BuildInfo);
+pyo3_stub_gen::module_variable!("coglet", "server", CogletServer);
+
 use coglet_core::{
     Health, PredictionService, SetupResult, VersionInfo,
     transport::{ServerConfig, serve as http_serve},
@@ -27,18 +35,69 @@ use coglet_core::{
 /// Global flag: true when running inside a worker subprocess.
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 
+/// Frozen build metadata exposed as `coglet.__build__`.
+#[gen_stub_pyclass]
+#[pyclass(name = "BuildInfo", module = "coglet", frozen)]
+pub struct BuildInfo {
+    #[pyo3(get)]
+    version: String,
+    #[pyo3(get)]
+    git_sha: String,
+    #[pyo3(get)]
+    dirty: bool,
+    #[pyo3(get)]
+    build_time: String,
+    #[pyo3(get)]
+    rustc_version: String,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl BuildInfo {
+    fn __repr__(&self) -> String {
+        format!(
+            "BuildInfo(version='{}', git_sha='{}', dirty={}, build_time='{}', rustc_version='{}')",
+            self.version,
+            self.git_sha,
+            if self.dirty { "True" } else { "False" },
+            self.build_time,
+            self.rustc_version
+        )
+    }
+}
+
+impl BuildInfo {
+    fn new() -> Self {
+        Self {
+            version: env!("COGLET_PEP440_VERSION").to_string(),
+            git_sha: env!("COGLET_GIT_SHA").to_string(),
+            dirty: env!("COGLET_GIT_DIRTY") == "true",
+            build_time: env!("COGLET_BUILD_TIME").to_string(),
+            rustc_version: env!("COGLET_RUSTC_VERSION").to_string(),
+        }
+    }
+
+    /// Git SHA with optional `-dirty` suffix.
+    fn sha_display(&self) -> String {
+        if self.dirty {
+            format!("{}-dirty", self.git_sha)
+        } else {
+            self.git_sha.clone()
+        }
+    }
+}
+
 fn set_active() {
     ACTIVE.store(true, Ordering::SeqCst);
 }
 
-#[gen_stub_pyfunction]
-#[pyfunction]
-fn active() -> bool {
-    ACTIVE.load(Ordering::SeqCst)
-}
-
-/// Initialize tracing with COG_LOG and LOG_FORMAT support.
+/// Initialize tracing with COG_LOG_LEVEL and LOG_FORMAT support.
 /// Returns optional receiver for draining setup logs.
+///
+/// The Sentry tracing layer is automatically included when Sentry is enabled
+/// (i.e. `init_sentry()` was called and `SENTRY_DSN` was set). This layer
+/// captures `ERROR`-level tracing events as Sentry issues and `WARN`-level
+/// events as breadcrumbs.
 fn init_tracing(
     _to_stderr: bool,
     setup_log_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
@@ -46,7 +105,7 @@ fn init_tracing(
     let filter = if std::env::var("RUST_LOG").is_ok() {
         EnvFilter::from_default_env()
     } else {
-        let base_level = match std::env::var("COG_LOG").as_deref() {
+        let base_level = match std::env::var("COG_LOG_LEVEL").as_deref() {
             Ok("debug") => "debug",
             Ok("warn") | Ok("warning") => "warn",
             Ok("error") => "error",
@@ -54,14 +113,18 @@ fn init_tracing(
         };
 
         let filter_str = format!(
-            "coglet={level},coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
+            "coglet={level},coglet::setup=info,coglet::user=info,coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
             level = base_level
         );
 
         EnvFilter::new(filter_str)
     };
 
-    let use_json = std::env::var("LOG_FORMAT").as_deref() == Ok("json");
+    let use_json = std::env::var("LOG_FORMAT").as_deref() != Ok("console");
+
+    // Optional Sentry layer — returns None (no-op) when SENTRY_DSN is not set.
+    // Option<Layer> implements Layer, so this composes cleanly.
+    let sentry_layer = sentry_integration::sentry_tracing_layer();
 
     if let Some(tx) = setup_log_tx {
         let accumulator = coglet_core::SetupLogAccumulator::new(tx);
@@ -69,12 +132,14 @@ fn init_tracing(
         if use_json {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(accumulator)
                 .with(fmt::layer().json().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
         } else {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(accumulator)
                 .with(fmt::layer().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
@@ -84,11 +149,13 @@ fn init_tracing(
         if use_json {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(fmt::layer().json().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
         } else {
             let subscriber = tracing_subscriber::registry()
                 .with(filter)
+                .with(sentry_layer)
                 .with(fmt::layer().with_writer(std::io::stderr));
             let _ = subscriber.try_init();
         }
@@ -96,8 +163,10 @@ fn init_tracing(
     }
 }
 
-fn detect_version(py: Python<'_>) -> VersionInfo {
-    let mut version = VersionInfo::new();
+fn detect_version(py: Python<'_>, build: &BuildInfo) -> VersionInfo {
+    let mut version = VersionInfo::new()
+        .with_git_sha(build.sha_display())
+        .with_build_time(build.build_time.clone());
 
     if let Ok(sys) = py.import("sys")
         && let Ok(py_version) = sys.getattr("version")
@@ -111,44 +180,158 @@ fn detect_version(py: Python<'_>) -> VersionInfo {
         && let Ok(cog_version) = cog.getattr("__version__")
         && let Ok(v) = cog_version.extract::<String>()
     {
-        version = version.with_cog(v);
+        version = version.with_python_sdk(v);
     }
 
     version
 }
 
-fn read_max_concurrency(py: Python<'_>) -> usize {
-    let result = (|| -> PyResult<usize> {
-        let cog_config = py.import("cog.config")?;
-        let config_class = cog_config.getattr("Config")?;
-        let config = config_class.call0()?;
-        config.getattr("max_concurrency")?.extract::<usize>()
-    })();
-
-    match result {
-        Ok(max) => max,
-        Err(e) => {
-            warn!(error = %e, "Failed to read concurrency config, using default=1");
-            1
-        }
+fn read_max_concurrency() -> usize {
+    match std::env::var("COG_MAX_CONCURRENCY") {
+        Ok(val) => val.parse::<usize>().unwrap_or(1),
+        Err(_) => 1,
     }
 }
 
-#[gen_stub_pyfunction]
-#[pyfunction]
-#[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false))]
-fn serve(
+fn read_setup_timeout() -> Option<std::time::Duration> {
+    match std::env::var("COG_SETUP_TIMEOUT") {
+        Ok(val) => match val.parse::<u64>() {
+            Ok(0) => {
+                warn!("COG_SETUP_TIMEOUT=0 would cause immediate timeout, ignoring");
+                None
+            }
+            Ok(secs) => Some(std::time::Duration::from_secs(secs)),
+            Err(e) => {
+                warn!(
+                    value = %val,
+                    error = %e,
+                    "Invalid COG_SETUP_TIMEOUT value, ignoring (no timeout will be applied)"
+                );
+                None
+            }
+        },
+        Err(_) => None,
+    }
+}
+
+// =============================================================================
+// coglet.server — frozen Server object with serve() and active property
+// =============================================================================
+
+/// The coglet prediction server.
+///
+/// Access via `coglet.server`. Frozen — attributes cannot be set or deleted.
+///
+/// - `coglet.server.active` — `True` when running inside a worker subprocess
+/// - `coglet.server.serve(...)` — start the HTTP prediction server (blocking)
+#[gen_stub_pyclass]
+#[pyclass(name = "Server", module = "coglet", frozen)]
+pub struct CogletServer {}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl CogletServer {
+    /// `True` when running inside a coglet worker subprocess.
+    #[getter]
+    fn active(&self) -> bool {
+        ACTIVE.load(Ordering::SeqCst)
+    }
+
+    /// Start the HTTP prediction server. Blocks until shutdown.
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (predictor_ref=None, host="0.0.0.0".to_string(), port=5000, await_explicit_shutdown=false, is_train=false, output_temp_dir_base="/tmp/coglet/output".to_string(), upload_url=None))]
+    fn serve(
+        &self,
+        py: Python<'_>,
+        predictor_ref: Option<String>,
+        host: String,
+        port: u16,
+        await_explicit_shutdown: bool,
+        is_train: bool,
+        output_temp_dir_base: String,
+        upload_url: Option<String>,
+    ) -> PyResult<()> {
+        serve_impl(
+            py,
+            predictor_ref,
+            host,
+            port,
+            await_explicit_shutdown,
+            is_train,
+            output_temp_dir_base,
+            upload_url,
+        )
+    }
+
+    /// Worker subprocess entry point. Called by the orchestrator.
+    ///
+    /// Sets the active flag, installs log writers and audit hooks,
+    /// then enters the worker event loop.
+    #[pyo3(name = "_run_worker", signature = ())]
+    fn run_worker(&self, py: Python<'_>) -> PyResult<()> {
+        set_active();
+
+        // Install SlotLogWriters for ContextVar-based log routing
+        log_writer::install_slot_log_writers(py)?;
+
+        // Install audit hook to protect stdout/stderr from user replacement
+        if let Err(e) = audit::install_audit_hook(py) {
+            warn!(error = %e, "Failed to install audit hook, stdout/stderr protection disabled");
+        }
+
+        info!(target: "coglet::worker", "Worker subprocess starting, waiting for Init message");
+
+        py.detach(|| {
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
+            rt.block_on(async {
+                run_worker_with_init()
+                    .await
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            })
+        })
+    }
+
+    fn __repr__(&self) -> &'static str {
+        "coglet.server"
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn serve_impl(
     py: Python<'_>,
     predictor_ref: Option<String>,
     host: String,
     port: u16,
     await_explicit_shutdown: bool,
     is_train: bool,
+    _output_temp_dir_base: String,
+    upload_url: Option<String>,
 ) -> PyResult<()> {
+    // Install ring as the TLS crypto provider for rustls/reqwest.
+    coglet_core::install_crypto_provider();
+
+    // Initialize Sentry BEFORE tracing so the sentry tracing layer can attach.
+    // If SENTRY_DSN is not set, this is a no-op. The guard must be held until
+    // process exit to ensure pending events are flushed.
+    let _sentry_guard = sentry_integration::init_sentry();
+
     let (setup_log_tx, setup_log_rx) = tokio::sync::mpsc::unbounded_channel();
     init_tracing(false, Some(setup_log_tx));
 
-    info!("coglet {}", env!("CARGO_PKG_VERSION"));
+    let build = BuildInfo::new();
+    info!(
+        "coglet {} ({}, built {}{})",
+        env!("CARGO_PKG_VERSION"),
+        build.sha_display(),
+        build.build_time,
+        if cfg!(debug_assertions) {
+            ", debug"
+        } else {
+            ""
+        },
+    );
 
     let config = ServerConfig {
         host,
@@ -165,9 +348,18 @@ fn serve(
         info!("await_explicit_shutdown: installed SIGTERM ignore handler");
     }
 
-    let version = detect_version(py);
+    let version = detect_version(py, &build);
+    info!(
+        "python sdk {}",
+        version.python_sdk.as_deref().unwrap_or("unknown")
+    );
+    info!("python {}", version.python.as_deref().unwrap_or("unknown"));
 
     let Some(pred_ref) = predictor_ref else {
+        // Health-only mode: no predictor, no worker subprocess, no orchestrator.
+        // Sentry scope enrichment is skipped since there's no model metadata to
+        // attach. Infrastructure errors (e.g. HTTP bind failure) are still captured
+        // with default Sentry context (release, environment).
         info!("No predictor specified, serving health endpoints only");
         let service = Arc::new(
             PredictionService::new_no_pool()
@@ -186,7 +378,15 @@ fn serve(
     };
 
     info!(predictor_ref = %pred_ref, is_train, "Using subprocess isolation");
-    serve_subprocess(py, pred_ref, config, version, is_train, setup_log_rx)
+    serve_subprocess(
+        py,
+        pred_ref,
+        config,
+        version,
+        is_train,
+        setup_log_rx,
+        upload_url,
+    )
 }
 
 fn serve_subprocess(
@@ -196,16 +396,33 @@ fn serve_subprocess(
     version: VersionInfo,
     is_train: bool,
     mut setup_log_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
+    upload_url: Option<String>,
 ) -> PyResult<()> {
-    let max_concurrency = read_max_concurrency(py);
+    let max_concurrency = read_max_concurrency();
     info!(
         max_concurrency,
         "Configuring subprocess worker via orchestrator"
     );
 
+    // Enrich Sentry scope with model/server metadata
+    sentry_integration::configure_sentry_scope(
+        &pred_ref,
+        max_concurrency,
+        env!("CARGO_PKG_VERSION"),
+        version.python.as_deref(),
+        version.python_sdk.as_deref(),
+    );
+
+    let setup_timeout = read_setup_timeout();
+    debug!(
+        setup_timeout_secs = setup_timeout.map(|d| d.as_secs()),
+        is_train, "Orchestrator configuration"
+    );
     let orch_config = coglet_core::orchestrator::OrchestratorConfig::new(pred_ref)
         .with_num_slots(max_concurrency)
-        .with_train(is_train);
+        .with_train(is_train)
+        .with_upload_url(upload_url)
+        .with_setup_timeout(setup_timeout);
 
     let service = Arc::new(
         PredictionService::new_no_pool()
@@ -225,20 +442,30 @@ fn serve_subprocess(
             let setup_service = Arc::clone(&service_clone);
             tokio::spawn(async move {
                 info!("Spawning worker subprocess");
+                let spawn_start = std::time::Instant::now();
                 match coglet_core::orchestrator::spawn_worker(orch_config, &mut setup_log_rx).await
                 {
                     Ok(ready) => {
-                        debug!("Worker ready, configuring service");
+                        let spawn_elapsed = spawn_start.elapsed();
+                        debug!(
+                            elapsed_ms = spawn_elapsed.as_millis() as u64,
+                            "Worker ready, configuring service"
+                        );
 
                         let num_slots = ready.handle.slot_ids().len();
+                        debug!(num_slots, "Setting up orchestrator on service");
 
                         setup_service
                             .set_orchestrator(ready.pool, Arc::new(ready.handle))
                             .await;
+                        debug!("Transitioning health to Ready");
                         setup_service.set_health(Health::Ready).await;
 
                         if let Some(s) = ready.schema {
+                            debug!("Setting OpenAPI schema on service");
                             setup_service.set_schema(s).await;
+                        } else {
+                            debug!("No OpenAPI schema provided by worker");
                         }
 
                         let mode = if is_train { "train" } else { "predict" };
@@ -246,6 +473,11 @@ fn serve_subprocess(
 
                         // Drain final logs (includes "Server ready" above)
                         let final_logs = coglet_core::drain_accumulated_logs(&mut setup_log_rx);
+                        debug!(
+                            initial_logs_len = ready.setup_logs.len(),
+                            final_logs_len = final_logs.len(),
+                            "Drained setup logs"
+                        );
                         drop(setup_log_rx);
 
                         // Combine initial + final logs
@@ -257,7 +489,13 @@ fn serve_subprocess(
                         info!("Setup complete, now accepting requests");
                     }
                     Err(e) => {
-                        error!(error = %e, "Worker initialization failed");
+                        let spawn_elapsed = spawn_start.elapsed();
+                        error!(
+                            error = %e,
+                            elapsed_ms = spawn_elapsed.as_millis() as u64,
+                            "Worker initialization failed"
+                        );
+                        debug!("Transitioning health to SetupFailed");
                         setup_service.set_health(Health::SetupFailed).await;
                         setup_service
                             .set_setup_result(setup_result.failed(e.to_string()))
@@ -267,45 +505,6 @@ fn serve_subprocess(
             });
 
             http_serve(config, service_clone)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    })
-}
-
-#[gen_stub_pyfunction]
-#[pyfunction]
-fn _is_cancelable() -> bool {
-    cancel::is_cancelable()
-}
-
-#[gen_stub_pyfunction]
-#[pyfunction]
-#[pyo3(signature = ())]
-fn _run_worker(py: Python<'_>) -> PyResult<()> {
-    set_active();
-
-    // Install SlotLogWriters for ContextVar-based log routing
-    log_writer::install_slot_log_writers(py)?;
-
-    // Install audit hook to protect stdout/stderr from user replacement
-    if let Err(e) = audit::install_audit_hook(py) {
-        warn!(error = %e, "Failed to install audit hook, stdout/stderr protection disabled");
-    }
-
-    // Install signal handler for cancellation
-    if let Err(e) = cancel::install_signal_handler(py) {
-        warn!(error = %e, "Failed to install signal handler, cancellation may not work");
-    }
-
-    info!(target: "coglet::worker", "Worker subprocess starting, waiting for Init message");
-
-    py.detach(|| {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-
-        rt.block_on(async {
-            run_worker_with_init()
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
         })
@@ -342,17 +541,6 @@ async fn run_worker_with_init() -> Result<(), String> {
 
     info!(predictor_ref = %predictor_ref, num_slots, is_train, "Init received, connecting to transport");
 
-    // Set transport info for run_worker
-    let transport_json = serde_json::to_string(&transport_info)
-        .map_err(|e| format!("Failed to serialize transport info: {}", e))?;
-    // SAFETY: Single-threaded at this point, only read by our own code
-    unsafe {
-        std::env::set_var(
-            coglet_core::bridge::transport::TRANSPORT_INFO_ENV,
-            &transport_json,
-        );
-    }
-
     let handler = Arc::new(if is_train {
         worker_bridge::PythonPredictHandler::new_train(predictor_ref)
             .map_err(|e| format!("Failed to create handler: {}", e))?
@@ -375,31 +563,51 @@ async fn run_worker_with_init() -> Result<(), String> {
         setup_log_hook: Some(setup_log_hook),
     };
 
-    coglet_core::run_worker(handler, config)
+    coglet_core::run_worker(handler, config, transport_info)
         .await
         .map_err(|e| format!("Worker error: {}", e))
 }
 
+// =============================================================================
+// Module init
+// =============================================================================
+
 #[pymodule]
-fn coglet(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Version from Cargo.toml
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+#[pyo3(name = "_impl")]
+fn coglet(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Control what `from ._impl import *` exports into coglet/__init__.py
+    m.add("__all__", vec!["__version__", "__build__", "server"])?;
 
-    // Core functions
-    m.add_function(wrap_pyfunction!(active, m)?)?;
-    m.add_function(wrap_pyfunction!(serve, m)?)?;
-    m.add_function(wrap_pyfunction!(_is_cancelable, m)?)?;
-    m.add_function(wrap_pyfunction!(_run_worker, m)?)?;
+    // Static metadata
+    m.add("__version__", env!("COGLET_PEP440_VERSION"))?;
+    m.add("__build__", BuildInfo::new())?;
 
-    // Audit hook helpers for stdout/stderr protection (internal use by audit hook)
-    m.add_function(wrap_pyfunction!(audit::_is_slot_log_writer, m)?)?;
-    m.add_function(wrap_pyfunction!(audit::_is_tee_writer, m)?)?;
-    m.add_function(wrap_pyfunction!(audit::_get_inner_writer, m)?)?;
-    m.add_function(wrap_pyfunction!(audit::_create_tee_writer, m)?)?;
+    // Frozen server object
+    m.add("server", CogletServer {})?;
 
-    // Export classes (needed for isinstance checks in audit hook)
-    m.add_class::<log_writer::SlotLogWriter>()?;
-    m.add_class::<audit::TeeWriter>()?;
+    // CancelationException — a BaseException subclass for prediction cancellation.
+    // Re-exported through coglet → cog.exceptions → cog.CancelationException.
+    m.add(
+        "CancelationException",
+        py.get_type::<cancel::CancelationException>(),
+    )?;
+
+    // _sdk submodule — internal Python runtime integration classes
+    let sdk = PyModule::new(py, "_sdk")?;
+    sdk.setattr(
+        "__doc__",
+        "Internal SDK runtime integration for coglet.\n\
+         \n\
+         This submodule contains Rust-backed classes that integrate coglet with\n\
+         the Python runtime (I/O routing, audit hooks, log streaming). These are\n\
+         implementation details used by the cog SDK — not part of the public API.",
+    )?;
+    sdk.add_class::<log_writer::SlotLogWriter>()?;
+    sdk.add_class::<audit::_TeeWriter>()?;
+    sdk.add_class::<metric_scope::Scope>()?;
+    sdk.add_class::<metric_scope::MetricRecorder>()?;
+    sdk.add_function(wrap_pyfunction!(metric_scope::py_current_scope, &sdk)?)?;
+    m.add_submodule(&sdk)?;
 
     Ok(())
 }

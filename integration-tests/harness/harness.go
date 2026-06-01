@@ -4,12 +4,10 @@ package harness
 import (
 	"context"
 	cryptorand "crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	mathrand "math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -20,11 +18,24 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/rogpeppe/go-internal/testscript"
 
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/registry_testhelpers"
 )
+
+// propagatedEnvVars lists host environment variables that should be propagated
+// into testscript environments (Setup) and background processes (cmdCogServe).
+// Keep this list in sync: if you add a new env var to propagate, add it here.
+var propagatedEnvVars = []string{
+	"COG_SDK_WHEEL",     // SDK wheel override
+	"COGLET_WHEEL",      // coglet wheel override
+	"RUST_LOG",          // Rust logging control
+	"COG_CA_CERT",       // custom CA certificates (e.g. Cloudflare WARP)
+	"BUILDKIT_PROGRESS", // Docker build output format
+	"COG_REGISTRY_HOST", // registry host for cog base image resolution
+}
 
 // Harness provides utilities for running cog integration tests.
 // serverInfo tracks a running cog serve process and its port
@@ -40,6 +51,42 @@ type registryInfo struct {
 	host      string // e.g., "localhost:5432"
 }
 
+// mockUploadRecord records a single upload received by the mock upload server.
+type mockUploadRecord struct {
+	Path        string
+	ContentType string
+	Size        int
+}
+
+// mockUploadServer is a lightweight HTTP server that accepts PUT requests
+// and records what was uploaded.
+type mockUploadServer struct {
+	server  *http.Server
+	port    int
+	mu      sync.Mutex
+	uploads []mockUploadRecord
+}
+
+// webhookResult is the summary written to stdout by webhook-server-wait.
+type webhookResult struct {
+	Status       string          `json:"status"`
+	OutputSize   int             `json:"output_size"`
+	HasError     bool            `json:"has_error"`
+	ErrorMessage string          `json:"error_message,omitempty"`
+	Metrics      json.RawMessage `json:"metrics,omitempty"`
+}
+
+// webhookServer accepts prediction webhook callbacks from coglet.
+// It parses the JSON payload to extract status and output size, without
+// ever exposing the (potentially huge) output to testscript's log buffer.
+type webhookServer struct {
+	server *http.Server
+	port   int
+	mu     sync.Mutex
+	result *webhookResult
+	done   chan struct{} // closed on first terminal webhook
+}
+
 type Harness struct {
 	CogBinary string
 	// realHome is captured at creation time before testscript overrides HOME
@@ -52,6 +99,12 @@ type Harness struct {
 	// registries tracks test registry containers for cleanup, keyed by work directory
 	registries   map[string]*registryInfo
 	registriesMu sync.Mutex
+	// uploadServers tracks mock upload servers for cleanup, keyed by work directory
+	uploadServers   map[string]*mockUploadServer
+	uploadServersMu sync.Mutex
+	// webhookServers tracks webhook receiver servers for cleanup, keyed by work directory
+	webhookServers   map[string]*webhookServer
+	webhookServersMu sync.Mutex
 }
 
 // New creates a new Harness, resolving the cog binary location.
@@ -65,11 +118,13 @@ func New() (*Harness, error) {
 		return nil, err
 	}
 	return &Harness{
-		CogBinary:   cogBinary,
-		realHome:    os.Getenv("HOME"),
-		repoRoot:    repoRoot,
-		serverProcs: make(map[string]*serverInfo),
-		registries:  make(map[string]*registryInfo),
+		CogBinary:      cogBinary,
+		realHome:       os.Getenv("HOME"),
+		repoRoot:       repoRoot,
+		serverProcs:    make(map[string]*serverInfo),
+		registries:     make(map[string]*registryInfo),
+		uploadServers:  make(map[string]*mockUploadServer),
+		webhookServers: make(map[string]*webhookServer),
 	}, nil
 }
 
@@ -80,9 +135,7 @@ func New() (*Harness, error) {
 func ResolveCogBinary() (string, error) {
 	if cogBinary := os.Getenv("COG_BINARY"); cogBinary != "" {
 		if !filepath.IsAbs(cogBinary) {
-			// Resolve relative paths from repo root, not cwd.
-			// This handles the case where tests run from integration-tests/
-			// but COG_BINARY is set relative to repo root (e.g., "./cog").
+			// Resolve relative paths from repo root, not the test package directory.
 			repoRoot, err := findRepoRoot()
 			if err != nil {
 				return "", err
@@ -122,7 +175,7 @@ func buildCogBinary() (string, error) {
 
 	if len(cogWheelExists) == 0 || len(cogletWheelExists) == 0 {
 		fmt.Println("Building Python wheels...")
-		if err := runCommand(repoRoot, "make", "wheel"); err != nil {
+		if err := runCommand(repoRoot, "mise", "run", "build:wheels"); err != nil {
 			return "", fmt.Errorf("failed to build wheels: %w", err)
 		}
 
@@ -156,7 +209,7 @@ func findRepoRoot() (string, error) {
 	for {
 		goMod := filepath.Join(dir, "go.mod")
 		if _, err := os.Stat(goMod); err == nil {
-			// Verify it's the main cog repo (not a submodule like integration-tests)
+			// Verify it's the cog repo root (matches the expected module path)
 			content, err := os.ReadFile(goMod)
 			if err == nil && strings.Contains(string(content), "module github.com/replicate/cog\n") {
 				return dir, nil
@@ -195,8 +248,16 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 		// Registry and OCI bundle testing commands
 		NewCommand("registry-start", h.cmdRegistryStart),
 		NewCommand("registry-inspect", h.cmdRegistryInspect),
+		NewCommand("registry-seed", h.cmdRegistrySeed),
 		NewCommand("docker-push", h.cmdDockerPush),
-		NewCommand("mock-weights", h.cmdMockWeights),
+
+		// Mock upload server commands
+		NewCommand("upload-server-start", h.cmdUploadServerStart),
+		NewCommand("upload-server-count", h.cmdUploadServerCount),
+
+		// Webhook receiver commands
+		NewCommand("webhook-server-start", h.cmdWebhookServerStart),
+		NewCommand("webhook-server-wait", h.cmdWebhookServerWait),
 
 		// PTY command (defined in cmd_pty.go)
 		&PtyRunCommand{harness: h},
@@ -214,17 +275,10 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 // It handles all cog subcommands, with special handling for certain commands.
 func (h *Harness) cmdCog(ts *testscript.TestScript, neg bool, args []string) {
 	// Check for subcommands that need special handling
-	if len(args) > 0 {
-		switch args[0] {
-		case "serve":
-			// Special handling for 'cog serve' - run in background
-			h.cmdCogServe(ts, neg, args[1:])
-			return
-			// Add more special subcommands here as needed:
-			// case "run":
-			//     h.cmdCogRun(ts, neg, args[1:])
-			//     return
-		}
+	if len(args) > 0 && args[0] == "serve" {
+		// Special handling for 'cog serve' - run in background
+		h.cmdCogServe(ts, neg, args[1:])
+		return
 	}
 
 	// Default: run cog command normally
@@ -259,20 +313,34 @@ func (h *Harness) Setup(env *testscript.Env) error {
 
 	// Disable update checks during tests
 	env.Setenv("COG_NO_UPDATE_CHECK", "1")
+	// Doctor tests exercise project checks, not Docker daemon availability.
+	env.Setenv("COG_SKIP_DOCKER_CHECK", "1")
 
-	// Propagate COG_WHEEL environment variable for runtime selection
-	if cogWheel := os.Getenv("COG_WHEEL"); cogWheel != "" {
-		env.Setenv("COG_WHEEL", cogWheel)
+	// Propagate host env vars listed in propagatedEnvVars
+	for _, key := range propagatedEnvVars {
+		if val := os.Getenv(key); val != "" {
+			env.Setenv(key, val)
+		}
 	}
 
-	// Propagate COGLET_WHEEL for Rust coglet server testing
-	if cogletWheel := os.Getenv("COGLET_WHEEL"); cogletWheel != "" {
-		env.Setenv("COGLET_WHEEL", cogletWheel)
-	}
+	// In CI, COG_REGISTRY_HOST is set to ghcr.io/replicate/cog so tests
+	// resolve cog-base images from GHCR (mirrored from r8.im) instead of
+	// hitting r8.im directly. The env var is propagated via propagatedEnvVars.
+	// Tests that need a specific registry (e.g. oci_bundle_push.txtar)
+	// override this by setting COG_REGISTRY_HOST in the txtar file.
 
-	// Propagate RUST_LOG for Rust logging control
-	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
-		env.Setenv("RUST_LOG", rustLog)
+	// Auto-detect wheels from dist/ if not explicitly set via env vars.
+	// CI sets these env vars; locally we need to find them ourselves.
+	distDir := filepath.Join(h.repoRoot, "dist")
+	if os.Getenv("COGLET_WHEEL") == "" {
+		if matches, _ := filepath.Glob(filepath.Join(distDir, "coglet-*.whl")); len(matches) > 0 {
+			env.Setenv("COGLET_WHEEL", distDir)
+		}
+	}
+	if os.Getenv("COG_SDK_WHEEL") == "" {
+		if matches, _ := filepath.Glob(filepath.Join(distDir, "cog-*.whl")); len(matches) > 0 {
+			env.Setenv("COG_SDK_WHEEL", distDir)
+		}
 	}
 
 	// Generate unique image name for this test run
@@ -288,6 +356,10 @@ func (h *Harness) Setup(env *testscript.Env) error {
 		h.stopServerByWorkDir(workDir)
 		// Stop the registry for this specific test (if any)
 		h.stopRegistryByWorkDir(workDir)
+		// Stop the upload server for this specific test (if any)
+		h.stopUploadServerByWorkDir(workDir)
+		// Stop the webhook server for this specific test (if any)
+		h.stopWebhookServerByWorkDir(workDir)
 		removeDockerImage(imageName)
 	})
 
@@ -314,12 +386,11 @@ func removeDockerImage(imageName string) {
 		return
 	}
 
-	images := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, img := range images {
+	for img := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
 		if img == "" {
 			continue
 		}
-		exec.Command("docker", "rmi", "-f", img).Run() //nolint:errcheck
+		exec.Command("docker", "rmi", "-f", img).Run() //nolint:errcheck,gosec
 	}
 }
 
@@ -328,10 +399,6 @@ func removeDockerImage(imageName string) {
 // Usage: cog serve [flags]
 // Exports $SERVER_URL environment variable with the server address.
 func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string) {
-	if neg {
-		ts.Fatalf("serve command does not support negation")
-	}
-
 	workDir := ts.Getenv("WORK")
 
 	// Check if server is already running
@@ -362,11 +429,17 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	cmd := exec.Command(h.CogBinary, expandedArgs...)
 	cmd.Dir = workDir
 
-	// Build environment from testscript
+	// Build environment from testscript.
+	// Always include core vars, plus everything from propagatedEnvVars.
 	var env []string
-	for _, key := range []string{"HOME", "PATH", "REPO_ROOT", "COG_NO_UPDATE_CHECK", "COG_WHEEL", "COGLET_WHEEL", "RUST_LOG", "BUILDKIT_PROGRESS", "TEST_IMAGE"} {
+	for _, key := range []string{"HOME", "PATH", "REPO_ROOT", "COG_NO_UPDATE_CHECK", "TEST_IMAGE"} {
 		if val := ts.Getenv(key); val != "" {
-			env = append(env, fmt.Sprintf("%s=%s", key, val))
+			env = append(env, key+"="+val)
+		}
+	}
+	for _, key := range propagatedEnvVars {
+		if val := ts.Getenv(key); val != "" {
+			env = append(env, key+"="+val)
 		}
 	}
 	cmd.Env = env
@@ -388,24 +461,53 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	ts.Setenv("SERVER_URL", serverURL)
 
-	if !waitForServer(serverURL, 60*time.Second) {
+	if !waitForServer(serverURL, 120*time.Second) {
+		if neg {
+			// Test expected the server to fail setup — keep it running
+			// so the test can inspect the health-check status.
+			return
+		}
 		// Try to get server output for debugging
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		ts.Fatalf("server did not become healthy within timeout")
+	}
+
+	if neg {
+		ts.Fatalf("server became healthy, but expected setup failure")
 	}
 }
 
 // cmdCurl implements the 'curl' command for testscript.
 // It makes HTTP requests to the server started with 'serve'.
 // Includes built-in retry logic (10 attempts, 500ms delay) for resilience.
-// Usage: curl [method] [path] [body]
+// Usage: curl [-H key:value]... [method] [path] [body]
 // Examples:
 //
 //	curl GET /health-check
 //	curl POST /predictions '{"input":{"s":"hello"}}'
+//	curl -H Prefer:respond-async POST /predictions '{"input":{}}'
 func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) < 2 {
-		ts.Fatalf("curl: usage: curl [method] [path] [body]")
+		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body | @file]")
+	}
+
+	// Parse -H flags for extra headers
+	var extraHeaders [][2]string
+	for len(args) >= 2 && args[0] == "-H" {
+		kv := args[1]
+		parts := strings.SplitN(kv, ":", 2)
+		if len(parts) != 2 {
+			ts.Fatalf("curl: invalid header %q (expected key:value)", kv)
+		}
+		extraHeaders = append(extraHeaders, [2]string{
+			strings.TrimSpace(parts[0]),
+			strings.TrimSpace(parts[1]),
+		})
+		args = args[2:]
+	}
+
+	if len(args) < 2 {
+		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body | @file]")
 	}
 
 	serverURL := ts.Getenv("SERVER_URL")
@@ -417,7 +519,15 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	path := args[1]
 	var body string
 	if len(args) > 2 {
-		body = args[2]
+		body = os.Expand(args[2], ts.Getenv)
+		if strings.HasPrefix(body, "@") {
+			filename := body[1:]
+			data, err := os.ReadFile(ts.MkAbs(filename))
+			if err != nil {
+				ts.Fatalf("curl: failed to read body file %q: %v", filename, err)
+			}
+			body = string(data)
+		}
 	}
 
 	// Retry settings
@@ -443,8 +553,11 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 		if body != "" {
 			req.Header.Set("Content-Type", "application/json")
 		}
+		for _, h := range extraHeaders {
+			req.Header.Set(h[0], h[1])
+		}
 
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) //nolint:gosec // G704: URL from test harness, not user input
 		if err != nil {
 			lastErr = err
 			time.Sleep(retryDelay)
@@ -457,7 +570,7 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 			ts.Fatalf("curl: failed to read response: %v", readErr)
 		}
 		respBody := string(respBodyBytes)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		lastStatus = resp.StatusCode
 		lastBody = respBody
@@ -468,13 +581,14 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 
 		if neg {
 			if !statusOK {
-				// Expected to fail - success!
+				// Expected to fail — write body to stderr so tests can assert
+				_, _ = ts.Stderr().Write([]byte(respBody))
 				return
 			}
 		} else {
 			if statusOK {
 				// Success - write body to stdout
-				ts.Stdout().Write([]byte(respBody))
+				_, _ = ts.Stdout().Write([]byte(respBody))
 				return
 			}
 		}
@@ -526,14 +640,14 @@ func (h *Harness) stopServerByWorkDir(workDir string) {
 	shutdownURL := serverURL + "/shutdown"
 	resp, err := http.Post(shutdownURL, "application/json", nil) //nolint:gosec,noctx
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	// Force kill the cog process if still running
 	if info.cmd.Process != nil {
-		info.cmd.Process.Kill()
+		_ = info.cmd.Process.Kill()
 	}
-	info.cmd.Wait()
+	_ = info.cmd.Wait()
 
 	// Also kill any Docker container that may still be running on this port
 	// Find container by port and kill it
@@ -541,7 +655,7 @@ func (h *Harness) stopServerByWorkDir(workDir string) {
 	if err == nil && len(output) > 0 {
 		containerID := strings.TrimSpace(string(output))
 		if containerID != "" {
-			exec.Command("docker", "kill", containerID).Run() //nolint:errcheck
+			exec.Command("docker", "kill", containerID).Run() //nolint:errcheck,gosec
 		}
 	}
 }
@@ -577,7 +691,7 @@ func waitForServer(serverURL string, timeout time.Duration) bool {
 
 		if resp.StatusCode == http.StatusOK {
 			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if err != nil {
 				time.Sleep(200 * time.Millisecond)
 				continue
@@ -602,7 +716,7 @@ func waitForServer(serverURL string, timeout time.Duration) bool {
 				return false
 			}
 		} else {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		time.Sleep(200 * time.Millisecond)
@@ -668,7 +782,7 @@ func (h *Harness) cmdWaitFor(ts *testscript.TestScript, neg bool, args []string)
 			resp, err := client.Get(target)
 			if err == nil {
 				conditionMet = resp.StatusCode == expectedStatus
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 
 		default:
@@ -809,6 +923,61 @@ func (h *Harness) stopRegistryByWorkDir(workDir string) {
 	}
 }
 
+// cmdRegistrySeed copies an image into the test registry under a new repository:tag.
+// The source can be a local reference (relative to $TEST_REGISTRY) or an absolute
+// reference to an external registry (e.g., docker.io/library/python:3.12-slim).
+// The destination is always relative to $TEST_REGISTRY.
+//
+// Usage: registry-seed <source> <dest-repo:tag>
+// Examples:
+//
+//	registry-seed alpine:latest cog-base:cuda11.8-python3.10-torch2.0.1
+//	registry-seed docker.io/library/python:3.12-slim cog-base:python3.12
+func (h *Harness) cmdRegistrySeed(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("registry-seed: does not support negation")
+	}
+	if len(args) < 2 {
+		ts.Fatalf("registry-seed: usage: registry-seed <source> <dest-repo:tag>")
+	}
+
+	src := os.Expand(args[0], ts.Getenv)
+	dst := os.Expand(args[1], ts.Getenv)
+
+	testRegistry := ts.Getenv("TEST_REGISTRY")
+	if testRegistry == "" {
+		ts.Fatalf("registry-seed: TEST_REGISTRY not set (call registry-start first)")
+	}
+
+	// If the source looks like an absolute reference (contains a registry host
+	// with a dot, e.g. "docker.io/library/python:3.12-slim"), use it as-is.
+	// Otherwise treat it as relative to the test registry.
+	srcRef := src
+	if !isAbsoluteImageRef(src) {
+		srcRef = testRegistry + "/" + src
+	}
+	dstRef := testRegistry + "/" + dst
+
+	if err := crane.Copy(srcRef, dstRef, crane.Insecure); err != nil {
+		ts.Fatalf("registry-seed: failed to copy %s to %s: %v", srcRef, dstRef, err)
+	}
+
+	ts.Logf("registry-seed: copied %s to %s", srcRef, dstRef)
+}
+
+// isAbsoluteImageRef returns true if ref looks like it contains an explicit
+// registry host (e.g. "docker.io/library/python:3.12-slim" or
+// "ghcr.io/foo/bar:latest"). It checks whether the part before the first
+// slash contains a dot or a colon (port), which distinguishes a registry
+// host from a simple repository name like "alpine:latest".
+func isAbsoluteImageRef(ref string) bool {
+	host, _, ok := strings.Cut(ref, "/")
+	if !ok {
+		return false
+	}
+	return strings.Contains(host, ".") || strings.Contains(host, ":")
+}
+
 // cmdRegistryInspect inspects a registry manifest and outputs JSON.
 // Usage: registry-inspect <image-ref>
 // Outputs the manifest result as JSON to stdout.
@@ -839,8 +1008,8 @@ func (h *Harness) cmdRegistryInspect(ts *testscript.TestScript, neg bool, args [
 		ts.Fatalf("registry-inspect: failed to marshal result: %v", err)
 	}
 
-	ts.Stdout().Write(output)
-	ts.Stdout().Write([]byte("\n"))
+	_, _ = ts.Stdout().Write(output)
+	_, _ = ts.Stdout().Write([]byte("\n"))
 }
 
 // cmdDockerPush tags and pushes a local image to the test registry.
@@ -894,181 +1063,282 @@ func (h *Harness) cmdDockerPush(ts *testscript.TestScript, neg bool, args []stri
 }
 
 // =============================================================================
-// Mock weights command
+// Mock upload server commands
 // =============================================================================
 
-// mockWeightsLock mirrors the structure from pkg/model/weights_lock.go
-// SYNC: If pkg/model/WeightsLock changes, update this copy.
-// We duplicate it here to avoid importing pkg/model which transitively imports pkg/wheels.
-type mockWeightsLock struct {
-	Version string           `json:"version"`
-	Created time.Time        `json:"created"`
-	Files   []mockWeightFile `json:"files"`
-}
-
-// mockWeightFile mirrors WeightFile from pkg/model/weights.go
-// SYNC: If pkg/model/WeightFile changes, update this copy.
-type mockWeightFile struct {
-	Name             string `json:"name"`
-	Dest             string `json:"dest"`
-	DigestOriginal   string `json:"digestOriginal"`
-	Digest           string `json:"digest"`
-	Size             int64  `json:"size"`
-	SizeUncompressed int64  `json:"sizeUncompressed"`
-	MediaType        string `json:"mediaType"`
-	ContentType      string `json:"contentType,omitempty"`
-}
-
-// cmdMockWeights generates mock weight files and a weights.lock file.
-// Usage: mock-weights [--count N] [--min-size S] [--max-size S]
-// Defaults:
-//   - count: 2
-//   - min-size: 1kb
-//   - max-size: 10kb
-//
-// Creates files in $WORK/weights/ and writes $WORK/weights.lock
-func (h *Harness) cmdMockWeights(ts *testscript.TestScript, neg bool, args []string) {
+// cmdUploadServerStart starts a mock HTTP upload server on the host.
+// It accepts PUT requests, records them, and responds with a Location header.
+// Usage: upload-server-start
+// Exports $UPLOAD_SERVER_URL with the server's base URL.
+func (h *Harness) cmdUploadServerStart(ts *testscript.TestScript, neg bool, args []string) {
 	if neg {
-		ts.Fatalf("mock-weights: does not support negation")
+		ts.Fatalf("upload-server-start: does not support negation")
 	}
 
-	// Parse arguments
-	count := 2
-	minSize := int64(1024)      // 1KB
-	maxSize := int64(10 * 1024) // 10KB
+	workDir := ts.Getenv("WORK")
 
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--count", "-n":
-			if i+1 < len(args) {
-				if n, err := strconv.Atoi(args[i+1]); err == nil {
-					count = n
-				}
-				i++
-			}
-		case "--min-size":
-			if i+1 < len(args) {
-				if size, err := parseSize(args[i+1]); err == nil {
-					minSize = size
-				}
-				i++
-			}
-		case "--max-size":
-			if i+1 < len(args) {
-				if size, err := parseSize(args[i+1]); err == nil {
-					maxSize = size
-				}
-				i++
-			}
+	h.uploadServersMu.Lock()
+	if _, exists := h.uploadServers[workDir]; exists {
+		h.uploadServersMu.Unlock()
+		ts.Fatalf("upload-server-start: server already running for this test")
+	}
+	h.uploadServersMu.Unlock()
+
+	mus := &mockUploadServer{}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		record := mockUploadRecord{
+			Path:        r.URL.Path,
+			ContentType: r.Header.Get("Content-Type"),
+			Size:        len(body),
+		}
+		mus.mu.Lock()
+		mus.uploads = append(mus.uploads, record)
+		mus.mu.Unlock()
+
+		// Return a clean URL without query params (simulates a signed URL redirect)
+		location := fmt.Sprintf("http://host.docker.internal:%d%s", mus.port, r.URL.Path)
+		w.Header().Set("Location", location)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mus.server = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second} //nolint:gosec // test harness, not production
+
+	// Bind to all interfaces so the container can reach us via host.docker.internal
+	ln, err := net.Listen("tcp", "0.0.0.0:0") //nolint:gosec // must be reachable from Docker container
+	if err != nil {
+		ts.Fatalf("upload-server-start: failed to listen: %v", err)
+	}
+	mus.port = ln.Addr().(*net.TCPAddr).Port
+
+	go func() { _ = mus.server.Serve(ln) }()
+
+	h.uploadServersMu.Lock()
+	h.uploadServers[workDir] = mus
+	h.uploadServersMu.Unlock()
+
+	// Advertise host.docker.internal so the container can reach the host server.
+	// On Linux, cog serve adds --add-host=host.docker.internal:host-gateway.
+	// On Mac, Docker Desktop resolves host.docker.internal automatically.
+	url := fmt.Sprintf("http://host.docker.internal:%d/", mus.port)
+	ts.Setenv("UPLOAD_SERVER_URL", url)
+	ts.Logf("upload-server-start: listening on 0.0.0.0:%d, container URL: %s", mus.port, url)
+}
+
+// cmdUploadServerCount verifies exactly N uploads were received.
+// Usage: upload-server-count N
+func (h *Harness) cmdUploadServerCount(ts *testscript.TestScript, neg bool, args []string) {
+	if len(args) != 1 {
+		ts.Fatalf("upload-server-count: usage: upload-server-count N")
+	}
+
+	expected, err := strconv.Atoi(args[0])
+	if err != nil {
+		ts.Fatalf("upload-server-count: invalid count %q: %v", args[0], err)
+	}
+
+	workDir := ts.Getenv("WORK")
+	h.uploadServersMu.Lock()
+	mus, exists := h.uploadServers[workDir]
+	h.uploadServersMu.Unlock()
+
+	if !exists {
+		ts.Fatalf("upload-server-count: no upload server running (call upload-server-start first)")
+	}
+
+	mus.mu.Lock()
+	got := len(mus.uploads)
+	mus.mu.Unlock()
+
+	if neg {
+		if got == expected {
+			ts.Fatalf("upload-server-count: expected NOT %d uploads but got %d", expected, got)
+		}
+		return
+	}
+
+	if got != expected {
+		ts.Fatalf("upload-server-count: expected %d uploads but got %d", expected, got)
+	}
+}
+
+// stopUploadServerByWorkDir shuts down the upload server for a work directory.
+func (h *Harness) stopUploadServerByWorkDir(workDir string) {
+	h.uploadServersMu.Lock()
+	mus, exists := h.uploadServers[workDir]
+	if !exists {
+		h.uploadServersMu.Unlock()
+		return
+	}
+	delete(h.uploadServers, workDir)
+	h.uploadServersMu.Unlock()
+
+	if mus.server != nil {
+		_ = mus.server.Close()
+	}
+}
+
+// =============================================================================
+// Webhook receiver commands
+// =============================================================================
+
+// cmdWebhookServerStart starts a webhook receiver that accepts prediction callbacks.
+// It parses the JSON payload to extract status and measure the output size, without
+// ever exposing the (potentially huge) output to testscript's log buffer.
+// Usage: webhook-server-start
+// Exports $WEBHOOK_URL with the server's callback URL.
+func (h *Harness) cmdWebhookServerStart(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("webhook-server-start: does not support negation")
+	}
+
+	workDir := ts.Getenv("WORK")
+
+	h.webhookServersMu.Lock()
+	if _, exists := h.webhookServers[workDir]; exists {
+		h.webhookServersMu.Unlock()
+		ts.Fatalf("webhook-server-start: server already running for this test")
+	}
+	h.webhookServersMu.Unlock()
+
+	ws := &webhookServer{
+		done: make(chan struct{}),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Stream-parse the JSON to extract status, measure output size, and
+		// capture metrics without holding the entire output string in memory.
+		// Output is json.RawMessage because it can be a string (single output)
+		// or an array (iterator/streaming output).
+		var payload struct {
+			Status  string          `json:"status"`
+			Output  json.RawMessage `json:"output"`
+			Error   string          `json:"error"`
+			Metrics json.RawMessage `json:"metrics"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+
+		// Only record terminal statuses
+		switch payload.Status {
+		case "succeeded", "failed", "canceled":
+		default:
+			return
+		}
+
+		ws.mu.Lock()
+		defer ws.mu.Unlock()
+
+		// Only record the first terminal callback
+		if ws.result != nil {
+			return
+		}
+		// Compute output size: for strings, use the unquoted length;
+		// for arrays or other types, use the raw JSON byte length.
+		outputSize := len(payload.Output)
+		var outputStr string
+		if json.Unmarshal(payload.Output, &outputStr) == nil {
+			outputSize = len(outputStr)
+		}
+
+		ws.result = &webhookResult{
+			Status:       payload.Status,
+			OutputSize:   outputSize,
+			HasError:     payload.Error != "",
+			ErrorMessage: payload.Error,
+			Metrics:      payload.Metrics,
+		}
+		close(ws.done)
+	})
+
+	ws.server = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second} //nolint:gosec
+
+	// Bind to all interfaces so the container can reach us via host.docker.internal
+	ln, err := net.Listen("tcp", "0.0.0.0:0") //nolint:gosec
+	if err != nil {
+		ts.Fatalf("webhook-server-start: failed to listen: %v", err)
+	}
+	ws.port = ln.Addr().(*net.TCPAddr).Port
+
+	go func() { _ = ws.server.Serve(ln) }()
+
+	h.webhookServersMu.Lock()
+	h.webhookServers[workDir] = ws
+	h.webhookServersMu.Unlock()
+
+	url := fmt.Sprintf("http://host.docker.internal:%d/webhook", ws.port)
+	ts.Setenv("WEBHOOK_URL", url)
+	ts.Logf("webhook-server-start: listening on 0.0.0.0:%d, container URL: %s", ws.port, url)
+}
+
+// cmdWebhookServerWait blocks until the webhook server receives a terminal prediction callback,
+// then writes a compact JSON summary to stdout for assertion with stdout/stderr matchers.
+// Usage: webhook-server-wait [timeout]
+// Default timeout: 120s
+func (h *Harness) cmdWebhookServerWait(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("webhook-server-wait: does not support negation")
+	}
+
+	timeout := 120 * time.Second
+	if len(args) > 0 {
+		if d, err := time.ParseDuration(args[0]); err == nil {
+			timeout = d
 		}
 	}
 
 	workDir := ts.Getenv("WORK")
-	weightsDir := filepath.Join(workDir, "weights")
-	lockPath := filepath.Join(workDir, "weights.lock")
+	h.webhookServersMu.Lock()
+	ws, exists := h.webhookServers[workDir]
+	h.webhookServersMu.Unlock()
 
-	// Create weights directory
-	if err := os.MkdirAll(weightsDir, 0o755); err != nil {
-		ts.Fatalf("mock-weights: failed to create weights dir: %v", err)
+	if !exists {
+		ts.Fatalf("webhook-server-wait: no webhook server running (call webhook-server-start first)")
 	}
 
-	var files []mockWeightFile
-
-	// Seed the RNG for varied sizes across test runs
-	rng := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
-
-	for i := 1; i <= count; i++ {
-		// Random size between min and max
-		size := minSize
-		if maxSize > minSize {
-			size = minSize + (rng.Int63() % (maxSize - minSize + 1))
-		}
-
-		// Generate identifier (e.g., "weights-001")
-		weightName := fmt.Sprintf("weights-%03d", i)
-		filename := weightName + ".bin"
-		filePath := filepath.Join(weightsDir, filename)
-
-		// Generate random data
-		data := make([]byte, size)
-		if _, err := cryptorand.Read(data); err != nil {
-			ts.Fatalf("mock-weights: failed to generate random data: %v", err)
-		}
-
-		// Write file
-		if err := os.WriteFile(filePath, data, 0o644); err != nil {
-			ts.Fatalf("mock-weights: failed to write %s: %v", filename, err)
-		}
-
-		// Compute digest (uncompressed, since we're not actually compressing for tests)
-		hash := sha256.Sum256(data)
-		digest := "sha256:" + hex.EncodeToString(hash[:])
-
-		files = append(files, mockWeightFile{
-			Name:             weightName,
-			Dest:             "/cache/" + filename,
-			DigestOriginal:   digest,
-			Digest:           digest, // Same as original since we're not compressing
-			Size:             size,
-			SizeUncompressed: size,
-			// MediaType matches production WeightBuilder output (uncompressed).
-			MediaType:   "application/vnd.cog.weight.layer.v1",
-			ContentType: "application/octet-stream",
-		})
+	select {
+	case <-ws.done:
+	case <-time.After(timeout):
+		ts.Fatalf("webhook-server-wait: timed out after %s waiting for terminal webhook", timeout)
 	}
 
-	// Create weights.lock
-	lock := mockWeightsLock{
-		Version: "1.0",
-		Created: time.Now().UTC(),
-		Files:   files,
-	}
+	ws.mu.Lock()
+	result := ws.result
+	ws.mu.Unlock()
 
-	lockData, err := json.MarshalIndent(lock, "", "  ")
-	if err != nil {
-		ts.Fatalf("mock-weights: failed to marshal weights.lock: %v", err)
-	}
-
-	if err := os.WriteFile(lockPath, lockData, 0o644); err != nil {
-		ts.Fatalf("mock-weights: failed to write weights.lock: %v", err)
-	}
-
-	ts.Logf("mock-weights: created %d files in %s", count, weightsDir)
+	out, _ := json.Marshal(result)
+	_, _ = ts.Stdout().Write(out)
+	_, _ = ts.Stdout().Write([]byte("\n"))
 }
 
-// parseSize parses size strings like "1kb", "10KB", "1mb" into bytes.
-func parseSize(s string) (int64, error) {
-	s = strings.TrimSpace(strings.ToLower(s))
-	if s == "" {
-		return 0, fmt.Errorf("empty size string")
+// stopWebhookServerByWorkDir shuts down the webhook server for a work directory.
+func (h *Harness) stopWebhookServerByWorkDir(workDir string) {
+	h.webhookServersMu.Lock()
+	ws, exists := h.webhookServers[workDir]
+	if !exists {
+		h.webhookServersMu.Unlock()
+		return
 	}
+	delete(h.webhookServers, workDir)
+	h.webhookServersMu.Unlock()
 
-	var multiplier int64 = 1
-	var numStr string
-
-	switch {
-	case strings.HasSuffix(s, "gb"):
-		multiplier = 1024 * 1024 * 1024
-		numStr = strings.TrimSuffix(s, "gb")
-	case strings.HasSuffix(s, "mb"):
-		multiplier = 1024 * 1024
-		numStr = strings.TrimSuffix(s, "mb")
-	case strings.HasSuffix(s, "kb"):
-		multiplier = 1024
-		numStr = strings.TrimSuffix(s, "kb")
-	case strings.HasSuffix(s, "b"):
-		numStr = strings.TrimSuffix(s, "b")
-	default:
-		numStr = s
+	if ws.server != nil {
+		_ = ws.server.Close()
 	}
-
-	num, err := strconv.ParseFloat(strings.TrimSpace(numStr), 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid number: %s", numStr)
-	}
-	if num < 0 {
-		return 0, fmt.Errorf("size cannot be negative")
-	}
-
-	return int64(num * float64(multiplier)), nil
 }

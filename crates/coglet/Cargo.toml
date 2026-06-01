@@ -21,6 +21,10 @@ async-trait = "0.1"
 serde.workspace = true
 serde_json.workspace = true
 
+# Encoding
+base64 = "0.22.1"
+mime_guess = "2.0.5"
+
 # Identifiers
 uuid.workspace = true
 
@@ -38,18 +42,25 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror.workspace = true
 anyhow.workspace = true
 
+# Input validation
+jsonschema = "0.29"
+
 # Concurrent collections
 dashmap = "6"
+
+# TLS
+rustls.workspace = true
 
 # Observability
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.30", features = ["signal", "fs"] }
+nix = { version = "0.31", features = ["signal", "fs"] }
 
 [dev-dependencies]
 insta.workspace = true
+tempfile = "3"
 wiremock = "0.6"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

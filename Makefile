@@ -24,11 +24,7 @@ $(info └───────────────────────�
 $(info )
 endif
 
-DESTDIR ?=
-PREFIX = /usr/local
-BINDIR = $(PREFIX)/bin
-
-INSTALL := install -m 0755
+PREFIX ?= /usr/local
 
 GO ?= go
 
@@ -50,8 +46,7 @@ wheel:
 
 .PHONY: install
 install: cog
-	$(INSTALL) -d $(DESTDIR)$(BINDIR)
-	$(INSTALL) cog $(DESTDIR)$(BINDIR)/cog
+	PREFIX=$(PREFIX) mise run install
 
 # =============================================================================
 # Test targets

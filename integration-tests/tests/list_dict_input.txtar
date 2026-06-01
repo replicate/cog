@@ -1,0 +1,33 @@
+# Test list[dict] as predict input type (common pattern for chat message arrays)
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# List of dicts works as input via JSON
+cog predict $TEST_IMAGE --json '{"messages": [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}]}'
+stdout '"status": "succeeded"'
+stdout '"output": "user: hello\\nassistant: hi"'
+
+# Empty list also works
+cog predict $TEST_IMAGE --json '{"messages": []}'
+stdout '"status": "succeeded"'
+stdout '"output": ""'
+
+# Verify the schema has array-of-objects type for list[dict] input
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+stdout '"messages":{"items":{"type":"object"},"title":"Messages","type":"array","x-order":0}'
+stdout '"required":\["messages"\]'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[dict]) -> str:
+        parts = [f"{m['role']}: {m['content']}" for m in messages]
+        return "\n".join(parts)

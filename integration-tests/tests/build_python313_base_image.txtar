@@ -1,5 +1,7 @@
 # Test Python 3.13 works with --use-cog-base-image
 # Source: test_build.py::test_python_313_base_images
+#
+# Resolves cog-base images from GHCR via COG_REGISTRY_HOST (set in CI).
 
 # Build using Python 3.13 with --use-cog-base-image
 cog build -t $TEST_IMAGE --use-cog-base-image

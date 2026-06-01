@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "envelopeFormat": "sha256:ce2d53f8dd962ace393450e0abadbe227304897be87753a503b61f9c8525726e",
+  "weights": [
+    {
+      "name": "resnet50",
+      "target": "/src/weights/resnet50",
+      "source": {
+        "uri": "hf://microsoft/resnet-50",
+        "fingerprint": "commit:34c2154c194f829b11125337b98c8f5f9965ff19",
+        "include": [],
+        "exclude": [
+          ".gitattributes",
+          "README.md",
+          "flax_model.msgpack",
+          "pytorch_model.bin",
+          "tf_model.h5"
+        ],
+        "importedAt": "2026-04-30T21:49:23.515142Z"
+      },
+      "digest": "sha256:d2daafad96409df82d69df3c92192d2e651344f579a12683a59e4a6140a5abf5",
+      "setDigest": "sha256:52924993c7eff45d5d1deaecf1f375d774c30faa1b4ce61379f5d552fd376744",
+      "size": 102552676,
+      "sizeCompressed": 102509231,
+      "files": [
+        {
+          "path": "config.json",
+          "size": 69556,
+          "digest": "sha256:a1be0f56d516d0b55f9844ce0fbfe5fb359195cba6c6c102d41ae6c202c84d5e",
+          "layer": "sha256:d3458267e3c3179135ab97c11fb1a0da870c44be7c32d65c5d2b35bc91c46bf8"
+        },
+        {
+          "path": "model.safetensors",
+          "size": 102482854,
+          "digest": "sha256:9c6061af1f450bb0847e529fd742aa5066017be379c71bbf5546b198e5b13a1e",
+          "layer": "sha256:dec23f069d100ce2979619413133cd208a35069daed2b13e77879ac2404994c5"
+        },
+        {
+          "path": "preprocessor_config.json",
+          "size": 266,
+          "digest": "sha256:fd575b890da5a949493e1d1e7a70bfcb9e4b99fe444004d2dbfa253add254741",
+          "layer": "sha256:d3458267e3c3179135ab97c11fb1a0da870c44be7c32d65c5d2b35bc91c46bf8"
+        }
+      ],
+      "layers": [
+        {
+          "digest": "sha256:d3458267e3c3179135ab97c11fb1a0da870c44be7c32d65c5d2b35bc91c46bf8",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+          "size": 23727,
+          "sizeUncompressed": 69822
+        },
+        {
+          "digest": "sha256:dec23f069d100ce2979619413133cd208a35069daed2b13e77879ac2404994c5",
+          "mediaType": "application/vnd.oci.image.layer.v1.tar",
+          "size": 102485504,
+          "sizeUncompressed": 102482854
+        }
+      ]
+    }
+  ]
+}

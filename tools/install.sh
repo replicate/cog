@@ -132,6 +132,12 @@ setup_cog() {
 
   $SUDO chmod +x $COG_LOCATION
 
+  # On macOS, remove the quarantine attribute that triggers Gatekeeper's
+  # "cannot be opened because the developer cannot be verified" warning.
+  if [ "$(uname -s)" = "Darwin" ]; then
+    $SUDO xattr -d com.apple.quarantine "$COG_LOCATION" 2>/dev/null || true
+  fi
+
   SHELL_NAME=$(basename "$SHELL")
   if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo "Adding $INSTALL_DIR to PATH in .$SHELL_NAME"rc
@@ -156,7 +162,7 @@ main() {
   # Check if macOS
   if [ "$(uname -s)" = "Darwin" ]; then
     echo "On macOS, it is recommended to install cog using Homebrew instead:"
-    echo \`brew install cog\`
+    echo \`brew install replicate/tap/cog\`
     echo "Do you want to continue with this installation anyway?"
     
     read -p "Continue? (y/N): " choice

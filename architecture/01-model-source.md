@@ -9,7 +9,7 @@ A Cog model consists of:
 ```
 my-model/
 ├── cog.yaml          # Environment configuration
-├── predict.py        # Predictor class
+├── run.py            # Runner class
 └── weights/          # Model weights (optional, can be downloaded)
 ```
 
@@ -29,38 +29,37 @@ build:
   run:
     - curl -o /src/model.bin https://example.com/model.bin
 
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 
 concurrency:
   max: 1
 ```
 
-| Field | Purpose |
-|-------|---------|
-| `build.python_version` | Python interpreter version (3.10-3.13) |
-| `build.gpu` | Enable CUDA support |
-| `build.python_packages` | pip packages to install |
-| `build.system_packages` | apt packages to install |
-| `build.run` | Arbitrary shell commands during build |
-| `predict` | Path to predictor class (`module:ClassName`) |
-| `train` | Path to training class (optional) |
-| `concurrency.max` | Max concurrent predictions (requires async) |
+| Field                   | Purpose                                     |
+| ----------------------- | ------------------------------------------- |
+| `build.python_version`  | Python interpreter version (3.10-3.13)      |
+| `build.gpu`             | Enable CUDA support                         |
+| `build.python_packages` | pip packages to install                     |
+| `build.system_packages` | apt packages to install                     |
+| `build.run`             | Arbitrary shell commands during build       |
+| `run`                   | Path to runner class (`module:ClassName`)   |
+| `concurrency.max`       | Max concurrent predictions (requires async) |
 
 The [Build System](./05-build-system.md) uses this configuration to produce an image containing all necessary dependencies, libraries, and the correct Python/CUDA versions.
 
-## The Predictor Class
+## The Runner Class
 
-A predictor is a Python class with two methods:
+A runner is a Python class with two methods:
 
 ```python
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
         """Load model into memory. Called once at container start."""
         self.model = load_model("./weights")
-    
-    def predict(self, prompt: str, steps: int = 50) -> Path:
+
+    def run(self, prompt: str, steps: int = 50) -> Path:
         """Run inference. Called for each prediction request."""
         output = self.model.generate(prompt, steps=steps)
         output.save("/tmp/output.png")
@@ -73,27 +72,24 @@ class Predictor(BasePredictor):
 - Used to load model weights, initialize GPU contexts, warm up caches
 - Runs before the HTTP server accepts requests
 - Optional: if omitted, Cog proceeds directly to serving
+- See [Container Runtime: Predictor Lifecycle](./04-container-runtime.md#predictor-lifecycle) for details on instance lifetime, concurrency, crash recovery, and shutdown
 
-### predict()
+### run()
 
 - Called **for each prediction request**
 - Signature defines the model's input schema (via type hints)
 - Return type defines the output schema
 - Can be sync (`def`) or async (`async def`)
-
-### train() (optional)
-
-- Same contract as `predict()` but for fine-tuning workflows
-- Configured separately in `cog.yaml` with `train:` key
+- See [Container Runtime: Life of a Prediction](./04-container-runtime.md#life-of-a-prediction) for the full request-to-response path through the runtime
 
 ## Input Types
 
-The types used in `predict()` parameters become the model's input schema.
+The types used in `run()` parameters become the model's input schema.
 
 ### Basic Types
 
 ```python
-def predict(
+def run(
     self,
     text: str,              # String input
     count: int,             # Integer
@@ -109,7 +105,7 @@ URLs are automatically downloaded to local files:
 ```python
 from cog import Path
 
-def predict(self, image: Path) -> Path:
+def run(self, image: Path) -> Path:
     # Client sends: {"input": {"image": "https://example.com/photo.jpg"}}
     # Cog downloads the URL, `image` is a local path like /tmp/inputabc123.jpg
     img = PIL.Image.open(image)
@@ -117,6 +113,7 @@ def predict(self, image: Path) -> Path:
 ```
 
 `cog.Path` extends `pathlib.Path`. At runtime:
+
 - HTTP/HTTPS URLs are downloaded to temp files
 - Data URLs are decoded
 - The predictor receives a local filesystem path
@@ -128,7 +125,7 @@ For sensitive values that shouldn't appear in logs:
 ```python
 from cog import Secret
 
-def predict(self, api_key: Secret) -> str:
+def run(self, api_key: Secret) -> str:
     # Value is masked in logs and webhooks
     client = SomeAPI(api_key.get_secret_value())
     ...
@@ -141,7 +138,7 @@ Use `Input()` to add metadata and validation:
 ```python
 from cog import Input
 
-def predict(
+def run(
     self,
     prompt: str = Input(description="The text prompt"),
     steps: int = Input(default=50, ge=1, le=100, description="Inference steps"),
@@ -149,20 +146,20 @@ def predict(
 ) -> str:
 ```
 
-| Parameter | Effect |
-|-----------|--------|
-| `description` | Shown in UI and schema |
-| `default` | Default value if not provided |
-| `ge`, `le` | Numeric bounds (greater/less than or equal) |
-| `min_length`, `max_length` | String length bounds |
-| `choices` | Enum values (deprecated: prefer `Literal`) |
+| Parameter                  | Effect                                      |
+| -------------------------- | ------------------------------------------- |
+| `description`              | Shown in UI and schema                      |
+| `default`                  | Default value if not provided               |
+| `ge`, `le`                 | Numeric bounds (greater/less than or equal) |
+| `min_length`, `max_length` | String length bounds                        |
+| `choices`                  | Enum values (deprecated: prefer `Literal`)  |
 
 ### Enums with Literal
 
 ```python
 from typing import Literal
 
-def predict(
+def run(
     self,
     size: Literal["small", "medium", "large"] = "medium",
 ) -> str:
@@ -174,7 +171,7 @@ def predict(
 from typing import List
 from cog import Path
 
-def predict(
+def run(
     self,
     images: List[Path],      # Multiple file inputs
     tags: List[str],         # Multiple strings
@@ -186,7 +183,7 @@ def predict(
 ```python
 from typing import Optional
 
-def predict(
+def run(
     self,
     seed: Optional[int] = None,  # Can be omitted or null
 ) -> str:
@@ -199,7 +196,7 @@ The return type annotation defines what the model produces.
 ### Basic Types
 
 ```python
-def predict(self, prompt: str) -> str:
+def run(self, prompt: str) -> str:
     return "Generated text..."
 ```
 
@@ -210,7 +207,7 @@ Return `cog.Path` pointing to a generated file:
 ```python
 from cog import Path
 
-def predict(self, prompt: str) -> Path:
+def run(self, prompt: str) -> Path:
     # Generate file
     output_path = "/tmp/output.png"
     self.model.generate(prompt).save(output_path)
@@ -227,7 +224,7 @@ Return a list:
 from typing import List
 from cog import Path
 
-def predict(self, prompt: str) -> List[Path]:
+def run(self, prompt: str) -> List[Path]:
     paths = []
     for i in range(4):
         path = f"/tmp/output_{i}.png"
@@ -243,7 +240,7 @@ Yield values progressively:
 ```python
 from typing import Iterator
 
-def predict(self, prompt: str) -> Iterator[str]:
+def run(self, prompt: str) -> Iterator[str]:
     for token in self.model.generate_stream(prompt):
         yield token
 ```
@@ -257,7 +254,7 @@ For LLM-style token streaming where outputs should be concatenated:
 ```python
 from cog import ConcatenateIterator
 
-def predict(self, prompt: str) -> ConcatenateIterator[str]:
+def run(self, prompt: str) -> ConcatenateIterator[str]:
     for token in self.model.generate(prompt):
         yield token  # "Hello", " ", "world", "!"
     # Client sees progressive: "Hello" -> "Hello " -> "Hello world" -> "Hello world!"
@@ -276,7 +273,7 @@ Include weights in your source directory - they're copied into the image during 
 ```
 my-model/
 ├── cog.yaml
-├── predict.py
+├── run.py
 └── weights/
     └── model.safetensors
 ```
@@ -289,20 +286,6 @@ def setup(self):
 ### Downloaded at Runtime
 
 Weights can be fetched during `setup()` rather than bundled. Common approaches:
-
-**Using the `weights` parameter** (Cog's built-in mechanism):
-
-```python
-class Predictor(BasePredictor):
-    def setup(self, weights: Path):
-        self.model = load(weights)
-```
-
-The `weights` value comes from `COG_WEIGHTS` env var or falls back to `./weights`:
-
-```bash
-COG_WEIGHTS=https://example.com/model.tar cog predict ...
-```
 
 **Using pget** (parallel download tool, included in Cog images):
 
@@ -330,15 +313,16 @@ The choice depends on your deployment needs - bundled weights make images larger
 For concurrent predictions, use async:
 
 ```python
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     async def setup(self):
         self.model = await load_model_async()
-    
-    async def predict(self, prompt: str) -> str:
+
+    async def run(self, prompt: str) -> str:
         return await self.model.generate(prompt)
 ```
 
 Requires:
+
 - Python 3.11+
 - `concurrency.max > 1` in cog.yaml
 
@@ -346,10 +330,10 @@ See [Container Runtime](./04-container-runtime.md) for concurrency details.
 
 ## Code References
 
-| File | Purpose |
-|------|---------|
-| `python/cog/__init__.py` | Public API exports |
-| `python/cog/base_predictor.py` | BasePredictor class |
-| `python/cog/types.py` | Input, Path, Secret, ConcatenateIterator |
-| `python/cog/predictor.py` | Type introspection, weights handling |
-| `pkg/config/config.go` | cog.yaml parsing |
+| File                      | Purpose                                                |
+| ------------------------- | ------------------------------------------------------ |
+| `python/cog/__init__.py`  | Public API exports                                     |
+| `python/cog/predictor.py` | BaseRunner class, type introspection, weights handling |
+| `python/cog/types.py`     | Path, Secret, ConcatenateIterator                      |
+| `python/cog/input.py`     | `Input()` function and field metadata                  |
+| `pkg/config/config.go`    | cog.yaml parsing                                       |

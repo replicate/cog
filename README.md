@@ -12,11 +12,7 @@ You can deploy your packaged model to your own infrastructure, or to [Replicate]
 
 - ✅ **Define the inputs and outputs for your model with standard Python.** Then, Cog generates an OpenAPI schema and validates the inputs and outputs.
 
-- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API. Two runtime implementations available: FastAPI (default) and Rust/Axum (experimental, faster).
-
-- 🥞 **Automatic queue worker.** Long-running deep learning models or batch processing is best architected with a queue. Cog models do this out of the box. Redis is currently supported, with more in the pipeline.
-
-- ☁️ **Cloud storage.** Files can be read and written directly to Amazon S3 and Google Cloud Storage. (Coming soon.)
+- 🎁 **Automatic HTTP inference server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
 
 - 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
 
@@ -28,30 +24,29 @@ Define the Docker environment your model runs in with `cog.yaml`:
 build:
   gpu: true
   system_packages:
-    - "libgl1-mesa-glx"
+    - "libgl1"
     - "libglib2.0-0"
-  python_version: "3.12"
-  python_packages:
-    - "torch==2.3"
-predict: "predict.py:Predictor"
+  python_version: "3.13"
+  python_requirements: requirements.txt
+run: "run.py:Runner"
 ```
 
-Define how predictions are run on your model with `predict.py`:
+Define how your model runs with `run.py`:
 
 ```python
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 import torch
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Load the model into memory to make running multiple inferences efficient"""
         self.model = torch.load("./weights.pth")
 
     # The arguments and types the model takes as input
-    def predict(self,
+    def run(self,
           image: Path = Input(description="Grayscale input image")
     ) -> Path:
-        """Run a single prediction on the model"""
+        """Run the model"""
         processed_image = preprocess(image)
         output = self.model(processed_image)
         return postprocess(output)
@@ -59,23 +54,23 @@ class Predictor(BasePredictor):
 
 In the above we accept a path to the image as an input, and return a path to our transformed image after running it through our model.
 
-Now, you can run predictions on this model:
+Now, you can run the model:
 
 ```console
-$ cog predict -i image=@input.jpg
+$ cog run -i image=@input.jpg
 --> Building Docker image...
---> Running Prediction...
+--> Running...
 --> Output written to output.jpg
 ```
 
 Or, build a Docker image for deployment:
 
 ```console
-$ cog build -t my-colorization-model
+$ cog build -t my-classification-model
 --> Building Docker image...
---> Built my-colorization-model:latest
+--> Built my-classification-model:latest
 
-$ docker run -d -p 5000:5000 --gpus all my-colorization-model
+$ docker run -d -p 5000:5000 --gpus all my-classification-model
 
 $ curl http://localhost:5000/predictions -X POST \
     -H 'Content-Type: application/json' \
@@ -97,14 +92,14 @@ $ curl http://localhost:8080/predictions -X POST \
 In development, you can also run arbitrary commands inside the Docker environment:
 
 ```console
-$ cog run python train.py
+$ cog exec python train.py
 ...
 ```
 
 Or, [spin up a Jupyter notebook](docs/notebooks.md):
 
 ```console
-$ cog run -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
+$ cog exec -p 8888 jupyter notebook --allow-root --ip=0.0.0.0
 ```
 -->
 
@@ -130,10 +125,10 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 If you're using macOS, you can install Cog using Homebrew:
 
 ```console
-brew install cog
+brew install replicate/tap/cog
 ```
 
-You can also download and install the latest release using our 
+You can also download and install the latest release using our
 [install script](https://cog.run/install):
 
 ```sh
@@ -148,19 +143,12 @@ wget -qO- https://cog.run/install.sh
 sh ./install.sh
 ```
 
-You can manually install the latest release of Cog directly from GitHub 
+You can manually install the latest release of Cog directly from GitHub
 by running the following commands in a terminal:
 
 ```console
 sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
 sudo chmod +x /usr/local/bin/cog
-```
-
-Alternatively, you can build Cog from source and install it with these commands:
-
-```console
-make
-sudo make install
 ```
 
 Or if you are on docker:
@@ -174,10 +162,14 @@ RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run
 If you're using macOS and you previously installed Cog with Homebrew, run the following:
 
 ```console
-brew upgrade cog
+brew upgrade replicate/tap/cog
 ```
 
 Otherwise, you can upgrade to the latest version by running the same commands you used to install it.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environment and build from source.
 
 ## Next steps
 
@@ -188,13 +180,15 @@ Otherwise, you can upgrade to the latest version by running the same commands yo
 - [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
 - [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
-- [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
+- [Run interface reference](docs/python.md) to learn how the `Runner` interface works
 - [Training interface reference](docs/training.md) to learn how to add a fine-tuning API to your model
 - [HTTP API reference](docs/http.md) to learn how to use the HTTP API that models serve
 
 ## Need help?
 
 [Join us in #cog on Discord.](https://discord.gg/replicate)
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/replicate/cog)
 
 ## Contributors ✨
 

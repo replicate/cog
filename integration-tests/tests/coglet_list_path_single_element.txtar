@@ -1,0 +1,56 @@
+# Test that List[Path] with a single element returns an array, not a scalar.
+# Regression test: the orchestrator must not collapse [url] → url for
+# single-element list outputs. The schema declares Output as "type": "array",
+# so the response must always be an array regardless of item count.
+
+cog build -t $TEST_IMAGE
+
+# Start mock upload server on the host, sets $UPLOAD_SERVER_URL
+upload-server-start
+
+cog serve --upload-url $UPLOAD_SERVER_URL
+
+# Single element: output MUST be ["url"], not "url"
+curl POST /predictions '{"input":{"count":1}}'
+stdout '"status":"succeeded"'
+# Match array with exactly one URL element (not a bare string)
+stdout '"output":\["http://host.docker.internal[^"]*"\]'
+! stdout 'data:image/'
+
+upload-server-count 1
+
+# Multiple elements: output must be ["url1","url2"]
+curl POST /predictions '{"input":{"count":2}}'
+stdout '"status":"succeeded"'
+stdout '"output":\["http://host.docker.internal[^"]*","http://host.docker.internal[^"]*"\]'
+! stdout 'data:image/'
+
+# 1 from first prediction + 2 from second = 3 total uploads
+upload-server-count 3
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_packages:
+    - "pillow==10.4.0"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import os
+import tempfile
+from typing import List
+
+from cog import BasePredictor, Input, Path
+from PIL import Image
+
+
+class Predictor(BasePredictor):
+    def predict(self, count: int = Input(description="Number of images", default=1)) -> List[Path]:
+        outputs = []
+        colors = ["red", "blue", "green", "yellow"]
+        for i in range(count):
+            d = tempfile.mkdtemp()
+            p = os.path.join(d, f"{colors[i % len(colors)]}.png")
+            Image.new("RGB", (10, 10), colors[i % len(colors)]).save(p)
+            outputs.append(Path(p))
+        return outputs

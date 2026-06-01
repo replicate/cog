@@ -1,0 +1,25 @@
+# Test list[int] as predict input and output types
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# List of ints works as input and output
+cog predict $TEST_IMAGE --json '{"numbers": [1, 2, 3]}'
+stdout '"status": "succeeded"'
+stdout '"output":'
+stdout '2'
+stdout '4'
+stdout '6'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, numbers: list[int]) -> list[int]:
+        return [n * 2 for n in numbers]

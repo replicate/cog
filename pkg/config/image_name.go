@@ -30,8 +30,3 @@ func DockerImageName(projectDir string) string {
 
 	return projectName
 }
-
-// BaseDockerImageName returns the Docker image name for base images
-func BaseDockerImageName(projectDir string) string {
-	return DockerImageName(projectDir) + "-base"
-}

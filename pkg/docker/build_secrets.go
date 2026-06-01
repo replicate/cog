@@ -7,7 +7,6 @@ import (
 
 	"github.com/moby/buildkit/session/secrets"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
-	"github.com/pkg/errors"
 	"github.com/tonistiigi/go-csvvalue"
 )
 
@@ -37,13 +36,13 @@ func parseSecretFromHost(workingDir, secret string) (*secretsprovider.Source, er
 	for _, field := range fields {
 		key, value, ok := strings.Cut(field, "=")
 		if !ok {
-			return nil, errors.Errorf("invalid field %q must be a key=value pair", field)
+			return nil, fmt.Errorf("invalid field %q must be a key=value pair", field)
 		}
 		key = strings.ToLower(key)
 		switch key {
 		case "type":
 			if value != "file" && value != "env" {
-				return nil, errors.Errorf("unsupported secret type %q", value)
+				return nil, fmt.Errorf("unsupported secret type %q", value)
 			}
 			typ = value
 		case "id":
@@ -60,7 +59,7 @@ func parseSecretFromHost(workingDir, secret string) (*secretsprovider.Source, er
 		case "env":
 			src.Env = value
 		default:
-			return nil, errors.Errorf("unexpected key '%s' in '%s'", key, field)
+			return nil, fmt.Errorf("unexpected key '%s' in '%s'", key, field)
 		}
 	}
 	if typ == "env" && src.Env == "" {

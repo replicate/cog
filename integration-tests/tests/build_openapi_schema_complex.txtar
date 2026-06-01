@@ -1,0 +1,63 @@
+# Test that the OpenAPI schema for complex input/output types is correct.
+#
+# Verifies schema generation for:
+# - Multiple input types with constraints (ge, le, choices)
+# - Optional fields with defaults
+# - Secret type
+# - Structured BaseModel output with nested types
+
+cog build -t $TEST_IMAGE
+
+# Extract the schema from the image label
+exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.openapi_schema"}}'
+
+# Input schema checks
+stdout '"title":"Input"'
+stdout '"temperature"'
+stdout '"prompt"'
+stdout '"style"'
+stdout '"api_key"'
+stdout '"image"'
+
+# Constraints on temperature
+stdout '"minimum":0'
+stdout '"maximum":2'
+
+# Choices for style (enum)
+stdout '"enum":\["fast","balanced","quality"\]'
+
+# Secret type renders as string with format
+stdout '"x-cog-secret":true'
+
+# Optional field has default
+stdout '"default":"hello"'
+
+# Output schema has structured type
+stdout '"Output"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import Optional
+
+from cog import BaseModel, BasePredictor, Input, Path, Secret
+
+
+class Output(BaseModel):
+    text: str
+    score: float
+
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        prompt: str = Input(description="The prompt", default="hello"),
+        temperature: float = Input(description="Sampling temp", ge=0, le=2, default=0.7),
+        style: str = Input(description="Style", choices=["fast", "balanced", "quality"], default="balanced"),
+        api_key: Secret = Input(description="API key"),
+        image: Optional[Path] = Input(description="Optional image", default=None),
+    ) -> Output:
+        return Output(text=f"generated from {prompt}", score=temperature)

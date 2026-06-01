@@ -30,6 +30,7 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/util/mime"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 const StdinPath = "-"
@@ -43,20 +44,48 @@ var (
 	inputJSON            string
 )
 
-func newPredictCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "predict [image]",
-		Short: "Run a prediction",
-		Long: `Run a prediction.
+const existingPredictExamples = `  # Run the model with named inputs
+  cog predict -i prompt="a photo of a cat"
 
-If 'image' is passed, it will run the prediction on that Docker image.
+  # Pass a file as input
+  cog predict -i image=@photo.jpg
+
+  # Save output to a file
+  cog predict -i image=@input.jpg -o output.png
+
+  # Pass multiple inputs
+  cog predict -i prompt="sunset" -i width=1024 -i height=768
+
+  # Run against a pre-built image
+  cog predict r8.im/your-username/my-model -i prompt="hello"
+
+  # Pass inputs as JSON
+  echo '{"prompt": "a cat"}' | cog predict --json @-`
+
+func newPredictCommand() *cobra.Command {
+	return newPredictionCommand("predict", true)
+}
+
+func newPredictionCommand(use string, hidden bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   use + " [image]",
+		Short: "Run the model",
+		Long: `Run the model.
+
+If 'image' is passed, it will run the model on that Docker image.
 It must be an image that has been built by Cog.
 
 Otherwise, it will build the model in the current directory and run
-the prediction on that.`,
+it.`,
+
+		Example:    strings.ReplaceAll(existingPredictExamples, "cog predict", "cog "+use),
 		RunE:       cmdPredict,
 		Args:       cobra.MaximumNArgs(1),
+		Hidden:     hidden,
 		SuggestFor: []string{"infer"},
+	}
+	if hidden {
+		cmd.Short = "Run the model (deprecated, use cog run)"
 	}
 
 	addUseCudaBaseImageFlag(cmd)
@@ -160,7 +189,12 @@ func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
+	if cmd.CalledAs() == "predict" || cmd.Name() == "predict" {
+		console.Warn(`"cog predict" is deprecated, use "cog run"`)
+	}
+
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
@@ -171,6 +205,11 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	volumes := []command.Volume{}
 	gpus := gpusFlag
 
+	// The Manager is built only when we have cog.yaml in scope (the
+	// build-from-source path). Pre-built images are opaque to Cog and
+	// may grow their own weight-metadata signal later.
+	var wm *weights.Manager
+
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
 	if len(args) == 0 {
@@ -179,14 +218,21 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		defer src.Close()
 
-		m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
+		if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
+			return err
+		}
+
+		console.Info("Building Docker image from environment in cog.yaml...")
+		console.Info("")
+		m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
 		if err != nil {
 			return err
 		}
 		imageName = m.ImageRef()
 
-		// Base image doesn't have /src in it, so mount as volume
+		// ExcludeSource build doesn't have /src in it, so mount as volume
 		volumes = append(volumes, command.Volume{
 			Source:      src.ProjectDir,
 			Destination: "/src",
@@ -194,6 +240,11 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		if gpus == "" && m.HasGPU() {
 			gpus = "all"
+		}
+
+		wm, err = newWeightManager(src)
+		if err != nil {
+			return err
 		}
 	} else {
 		// Use existing image
@@ -220,7 +271,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	}
 
 	console.Info("")
-	console.Infof("Starting Docker image %s and running setup()...", imageName)
+	console.Info("Starting Docker image and running setup()...")
 
 	// Automatically propagate RUST_LOG for Rust coglet debugging
 	env := envFlags
@@ -228,41 +279,39 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		env = append(env, "RUST_LOG="+rustLog)
 	}
 
-	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
-		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: volumes,
-		Env:     env,
-	}, false, dockerClient)
+	predictor, err := predict.NewPredictor(ctx, predict.PredictorOptions{
+		RunOptions: command.RunOptions{
+			GPUs:    gpus,
+			Image:   imageName,
+			Volumes: volumes,
+			Env:     env,
+		},
+		IsTrain:       false,
+		Docker:        dockerClient,
+		WeightManager: wm,
+	})
 	if err != nil {
 		return err
 	}
 
-	go func() {
-		captureSignal := make(chan os.Signal, 1)
-		signal.Notify(captureSignal, syscall.SIGINT)
-
-		<-captureSignal
-
-		console.Info("Stopping container...")
-		if err := predictor.Stop(ctx); err != nil {
-			console.Warnf("Failed to stop container: %s", err)
-		}
-	}()
-
 	timeout := time.Duration(setupTimeout) * time.Second
 	if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
-		// Only retry if we're using a GPU but but the user didn't explicitly select a GPU with --gpus
+		// Only retry if we're using a GPU but the user didn't explicitly select a GPU with --gpus
 		// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
 		if gpus == "all" && errors.Is(err, docker.ErrMissingDeviceDriver) {
 			console.Info("Missing device driver, re-trying without GPU")
 
 			_ = predictor.Stop(ctx)
-			predictor, err = predict.NewPredictor(ctx, command.RunOptions{
-				Image:   imageName,
-				Volumes: volumes,
-				Env:     env,
-			}, false, dockerClient)
+			predictor, err = predict.NewPredictor(ctx, predict.PredictorOptions{
+				RunOptions: command.RunOptions{
+					Image:   imageName,
+					Volumes: volumes,
+					Env:     env,
+				},
+				IsTrain:       false,
+				Docker:        dockerClient,
+				WeightManager: wm,
+			})
 			if err != nil {
 				return err
 			}
@@ -275,10 +324,9 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// FIXME: will not run on signal
+	// Use background context to ensure stop signal is still sent after root context is canceled by signal
 	defer func() {
 		console.Debugf("Stopping container...")
-		// use background context to ensure stop signal is still sent after root context is canceled
 		if err := predictor.Stop(context.Background()); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
@@ -334,7 +382,7 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
-	inputs, err := parseInputFlags(inputFlags, schema)
+	inputs, err := parseInputFlags(inputFlags, schema, isTrain)
 	if err != nil {
 		return err
 	}
@@ -348,6 +396,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 	} else {
 		console.Info("Running prediction...")
 	}
+	console.Info("")
 
 	// Generate output depending on type in schema
 	url := "/predictions"
@@ -381,7 +430,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 
 	prediction, err := predictor.Predict(inputs, context)
 	if err != nil {
-		return fmt.Errorf("Failed to predict: %w", err)
+		return fmt.Errorf("Failed to run prediction: %w", err)
 	}
 
 	schema, err := predictor.GetSchema()
@@ -525,7 +574,7 @@ func ensureOutputWriteable(outputPath string, fallbackPath string) (string, erro
 	stat, err := os.Stat(outputPath)
 
 	// If the file doesn't exist, use the parent directory with given filename.
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		if err = unix.Access(path.Dir(outputPath), unix.W_OK); err != nil {
 			return "", fmt.Errorf("Output directory is not writable: %s", path.Dir(outputPath))
 		}
@@ -605,7 +654,7 @@ func processFileOutputs(output any, schema *openapi3.Schema, destination string)
 	return output, nil
 }
 
-func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error) {
+func parseInputFlags(inputs []string, schema *openapi3.T, isTrain ...bool) (predict.Inputs, error) {
 	keyVals := map[string][]string{}
 	for _, input := range inputs {
 		var name, value string
@@ -627,7 +676,8 @@ func parseInputFlags(inputs []string, schema *openapi3.T) (predict.Inputs, error
 		keyVals[name] = append(keyVals[name], value)
 	}
 
-	return predict.NewInputs(keyVals, schema)
+	train := len(isTrain) > 0 && isTrain[0]
+	return predict.NewInputsForMode(keyVals, schema, train)
 }
 
 func addSetupTimeoutFlag(cmd *cobra.Command) {

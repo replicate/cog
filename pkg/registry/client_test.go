@@ -6,10 +6,13 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"syscall"
 	"testing"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -79,6 +82,48 @@ func TestInspect(t *testing.T) {
 		assert.ErrorContains(t, err, "platform not found")
 		assert.Nil(t, resp)
 	})
+}
+
+func TestCommitUploadSendsLayerMediaTypeHeaderWhenConfigured(t *testing.T) {
+	var gotMediaType string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPut, r.Method)
+		gotMediaType = r.Header.Get(OCILayerMediaTypeHeader)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(server.Close)
+
+	client := &RegistryClient{}
+	err := client.commitUpload(
+		context.Background(),
+		server.Client(),
+		server.URL+"/v2/test/blobs/uploads/uuid",
+		v1.Hash{Algorithm: "sha256", Hex: "abc123"},
+		"application/vnd.oci.image.layer.v1.tar+gzip",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "application/vnd.oci.image.layer.v1.tar+gzip", gotMediaType)
+}
+
+func TestCommitUploadOmitsLayerMediaTypeHeaderWhenUnset(t *testing.T) {
+	var gotMediaType string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPut, r.Method)
+		gotMediaType = r.Header.Get(OCILayerMediaTypeHeader)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(server.Close)
+
+	client := &RegistryClient{}
+	err := client.commitUpload(
+		context.Background(),
+		server.Client(),
+		server.URL+"/v2/test/blobs/uploads/uuid",
+		v1.Hash{Algorithm: "sha256", Hex: "abc123"},
+		"",
+	)
+	require.NoError(t, err)
+	require.Empty(t, gotMediaType)
 }
 
 func TestIsRetryableError(t *testing.T) {

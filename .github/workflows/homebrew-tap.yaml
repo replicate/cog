@@ -1,0 +1,134 @@
+---
+name: Update Homebrew Tap
+
+# Standalone workflow for updating the Homebrew cask in replicate/homebrew-tap.
+#
+# Can be triggered:
+# 1. Manually via workflow_dispatch (for iterating without a new release)
+# 2. Called by release-publish.yaml for stable releases
+#
+# REQUIRED GITHUB CONFIGURATION:
+# - Environment "homebrew" with deployment branch rules (v* tags + main)
+# - Secret: COG_HOMEBREW_TAP_PRIVATE_KEY (cog-homebrew-tapbot app private key)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v1.0.0)"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update-homebrew-tap:
+    name: Update Homebrew cask
+    runs-on: ubuntu-latest
+    environment: homebrew
+    timeout-minutes: 10
+    steps:
+      - name: Validate tag format
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid or non-stable tag: $TAG"
+            echo "::error::Only stable release tags (e.g., v1.0.0) should update Homebrew"
+            exit 1
+          fi
+          echo "Updating Homebrew cask for tag: $TAG"
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: 2932405
+          private-key: ${{ secrets.COG_HOMEBREW_TAP_PRIVATE_KEY }}
+          owner: replicate
+          repositories: homebrew-tap
+
+      - name: Checkout cog repository
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/cog.rb.tmpl
+          sparse-checkout-cone-mode: false
+
+      - name: Download checksums from release
+        run: gh release download "$TAG" -p checksums.txt -R "${{ github.repository }}"
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Generate cask file
+        id: generate
+        env:
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ inputs.tag }}
+        run: |
+          # Strip leading 'v' from tag for version
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          # Extract SHA256s for Darwin binaries from checksums.txt
+          SHA_X86=$(grep 'cog_Darwin_x86_64' checksums.txt | awk '{print $1}')
+          SHA_ARM=$(grep 'cog_Darwin_arm64' checksums.txt | awk '{print $1}')
+
+          if [ -z "$SHA_X86" ] || [ -z "$SHA_ARM" ]; then
+            echo "::error::Missing Darwin binary checksums in checksums.txt"
+            echo "Darwin x86_64: ${SHA_X86:-MISSING}"
+            echo "Darwin arm64:  ${SHA_ARM:-MISSING}"
+            cat checksums.txt
+            exit 1
+          fi
+
+          echo "Checksums:"
+          echo "  Darwin x86_64: $SHA_X86"
+          echo "  Darwin arm64:  $SHA_ARM"
+
+          # Generate cask from template.
+          # The template uses ${VERSION}, ${SHA_ARM}, ${SHA_X86} placeholders.
+          # Ruby #{...} interpolation is preserved (envsubst only expands $VAR / ${VAR}).
+          export VERSION SHA_ARM SHA_X86
+          envsubst '${VERSION} ${SHA_ARM} ${SHA_X86}' < .github/cog.rb.tmpl > cog.rb
+
+          echo "Generated cask:"
+          cat cog.rb
+
+      - name: Create pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ steps.generate.outputs.version }}
+        run: |
+          # Clone tap repo and create a branch
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/replicate/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          cp cog.rb tap/Casks/cog.rb
+
+          cd tap
+          git config user.name "cog-homebrew-tapbot[bot]"
+          git config user.email "2932405+cog-homebrew-tapbot[bot]@users.noreply.github.com"
+
+          TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
+          BRANCH="update-cog-${VERSION}-${TIMESTAMP}"
+          git checkout -b "$BRANCH"
+          git add Casks/cog.rb
+          git diff --cached --quiet && echo "No changes to cask" && exit 0
+          git commit -m "Update cog to ${VERSION}"
+          git push origin "$BRANCH"
+
+          # Create PR
+          gh pr create \
+            --repo replicate/homebrew-tap \
+            --base main \
+            --head "$BRANCH" \
+            --title "Update cog to ${VERSION}" \
+            --body "Automated PR to update the cog Homebrew cask to [${TAG}](https://github.com/replicate/cog/releases/tag/${TAG})."
+          echo "Pull request created for cog ${VERSION}"

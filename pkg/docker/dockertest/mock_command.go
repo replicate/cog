@@ -32,6 +32,10 @@ func (c *MockCommand) Push(ctx context.Context, image string) error {
 	return PushError
 }
 
+func (c *MockCommand) Tag(ctx context.Context, source, target string) error {
+	return nil
+}
+
 func (c *MockCommand) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	userInfo := command.UserInfo{
 		Token:    "test-token",
@@ -111,5 +115,9 @@ func (c *MockCommand) Run(ctx context.Context, options command.RunOptions) error
 }
 
 func (c *MockCommand) ContainerStart(ctx context.Context, options command.RunOptions) (string, error) {
+	panic("not implemented")
+}
+
+func (c *MockCommand) ImageSave(ctx context.Context, imageRef string) (io.ReadCloser, error) {
 	panic("not implemented")
 }

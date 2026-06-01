@@ -1,5 +1,8 @@
-
-# Test that training with setup method works correctly
+# Test that training with setup method works correctly.
+#
+# `cog train` needs a schema to parse the -i flags into typed Python
+# arguments. That schema is generated statically before the local training
+# image is built.
 
 # Train with input
 cog train -i s=world

@@ -5,33 +5,12 @@ This module provides the Input() function and FieldInfo class for defining
 predictor input parameters with constraints and metadata.
 """
 
-import copy
-import sys
-from dataclasses import MISSING, dataclass, field
-from enum import Enum
-from typing import Any, Callable, List, Optional, Union, cast
+from dataclasses import dataclass
+from typing import Any, Callable, List, Optional, Union
 
 
-class Representation:
-    """Base class for custom object representations."""
-
-    def __repr__(self) -> str:
-        """Generate a detailed string representation."""
-        return f"{self.__class__.__name__}({self.__repr_str__(', ')})"
-
-    def __repr_str__(self, join_str: str) -> str:
-        """Generate representation string for attributes."""
-        return join_str.join(
-            f"{k}={v!r}" if v is not None else k for k, v in self.__repr_args__()
-        )
-
-    def __repr_args__(self) -> List[tuple[str, Any]]:
-        """Generate arguments for representation. Override in subclasses."""
-        return []
-
-
-@dataclass(frozen=True, repr=False)
-class FieldInfo(Representation):
+@dataclass(frozen=True)
+class FieldInfo:
     """
     Internal dataclass to hold Input metadata.
 
@@ -49,36 +28,11 @@ class FieldInfo(Representation):
     choices: Optional[List[Union[str, int]]] = None
     deprecated: Optional[bool] = None
 
-    def __repr_args__(self) -> List[tuple[str, Any]]:
-        """Generate arguments for representation."""
-        args: List[tuple[str, Any]] = []
-        if self.default is not None:
-            args.append(("default", self.default))
-        if self.description is not None:
-            args.append(("description", self.description))
-        if self.ge is not None:
-            args.append(("ge", self.ge))
-        if self.le is not None:
-            args.append(("le", self.le))
-        if self.min_length is not None:
-            args.append(("min_length", self.min_length))
-        if self.max_length is not None:
-            args.append(("max_length", self.max_length))
-        if self.regex is not None:
-            args.append(("regex", self.regex))
-        if self.choices is not None:
-            args.append(("choices", self.choices))
-        if self.deprecated is not None:
-            args.append(("deprecated", self.deprecated))
-        return args
-
 
 def Input(
     default: Any = None,
     *,
-    default_factory: Optional[
-        Callable[[], Any] | type[list[Any]] | type[dict[Any, Any]] | type[set[Any]]
-    ] = None,
+    default_factory: Optional[Callable[..., Any]] = None,
     description: Optional[str] = None,
     ge: Optional[Union[int, float]] = None,
     le: Optional[Union[int, float]] = None,
@@ -93,7 +47,8 @@ def Input(
 
     Use this to add metadata and constraints to predictor inputs.
 
-    Example:
+    Example::
+
         from cog import BasePredictor, Input
 
         class Predictor(BasePredictor):
@@ -106,10 +61,7 @@ def Input(
                 ...
 
     Args:
-        default: Default value for the field. For mutable defaults (lists, dicts),
-            this is automatically converted to a default_factory.
-        default_factory: A callable that returns the default value. Use this for
-            mutable defaults. Cannot be used together with default.
+        default: Default value for the field. Must be an immutable literal value.
         description: Human-readable description of the input.
         ge: Minimum value (greater than or equal) for numeric inputs.
         le: Maximum value (less than or equal) for numeric inputs.
@@ -122,77 +74,16 @@ def Input(
     Returns:
         A FieldInfo instance containing the field metadata.
     """
-    # Import here to avoid circular imports
-    from .types import Path, Secret
-
-    # Validate that default and default_factory are mutually exclusive
-    if default is not None and default_factory is not None:
-        raise ValueError(
-            "Cannot specify both 'default' and 'default_factory' parameters. "
-            "Use either 'default' for immutable values or 'default_factory' "
-            "for mutable values."
+    if default_factory is not None:
+        raise TypeError(
+            "default_factory is not supported in Input(). "
+            "Use a literal default value instead: Input(default=...). "
+            "Mutable defaults like lists should use immutable alternatives "
+            "(e.g. a comma-separated string) or be constructed in predict()."
         )
 
-    # Automatically convert mutable defaults to default_factory
-    if default is not None:
-        # Known immutable types that are safe to use as defaults
-        immutable_types = (str, int, float, bool, type(None), tuple, frozenset, bytes)
-
-        # Also allow Cog-specific types and enums
-        if not isinstance(default, immutable_types) and not isinstance(
-            default, (Path, Secret, Enum)
-        ):
-            # Automatically convert to default_factory
-            if isinstance(default, list) and not default:
-                default_factory = list
-            elif isinstance(default, dict) and not default:
-                default_factory = dict
-            elif isinstance(default, set) and not default:
-                default_factory = set
-            else:
-                # For populated collections or complex objects, use deepcopy
-                # Capture the value before clearing default
-                original_value = default
-
-                def _create_default(val: Any = original_value) -> Any:
-                    return copy.deepcopy(val)
-
-                default_factory = _create_default
-
-            # Clear the default since we're using factory instead
-            default = None
-
-    # If default_factory is provided, create a proper dataclass Field
-    if default_factory is not None:
-        # Cast to Callable for dataclass field() - type[list] etc are callable
-        factory_fn = cast(Callable[[], Any], default_factory)
-        # kw_only parameter was added in Python 3.10
-        if sys.version_info >= (3, 10):
-            computed_default: Any = field(  # type: ignore[call-overload]
-                default=MISSING,
-                default_factory=factory_fn,
-                init=True,
-                repr=True,
-                hash=None,
-                compare=True,
-                metadata={},
-                kw_only=False,
-            )
-        else:
-            computed_default = field(  # type: ignore[call-overload]
-                default=MISSING,
-                default_factory=factory_fn,
-                init=True,
-                repr=True,
-                hash=None,
-                compare=True,
-                metadata={},
-            )
-    else:
-        computed_default = default
-
     return FieldInfo(
-        default=computed_default,
+        default=default,
         description=description,
         ge=ge,
         le=le,

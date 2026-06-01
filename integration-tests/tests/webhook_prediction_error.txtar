@@ -1,0 +1,30 @@
+# Test that a failed prediction delivers the correct webhook payload.
+#
+# When predict() raises an exception during an async prediction, the webhook
+# should receive status "failed" with the error message populated.
+
+webhook-server-start
+cog serve --upload-url http://unused/
+
+# Async prediction that raises an exception
+curl -H Prefer:respond-async POST /predictions '{"id":"webhook-error-test","webhook":"$WEBHOOK_URL","webhook_events_filter":["completed"]}'
+
+webhook-server-wait
+
+# Webhook should report failure with error
+stdout '"status":"failed"'
+stdout '"has_error":true'
+stdout '"error_message":".*prediction went wrong"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        raise RuntimeError("prediction went wrong")

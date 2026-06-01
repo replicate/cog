@@ -13,10 +13,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # Strict lockfile mode: fail if mise.lock is missing entries for the current
+  # platform instead of silently resolving and rewriting the lockfile.
+  MISE_LOCKED: "1"
   # Single source of truth for supported Python versions
   SUPPORTED_PYTHONS: '["3.10", "3.11", "3.12", "3.13"]'
   # Default Python version for non-matrix jobs
   PYTHON_VERSION: "3.13"
+  # Minimum supported Python — used for ABI3 wheel builds and glob patterns.
+  # Must match the lowest entry in SUPPORTED_PYTHONS.
+  MINIMUM_PYTHON: "3.10"
   # Number of runners to shard integration tests across (per runtime)
   # Slow tests ([short] skip) are distributed round-robin first, then fast tests fill in
   NUM_IT_RUNNER_SHARDS: "4"
@@ -26,155 +32,43 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
   CARGO_TERM_COLOR: always
-  # Disable Rust toolchain, cargo-binstall, and Python in mise - CI uses dedicated actions
-  # for better caching. mise installs tools in parallel, so rust might not be
-  # ready when cargo-binstall tries to compile cargo:* tools from source.
-  # Using actions guarantees toolchain is ready before mise installs cargo:* tools.
-  # Python is managed by astral-sh/setup-uv for version matrix support.
-  # golangci-lint is managed by golangci/golangci-lint-action for caching.
-  MISE_DISABLE_TOOLS: rust,rustup,rustup-init,cargo-binstall,python,golangci-lint
+  # CGo required for go-tree-sitter (static Python schema parser)
+  CGO_ENABLED: "1"
+  # Note: do NOT add rustup/rustup-init to MISE_DISABLE_TOOLS — mise needs
+  # them to install Rust components (rustfmt, clippy) specified in mise.toml.
+  #
+  # mise cache caveats:
+  #   mise-action caches ~/.local/share/mise but NOT external tool state:
+  #   - ~/.rustup (Rust toolchain + components like rustfmt, clippy)
+  #   - pipx/uv venvs (nox binary is a wrapper pointing to a venv outside mise)
+  #   On cache hit, mise sees tools as "installed" and skips reinstall, but
+  #   the actual binaries are missing. Affected jobs must force-reinstall:
+  #   - Rust jobs: `rustup component add rustfmt clippy`
+  #   - lint-python: `mise install pipx:nox --force`
+  #
+  # mise cache keys: each job uses its own key (mise-ci-{job_id}) so parallel
+  # jobs don't race on a single shared cache entry.
 
 permissions: {}
 
-# =============================================================================
-# Change Detection
-# =============================================================================
-
 jobs:
-  changes:
-    name: Detect changes
+  # Passthrough for SUPPORTED_PYTHONS — env context is unavailable in
+  # strategy.matrix, so matrix jobs reference this job's output instead.
+  setup:
+    name: Setup
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      go: ${{ steps.filter.outputs.go }}
-      rust: ${{ steps.filter.outputs.rust }}
-      python: ${{ steps.filter.outputs.python }}
-      integration: ${{ steps.filter.outputs.integration }}
-      docs: ${{ steps.filter.outputs.docs }}
-      version_only: ${{ steps.filter.outputs.version_only }}
-      version_changed: ${{ steps.filter.outputs.version_changed }}
+      supported_pythons: ${{ env.SUPPORTED_PYTHONS }}
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Detect changed paths
-        id: filter
-        run: |
-          # For PRs, compare against base; for pushes, compare against previous commit
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
-          else
-            BASE="${{ github.event.before }}"
-            # Handle initial push (no before)
-            if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-              BASE="HEAD~1"
-            fi
-          fi
-
-          echo "Comparing $BASE..HEAD"
-
-          # Get changed files
-          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
-          
-          # Check if coglet version changed
-          VERSION_CHANGED="false"
-          if echo "$CHANGED" | grep -qE '^crates/Cargo\.toml$'; then
-            # Check if only the version line changed
-            if git diff "$BASE" HEAD -- crates/Cargo.toml | grep -qE '^\+version = '; then
-              VERSION_CHANGED="true"
-              echo "Coglet version changed"
-            fi
-          fi
-          echo "version_changed=$VERSION_CHANGED" >> $GITHUB_OUTPUT
-          
-          # Check if ONLY the version changed (version bump PR)
-          # This is true if crates/Cargo.toml is the only file and only version line changed
-          VERSION_ONLY="false"
-          if [ "$VERSION_CHANGED" = "true" ]; then
-            FILE_COUNT=$(echo "$CHANGED" | grep -c . || echo "0")
-            if [ "$FILE_COUNT" = "1" ]; then
-              # Only crates/Cargo.toml changed, check if only version line changed
-              # Get actual diff lines (excluding +++ and --- headers)
-              DIFF_CONTENT=$(git diff "$BASE" HEAD -- crates/Cargo.toml | grep -E '^[+-]' | grep -v '^[+-]{3}')
-              # Should be exactly: -version = "old" and +version = "new"
-              MINUS_LINES=$(echo "$DIFF_CONTENT" | grep -c '^-' || echo "0")
-              PLUS_LINES=$(echo "$DIFF_CONTENT" | grep -c '^\+' || echo "0")
-              VERSION_MINUS=$(echo "$DIFF_CONTENT" | grep -c '^-version = ' || echo "0")
-              VERSION_PLUS=$(echo "$DIFF_CONTENT" | grep -c '^\+version = ' || echo "0")
-              
-              if [ "$MINUS_LINES" = "1" ] && [ "$PLUS_LINES" = "1" ] && \
-                 [ "$VERSION_MINUS" = "1" ] && [ "$VERSION_PLUS" = "1" ]; then
-                VERSION_ONLY="true"
-                echo "Version-only change detected - skipping heavy CI"
-              fi
-            fi
-          fi
-          echo "version_only=$VERSION_ONLY" >> $GITHUB_OUTPUT
-
-          # CI/tooling changes should run everything (unless version-only)
-          if [ "$VERSION_ONLY" = "true" ]; then
-            echo "go=false" >> $GITHUB_OUTPUT
-            echo "rust=false" >> $GITHUB_OUTPUT
-            echo "python=false" >> $GITHUB_OUTPUT
-            echo "integration=false" >> $GITHUB_OUTPUT
-            echo "docs=false" >> $GITHUB_OUTPUT
-          elif echo "$CHANGED" | grep -qE '^(\.github/workflows/|mise\.toml)'; then
-            echo "CI/tooling changed - running all jobs"
-            echo "go=true" >> $GITHUB_OUTPUT
-            echo "rust=true" >> $GITHUB_OUTPUT
-            echo "python=true" >> $GITHUB_OUTPUT
-            echo "integration=true" >> $GITHUB_OUTPUT
-            echo "docs=true" >> $GITHUB_OUTPUT
-          else
-            # Detect Go changes
-            if echo "$CHANGED" | grep -qE '^(cmd/|pkg/|go\.(mod|sum)|\.golangci\.yml|Makefile)'; then
-              echo "go=true" >> $GITHUB_OUTPUT
-            else
-              echo "go=false" >> $GITHUB_OUTPUT
-            fi
-
-            # Detect Rust changes
-            if echo "$CHANGED" | grep -qE '^(crates/|Cargo\.(toml|lock))'; then
-              echo "rust=true" >> $GITHUB_OUTPUT
-            else
-              echo "rust=false" >> $GITHUB_OUTPUT
-            fi
-
-            # Detect Python changes
-            if echo "$CHANGED" | grep -qE '^(python/|pyproject\.toml|noxfile\.py|\.ruff\.toml)'; then
-              echo "python=true" >> $GITHUB_OUTPUT
-            else
-              echo "python=false" >> $GITHUB_OUTPUT
-            fi
-
-            # Detect integration test changes (or if any code changed)
-            if echo "$CHANGED" | grep -qE '^(integration-tests/|cmd/|pkg/|python/|crates/)'; then
-              echo "integration=true" >> $GITHUB_OUTPUT
-            else
-              echo "integration=false" >> $GITHUB_OUTPUT
-            fi
-
-            # Detect docs changes
-            if echo "$CHANGED" | grep -qE '^(docs/|README\.md)'; then
-              echo "docs=true" >> $GITHUB_OUTPUT
-            else
-              echo "docs=false" >> $GITHUB_OUTPUT
-            fi
-          fi
-
-          # Debug output
-          echo "Changed files:"
-          echo "$CHANGED" | head -50
+      - run: echo "supported_pythons=$SUPPORTED_PYTHONS"
 
 # =============================================================================
-# Version Check - Validates coglet version changes
+# Version Check - Validates VERSION.txt format and sync
 # =============================================================================
 
   version-check:
-    name: Validate coglet version
-    needs: changes
-    if: needs.changes.outputs.version_changed == 'true'
+    name: Validate version
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -184,9 +78,13 @@ jobs:
 
       - name: Validate version
         run: |
-          # Get version from Cargo.toml
-          VERSION=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "Coglet version: $VERSION"
+          # Read canonical version from VERSION.txt
+          if [ ! -f VERSION.txt ]; then
+            echo "::error::VERSION.txt not found"
+            exit 1
+          fi
+          VERSION=$(tr -d '[:space:]' < VERSION.txt)
+          echo "VERSION.txt: $VERSION"
           
           # Validate semver format
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
@@ -196,13 +94,14 @@ jobs:
           fi
           echo "✓ Valid semver format"
           
-          # Check version doesn't already exist as a tag
-          if git tag -l "v$VERSION" | grep -q .; then
-            echo "::error::Tag v$VERSION already exists!"
-            echo "::error::Cannot set version to an already-released version."
+          # Check VERSION.txt matches crates/Cargo.toml
+          CARGO_VERSION=$(grep '^version = ' crates/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          if [ "$VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Version mismatch! VERSION.txt has $VERSION but crates/Cargo.toml has $CARGO_VERSION"
+            echo "::error::Run 'mise run version:bump $VERSION' to sync."
             exit 1
           fi
-          echo "✓ Version not yet released"
+          echo "✓ VERSION.txt matches crates/Cargo.toml"
           
           # Get the highest existing stable version tag
           HIGHEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -v '-' | sed 's/^v//' | sort -V | tail -1)
@@ -231,23 +130,15 @@ jobs:
 
   build-sdk:
     name: Build SDK
-    needs: changes
-    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
+      - uses: jdx/mise-action@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
-        with:
-          cache: false
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Build SDK
         run: mise run ci:build:sdk
       - name: Upload SDK package
@@ -258,34 +149,65 @@ jobs:
 
   build-rust:
     name: Build coglet wheel
-    needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable  # Required for cargo-binstall to find cargo
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: jdx/mise-action@v3
-        with:
-          cache: false
+      # maturin-action bundles maturin and zig inside a manylinux container.
+      # Explicitly request MINIMUM_PYTHON inside the container so maturin
+      # produces an ABI3 wheel (cp310-abi3). Without this, maturin picks up
+      # the container's default Python (3.8), which doesn't support ABI3.
       - name: Build coglet wheel (ABI3)
-        run: mise run ci:build:coglet
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64-unknown-linux-gnu
+          args: --release --out dist -m crates/coglet-python/Cargo.toml --interpreter python${{ env.MINIMUM_PYTHON }}
+          manylinux: auto
+      - name: Verify ABI3 wheel exists
+        run: |
+          CPVER="cp${MINIMUM_PYTHON//.}"
+          ls -la dist/coglet-*-${CPVER}-abi3-*.whl
       - name: Upload coglet wheel
         uses: actions/upload-artifact@v6
         with:
           name: CogletRustWheel
-          path: dist/coglet-*-cp310-abi3-*.whl
+          # ABI3 wheels use cpXYZ-abi3 naming; just match any abi3 wheel
+          path: dist/coglet-*-abi3-*.whl
+
+  build-cog:
+    name: Build cog CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Get version from VERSION.txt
+        id: version
+        run: echo "version=$(tr -d '[:space:]' < VERSION.txt)" >> "$GITHUB_OUTPUT"
+      - name: Build cog binary
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          args: build --clean --snapshot --single-target --id cog --output cog
+        env:
+          GOFLAGS: -buildvcs=false
+          # Use VERSION.txt as version source so snapshot builds match the wheel version
+          COG_VERSION: ${{ steps.version.outputs.version }}
+      - name: Upload cog binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: CogBinary
+          path: cog
 
 # =============================================================================
 # Format Checks - Fast, parallel
@@ -293,72 +215,80 @@ jobs:
 
   fmt-go:
     name: Format Go
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
-          cache: false
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check Go formatting
         run: mise run fmt:go
 
   fmt-rust:
     name: Format Rust
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v4
         with:
-          components: rustfmt
-      # No mise needed - rustfmt comes with toolchain
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Ensure Rust components
+        run: rustup component add rustfmt clippy
       - name: Check Rust formatting
-        run: cargo fmt --manifest-path crates/Cargo.toml --all -- --check
+        run: mise run fmt:rust
 
   fmt-python:
     name: Format Python
-    needs: changes
-    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v6
+      - uses: jdx/mise-action@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
-        with:
-          cache: false
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check Python formatting
         run: mise run fmt:python
 
   check-llm-docs:
     name: Check LLM docs
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
-          cache: false
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check llms.txt is up to date
         run: mise run docs:llm:check
+      - name: Check CLI docs are up to date
+        run: mise run docs:cli:check
+
+  check-stubs:
+    name: Check stubs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      # setup-python provides a shared-library Python (libpython3.x.so) needed
+      # by stub_gen at runtime (PyO3 auto-initialize). mise's
+      # python-build-standalone is statically linked and doesn't ship the .so.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Check stubs are up to date
+        run: |
+          # stub_gen links libpython dynamically; tell the linker where to find it
+          export LD_LIBRARY_PATH="$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
+          mise run --force stub:check
 
 # =============================================================================
 # Lint Checks - Parallel
@@ -366,78 +296,100 @@ jobs:
 
   lint-go:
     name: Lint Go
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: jdx/mise-action@v4
         with:
-          go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v8
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Lint Go
+        run: mise run lint:go
 
   lint-rust:
     name: Lint Rust
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # No mise needed - clippy comes with toolchain
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Ensure Rust components
+        run: rustup component add rustfmt clippy
       - name: Lint Rust (clippy)
-        run: cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings
+        run: mise run lint:rust
 
   lint-rust-deny:
     name: Lint Rust (deny)
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable  # Required for cargo-binstall to find cargo
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
-          cache: false
-      - name: Check licenses and advisories
-        run: mise run lint:rust:deny
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Check licenses, bans, and sources
+        run: cargo deny --manifest-path crates/Cargo.toml check bans licenses sources
+
+  # Advisory checks run against a live database that can change at any time.
+  # A new RUSTSEC entry would break CI on every branch even though no code
+  # changed, so this job is informational only (continue-on-error).
+  # A weekly cron workflow (rust-advisories.yaml) opens issues for new advisories.
+  lint-rust-advisories:
+    name: Lint Rust (advisories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Check advisories (informational)
+        run: cargo deny --manifest-path crates/Cargo.toml check advisories
 
   lint-python:
     name: Lint Python
-    needs: [changes, build-sdk]
-    if: needs.changes.outputs.python == 'true'
+    needs: [build-sdk, build-rust]
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 15
     steps:
       - name: Download SDK
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: CogPackage
           path: dist
+      - name: Download coglet wheel
+        uses: actions/download-artifact@v8
+        with:
+          name: CogletRustWheel
+          path: dist
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: astral-sh/setup-uv@v6
+      - uses: jdx/mise-action@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
-        with:
-          cache: false
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Ensure nox is installed
+        run: mise install pipx:nox --force
       - name: Lint Python
         run: mise run lint:python
+
+  lint-docs:
+    name: Lint Markdown
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Lint Markdown
+        run: mise run lint:docs
 
 # =============================================================================
 # Test Jobs
@@ -445,8 +397,6 @@ jobs:
 
   test-go:
     name: "Test Go (${{ matrix.platform }})"
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -455,10 +405,9 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: jdx/mise-action@v4
         with:
-          go-version-file: go.mod
-      - uses: jdx/mise-action@v3
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test Go
         shell: bash
         run: |
@@ -471,55 +420,65 @@ jobs:
             kill -KILL -- -$$ 2>/dev/null || true
           }
           trap cleanup INT TERM
-          gotestsum -- -short -timeout 1200s -parallel 5 $(go list ./...) &
+          gotestsum -- -short -timeout 1200s -parallel 5 ./... &
           wait $!
+
+  fuzz-go:
+    name: Fuzz Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Fuzz schema type resolution
+        run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime=30s
+      - name: Fuzz JSON schema generation
+        run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzJSONSchema -fuzztime=30s
+      - name: Fuzz Python parser
+        run: go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParsePredictor -fuzztime=30s
+      - name: Fuzz type annotation parsing
+        run: go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParseTypeAnnotation -fuzztime=30s
 
   test-rust:
     name: Test Rust
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable  # Required for cargo-binstall to find cargo
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v4
         with:
-          cache: false
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test Rust
         run: mise run test:rust
 
   test-python:
     name: "Test Python ${{ matrix.python-version }}"
-    needs: [changes, build-sdk]
-    if: needs.changes.outputs.python == 'true' && needs.build-sdk.result == 'success'
+    needs: [setup, build-sdk, build-rust]
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ${{ fromJSON(needs.setup.outputs.supported_pythons) }}
     steps:
-      - name: Download SDK
-        uses: actions/download-artifact@v7
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
         with:
-          name: CogPackage
           path: dist
+          merge-multiple: true
       - name: Extract source distribution
         run: tar xf dist/*.tar.gz --strip-components=1
-      - uses: astral-sh/setup-uv@v6
+      - uses: jdx/mise-action@v4
         with:
-          python-version: ${{ matrix.python-version }}
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: jdx/mise-action@v3
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
       - name: Test Python
@@ -527,37 +486,29 @@ jobs:
 
   test-coglet-python:
     name: "Test coglet-python (${{ matrix.python-version }})"
-    needs: [changes, build-rust]
-    if: |
-      always() &&
-      (needs.changes.outputs.rust == 'true' || needs.changes.outputs.python == 'true') &&
-      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
+    needs: [setup, build-rust]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ${{ fromJSON(needs.setup.outputs.supported_pythons) }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Download coglet wheel
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: CogletRustWheel
           path: dist
-        if: needs.build-rust.result == 'success'
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable  # Required for cargo-binstall to find cargo
-      - uses: taiki-e/install-action@cargo-binstall
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: astral-sh/setup-uv@v6
+      - uses: jdx/mise-action@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test coglet-python bindings
         run: uvx nox -s coglet -p ${{ matrix.python-version }}
 
@@ -566,8 +517,6 @@ jobs:
   # then remaining tests fill in. This ensures slow tests don't pile up on one runner.
   integration-shards:
     name: Compute test shards
-    needs: changes
-    if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -649,60 +598,51 @@ jobs:
           done
 
   test-integration:
-    name: "Test integration (${{ matrix.runtime }}, shard ${{ matrix.shard.index }})"
-    needs: [changes, build-sdk, build-rust, integration-shards]
-    if: |
-      !cancelled() &&
-      needs.changes.outputs.integration == 'true' &&
-      needs.integration-shards.result == 'success' &&
-      (needs.build-sdk.result == 'success' || needs.build-sdk.result == 'skipped') &&
-      (needs.build-rust.result == 'success' || needs.build-rust.result == 'skipped')
+    name: "Test integration (shard ${{ matrix.shard.index }})"
+    needs: [build-cog, build-sdk, build-rust, integration-shards]
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        runtime: [cog, cog-rust]
         shard: ${{ fromJSON(needs.integration-shards.outputs.shards) }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
         with:
           registry: index.docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Download artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
-      - uses: dtolnay/rust-toolchain@stable
-      - run: rustup default stable
-      - uses: taiki-e/install-action@cargo-binstall
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: |
-            go.sum
-            integration-tests/go.sum
-      - uses: jdx/mise-action@v3
-      - name: Build cog binary
-        run: mise run build:cog
-      - name: Set runtime environment
+      - name: Install cog binary
         run: |
-          if [ "${{ matrix.runtime }}" = "cog-rust" ]; then
-            echo "COGLET_WHEEL=dist" >> $GITHUB_ENV
-          fi
+          cp dist/cog ./cog
+          chmod +x ./cog
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Set wheel environment
+        run: |
+          # Use locally-built wheels, not PyPI (version may not be published yet)
+          # Must use absolute paths — cog subprocess runs from txtar workdir, not checkout root
+          echo "COG_SDK_WHEEL=${{ github.workspace }}/dist" >> $GITHUB_ENV
+          echo "COGLET_WHEEL=${{ github.workspace }}/dist" >> $GITHUB_ENV
       - name: Run integration tests (shard ${{ matrix.shard.index }}, ${{ matrix.shard.count }} tests)
         env:
           COG_BINARY: ./cog
           TEST_PARALLEL: 4
           BUILDKIT_PROGRESS: 'quiet'
-        working-directory: integration-tests
+          # Resolve cog-base images from GHCR instead of r8.im.
+          # Images are mirrored by integration-tests/mirror-cog-base-images.sh.
+          COG_REGISTRY_HOST: 'ghcr.io/replicate/cog'
         shell: bash
         run: |
           set -euo pipefail
@@ -715,15 +655,16 @@ jobs:
           }
           trap cleanup INT TERM
           
-          # Build -run regex from shard pattern
-          # Pattern is "test1|test2|test3" - wrap each in TestIntegration/<name>/
+          # Build an anchored -run regex from shard pattern "test1|test2|test3".
           RUN_PATTERN="${{ matrix.shard.pattern }}"
           echo "Running tests matching: $RUN_PATTERN"
           
           gotestsum --format github-actions -- \
+            -tags integration \
             -parallel $TEST_PARALLEL \
             -timeout 30m \
-            -run "TestIntegration/($RUN_PATTERN)/" &
+            -run "^TestIntegration$/^($RUN_PATTERN)$" \
+            ./integration-tests/... &
           wait $!
 
 # =============================================================================
@@ -733,19 +674,24 @@ jobs:
   ci-complete:
     name: CI Complete
     needs:
-      - changes
+      - setup
       - version-check
+      - build-cog
       - build-sdk
       - build-rust
       - fmt-go
       - fmt-rust
       - fmt-python
       - check-llm-docs
+      - check-stubs
       - lint-go
       - lint-rust
       - lint-rust-deny
+      - lint-rust-advisories
       - lint-python
+      - lint-docs
       - test-go
+      - fuzz-go
       - test-rust
       - test-python
       - test-coglet-python
@@ -758,39 +704,51 @@ jobs:
       - name: Check job results
         run: |
           echo "Job results:"
-          echo "  changes: ${{ needs.changes.result }}"
+          echo "  version-check: ${{ needs.version-check.result }}"
+          echo "  build-cog: ${{ needs.build-cog.result }}"
           echo "  build-sdk: ${{ needs.build-sdk.result }}"
           echo "  build-rust: ${{ needs.build-rust.result }}"
           echo "  fmt-go: ${{ needs.fmt-go.result }}"
           echo "  fmt-rust: ${{ needs.fmt-rust.result }}"
           echo "  fmt-python: ${{ needs.fmt-python.result }}"
           echo "  check-llm-docs: ${{ needs.check-llm-docs.result }}"
+          echo "  check-stubs: ${{ needs.check-stubs.result }}"
           echo "  lint-go: ${{ needs.lint-go.result }}"
           echo "  lint-rust: ${{ needs.lint-rust.result }}"
           echo "  lint-rust-deny: ${{ needs.lint-rust-deny.result }}"
+          echo "  lint-rust-advisories: ${{ needs.lint-rust-advisories.result }} (informational)"
           echo "  lint-python: ${{ needs.lint-python.result }}"
+          echo "  lint-docs: ${{ needs.lint-docs.result }}"
           echo "  test-go: ${{ needs.test-go.result }}"
+          echo "  fuzz-go: ${{ needs.fuzz-go.result }}"
           echo "  test-rust: ${{ needs.test-rust.result }}"
           echo "  test-python: ${{ needs.test-python.result }}"
           echo "  test-coglet-python: ${{ needs.test-coglet-python.result }}"
           echo "  integration-shards: ${{ needs.integration-shards.result }}"
           echo "  test-integration: ${{ needs.test-integration.result }}"
 
-          # Fail if any job failed (skipped is OK)
+          # Fail if any required job failed.
+          # lint-rust-advisories is excluded: it uses continue-on-error because
+          # advisory DB updates shouldn't block unrelated PRs.
           FAILED=false
           for result in \
-            "${{ needs.changes.result }}" \
+            "${{ needs.setup.result }}" \
+            "${{ needs.version-check.result }}" \
+            "${{ needs.build-cog.result }}" \
             "${{ needs.build-sdk.result }}" \
             "${{ needs.build-rust.result }}" \
             "${{ needs.fmt-go.result }}" \
             "${{ needs.fmt-rust.result }}" \
             "${{ needs.fmt-python.result }}" \
             "${{ needs.check-llm-docs.result }}" \
+            "${{ needs.check-stubs.result }}" \
             "${{ needs.lint-go.result }}" \
             "${{ needs.lint-rust.result }}" \
             "${{ needs.lint-rust-deny.result }}" \
             "${{ needs.lint-python.result }}" \
+            "${{ needs.lint-docs.result }}" \
             "${{ needs.test-go.result }}" \
+            "${{ needs.fuzz-go.result }}" \
             "${{ needs.test-rust.result }}" \
             "${{ needs.test-python.result }}" \
             "${{ needs.test-coglet-python.result }}" \
@@ -823,16 +781,16 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: jdx/mise-action@v4
+        with:
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check coglet crates.io publish
         run: cargo publish --dry-run -p coglet --manifest-path crates/Cargo.toml
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
           args: check
-
-

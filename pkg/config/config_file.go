@@ -14,6 +14,8 @@ import (
 type configFile struct {
 	Build       *buildFile       `json:"build,omitempty" yaml:"build,omitempty"`
 	Image       *string          `json:"image,omitempty" yaml:"image,omitempty"`
+	Model       *string          `json:"model,omitempty" yaml:"model,omitempty"`
+	Run         *string          `json:"run,omitempty" yaml:"run,omitempty"`
 	Predict     *string          `json:"predict,omitempty" yaml:"predict,omitempty"`
 	Train       *string          `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *concurrencyFile `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
@@ -30,6 +32,7 @@ type buildFile struct {
 	SystemPackages     []string      `json:"system_packages,omitempty" yaml:"system_packages,omitempty"`
 	CUDA               *string       `json:"cuda,omitempty" yaml:"cuda,omitempty"`
 	CuDNN              *string       `json:"cudnn,omitempty" yaml:"cudnn,omitempty"`
+	SDKVersion         *string       `json:"sdk_version,omitempty" yaml:"sdk_version,omitempty"`
 
 	// Deprecated fields - parsed with warnings
 	PythonPackages []string `json:"python_packages,omitempty" yaml:"python_packages,omitempty"`
@@ -49,11 +52,11 @@ type mountFile struct {
 	Target string `json:"target,omitempty" yaml:"target,omitempty"`
 }
 
-// weightFile represents a weight source configuration.
+// weightFile represents a weight entry in cog.yaml.
 type weightFile struct {
-	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
-	Source string `json:"source" yaml:"source"`
-	Target string `json:"target,omitempty" yaml:"target,omitempty"`
+	Name   string           `json:"name" yaml:"name"`
+	Target string           `json:"target" yaml:"target"`
+	Source WeightSourceList `json:"source" yaml:"source"`
 }
 
 // concurrencyFile represents concurrency configuration.
@@ -153,6 +156,66 @@ func (r *runItemFile) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling for WeightSourceList
+// to accept both a single object and an array of objects.
+func (wsl *WeightSourceList) UnmarshalYAML(unmarshal func(any) error) error {
+	// Try array first.
+	var list []WeightSourceConfig
+	if err := unmarshal(&list); err == nil {
+		wsl.Items = list
+		return nil
+	}
+
+	// Fall back to single object.
+	var single WeightSourceConfig
+	if err := unmarshal(&single); err != nil {
+		return fmt.Errorf("source must be an object or array of objects: %w", err)
+	}
+	wsl.Items = []WeightSourceConfig{single}
+	return nil
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for WeightSourceList
+// to accept both a single object and an array of objects.
+func (wsl *WeightSourceList) UnmarshalJSON(data []byte) error {
+	// Try array first.
+	var list []WeightSourceConfig
+	if err := json.Unmarshal(data, &list); err == nil {
+		wsl.Items = list
+		return nil
+	}
+
+	// Fall back to single object.
+	var single WeightSourceConfig
+	if err := json.Unmarshal(data, &single); err != nil {
+		return fmt.Errorf("source must be an object or array of objects: %w", err)
+	}
+	wsl.Items = []WeightSourceConfig{single}
+	return nil
+}
+
+// MarshalJSON serializes WeightSourceList. A single-element list is
+// serialized as a plain object for backward compatibility; multi-element
+// lists are serialized as an array.
+func (wsl WeightSourceList) MarshalJSON() ([]byte, error) {
+	if len(wsl.Items) == 1 {
+		return json.Marshal(wsl.Items[0])
+	}
+	return json.Marshal(wsl.Items)
+}
+
+// MarshalYAML serializes WeightSourceList symmetrically with
+// UnmarshalYAML: a single-element list becomes a plain mapping, a
+// multi-element list becomes a sequence. Without this, round-tripping
+// a single-source weight through YAML would produce a one-element
+// sequence instead of the original mapping shape.
+func (wsl WeightSourceList) MarshalYAML() (any, error) {
+	if len(wsl.Items) == 1 {
+		return wsl.Items[0], nil
+	}
+	return wsl.Items, nil
 }
 
 // Helper functions for working with configFile

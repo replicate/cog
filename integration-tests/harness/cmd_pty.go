@@ -75,8 +75,8 @@ func (c *PtyRunCommand) Run(ts *testscript.TestScript, neg bool, args []string) 
 	if v := ts.Getenv("REPO_ROOT"); v != "" {
 		cmd.Env = append(cmd.Env, "REPO_ROOT="+v)
 	}
-	if v := ts.Getenv("COG_WHEEL"); v != "" {
-		cmd.Env = append(cmd.Env, "COG_WHEEL="+v)
+	if v := ts.Getenv("COG_SDK_WHEEL"); v != "" {
+		cmd.Env = append(cmd.Env, "COG_SDK_WHEEL="+v)
 	}
 	if v := ts.Getenv("COGLET_WHEEL"); v != "" {
 		cmd.Env = append(cmd.Env, "COGLET_WHEEL="+v)
@@ -125,8 +125,7 @@ func (c *PtyRunCommand) Run(ts *testscript.TestScript, neg bool, args []string) 
 
 	// Write input to PTY with small delays between lines for reliability
 	if input != "" {
-		lines := strings.Split(input, "\n")
-		for _, line := range lines {
+		for line := range strings.SplitSeq(input, "\n") {
 			if line == "" {
 				continue
 			}
@@ -154,7 +153,7 @@ func (c *PtyRunCommand) Run(ts *testscript.TestScript, neg bool, args []string) 
 		// Command finished
 	case <-time.After(timeout):
 		// Timeout - kill the process
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		mu.Lock()
 		output := buf.String()
 		mu.Unlock()
@@ -178,7 +177,7 @@ func (c *PtyRunCommand) Run(ts *testscript.TestScript, neg bool, args []string) 
 			ts.Fatalf("pty-run: command succeeded unexpectedly")
 		}
 		// Command failed as expected - write output for potential pattern matching
-		ts.Stdout().Write([]byte(output))
+		_, _ = ts.Stdout().Write([]byte(output))
 		return
 	}
 
@@ -188,5 +187,5 @@ func (c *PtyRunCommand) Run(ts *testscript.TestScript, neg bool, args []string) 
 	}
 
 	// Write output to stdout for pattern matching
-	ts.Stdout().Write([]byte(output))
+	_, _ = ts.Stdout().Write([]byte(output))
 }

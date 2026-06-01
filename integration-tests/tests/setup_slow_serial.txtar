@@ -1,0 +1,35 @@
+[short] skip 'slow test - skip in short mode'
+
+# Test that a slow setup() completes successfully without being killed by
+# an internal timeout. Coglet should not impose its own setup timeout —
+# the external orchestrator (director) is the authority on setup timeouts.
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Start the server — setup takes ~15s but should complete fine
+cog serve
+
+# Verify the server is healthy and predictions work
+curl POST /predictions '{"input":{"s":"hello"}}'
+stdout '"output":"hello hello"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import time
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def setup(self) -> None:
+        print("Starting slow setup...")
+        time.sleep(15)
+        print("Slow setup complete.")
+
+    def predict(self, s: str) -> str:
+        return "hello " + s

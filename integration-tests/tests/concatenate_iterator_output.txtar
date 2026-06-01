@@ -1,0 +1,27 @@
+# Test ConcatenateIterator[str] as predict output type
+#
+# ConcatenateIterator is the primary streaming text output type for LLMs.
+# cog predict renders each yielded token as an array element.
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Streaming output yields individual tokens
+cog predict $TEST_IMAGE -i prompt=hello
+stdout '"hello"'
+stdout '" world"'
+stdout '" !"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, ConcatenateIterator
+
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> ConcatenateIterator[str]:
+        for token in [prompt, " world", " !"]:
+            yield token

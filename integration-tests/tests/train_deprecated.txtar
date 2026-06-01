@@ -1,0 +1,13 @@
+# Test that the train command shows a deprecation warning
+
+# Train command should fail (no cog.yaml) but still show deprecation warning
+! cog train
+stderr 'Command "train" is deprecated'
+stderr 'will be removed in a future version of Cog'
+
+-- predict.py --
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, s: str) -> str:
+        return "hello " + s

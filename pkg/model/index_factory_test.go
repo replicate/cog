@@ -29,7 +29,7 @@ func TestIndexBuilder_BuildFromDescriptors(t *testing.T) {
 
 		builder := NewIndexBuilder()
 		builder.SetImageDescriptor(imgDesc, &v1.Platform{OS: "linux", Architecture: "amd64"})
-		builder.AddWeightDescriptor(weightDesc, imgDesc.Digest.String(), "model-v1", "/cache/model.safetensors")
+		builder.AddWeightDescriptor(weightDesc, "model-v1", "sha256:abcdef1234567890", 1073741824)
 
 		idx, err := builder.BuildFromDescriptors()
 		require.NoError(t, err)
@@ -44,15 +44,16 @@ func TestIndexBuilder_BuildFromDescriptors(t *testing.T) {
 		require.Equal(t, "linux", idxManifest.Manifests[0].Platform.OS)
 		require.Equal(t, "amd64", idxManifest.Manifests[0].Platform.Architecture)
 
-		// Second entry: weight artifact with unknown platform and annotations
-		require.Equal(t, weightDesc.Digest, idxManifest.Manifests[1].Digest)
-		require.Equal(t, weightDesc.Size, idxManifest.Manifests[1].Size)
-		require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.OS)
-		require.Equal(t, PlatformUnknown, idxManifest.Manifests[1].Platform.Architecture)
-		require.Equal(t, AnnotationValueWeights, idxManifest.Manifests[1].Annotations[AnnotationReferenceType])
-		require.Equal(t, imgDesc.Digest.String(), idxManifest.Manifests[1].Annotations[AnnotationReferenceDigest])
-		require.Equal(t, "model-v1", idxManifest.Manifests[1].Annotations[AnnotationWeightName])
-		require.Equal(t, "/cache/model.safetensors", idxManifest.Manifests[1].Annotations[AnnotationWeightDest])
+		// Second entry: weight artifact with unknown platform, artifactType, and annotations
+		wm := idxManifest.Manifests[1]
+		require.Equal(t, weightDesc.Digest, wm.Digest)
+		require.Equal(t, weightDesc.Size, wm.Size)
+		require.Equal(t, MediaTypeWeightArtifact, wm.ArtifactType)
+		require.Equal(t, PlatformUnknown, wm.Platform.OS)
+		require.Equal(t, PlatformUnknown, wm.Platform.Architecture)
+		require.Equal(t, "model-v1", wm.Annotations[AnnotationV1WeightName])
+		require.Equal(t, "sha256:abcdef1234567890", wm.Annotations[AnnotationV1WeightSetDigest])
+		require.Equal(t, "1073741824", wm.Annotations[AnnotationV1WeightSizeUncomp])
 	})
 
 	t.Run("builds index with multiple weight descriptors", func(t *testing.T) {
@@ -74,8 +75,8 @@ func TestIndexBuilder_BuildFromDescriptors(t *testing.T) {
 
 		builder := NewIndexBuilder()
 		builder.SetImageDescriptor(imgDesc, &v1.Platform{OS: "linux", Architecture: "amd64"})
-		builder.AddWeightDescriptor(weight1, imgDesc.Digest.String(), "weight-1", "/weights/w1.bin")
-		builder.AddWeightDescriptor(weight2, imgDesc.Digest.String(), "weight-2", "/weights/w2.bin")
+		builder.AddWeightDescriptor(weight1, "weight-1", "sha256:set1", 500)
+		builder.AddWeightDescriptor(weight2, "weight-2", "sha256:set2", 600)
 
 		idx, err := builder.BuildFromDescriptors()
 		require.NoError(t, err)

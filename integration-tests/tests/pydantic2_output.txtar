@@ -1,0 +1,37 @@
+# Test that Pydantic v2 BaseModel works as prediction output type.
+# Coglet's make_encodeable() must call model_dump() to serialize.
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict returns structured Pydantic output
+cog predict $TEST_IMAGE -i name=alice -i score=0.95
+stdout '"name": "alice"'
+stdout '"score": 0.95'
+stdout '"tags"'
+stdout 'default'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_packages:
+    - "pydantic>2"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import List
+
+from pydantic import BaseModel as PydanticBaseModel
+
+from cog import BasePredictor
+
+
+class Result(PydanticBaseModel):
+    name: str
+    score: float
+    tags: List[str]
+
+
+class Predictor(BasePredictor):
+    def predict(self, name: str, score: float = 0.5) -> Result:
+        return Result(name=name, score=score, tags=["default"])

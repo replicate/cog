@@ -1,5 +1,4 @@
 [short] skip 'slow test - skip in short mode'
-[!coglet_rust] skip
 
 # Test worker tracing logs appear in setuplog
 # This ensures Rust tracing from the worker subprocess is properly captured during setup

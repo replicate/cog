@@ -4,6 +4,8 @@
 //! - **Control channel** (stdin/stdout): Init, Cancel, Shutdown, Ready, Idle
 //! - **Slot sockets**: Prediction data, streaming logs (per-slot to avoid HOL blocking)
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use super::transport::ChildTransportInfo;
@@ -40,6 +42,27 @@ impl std::fmt::Display for SlotId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
+}
+
+/// Maximum payload size (input or output) that can be sent inline over the IPC
+/// slot socket. Payloads exceeding this threshold are spilled to disk. The
+/// `LengthDelimitedCodec` default frame limit is 8 MiB, so 6 MiB provides a
+/// 2 MiB safety margin for framing overhead and other message fields.
+pub const MAX_INLINE_IPC_SIZE: usize = 1024 * 1024 * 6; // 6MiB
+
+const MAX_WORKER_LOG_SIZE: usize = 1024 * 1024 * 4; // 4MIB
+const WORKER_LOG_TRUNCATE_NOTICE: &str = "[**** LOG LINE TRUNCATED AT 4 MiB ****]";
+
+/// To ensure no panics happen due to oversized log lines, we truncate at 4 MiB. 1 MiB
+/// let alone 4 MiB log line boarder/exceed usefulness from a readability standpoint.
+pub fn truncate_worker_log(mut log_message: String) -> String {
+    if log_message.len() > MAX_WORKER_LOG_SIZE {
+        let boundary =
+            log_message.floor_char_boundary(MAX_WORKER_LOG_SIZE - WORKER_LOG_TRUNCATE_NOTICE.len());
+        log_message.truncate(boundary);
+        log_message.push_str(WORKER_LOG_TRUNCATE_NOTICE);
+    }
+    log_message
 }
 
 /// Control messages from parent to worker.
@@ -104,6 +127,14 @@ pub enum ControlResponse {
     Failed {
         slot: SlotId,
         error: String,
+    },
+
+    /// Worker unrecoverable error - parent should poison all slots and fail all
+    /// in-flight predictions. The worker will abort immediately after sending this.
+    ///
+    /// Reason explains *why* (e.g. "slots mutex poisoned: cannot guarantee slot isolation").
+    Fatal {
+        reason: String,
     },
 
     /// System diagnostic: logs dropped due to backpressure.
@@ -177,22 +208,145 @@ impl SlotOutcome {
 pub enum SlotRequest {
     Predict {
         id: String,
-        input: serde_json::Value,
+        /// Inline input payload (present when input fits within the IPC frame limit).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        input: Option<serde_json::Value>,
+        /// Path to a spill file containing the JSON input (present when input exceeds
+        /// `MAX_INLINE_IPC_SIZE`). The worker reads, deserializes, and deletes the file.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        input_file: Option<String>,
+        /// Directory for writing file outputs (created by coglet before dispatch).
+        /// Not included in API responses — internal transport detail.
+        output_dir: String,
+        /// Per-prediction context from the request body (`dict[str, str]`).
+        /// Made available to predictors via `current_scope().context`.
+        #[serde(default)]
+        context: HashMap<String, String>,
     },
 }
+
+impl SlotRequest {
+    /// Returns the prediction ID without consuming the request.
+    pub fn prediction_id(&self) -> &str {
+        match self {
+            SlotRequest::Predict { id, .. } => id,
+        }
+    }
+
+    /// Rehydrate the input from either inline value or spill file.
+    ///
+    /// Returns `(id, input, output_dir, context)`. If the input was spilled to disk,
+    /// reads the file, deserializes, and deletes it.
+    pub fn rehydrate_input(
+        self,
+    ) -> std::io::Result<(String, serde_json::Value, String, HashMap<String, String>)> {
+        match self {
+            SlotRequest::Predict {
+                id,
+                input: Some(value),
+                output_dir,
+                context,
+                ..
+            } => Ok((id, value, output_dir, context)),
+            SlotRequest::Predict {
+                id,
+                input: None,
+                input_file: Some(path),
+                output_dir,
+                context,
+            } => {
+                let bytes = std::fs::read(&path)?;
+                // Clean up spill file immediately — bytes are already in memory.
+                // Do this before parsing so the file is removed even if JSON is corrupt.
+                if let Err(e) = std::fs::remove_file(&path) {
+                    tracing::warn!(path = %path, error = %e, "Failed to remove input spill file");
+                }
+                let value: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                Ok((id, value, output_dir, context))
+            }
+            SlotRequest::Predict { .. } => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "SlotRequest::Predict has neither input nor input_file",
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FileOutputKind {
+    /// Output is a file-like return type (e.g. File, Path)
+    FileType,
+    /// Output exceeds size threshold for bridge codec serialization but is not a file-like return type
+    Oversized,
+}
+
+/// Accumulation mode for user metrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetricMode {
+    /// Replace existing value (default).
+    Replace,
+    /// Add to existing numeric value.
+    Increment,
+    /// Append to existing array.
+    Append,
+}
+
+/// Current slot response protocol version.
+///
+/// The response enum is already serde-tagged with `type`, so this constant and
+/// the optional `ProtocolVersion` message give future protocol changes an
+/// explicit marker without adding a second envelope around every message.
+pub const SLOT_RESPONSE_PROTOCOL_VERSION: u32 = 1;
 
 /// Messages from worker to parent on slot socket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SlotResponse {
-    Log {
+    /// Protocol version handshake message.
+    ///
+    /// Intended to be sent by the worker when the slot connection opens so the
+    /// orchestrator can detect version mismatches and adjust behavior. Currently
+    /// nothing sends this; it is scaffolding for future protocol evolution.
+    ProtocolVersion {
+        version: u32,
+    },
+
+    LogLine {
         source: LogSource,
         data: String,
     },
 
-    /// Streaming output chunk (for generators).
-    Output {
+    /// Output for a file/path-like output return type or an output that exceeds the size threshold
+    /// for bridge codec serialization.
+    FileOutput {
+        filename: String,
+        kind: FileOutputKind,
+        /// Explicit MIME type from the predictor. Falls back to mime_guess when None.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        mime_type: Option<String>,
+    },
+
+    /// Streaming output chunk for generator and iterator output.
+    OutputChunk {
         output: serde_json::Value,
+        index: u64,
+    },
+
+    /// User-emitted metric from the prediction.
+    ///
+    /// Metrics are key-value pairs attached to the prediction response.
+    /// Supports dot-path keys (e.g., "timing.preprocess") that the server
+    /// resolves into nested objects. The mode controls how values are merged:
+    /// - Replace: overwrite existing value
+    /// - Increment: add to existing numeric value
+    /// - Append: push onto existing array
+    Metric {
+        name: String,
+        value: serde_json::Value,
+        mode: MetricMode,
     },
 
     Done {
@@ -200,6 +354,11 @@ pub enum SlotResponse {
         #[serde(skip_serializing_if = "Option::is_none")]
         output: Option<serde_json::Value>,
         predict_time: f64,
+        /// Predictor signal: true when the output is a list, generator, or
+        /// iterator, used as fallback when the schema Output type is `Any`
+        /// or unavailable.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        is_stream: bool,
     },
 
     Failed {
@@ -336,26 +495,73 @@ mod tests {
     fn slot_predict_serializes() {
         let req = SlotRequest::Predict {
             id: "pred_123".to_string(),
-            input: json!({"text": "hello"}),
+            input: Some(json!({"text": "hello"})),
+            input_file: None,
+            output_dir: "/tmp/coglet/predictions/pred_123/outputs".to_string(),
+            context: Default::default(),
         };
         insta::assert_json_snapshot!(req);
     }
 
     #[test]
-    fn slot_log_serializes() {
-        let resp = SlotResponse::Log {
-            source: LogSource::Stdout,
-            data: "Processing...".to_string(),
+    fn slot_predict_file_input_serializes() {
+        let req = SlotRequest::Predict {
+            id: "pred_456".to_string(),
+            input: None,
+            input_file: Some("/tmp/coglet/predictions/pred_456/inputs/spill_abc.json".to_string()),
+            output_dir: "/tmp/coglet/predictions/pred_456/outputs".to_string(),
+            context: Default::default(),
         };
-        insta::assert_json_snapshot!(resp);
+        insta::assert_json_snapshot!(req);
     }
 
     #[test]
-    fn slot_output_serializes() {
-        let resp = SlotResponse::Output {
-            output: json!("chunk 1"),
+    fn slot_log_line_serializes() {
+        let resp = SlotResponse::LogLine {
+            source: LogSource::Stdout,
+            data: "Processing...".to_string(),
         };
-        insta::assert_json_snapshot!(resp);
+
+        assert_eq!(
+            serde_json::to_value(resp).unwrap(),
+            json!({
+                "type": "log_line",
+                "source": "stdout",
+                "data": "Processing..."
+            })
+        );
+    }
+
+    #[test]
+    fn slot_output_chunk_serializes() {
+        let resp = SlotResponse::OutputChunk {
+            output: json!("chunk 1"),
+            index: 7,
+        };
+
+        assert_eq!(
+            serde_json::to_value(resp).unwrap(),
+            json!({
+                "type": "output_chunk",
+                "output": "chunk 1",
+                "index": 7
+            })
+        );
+    }
+
+    #[test]
+    fn slot_protocol_version_serializes() {
+        let resp = SlotResponse::ProtocolVersion {
+            version: SLOT_RESPONSE_PROTOCOL_VERSION,
+        };
+
+        assert_eq!(
+            serde_json::to_value(resp).unwrap(),
+            json!({
+                "type": "protocol_version",
+                "version": 1
+            })
+        );
     }
 
     #[test]
@@ -364,6 +570,7 @@ mod tests {
             id: "pred_123".to_string(),
             output: Some(json!("final result")),
             predict_time: 1.234,
+            is_stream: false,
         };
         insta::assert_json_snapshot!(resp);
     }
@@ -383,5 +590,146 @@ mod tests {
             id: "pred_123".to_string(),
         };
         insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_metric_replace_serializes() {
+        let resp = SlotResponse::Metric {
+            name: "temperature".to_string(),
+            value: json!(0.7),
+            mode: MetricMode::Replace,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_metric_increment_serializes() {
+        let resp = SlotResponse::Metric {
+            name: "token_count".to_string(),
+            value: json!(1),
+            mode: MetricMode::Increment,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_metric_append_serializes() {
+        let resp = SlotResponse::Metric {
+            name: "logprobs".to_string(),
+            value: json!(-1.2),
+            mode: MetricMode::Append,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_metric_delete_serializes() {
+        let resp = SlotResponse::Metric {
+            name: "unwanted".to_string(),
+            value: json!(null),
+            mode: MetricMode::Replace,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_metric_complex_value_serializes() {
+        let resp = SlotResponse::Metric {
+            name: "timing".to_string(),
+            value: json!({"preprocess": 0.1, "inference": 0.8}),
+            mode: MetricMode::Replace,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn rehydrate_input_inline() {
+        let req = SlotRequest::Predict {
+            id: "p1".to_string(),
+            input: Some(json!({"text": "hello"})),
+            input_file: None,
+            output_dir: "/tmp/out".to_string(),
+            context: Default::default(),
+        };
+        let (id, input, output_dir, _context) = req.rehydrate_input().unwrap();
+        assert_eq!(id, "p1");
+        assert_eq!(input, json!({"text": "hello"}));
+        assert_eq!(output_dir, "/tmp/out");
+    }
+
+    #[test]
+    fn rehydrate_input_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let spill_path = dir.path().join("spill_test.json");
+        std::fs::write(&spill_path, r#"{"key":"value"}"#).unwrap();
+
+        let req = SlotRequest::Predict {
+            id: "p2".to_string(),
+            input: None,
+            input_file: Some(spill_path.to_str().unwrap().to_string()),
+            output_dir: "/tmp/out".to_string(),
+            context: Default::default(),
+        };
+        let (id, input, output_dir, _context) = req.rehydrate_input().unwrap();
+        assert_eq!(id, "p2");
+        assert_eq!(input, json!({"key": "value"}));
+        assert_eq!(output_dir, "/tmp/out");
+        // Spill file should be deleted
+        assert!(!spill_path.exists());
+    }
+
+    #[test]
+    fn rehydrate_input_neither_errors() {
+        let req = SlotRequest::Predict {
+            id: "p3".to_string(),
+            input: None,
+            input_file: None,
+            output_dir: "/tmp/out".to_string(),
+            context: Default::default(),
+        };
+        let err = req.rehydrate_input().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rehydrate_input_corrupt_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let spill_path = dir.path().join("corrupt.json");
+        std::fs::write(&spill_path, "not valid json!!!").unwrap();
+
+        let req = SlotRequest::Predict {
+            id: "p4".to_string(),
+            input: None,
+            input_file: Some(spill_path.to_str().unwrap().to_string()),
+            output_dir: "/tmp/out".to_string(),
+            context: Default::default(),
+        };
+        let err = req.rehydrate_input().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn truncate_worker_log_truncates_long_messages() {
+        let emoji = "🦀"; // 4-byte UTF-8 character
+        // known size of truncate target, add one more character
+        let count = 1024 * 1024 * 1024 * 4 / emoji.len() + 1;
+        let message: String = truncate_worker_log(emoji.repeat(count));
+        assert!(
+            message.ends_with(WORKER_LOG_TRUNCATE_NOTICE),
+            "log message didn't end with {}",
+            WORKER_LOG_TRUNCATE_NOTICE
+        );
+    }
+
+    #[test]
+    fn truncate_worker_log_does_not_truncate_short_messages() {
+        let emoji = "🦀"; // 4-byte UTF-8 character
+        // known size of truncate target, add one more character
+        let count = 10;
+        let message: String = truncate_worker_log(emoji.repeat(count));
+        assert!(
+            !message.ends_with(WORKER_LOG_TRUNCATE_NOTICE),
+            "short log message was truncated"
+        );
     }
 }

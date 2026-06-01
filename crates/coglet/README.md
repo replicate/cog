@@ -19,17 +19,17 @@ dependencies - the Python bindings live in `coglet-python`.
     │                                  │                              │
     │  ┌───────────────────────────────▼─────────────────────────┐   │
     │  │                     service.rs                          │   │
-    │  │  PredictionService: health, permits, predict routing    │   │
+    │  │  PredictionService: health, permits, state, webhooks    │   │
     │  └───────────────────────────────┬─────────────────────────┘   │
     │                                  │                              │
-    │         ┌────────────────────────┼────────────────────────┐    │
-    │         │                        │                        │    │
-    │         ▼                        ▼                        ▼    │
-    │  ┌─────────────┐    ┌────────────────────┐    ┌──────────────┐│
-    │  │ permit/     │    │   orchestrator.rs  │    │ supervisor.rs││
-    │  │ PermitPool  │    │   Parent-side:     │    │ State track  ││
-    │  │ Slot alloc  │    │   spawn, route     │    │ Webhooks     ││
-    │  └─────────────┘    └─────────┬──────────┘    └──────────────┘│
+    │         ┌────────────────────────┼────────────────┐            │
+    │         │                        │                │            │
+    │         ▼                        ▼                ▼            │
+    │  ┌─────────────┐    ┌────────────────────┐    ┌──────────┐   │
+    │  │ permit/     │    │   orchestrator.rs  │    │webhook.rs│   │
+    │  │ PermitPool  │    │   Parent-side:     │    │ Sender   │   │
+    │  │ Slot alloc  │    │   spawn, route     │    │ Retry    │   │
+    │  └─────────────┘    └─────────┬──────────┘    └──────────┘   │
     │                               │                                │
     │  ┌────────────────────────────▼────────────────────────────┐   │
     │  │                      bridge/                            │   │
@@ -61,14 +61,13 @@ coglet/
     ├── version.rs          # VersionInfo
     │
     │   # Service Layer
-    ├── service.rs          # PredictionService - main entry point
-    ├── supervisor.rs       # PredictionSupervisor - state/webhook management
+    ├── service.rs          # PredictionService - lifecycle, state, webhooks
     ├── webhook.rs          # WebhookSender, webhook types
     │
     │   # Orchestrator (Parent Process)
     ├── orchestrator.rs     # spawn_worker, OrchestratorHandle, event loop
     │
-    │   # Worker (Child Process)  
+    │   # Worker (Child Process)
     ├── worker.rs           # run_worker, PredictHandler trait, SetupError
     │
     │   # Concurrency Control
@@ -97,10 +96,13 @@ coglet/
 
 ### PredictionService (`service.rs`)
 
-Central coordination point. Owns:
+Single owner of prediction state. Manages:
+
 - Health state (Unknown → Starting → Ready/SetupFailed)
-- PermitPool or Orchestrator reference
-- PredictionSupervisor for state tracking
+- PermitPool + Orchestrator reference
+- Active predictions (DashMap — single source of truth)
+- Cancellation (cancel tokens + orchestrator delegation)
+- Webhooks fire from Prediction mutation methods (no dual state)
 
 ```rust
 let service = PredictionService::new_no_pool()
@@ -120,7 +122,7 @@ Parent-side worker lifecycle management.
 spawn_worker(config)
     │
     ├─▶ Create Unix socket transport (N slots)
-    ├─▶ Spawn: python -c "import coglet; coglet._run_worker()"
+     ├─▶ Spawn: python -c "import coglet; coglet.server._run_worker()"
     ├─▶ Send Init message via stdin
     ├─▶ Wait for worker to connect sockets
     ├─▶ Wait for Ready message (with timeout)
@@ -130,8 +132,9 @@ spawn_worker(config)
 ```
 
 Event loop handles:
+
 - `ControlResponse::Idle` - Slot ready for next prediction
-- `ControlResponse::Failed` - Slot poisoned, mark unavailable  
+- `ControlResponse::Failed` - Slot poisoned, mark unavailable
 - `SlotResponse::Log/Output/Done/Failed` - Route to prediction
 - Worker crash - Fail all in-flight predictions
 
@@ -178,10 +181,12 @@ drop(permit);
 Message types for parent-worker communication.
 
 **Control Channel:**
+
 - `ControlRequest`: Init, Cancel, Shutdown
 - `ControlResponse`: Ready, Log, Idle, Failed, Cancelled, ShuttingDown
 
 **Slot Channel:**
+
 - `SlotRequest`: Predict
 - `SlotResponse`: Log, Output, Done, Failed, Cancelled
 
@@ -224,6 +229,7 @@ Starting ──▶ Processing ──┬──▶ Succeeded
 ### Shutdown
 
 **Graceful (SIGTERM with await_explicit_shutdown):**
+
 1. Stop accepting new predictions
 2. Wait for in-flight to complete
 3. Send `ControlRequest::Shutdown`
@@ -231,11 +237,13 @@ Starting ──▶ Processing ──┬──▶ Succeeded
 5. Parent exits
 
 **Immediate (SIGTERM without flag):**
+
 1. Send `ControlRequest::Shutdown`
 2. Cancel in-flight predictions
 3. Exit
 
 **Worker crash:**
+
 1. Control channel closes
 2. Event loop detects, fails all in-flight predictions
 3. Health → Defunct

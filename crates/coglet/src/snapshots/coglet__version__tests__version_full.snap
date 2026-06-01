@@ -4,6 +4,8 @@ expression: info
 ---
 {
   "coglet": "0.1.0",
-  "cog": "0.9.0",
+  "git_sha": "abc1234-dirty",
+  "build_time": "2026-03-12T18:00:00Z",
+  "python_sdk": "0.9.0",
   "python": "3.11.0"
 }

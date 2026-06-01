@@ -1,266 +1,437 @@
-"""Tests for cog._inspector module."""
-
-import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-from cog import BaseModel
-from cog._adt import OutputKind, PrimitiveType, Repetition
-from cog._inspector import (
-    _create_input_field,
-    _create_output_type,
-    check_input,
-    create_predictor,
-)
-from cog.input import FieldInfo
+import pytest
+
+from cog import BaseModel, Opaque
+from cog import _adt as adt
+from cog._inspector import _create_predictor_info, create_predictor
 
 
-class TestCreateInputField:
-    """Tests for _create_input_field function."""
+def test_inspector_uses_run_method_for_classes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_run_method"
+    (tmp_path / f"{module_name}.py").write_text(
+        "class Runner:\n    def run(self, value: str) -> str:\n        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
 
-    def test_basic_input(self) -> None:
-        field = _create_input_field(0, "text", str, None)
-        assert field.name == "text"
-        assert field.order == 0
-        assert field.type.primitive is PrimitiveType.STRING
-        assert field.type.repetition is Repetition.REQUIRED
-        assert field.default is None
-
-    def test_input_with_default(self) -> None:
-        info = FieldInfo(default="hello")
-        field = _create_input_field(0, "text", str, info)
-        assert field.default == "hello"
-
-    def test_input_with_constraints(self) -> None:
-        info = FieldInfo(ge=0, le=100, description="A number")
-        field = _create_input_field(0, "count", int, info)
-        assert field.ge == 0.0
-        assert field.le == 100.0
-        assert field.description == "A number"
-
-    def test_input_with_choices(self) -> None:
-        info = FieldInfo(choices=["a", "b", "c"])
-        field = _create_input_field(0, "option", str, info)
-        assert field.choices == ["a", "b", "c"]
-
-    def test_optional_input(self) -> None:
-        field = _create_input_field(0, "text", Optional[str], None)
-        assert field.type.repetition is Repetition.OPTIONAL
-
-    def test_list_input(self) -> None:
-        field = _create_input_field(0, "items", List[str], None)
-        assert field.type.repetition is Repetition.REPEATED
+    info = create_predictor(module_name, "Runner")
+    assert "value" in info.inputs
 
 
-class TestCreateOutputType:
-    """Tests for _create_output_type function."""
+def test_inspector_warns_for_legacy_predict_method(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_predict_method"
+    (tmp_path / f"{module_name}.py").write_text(
+        "class Runner:\n"
+        "    def predict(self, value: str) -> str:\n"
+        "        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
 
-    def test_string_output(self) -> None:
-        out = _create_output_type(str)
-        assert out.kind is OutputKind.SINGLE
-        assert out.type is PrimitiveType.STRING
-
-    def test_int_output(self) -> None:
-        out = _create_output_type(int)
-        assert out.kind is OutputKind.SINGLE
-        assert out.type is PrimitiveType.INTEGER
-
-    def test_list_output(self) -> None:
-        out = _create_output_type(List[str])
-        assert out.kind is OutputKind.LIST
-        assert out.type is PrimitiveType.STRING
-
-    def test_basemodel_output(self) -> None:
-        class Output(BaseModel):
-            text: str
-            score: float
-
-        out = _create_output_type(Output)
-        assert out.kind is OutputKind.OBJECT
-        assert out.fields is not None
-        assert "text" in out.fields
-        assert "score" in out.fields
+    with pytest.warns(DeprecationWarning, match=r"Runner\.predict\(\) is deprecated"):
+        info = create_predictor(module_name, "Runner")
+    assert "value" in info.inputs
 
 
-class TestCheckInput:
-    """Tests for check_input function."""
+def test_inspector_warns_for_base_predictor_inheritance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_base_predictor"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from cog import BasePredictor\n"
+        "class Runner(BasePredictor):\n"
+        "    def run(self, value: str) -> str:\n"
+        "        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
 
-    def test_basic_check_input(self) -> None:
-        field = _create_input_field(0, "text", str, None)
-        inputs = {"text": field}
-        result = check_input(inputs, {"text": "hello"})
-        assert result == {"text": "hello"}
-
-    def test_check_input_with_default(self) -> None:
-        info = FieldInfo(default="default_value")
-        field = _create_input_field(0, "text", str, info)
-        inputs = {"text": field}
-        result = check_input(inputs, {})
-        assert result == {"text": "default_value"}
-
-    def test_check_input_optional_none(self) -> None:
-        field = _create_input_field(0, "text", Optional[str], None)
-        inputs = {"text": field}
-        result = check_input(inputs, {})
-        assert result == {"text": None}
-
-    def test_check_input_ge_constraint(self) -> None:
-        info = FieldInfo(ge=0)
-        field = _create_input_field(0, "count", int, info)
-        inputs = {"count": field}
-
-        # Valid
-        result = check_input(inputs, {"count": 5})
-        assert result == {"count": 5}
-
-        # Invalid
-        try:
-            check_input(inputs, {"count": -1})
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "fails constraint >= 0" in str(e)
-
-    def test_check_input_le_constraint(self) -> None:
-        info = FieldInfo(le=100)
-        field = _create_input_field(0, "count", int, info)
-        inputs = {"count": field}
-
-        # Valid
-        result = check_input(inputs, {"count": 50})
-        assert result == {"count": 50}
-
-        # Invalid
-        try:
-            check_input(inputs, {"count": 101})
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "fails constraint <= 100" in str(e)
-
-    def test_check_input_min_length_constraint(self) -> None:
-        info = FieldInfo(min_length=3)
-        field = _create_input_field(0, "text", str, info)
-        inputs = {"text": field}
-
-        # Valid
-        result = check_input(inputs, {"text": "hello"})
-        assert result == {"text": "hello"}
-
-        # Invalid
-        try:
-            check_input(inputs, {"text": "hi"})
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "fails constraint len() >= 3" in str(e)
-
-    def test_check_input_max_length_constraint(self) -> None:
-        info = FieldInfo(max_length=5)
-        field = _create_input_field(0, "text", str, info)
-        inputs = {"text": field}
-
-        # Valid
-        result = check_input(inputs, {"text": "hello"})
-        assert result == {"text": "hello"}
-
-        # Invalid
-        try:
-            check_input(inputs, {"text": "hello world"})
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "fails constraint len() <= 5" in str(e)
-
-    def test_check_input_choices_constraint(self) -> None:
-        info = FieldInfo(choices=["a", "b", "c"])
-        field = _create_input_field(0, "option", str, info)
-        inputs = {"option": field}
-
-        # Valid
-        result = check_input(inputs, {"option": "a"})
-        assert result == {"option": "a"}
-
-        # Invalid
-        try:
-            check_input(inputs, {"option": "d"})
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "does not match choices" in str(e)
-
-    def test_check_input_regex_constraint(self) -> None:
-        info = FieldInfo(regex=r"^\d{3}-\d{4}$")
-        field = _create_input_field(0, "phone", str, info)
-        inputs = {"phone": field}
-
-        # Valid
-        result = check_input(inputs, {"phone": "123-4567"})
-        assert result == {"phone": "123-4567"}
-
-        # Invalid
-        try:
-            check_input(inputs, {"phone": "invalid"})
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "does not match regex" in str(e)
-
-    def test_check_input_missing_required(self) -> None:
-        field = _create_input_field(0, "text", str, None)
-        inputs = {"text": field}
-
-        try:
-            check_input(inputs, {})
-            assert False, "Should have raised ValueError"
-        except ValueError as e:
-            assert "Field required" in str(e)
-
-    def test_check_input_unknown_field_warning(self, capsys) -> None:
-        field = _create_input_field(0, "text", str, None)
-        inputs = {"text": field}
-
-        result = check_input(inputs, {"text": "hello", "unknown": "value"})
-        assert result == {"text": "hello"}
-
-        captured = capsys.readouterr()
-        assert "WARNING unknown input field ignored: unknown" in captured.out
+    with pytest.warns(DeprecationWarning, match="BasePredictor is deprecated"):
+        info = create_predictor(module_name, "Runner")
+    assert "value" in info.inputs
 
 
-class TestCreatePredictor:
-    """Tests for create_predictor permissiveness."""
+def test_inspector_supports_inherited_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_inherited_run"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from cog import BaseRunner\n"
+        "class Shared(BaseRunner):\n"
+        "    def run(self, value: str) -> str:\n"
+        "        return value\n"
+        "class Runner(Shared):\n"
+        "    pass\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
 
-    def test_non_base_predictor_class(self, tmp_path: Path) -> None:
-        module_path = tmp_path / "predictor_mod.py"
-        module_path.write_text(
-            """
-from cog import Input
+    info = create_predictor(module_name, "Runner")
+    assert "value" in info.inputs
 
 
-class Predictor:
-    def predict(self, text: str = Input(default="hello")) -> str:
-        return text
-"""
+def test_inspector_rejects_inherited_run_and_direct_predict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_inherited_conflict"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from cog import BaseRunner\n"
+        "class Shared(BaseRunner):\n"
+        "    def run(self, value: str) -> str:\n"
+        "        return value\n"
+        "class Runner(Shared):\n"
+        "    def predict(self, value: str) -> str:\n"
+        "        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(ValueError, match=r"either run\(\) or predict\(\)"):
+        create_predictor(module_name, "Runner")
+
+
+def test_inspector_warns_for_inherited_legacy_predict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_inherited_predict"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from cog import BasePredictor\n"
+        "class Shared(BasePredictor):\n"
+        "    def predict(self, value: str) -> str:\n"
+        "        return value\n"
+        "class Predictor(Shared):\n"
+        "    pass\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.warns(DeprecationWarning, match=r"predict\(\) is deprecated"):
+        info = create_predictor(module_name, "Predictor")
+    assert "value" in info.inputs
+
+
+def test_inspector_rejects_class_with_run_and_predict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_conflict"
+    (tmp_path / f"{module_name}.py").write_text(
+        "class Runner:\n"
+        "    def run(self, value: str) -> str:\n"
+        "        return value\n"
+        "    def predict(self, value: str) -> str:\n"
+        "        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(ValueError, match=r"either run\(\) or predict\(\)"):
+        create_predictor(module_name, "Runner")
+
+
+def test_inspector_errors_when_class_has_no_run_or_predict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "runner_module_missing_method"
+    (tmp_path / f"{module_name}.py").write_text(
+        "class Runner:\n    def setup(self) -> None:\n        pass\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(ValueError, match="run.*predict|predict.*run"):
+        create_predictor(module_name, "Runner")
+
+
+class ExternalObject:
+    pass
+
+
+def test_inspector_preserves_opaque_input_metadata_with_run() -> None:
+    class Runner:
+        def run(self, value: Annotated[ExternalObject, Opaque]) -> str:
+            return "ok"
+
+    info = _create_predictor_info("run", "Runner", Runner.run, "run", True)
+    field = info.inputs["value"]
+    assert field.type.primitive is adt.PrimitiveType.ANY
+    assert field.type.repetition is adt.Repetition.REQUIRED
+
+
+def test_inspector_preserves_opaque_input_metadata() -> None:
+    class Predictor:
+        def predict(self, value: Annotated[ExternalObject, Opaque]) -> str:
+            return "ok"
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    field = info.inputs["value"]
+    assert field.type.primitive is adt.PrimitiveType.ANY
+    assert field.type.repetition is adt.Repetition.REQUIRED
+
+
+def test_inspector_preserves_opaque_list_input_metadata() -> None:
+    class Predictor:
+        def predict(self, value: Annotated[List[ExternalObject], Opaque]) -> str:
+            return "ok"
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    field = info.inputs["value"]
+    assert field.type.primitive is adt.PrimitiveType.ANY
+    assert field.type.repetition is adt.Repetition.REPEATED
+
+
+def test_inspector_supports_opaque_output_metadata() -> None:
+    class Predictor:
+        def predict(self, value: str) -> Annotated[ExternalObject, Opaque]:
+            return ExternalObject()
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    assert info.output.kind is adt.OutputKind.SINGLE
+    assert info.output.type is adt.PrimitiveType.ANY
+
+
+def test_inspector_supports_opaque_list_output_metadata() -> None:
+    class Predictor:
+        def predict(self, value: str) -> Annotated[List[ExternalObject], Opaque]:
+            return [ExternalObject()]
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    assert info.output.kind is adt.OutputKind.LIST
+    assert info.output.type is adt.PrimitiveType.ANY
+
+
+def test_inspector_supports_basemodel_opaque_output_field_with_run() -> None:
+    class Output(BaseModel):
+        payload: Annotated[ExternalObject, Opaque]
+
+    class Runner:
+        def run(self, value: str) -> Output:
+            return Output(payload=ExternalObject())
+
+    info = _create_predictor_info("run", "Runner", Runner.run, "run", True)
+    assert info.output.kind is adt.OutputKind.OBJECT
+    assert info.output.fields is not None
+    field = info.output.fields["payload"]
+    assert field.primitive is adt.PrimitiveType.ANY
+    assert field.repetition is adt.Repetition.REQUIRED
+
+
+def test_inspector_supports_basemodel_opaque_output_field() -> None:
+    class Output(BaseModel):
+        payload: Annotated[ExternalObject, Opaque]
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(payload=ExternalObject())
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    assert info.output.kind is adt.OutputKind.OBJECT
+    assert info.output.fields is not None
+    field = info.output.fields["payload"]
+    assert field.primitive is adt.PrimitiveType.ANY
+    assert field.repetition is adt.Repetition.REQUIRED
+
+
+def test_inspector_supports_basemodel_opaque_list_output_field_schema() -> None:
+    class Output(BaseModel):
+        payload: Annotated[List[ExternalObject], Opaque]
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(payload=[ExternalObject()])
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    payload_schema = info.output.json_type()["properties"]["payload"]
+    assert payload_schema["type"] == "array"
+    assert payload_schema["items"] == {"type": "object"}
+
+
+def test_inspector_basemodel_optional_output_fields_schema() -> None:
+    class Output(BaseModel):
+        required: str
+        maybe: Optional[str]
+        maybe_values: Optional[List[str]]
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(required=value, maybe=None, maybe_values=None)
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    output_schema = info.output.json_type()
+
+    assert output_schema["required"] == ["required"]
+
+    maybe_schema = output_schema["properties"]["maybe"]
+    assert maybe_schema["type"] == "string"
+    assert maybe_schema["nullable"] is True
+    assert maybe_schema["title"] == "Maybe"
+
+    maybe_values_schema = output_schema["properties"]["maybe_values"]
+    assert maybe_values_schema["type"] == "array"
+    assert maybe_values_schema["items"] == {"type": "string"}
+    assert maybe_values_schema["nullable"] is True
+    assert maybe_values_schema["title"] == "Maybe Values"
+
+
+def test_inspector_basemodel_all_optional_output_fields_omits_required_schema() -> None:
+    class Output(BaseModel):
+        maybe: Optional[str]
+        maybe_values: Optional[List[str]]
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(maybe=value, maybe_values=None)
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    output_schema = info.output.json_type()
+
+    assert "required" not in output_schema
+
+
+def test_inspector_supports_basemodel_string_opaque_output_field() -> None:
+    class Output(BaseModel):
+        payload: "Annotated[ExternalObject, Opaque]"
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(payload=ExternalObject())
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    assert info.output.kind is adt.OutputKind.OBJECT
+    assert info.output.fields is not None
+    field = info.output.fields["payload"]
+    assert field.primitive is adt.PrimitiveType.ANY
+    assert field.repetition is adt.Repetition.REQUIRED
+
+
+def test_inspector_supports_pydantic_opaque_list_output_field_schema() -> None:
+    pydantic = pytest.importorskip("pydantic")
+
+    class Output(pydantic.BaseModel):
+        payload: Annotated[List[ExternalObject], Opaque]
+
+        model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    class Predictor:
+        def predict(self, value: str) -> Output:
+            return Output(payload=[ExternalObject()])
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    payload_schema = info.output.json_type()["properties"]["payload"]
+    assert payload_schema["type"] == "array"
+    assert payload_schema["items"] == {"type": "object"}
+
+
+def test_inspector_rejects_optional_opaque_output_metadata() -> None:
+    class Predictor:
+        def predict(self, value: str) -> Optional[Annotated[ExternalObject, Opaque]]:
+            return ExternalObject()
+
+    with pytest.raises(ValueError, match="output must not be Optional"):
+        _create_predictor_info(
+            "predict", "Predictor", Predictor.predict, "predict", True
         )
-        sys.path.insert(0, str(tmp_path))
-        try:
-            predictor = create_predictor("predictor_mod", "Predictor")
-            assert "text" in predictor.inputs
-            assert predictor.output.type is PrimitiveType.STRING
-        finally:
-            sys.path.remove(str(tmp_path))
-            sys.modules.pop("predictor_mod", None)
-
-    def test_standalone_predictor_function(self, tmp_path: Path) -> None:
-        module_path = tmp_path / "predictor_fn.py"
-        module_path.write_text(
-            """
-from cog import Input
 
 
-def infer(text: str = Input(default="hello")) -> str:
-    return text
-"""
-        )
-        sys.path.insert(0, str(tmp_path))
-        try:
-            predictor = create_predictor("predictor_fn", "infer")
-            assert "text" in predictor.inputs
-            assert predictor.output.type is PrimitiveType.STRING
-        finally:
-            sys.path.remove(str(tmp_path))
-            sys.modules.pop("predictor_fn", None)
+def test_inspector_preserves_non_opaque_annotated_behavior() -> None:
+    class Predictor:
+        def predict(
+            self, value: Annotated[str, "metadata"]
+        ) -> Annotated[str, "metadata"]:
+            return value
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    field = info.inputs["value"]
+    assert field.type.primitive is adt.PrimitiveType.STRING
+    assert field.type.repetition is adt.Repetition.REQUIRED
+    assert info.output.kind is adt.OutputKind.SINGLE
+    assert info.output.type is adt.PrimitiveType.STRING
+
+
+def test_inspector_preserves_nested_non_opaque_annotated_list_behavior() -> None:
+    class Predictor:
+        def predict(self, value: List[Annotated[str, "metadata"]]) -> str:
+            return value[0]
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    field = info.inputs["value"]
+    assert field.type.primitive is adt.PrimitiveType.STRING
+    assert field.type.repetition is adt.Repetition.REPEATED
+
+
+def test_inspector_preserves_nested_non_opaque_annotated_optional_behavior() -> None:
+    class Predictor:
+        def predict(self, value: Optional[Annotated[str, "metadata"]]) -> str:
+            return value or ""
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    field = info.inputs["value"]
+    assert field.type.primitive is adt.PrimitiveType.STRING
+    assert field.type.repetition is adt.Repetition.OPTIONAL
+
+
+def test_inspector_accepts_setup_with_none_return_annotation_and_future_annotations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """setup() -> None must be accepted even when from __future__ import annotations is active.
+
+    With PEP 563 string annotations, -> None is stored as the string "None" rather than
+    the NoneType object, so a naive `is not None` check incorrectly rejects it.
+    """
+    module_name = "future_annotations_setup"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from __future__ import annotations\n"
+        "class Runner:\n"
+        "    def setup(self) -> None:\n"
+        "        pass\n"
+        "    def run(self, value: str) -> str:\n"
+        "        return value\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    info = create_predictor(module_name, "Runner")
+    assert "value" in info.inputs
+
+
+def test_inspector_rejects_predict_with_none_return_annotation_and_future_annotations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """predict() -> None must be rejected even when from __future__ import annotations is active.
+
+    With PEP 563 string annotations, -> None is stored as the string "None" rather than
+    the NoneType object, so a naive `is None` check incorrectly accepts it.
+    """
+    module_name = "future_annotations_predict_none"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from __future__ import annotations\n"
+        "class Runner:\n"
+        "    def run(self, value: str) -> None:\n"
+        "        pass\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(ValueError, match="return type annotation"):
+        create_predictor(module_name, "Runner")

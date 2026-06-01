@@ -1,242 +1,324 @@
-"""Tests for cog._adt module."""
+"""Tests for cog._adt module (FieldType, PrimitiveType)."""
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Annotated, Any, Dict, List, Optional, TypedDict
 
-from cog import Path, Secret
-from cog._adt import (
-    FieldType,
-    InputField,
-    OutputKind,
-    OutputType,
-    PredictorInfo,
-    PrimitiveType,
-    Repetition,
-)
+from typing_extensions import TypedDict as ExtensionsTypedDict
+
+from cog import Opaque
+from cog._adt import FieldType, PrimitiveType, Repetition
 
 
-class TestPrimitiveType:
-    """Tests for PrimitiveType enum."""
-
-    def test_from_type_basic_types(self) -> None:
-        assert PrimitiveType.from_type(bool) is PrimitiveType.BOOL
-        assert PrimitiveType.from_type(int) is PrimitiveType.INTEGER
-        assert PrimitiveType.from_type(float) is PrimitiveType.FLOAT
-        assert PrimitiveType.from_type(str) is PrimitiveType.STRING
-
-    def test_from_type_cog_types(self) -> None:
-        assert PrimitiveType.from_type(Path) is PrimitiveType.PATH
-        assert PrimitiveType.from_type(Secret) is PrimitiveType.SECRET
-
-    def test_from_type_any(self) -> None:
-        assert PrimitiveType.from_type(Any) is PrimitiveType.ANY
-
-    def test_from_type_custom(self) -> None:
-        class CustomClass:
-            pass
-
-        assert PrimitiveType.from_type(CustomClass) is PrimitiveType.CUSTOM
-
-    def test_normalize_int(self) -> None:
-        assert PrimitiveType.INTEGER.normalize(42) == 42
-        assert PrimitiveType.INTEGER.normalize(42.0) == 42
-
-    def test_normalize_float(self) -> None:
-        assert PrimitiveType.FLOAT.normalize(3.14) == 3.14
-        assert PrimitiveType.FLOAT.normalize(3) == 3.0
-
-    def test_normalize_string(self) -> None:
-        assert PrimitiveType.STRING.normalize("hello") == "hello"
-
-    def test_normalize_bool(self) -> None:
-        assert PrimitiveType.BOOL.normalize(True) is True
-        assert PrimitiveType.BOOL.normalize(False) is False
-
-    def test_normalize_path(self) -> None:
-        result = PrimitiveType.PATH.normalize("/tmp/file.txt")
-        assert isinstance(result, Path)
-        assert str(result) == "/tmp/file.txt"
-
-    def test_normalize_secret(self) -> None:
-        result = PrimitiveType.SECRET.normalize("api-key")
-        assert isinstance(result, Secret)
-        assert result.get_secret_value() == "api-key"
-
-    def test_json_type(self) -> None:
-        assert PrimitiveType.INTEGER.json_type() == {"type": "integer"}
-        assert PrimitiveType.FLOAT.json_type() == {"type": "number"}
-        assert PrimitiveType.STRING.json_type() == {"type": "string"}
-        assert PrimitiveType.BOOL.json_type() == {"type": "boolean"}
-
-    def test_json_type_path(self) -> None:
-        jt = PrimitiveType.PATH.json_type()
-        assert jt["type"] == "string"
-        assert jt["format"] == "uri"
-
-    def test_json_type_secret(self) -> None:
-        jt = PrimitiveType.SECRET.json_type()
-        assert jt["type"] == "string"
-        assert jt["format"] == "password"
-        assert jt["writeOnly"] is True
-        assert jt["x-cog-secret"] is True
+class ExampleTypedDict(TypedDict):
+    name: str
+    count: int
 
 
-class TestFieldType:
-    """Tests for FieldType class."""
+class ExampleExtensionsTypedDict(ExtensionsTypedDict):
+    name: str
+    count: int
 
-    def test_from_type_required(self) -> None:
-        ft = FieldType.from_type(str)
-        assert ft.primitive is PrimitiveType.STRING
+
+class ExampleDictSubclass(dict[str, int]):
+    pass
+
+
+class ThirdPartyObject:
+    pass
+
+
+def test_opaque_is_public_cog_export() -> None:
+    cog_module = __import__("cog")
+
+    assert repr(cog_module.Opaque) == "cog.Opaque"
+    assert cog_module.Opaque is Opaque
+
+
+def test_opaque_simple_field_type() -> None:
+    ft = FieldType.from_type(Annotated[ThirdPartyObject, Opaque])
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.REQUIRED
+    assert ft.coder is None
+
+
+def test_opaque_list_field_type() -> None:
+    ft = FieldType.from_type(Annotated[List[ThirdPartyObject], Opaque])
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.REPEATED
+    assert ft.coder is None
+
+
+def test_opaque_bare_list_field_type() -> None:
+    ft = FieldType.from_type(Annotated[list, Opaque])
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.REPEATED
+    assert ft.coder is None
+
+
+def test_opaque_inside_list_field_type() -> None:
+    ft = FieldType.from_type(List[Annotated[ThirdPartyObject, Opaque]])
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.REPEATED
+    assert ft.coder is None
+
+
+def test_opaque_optional_field_type() -> None:
+    ft = FieldType.from_type(Annotated[ThirdPartyObject, Opaque] | None)
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.OPTIONAL
+    assert ft.coder is None
+
+
+def test_opaque_optional_list_field_type() -> None:
+    ft = FieldType.from_type(Annotated[List[ThirdPartyObject], Opaque] | None)
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.OPTIONAL_REPEATED
+    assert ft.coder is None
+
+
+def test_opaque_optional_bare_list_field_type() -> None:
+    ft = FieldType.from_type(Annotated[list, Opaque] | None)
+    assert ft.primitive is PrimitiveType.ANY
+    assert ft.repetition is Repetition.OPTIONAL_REPEATED
+    assert ft.coder is None
+
+
+class TestDictInputTypes:
+    """Tests for FieldType.from_type() with dict types as inputs."""
+
+    def test_bare_dict_input(self) -> None:
+        """Bare dict should be accepted as an input type, mapped to ANY."""
+        ft = FieldType.from_type(dict)
+        assert ft.primitive is PrimitiveType.ANY
         assert ft.repetition is Repetition.REQUIRED
         assert ft.coder is None
 
-    def test_from_type_optional(self) -> None:
-        ft = FieldType.from_type(Optional[str])
-        assert ft.primitive is PrimitiveType.STRING
-        assert ft.repetition is Repetition.OPTIONAL
-        assert ft.coder is None
+    def test_dict_str_any_input(self) -> None:
+        """Dict[str, Any] should be accepted as an input type."""
+        ft = FieldType.from_type(Dict[str, Any])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REQUIRED
 
-    def test_from_type_list(self) -> None:
-        ft = FieldType.from_type(List[int])
-        assert ft.primitive is PrimitiveType.INTEGER
+    def test_list_of_dict_input(self) -> None:
+        """list[dict] should produce a repeated ANY field."""
+        ft = FieldType.from_type(list[dict])
+        assert ft.primitive is PrimitiveType.ANY
         assert ft.repetition is Repetition.REPEATED
         assert ft.coder is None
 
-    def test_from_type_bare_list(self) -> None:
+    def test_list_of_typing_dict_input(self) -> None:
+        """List[Dict[str, Any]] should produce a repeated ANY field."""
+        ft = FieldType.from_type(List[Dict[str, Any]])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REPEATED
+
+    def test_optional_dict_input(self) -> None:
+        """Optional[dict] should produce an optional ANY field."""
+        ft = FieldType.from_type(Optional[dict])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL
+        assert ft.coder is None
+
+    def test_optional_typing_dict_input(self) -> None:
+        """Optional[Dict[str, Any]] should produce an optional ANY field."""
+        ft = FieldType.from_type(Optional[Dict[str, Any]])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL
+        assert ft.coder is None
+
+    def test_optional_list_of_dict_input(self) -> None:
+        """Optional[list[dict]] should produce an optional repeated ANY field."""
+        ft = FieldType.from_type(Optional[list[dict]])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+
+    def test_optional_list_of_typing_dict_input(self) -> None:
+        """Optional[List[Dict[str, Any]]] should produce optional repeated ANY."""
+        ft = FieldType.from_type(Optional[List[Dict[str, Any]]])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+
+    def test_pep604_dict_or_none(self) -> None:
+        """dict | None (PEP 604) should produce optional ANY."""
+        ft = FieldType.from_type(dict | None)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL
+        assert ft.coder is None
+
+    def test_pep604_list_dict_or_none(self) -> None:
+        """list[dict] | None (PEP 604) should produce optional repeated ANY."""
+        ft = FieldType.from_type(list[dict] | None)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+
+    def test_dict_str_int_type_erasure(self) -> None:
+        """dict[str, int] should be accepted as ANY (type params discarded)."""
+        ft = FieldType.from_type(dict[str, int])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REQUIRED
+
+    def test_typeddict_input(self) -> None:
+        """TypedDict subclasses should be accepted as dict-like inputs."""
+        ft = FieldType.from_type(ExampleTypedDict)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REQUIRED
+        assert ft.coder is None
+
+    def test_typing_extensions_typeddict_input(self) -> None:
+        """typing_extensions.TypedDict should be accepted as dict-like inputs."""
+        ft = FieldType.from_type(ExampleExtensionsTypedDict)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REQUIRED
+        assert ft.coder is None
+
+    def test_list_of_typeddict_input(self) -> None:
+        """list[TypedDict] should produce a repeated ANY field."""
+        ft = FieldType.from_type(list[ExampleTypedDict])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REPEATED
+        assert ft.coder is None
+
+    def test_list_of_typing_extensions_typeddict_input(self) -> None:
+        """list[typing_extensions.TypedDict] should produce repeated ANY."""
+        ft = FieldType.from_type(list[ExampleExtensionsTypedDict])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REPEATED
+        assert ft.coder is None
+
+    def test_optional_typeddict_input(self) -> None:
+        """Optional[TypedDict] should produce an optional ANY field."""
+        ft = FieldType.from_type(Optional[ExampleTypedDict])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL
+        assert ft.coder is None
+
+    def test_optional_typing_extensions_typeddict_input(self) -> None:
+        """Optional[typing_extensions.TypedDict] should produce optional ANY."""
+        ft = FieldType.from_type(Optional[ExampleExtensionsTypedDict])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL
+        assert ft.coder is None
+
+    def test_optional_list_of_typeddict_input(self) -> None:
+        """Optional[list[TypedDict]] should produce optional repeated ANY."""
+        ft = FieldType.from_type(Optional[list[ExampleTypedDict]])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+        assert ft.coder is None
+
+    def test_optional_list_of_typing_extensions_typeddict_input(self) -> None:
+        """Optional[list[typing_extensions.TypedDict]] should be optional repeated ANY."""
+        ft = FieldType.from_type(Optional[list[ExampleExtensionsTypedDict]])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+        assert ft.coder is None
+
+    def test_pep604_list_of_typeddict_or_none_input(self) -> None:
+        """list[TypedDict] | None should produce optional repeated ANY."""
+        ft = FieldType.from_type(list[ExampleTypedDict] | None)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+        assert ft.coder is None
+
+    def test_pep604_list_of_typing_extensions_typeddict_or_none_input(self) -> None:
+        """list[typing_extensions.TypedDict] | None should be optional repeated ANY."""
+        ft = FieldType.from_type(list[ExampleExtensionsTypedDict] | None)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.OPTIONAL_REPEATED
+        assert ft.coder is None
+
+    def test_plain_dict_subclass_is_not_treated_as_dict(self) -> None:
+        """Plain dict subclasses should not be accepted as dict-like inputs."""
+        try:
+            FieldType.from_type(ExampleDictSubclass)
+        except ValueError as exc:
+            assert str(exc) == "unsupported Cog type ExampleDictSubclass"
+        else:
+            raise AssertionError("Expected ValueError for plain dict subclass")
+
+    def test_list_dict_str_int_type_erasure(self) -> None:
+        """list[dict[str, int]] should be accepted as repeated ANY."""
+        ft = FieldType.from_type(list[dict[str, int]])
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REPEATED
+
+
+class TestDictJsonSchema:
+    """Tests for JSON schema generation with dict types."""
+
+    def test_dict_json_type(self) -> None:
+        """dict should generate {"type": "object"} schema."""
+        ft = FieldType.from_type(dict)
+        assert ft.json_type() == {"type": "object"}
+
+    def test_list_of_dict_json_type(self) -> None:
+        """list[dict] should generate array-of-objects schema."""
+        ft = FieldType.from_type(list[dict])
+        assert ft.json_type() == {"type": "array", "items": {"type": "object"}}
+
+
+class TestDictNormalization:
+    """Tests for normalize/encode/decode with dict types."""
+
+    def test_dict_normalize_passthrough(self) -> None:
+        """dict normalize should pass values through unchanged."""
+        ft = FieldType.from_type(dict)
+        data = {"key": "value", "nested": {"a": 1}}
+        assert ft.normalize(data) == data
+
+    def test_list_of_dict_normalize_passthrough(self) -> None:
+        """list[dict] normalize should pass list elements through unchanged."""
+        ft = FieldType.from_type(list[dict])
+        data = [{"key": "value"}, {"a": 1}]
+        assert ft.normalize(data) == data
+
+    def test_optional_dict_normalize_none(self) -> None:
+        """Optional[dict] should normalize None to None."""
+        ft = FieldType.from_type(Optional[dict])
+        assert ft.normalize(None) is None
+
+    def test_optional_list_dict_normalize_none(self) -> None:
+        """Optional[list[dict]] should normalize None to None."""
+        ft = FieldType.from_type(Optional[list[dict]])
+        assert ft.normalize(None) is None
+
+    def test_dict_json_encode_passthrough(self) -> None:
+        """dict json_encode should pass values through unchanged."""
+        ft = FieldType.from_type(dict)
+        data = {"key": "value", "nested": {"a": 1}}
+        assert ft.json_encode(data) == data
+
+    def test_list_of_dict_json_encode_passthrough(self) -> None:
+        """list[dict] json_encode should pass list elements through unchanged."""
+        ft = FieldType.from_type(list[dict])
+        data = [{"key": "value"}, {"a": 1}]
+        assert ft.json_encode(data) == data
+
+    def test_dict_json_decode_passthrough(self) -> None:
+        """dict json_decode should pass values through unchanged."""
+        ft = FieldType.from_type(dict)
+        data = {"key": "value"}
+        assert ft.json_decode(data) == data
+
+
+class TestFieldTypeExistingTypes:
+    """Regression tests: ensure existing types still work after dict changes."""
+
+    def test_bare_list(self) -> None:
         ft = FieldType.from_type(list)
         assert ft.primitive is PrimitiveType.ANY
         assert ft.repetition is Repetition.REPEATED
 
-    def test_from_type_bare_dict(self) -> None:
-        ft = FieldType.from_type(dict)
-        assert ft.primitive is PrimitiveType.CUSTOM
-        assert ft.repetition is Repetition.REQUIRED
-        assert ft.coder is not None
+    def test_list_str(self) -> None:
+        ft = FieldType.from_type(list[str])
+        assert ft.primitive is PrimitiveType.STRING
+        assert ft.repetition is Repetition.REPEATED
 
-    def test_from_type_dict_str_any(self) -> None:
-        ft = FieldType.from_type(Dict[str, Any])
-        assert ft.primitive is PrimitiveType.CUSTOM
-        assert ft.coder is not None
+    def test_list_int(self) -> None:
+        ft = FieldType.from_type(list[int])
+        assert ft.primitive is PrimitiveType.INTEGER
+        assert ft.repetition is Repetition.REPEATED
 
-    def test_from_type_set(self) -> None:
-        ft = FieldType.from_type(Set[int])
-        assert ft.primitive is PrimitiveType.CUSTOM
-        assert ft.coder is not None
-
-    def test_normalize_required(self) -> None:
-        ft = FieldType.from_type(int)
-        assert ft.normalize(42) == 42
-
-    def test_normalize_optional(self) -> None:
-        ft = FieldType.from_type(Optional[int])
-        assert ft.normalize(42) == 42
-        assert ft.normalize(None) is None
-
-    def test_normalize_repeated(self) -> None:
-        ft = FieldType.from_type(List[int])
-        assert ft.normalize([1, 2, 3]) == [1, 2, 3]
-
-    def test_json_type_required(self) -> None:
-        ft = FieldType.from_type(str)
-        assert ft.json_type() == {"type": "string"}
-
-    def test_json_type_repeated(self) -> None:
-        ft = FieldType.from_type(List[str])
-        assert ft.json_type() == {"type": "array", "items": {"type": "string"}}
-
-    def test_python_type_name(self) -> None:
-        assert FieldType.from_type(str).python_type_name() == "str"
-        assert FieldType.from_type(Optional[str]).python_type_name() == "Optional[str]"
-        assert FieldType.from_type(List[str]).python_type_name() == "List[str]"
-
-
-class TestInputField:
-    """Tests for InputField class."""
-
-    def test_basic_input_field(self) -> None:
-        ft = FieldType.from_type(str)
-        inp = InputField(name="text", order=0, type=ft)
-        assert inp.name == "text"
-        assert inp.order == 0
-        assert inp.default is None
-        assert inp.description is None
-
-    def test_input_field_with_constraints(self) -> None:
-        ft = FieldType.from_type(int)
-        inp = InputField(
-            name="count",
-            order=0,
-            type=ft,
-            default=5,
-            description="The count",
-            ge=0,
-            le=100,
-        )
-        assert inp.default == 5
-        assert inp.description == "The count"
-        assert inp.ge == 0
-        assert inp.le == 100
-
-
-class TestOutputType:
-    """Tests for OutputType class."""
-
-    def test_single_output(self) -> None:
-        out = OutputType(kind=OutputKind.SINGLE, type=PrimitiveType.STRING)
-        jt = out.json_type()
-        assert jt["title"] == "Output"
-        assert jt["type"] == "string"
-
-    def test_list_output(self) -> None:
-        out = OutputType(kind=OutputKind.LIST, type=PrimitiveType.INTEGER)
-        jt = out.json_type()
-        assert jt["title"] == "Output"
-        assert jt["type"] == "array"
-        assert jt["items"]["type"] == "integer"
-
-    def test_iterator_output(self) -> None:
-        out = OutputType(kind=OutputKind.ITERATOR, type=PrimitiveType.STRING)
-        jt = out.json_type()
-        assert jt["x-cog-array-type"] == "iterator"
-        assert "x-cog-array-display" not in jt
-
-    def test_concat_iterator_output(self) -> None:
-        out = OutputType(kind=OutputKind.CONCAT_ITERATOR, type=PrimitiveType.STRING)
-        jt = out.json_type()
-        assert jt["x-cog-array-type"] == "iterator"
-        assert jt["x-cog-array-display"] == "concatenate"
-
-    def test_object_output(self) -> None:
-        fields = {
-            "text": FieldType.from_type(str),
-            "score": FieldType.from_type(float),
-        }
-        out = OutputType(kind=OutputKind.OBJECT, fields=fields)
-        jt = out.json_type()
-        assert jt["type"] == "object"
-        assert "text" in jt["properties"]
-        assert "score" in jt["properties"]
-        assert set(jt["required"]) == {"text", "score"}
-
-
-class TestPredictorInfo:
-    """Tests for PredictorInfo class."""
-
-    def test_basic_predictor_info(self) -> None:
-        inputs = {
-            "text": InputField(
-                name="text",
-                order=0,
-                type=FieldType.from_type(str),
-            )
-        }
-        output = OutputType(kind=OutputKind.SINGLE, type=PrimitiveType.STRING)
-        info = PredictorInfo(
-            module_name="mymodule",
-            predictor_name="Predictor",
-            inputs=inputs,
-            output=output,
-        )
-        assert info.module_name == "mymodule"
-        assert info.predictor_name == "Predictor"
-        assert len(info.inputs) == 1
-        assert info.output.kind is OutputKind.SINGLE
+    def test_optional_str(self) -> None:
+        ft = FieldType.from_type(Optional[str])
+        assert ft.primitive is PrimitiveType.STRING
+        assert ft.repetition is Repetition.OPTIONAL

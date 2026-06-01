@@ -1,26 +1,26 @@
 # Training interface reference
 
-> [!NOTE]  
-> The training API is still experimental, and is subject to change.
+> [!WARNING]  
+> The `cog train` command is deprecated and will be removed in the next version of Cog. The training API described below may still be used with the HTTP API's `/trainings` endpoint, but the CLI command is no longer recommended for new projects.
 
 Cog's training API allows you to define a fine-tuning interface for an existing Cog model, so users of the model can bring their own training data to create derivative fine-tuned models. Real-world examples of this API in use include [fine-tuning SDXL with images](https://replicate.com/blog/fine-tune-sdxl) or [fine-tuning Llama 2 with structured text](https://replicate.com/blog/fine-tune-llama-2).
 
 ## How it works
 
-If you've used Cog before, you've probably seen the [Predictor](./python.md) class, which defines the interface for creating predictions against your model. Cog's training API works similarly: You define a Python function that describes the inputs and outputs of the training process. The inputs are things like training data, epochs, batch size, seed, etc. The output is typically a file with the fine-tuned weights.
+If you've used Cog before, you've probably seen the [Runner](./python.md) class, which defines the interface for running your model. Cog's training API works similarly: You define a Python function that describes the inputs and outputs of the training process. The inputs are things like training data, epochs, batch size, seed, etc. The output is typically a file with the fine-tuned weights.
 
 `cog.yaml`:
 
 ```yaml
 build:
-  python_version: "3.10"
+  python_version: "3.13"
 train: "train.py:train"
 ```
 
 `train.py`:
 
 ```python
-from cog import BasePredictor, File
+from cog import File
 import io
 
 def train(param: str) -> File:
@@ -37,27 +37,27 @@ $ cat weights
 hello train
 ```
 
-You can also use classes if you want to run many model trainings and save on setup time. This works the same way as the [Predictor](./python.md) class with the only difference being the `train` method.
+You can also use classes if you want to run many model trainings and save on setup time. This works the same way as the [Runner](./python.md) class with the only difference being the `train` method.
 
 `cog.yaml`:
 
 ```yaml
 build:
-  python_version: "3.10"
+  python_version: "3.13"
 train: "train.py:Trainer"
 ```
 
 `train.py`:
 
 ```python
-from cog import BasePredictor, File
+from cog import File
 import io
 
 class Trainer:
     def setup(self) -> None:
         self.base_model = ... # Load a big base model
 
-    def train(param: str) -> File:
+    def train(self, param: str) -> File:
         return self.base_model.train(param) # Train on top of a base model
 ```
 
@@ -92,7 +92,7 @@ Each parameter of the `train()` function must be annotated with a type like `str
 Using the `Input` function provides better documentation and validation constraints to the users of your model, but it is not strictly required. You can also specify default values for your parameters using plain Python, or omit default assignment entirely:
 
 ```py
-def predict(self,
+def train(self,
   training_data: str = "foo bar", # this is valid
   iterations: int                 # also valid
 ) -> str:
@@ -120,8 +120,8 @@ def train(
 
 ## Testing
 
-If you are doing development of a Cog model like Llama or SDXL, you can test that the fine-tuned code path works before pushing by specifying a `COG_WEIGHTS` environment variable when running `predict`:
+If you are doing development of a Cog model like Llama or SDXL, you can test that the fine-tuned code path works before pushing by specifying a `COG_WEIGHTS` environment variable when running `run`:
 
 ```console
-cog predict -e COG_WEIGHTS=https://replicate.delivery/pbxt/xyz/weights.tar -i prompt="a photo of TOK"
+cog run -e COG_WEIGHTS=https://replicate.delivery/pbxt/xyz/weights.tar -i prompt="a photo of TOK"
 ```

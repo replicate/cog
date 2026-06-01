@@ -86,7 +86,7 @@ func checkForRelease(ctx context.Context) (*updateCheckResponse, error) {
 	q.Add("arch", runtime.GOARCH)
 	req.URL.RawQuery = q.Encode()
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is built from hardcoded base + version params
 	if err != nil {
 		return nil, err
 	}

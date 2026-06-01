@@ -13,27 +13,47 @@ import (
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
-var buildTag string
-var buildSeparateWeights bool
-var buildSecrets []string
-var buildNoCache bool
-var buildProgressOutput string
-var buildSchemaFile string
-var buildUseCudaBaseImage string
-var buildDockerfileFile string
-var buildUseCogBaseImage bool
-var buildStrip bool
-var buildPrecompile bool
-var configFilename string
+var (
+	buildTag                  string
+	buildSeparateWeights      bool
+	buildSecrets              []string
+	buildNoCache              bool
+	buildProgressOutput       string
+	buildSchemaFile           string
+	buildUseCudaBaseImage     string
+	buildDockerfileFile       string
+	buildUseCogBaseImage      bool
+	buildStrip                bool
+	buildPrecompile           bool
+	buildSkipSchemaValidation bool
+	configFilename            string
+)
 
 const useCogBaseImageFlagKey = "use-cog-base-image"
 
 func newBuildCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "build",
-		Short:   "Build an image from cog.yaml",
+		Use:   "build",
+		Short: "Build an image from cog.yaml",
+		Long: `Build a Docker image from the cog.yaml in the current directory.
+
+The generated image contains your model code, dependencies, and the Cog
+runtime. It can be run locally with 'cog run' or pushed to a registry
+with 'cog push'.`,
+		Example: `  # Build with default settings
+  cog build
+
+  # Build and tag the image
+  cog build -t my-model:latest
+
+  # Build without using the cache
+  cog build --no-cache
+
+  # Build with model weights in a separate layer
+  cog build --separate-weights -t my-model:v1`,
 		Args:    cobra.NoArgs,
 		RunE:    buildCommand,
 		PreRunE: checkMutuallyExclusiveFlags,
@@ -50,6 +70,7 @@ func newBuildCommand() *cobra.Command {
 	addStripFlag(cmd)
 	addPrecompileFlag(cmd)
 	addConfigFlag(cmd)
+	addSkipSchemaValidationFlag(cmd)
 	cmd.Flags().StringVarP(&buildTag, "tag", "t", "", "A name for the built image in the form 'repository:tag'")
 	return cmd
 }
@@ -66,8 +87,16 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer src.Close()
+
+	if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
+		return err
+	}
 
 	imageName := src.Config.Image
+	if imageName == "" {
+		imageName = src.Config.Model
+	}
 	if buildTag != "" {
 		imageName = buildTag
 	}
@@ -75,13 +104,17 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		imageName = config.DockerImageName(src.ProjectDir)
 	}
 
+	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(imageName))
+	console.Info("")
+
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, nil))
 	if err != nil {
 		return err
 	}
 
-	console.Infof("\nImage built as %s", m.ImageRef())
+	console.Info("")
+	console.Successf("Image built as %s", console.Bold(m.ImageRef()))
 
 	return nil
 }
@@ -131,7 +164,7 @@ func addUseCogBaseImageFlag(cmd *cobra.Command) {
 }
 
 func addBuildTimestampFlag(cmd *cobra.Command) {
-	cmd.Flags().Int64Var(&config.BuildSourceEpochTimestamp, "timestamp", -1, "Number of seconds sing Epoch to use for the build timestamp; this rewrites the timestamp of each layer. Useful for reproducibility. (`-1` to disable timestamp rewrites)")
+	cmd.Flags().Int64Var(&config.BuildSourceEpochTimestamp, "timestamp", -1, "Number of seconds since Epoch to use for the build timestamp; this rewrites the timestamp of each layer. Useful for reproducibility. (`-1` to disable timestamp rewrites)")
 	_ = cmd.Flags().MarkHidden("timestamp")
 }
 
@@ -174,32 +207,27 @@ func DetermineUseCogBaseImage(cmd *cobra.Command) *bool {
 	return useCogBaseImage
 }
 
+func addSkipSchemaValidationFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&buildSkipSchemaValidation, "skip-schema-validation", false, "Skip OpenAPI schema generation and validation")
+	_ = cmd.Flags().MarkHidden("skip-schema-validation")
+}
+
 // buildOptionsFromFlags creates BuildOptions from the current CLI flag values.
 // The imageName and annotations parameters vary by command and must be provided.
 func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map[string]string) model.BuildOptions {
 	return model.BuildOptions{
-		ImageName:        imageName,
-		Secrets:          buildSecrets,
-		NoCache:          buildNoCache,
-		SeparateWeights:  buildSeparateWeights,
-		UseCudaBaseImage: buildUseCudaBaseImage,
-		ProgressOutput:   buildProgressOutput,
-		SchemaFile:       buildSchemaFile,
-		DockerfileFile:   buildDockerfileFile,
-		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
-		Strip:            buildStrip,
-		Precompile:       buildPrecompile,
-		Annotations:      annotations,
-		OCIIndex:         model.OCIIndexEnabled(),
-	}
-}
-
-// buildBaseOptionsFromFlags creates BuildBaseOptions from the current CLI flag values.
-func buildBaseOptionsFromFlags(cmd *cobra.Command) model.BuildBaseOptions {
-	return model.BuildBaseOptions{
-		UseCudaBaseImage: buildUseCudaBaseImage,
-		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
-		ProgressOutput:   buildProgressOutput,
-		RequiresCog:      true,
+		ImageName:            imageName,
+		Secrets:              buildSecrets,
+		NoCache:              buildNoCache,
+		SeparateWeights:      buildSeparateWeights,
+		UseCudaBaseImage:     buildUseCudaBaseImage,
+		ProgressOutput:       buildProgressOutput,
+		SchemaFile:           buildSchemaFile,
+		DockerfileFile:       buildDockerfileFile,
+		UseCogBaseImage:      DetermineUseCogBaseImage(cmd),
+		Strip:                buildStrip,
+		Precompile:           buildPrecompile,
+		Annotations:          annotations,
+		SkipSchemaValidation: buildSkipSchemaValidation,
 	}
 }

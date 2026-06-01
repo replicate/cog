@@ -31,8 +31,8 @@ func (p *GenericProvider) MatchesRegistry(host string) bool {
 }
 
 func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions) error {
-	console.Infof("Logging in to %s", opts.Host)
-	console.Info("")
+	console.InfoUnformattedf("Logging in to %s", opts.Host)
+	console.InfoUnformatted("")
 
 	// TODO: support non-interactive login with token stdin for generic registries
 	// Prompt for username
@@ -50,7 +50,7 @@ func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions)
 
 	// Prompt for password (hidden input)
 	fmt.Print("Password: ")
-	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd())) //nolint:gosec // G115: Fd() fits in int on all supported platforms
 	if err != nil {
 		return fmt.Errorf("failed to read password: %w", err)
 	}
@@ -66,16 +66,15 @@ func (p *GenericProvider) Login(ctx context.Context, opts provider.LoginOptions)
 		return fmt.Errorf("failed to save credentials: %w", err)
 	}
 
-	console.Infof("Login succeeded for %s", opts.Host)
+	console.Successf("Login succeeded for %s", console.Bold(opts.Host))
 	return nil
 }
 
 func (p *GenericProvider) PostPush(ctx context.Context, opts provider.PushOptions, pushErr error) error {
-	// No special post-push handling for generic registries
-	// Just show a simple success message if push succeeded
-	if pushErr == nil {
-		console.Infof("Image '%s' pushed", opts.Image)
-	}
+	// No special post-push handling for generic registries.
+	// Success output is the structured ref tree printed by the CLI
+	// (see pkg/cli/push.go:printPushResult); we have nothing to add
+	// here.
 	return nil
 }
 

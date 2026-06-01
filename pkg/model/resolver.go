@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types/image"
@@ -12,6 +11,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/registry"
+	"github.com/replicate/cog/pkg/util/console"
 )
 
 // Option configures how Resolver methods behave.
@@ -76,17 +76,19 @@ func WithPlatform(p *registry.Platform) Option {
 
 // Resolver orchestrates building and loading Models.
 type Resolver struct {
-	docker   command.Command
-	registry registry.Client
-	factory  Factory
+	docker      command.Command
+	registry    registry.Client
+	factory     Factory
+	imagePusher *ImagePusher
 }
 
 // NewResolver creates a Resolver with the default factory.
 func NewResolver(docker command.Command, reg registry.Client) *Resolver {
 	return &Resolver{
-		docker:   docker,
-		registry: reg,
-		factory:  DefaultFactory(docker, reg),
+		docker:      docker,
+		registry:    reg,
+		factory:     defaultFactory(docker, reg),
+		imagePusher: newImagePusher(docker, reg),
 	}
 }
 
@@ -220,7 +222,20 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 	}
 	opts = opts.WithDefaults(src)
 
-	// Build image artifact via ImageBuilder
+	// Resolve the model ref up front so user-facing config or env
+	// errors (malformed COG_MODEL_TAG, reserved prefix, image:+env
+	// mode mix-up, etc.) surface before kicking off a Docker build.
+	// ErrNoModelRef just means there's no model field — fall back to
+	// FormatImage.
+	format := FormatImage
+	ref, err := ResolveModelRef(src.Config.Image, src.Config.Model)
+	if err != nil && !errors.Is(err, ErrNoModelRef) {
+		return nil, err
+	}
+	if ref != nil {
+		format = FormatBundle
+	}
+
 	ib := NewImageBuilder(r.factory, r.docker, src, opts)
 	imageSpec := NewImageSpec("model", opts.ImageName)
 	imgResult, err := ib.Build(ctx, imageSpec)
@@ -237,74 +252,68 @@ func (r *Resolver) Build(ctx context.Context, src *Source, opts BuildOptions) (*
 		return nil, err
 	}
 
-	m.OCIIndex = opts.OCIIndex
 	m.Artifacts = []Artifact{ia}
+	m.Format = format
+	m.Ref = ref
 
-	// Build weight artifacts if OCI index mode is enabled
-	lockPath := opts.WeightsLockPath
-	if lockPath == "" {
-		lockPath = filepath.Join(src.ProjectDir, WeightsLockFilename)
-	}
-
-	if opts.OCIIndex && len(src.Config.Weights) > 0 {
-		wb := NewWeightBuilder(src, m.CogVersion, lockPath)
-		for _, ws := range src.Config.Weights {
-			spec := NewWeightSpec(ws.Name, ws.Source, ws.Target)
-			artifact, buildErr := wb.Build(ctx, spec)
-			if buildErr != nil {
-				return nil, fmt.Errorf("build weight %q: %w", ws.Name, buildErr)
-			}
-			m.Artifacts = append(m.Artifacts, artifact)
+	// Load managed weights when declared. Config validation enforces
+	// "weights require model", so a healthy config only reaches this
+	// branch when Format == FormatBundle.
+	if len(src.Config.Weights) > 0 {
+		weights, weightErr := WeightsFromLockfile(src.ProjectDir)
+		if weightErr != nil {
+			return nil, weightErr
 		}
-
+		m.Weights = weights
 	}
 
 	return m, nil
 }
 
-// Push pushes a Model to a container registry.
-// TODO(md): The OCIIndex gate is temporary. When true, pushes an OCI Image Index
-// with weight artifacts. When false, does a plain docker push. Remove the gate
-// once index pushes are validated with all registries.
-func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) error {
-	if m.OCIIndex {
+// Push pushes a Model to a container registry and returns an
+// enriched copy of the Model with all registry references populated
+// (Model.Ref pinned to the resulting digest, image artifact and
+// weights carrying repo@digest references).
+//
+// FormatBundle delegates to BundlePusher; FormatImage falls back to
+// the legacy single-image push and the returned Model has only the
+// image artifact's repo@digest captured.
+func (r *Resolver) Push(ctx context.Context, m *Model, opts PushOptions) (*Model, error) {
+	if m.IsBundle() {
 		pusher := NewBundlePusher(r.docker, r.registry)
 		return pusher.Push(ctx, m, opts)
 	}
-	pusher := NewImagePusher(r.docker)
-	return pusher.Push(ctx, m, opts)
-}
 
-// BuildBase creates a base image for dev mode (without /src copied).
-// The source directory is expected to be mounted as a volume at runtime.
-// Returns a Model with the built image info and the source config.
-//
-// NOTE: Unlike Build(), this does not use ImageBuilder because base images
-// don't have labels yet (they're added during full builds). The returned
-// ImageArtifact has no labels, no descriptor, and no inspect results.
-func (r *Resolver) BuildBase(ctx context.Context, src *Source, opts BuildBaseOptions) (*Model, error) {
-	if src == nil {
-		return nil, fmt.Errorf("source is required for BuildBase")
+	imgArtifact := m.GetImageArtifact()
+	if imgArtifact == nil {
+		return nil, fmt.Errorf("no image artifact in model")
 	}
-	if src.Config == nil {
-		return nil, fmt.Errorf("source.Config is required for BuildBase")
-	}
-	if src.ProjectDir == "" {
-		return nil, fmt.Errorf("source.ProjectDir is required for BuildBase")
-	}
-	opts = opts.WithDefaults()
 
-	img, err := r.factory.BuildBase(ctx, src, opts)
-	if err != nil {
+	var imagePushOpts []ImagePushOption
+	if opts.ImageProgressFn != nil {
+		imagePushOpts = append(imagePushOpts, WithProgressFn(opts.ImageProgressFn))
+	}
+	if opts.OnFallback != nil {
+		imagePushOpts = append(imagePushOpts, WithOnFallback(opts.OnFallback))
+	}
+	if err := r.imagePusher.Push(ctx, imgArtifact, imagePushOpts...); err != nil {
 		return nil, err
 	}
 
-	// For base builds, we don't have labels yet (they're added in full builds).
-	// Return the model with the source config and the built image.
-	return &Model{
-		Image:  img,
-		Config: src.Config,
-	}, nil
+	// Enrich the image artifact with the pushed digest. On registries
+	// that don't support HEAD on tags, fall back to the original Model
+	// rather than failing a successful push. FormatImage is the legacy
+	// single-image path; bundle pushes surface HEAD failures as errors.
+	desc, err := r.registry.GetDescriptor(ctx, imgArtifact.Reference)
+	if err != nil {
+		console.Debugf("post-push HEAD on %q failed; returning Model without digest enrichment: %v", imgArtifact.Reference, err)
+		return m, nil
+	}
+
+	enrichedImage := imgArtifact.WithDigest(repoFromReference(imgArtifact.Reference), desc)
+	out := *m
+	out.Image, out.Artifacts = replaceImageArtifact(imgArtifact, m.Artifacts, enrichedImage)
+	return &out, nil
 }
 
 // loadLocal loads a Model from the local docker daemon.
@@ -340,6 +349,7 @@ func (r *Resolver) modelFromImage(img *ImageArtifact, cfg *config.Config) (*Mode
 	}
 
 	return &Model{
+		Format:     FormatImage,
 		Image:      img,
 		Config:     cfg,
 		Schema:     schema,
@@ -413,37 +423,9 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 	if err != nil {
 		return nil, fmt.Errorf("image %s: %w", ref.Original, err)
 	}
-
-	m.Index = &Index{
-		Digest:    manifest.Digest, // Content-addressable digest from registry
-		Reference: ref.String(),
-		MediaType: manifest.MediaType,
-		Manifests: make([]IndexManifest, len(manifest.Manifests)),
-	}
-
-	// Populate index manifests
-	for i, pm := range manifest.Manifests {
-		im := IndexManifest{
-			Digest:      pm.Digest,
-			MediaType:   pm.MediaType,
-			Size:        pm.Size,
-			Annotations: pm.Annotations,
-		}
-		if pm.OS != "" {
-			im.Platform = &Platform{
-				OS:           pm.OS,
-				Architecture: pm.Architecture,
-				Variant:      pm.Variant,
-			}
-		}
-		// Determine manifest type
-		if pm.OS == PlatformUnknown && pm.Annotations != nil && pm.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
-			im.Type = ManifestTypeWeights
-		} else {
-			im.Type = ManifestTypeImage
-		}
-		m.Index.Manifests[i] = im
-	}
+	// Override the FormatImage default from ToModel — an OCI index is
+	// always a bundle, regardless of how many weight manifests it carries.
+	m.Format = FormatBundle
 
 	return m, nil
 }
@@ -451,18 +433,6 @@ func (r *Resolver) modelFromIndex(ref *ParsedRef, manifest *registry.ManifestRes
 // isOCIIndex checks if the manifest result is an OCI Image Index.
 func isOCIIndex(mr *registry.ManifestResult) bool {
 	return mr.IsIndex()
-}
-
-// findWeightsManifest finds the weights manifest in an index.
-// Returns nil if no weights manifest is found.
-func findWeightsManifest(manifests []registry.PlatformManifest) *registry.PlatformManifest {
-	for i := range manifests {
-		m := &manifests[i]
-		if m.Annotations != nil && m.Annotations[AnnotationReferenceType] == AnnotationValueWeights {
-			return m
-		}
-	}
-	return nil
 }
 
 // findImageManifest finds the model image manifest in an index.

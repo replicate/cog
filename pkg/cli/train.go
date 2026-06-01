@@ -15,6 +15,7 @@ import (
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 var (
@@ -33,9 +34,10 @@ If 'image' is passed, it will run the training on that Docker image.
 It must be an image that has been built by Cog.
 
 Otherwise, it will build the model in the current directory and train it.`,
-		RunE:   cmdTrain,
-		Args:   cobra.MaximumNArgs(1),
-		Hidden: true,
+		RunE:       cmdTrain,
+		Args:       cobra.MaximumNArgs(1),
+		Hidden:     true,
+		Deprecated: "the train command will be removed in a future version of Cog",
 	}
 
 	addBuildProgressOutputFlag(cmd)
@@ -53,7 +55,8 @@ Otherwise, it will build the model in the current directory and train it.`,
 }
 
 func cmdTrain(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
@@ -64,6 +67,9 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	volumes := []command.Volume{}
 	gpus := gpusFlag
 
+	// Managed-weight mounts only apply when we have cog.yaml in scope.
+	var wm *weights.Manager
+
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
 	if len(args) == 0 {
@@ -72,14 +78,21 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		defer src.Close()
 
-		m, err := resolver.BuildBase(ctx, src, buildBaseOptionsFromFlags(cmd))
+		if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
+			return err
+		}
+
+		console.Info("Building Docker image from environment in cog.yaml...")
+		console.Info("")
+		m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
 		if err != nil {
 			return err
 		}
 		imageName = m.ImageRef()
 
-		// Base image doesn't have /src in it, so mount as volume
+		// ExcludeSource build doesn't have /src in it, so mount as volume
 		volumes = append(volumes, command.Volume{
 			Source:      src.ProjectDir,
 			Destination: "/src",
@@ -87,6 +100,11 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 
 		if gpus == "" && m.HasGPU() {
 			gpus = "all"
+		}
+
+		wm, err = newWeightManager(src)
+		if err != nil {
+			return err
 		}
 	} else {
 		// Use existing image
@@ -108,39 +126,31 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	}
 
 	console.Info("")
-	console.Infof("Starting Docker image %s...", imageName)
+	console.Info("Starting Docker image and running setup()...")
 
-	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
-		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: volumes,
-		Env:     trainEnvFlags,
-		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	}, true, dockerClient)
+	predictor, err := predict.NewPredictor(ctx, predict.PredictorOptions{
+		RunOptions: command.RunOptions{
+			GPUs:    gpus,
+			Image:   imageName,
+			Volumes: volumes,
+			Env:     trainEnvFlags,
+			Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
+		},
+		IsTrain:       true,
+		Docker:        dockerClient,
+		WeightManager: wm,
+	})
 	if err != nil {
 		return err
 	}
-
-	go func() {
-		captureSignal := make(chan os.Signal, 1)
-		signal.Notify(captureSignal, syscall.SIGINT)
-
-		<-captureSignal
-
-		console.Info("Stopping container...")
-		if err := predictor.Stop(ctx); err != nil {
-			console.Warnf("Failed to stop container: %s", err)
-		}
-	}()
 
 	if err := predictor.Start(ctx, os.Stderr, time.Duration(setupTimeout)*time.Second); err != nil {
 		return err
 	}
 
-	// FIXME: will not run on signal
+	// Use background context to ensure stop signal is still sent after root context is canceled by signal
 	defer func() {
 		console.Debugf("Stopping container...")
-		// use background context to ensure stop signal is still sent after root context is canceled
 		if err := predictor.Stop(context.Background()); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}

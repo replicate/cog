@@ -41,14 +41,22 @@ type BuildOptions struct {
 	// DockerfileFile is a custom Dockerfile path.
 	DockerfileFile string
 
-	// WeightsLockPath is the path to weights.lock file.
-	// Default: weights.lock in project directory.
-	WeightsLockPath string
+	// ExcludeSource skips the COPY . /src step in the generated Dockerfile.
+	// Used by `cog serve` to produce an image identical to `cog build` minus
+	// the source copy — the source directory is volume-mounted at runtime.
+	// All other layers (wheel installs, apt, etc.) are shared with `cog build`
+	// via Docker layer caching.
+	ExcludeSource bool
 
-	// TODO(md): OCIIndex is a temporary gate. When true, builds produce weight
-	// artifacts and pushes create an OCI Image Index. Set via COG_OCI_INDEX=1.
-	// Remove this field once index pushes are validated with all registries.
-	OCIIndex bool
+	// SkipSchemaValidation skips OpenAPI schema generation and validation.
+	// Used by `cog exec` which executes arbitrary commands and may not have
+	// a predictor or trainer defined in cog.yaml.
+	SkipSchemaValidation bool
+
+	// SkipLabels skips adding Cog metadata labels to the built image.
+	// Used by `cog exec`, `cog predict`, `cog serve`, and `cog train` where
+	// the image is for local use only and not being distributed.
+	SkipLabels bool
 }
 
 // WithDefaults returns a copy of BuildOptions with defaults applied from Source.
@@ -64,29 +72,5 @@ func (o BuildOptions) WithDefaults(src *Source) BuildOptions {
 		o.ProgressOutput = "auto"
 	}
 
-	return o
-}
-
-// BuildBaseOptions contains settings for building a base image (dev mode).
-// Base images don't copy /src - the source is mounted as a volume at runtime.
-type BuildBaseOptions struct {
-	// UseCudaBaseImage controls CUDA base image usage: "auto", "true", or "false".
-	UseCudaBaseImage string
-
-	// UseCogBaseImage controls cog base image usage. nil means auto-detect.
-	UseCogBaseImage *bool
-
-	// ProgressOutput controls build output format: "auto", "plain", or "tty".
-	ProgressOutput string
-
-	// RequiresCog indicates whether the build requires cog to be installed.
-	RequiresCog bool
-}
-
-// WithDefaults returns a copy of BuildBaseOptions with defaults applied.
-func (o BuildBaseOptions) WithDefaults() BuildBaseOptions {
-	if o.ProgressOutput == "" {
-		o.ProgressOutput = "auto"
-	}
 	return o
 }

@@ -148,7 +148,7 @@ func TestGenerateCACertInstall(t *testing.T) {
 	mockWriteTemp := func(filename string, contents []byte) ([]string, string, error) {
 		writtenFilename = filename
 		writtenContents = contents
-		return []string{"COPY .cog/tmp/" + filename + " /tmp/" + filename}, "/tmp/" + filename, nil
+		return []string{"COPY --from=cog_build " + filename + " /tmp/" + filename}, "/tmp/" + filename, nil
 	}
 
 	result, err := GenerateCACertInstall([]byte(testCertPEM), mockWriteTemp)
@@ -159,7 +159,7 @@ func TestGenerateCACertInstall(t *testing.T) {
 	require.Contains(t, string(writtenContents), "-----BEGIN CERTIFICATE-----")
 
 	// Check the generated Dockerfile lines
-	require.Contains(t, result, "COPY .cog/tmp/"+CACertFilename)
+	require.Contains(t, result, "COPY --from=cog_build "+CACertFilename)
 	require.Contains(t, result, "update-ca-certificates")
 	require.Contains(t, result, "ENV SSL_CERT_FILE="+SystemCertBundle)
 	require.Contains(t, result, "ENV REQUESTS_CA_BUNDLE="+SystemCertBundle)

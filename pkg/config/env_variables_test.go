@@ -125,7 +125,7 @@ func TestEnvironmentConfig(t *testing.T) {
 				input := fmt.Sprintf("%s=VALUE", pattern)
 				_, err := parseAndValidateEnvironment([]string{input})
 				require.Error(t, err)
-				require.ErrorContains(t, err, fmt.Sprintf("environment variable %q is not allowed", pattern))
+				require.ErrorContains(t, err, fmt.Sprintf("environment variable %q is not allowed: reserved for internal use", pattern))
 			})
 
 			// test that prefix matches are rejected
@@ -135,7 +135,7 @@ func TestEnvironmentConfig(t *testing.T) {
 					input := fmt.Sprintf("%s=VALUE", name)
 					_, err := parseAndValidateEnvironment([]string{input})
 					require.Error(t, err)
-					require.ErrorContains(t, err, fmt.Sprintf("environment variable %q is not allowed", name))
+					require.ErrorContains(t, err, fmt.Sprintf("environment variable %q is not allowed: reserved for internal use", name))
 				})
 			}
 		}

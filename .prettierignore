@@ -1,0 +1,25 @@
+# Generated files
+docs/llms.txt
+CLAUDE.md
+
+# Build artifacts
+site/
+dist/
+.cargo-home/
+
+# Dependencies
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Go
+cog
+base-image/
+dist/go/
+
+# Rust
+target/

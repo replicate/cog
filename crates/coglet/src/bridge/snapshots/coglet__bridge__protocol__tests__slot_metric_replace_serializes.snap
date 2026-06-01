@@ -1,0 +1,10 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "metric",
+  "name": "temperature",
+  "value": 0.7,
+  "mode": "replace"
+}

@@ -1,10 +1,10 @@
 //! Input processing for cog predictors.
 //!
-//! This module handles input validation and file downloads for cog predictors.
-//! The architecture supports multiple runtime implementations, but currently
-//! only the standard cog runtime is implemented.
+//! This module handles file downloads for cog predictor inputs.
+//! Input validation is performed at the HTTP edge using the OpenAPI schema;
+//! the worker only needs to download URLPath inputs and pass them through.
 
-use std::path::Path;
+use std::collections::HashSet;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -62,66 +62,242 @@ impl Drop for PreparedInput {
 // Safety: PyObject is Send in PyO3 0.23+, we only access through Python::attach
 unsafe impl Send for PreparedInput {}
 
-/// Detected predictor runtime.
+/// Prepare input for prediction.
 ///
-/// This enum allows for future extensibility if additional runtime
-/// implementations are needed.
+/// Coerces URL strings to the appropriate cog types based on the function's
+/// type annotations: `File`-annotated params get `File.validate()` (IO-like),
+/// `Path`-annotated params get `Path.validate()` (filesystem path + download).
+/// Returns a PreparedInput that cleans up temp files on drop.
+///
+/// Input validation is handled at the HTTP edge via the OpenAPI schema —
+/// this function only handles URL->Path/File coercion and file downloads.
+///
+/// `func` is the Python predict/train callable used to introspect type annotations.
+pub fn prepare_input(
+    py: Python<'_>,
+    input: &Bound<'_, PyDict>,
+    func: &Bound<'_, PyAny>,
+) -> PyResult<PreparedInput> {
+    let fields = classify_fields(py, func)?;
+    coerce_url_strings(py, input, &fields)?;
+    let cleanup_paths = download_url_paths_into_dict(py, input)?;
+    Ok(PreparedInput::new(input.clone().unbind(), cleanup_paths))
+}
+
+/// Whether a field should be coerced as a `cog.File` or `cog.Path`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FieldKind {
+    File,
+    Path,
+}
+
+/// Result of inspecting a Python function's type annotations for File and Path fields.
 #[derive(Debug)]
-pub enum Runtime {
-    /// Standard cog runtime using ADT types for input validation.
-    Cog {
-        /// The adt.PredictorInfo object with inputs dict
-        predictor_info: PyObject,
-    },
+struct FieldClassification {
+    /// Fields typed as `cog.File` (or `list[File]`, `Optional[File]`, etc.)
+    /// These use `File.validate()` for URL coercion.
+    file_fields: HashSet<String>,
+    /// Fields typed as `cog.Path` (or `list[Path]`, `Optional[Path]`, etc.)
+    /// These use `Path.validate()` for URL coercion.
+    path_fields: HashSet<String>,
 }
 
-/// Input processor trait for runtime-specific input handling.
+/// Inspect a Python function's type annotations to find parameters typed as
+/// `cog.File` or `cog.Path` (including `list[...]`, `Optional[...]`,
+/// `... | None`, etc.).
 ///
-/// This trait allows different runtime implementations to handle input
-/// validation and file downloads in their own way.
-pub trait InputProcessor: Send + Sync {
-    /// Prepare input for prediction.
-    ///
-    /// This performs:
-    /// 1. Input validation
-    /// 2. Type coercion
-    /// 3. File downloads (for URLPath inputs)
-    ///
-    /// Returns a PreparedInput that cleans up temp files on drop.
-    fn prepare(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput>;
-}
+/// Returns a `FieldClassification` so that `coerce_url_strings` only coerces
+/// fields that are actually File- or Path-typed, leaving `str` and other types
+/// untouched.
+fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldClassification> {
+    let mut file_fields = HashSet::new();
+    let mut path_fields = HashSet::new();
 
-/// Input processor for the standard cog runtime.
-pub struct CogInputProcessor {
-    /// The adt.PredictorInfo object
-    predictor_info: PyObject,
-}
+    let cog_types = py.import("cog.types")?;
+    let cog_file_class = cog_types.getattr("File")?;
+    let cog_path_class = cog_types.getattr("Path")?;
 
-impl CogInputProcessor {
-    pub fn new(predictor_info: PyObject) -> Self {
-        Self { predictor_info }
+    // typing.get_type_hints resolves string annotations and handles forward refs
+    let typing = py.import("typing")?;
+    let get_type_hints = typing.getattr("get_type_hints")?;
+    let get_origin = typing.getattr("get_origin")?;
+    let get_args = typing.getattr("get_args")?;
+    let builtins_list = py.eval(c"list", None, None)?;
+    let union_type = typing.getattr("Union")?;
+    let types_mod = py.import("types")?;
+    let union_pipe_type = types_mod.getattr("UnionType")?;
+    let nonetype = py.eval(c"type(None)", None, None)?;
+
+    let hints = match get_type_hints.call1((func,)) {
+        Ok(h) => h,
+        Err(_) => {
+            return Ok(FieldClassification {
+                file_fields,
+                path_fields,
+            });
+        }
+    };
+
+    // Helper: returns the FieldKind if ty is File/Path or list[File]/list[Path].
+    let classify_type = |ty: &Bound<'_, PyAny>| -> PyResult<Option<FieldKind>> {
+        if ty.is(&cog_file_class) {
+            return Ok(Some(FieldKind::File));
+        }
+        if ty.is(&cog_path_class) {
+            return Ok(Some(FieldKind::Path));
+        }
+        let inner_origin = get_origin.call1((ty,))?;
+        if !inner_origin.is_none() && inner_origin.is(&builtins_list) {
+            let inner_args = get_args.call1((ty,))?;
+            if let Ok(t) = inner_args.cast::<pyo3::types::PyTuple>()
+                && !t.is_empty()
+            {
+                let inner = t.get_item(0)?;
+                if inner.is(&cog_file_class) {
+                    return Ok(Some(FieldKind::File));
+                }
+                if inner.is(&cog_path_class) {
+                    return Ok(Some(FieldKind::Path));
+                }
+            }
+        }
+        Ok(None)
+    };
+
+    let hints_dict = hints.cast::<PyDict>()?;
+    for (name, annotation) in hints_dict.iter() {
+        let name_str: String = match name.extract() {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if name_str == "return" {
+            continue;
+        }
+
+        // Direct annotation: `param: File` or `param: Path`
+        // Also covers `list[File]` / `list[Path]` via classify_type.
+        if let Some(kind) = classify_type(&annotation)? {
+            match kind {
+                FieldKind::File => {
+                    file_fields.insert(name_str);
+                }
+                FieldKind::Path => {
+                    path_fields.insert(name_str);
+                }
+            }
+            continue;
+        }
+
+        // Union annotation: Optional[File], File | None, Optional[list[File]], etc.
+        // typing.get_origin(Optional[X]) -> typing.Union
+        // typing.get_args(Optional[X])   -> (X, NoneType)
+        let origin = get_origin.call1((&annotation,))?;
+        if !origin.is_none() && (origin.is(&union_type) || origin.is(&union_pipe_type)) {
+            let args = get_args.call1((&annotation,))?;
+            if let Ok(args_tuple) = args.cast::<pyo3::types::PyTuple>() {
+                for arg in args_tuple.iter() {
+                    // Skip NoneType
+                    if arg.is_none() || arg.is(py.None().into_bound(py)) {
+                        continue;
+                    }
+                    if arg.is(&nonetype) {
+                        continue;
+                    }
+                    if let Some(kind) = classify_type(&arg)? {
+                        match kind {
+                            FieldKind::File => {
+                                file_fields.insert(name_str.clone());
+                            }
+                            FieldKind::Path => {
+                                path_fields.insert(name_str.clone());
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
+
+    if !file_fields.is_empty() || !path_fields.is_empty() {
+        tracing::debug!(
+            "Detected File-typed fields: {:?}, Path-typed fields: {:?}",
+            file_fields,
+            path_fields
+        );
+    }
+
+    Ok(FieldClassification {
+        file_fields,
+        path_fields,
+    })
 }
 
-impl InputProcessor for CogInputProcessor {
-    fn prepare(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PreparedInput> {
-        // Use cog inspector.check_input() for validation
-        let inspector = py.import("cog._inspector")?;
-        let check_input = inspector.getattr("check_input")?;
+/// Coerce URL string values in the input dict to the appropriate cog types.
+///
+/// After `json.loads()`, all values are plain Python types. URL strings
+/// (http://, https://, data:) that represent file inputs need to be converted:
+///   - `File`-typed fields -> `File.validate()` -> returns IO-like `URLFile`
+///   - `Path`-typed fields -> `Path.validate()` -> returns `URLPath` (downloaded later)
+///
+/// Only fields whose declared type is `File` or `Path` (including `list[...]`,
+/// `Optional[...]`, etc.) are coerced. Fields typed as `str` or any other type
+/// are left untouched, even if the value looks like a URL.
+///
+/// This replaces the type coercion that `_adt.py`'s `PrimitiveType.normalize()`
+/// previously performed.
+fn coerce_url_strings(
+    py: Python<'_>,
+    payload: &Bound<'_, PyDict>,
+    fields: &FieldClassification,
+) -> PyResult<()> {
+    let cog_types = py.import("cog.types")?;
+    let path_validate = cog_types.getattr("Path")?.getattr("validate")?;
+    let file_validate = cog_types.getattr("File")?.getattr("validate")?;
 
-        // Get inputs dict from predictor_info
-        let predictor_info = self.predictor_info.bind(py);
-        let inputs = predictor_info.getattr("inputs")?;
+    for (key, value) in payload.iter() {
+        let key_str: String = key.extract().unwrap_or_default();
 
-        // check_input(inputs, input_dict) -> validated kwargs dict
-        let result = check_input.call1((&inputs, input))?;
-        let result_dict = result.extract::<Bound<'_, PyDict>>()?;
+        // Only coerce fields that are declared as File or Path types.
+        // str-typed and other fields are left as-is even if values look like URLs.
+        let validate = if fields.file_fields.contains(&key_str) {
+            &file_validate
+        } else if fields.path_fields.contains(&key_str) {
+            &path_validate
+        } else {
+            continue;
+        };
 
-        // Download URLPath inputs in parallel and replace in payload
-        let cleanup_paths = download_url_paths_into_dict(py, &result_dict)?;
-
-        Ok(PreparedInput::new(result_dict.unbind(), cleanup_paths))
+        // Single string value -- check if it's a URL
+        if let Ok(s) = value.extract::<String>() {
+            if s.starts_with("http://") || s.starts_with("https://") || s.starts_with("data:") {
+                let coerced = validate.call1((&value,))?;
+                payload.set_item(&key, coerced)?;
+            }
+        }
+        // List of strings -- check if any are URLs
+        else if let Ok(list) = value.extract::<Bound<'_, pyo3::types::PyList>>() {
+            let mut any_coerced = false;
+            let new_items = pyo3::types::PyList::empty(py);
+            for item in list.iter() {
+                if let Ok(s) = item.extract::<String>()
+                    && (s.starts_with("http://")
+                        || s.starts_with("https://")
+                        || s.starts_with("data:"))
+                {
+                    let coerced = validate.call1((&item,))?;
+                    new_items.append(coerced)?;
+                    any_coerced = true;
+                    continue;
+                }
+                new_items.append(item)?;
+            }
+            if any_coerced {
+                payload.set_item(&key, new_items)?;
+            }
+        }
     }
+    Ok(())
 }
 
 /// Download URLPath inputs in parallel and replace them in the payload dict.
@@ -260,161 +436,223 @@ fn download_url_paths_into_dict(
     Ok(cleanup_paths)
 }
 
-/// Error returned when runtime detection fails.
-#[derive(Debug)]
-pub struct RuntimeDetectionError {
-    pub predictor_ref: String,
-}
-
-impl std::fmt::Display for RuntimeDetectionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Unable to detect predictor runtime for '{}'. \
-             This predictor may be incompatible with the cog runtime.",
-            self.predictor_ref
-        )
-    }
-}
-
-impl std::error::Error for RuntimeDetectionError {}
-
-/// Detect the runtime type for a loaded predictor.
-///
-/// Returns the appropriate Runtime variant based on the predictor's type system.
-/// Returns an error if the runtime cannot be determined.
-pub fn detect_runtime(
-    py: Python<'_>,
-    predictor_ref: &str,
-    _instance: &PyObject,
-) -> Result<Runtime, RuntimeDetectionError> {
-    // Try to create a PredictorInfo via cog._inspector
-    if let Some(runtime) = try_cog_runtime(py, predictor_ref) {
-        tracing::info!("Detected cog runtime");
-        return Ok(runtime);
-    }
-
-    // Cannot determine runtime
-    Err(RuntimeDetectionError {
-        predictor_ref: predictor_ref.to_string(),
-    })
-}
-
-fn parse_predictor_ref(predictor_ref: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = predictor_ref.rsplitn(2, ':').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let predictor_name = parts[0].to_string();
-    let module_path = parts[1];
-
-    let module_name = if module_path.contains('/')
-        || module_path.contains('\\')
-        || module_path.ends_with(".py")
-    {
-        let normalized_path = module_path.replace('\\', "/");
-        Path::new(&normalized_path)
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or(module_path)
-            .to_string()
-    } else {
-        module_path.to_string()
-    };
-
-    Some((module_name, predictor_name))
-}
-
-/// Try to detect cog runtime.
-fn try_cog_runtime(py: Python<'_>, predictor_ref: &str) -> Option<Runtime> {
-    let (module_name, predictor_name) = parse_predictor_ref(predictor_ref)?;
-
-    let inspector = py.import("cog._inspector").ok()?;
-    let create_predictor = inspector.getattr("create_predictor").ok()?;
-
-    let predictor_info = create_predictor.call1((module_name, predictor_name)).ok()?;
-
-    let adt_module = py.import("cog._adt").ok()?;
-    let predictor_info_class = adt_module.getattr("PredictorInfo").ok()?;
-    let is_predictor_info = predictor_info
-        .is_instance(&predictor_info_class)
-        .ok()
-        .unwrap_or(false);
-
-    if !is_predictor_info {
-        return None;
-    }
-
-    Some(Runtime::Cog {
-        predictor_info: predictor_info.unbind(),
-    })
-}
-
-/// Create an InputProcessor for the given runtime.
-pub fn create_input_processor(runtime: &Runtime) -> Box<dyn InputProcessor> {
-    match runtime {
-        Runtime::Cog { predictor_info } => {
-            Python::attach(|py| Box::new(CogInputProcessor::new(predictor_info.clone_ref(py))))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_parse_predictor_ref_valid() {
-        let (module, predictor) = parse_predictor_ref("predict.py:Predictor").unwrap();
-        assert_eq!(module, "predict");
-        assert_eq!(predictor, "Predictor");
+    /// Helper: define a Python function with the given parameter annotations and
+    /// return the `FieldClassification` from `classify_fields`.
+    fn classify_for(py_func_src: &str) -> FieldClassification {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            // Ensure cog.types is importable
+            py.run(c"import cog.types", None, None)
+                .expect("cog.types must be importable for tests");
+
+            let locals = PyDict::new(py);
+            py.run(
+                &std::ffi::CString::new(py_func_src).unwrap(),
+                None,
+                Some(&locals),
+            )
+            .expect("failed to define test function");
+
+            let func = locals.get_item("func").unwrap().unwrap();
+            classify_fields(py, &func).expect("classify_fields failed")
+        })
     }
 
     #[test]
-    fn test_parse_predictor_ref_nested_path() {
-        let (module, predictor) = parse_predictor_ref("path/to/predict.py:Predictor").unwrap();
-        assert_eq!(module, "predict");
-        assert_eq!(predictor, "Predictor");
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_direct_file() {
+        let c = classify_for("from cog import File\ndef func(a: File, b: str): ...");
+        assert!(
+            c.file_fields.contains("a"),
+            "direct File annotation not detected"
+        );
+        assert!(
+            !c.file_fields.contains("b"),
+            "str incorrectly flagged as File"
+        );
+        assert!(
+            !c.path_fields.contains("b"),
+            "str incorrectly flagged as Path"
+        );
     }
 
     #[test]
-    fn test_parse_predictor_ref_function() {
-        let (module, predictor) = parse_predictor_ref("predict.py:predict").unwrap();
-        assert_eq!(module, "predict");
-        assert_eq!(predictor, "predict");
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_list_file() {
+        let c = classify_for("from cog import File\ndef func(a: list[File]): ...");
+        assert!(
+            c.file_fields.contains("a"),
+            "list[File] annotation not detected"
+        );
     }
 
     #[test]
-    fn test_parse_predictor_ref_non_standard_name() {
-        let (module, predictor) = parse_predictor_ref("model.py:run").unwrap();
-        assert_eq!(module, "model");
-        assert_eq!(predictor, "run");
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_optional_file() {
+        let c = classify_for(
+            "from typing import Optional\nfrom cog import File\ndef func(a: Optional[File]): ...",
+        );
+        assert!(
+            c.file_fields.contains("a"),
+            "Optional[File] annotation not detected"
+        );
     }
 
     #[test]
-    fn test_parse_predictor_ref_windows_path() {
-        let (module, predictor) = parse_predictor_ref("path\\to\\predict.py:Predictor").unwrap();
-        assert_eq!(module, "predict");
-        assert_eq!(predictor, "Predictor");
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_file_union_none() {
+        let c = classify_for(
+            "from typing import Union\nfrom cog import File\ndef func(a: Union[File, None]): ...",
+        );
+        assert!(
+            c.file_fields.contains("a"),
+            "Union[File, None] annotation not detected"
+        );
     }
 
     #[test]
-    fn test_parse_predictor_ref_absolute_path() {
-        let (module, predictor) = parse_predictor_ref("/tmp/scratch/predict.py:Predictor").unwrap();
-        assert_eq!(module, "predict");
-        assert_eq!(predictor, "Predictor");
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_optional_list_file() {
+        let c = classify_for(
+            "from typing import Optional\nfrom cog import File\ndef func(a: Optional[list[File]]): ...",
+        );
+        assert!(
+            c.file_fields.contains("a"),
+            "Optional[list[File]] annotation not detected"
+        );
     }
 
     #[test]
-    fn test_parse_predictor_ref_invalid_no_colon() {
-        assert!(parse_predictor_ref("predict.py").is_none());
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_direct_path() {
+        let c = classify_for("from cog import Path\ndef func(a: Path, b: str): ...");
+        assert!(
+            c.path_fields.contains("a"),
+            "direct Path annotation not detected"
+        );
+        assert!(
+            !c.path_fields.contains("b"),
+            "str incorrectly flagged as Path"
+        );
+        assert!(
+            !c.file_fields.contains("b"),
+            "str incorrectly flagged as File"
+        );
     }
 
     #[test]
-    fn test_parse_predictor_ref_invalid_multiple_colons() {
-        // Should take the last colon as the separator
-        let (module, predictor) = parse_predictor_ref("path:to:predict.py:Predictor").unwrap();
-        assert_eq!(module, "path:to:predict");
-        assert_eq!(predictor, "Predictor");
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_pep604_file_or_none() {
+        let c = classify_for("from cog import File\ndef func(a: File | None): ...");
+        assert!(
+            c.file_fields.contains("a"),
+            "File | None annotation not detected"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_pep604_list_file_or_none() {
+        let c = classify_for("from cog import File\ndef func(a: list[File] | None): ...");
+        assert!(
+            c.file_fields.contains("a"),
+            "list[File] | None annotation not detected"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_pep604_path_or_none() {
+        let c = classify_for("from cog import Path\ndef func(a: Path | None): ...");
+        assert!(
+            c.path_fields.contains("a"),
+            "Path | None annotation not detected as Path"
+        );
+        assert!(
+            !c.file_fields.contains("a"),
+            "Path | None incorrectly detected as File"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_pep604_list_path_or_none() {
+        let c = classify_for("from cog import Path\ndef func(a: list[Path] | None): ...");
+        assert!(
+            c.path_fields.contains("a"),
+            "list[Path] | None annotation not detected as Path"
+        );
+        assert!(
+            !c.file_fields.contains("a"),
+            "list[Path] | None incorrectly detected as File"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_list_path() {
+        let c = classify_for("from cog import Path\ndef func(a: list[Path]): ...");
+        assert!(
+            c.path_fields.contains("a"),
+            "list[Path] annotation not detected"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn detect_optional_path() {
+        let c = classify_for(
+            "from typing import Optional\nfrom cog import Path\ndef func(a: Optional[Path]): ...",
+        );
+        assert!(
+            c.path_fields.contains("a"),
+            "Optional[Path] annotation not detected"
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn non_file_or_path_types_not_detected() {
+        let c = classify_for(
+            "from typing import Optional\ndef func(a: str, b: int, c: Optional[str]): ...",
+        );
+        assert!(
+            c.file_fields.is_empty(),
+            "non-File types incorrectly detected as file: {:?}",
+            c.file_fields
+        );
+        assert!(
+            c.path_fields.is_empty(),
+            "non-Path types incorrectly detected as path: {:?}",
+            c.path_fields
+        );
+    }
+
+    #[test]
+    #[ignore] // Requires cog Python package in PYTHONPATH
+    fn str_url_input_not_coerced() {
+        let c = classify_for(
+            "from cog import File, Path\ndef func(a: str, b: File, c: Path, d: list[str]): ...",
+        );
+        assert!(
+            !c.file_fields.contains("a") && !c.path_fields.contains("a"),
+            "str field 'a' should not be classified as File or Path"
+        );
+        assert!(
+            c.file_fields.contains("b"),
+            "File field 'b' should be classified"
+        );
+        assert!(
+            c.path_fields.contains("c"),
+            "Path field 'c' should be classified"
+        );
+        assert!(
+            !c.file_fields.contains("d") && !c.path_fields.contains("d"),
+            "list[str] field 'd' should not be classified as File or Path"
+        );
     }
 }

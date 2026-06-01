@@ -1,12 +1,17 @@
 //! HTTP route handlers.
 
+use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     Router,
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Json},
+    response::{
+        IntoResponse, Json, Response,
+        sse::{Event, KeepAlive, Sse},
+    },
     routing::{get, post, put},
 };
 use serde::{Deserialize, Serialize};
@@ -14,9 +19,12 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use crate::health::Health;
 use crate::health::{HealthResponse, SetupResult};
-use crate::prediction::PredictionStatus;
+use crate::prediction::SharedPredictionStreamEvent;
 use crate::predictor::PredictionError;
-use crate::service::{CreatePredictionError, HealthSnapshot, PredictionService};
+use crate::service::{
+    CreatePredictionError, HealthSnapshot, PredictionService, PredictionStreamSubscription,
+    SubscribePredictionStreamError,
+};
 use crate::version::VersionInfo;
 use crate::webhook::{TraceContext, WebhookConfig, WebhookEventType, WebhookSender};
 
@@ -58,6 +66,9 @@ pub struct PredictionRequest {
         deserialize_with = "deserialize_input"
     )]
     pub input: serde_json::Value,
+    /// Per-prediction context made available to predictors via `current_scope().context`.
+    #[serde(default)]
+    pub context: std::collections::HashMap<String, String>,
     pub webhook: Option<String>,
     #[serde(default = "default_webhook_events_filter")]
     pub webhook_events_filter: Vec<WebhookEventType>,
@@ -99,27 +110,81 @@ fn generate_prediction_id() -> String {
     format!("pred_{:x}", timestamp)
 }
 
-async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
-    let snapshot = service.health().await;
+/// Root discovery endpoint — returns a map of available API endpoints.
+///
+/// Restores the `GET /` endpoint from cog <= 0.16.x for service discovery.
+/// `cog_version` reports the Python SDK version when available (matching the
+/// old Python server behaviour), falling back to the coglet runtime version.
+async fn root(State(service): State<Arc<PredictionService>>) -> Json<serde_json::Value> {
+    let version = service.version();
+    let cog_version = version.python_sdk.as_deref().unwrap_or(version.coglet);
+    let mut doc = serde_json::json!({
+        "cog_version": cog_version,
+        "docs_url": "/docs",
+        "openapi_url": "/openapi.json",
+        "shutdown_url": "/shutdown",
+        "healthcheck_url": "/health-check",
+        "predictions_url": "/predictions",
+        "predictions_idempotent_url": "/predictions/{prediction_id}",
+        "predictions_cancel_url": "/predictions/{prediction_id}/cancel",
+    });
 
-    // Run user healthcheck if ready and not busy
-    let user_healthcheck_error = if snapshot.is_ready() && !snapshot.is_busy() {
+    if service.supports_training().await {
+        let obj = doc.as_object_mut().expect("doc is an object");
+        obj.insert("trainings_url".to_string(), serde_json::json!("/trainings"));
+        obj.insert(
+            "trainings_idempotent_url".to_string(),
+            serde_json::json!("/trainings/{training_id}"),
+        );
+        obj.insert(
+            "trainings_cancel_url".to_string(),
+            serde_json::json!("/trainings/{training_id}/cancel"),
+        );
+    }
+
+    Json(doc)
+}
+
+async fn health_check(State(service): State<Arc<PredictionService>>) -> Json<HealthCheckResponse> {
+    tracing::trace!("Health check endpoint called");
+    let snapshot = service.health().await;
+    tracing::trace!(
+        state = ?snapshot.state,
+        available_slots = snapshot.available_slots,
+        total_slots = snapshot.total_slots,
+        has_setup_result = snapshot.setup_result.is_some(),
+        "Health snapshot retrieved"
+    );
+
+    // Run user healthcheck if ready (even when busy — healthcheck health
+    // and slot availability are orthogonal concerns).
+    let user_healthcheck_error = if snapshot.is_ready() {
         write_readiness_file();
 
         // Run user-defined healthcheck
+        tracing::trace!("Running user-defined healthcheck");
         match service.healthcheck().await {
-            Ok(result) if result.is_healthy() => None,
-            Ok(result) => result.error,
-            Err(e) => Some(format!("Healthcheck error: {}", e)),
+            Ok(result) if result.is_healthy() => {
+                tracing::trace!("User healthcheck passed");
+                None
+            }
+            Ok(result) => {
+                tracing::debug!(error = ?result.error, "User healthcheck reported unhealthy");
+                result.error
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "User healthcheck returned error");
+                Some(format!("Healthcheck error: {}", e))
+            }
         }
     } else {
+        tracing::trace!(state = ?snapshot.state, "Skipping user healthcheck (not ready)");
         None
     };
 
-    Json(HealthCheckResponse::from_snapshot(
-        snapshot,
-        user_healthcheck_error,
-    ))
+    let response = HealthCheckResponse::from_snapshot(snapshot, user_healthcheck_error);
+    tracing::trace!(status = ?response.status, "Health check response");
+    Json(response)
 }
 
 /// Write /var/run/cog/ready for K8s readiness probe.
@@ -153,6 +218,63 @@ fn should_respond_async(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PredictionResponseMode {
+    SyncJson,
+    AsyncJson,
+    AsyncSse,
+}
+
+fn wants_sse(headers: &HeaderMap) -> bool {
+    headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(|accept| {
+            accept
+                .split(',')
+                .any(|part| part.trim().split(';').next() == Some("text/event-stream"))
+        })
+        .unwrap_or(false)
+}
+
+fn prediction_response_mode(headers: &HeaderMap) -> PredictionResponseMode {
+    if wants_sse(headers) {
+        PredictionResponseMode::AsyncSse
+    } else if should_respond_async(headers) {
+        PredictionResponseMode::AsyncJson
+    } else {
+        PredictionResponseMode::SyncJson
+    }
+}
+
+fn streaming_not_supported_response() -> Response {
+    (
+        StatusCode::NOT_ACCEPTABLE,
+        Json(serde_json::json!({
+            "error": "This model does not support streaming responses. Add @cog.streaming to predict() to enable SSE."
+        })),
+    )
+        .into_response()
+}
+
+fn training_streaming_not_supported_response() -> Response {
+    (
+        StatusCode::NOT_ACCEPTABLE,
+        Json(serde_json::json!({
+            "error": "Training endpoints do not support streaming responses."
+        })),
+    )
+        .into_response()
+}
+
+fn json_response_mode(headers: &HeaderMap) -> PredictionResponseMode {
+    if should_respond_async(headers) {
+        PredictionResponseMode::AsyncJson
+    } else {
+        PredictionResponseMode::SyncJson
+    }
+}
+
 fn extract_trace_context(headers: &HeaderMap) -> TraceContext {
     TraceContext {
         traceparent: headers
@@ -170,24 +292,27 @@ async fn create_prediction(
     State(service): State<Arc<PredictionService>>,
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
-) -> impl IntoResponse {
+) -> Response {
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
+        context: Default::default(),
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
     let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
-    let respond_async = should_respond_async(&headers);
+    let response_mode = prediction_response_mode(&headers);
     let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
         service,
         prediction_id,
         request.input,
+        request.context,
         request.webhook,
         request.webhook_events_filter,
-        respond_async,
+        response_mode,
         trace_context,
+        false,
     )
     .await
 }
@@ -197,10 +322,11 @@ async fn create_prediction_idempotent(
     Path(prediction_id): Path<String>,
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
-) -> impl IntoResponse {
+) -> Response {
     let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
         id: None,
         input: serde_json::json!({}),
+        context: Default::default(),
         webhook: None,
         webhook_events_filter: default_webhook_events_filter(),
     });
@@ -217,25 +343,34 @@ async fn create_prediction_idempotent(
                     "type": "value_error"
                 }]
             })),
-        );
+        )
+            .into_response();
     }
+
+    let response_mode = prediction_response_mode(&headers);
 
     // Check if prediction with this ID is already in-flight
-    let supervisor = service.supervisor();
-    if let Some(state) = supervisor.get_state(&prediction_id) {
-        return (StatusCode::ACCEPTED, Json(state.to_response()));
+    if let Some(response) = service.get_prediction_response(&prediction_id) {
+        if response_mode == PredictionResponseMode::AsyncSse {
+            if !service.supports_prediction_streaming().await {
+                return streaming_not_supported_response();
+            }
+            return stream_prediction_response(service, &prediction_id);
+        }
+        return (StatusCode::ACCEPTED, Json(response)).into_response();
     }
 
-    let respond_async = should_respond_async(&headers);
     let trace_context = extract_trace_context(&headers);
     create_prediction_with_id(
         service,
         prediction_id,
         request.input,
+        request.context,
         request.webhook,
         request.webhook_events_filter,
-        respond_async,
+        response_mode,
         trace_context,
+        false,
     )
     .await
 }
@@ -264,99 +399,129 @@ fn build_webhook_sender(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn create_prediction_with_id(
     service: Arc<PredictionService>,
     prediction_id: String,
-    input: serde_json::Value,
+    mut input: serde_json::Value,
+    context: std::collections::HashMap<String, String>,
     webhook: Option<String>,
     webhook_events_filter: Vec<WebhookEventType>,
-    respond_async: bool,
+    response_mode: PredictionResponseMode,
     trace_context: TraceContext,
-) -> (StatusCode, Json<serde_json::Value>) {
+    is_training: bool,
+) -> Response {
+    if !is_training
+        && response_mode == PredictionResponseMode::AsyncSse
+        && !service.supports_prediction_streaming().await
+    {
+        return streaming_not_supported_response();
+    }
+
+    // Strip unknown fields and validate in one pass. Unknown inputs are
+    // silently dropped to match Replicate's historical API behavior.
+    let (stripped, validation_result) = if is_training {
+        service.strip_and_validate_train_input(&mut input).await
+    } else {
+        service.strip_and_validate_input(&mut input).await
+    };
+    if !stripped.is_empty() {
+        tracing::warn!(
+            prediction_id = %prediction_id,
+            fields = ?stripped,
+            "Stripped unknown input fields"
+        );
+    }
+    if let Err(errors) = validation_result {
+        let detail: Vec<serde_json::Value> = errors
+            .into_iter()
+            .map(|e| {
+                serde_json::json!({
+                    "loc": ["body", "input", e.field],
+                    "msg": e.msg,
+                    "type": e.error_type
+                })
+            })
+            .collect();
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({ "detail": detail })),
+        )
+            .into_response();
+    }
+
     let webhook_sender = build_webhook_sender(
         webhook.clone(),
         webhook_events_filter.clone(),
         trace_context.clone(),
     );
 
-    // Submit to supervisor (tracks lifecycle, owns webhook)
-    let supervisor = service.supervisor();
-    let handle = supervisor.submit(prediction_id.clone(), input.clone(), webhook_sender);
-
-    // Try to create prediction slot (acquires permit, checks health)
-    let mut slot = match service.create_prediction(prediction_id.clone(), None).await {
-        Ok(p) => p,
+    // Submit prediction: creates Prediction, acquires slot, registers in service
+    let (handle, unregistered_slot) = match service
+        .submit_prediction(
+            prediction_id.clone(),
+            input.clone(),
+            webhook_sender,
+            response_mode == PredictionResponseMode::AsyncSse,
+        )
+        .await
+    {
+        Ok(r) => r,
         Err(CreatePredictionError::NotReady) => {
-            supervisor.update_status(
-                &prediction_id,
-                PredictionStatus::Failed,
-                None,
-                Some("Predictor not ready".to_string()),
-            );
+            let msg = PredictionError::NotReady.to_string();
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
-                    "error": "Predictor not ready",
+                    "error": msg,
                     "status": "failed"
                 })),
-            );
+            )
+                .into_response();
         }
         Err(CreatePredictionError::AtCapacity) => {
-            supervisor.update_status(
-                &prediction_id,
-                PredictionStatus::Failed,
-                None,
-                Some("At capacity".to_string()),
-            );
             return (
                 StatusCode::CONFLICT,
                 Json(serde_json::json!({
                     "error": "At capacity - all prediction slots busy",
                     "status": "failed"
                 })),
-            );
+            )
+                .into_response();
         }
     };
 
-    supervisor.update_status(&prediction_id, PredictionStatus::Processing, None, None);
+    let prediction = unregistered_slot.prediction();
 
     // Async mode: spawn background task, return immediately
-    if respond_async {
-        let service_clone = Arc::clone(&service);
-        let supervisor_clone = Arc::clone(supervisor);
-        let id_for_cleanup = prediction_id.clone();
-        tokio::spawn(async move {
-            let result = service_clone.predict(&mut slot, input).await;
-
-            match result {
-                Ok(r) => {
-                    supervisor_clone.update_status(
-                        &id_for_cleanup,
-                        PredictionStatus::Succeeded,
-                        Some(serde_json::json!(r.output)),
-                        None,
-                    );
-                }
-                Err(PredictionError::Cancelled) => {
-                    supervisor_clone.update_status(
-                        &id_for_cleanup,
-                        PredictionStatus::Canceled,
-                        None,
-                        None,
-                    );
-                }
-                Err(e) => {
-                    supervisor_clone.update_status(
-                        &id_for_cleanup,
-                        PredictionStatus::Failed,
-                        None,
-                        Some(e.to_string()),
-                    );
+    if response_mode != PredictionResponseMode::SyncJson {
+        let sse_subscription = if response_mode == PredictionResponseMode::AsyncSse {
+            match service.subscribe_prediction_stream(&prediction_id) {
+                Ok(subscription) => Some(subscription),
+                Err(error) => {
+                    service.remove_prediction(&prediction_id);
+                    return stream_subscription_error_response(error);
                 }
             }
+        } else {
+            None
+        };
 
-            service_clone.unregister_prediction(&id_for_cleanup);
+        let service_clone = Arc::clone(&service);
+        let id_for_cleanup = prediction_id.clone();
+        let context_async = context.clone();
+        tokio::spawn(async move {
+            let _result = service_clone
+                .predict(unregistered_slot, input, context_async)
+                .await;
+            // Prediction state is already updated by predict() internally
+            // (set_succeeded/set_failed/set_canceled fire webhooks automatically)
+            service_clone.remove_prediction(&id_for_cleanup);
         });
+
+        if response_mode == PredictionResponseMode::AsyncSse {
+            let subscription = sse_subscription.expect("SSE subscription requested");
+            return stream_prediction_subscription_response(subscription);
+        }
 
         return (
             StatusCode::ACCEPTED,
@@ -364,92 +529,130 @@ async fn create_prediction_with_id(
                 "id": prediction_id,
                 "status": "starting"
             })),
-        );
+        )
+            .into_response();
     }
 
-    // Sync mode: use sync guard for connection-drop cancellation
-    let mut sync_guard = handle.sync_guard();
+    // Sync mode: spawn prediction into a background task so the slot lifetime
+    // is NOT tied to the HTTP connection. If the client disconnects, the
+    // SyncPredictionGuard fires cancel, but the slot/permit stays alive in the
+    // spawned task until the worker acknowledges the cancel.
+    let mut sync_guard = handle.sync_guard(Arc::clone(&service));
 
-    let result = service.predict(&mut slot, input).await;
-    let predict_time = slot.elapsed().as_secs_f64();
+    let service_bg = Arc::clone(&service);
+    let id_bg = prediction_id.clone();
+    let result_rx = {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let result = service_bg.predict(unregistered_slot, input, context).await;
+            // Prediction state is already updated by predict() internally
+            service_bg.remove_prediction(&id_bg);
+            let _ = tx.send(result);
+        });
+        rx
+    };
 
-    // Disarm guard - prediction completed normally
+    // Wait for the prediction to complete. If the connection drops, axum
+    // cancels this future, dropping sync_guard which fires cancel.
+    let result = match result_rx.await {
+        Ok(r) => r,
+        Err(_) => {
+            // Background task panicked or was cancelled
+            Err(PredictionError::Failed("prediction task lost".to_string()))
+        }
+    };
+
+    // Extract predict_time and user metrics from the Prediction mutex.
+    // User metrics are read here so they are available for all response paths
+    // (success, failure, and cancellation), not just the success path.
+    let (predict_time, user_metrics) = prediction
+        .try_lock()
+        .map(|p| (p.elapsed().as_secs_f64(), p.metrics().clone()))
+        .unwrap_or_default();
+
+    // Disarm guard - prediction completed normally (connection still alive)
     sync_guard.disarm();
 
-    match &result {
-        Ok(r) => {
-            supervisor.update_status(
-                &prediction_id,
-                PredictionStatus::Succeeded,
-                Some(serde_json::json!(r.output)),
-                None,
-            );
+    // Build metrics object: user metrics + predict_time
+    let build_metrics = |user_metrics: &std::collections::HashMap<String, serde_json::Value>| {
+        let mut m = serde_json::Map::new();
+        for (k, v) in user_metrics {
+            m.insert(k.clone(), v.clone());
         }
-        Err(PredictionError::Cancelled) => {
-            supervisor.update_status(&prediction_id, PredictionStatus::Canceled, None, None);
-        }
-        Err(e) => {
-            supervisor.update_status(
-                &prediction_id,
-                PredictionStatus::Failed,
-                None,
-                Some(e.to_string()),
-            );
-        }
-    }
-
-    service.unregister_prediction(&prediction_id);
+        m.insert("predict_time".to_string(), serde_json::json!(predict_time));
+        serde_json::Value::Object(m)
+    };
 
     match result {
-        Ok(r) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": prediction_id,
-                "output": r.output,
-                "logs": r.logs,
-                "status": "succeeded",
-                "metrics": { "predict_time": predict_time }
-            })),
-        ),
-        Err(PredictionError::InvalidInput(msg)) => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(serde_json::json!({
-                "id": prediction_id,
-                "error": msg,
-                "logs": "",
-                "status": "failed",
-                "metrics": { "predict_time": predict_time }
-            })),
-        ),
-        Err(PredictionError::NotReady) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "id": prediction_id,
-                "error": "Predictor not ready",
-                "logs": "",
-                "status": "failed"
-            })),
-        ),
-        Err(PredictionError::Failed(msg)) => (
-            // 200 for parity with Python - prediction failure is data, not HTTP error
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": prediction_id,
-                "error": msg,
-                "logs": "",
-                "status": "failed",
-                "metrics": { "predict_time": predict_time }
-            })),
-        ),
-        Err(PredictionError::Cancelled) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "id": prediction_id,
-                "logs": "",
-                "status": "canceled",
-                "metrics": { "predict_time": predict_time }
-            })),
-        ),
+        Ok(r) => {
+            let metrics = build_metrics(&r.metrics);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "id": prediction_id,
+                    "output": r.output,
+                    "logs": r.logs,
+                    "status": "succeeded",
+                    "metrics": metrics
+                })),
+            )
+                .into_response()
+        }
+        Err(PredictionError::InvalidInput(msg)) => {
+            let metrics = build_metrics(&user_metrics);
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(serde_json::json!({
+                    "id": prediction_id,
+                    "error": msg,
+                    "logs": "",
+                    "status": "failed",
+                    "metrics": metrics
+                })),
+            )
+                .into_response()
+        }
+        Err(PredictionError::NotReady) => {
+            let msg = PredictionError::NotReady.to_string();
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "id": prediction_id,
+                    "error": msg,
+                    "logs": "",
+                    "status": "failed"
+                })),
+            )
+                .into_response()
+        }
+        Err(PredictionError::Failed(msg)) => {
+            let metrics = build_metrics(&user_metrics);
+            (
+                // 200 for parity with Python - prediction failure is data, not HTTP error
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "id": prediction_id,
+                    "error": msg,
+                    "logs": "",
+                    "status": "failed",
+                    "metrics": metrics
+                })),
+            )
+                .into_response()
+        }
+        Err(PredictionError::Cancelled) => {
+            let metrics = build_metrics(&user_metrics);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "id": prediction_id,
+                    "logs": "",
+                    "status": "canceled",
+                    "metrics": metrics
+                })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -464,6 +667,123 @@ async fn cancel_prediction(
     } else {
         (StatusCode::NOT_FOUND, Json(serde_json::json!({})))
     }
+}
+
+fn stream_event_to_sse(event: SharedPredictionStreamEvent) -> Event {
+    Event::default()
+        .event(event.event_name())
+        .json_data(event.json_data())
+        .expect("prediction stream events serialize to JSON")
+}
+
+fn prediction_sse_stream(
+    subscription: PredictionStreamSubscription,
+) -> impl futures::Stream<Item = Result<Event, Infallible>> {
+    let (replay, replay_skipped, receiver, guard) = subscription.into_parts();
+
+    struct StreamState {
+        replay: std::collections::VecDeque<SharedPredictionStreamEvent>,
+        replay_skipped: u64,
+        // Drop order matters: receiver must drop before guard so stream_receiver_count()
+        // reaches zero before the guard decides whether to cancel on disconnect.
+        receiver: tokio::sync::broadcast::Receiver<SharedPredictionStreamEvent>,
+        _guard: crate::service::PredictionStreamGuard,
+        done: bool,
+    }
+
+    futures::stream::unfold(
+        StreamState {
+            replay,
+            replay_skipped,
+            receiver,
+            _guard: guard,
+            done: false,
+        },
+        |mut state| async move {
+            if state.done {
+                return None;
+            }
+
+            if state.replay_skipped > 0 {
+                let skipped = state.replay_skipped;
+                state.replay_skipped = 0;
+                state.done = true;
+                let event = Event::default()
+                    .event("error")
+                    .json_data(serde_json::json!({
+                        "error": "SSE stream replay truncated; events were dropped",
+                        "skipped": skipped,
+                    }))
+                    .expect("SSE replay truncation error serializes to JSON");
+                return Some((Ok(event), state));
+            }
+
+            if let Some(event) = state.replay.pop_front() {
+                state.done = event.event_name() == "completed";
+                return Some((Ok(stream_event_to_sse(event)), state));
+            }
+
+            match state.receiver.recv().await {
+                Ok(event) => {
+                    state.done = event.event_name() == "completed";
+                    Some((Ok(stream_event_to_sse(event)), state))
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(skipped, "SSE prediction stream receiver lagged");
+                    state.done = true;
+                    // In the future, this could become backpressure or cursor-based replay.
+                    let event = Event::default()
+                        .event("error")
+                        .json_data(serde_json::json!({
+                            "error": "SSE stream lagged; events were dropped",
+                            "skipped": skipped,
+                        }))
+                        .expect("SSE lag error serializes to JSON");
+                    Some((Ok(event), state))
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
+            }
+        },
+    )
+}
+
+fn stream_prediction_response(service: Arc<PredictionService>, prediction_id: &str) -> Response {
+    let subscription = match service.subscribe_prediction_stream(prediction_id) {
+        Ok(subscription) => subscription,
+        Err(error) => return stream_subscription_error_response(error),
+    };
+
+    stream_prediction_subscription_response(subscription)
+}
+
+fn stream_subscription_error_response(error: SubscribePredictionStreamError) -> Response {
+    match error {
+        SubscribePredictionStreamError::NotFound => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Prediction not found"})),
+        )
+            .into_response(),
+        SubscribePredictionStreamError::TooManySubscribers => (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({"error": "Too many stream subscribers"})),
+        )
+            .into_response(),
+        SubscribePredictionStreamError::Unavailable => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Prediction stream unavailable"})),
+        )
+            .into_response(),
+    }
+}
+
+fn stream_prediction_subscription_response(subscription: PredictionStreamSubscription) -> Response {
+    Sse::new(prediction_sse_stream(subscription))
+        .keep_alive(
+            KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("keep-alive"),
+        )
+        .into_response()
 }
 
 async fn shutdown(State(service): State<Arc<PredictionService>>) -> impl IntoResponse {
@@ -484,15 +804,40 @@ async fn openapi_schema(State(service): State<Arc<PredictionService>>) -> impl I
     }
 }
 
-// Training routes - bug-for-bug compatibility with cog mainline
-// In cog, training routes actually call predict(), not train()
+// Training routes — same dispatch as predictions but validated against
+// TrainingInput schema instead of Input.
 
 async fn create_training(
     State(service): State<Arc<PredictionService>>,
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
-) -> impl IntoResponse {
-    create_prediction(State(service), headers, body).await
+) -> Response {
+    if wants_sse(&headers) {
+        return training_streaming_not_supported_response();
+    }
+
+    let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
+        id: None,
+        input: serde_json::json!({}),
+        context: Default::default(),
+        webhook: None,
+        webhook_events_filter: default_webhook_events_filter(),
+    });
+    let prediction_id = request.id.unwrap_or_else(generate_prediction_id);
+    let response_mode = json_response_mode(&headers);
+    let trace_context = extract_trace_context(&headers);
+    create_prediction_with_id(
+        service,
+        prediction_id,
+        request.input,
+        request.context,
+        request.webhook,
+        request.webhook_events_filter,
+        response_mode,
+        trace_context,
+        true,
+    )
+    .await
 }
 
 async fn create_training_idempotent(
@@ -500,8 +845,54 @@ async fn create_training_idempotent(
     Path(training_id): Path<String>,
     headers: HeaderMap,
     body: Option<Json<PredictionRequest>>,
-) -> impl IntoResponse {
-    create_prediction_idempotent(State(service), Path(training_id), headers, body).await
+) -> Response {
+    if wants_sse(&headers) {
+        return training_streaming_not_supported_response();
+    }
+
+    let request = body.map(|Json(r)| r).unwrap_or_else(|| PredictionRequest {
+        id: None,
+        input: serde_json::json!({}),
+        context: Default::default(),
+        webhook: None,
+        webhook_events_filter: default_webhook_events_filter(),
+    });
+
+    if let Some(ref req_id) = request.id
+        && req_id != &training_id
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({
+                "detail": [{
+                    "loc": ["body", "id"],
+                    "msg": "training ID must match the ID supplied in the URL",
+                    "type": "value_error"
+                }]
+            })),
+        )
+            .into_response();
+    }
+
+    // Idempotent: return existing state if already submitted
+    if let Some(response) = service.get_prediction_response(&training_id) {
+        return (StatusCode::ACCEPTED, Json(response)).into_response();
+    }
+
+    let response_mode = json_response_mode(&headers);
+    let trace_context = extract_trace_context(&headers);
+    create_prediction_with_id(
+        service,
+        training_id,
+        request.input,
+        request.context,
+        request.webhook,
+        request.webhook_events_filter,
+        response_mode,
+        trace_context,
+        true,
+    )
+    .await
 }
 
 async fn cancel_training(
@@ -511,8 +902,16 @@ async fn cancel_training(
     cancel_prediction(State(service), Path(training_id)).await
 }
 
+/// Maximum HTTP request body size (100 MiB).
+///
+/// Axum defaults to 2 MiB which is too small for models that accept large
+/// inline inputs (e.g. base64-encoded images).  Inputs that exceed the IPC
+/// frame limit are automatically spilled to disk by `build_slot_request`.
+const MAX_HTTP_BODY_SIZE: usize = 100 * 1024 * 1024;
+
 pub fn routes(service: Arc<PredictionService>) -> Router {
     Router::new()
+        .route("/", get(root))
         .route("/health-check", get(health_check))
         .route("/openapi.json", get(openapi_schema))
         .route("/shutdown", post(shutdown))
@@ -522,6 +921,7 @@ pub fn routes(service: Arc<PredictionService>) -> Router {
         .route("/trainings", post(create_training))
         .route("/trainings/{id}", put(create_training_idempotent))
         .route("/trainings/{id}/cancel", post(cancel_training))
+        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_SIZE))
         .with_state(service)
 }
 
@@ -589,7 +989,12 @@ mod tests {
 
         let json = response_json(response).await;
         assert_eq!(json["status"], "failed");
-        assert!(json["error"].as_str().unwrap().contains("not ready"));
+        assert!(
+            json["error"]
+                .as_str()
+                .unwrap()
+                .contains("Setup has not finished yet")
+        );
     }
 
     #[tokio::test]
@@ -669,12 +1074,20 @@ mod tests {
             &self,
             _slot_id: SlotId,
             prediction: Arc<StdMutex<crate::prediction::Prediction>>,
+            _idle_sender: tokio::sync::oneshot::Sender<crate::permit::SlotIdleToken>,
         ) {
             self.register_count.fetch_add(1, Ordering::SeqCst);
             if self.complete_immediately {
                 let mut pred = prediction.lock().unwrap();
                 pred.set_succeeded(PredictionOutput::Single(serde_json::json!("mock output")));
             }
+        }
+
+        async fn cancel_by_prediction_id(
+            &self,
+            _prediction_id: &str,
+        ) -> Result<(), crate::orchestrator::OrchestratorError> {
+            Ok(())
         }
 
         async fn healthcheck(
@@ -720,6 +1133,15 @@ mod tests {
         service.set_orchestrator(pool, orchestrator).await;
         service.set_health(Health::Ready).await;
         service
+    }
+
+    async fn enable_prediction_streaming(service: &PredictionService) {
+        service
+            .set_schema(serde_json::json!({
+                "paths": {"/predictions": {"post": {"x-cog-streaming": true}}},
+                "components": {"schemas": {"Input": {"type": "object", "properties": {}}}}
+            }))
+            .await;
     }
 
     #[tokio::test]
@@ -778,6 +1200,315 @@ mod tests {
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let json = response_json(response).await;
         assert_eq!(json["status"], "starting");
+    }
+
+    #[tokio::test]
+    async fn prediction_post_with_sse_accept_returns_sse() {
+        let service = create_ready_service().await;
+        enable_prediction_streaming(&service).await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response.headers().get("content-type").unwrap();
+        assert!(
+            content_type
+                .to_str()
+                .unwrap()
+                .starts_with("text/event-stream"),
+            "unexpected content-type: {:?}",
+            content_type
+        );
+
+        let body = response.into_body();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        let sse = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(sse.contains("event: completed"), "SSE body: {sse}");
+        assert!(sse.contains(r#""status":"succeeded""#), "SSE body: {sse}");
+    }
+
+    #[tokio::test]
+    async fn prediction_post_with_sse_accept_rejects_when_not_opted_in() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/predictions")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+        let json = response_json(response).await;
+        assert_eq!(
+            json["error"],
+            "This model does not support streaming responses. Add @cog.streaming to predict() to enable SSE."
+        );
+    }
+
+    #[tokio::test]
+    async fn lagged_prediction_sse_stream_emits_error_and_closes() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        let (_handle, slot) = service
+            .submit_prediction(
+                "lagged-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let subscription = service
+            .subscribe_prediction_stream("lagged-stream")
+            .unwrap();
+
+        {
+            let prediction = slot.prediction();
+            let mut prediction = prediction.lock().unwrap();
+            for index in 0..1030 {
+                prediction.append_output_chunk(serde_json::json!(index), index);
+            }
+        }
+
+        let response = Sse::new(prediction_sse_stream(subscription)).into_response();
+        let collected =
+            tokio::time::timeout(Duration::from_millis(100), response.into_body().collect())
+                .await
+                .expect("lagged SSE stream should close after emitting an error")
+                .unwrap();
+        let sse = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+        assert!(sse.contains("event: error"), "SSE body: {sse}");
+        assert!(sse.contains("SSE stream lagged"), "SSE body: {sse}");
+        assert!(sse.contains("skipped"), "SSE body: {sse}");
+    }
+
+    #[tokio::test]
+    async fn truncated_replay_prediction_sse_stream_emits_error_and_closes() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        let (_handle, slot) = service
+            .submit_prediction(
+                "truncated-replay".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+
+        {
+            let prediction = slot.prediction();
+            let mut prediction = prediction.lock().unwrap();
+            for index in 0..1030 {
+                prediction.append_output_chunk(serde_json::json!(index), index);
+            }
+        }
+
+        let subscription = service
+            .subscribe_prediction_stream("truncated-replay")
+            .unwrap();
+        let response = Sse::new(prediction_sse_stream(subscription)).into_response();
+        let collected =
+            tokio::time::timeout(Duration::from_millis(100), response.into_body().collect())
+                .await
+                .expect("truncated replay SSE stream should close after emitting an error")
+                .unwrap();
+        let sse = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+        assert!(sse.contains("event: error"), "SSE body: {sse}");
+        assert!(
+            sse.contains("SSE stream replay truncated"),
+            "SSE body: {sse}"
+        );
+        assert!(sse.contains("skipped"), "SSE body: {sse}");
+    }
+
+    #[tokio::test]
+    async fn failed_prediction_sse_stream_emits_completed_event() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        let (_handle, slot) = service
+            .submit_prediction(
+                "failed-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let subscription = service
+            .subscribe_prediction_stream("failed-stream")
+            .unwrap();
+
+        {
+            let prediction = slot.prediction();
+            let mut prediction = prediction.lock().unwrap();
+            prediction.set_processing();
+            prediction.set_failed("boom".to_string());
+        }
+
+        let response = Sse::new(prediction_sse_stream(subscription)).into_response();
+        let collected = response.into_body().collect().await.unwrap();
+        let sse = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+        assert!(sse.contains("event: completed"), "SSE body: {sse}");
+        assert!(sse.contains(r#""status":"failed""#), "SSE body: {sse}");
+        assert!(sse.contains(r#""error":"boom""#), "SSE body: {sse}");
+    }
+
+    #[tokio::test]
+    async fn canceled_prediction_sse_stream_emits_completed_event() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let pool = create_test_pool(1).await;
+        let orchestrator = Arc::new(MockOrchestrator::never_complete());
+        service.set_orchestrator(pool, orchestrator).await;
+        service.set_health(Health::Ready).await;
+
+        let (_handle, slot) = service
+            .submit_prediction(
+                "canceled-stream".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let subscription = service
+            .subscribe_prediction_stream("canceled-stream")
+            .unwrap();
+
+        {
+            let prediction = slot.prediction();
+            let mut prediction = prediction.lock().unwrap();
+            prediction.set_processing();
+            prediction.set_canceled();
+        }
+
+        let response = Sse::new(prediction_sse_stream(subscription)).into_response();
+        let collected = response.into_body().collect().await.unwrap();
+        let sse = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+        assert!(sse.contains("event: completed"), "SSE body: {sse}");
+        assert!(sse.contains(r#""status":"canceled""#), "SSE body: {sse}");
+    }
+
+    #[tokio::test]
+    async fn prediction_put_with_sse_accept_returns_sse() {
+        let service = create_ready_service().await;
+        enable_prediction_streaming(&service).await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/predictions/sse-put")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response.headers().get("content-type").unwrap();
+        assert!(
+            content_type
+                .to_str()
+                .unwrap()
+                .starts_with("text/event-stream"),
+            "unexpected content-type: {:?}",
+            content_type
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_put_existing_with_sse_accept_returns_sse() {
+        let service = create_ready_service().await;
+        enable_prediction_streaming(&service).await;
+        let (_handle, _slot) = service
+            .submit_prediction(
+                "existing-sse-put".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/predictions/existing-sse-put")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response.headers().get("content-type").unwrap();
+        assert!(
+            content_type
+                .to_str()
+                .unwrap()
+                .starts_with("text/event-stream"),
+            "unexpected content-type: {:?}",
+            content_type
+        );
+    }
+
+    #[tokio::test]
+    async fn stream_prediction_route_is_removed() {
+        let service = create_ready_service().await;
+        let (_handle, _slot) = service
+            .submit_prediction(
+                "removed-stream-route".to_string(),
+                serde_json::json!({}),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::get("/predictions/removed-stream-route/stream")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
@@ -945,6 +1676,100 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn training_post_with_sse_accept_rejects() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::post("/trainings")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+        let json = response_json(response).await;
+        assert_eq!(
+            json["error"],
+            "Training endpoints do not support streaming responses."
+        );
+    }
+
+    #[tokio::test]
+    async fn training_put_with_sse_accept_rejects() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/trainings/train-sse")
+                    .header("content-type", "application/json")
+                    .header("accept", "text/event-stream")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+        let json = response_json(response).await;
+        assert_eq!(
+            json["error"],
+            "Training endpoints do not support streaming responses."
+        );
+    }
+
+    #[tokio::test]
+    async fn training_idempotent_put() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/trainings/train-123")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let json = response_json(response).await;
+        assert_eq!(json["id"], "train-123");
+        assert_eq!(json["status"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn training_idempotent_id_mismatch() {
+        let service = create_ready_service().await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(
+                Request::put("/trainings/url-id")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"id":"body-id","input":{}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let json = response_json(response).await;
+        assert!(
+            json["detail"][0]["msg"]
+                .as_str()
+                .unwrap()
+                .contains("must match")
+        );
+    }
+
+    #[tokio::test]
     async fn shutdown_triggers_service_shutdown() {
         let service = create_ready_service().await;
         let mut rx = service.shutdown_rx();
@@ -960,5 +1785,99 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         rx.changed().await.unwrap();
         assert!(*rx.borrow());
+    }
+
+    #[tokio::test]
+    async fn root_returns_discovery_document() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let app = routes(service);
+
+        let response = app
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+
+        let json = response_json(response).await;
+        // Without a python_sdk version set, falls back to coglet version
+        assert_eq!(json["cog_version"], crate::version::COGLET_VERSION);
+        assert_eq!(json["docs_url"], "/docs");
+        assert_eq!(json["openapi_url"], "/openapi.json");
+        assert_eq!(json["shutdown_url"], "/shutdown");
+        assert_eq!(json["healthcheck_url"], "/health-check");
+        assert_eq!(json["predictions_url"], "/predictions");
+        assert_eq!(
+            json["predictions_idempotent_url"],
+            "/predictions/{prediction_id}"
+        );
+        assert_eq!(
+            json["predictions_cancel_url"],
+            "/predictions/{prediction_id}/cancel"
+        );
+        // No training URLs without a TrainingInput schema
+        assert!(json.get("trainings_url").is_none());
+        assert!(json.get("trainings_idempotent_url").is_none());
+        assert!(json.get("trainings_cancel_url").is_none());
+    }
+
+    #[tokio::test]
+    async fn root_includes_training_urls_when_schema_has_training() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        // Set a schema that includes a TrainingInput component
+        service
+            .set_schema(serde_json::json!({
+                "openapi": "3.0.2",
+                "info": {"title": "Cog", "version": "0.1.0"},
+                "components": {
+                    "schemas": {
+                        "TrainingInput": {
+                            "type": "object",
+                            "properties": {
+                                "data": {"type": "string"}
+                            }
+                        }
+                    }
+                }
+            }))
+            .await;
+        let app = routes(service);
+
+        let response = app
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let json = response_json(response).await;
+        // Base fields still present
+        assert_eq!(json["predictions_url"], "/predictions");
+        // Training URLs included
+        assert_eq!(json["trainings_url"], "/trainings");
+        assert_eq!(json["trainings_idempotent_url"], "/trainings/{training_id}");
+        assert_eq!(
+            json["trainings_cancel_url"],
+            "/trainings/{training_id}/cancel"
+        );
+    }
+
+    #[tokio::test]
+    async fn root_cog_version_prefers_python_sdk() {
+        let version = VersionInfo::new().with_python_sdk("0.14.0".to_string());
+        let service = Arc::new(PredictionService::new_no_pool().with_version(version));
+        let app = routes(service);
+
+        let response = app
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let json = response_json(response).await;
+        assert_eq!(json["cog_version"], "0.14.0");
     }
 }

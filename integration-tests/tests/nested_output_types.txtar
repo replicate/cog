@@ -1,0 +1,55 @@
+# Test structured output type with multiple field types.
+#
+# Verifies that coglet correctly serializes a BaseModel output containing:
+# - Multiple primitive types (str, int, float, bool)
+# - Optional fields (with value and without)
+# - List of primitive types
+#
+# Note: nested BaseModel fields (e.g., a field typed as another BaseModel)
+# are NOT supported by cog's type system. This test covers the supported
+# complex output patterns.
+
+cog serve
+
+curl POST /predictions '{"input":{"name":"test"}}'
+stdout '"status":"succeeded"'
+stdout '"name":"test"'
+stdout '"count":42'
+stdout '"score":0.95'
+stdout '"passed":true'
+stdout '"tags":\["fast","cached"\]'
+stdout '"note":"extra info"'
+stdout '"extra":null'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import List, Optional
+
+from cog import BaseModel, BasePredictor
+
+
+class Output(BaseModel):
+    name: str
+    count: int
+    score: float
+    passed: bool
+    tags: List[str]
+    note: Optional[str]
+    extra: Optional[str]
+
+
+class Predictor(BasePredictor):
+    def predict(self, name: str) -> Output:
+        return Output(
+            name=name,
+            count=42,
+            score=0.95,
+            passed=True,
+            tags=["fast", "cached"],
+            note="extra info",
+            extra=None,
+        )

@@ -1,96 +1,5 @@
 # Contributing guide
 
-## Making a contribution
-
-### Signing your work
-
-Each commit you contribute to Cog must be signed off (not to be confused with **[signing](https://git-scm.com/book/en/v2/Git-Tools-Signing-Your-Work)**). It certifies that you wrote the patch, or have the right to contribute it. It is called the [Developer Certificate of Origin](https://developercertificate.org/) and was originally developed for the Linux kernel.
-
-If you can certify the following:
-
-```
-By making a contribution to this project, I certify that:
-
-(a) The contribution was created in whole or in part by me and I
-    have the right to submit it under the open source license
-    indicated in the file; or
-
-(b) The contribution is based upon previous work that, to the best
-    of my knowledge, is covered under an appropriate open source
-    license and I have the right under that license to submit that
-    work with modifications, whether created in whole or in part
-    by me, under the same open source license (unless I am
-    permitted to submit under a different license), as indicated
-    in the file; or
-
-(c) The contribution was provided directly to me by some other
-    person who certified (a), (b) or (c) and I have not modified
-    it.
-
-(d) I understand and agree that this project and the contribution
-    are public and that a record of the contribution (including all
-    personal information I submit with it, including my sign-off) is
-    maintained indefinitely and may be redistributed consistent with
-    this project or the open source license(s) involved.
-```
-
-Then add this line to each of your Git commit messages, with your name and email:
-
-```
-Signed-off-by: Sam Smith <sam.smith@example.com>
-```
-
-### How to sign off your commits
-
-If you're using the `git` CLI, you can sign a commit by passing the `-s` option: `git commit -s -m "Reticulate splines"`
-
-You can also create a git hook which will sign off all your commits automatically. Using hooks also allows you to sign off commits when using non-command-line tools like GitHub Desktop or VS Code.
-
-First, create the hook file and make it executable:
-
-```sh
-cd your/checkout/of/cog
-touch .git/hooks/prepare-commit-msg
-chmod +x .git/hooks/prepare-commit-msg
-```
-
-Then paste the following into the file:
-
-```
-#!/bin/sh
-
-NAME=$(git config user.name)
-EMAIL=$(git config user.email)
-
-if [ -z "$NAME" ]; then
-    echo "empty git config user.name"
-    exit 1
-fi
-
-if [ -z "$EMAIL" ]; then
-    echo "empty git config user.email"
-    exit 1
-fi
-
-git interpret-trailers --if-exists doNothing --trailer \
-    "Signed-off-by: $NAME <$EMAIL>" \
-    --in-place "$1"
-```
-
-### Acknowledging contributions
-
-We welcome contributions from everyone, and consider all forms of contribution equally valuable. This includes code, bug reports, feature requests, and documentation. We use [All Contributors](https://allcontributors.org/) to maintain a list of all the people who have contributed to Cog.
-
-To acknowledge a contribution, add a comment to an issue or pull request in the following format:
-
-```
-@allcontributors please add @username for doc,code,ideas
-```
-
-A bot will automatically open a pull request to add the contributor to the project README.
-
-Common contribution types include: `doc`, `code`, `bug`, and `ideas`. See the full list at [allcontributors.org/docs/en/emoji-key](https://allcontributors.org/docs/en/emoji-key)
-
 ## Development environment
 
 Development tasks are managed with [mise](https://mise.jdx.dev/). Run `mise tasks` to see all available tasks.
@@ -112,15 +21,20 @@ uv venv
 uv sync --all-groups
 ```
 
+### Build & install
+
+```sh
+mise run build
+
+# symlink the binary to /usr/local/bin
+sudo mise run install
+```
+
+After making changes, run `mise run build` to rebuild and it will get picked up by the symlink.
+
 ### Common tasks
 
 ```sh
-# Build cog binary
-mise run build:cog
-
-# Install cog to $GOPATH/bin
-make install PREFIX=$(go env GOPATH)
-
 # Run all tests
 mise run test:go
 mise run test:python
@@ -176,9 +90,28 @@ mise run generate:compat tensorflow
 ```
 
 The generated files are:
+
 - `pkg/config/cuda_base_images.json` - Available NVIDIA CUDA base images
 - `pkg/config/torch_compatibility_matrix.json` - PyTorch/CUDA/Python compatibility
 - `pkg/config/tf_compatibility_matrix.json` - TensorFlow/CUDA/Python compatibility
+
+## CI tool dependencies
+
+Development tools are managed in **two places** that must be kept in sync:
+
+1. **`mise.toml`** — Tool versions for local development (uses aqua backend for prebuilt binaries)
+2. **`.github/workflows/ci.yaml`** — Tool installation for CI (uses dedicated GitHub Actions)
+
+CI deliberately avoids aqua downloads from GitHub Releases to prevent transient 502 failures. Instead, it uses dedicated actions (`taiki-e/install-action`, `go install`, `PyO3/maturin-action`, etc.) that are more reliable.
+
+Tools disabled in CI are listed in `MISE_DISABLE_TOOLS` in `ci.yaml`.
+
+**When updating a tool version**, update both:
+
+- The version in `mise.toml` (for local dev)
+- The corresponding version pin in `.github/workflows/ci.yaml` (for CI)
+
+See the [CI Tool Dependencies section in AGENTS.md](./AGENTS.md#ci-tool-dependencies) for the full mapping of tools to their CI installation methods.
 
 ## Concepts
 
@@ -238,6 +171,7 @@ COG_BINARY=/path/to/cog mise run test:integration
 ### Writing Integration Tests
 
 When adding new functionality, add integration tests in `integration-tests/tests/`. They are:
+
 - Self-contained (embedded fixtures in `.txtar` files)
 - Faster to run (parallel execution with automatic cleanup)
 - Easier to read and write (simple command script format)
@@ -299,7 +233,7 @@ stdout '"output":"hello test"'
 class Predictor(BasePredictor):
     def setup(self):
         self.process = subprocess.Popen(["./background.sh"])
-    
+
     def predict(self, s: str) -> str:
         return "hello " + s
 ```
@@ -349,6 +283,7 @@ cog build -t $TEST_IMAGE
 **Combining conditions:**
 
 Conditions can be negated with `!`. Examples:
+
 - `[short]` - True when `go test -short` is used (skip this test in short mode)
 - `[!short]` - True when NOT running with `-short` flag (only run this in full test mode)
 - `[!linux]` - True when NOT on Linux
@@ -366,88 +301,41 @@ mise run docs:serve
 
 ## Publishing a release
 
-This project has a [GitHub Actions workflow](https://github.com/replicate/cog/blob/39cfc5c44ab81832886c9139ee130296f1585b28/.github/workflows/ci.yaml#L107) that uses [goreleaser](https://goreleaser.com/quick-start/#quick-start) to facilitate the process of publishing new releases. The release process is triggered by manually creating and pushing a new annotated git tag.
+Releases are managed by GitHub Actions workflows. See [`.github/workflows/README.md`](.github/workflows/README.md) for full details.
 
-### Choose a version number
+All packages use **lockstep versioning** from `crates/Cargo.toml`. There are three release types:
 
-> Deciding what the annotated git tag should be requires some interpretation. Cog generally follows [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html), and since the major version
-> is `0`, the rules get [a bit more loose](https://semver.org/spec/v2.0.0.html#spec-item-4). Broadly speaking, the rules for when to increment the patch version still hold, but
-> backward-incompatible changes **will not** require incrementing the major version. In this way, the minor version may be incremented whether the changes are additive or
-> subtractive. This all changes once the major version is incremented to `1`.
+| Type            | Example tag      | Branch rule     | PyPI/crates.io? |
+| --------------- | ---------------- | --------------- | --------------- |
+| **Stable**      | `v0.17.0`        | Must be on main | Yes             |
+| **Pre-release** | `v0.17.0-alpha3` | Must be on main | Yes             |
+| **Dev**         | `v0.17.0-dev1`   | Any branch      | No              |
 
-### Set up GPG signing (macOS)
-
-Before creating a signed tag, you'll need to set up GPG signing. On macOS, install GPG using Homebrew:
-
-```bash
-brew install gnupg
-```
-
-Generate a GPG key for signing:
+### Stable / Pre-release
 
 ```bash
-gpg --quick-generate-key "Your Name <your.email@example.com>" ed25519 default 0
+# 1. Update crates/Cargo.toml version (e.g. "0.17.0" or "0.17.0-alpha3")
+# 2. Merge to main
+# 3. Tag and push
+git tag v0.17.0
+git push origin v0.17.0
+# 4. Wait for release-build.yaml to create a draft release
+# 5. Review the draft in GitHub UI, then click "Publish release"
+#    This triggers release-publish.yaml -> PyPI + crates.io
 ```
 
-Configure Git to use your GPG key:
+### Dev release
 
 ```bash
-# Get your key ID
-gpg --list-secret-keys --keyid-format=long
+# From any branch:
+# 1. Update crates/Cargo.toml version (e.g. "0.17.0-dev1")
+# 2. Commit and push
+# 3. Tag and push
+git tag v0.17.0-dev1
+git push origin v0.17.0-dev1
+# 4. Done. Artifacts are built and published as a GH pre-release.
+#    No PyPI/crates.io. No manual approval.
 ```
-
-This will show output like:
-```
-sec   ed25519/ABC123DEF456 2024-01-15 [SC]
-      ABC123DEF4567890ABCDEF1234567890ABCDEF12
-uid                 [ultimate] Your Name <your.email@example.com>
-```
-
-The key ID is the part after `ed25519/` (in this example, `ABC123DEF456`).
-
-```bash
-# Configure Git (replace YOUR_KEY_ID with your actual key ID)
-git config --global user.signingkey YOUR_KEY_ID
-git config --global commit.gpgsign true
-```
-### Create a prerelease (optional)
-
-Prereleases are a useful way to give testers a way to try out new versions of Cog without affecting the documented `latest` download URL which people normally use to install Cog.
-
-To publish a prerelease version, append a [SemVer prerelease identifer](https://semver.org/#spec-item-9) like `-alpha` or `-beta` to the git tag name. Goreleaser will detect this and mark it as a prerelease in GitHub Releases.
-
-    git checkout some-prerelease-branch
-    git fetch --all --tags
-    git tag -a v0.1.0-alpha -m "Prerelease v0.1.0"
-    git push --tags
-
-### Create a release
-
-Run these commands to publish a new release `v0.13.12` referencing commit `fabdadbead`:
-
-    git checkout main
-    git fetch --all --tags
-    git tag --sign --annotate --message 'Release v0.13.12' v0.13.12 fabdadbead
-    git push origin v0.13.12
-
-Then visit [github.com/replicate/cog/actions](https://github.com/replicate/cog/actions) to monitor the release process.
-
-
-### Get team approval for the PyPI package
-
-The release workflow will halt until another member of the team approves the release.
-
-Ping someone on the team to review and approve the release.
-
-### Convert your git tag to a GitHub release
-
-Once the release is published, convert your git tag to a proper GitHub release:
-
-1. Visit [github.com/replicate/cog/tags](https://github.com/replicate/cog/tags)
-2. Click on your tag
-3. Click "Create release from tag"
-4. Add release notes and publish the release
-
 
 ## Troubleshooting
 

@@ -1,0 +1,46 @@
+# Test that List[Path] outputs are uploaded to --upload-url.
+# This verifies that list returns (not just iterators) go through the
+# FileOutput IPC path for upload instead of being base64-encoded inline.
+
+cog build -t $TEST_IMAGE
+
+# Start mock upload server on the host, sets $UPLOAD_SERVER_URL
+upload-server-start
+
+cog serve --upload-url $UPLOAD_SERVER_URL
+
+# Run a prediction — three Path outputs should be uploaded, not base64-encoded
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+# Outputs should be URLs pointing at the mock server, not data URIs
+stdout '"output":\["http://host.docker.internal'
+! stdout 'data:image/'
+
+# Verify the mock server received exactly 3 PUT uploads
+upload-server-count 3
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_packages:
+    - "pillow==10.4.0"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import os
+import tempfile
+from typing import List
+
+from cog import BasePredictor, Path
+from PIL import Image
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> List[Path]:
+        outputs = []
+        for color in ["red", "blue", "green"]:
+            d = tempfile.mkdtemp()
+            p = os.path.join(d, f"{color}.png")
+            Image.new("RGB", (10, 10), color).save(p)
+            outputs.append(Path(p))
+        return outputs

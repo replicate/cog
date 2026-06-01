@@ -24,8 +24,6 @@ pub enum ChildTransportInfo {
     },
 }
 
-pub const TRANSPORT_INFO_ENV: &str = "COGLET_TRANSPORT_INFO";
-
 /// Named socket transport using filesystem sockets.
 ///
 /// Socket path format: `{temp_dir}/coglet-{pid}/slot-{n}.sock`
@@ -318,22 +316,6 @@ pub async fn connect_transport(info: ChildTransportInfo) -> io::Result<SlotTrans
             Ok(SlotTransport::Abstract(transport))
         }
     }
-}
-
-pub fn get_transport_info_from_env() -> io::Result<ChildTransportInfo> {
-    let json = std::env::var(TRANSPORT_INFO_ENV).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("{} environment variable not set", TRANSPORT_INFO_ENV),
-        )
-    })?;
-
-    serde_json::from_str(&json).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Failed to parse transport info: {}", e),
-        )
-    })
 }
 
 #[cfg(test)]

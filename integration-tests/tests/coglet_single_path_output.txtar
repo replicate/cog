@@ -1,0 +1,44 @@
+# Test that a single Path return (not List[Path]) returns a scalar string, not an array.
+# This complements coglet_list_path_single_element.txtar — verifying that
+# the schema-driven output wrapping correctly distinguishes:
+#   -> Path       →  "url"    (scalar)
+#   -> List[Path] →  ["url"]  (array, even with one element)
+
+cog build -t $TEST_IMAGE
+
+# Start mock upload server on the host, sets $UPLOAD_SERVER_URL
+upload-server-start
+
+cog serve --upload-url $UPLOAD_SERVER_URL
+
+# Single Path output: must be "url" (scalar string), NOT ["url"]
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+# Output should be a bare string URL, not wrapped in an array
+stdout '"output":"http://host.docker.internal'
+! stdout '"output":\['
+! stdout 'data:image/'
+
+upload-server-count 1
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_packages:
+    - "pillow==10.4.0"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import os
+import tempfile
+
+from cog import BasePredictor, Path
+from PIL import Image
+
+
+class Predictor(BasePredictor):
+    def predict(self) -> Path:
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "output.png")
+        Image.new("RGB", (10, 10), "red").save(p)
+        return Path(p)

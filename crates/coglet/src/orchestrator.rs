@@ -7,7 +7,7 @@
 //! 4. Run event loop routing responses to predictions
 //! 5. On worker crash: fail all predictions, shut down
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -22,11 +22,67 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use crate::PredictionOutput;
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
-    ControlRequest, ControlResponse, HealthcheckStatus, SlotId, SlotRequest, SlotResponse,
+    ControlRequest, ControlResponse, FileOutputKind, HealthcheckStatus, SlotId, SlotRequest,
+    SlotResponse,
 };
 use crate::bridge::transport::create_transport;
-use crate::permit::PermitPool;
+use crate::permit::{InactiveSlotIdleToken, PermitPool, SlotIdleToken};
 use crate::prediction::Prediction;
+
+const MAX_PENDING_CANCELLATIONS: usize = 1000;
+
+/// Upload a file to a signed endpoint, returning the final URL.
+///
+/// Matches the behavior of Python cog's `put_file_to_signed_endpoint`:
+/// PUT to `{endpoint}{filename}` with Content-Type header, then extract
+/// the final URL from the Location header (falling back to response URL),
+/// stripping query parameters. Follows redirects automatically.
+async fn upload_file(
+    endpoint: &str,
+    filename: &str,
+    data: &[u8],
+    content_type: &str,
+) -> Result<String, String> {
+    let url = format!("{endpoint}{filename}");
+    let client = reqwest::Client::new();
+    let resp = client
+        .put(&url)
+        .header("Content-Type", content_type)
+        .body(data.to_vec())
+        .timeout(std::time::Duration::from_secs(25))
+        .send()
+        .await
+        .map_err(|e| format!("upload request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("upload returned status {}", resp.status()));
+    }
+
+    // Prefer Location header, fall back to final request URL (after redirects)
+    let final_url = resp
+        .headers()
+        .get("location")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| resp.url().to_string());
+
+    // Strip query parameters (signing gubbins)
+    match reqwest::Url::parse(&final_url) {
+        Ok(mut parsed) => {
+            parsed.set_query(None);
+            Ok(parsed.to_string())
+        }
+        Err(_) => Ok(final_url),
+    }
+}
+
+fn ensure_trailing_slash(s: &str) -> String {
+    if s.ends_with('/') {
+        s.to_string()
+    } else {
+        format!("{s}/")
+    }
+}
 
 /// Try to lock a prediction mutex.
 /// On poison: logs error, recovers to fail the prediction, returns None.
@@ -44,6 +100,35 @@ fn try_lock_prediction(
             }
             None
         }
+    }
+}
+
+/// Wrap collected output items into the correct `PredictionOutput` variant.
+///
+/// Priority:
+/// 1. Schema says `"type": "array"` (`output_is_array = true`) → always `Stream`
+/// 2. Predictor signals `is_stream` (list/generator return) → always `Stream`
+/// 3. Otherwise → `Single` for one item, `Stream` for multiple
+///
+/// This ensures `List[Path]` with a single element returns `["url"]` not `"url"`.
+fn wrap_outputs(
+    outputs: Vec<serde_json::Value>,
+    output_is_array: bool,
+    is_stream: bool,
+) -> PredictionOutput {
+    let should_stream = output_is_array || is_stream;
+
+    match outputs.as_slice() {
+        [] => {
+            if should_stream {
+                PredictionOutput::Stream(vec![])
+            } else {
+                PredictionOutput::Single(serde_json::Value::Null)
+            }
+        }
+        _ if should_stream => PredictionOutput::Stream(outputs),
+        [single] => PredictionOutput::Single(single.clone()),
+        _ => PredictionOutput::Stream(outputs),
     }
 }
 
@@ -155,7 +240,18 @@ impl HealthcheckResult {
 #[async_trait]
 pub trait Orchestrator: Send + Sync {
     /// Register a prediction for response routing in the event loop.
-    async fn register_prediction(&self, slot_id: SlotId, prediction: Arc<StdMutex<Prediction>>);
+    async fn register_prediction(
+        &self,
+        slot_id: SlotId,
+        prediction: Arc<StdMutex<Prediction>>,
+        idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
+    );
+
+    /// Cancel a prediction by its prediction ID.
+    ///
+    /// The orchestrator resolves the prediction ID to a slot ID and sends
+    /// a cancel request to the worker over the control socket.
+    async fn cancel_by_prediction_id(&self, prediction_id: &str) -> Result<(), OrchestratorError>;
 
     /// Run user-defined healthcheck if available.
     async fn healthcheck(&self) -> Result<HealthcheckResult, OrchestratorError>;
@@ -188,7 +284,7 @@ pub struct SimpleSpawner;
 impl WorkerSpawner for SimpleSpawner {
     fn spawn(&self, _config: &WorkerSpawnConfig) -> Result<Child, SpawnError> {
         let child = Command::new("python")
-            .args(["-c", "import coglet; coglet._run_worker()"])
+            .args(["-c", "import coglet; coglet.server._run_worker()"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -202,8 +298,10 @@ pub struct OrchestratorConfig {
     pub num_slots: usize,
     pub is_train: bool,
     pub is_async: bool,
-    pub setup_timeout: Duration,
+    pub setup_timeout: Option<Duration>,
     pub spawner: Arc<dyn WorkerSpawner>,
+    /// Upload URL prefix for file outputs (from --upload-url CLI arg).
+    pub upload_url: Option<String>,
 }
 
 impl OrchestratorConfig {
@@ -213,9 +311,15 @@ impl OrchestratorConfig {
             num_slots: 1,
             is_train: false,
             is_async: false,
-            setup_timeout: Duration::from_secs(300),
+            setup_timeout: None,
             spawner: Arc::new(SimpleSpawner),
+            upload_url: None,
         }
+    }
+
+    pub fn with_upload_url(mut self, upload_url: Option<String>) -> Self {
+        self.upload_url = upload_url;
+        self
     }
 
     pub fn with_num_slots(mut self, n: usize) -> Self {
@@ -233,7 +337,7 @@ impl OrchestratorConfig {
         self
     }
 
-    pub fn with_setup_timeout(mut self, timeout: Duration) -> Self {
+    pub fn with_setup_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.setup_timeout = timeout;
         self
     }
@@ -251,49 +355,81 @@ pub struct OrchestratorReady {
     pub setup_logs: String,
 }
 
+struct RegisterPredictionMessage {
+    slot_id: SlotId,
+    prediction: Arc<StdMutex<Prediction>>,
+    idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
+    registered_ack: tokio::sync::oneshot::Sender<()>,
+}
+
 pub struct OrchestratorHandle {
     child: Child,
     ctrl_writer:
         Arc<tokio::sync::Mutex<FramedWrite<tokio::process::ChildStdin, JsonCodec<ControlRequest>>>>,
-    register_tx: mpsc::Sender<(SlotId, Arc<StdMutex<Prediction>>)>,
+    register_tx: mpsc::Sender<RegisterPredictionMessage>,
     healthcheck_tx: mpsc::Sender<tokio::sync::oneshot::Sender<HealthcheckResult>>,
-    /// Semaphore to limit concurrent healthchecks to 1
-    healthcheck_semaphore: Arc<tokio::sync::Semaphore>,
+    cancel_tx: mpsc::Sender<String>,
     slot_ids: Vec<SlotId>,
 }
 
 #[async_trait]
 impl Orchestrator for OrchestratorHandle {
-    async fn register_prediction(&self, slot_id: SlotId, prediction: Arc<StdMutex<Prediction>>) {
-        let _ = self.register_tx.send((slot_id, prediction)).await;
+    async fn register_prediction(
+        &self,
+        slot_id: SlotId,
+        prediction: Arc<StdMutex<Prediction>>,
+        idle_sender: tokio::sync::oneshot::Sender<SlotIdleToken>,
+    ) {
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .register_tx
+            .send(RegisterPredictionMessage {
+                slot_id,
+                prediction,
+                idle_sender,
+                registered_ack: ack_tx,
+            })
+            .await;
+        let _ = ack_rx.await;
+    }
+
+    async fn cancel_by_prediction_id(&self, prediction_id: &str) -> Result<(), OrchestratorError> {
+        self.cancel_tx
+            .send(prediction_id.to_string())
+            .await
+            .map_err(|_| OrchestratorError::Protocol("cancel channel closed".to_string()))
     }
 
     async fn healthcheck(&self) -> Result<HealthcheckResult, OrchestratorError> {
-        // Only allow one healthcheck at a time - if already running, return healthy
-        // (don't pile up healthcheck requests)
-        let _permit = match self.healthcheck_semaphore.try_acquire() {
-            Ok(permit) => permit,
-            Err(_) => {
-                tracing::debug!("Healthcheck already in progress, returning cached healthy");
-                return Ok(HealthcheckResult::healthy());
-            }
-        };
-
+        tracing::trace!("Healthcheck requested via orchestrator handle");
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
-        // Send the response channel to the event loop
+        // Send our channel to the event loop. If a healthcheck is already
+        // in-flight, the event loop coalesces — we get the same result as
+        // all other waiters when it comes back.
         self.healthcheck_tx
             .send(response_tx)
             .await
             .map_err(|_| OrchestratorError::Protocol("healthcheck channel closed".to_string()))?;
 
-        // Wait for the response with a timeout (worker has 5s, we give 10s total)
+        // Wait for the response with a timeout (worker has 5s, we give 10s total).
+        // If we time out, the healthcheck keeps running — our sender just gets a
+        // silent failure when the event loop eventually broadcasts.
         match tokio::time::timeout(Duration::from_secs(10), response_rx).await {
-            Ok(Ok(result)) => Ok(result),
-            Ok(Err(_)) => Err(OrchestratorError::Protocol(
-                "healthcheck response channel dropped".to_string(),
-            )),
-            Err(_) => Ok(HealthcheckResult::unhealthy("healthcheck timed out")),
+            Ok(Ok(result)) => {
+                tracing::trace!(healthy = result.is_healthy(), "Healthcheck completed");
+                Ok(result)
+            }
+            Ok(Err(_)) => {
+                tracing::debug!("Healthcheck response channel dropped");
+                Err(OrchestratorError::Protocol(
+                    "healthcheck response channel dropped".to_string(),
+                ))
+            }
+            Err(_) => {
+                tracing::debug!("Healthcheck timed out after 10s");
+                Ok(HealthcheckResult::unhealthy("healthcheck timed out"))
+            }
         }
     }
 
@@ -391,7 +527,7 @@ pub async fn spawn_worker(
         .map_err(|e| OrchestratorError::Spawn(format!("failed to accept connections: {}", e)))?;
 
     tracing::debug!("Waiting for Ready from worker");
-    let ready_result = tokio::time::timeout(config.setup_timeout, async {
+    let setup_fut = async {
         loop {
             match ctrl_reader.next().await {
                 Some(Ok(ControlResponse::Ready { slots, schema })) => {
@@ -402,21 +538,35 @@ pub async fn spawn_worker(
                         tracing::info!(target: "coglet::setup", source = ?source, "{}", line);
                     }
                 }
-                Some(Ok(ControlResponse::WorkerLog { target, level, message })) => {
+                Some(Ok(ControlResponse::WorkerLog {
+                    target,
+                    level,
+                    message,
+                })) => {
                     emit_worker_log(&target, &level, &message);
                 }
-                Some(Ok(ControlResponse::DroppedLogs { count, interval_millis })) => {
+                Some(Ok(ControlResponse::DroppedLogs {
+                    count,
+                    interval_millis,
+                })) => {
                     tracing::trace!(count, interval_millis, "Received DroppedLogs during setup");
                     let interval_secs = interval_millis as f64 / 1000.0;
                     tracing::warn!(
                         "Log production exceeds consumption rate during setup. {} logs dropped in last {:.1}s",
-                        count, interval_secs
+                        count,
+                        interval_secs
                     );
                 }
                 Some(Ok(ControlResponse::Failed { slot, error })) => {
                     return Err(OrchestratorError::Setup(format!(
                         "worker setup failed (slot {}): {}",
                         slot, error
+                    )));
+                }
+                Some(Ok(ControlResponse::Fatal { reason })) => {
+                    return Err(OrchestratorError::Setup(format!(
+                        "worker fatal: {}",
+                        reason
                     )));
                 }
                 Some(Ok(other)) => {
@@ -433,16 +583,40 @@ pub async fn spawn_worker(
                 }
             }
         }
-    })
-    .await;
+    };
 
-    let (slot_ids, schema) = match ready_result {
-        Ok(Ok((slots, schema))) => (slots, schema),
-        Ok(Err(e)) => return Err(e),
-        Err(_) => return Err(OrchestratorError::SetupTimeout),
+    let (slot_ids, schema) = match config.setup_timeout {
+        Some(timeout) => {
+            tracing::debug!(
+                timeout_secs = timeout.as_secs(),
+                "Waiting for setup with timeout"
+            );
+            match tokio::time::timeout(timeout, setup_fut).await {
+                Ok(Ok((slots, schema))) => {
+                    tracing::debug!(num_slots = slots.len(), "Setup completed within timeout");
+                    (slots, schema)
+                }
+                Ok(Err(e)) => {
+                    tracing::debug!(error = %e, "Setup failed");
+                    return Err(e);
+                }
+                Err(_) => {
+                    tracing::debug!(timeout_secs = timeout.as_secs(), "Setup timed out");
+                    return Err(OrchestratorError::SetupTimeout);
+                }
+            }
+        }
+        None => {
+            tracing::debug!("Waiting for setup with no timeout");
+            setup_fut.await?
+        }
     };
 
     let setup_logs = crate::setup_log_accumulator::drain_accumulated_logs(setup_log_rx);
+    tracing::debug!(
+        setup_logs_len = setup_logs.len(),
+        "Drained accumulated setup logs"
+    );
 
     tracing::debug!(num_slots = slot_ids.len(), "Worker ready");
 
@@ -451,6 +625,25 @@ pub async fn spawn_worker(
     {
         tracing::trace!(target: "coglet::schema", schema = %json, "OpenAPI schema");
     }
+
+    // Determine whether the output type is an array from the schema so the
+    // event loop can correctly wrap single-element list returns as Stream
+    // instead of collapsing them to Single.
+    let output_is_array = schema
+        .as_ref()
+        .and_then(|s| s.get("components"))
+        .and_then(|c| c.get("schemas"))
+        .and_then(|schemas| {
+            let key = if config.is_train {
+                "TrainingOutput"
+            } else {
+                "Output"
+            };
+            schemas.get(key)
+        })
+        .and_then(|output| output.get("type"))
+        .and_then(|t| t.as_str())
+        .is_some_and(|t| t == "array");
 
     let pool = Arc::new(PermitPool::new(num_slots));
     let sockets = transport.drain_sockets();
@@ -468,6 +661,7 @@ pub async fn spawn_worker(
 
     let (register_tx, register_rx) = mpsc::channel(num_slots);
     let (healthcheck_tx, healthcheck_rx) = mpsc::channel(1);
+    let (cancel_tx, cancel_rx) = mpsc::channel(16);
 
     let ctrl_writer = Arc::new(tokio::sync::Mutex::new(ctrl_writer));
 
@@ -476,12 +670,13 @@ pub async fn spawn_worker(
         ctrl_writer: Arc::clone(&ctrl_writer),
         register_tx,
         healthcheck_tx,
-        healthcheck_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+        cancel_tx,
         slot_ids: slot_ids.clone(),
     };
 
     let pool_for_loop = Arc::clone(&pool);
     let ctrl_writer_for_loop = Arc::clone(&ctrl_writer);
+    let upload_url = config.upload_url.clone();
     tokio::spawn(async move {
         run_event_loop(
             ctrl_reader,
@@ -489,7 +684,10 @@ pub async fn spawn_worker(
             slot_readers,
             register_rx,
             healthcheck_rx,
+            cancel_rx,
             pool_for_loop,
+            upload_url,
+            output_is_array,
         )
         .await;
     });
@@ -502,6 +700,19 @@ pub async fn spawn_worker(
     })
 }
 
+fn record_pending_cancellation(pending_cancellations: &mut HashSet<String>, prediction_id: String) {
+    if pending_cancellations.len() >= MAX_PENDING_CANCELLATIONS {
+        tracing::warn!(
+            prediction_id = %prediction_id,
+            cap = MAX_PENDING_CANCELLATIONS,
+            "Dropping pending cancellation because the pending cancellation buffer is full"
+        );
+        return;
+    }
+    pending_cancellations.insert(prediction_id);
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn run_event_loop(
     mut ctrl_reader: FramedRead<tokio::process::ChildStdout, JsonCodec<ControlResponse>>,
     ctrl_writer: Arc<
@@ -511,13 +722,23 @@ async fn run_event_loop(
         SlotId,
         FramedRead<tokio::net::unix::OwnedReadHalf, JsonCodec<SlotResponse>>,
     )>,
-    mut register_rx: mpsc::Receiver<(SlotId, Arc<StdMutex<Prediction>>)>,
+    mut register_rx: mpsc::Receiver<RegisterPredictionMessage>,
     mut healthcheck_rx: mpsc::Receiver<tokio::sync::oneshot::Sender<HealthcheckResult>>,
-    _pool: Arc<PermitPool>,
+    mut cancel_rx: mpsc::Receiver<String>,
+    pool: Arc<PermitPool>,
+    upload_url: Option<String>,
+    // Schema says Output is "type": "array" — always wrap as Stream.
+    // When false, the schema was unavailable or Output type is Any; fall
+    // back to the predictor's is_stream flag on the Done message.
+    output_is_array: bool,
 ) {
     let mut predictions: HashMap<SlotId, Arc<StdMutex<Prediction>>> = HashMap::new();
-    let mut pending_healthcheck: Option<tokio::sync::oneshot::Sender<HealthcheckResult>> = None;
+    let mut idle_senders: HashMap<SlotId, tokio::sync::oneshot::Sender<SlotIdleToken>> =
+        HashMap::new();
+    let mut pending_healthchecks: Vec<tokio::sync::oneshot::Sender<HealthcheckResult>> = Vec::new();
     let mut healthcheck_counter: u64 = 0;
+    let mut pending_uploads: HashMap<SlotId, Vec<tokio::task::JoinHandle<()>>> = HashMap::new();
+    let mut pending_cancellations: HashSet<String> = HashSet::new();
 
     let (slot_msg_tx, mut slot_msg_rx) =
         mpsc::channel::<(SlotId, Result<SlotResponse, std::io::Error>)>(100);
@@ -554,21 +775,49 @@ async fn run_event_loop(
             ctrl_msg = ctrl_reader.next() => {
                 match ctrl_msg {
                     Some(Ok(ControlResponse::Idle { slot })) => {
-                        tracing::debug!(%slot, "Slot idle");
+                        tracing::debug!(%slot, "Slot idle notification received (control channel)");
+                        match idle_senders.remove(&slot) {
+                            Some(sender) => {
+                                let token = InactiveSlotIdleToken::new(slot);
+                                if sender.send(token.activate()).is_err() {
+                                    tracing::warn!(%slot, "Idle token receiver dropped before idle confirmation");
+                                }
+                            }
+                            None => {
+                                tracing::warn!(%slot, "Received Idle for slot with no pending idle confirmation");
+                            }
+
+                        }
                     }
                     Some(Ok(ControlResponse::Cancelled { slot })) => {
                         tracing::debug!(%slot, "Slot cancelled (control channel)");
                     }
                     Some(Ok(ControlResponse::Failed { slot, error })) => {
                         tracing::warn!(%slot, %error, "Slot poisoned");
+                        pool.poison(slot);
                         if let Some(pred) = predictions.remove(&slot)
                             && let Some(mut p) = try_lock_prediction(&pred)
+                            && !p.is_terminal()
                         {
-                            p.set_slot_poisoned();
-                            if !p.is_terminal() {
-                                p.set_failed(error);
+                            p.set_failed(error);
+                        }
+                    }
+                    Some(Ok(ControlResponse::Fatal { reason })) => {
+                        tracing::error!(%reason, "Worker fatal");
+                        for (slot, pred) in predictions.drain() {
+                            tracing::warn!(%slot, "Failing prediction due to worker fatal error");
+                            pool.poison(slot);
+                            if let Some(mut p) = try_lock_prediction(&pred)
+                                && !p.is_terminal()
+                            {
+                                p.set_failed(reason.clone());
                             }
                         }
+                        let result = HealthcheckResult::unhealthy(&reason);
+                        for tx in pending_healthchecks.drain(..) {
+                            let _ = tx.send(result.clone());
+                        }
+                        break;
                     }
                     Some(Ok(ControlResponse::Ready { .. })) => {
                         tracing::warn!("Unexpected Ready in event loop");
@@ -590,16 +839,28 @@ async fn run_event_loop(
                         );
                     }
                     Some(Ok(ControlResponse::HealthcheckResult { id: _, status, error })) => {
-                        if let Some(tx) = pending_healthcheck.take() {
+                        tracing::trace!(
+                            ?status,
+                            ?error,
+                            pending_count = pending_healthchecks.len(),
+                            "Received healthcheck result from worker"
+                        );
+                        if pending_healthchecks.is_empty() {
+                            tracing::warn!("Received healthcheck result but no pending requests");
+                        } else {
                             let result = match status {
                                 HealthcheckStatus::Healthy => HealthcheckResult::healthy(),
                                 HealthcheckStatus::Unhealthy => {
                                     HealthcheckResult::unhealthy(error.unwrap_or_else(|| "unhealthy".to_string()))
                                 }
                             };
-                            let _ = tx.send(result);
-                        } else {
-                            tracing::warn!("Received healthcheck result but no pending request");
+                            tracing::trace!(
+                                pending_count = pending_healthchecks.len(),
+                                "Distributing healthcheck result to pending callers"
+                            );
+                            for tx in pending_healthchecks.drain(..) {
+                                let _ = tx.send(result.clone());
+                            }
                         }
                     }
                     Some(Ok(ControlResponse::ShuttingDown)) => {
@@ -618,8 +879,8 @@ async fn run_event_loop(
                                 p.set_failed("Worker crashed".to_string());
                             }
                         }
-                        // Fail any pending healthcheck
-                        if let Some(tx) = pending_healthcheck.take() {
+                        // Fail any pending healthchecks
+                        for tx in pending_healthchecks.drain(..) {
                             let _ = tx.send(HealthcheckResult::unhealthy("Worker crashed"));
                         }
                         break;
@@ -628,38 +889,82 @@ async fn run_event_loop(
             }
 
             Some(response_tx) = healthcheck_rx.recv() => {
-                // If there's already a pending healthcheck, respond immediately with healthy
-                // (shouldn't happen due to semaphore, but be defensive)
-                if pending_healthcheck.is_some() {
-                    let _ = response_tx.send(HealthcheckResult::healthy());
-                    continue;
+                let in_flight = !pending_healthchecks.is_empty();
+                pending_healthchecks.push(response_tx);
+
+                // Only send to worker if no healthcheck is already in-flight.
+                // Otherwise this caller just waits for the same result.
+                if !in_flight {
+                    healthcheck_counter += 1;
+                    let hc_id = format!("hc_{}", healthcheck_counter);
+                    tracing::trace!(%hc_id, "Sending healthcheck request to worker");
+
+                    let mut writer = ctrl_writer.lock().await;
+                    if let Err(e) = writer.send(ControlRequest::Healthcheck { id: hc_id }).await {
+                        tracing::error!(error = %e, "Failed to send healthcheck request");
+                        let result = HealthcheckResult::unhealthy(format!("Failed to send: {}", e));
+                        for tx in pending_healthchecks.drain(..) {
+                            let _ = tx.send(result.clone());
+                        }
+                    }
+                } else {
+                    tracing::trace!(
+                        pending_count = pending_healthchecks.len(),
+                        "Healthcheck already in-flight, coalescing request"
+                    );
                 }
-
-                healthcheck_counter += 1;
-                let hc_id = format!("hc_{}", healthcheck_counter);
-
-                // Send healthcheck request to worker
-                let mut writer = ctrl_writer.lock().await;
-                if let Err(e) = writer.send(ControlRequest::Healthcheck { id: hc_id }).await {
-                    tracing::error!(error = %e, "Failed to send healthcheck request");
-                    let _ = response_tx.send(HealthcheckResult::unhealthy(format!("Failed to send: {}", e)));
-                    continue;
-                }
-                drop(writer);
-
-                // Store the response channel to use when we get HealthcheckResult
-                pending_healthcheck = Some(response_tx);
             }
 
-            Some((slot_id, prediction)) = register_rx.recv() => {
+            Some(prediction_id) = cancel_rx.recv() => {
+                // Resolve prediction_id → slot_id by iterating (fine for small concurrency)
+                let slot = predictions.iter().find_map(|(sid, pred)| {
+                    try_lock_prediction(pred)
+                        .filter(|p| p.id() == prediction_id)
+                        .map(|_| *sid)
+                });
+                match slot {
+                    Some(slot_id) => {
+                        tracing::info!(
+                            target: "coglet::prediction",
+                            %prediction_id,
+                            %slot_id,
+                            "Cancelling prediction"
+                        );
+                        let mut writer = ctrl_writer.lock().await;
+                        if let Err(e) = writer.send(ControlRequest::Cancel { slot: slot_id }).await {
+                            tracing::error!(
+                                %slot_id,
+                                error = %e,
+                                "Failed to send cancel request to worker"
+                            );
+                        }
+                        // Also abort any pending upload tasks for this slot
+                        if let Some(handles) = pending_uploads.remove(&slot_id) {
+                            for h in handles { h.abort(); }
+                        }
+                    }
+                    None => {
+                        tracing::debug!(%prediction_id, "Cancel requested for unknown prediction; storing pending cancellation");
+                        record_pending_cancellation(&mut pending_cancellations, prediction_id);
+                    }
+                }
+            }
+
+            Some(RegisterPredictionMessage { slot_id, prediction, idle_sender, registered_ack }) = register_rx.recv() => {
                 let prediction_id = match try_lock_prediction(&prediction) {
                     Some(p) => p.id().to_string(),
                     None => {
                         // Mutex poisoned during registration - prediction already failed
                         tracing::error!(%slot_id, "Prediction mutex poisoned during registration");
+                        let _ = registered_ack.send(());
                         continue;
                     }
                 };
+                // NOTE: we insert the idle sender, and idle senders are only removed on consumption of the
+                // `tokio::sync::oneshot::Sender`, this means the only time we'll leak memory here is if the
+                // slot is poisoned or otherwise in a bad state. It is intentional that we don't remove idle
+                // senders in any other case.
+                idle_senders.insert(slot_id, idle_sender);
                 tracing::info!(
                     target: "coglet::prediction",
                     %prediction_id,
@@ -667,14 +972,42 @@ async fn run_event_loop(
                 );
                 tracing::debug!(%slot_id, %prediction_id, "Registered prediction");
                 predictions.insert(slot_id, prediction);
+                let pending_cancel = pending_cancellations.remove(&prediction_id);
+                let _ = registered_ack.send(());
+                if pending_cancel {
+                    tracing::info!(
+                        target: "coglet::prediction",
+                        %prediction_id,
+                        %slot_id,
+                        "Applying pending cancellation"
+                    );
+                    let mut writer = ctrl_writer.lock().await;
+                    if let Err(e) = writer.send(ControlRequest::Cancel { slot: slot_id }).await {
+                        tracing::error!(
+                            %slot_id,
+                            error = %e,
+                            "Failed to send pending cancel request to worker"
+                        );
+                    }
+                }
             }
 
             Some((slot_id, result)) = slot_msg_rx.recv() => {
                 match result {
-                    Ok(SlotResponse::Log { source, data }) => {
+                    Ok(SlotResponse::ProtocolVersion { version }) => {
+                        if version != crate::bridge::protocol::SLOT_RESPONSE_PROTOCOL_VERSION {
+                            tracing::warn!(
+                                %slot_id,
+                                version,
+                                expected = crate::bridge::protocol::SLOT_RESPONSE_PROTOCOL_VERSION,
+                                "Worker reported unexpected slot response protocol version"
+                            );
+                        }
+                    }
+                    Ok(SlotResponse::LogLine { source, data }) => {
                         let (prediction_id, poisoned) = if let Some(pred) = predictions.get(&slot_id) {
                             if let Some(mut p) = try_lock_prediction(pred) {
-                                p.append_log(&data);
+                                p.append_log_source(source, &data);
                                 (Some(p.id().to_string()), false)
                             } else {
                                 (None, true)
@@ -708,10 +1041,25 @@ async fn run_event_loop(
                             }
                         }
                     }
-                    Ok(SlotResponse::Output { output }) => {
+                    Ok(SlotResponse::Metric { name, value, mode }) => {
                         let poisoned = if let Some(pred) = predictions.get(&slot_id) {
                             if let Some(mut p) = try_lock_prediction(pred) {
-                                p.append_output(output);
+                                p.set_metric(name, value, mode);
+                                false
+                            } else {
+                                true
+                            }
+                        } else {
+                            false
+                        };
+                        if poisoned {
+                            predictions.remove(&slot_id);
+                        }
+                    }
+                    Ok(SlotResponse::OutputChunk { output, index }) => {
+                        let poisoned = if let Some(pred) = predictions.get(&slot_id) {
+                            if let Some(mut p) = try_lock_prediction(pred) {
+                                p.append_output_chunk(output, index);
                                 false
                             } else {
                                 true
@@ -724,21 +1072,159 @@ async fn run_event_loop(
                             predictions.remove(&slot_id);
                         }
                     }
-                    Ok(SlotResponse::Done { id, output, predict_time }) => {
+                    Ok(SlotResponse::FileOutput { filename, kind, mime_type }) => {
+                        tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
+                        let bytes = match std::fs::read(&filename) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                tracing::error!(%slot_id, %filename, error = %e, "Failed to read FileOutput");
+                                continue;
+                            }
+                        };
+                        match kind {
+                            FileOutputKind::Oversized => {
+                                let output: serde_json::Value = match serde_json::from_slice(&bytes) {
+                                    Ok(val) => val,
+                                    Err(e) => {
+                                        tracing::error!(%slot_id, %filename, error = %e, "Failed to parse oversized JSON");
+                                        continue;
+                                    }
+                                };
+                                let poisoned = if let Some(pred) = predictions.get(&slot_id) {
+                                    if let Some(mut p) = try_lock_prediction(pred) {
+                                        p.append_output(output);
+                                        false
+                                    } else {
+                                        true
+                                    }
+                                } else {
+                                    false
+                                };
+                                if poisoned {
+                                    predictions.remove(&slot_id);
+                                }
+                            }
+                            FileOutputKind::FileType => {
+                                let mime = mime_type.unwrap_or_else(|| {
+                                    mime_guess::from_path(&filename)
+                                        .first_or_octet_stream()
+                                        .to_string()
+                                });
+                                if let Some(ref url) = upload_url {
+                                    // Spawn upload task so we don't block the event loop
+                                    let pred = predictions.get(&slot_id).cloned();
+                                    let endpoint = ensure_trailing_slash(url);
+                                    let basename = std::path::Path::new(&filename)
+                                        .file_name()
+                                        .and_then(|n| n.to_str())
+                                        .unwrap_or("output")
+                                        .to_string();
+                                    let handle = tokio::spawn(async move {
+                                        match upload_file(&endpoint, &basename, &bytes, &mime).await {
+                                            Ok(url) => {
+                                                if let Some(pred) = pred
+                                                    && let Some(mut p) = try_lock_prediction(&pred)
+                                                {
+                                                    p.append_output(serde_json::Value::String(url));
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(error = %e, "Failed to upload file output");
+                                            }
+                                        }
+                                    });
+                                    pending_uploads.entry(slot_id).or_default().push(handle);
+                                } else {
+                                    // No upload URL — base64-encode as data URI
+                                    use base64::Engine;
+                                    let encoded = base64::engine::general_purpose::STANDARD
+                                        .encode(&bytes);
+                                    let output = serde_json::Value::String(format!(
+                                        "data:{mime};base64,{encoded}"
+                                    ));
+                                    let poisoned = if let Some(pred) = predictions.get(&slot_id) {
+                                        if let Some(mut p) = try_lock_prediction(pred) {
+                                            p.append_output(output);
+                                            false
+                                        } else {
+                                            true
+                                        }
+                                    } else {
+                                        false
+                                    };
+                                    if poisoned {
+                                        predictions.remove(&slot_id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Ok(SlotResponse::Done { id, output: _, predict_time, is_stream }) => {
                         tracing::info!(
                             target: "coglet::prediction",
                             prediction_id = %id,
                             predict_time,
+                            is_stream,
+                            output_is_array,
                             "Prediction succeeded"
                         );
+                        let uploads = pending_uploads.remove(&slot_id).unwrap_or_default();
                         if let Some(pred) = predictions.remove(&slot_id) {
-                            if let Some(mut p) = try_lock_prediction(&pred) {
-                                let pred_output = output
-                                    .map(PredictionOutput::Single)
-                                    .unwrap_or(PredictionOutput::Single(serde_json::Value::Null));
-                                p.set_succeeded(pred_output);
+                            if uploads.is_empty() {
+                                // No pending uploads — complete synchronously to avoid
+                                // a race between tokio::spawn and Notify::notified() in
+                                // service.rs.  notify_waiters() only wakes already-
+                                // registered waiters; spawning a task can fire the
+                                // notification before the service registers its waiter.
+                                if let Some(mut p) = try_lock_prediction(&pred) {
+                                    let pred_output = wrap_outputs(
+                                        p.take_outputs(),
+                                        output_is_array,
+                                        is_stream,
+                                    );
+                                    p.set_succeeded(pred_output);
+                                }
+                            } else {
+                                // Has pending uploads — must spawn to await them.
+                                // Clone the cancel token so we can abort uploads if
+                                // the prediction is cancelled while uploads are in flight.
+                                let (cancel_token, upload_pred_id) = match try_lock_prediction(&pred) {
+                                    Some(p) => (Some(p.cancel_token()), p.id().to_string()),
+                                    None => (None, id.clone()),
+                                };
+                                tokio::spawn(async move {
+                                    if let Some(token) = cancel_token {
+                                        let upload_fut = futures::future::join_all(uploads);
+                                        tokio::pin!(upload_fut);
+                                        tokio::select! {
+                                            _ = &mut upload_fut => {}
+                                            _ = token.cancelled() => {
+                                                tracing::info!(
+                                                    target: "coglet::prediction",
+                                                    prediction_id = %upload_pred_id,
+                                                    "Aborting in-flight uploads due to cancellation"
+                                                );
+                                                if let Some(mut p) = try_lock_prediction(&pred) {
+                                                    p.set_canceled();
+                                                }
+                                                return;
+                                            }
+                                        }
+                                    } else {
+                                        for h in uploads {
+                                            let _ = h.await;
+                                        }
+                                    }
+                                    if let Some(mut p) = try_lock_prediction(&pred) {
+                                        let pred_output = wrap_outputs(
+                                            p.take_outputs(),
+                                            output_is_array,
+                                            is_stream,
+                                        );
+                                        p.set_succeeded(pred_output);
+                                    }
+                                });
                             }
-                            // On mutex poison, prediction already failed - nothing more to do
                         } else {
                             tracing::warn!(%slot_id, %id, "Prediction not found for Done message");
                         }
@@ -750,6 +1236,10 @@ async fn run_event_loop(
                             %error,
                             "Prediction failed"
                         );
+                        // Abort any pending uploads — prediction is terminal
+                        if let Some(handles) = pending_uploads.remove(&slot_id) {
+                            for h in handles { h.abort(); }
+                        }
                         if let Some(pred) = predictions.remove(&slot_id)
                             && let Some(mut p) = try_lock_prediction(&pred)
                         {
@@ -762,6 +1252,10 @@ async fn run_event_loop(
                             prediction_id = %id,
                             "Prediction cancelled"
                         );
+                        // Abort any pending uploads — prediction is terminal
+                        if let Some(handles) = pending_uploads.remove(&slot_id) {
+                            for h in handles { h.abort(); }
+                        }
                         if let Some(pred) = predictions.remove(&slot_id)
                             && let Some(mut p) = try_lock_prediction(&pred)
                         {
@@ -770,6 +1264,9 @@ async fn run_event_loop(
                     }
                     Err(e) => {
                         tracing::error!(%slot_id, error = %e, "Slot socket error");
+                        if let Some(handles) = pending_uploads.remove(&slot_id) {
+                            for h in handles { h.abort(); }
+                        }
                         if let Some(pred) = predictions.remove(&slot_id)
                             && let Some(mut p) = try_lock_prediction(&pred)
                         {
@@ -782,4 +1279,168 @@ async fn run_event_loop(
     }
 
     tracing::info!("Event loop exiting");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── wrap_outputs: schema says array (output_is_array = true) ──
+
+    #[test]
+    fn wrap_outputs_schema_array_empty() {
+        // List[Path] that returned no items → empty array
+        let result = wrap_outputs(vec![], true, true);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), Vec::<serde_json::Value>::new());
+    }
+
+    #[test]
+    fn record_pending_cancellation_caps_stored_ids() {
+        let mut pending = HashSet::new();
+        for index in 0..MAX_PENDING_CANCELLATIONS {
+            record_pending_cancellation(&mut pending, format!("pred-{index}"));
+        }
+
+        record_pending_cancellation(&mut pending, "overflow".to_string());
+
+        assert_eq!(pending.len(), MAX_PENDING_CANCELLATIONS);
+        assert!(!pending.contains("overflow"));
+    }
+
+    #[test]
+    fn wrap_outputs_schema_array_single_item() {
+        // List[Path] with num_outputs=1 → ["url"] not "url"
+        let result = wrap_outputs(vec![json!("https://example.com/img.png")], true, true);
+        assert!(result.is_stream());
+        assert_eq!(
+            result.into_values(),
+            vec![json!("https://example.com/img.png")]
+        );
+    }
+
+    #[test]
+    fn wrap_outputs_schema_array_multiple_items() {
+        // List[Path] with num_outputs=4
+        let items = vec![
+            json!("https://example.com/1.png"),
+            json!("https://example.com/2.png"),
+            json!("https://example.com/3.png"),
+            json!("https://example.com/4.png"),
+        ];
+        let result = wrap_outputs(items.clone(), true, true);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), items);
+    }
+
+    #[test]
+    fn wrap_outputs_schema_array_overrides_is_stream_false() {
+        // Schema says array but predictor didn't set is_stream (shouldn't happen,
+        // but schema is authoritative)
+        let result = wrap_outputs(vec![json!("url")], true, false);
+        assert!(result.is_stream());
+    }
+
+    // ── wrap_outputs: predictor signal (is_stream = true, no schema) ──
+
+    #[test]
+    fn wrap_outputs_predictor_stream_empty() {
+        // Generator that yielded nothing, no schema
+        let result = wrap_outputs(vec![], false, true);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), Vec::<serde_json::Value>::new());
+    }
+
+    #[test]
+    fn wrap_outputs_predictor_stream_single_item() {
+        // Any-typed list with one element, no schema
+        let result = wrap_outputs(vec![json!("only_item")], false, true);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), vec![json!("only_item")]);
+    }
+
+    #[test]
+    fn wrap_outputs_predictor_stream_multiple_items() {
+        // Generator yielding multiple, no schema
+        let items = vec![json!("a"), json!("b"), json!("c")];
+        let result = wrap_outputs(items.clone(), false, true);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), items);
+    }
+
+    // ── wrap_outputs: scalar output (neither schema array nor predictor stream) ──
+
+    #[test]
+    fn wrap_outputs_scalar_empty() {
+        // Single output that was null (e.g. Path sent via FileOutput, not yet resolved?)
+        let result = wrap_outputs(vec![], false, false);
+        assert!(!result.is_stream());
+        assert_eq!(result.final_value(), &json!(null));
+    }
+
+    #[test]
+    fn wrap_outputs_scalar_single() {
+        // return Path("output.png") → single string
+        let result = wrap_outputs(vec![json!("https://example.com/output.png")], false, false);
+        assert!(!result.is_stream());
+        assert_eq!(
+            result.final_value(),
+            &json!("https://example.com/output.png")
+        );
+    }
+
+    #[test]
+    fn wrap_outputs_scalar_multiple_falls_back_to_stream() {
+        // Shouldn't happen for scalar returns, but if multiple items arrive
+        // with neither flag set, Stream is the safe choice
+        let items = vec![json!("a"), json!("b")];
+        let result = wrap_outputs(items.clone(), false, false);
+        assert!(result.is_stream());
+        assert_eq!(result.into_values(), items);
+    }
+
+    // ── Serialization: is_stream field on Done message ──
+
+    #[test]
+    fn done_is_stream_false_omitted_from_json() {
+        let msg = SlotResponse::Done {
+            id: "p1".into(),
+            output: None,
+            predict_time: 1.0,
+            is_stream: false,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert!(
+            json.get("is_stream").is_none(),
+            "is_stream=false should be omitted"
+        );
+    }
+
+    #[test]
+    fn done_is_stream_true_present_in_json() {
+        let msg = SlotResponse::Done {
+            id: "p1".into(),
+            output: None,
+            predict_time: 1.0,
+            is_stream: true,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json.get("is_stream"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn done_without_is_stream_deserializes_as_false() {
+        // Backward compat: old workers won't send is_stream
+        let json = json!({
+            "type": "done",
+            "id": "p1",
+            "predict_time": 1.0
+        });
+        let msg: SlotResponse = serde_json::from_value(json).unwrap();
+        match msg {
+            SlotResponse::Done { is_stream, .. } => assert!(!is_stream),
+            _ => panic!("wrong variant"),
+        }
+    }
 }

@@ -97,7 +97,7 @@ HTTP Request                     Parent Process                    Worker Subpro
 ## Startup Sequence
 
 ```
-1. coglet.serve() called from Python
+1. coglet.server.serve() called from Python
    │
    ├─▶ Start HTTP server immediately (health returns STARTING until ready)
    │
@@ -105,7 +105,7 @@ HTTP Request                     Parent Process                    Worker Subpro
        │
        ├─▶ Create slot transport (Unix sockets)
        │
-       ├─▶ Spawn worker: python -c "import coglet; coglet._run_worker()"
+        ├─▶ Spawn worker: python -c "import coglet; coglet.server._run_worker()"
        │
        ├─▶ Send Init message (predictor_ref, num_slots, transport_info)
        │     │
@@ -126,7 +126,9 @@ HTTP Request                     Parent Process                    Worker Subpro
 ## Components
 
 ### coglet (core library)
+
 Pure Rust library with no Python dependencies. Provides:
+
 - **orchestrator.rs** - Spawns worker, manages lifecycle, routes messages
 - **worker.rs** - Child-side event loop, prediction execution
 - **service.rs** - Transport-agnostic prediction service
@@ -135,7 +137,9 @@ Pure Rust library with no Python dependencies. Provides:
 - **transport/http/** - Axum-based HTTP server and routes
 
 ### coglet-python (PyO3 bindings)
+
 Bridges coglet to Python via PyO3. Provides:
+
 - **lib.rs** - Python module with `serve()`, `active()`, `_run_worker()`
 - **predictor.rs** - Wraps Python predictor class (sync/async detection)
 - **worker_bridge.rs** - Implements `PredictHandler` trait for Python
@@ -159,10 +163,13 @@ crates/
 │       ├── prediction.rs   # Prediction state machine
 │       ├── predictor.rs    # PredictionResult, PredictionError
 │       ├── service.rs      # PredictionService
-│       ├── supervisor.rs   # PredictionSupervisor (state tracking)
+│       ├── webhook.rs      # WebhookSender (retry, trace context)
 │       ├── version.rs      # Version info
-│       ├── webhook.rs      # Webhook sender
 │       ├── orchestrator.rs # Worker lifecycle, event loop (parent)
+│       ├── fd_redirect.rs  # File descriptor redirection
+│       ├── input_validation.rs # Input validation against schema
+│       ├── setup_log_accumulator.rs # Accumulates logs during setup()
+│       ├── worker_tracing_layer.rs  # Tracing layer for worker process
 │       ├── worker.rs       # Worker event loop (child)
 │       ├── bridge/
 │       │   ├── mod.rs
@@ -191,7 +198,9 @@ crates/
         ├── output.rs       # Output serialization
         ├── log_writer.rs   # SlotLogWriter, ContextVar routing
         ├── audit.rs        # Audit hook, TeeWriter
-        └── cancel.rs       # Cancellation support
+        ├── cancel.rs       # Cancellation support
+        ├── metric_scope.rs # Scope and MetricRecorder for record_metric()
+        └── bin/stub_gen.rs # Type stub generator
 ```
 
 ## Bridge Protocol
@@ -203,6 +212,7 @@ Two communication channels between parent and worker:
 Used for lifecycle messages. JSON lines, one message per line.
 
 **Parent → Worker:**
+
 ```json
 {"type": "init", "predictor_ref": "predict.py:Predictor", "num_slots": 2, ...}
 {"type": "cancel", "slot": "uuid"}
@@ -210,6 +220,7 @@ Used for lifecycle messages. JSON lines, one message per line.
 ```
 
 **Worker → Parent:**
+
 ```json
 {"type": "ready", "slots": ["uuid1", "uuid2"], "schema": {...}}
 {"type": "log", "source": "stdout", "data": "Loading model..."}
@@ -223,11 +234,13 @@ Used for lifecycle messages. JSON lines, one message per line.
 Per-slot bidirectional sockets for prediction data. Avoids head-of-line blocking.
 
 **Parent → Worker:**
+
 ```json
-{"type": "predict", "id": "pred_123", "input": {"prompt": "Hello"}}
+{ "type": "predict", "id": "pred_123", "input": { "prompt": "Hello" } }
 ```
 
 **Worker → Parent:**
+
 ```json
 {"type": "log", "source": "stdout", "data": "Processing..."}
 {"type": "output", "output": "chunk"}
@@ -239,24 +252,30 @@ Per-slot bidirectional sockets for prediction data. Avoids head-of-line blocking
 ## Key Design Decisions
 
 ### Subprocess Isolation
+
 Worker runs in a separate process. Benefits:
+
 - Crash isolation (worker crash → restart, parent survives)
 - Memory isolation (GPU memory leaks don't accumulate)
 - Clean shutdown (SIGKILL if needed)
 
 ### Single Worker Mode
+
 Always exactly one worker subprocess. No dynamic scaling - the parent is
 lightweight, all the heavy lifting happens in the worker.
 
 ### Slot-Based Concurrency
+
 Each slot is a Unix socket pair. `max_concurrency` determines slot count.
 Permits control access - at most one prediction per slot at a time.
 
 ### ContextVar-Based Log Routing
+
 Async predictions may spawn tasks. ContextVar propagates prediction ID
 through the call stack, allowing log routing even from spawned tasks.
 
 ### Audit Hook Protection
+
 User code might replace `sys.stdout`. The audit hook intercepts this and
 wraps their stream in a TeeWriter, preserving our log routing while
 allowing their code to work as expected.

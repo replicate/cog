@@ -145,6 +145,15 @@ impl WebhookSender {
             return true;
         }
 
+        // Output events are never throttled: they are high-value (contain actual
+        // prediction results), relatively infrequent (one per output chunk/file),
+        // and in the old Python runtime were effectively unthrottled because file
+        // uploads were synchronous.  Throttling them causes the director to miss
+        // intermediate output data.
+        if matches!(event, WebhookEventType::Output) {
+            return true;
+        }
+
         // Recover from poison - losing throttle state is acceptable
         let last = self.last_sent.lock().unwrap_or_else(|e| e.into_inner());
         last.elapsed() >= self.config.response_interval
@@ -368,6 +377,11 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    /// Install the ring crypto provider once for all webhook tests.
+    fn init() {
+        crate::install_crypto_provider();
+    }
+
     #[test]
     fn config_defaults() {
         let config = WebhookConfig::default();
@@ -386,6 +400,7 @@ mod tests {
     }
 
     fn test_config() -> WebhookConfig {
+        init();
         WebhookConfig {
             response_interval: Duration::ZERO,
             max_retries: 2,
@@ -516,7 +531,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_non_terminal_throttled() {
+    async fn send_non_terminal_logs_throttled() {
         let server = MockServer::start().await;
 
         Mock::given(method("POST"))
@@ -534,10 +549,41 @@ mod tests {
         let sender = WebhookSender::new(url, config).unwrap();
 
         sender.send(
+            WebhookEventType::Logs,
+            &serde_json::json!({"logs": "line 1"}),
+        );
+        // Second send should be throttled
+        sender.send(
+            WebhookEventType::Logs,
+            &serde_json::json!({"logs": "line 2"}),
+        );
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    #[tokio::test]
+    async fn send_output_not_throttled() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/webhook"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(2)
+            .mount(&server)
+            .await;
+
+        let url = format!("{}/webhook", server.uri());
+        let config = WebhookConfig {
+            response_interval: Duration::from_secs(10),
+            ..test_config()
+        };
+        let sender = WebhookSender::new(url, config).unwrap();
+
+        // Output events bypass throttling — both should be sent
+        sender.send(
             WebhookEventType::Output,
             &serde_json::json!({"output": "1"}),
         );
-        // Second send should be throttled
         sender.send(
             WebhookEventType::Output,
             &serde_json::json!({"output": "2"}),

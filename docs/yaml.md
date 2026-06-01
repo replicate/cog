@@ -1,17 +1,17 @@
 # `cog.yaml` reference
 
-`cog.yaml` defines how to build a Docker image and how to run predictions on your model inside that image.
+`cog.yaml` defines how to build a Docker image and how to run your model inside that image.
 
-It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predict). It looks a bit like this:
+It has three keys: [`build`](#build), [`image`](#image), and [`run`](#run). It looks a bit like this:
 
 ```yaml
 build:
-  python_version: "3.11"
+  python_version: "3.13"
   python_requirements: requirements.txt
   system_packages:
     - "ffmpeg"
     - "git"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
 Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `cog.yaml` file that can be used as a starting point for setting up your model.
@@ -44,7 +44,7 @@ build:
   gpu: true
 ```
 
-When you use `cog run` or `cog predict`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
+When you use `cog exec` or `cog run`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
 
 ### `python_requirements`
 
@@ -62,6 +62,7 @@ This follows the standard [requirements.txt](https://pip.pypa.io/en/stable/refer
 To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
 
 `cog.yaml`:
+
 ```yaml
 build:
   system_packages:
@@ -70,6 +71,7 @@ build:
 ```
 
 `requirements.txt`:
+
 ```
 git+https://github.com/huggingface/transformers
 ```
@@ -77,6 +79,7 @@ git+https://github.com/huggingface/transformers
 You can also pin Python package installations to a specific git commit:
 
 `cog.yaml`:
+
 ```yaml
 build:
   system_packages:
@@ -85,6 +88,7 @@ build:
 ```
 
 `requirements.txt`:
+
 ```
 git+https://github.com/huggingface/transformers@2d1602a
 ```
@@ -108,11 +112,11 @@ Your `cog.yaml` file can set either `python_packages` or `python_requirements`, 
 
 ### `python_version`
 
-The minor (`3.11`) or patch (`3.11.1`) version of Python to use. For example:
+The minor (`3.13`) or patch (`3.13.1`) version of Python to use. For example:
 
 ```yaml
 build:
-  python_version: "3.11.1"
+  python_version: "3.13.1"
 ```
 
 Cog supports Python 3.10, 3.11, 3.12, and 3.13. If you don't define a version, Cog will use the latest version of Python 3.13 or a version of Python that is compatible with the versions of PyTorch or TensorFlow you specify.
@@ -148,6 +152,29 @@ build:
 
 You can use secret mounts to securely pass credentials to setup commands, without baking them into the image. For more information, see [Dockerfile reference](https://docs.docker.com/engine/reference/builder/#run---mounttypesecret).
 
+### `sdk_version`
+
+Pin the version of the cog Python SDK installed in the container. Accepts a [PEP 440](https://peps.python.org/pep-0440/) version string. When omitted, the latest release is installed.
+
+```yaml
+build:
+  python_version: "3.13"
+  sdk_version: "0.18.0"
+```
+
+Pre-release versions are also supported:
+
+```yaml
+build:
+  sdk_version: "0.18.0a1"
+```
+
+When a pre-release `sdk_version` is set, `--pre` is automatically passed to the pip install commands for both `cog` and `coglet`, so pip will resolve matching pre-release packages.
+
+The minimum supported version is `0.16.0`. Specifying an older version will cause `cog build` to fail with an error.
+
+The `COG_SDK_WHEEL` environment variable takes precedence over `sdk_version`. See [Environment variables](./environment.md) for details.
+
 ### `system_packages`
 
 A list of Ubuntu APT packages to install. For example:
@@ -167,7 +194,7 @@ This stanza describes the concurrency capabilities of the model. It has one opti
 
 ### `max`
 
-The maximum number of concurrent predictions the model can process.  If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
+The maximum number of concurrent runs the model can process. If this is set, the model must specify an [async `run()` method](python.md#async-runners-and-concurrency).
 
 For example:
 
@@ -190,13 +217,27 @@ r8.im is Replicate's registry, but this can be any Docker registry.
 
 If you don't set this, then a name will be generated from the directory name.
 
-If you set this, then you can run `cog push` without specifying the model name. 
+If you set this, then you can run `cog push` without specifying the model name.
 
 If you specify an image name argument when pushing (like `cog push your-username/custom-model-name`), the argument will be used and the value of `image` in cog.yaml will be ignored.
 
+## `run`
+
+The pointer to the `Runner` object in your code, which defines how runs are executed on your model.
+
+For example:
+
+```yaml
+run: "run.py:Runner"
+```
+
+`predict:` is still accepted for existing projects, but it is deprecated. New projects should use `run:`.
+
+See [the Python API documentation for more information](python.md).
+
 ## `predict`
 
-The pointer to the `Predictor` object in your code, which defines how predictions are run on your model.
+Deprecated compatibility field for [`run`](#run). Existing projects can continue using it, but Cog will warn and `cog doctor --fix` can migrate common projects to `run:`.
 
 For example:
 

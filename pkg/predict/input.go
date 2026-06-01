@@ -27,12 +27,25 @@ type Input struct {
 
 type Inputs map[string]Input
 
-func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) {
+func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain bool) (Inputs, error) {
+	schemaKey := "Input"
+	if isTrain {
+		schemaKey = "TrainingInput"
+	}
 	var inputComponent *openapi3.SchemaRef
 	for name, component := range schema.Components.Schemas {
-		if name == "Input" {
+		if name == schemaKey {
 			inputComponent = component
 			break
+		}
+	}
+	// Fallback: if TrainingInput not found, try Input (legacy schemas)
+	if inputComponent == nil && isTrain {
+		for name, component := range schema.Components.Schemas {
+			if name == "Input" {
+				inputComponent = component
+				break
+			}
 		}
 	}
 
@@ -54,6 +67,10 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 					property, err := propertiesSchemas.JSONLookup(key)
 					if err == nil {
 						propertySchema := property.(*openapi3.Schema)
+						// Resolve allOf/$ref to find the actual type.
+						// cog-schema-gen emits allOf:[{$ref: ...}] for choices/enums,
+						// where the referenced schema has the concrete type.
+						propertySchema = resolveSchemaType(propertySchema)
 						switch {
 						case propertySchema.Type.Is("object"):
 							encodedVal := json.RawMessage(val)
@@ -110,19 +127,6 @@ func NewInputs(keyVals map[string][]string, schema *openapi3.T) (Inputs, error) 
 		}
 	}
 	return input, nil
-}
-
-func NewInputsWithBaseDir(keyVals map[string]string, baseDir string) Inputs {
-	input := Inputs{}
-	for key, val := range keyVals {
-		if strings.HasPrefix(val, "@") {
-			val = filepath.Join(baseDir, val[1:])
-			input[key] = Input{File: &val}
-		} else {
-			input[key] = Input{String: &val}
-		}
-	}
-	return input
 }
 
 func (inputs *Inputs) toMap() (map[string]any, error) {
@@ -182,4 +186,27 @@ func fileToDataURL(filePath string) (string, error) {
 	mimeType := mime.TypeByExtension(filepath.Ext(expandedVal))
 	dataURL := dataurl.New(content, mimeType).String()
 	return dataURL, nil
+}
+
+// resolveSchemaType walks through allOf/anyOf/$ref wrappers to find a schema
+// that has a concrete Type set. This is needed because the static schema gen
+// emits allOf:[{$ref: "#/components/schemas/Foo"}] for enum/choices fields,
+// where the referenced schema carries the type (e.g. "integer") but the wrapper does not.
+func resolveSchemaType(s *openapi3.Schema) *openapi3.Schema {
+	if s.Type != nil && s.Type.Slice() != nil {
+		return s
+	}
+	// Check allOf entries
+	for _, ref := range s.AllOf {
+		if ref.Value != nil && ref.Value.Type != nil && ref.Value.Type.Slice() != nil {
+			return ref.Value
+		}
+	}
+	// Check anyOf entries
+	for _, ref := range s.AnyOf {
+		if ref.Value != nil && ref.Value.Type != nil && ref.Value.Type.Slice() != nil {
+			return ref.Value
+		}
+	}
+	return s
 }

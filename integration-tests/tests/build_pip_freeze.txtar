@@ -7,9 +7,8 @@ cog build -t $TEST_IMAGE
 
 # Check the pip_freeze label exists and contains expected packages
 exec docker inspect $TEST_IMAGE --format '{{index .Config.Labels "run.cog.pip_freeze"}}'
-stdout 'pydantic'
-stdout 'uvicorn'
 stdout 'structlog'
+stdout 'coglet'
 
 -- cog.yaml --
 build:

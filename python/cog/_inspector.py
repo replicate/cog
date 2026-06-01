@@ -10,16 +10,25 @@ import inspect
 import re
 import sys
 import typing
+import warnings
 from dataclasses import MISSING, Field
 from enum import Enum
-from types import ModuleType
+from types import ModuleType, UnionType
 from typing import Any, AsyncIterator, Callable, Dict, Iterator, Type
 
 from . import _adt as adt
 from .coder import Coder
 from .input import FieldInfo
 from .model import BaseModel
+from .predictor import BasePredictor, _user_method_owner
 from .types import AsyncConcatenateIterator, ConcatenateIterator
+
+try:
+    from pydantic import (  # pyright: ignore[reportMissingImports]
+        BaseModel as PydanticBaseModel,
+    )
+except ImportError:
+    PydanticBaseModel = None  # type: ignore[assignment,misc]
 
 
 def _check_parent(child: type, parent: type) -> bool:
@@ -61,12 +70,17 @@ def _validate_setup(f: Callable[..., Any]) -> None:
         raise ValueError("setup() must not have keyword-only args")
     if spec.kwonlydefaults:
         raise ValueError("setup() must not have keyword-only defaults")
-    if spec.annotations.get("return") is not None:
+    # With `from __future__ import annotations` (PEP 563), `-> None` is stored as
+    # the string "None" rather than the None value, so check both forms.
+    return_annotation = spec.annotations.get("return")
+    if return_annotation is not None and return_annotation != "None":
         raise ValueError("setup() must return None")
 
 
-def _validate_predict(f: Callable[..., Any], f_name: str, is_class_fn: bool) -> None:
-    """Validate a predictor's predict method."""
+def _validate_run_or_predict(
+    f: Callable[..., Any], f_name: str, is_class_fn: bool
+) -> None:
+    """Validate a predictor's run or predict method."""
     if not inspect.isfunction(f):
         raise ValueError(f"{f_name} is not a function")
 
@@ -82,8 +96,41 @@ def _validate_predict(f: Callable[..., Any], f_name: str, is_class_fn: bool) -> 
         raise ValueError(f"{f_name}() must not have keyword-only args")
     if spec.kwonlydefaults:
         raise ValueError(f"{f_name}() must not have keyword-only defaults")
-    if spec.annotations.get("return") is None:
+    # With `from __future__ import annotations` (PEP 563), `-> None` is stored as
+    # the string "None" rather than the None value, so treat both as missing.
+    return_annotation = spec.annotations.get("return")
+    if return_annotation is None or return_annotation == "None":
         raise ValueError(f"{f_name}() must have a return type annotation")
+
+
+def _selected_predict_method(
+    cls: type[Any], fullname: str, *, stacklevel: int = 3
+) -> tuple[str, Callable[..., Any]]:
+    run_owner = _user_method_owner(cls, "run")
+    predict_owner = _user_method_owner(cls, "predict")
+    defines_run = run_owner is not None
+    defines_predict = predict_owner is not None
+    if defines_run and defines_predict:
+        raise ValueError(f"{fullname} must define either run() or predict(), not both")
+    if defines_run:
+        return "run", cls.run
+    if defines_predict:
+        warnings.warn(
+            f"{fullname}.predict() is deprecated; use run() instead",
+            DeprecationWarning,
+            stacklevel=stacklevel,
+        )
+        return "predict", cls.predict
+    raise ValueError(f"run or predict method not found: {fullname}")
+
+
+def _warn_if_base_predictor_in_mro(cls: type[Any], *, stacklevel: int = 3) -> None:
+    if any(base is BasePredictor for base in inspect.getmro(cls)[1:]):
+        warnings.warn(
+            "BasePredictor is deprecated; use BaseRunner instead",
+            DeprecationWarning,
+            stacklevel=stacklevel,
+        )
 
 
 def _validate_input_constraints(
@@ -107,7 +154,10 @@ def _validate_input_constraints(
             actual_default = field_info.default
 
         if actual_default is not None:
-            if ft.repetition is adt.Repetition.REPEATED:
+            if ft.repetition in (
+                adt.Repetition.REPEATED,
+                adt.Repetition.OPTIONAL_REPEATED,
+            ):
                 defaults = ft.normalize(actual_default)
             else:
                 defaults = [ft.normalize(actual_default)]
@@ -259,18 +309,79 @@ class _AnyType:
 _any_type = _AnyType()
 
 
+def _strip_non_opaque_annotated(tpe: Any) -> Any:
+    """Strip non-opaque Annotated metadata preserved by get_type_hints."""
+    _, is_opaque = adt._unwrap_opaque(tpe)
+    if is_opaque:
+        return tpe
+
+    origin = typing.get_origin(tpe)
+    if origin is typing.Annotated:
+        return _strip_non_opaque_annotated(typing.get_args(tpe)[0])
+
+    args = typing.get_args(tpe)
+    if not args:
+        return tpe
+
+    stripped_args = tuple(_strip_non_opaque_annotated(arg) for arg in args)
+    if stripped_args == args:
+        return tpe
+
+    if origin is typing.Union:
+        return typing.cast(Any, typing.Union).__getitem__(stripped_args)
+    if origin is UnionType:
+        result = stripped_args[0]
+        for arg in stripped_args[1:]:
+            result |= arg
+        return result
+
+    copy_with = getattr(tpe, "copy_with", None)
+    if callable(copy_with):
+        return copy_with(stripped_args)
+
+    try:
+        return origin[stripped_args]
+    except TypeError:
+        return tpe
+
+
 def _create_output_type(tpe: type) -> adt.OutputType:
     """Create an OutputType from a return type annotation."""
+    _, is_opaque = adt._unwrap_opaque(tpe)
+    if is_opaque:
+        ft = adt.FieldType.from_type(tpe)
+        if ft.repetition in (adt.Repetition.OPTIONAL, adt.Repetition.OPTIONAL_REPEATED):
+            raise ValueError("output must not be Optional")
+        if ft.repetition is adt.Repetition.REPEATED:
+            return adt.OutputType(kind=adt.OutputKind.LIST, type=adt.PrimitiveType.ANY)
+        return adt.OutputType(kind=adt.OutputKind.SINGLE, type=adt.PrimitiveType.ANY)
+
     if tpe is Any:
         print(
-            "Warning: use of Any as output type is error prone and highly-discouraged"
+            "Warning: use of Any as output type is error-prone and highly discouraged"
         )
         return adt.OutputType(kind=adt.OutputKind.SINGLE, type=_any_type)  # type: ignore[arg-type]
 
     if inspect.isclass(tpe) and _check_parent(tpe, BaseModel):
         fields = {}
-        for name, t in tpe.__annotations__.items():
+        field_hints = typing.get_type_hints(tpe, include_extras=True)
+        for name, t in field_hints.items():
+            t = _strip_non_opaque_annotated(t)
             ft = adt.FieldType.from_type(t)
+            fields[name] = ft
+        return adt.OutputType(kind=adt.OutputKind.OBJECT, fields=fields)
+
+    if (
+        PydanticBaseModel is not None
+        and inspect.isclass(tpe)
+        and _check_parent(tpe, PydanticBaseModel)
+    ):
+        fields = {}
+        field_hints = typing.get_type_hints(tpe, include_extras=True)
+        for name, field_info in tpe.model_fields.items():
+            field_type = field_hints.get(name, field_info.annotation)
+            field_type = _strip_non_opaque_annotated(field_type)
+            ft = adt.FieldType.from_type(field_type)
             fields[name] = ft
         return adt.OutputType(kind=adt.OutputKind.OBJECT, fields=fields)
 
@@ -299,7 +410,7 @@ def _create_output_type(tpe: type) -> adt.OutputType:
 
     else:
         ft = adt.FieldType.from_type(tpe)
-        if ft.repetition is adt.Repetition.OPTIONAL:
+        if ft.repetition in (adt.Repetition.OPTIONAL, adt.Repetition.OPTIONAL_REPEATED):
             raise ValueError("output must not be Optional")
         if ft.repetition == adt.Repetition.REQUIRED:
             kind = adt.OutputKind.SINGLE
@@ -318,16 +429,17 @@ def _create_predictor_info(
     f_name: str,
     is_class_fn: bool,
 ) -> adt.PredictorInfo:
-    """Create PredictorInfo from a predict function."""
-    _validate_predict(f, f_name, is_class_fn)
+    """Create PredictorInfo from a run or predict function."""
+    _validate_run_or_predict(f, f_name, is_class_fn)
     spec = inspect.getfullargspec(f)
 
     # Use get_type_hints to resolve string annotations (from __future__ import annotations)
     try:
-        type_hints = typing.get_type_hints(f)
+        type_hints = typing.get_type_hints(f, include_extras=True)
     except Exception:
         # Fall back to raw annotations if get_type_hints fails
         type_hints = spec.annotations
+    type_hints = {k: _strip_non_opaque_annotated(v) for k, v in type_hints.items()}
 
     # Skip 'self' for class methods
     names = spec.args[1:] if is_class_fn else spec.args
@@ -341,9 +453,10 @@ def _create_predictor_info(
             raise ValueError(f"missing type annotation for input: {name}")
         inputs[name] = _create_input_field(i, name, tpe, field_info)
 
-    output = _create_output_type(
-        type_hints.get("return", spec.annotations.get("return"))
-    )
+    return_type = type_hints.get("return", spec.annotations.get("return"))
+    if return_type is None:
+        raise ValueError("missing return type annotation for predict method")
+    output = _create_output_type(return_type)
     return adt.PredictorInfo(module_name, predictor_name, inputs, output)
 
 
@@ -410,14 +523,12 @@ def create_predictor(module_name: str, predictor_name: str) -> adt.PredictorInfo
     p = getattr(module, predictor_name)
 
     if inspect.isclass(p):
-        if not hasattr(p, "predict"):
-            raise ValueError(f"predict method not found: {fullname}")
-
         if hasattr(p, "setup"):
             _validate_setup(_unwrap(p.setup))
 
-        predict_fn_name = "predict"
-        predict_fn = _unwrap(getattr(p, predict_fn_name))
+        _warn_if_base_predictor_in_mro(p)
+        predict_fn_name, selected_predict_fn = _selected_predict_method(p, fullname)
+        predict_fn = _unwrap(selected_predict_fn)
         is_class_fn = True
 
     elif inspect.isfunction(p):
@@ -483,13 +594,19 @@ def check_input(
                 elif input_field.default.default is not MISSING:
                     kwargs[name] = input_field.default.default
                 else:
-                    if input_field.type.repetition is not adt.Repetition.OPTIONAL:
+                    if input_field.type.repetition not in (
+                        adt.Repetition.OPTIONAL,
+                        adt.Repetition.OPTIONAL_REPEATED,
+                    ):
                         raise ValueError(f"{name}: Field required")
                     kwargs[name] = None
             elif input_field.default is not None:
                 kwargs[name] = input_field.default
             else:
-                if input_field.type.repetition is not adt.Repetition.OPTIONAL:
+                if input_field.type.repetition not in (
+                    adt.Repetition.OPTIONAL,
+                    adt.Repetition.OPTIONAL_REPEATED,
+                ):
                     raise ValueError(f"{name}: Field required")
                 kwargs[name] = None
 
@@ -502,6 +619,8 @@ def check_input(
             values_to_check = [] if v is None else [v]
         elif input_field.type.repetition is adt.Repetition.REPEATED:
             values_to_check = v
+        elif input_field.type.repetition is adt.Repetition.OPTIONAL_REPEATED:
+            values_to_check = [] if v is None else v
 
         if input_field.ge is not None:
             if not all(x >= input_field.ge for x in values_to_check):

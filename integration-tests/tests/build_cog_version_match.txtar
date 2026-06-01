@@ -7,6 +7,8 @@
 #
 # This test verifies that when building with --use-cog-base-image,
 # the installed Python cog package has a valid version number.
+#
+# Resolves cog-base images from GHCR via COG_REGISTRY_HOST (set in CI).
 
 # Build using --use-cog-base-image
 cog build -t $TEST_IMAGE --use-cog-base-image=true

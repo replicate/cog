@@ -1,0 +1,23 @@
+# Test that cog doctor detects deprecated imports.
+# ExperimentalFeatureWarning was removed in cog 0.17.
+
+! cog doctor
+stderr 'ExperimentalFeatureWarning'
+stderr 'removed'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+import warnings
+from cog import BasePredictor
+from cog.types import ExperimentalFeatureWarning
+
+warnings.filterwarnings("ignore", category=ExperimentalFeatureWarning)
+
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return "hello " + text

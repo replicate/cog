@@ -23,14 +23,6 @@ flag_file
 bin/*
 .beads/
 
-# Compiled test tools
-/weights-gen
-
-# Test directories for weights testing
-/test-weights/
-/test-weights-example/
-weights.lock
-
 # Auto-:d version files from setuptools-scm
 python/cog/_version.py
 coglet/python/coglet/_version.py
@@ -50,6 +42,10 @@ CLAUDE.local.md
 mise.local.toml
 mise.local.lock
 
+# Built extension modules
+*.so
+*.pyd
+
 # Ignore rust specific build artifacts
 target
 /.cargo-home
@@ -57,3 +53,6 @@ target
 /.rustup
 /.rustup/**
 .coverage
+
+# Generated docs
+/site

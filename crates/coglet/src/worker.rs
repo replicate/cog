@@ -11,12 +11,17 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use futures::{SinkExt, StreamExt};
+use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedRead, FramedWrite};
+
+use crate::bridge::protocol::truncate_worker_log;
 
 // ============================================================================
 // Dropped log tracking
@@ -44,6 +49,54 @@ fn report_dropped_logs(tx: &mpsc::Sender<ControlResponse>, interval_millis: u64)
 }
 
 // ============================================================================
+// Fatal worker shutdown
+// ============================================================================
+
+struct FatalContext {
+    tx: mpsc::Sender<ControlResponse>,
+}
+
+static FATAL_CONTEXT: OnceLock<FatalContext> = OnceLock::new();
+
+fn init_fatal_context(tx: mpsc::Sender<ControlResponse>) {
+    let _ = FATAL_CONTEXT.set(FatalContext { tx });
+}
+
+/// Install a panic hook that sends a Fatal IPC message and aborts.
+///
+/// Any panic in the worker is an invariant violation. The hook sends a best-effort
+/// `ControlResponse::Fatal` so the parent can poison all slots, then aborts.
+/// This means `.expect()` / `panic!()` at any call site automatically gets
+/// the correct fatal behavior — no special helpers needed.
+fn install_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // Run the default hook first (prints to stderr).
+        prev(info);
+
+        let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "<unknown>".to_string()
+        };
+
+        let reason = match info.location() {
+            Some(loc) => format!("panic at {}:{}: {}", loc.file(), loc.line(), msg),
+            None => format!("panic: {}", msg),
+        };
+
+        if let Some(ctx) = FATAL_CONTEXT.get() {
+            let _ = ctx.tx.try_send(ControlResponse::Fatal { reason });
+        }
+
+        // If panic=abort is not set, abort explicitly.
+        std::process::abort();
+    }));
+}
+
+// ============================================================================
 // Tracing initialization
 // ============================================================================
 
@@ -53,7 +106,7 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
     let filter = if std::env::var("RUST_LOG").is_ok() {
         EnvFilter::from_default_env()
     } else {
-        let base_level = match std::env::var("COG_LOG").as_deref() {
+        let base_level = match std::env::var("COG_LOG_LEVEL").as_deref() {
             Ok("debug") => "debug",
             Ok("warn") | Ok("warning") => "warn",
             Ok("error") => "error",
@@ -61,7 +114,7 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
         };
 
         let filter_str = format!(
-            "coglet={level},coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
+            "coglet={level},coglet::setup=info,coglet::user=info,coglet_worker={level},coglet_worker::schema=off,coglet_worker::protocol=off",
             level = base_level
         );
 
@@ -79,9 +132,10 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
 
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
-    ControlRequest, ControlResponse, LogSource, SlotId, SlotOutcome, SlotRequest, SlotResponse,
+    ControlRequest, ControlResponse, FileOutputKind, LogSource, MAX_INLINE_IPC_SIZE, MetricMode,
+    SLOT_RESPONSE_PROTOCOL_VERSION, SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
-use crate::bridge::transport::{connect_transport, get_transport_info_from_env};
+use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
 use crate::worker_tracing_layer::WorkerTracingLayer;
 
@@ -95,11 +149,29 @@ type SlotWriter =
 #[derive(Clone)]
 pub struct SlotSender {
     tx: mpsc::UnboundedSender<SlotResponse>,
+    output_dir: PathBuf,
+    file_counter: Arc<AtomicUsize>,
+    output_counter: Arc<AtomicU64>,
 }
 
 impl SlotSender {
-    pub fn new(tx: mpsc::UnboundedSender<SlotResponse>) -> Self {
-        Self { tx }
+    pub fn new(tx: mpsc::UnboundedSender<SlotResponse>, output_dir: PathBuf) -> Self {
+        Self {
+            tx,
+            output_dir,
+            file_counter: Arc::new(AtomicUsize::new(0)),
+            output_counter: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    fn next_output_index(&self) -> u64 {
+        self.output_counter.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Generate a unique filename in the output dir.
+    fn next_output_path(&self, extension: &str) -> PathBuf {
+        let n = self.file_counter.fetch_add(1, Ordering::Relaxed);
+        self.output_dir.join(format!("{n}.{extension}"))
     }
 
     pub fn send_log(&self, source: LogSource, data: &str) -> io::Result<()> {
@@ -107,9 +179,9 @@ impl SlotSender {
             return Ok(());
         }
 
-        let msg = SlotResponse::Log {
+        let msg = SlotResponse::LogLine {
             source,
-            data: data.to_string(),
+            data: truncate_worker_log(data.to_string()),
         };
 
         self.tx
@@ -117,11 +189,85 @@ impl SlotSender {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
     }
 
-    pub fn send_output(&self, output: serde_json::Value) -> io::Result<()> {
-        let msg = SlotResponse::Output { output };
+    /// Write raw bytes to a file in the output dir and send as FileOutput.
+    ///
+    /// Used by FFI workers (Python, Node, etc.) to hand off file data without
+    /// needing language-specific file I/O — SlotSender owns the write.
+    pub fn write_file_output(
+        &self,
+        data: &[u8],
+        extension: &str,
+        mime_type: Option<String>,
+    ) -> io::Result<()> {
+        let path = self.next_output_path(extension);
+        std::fs::write(&path, data)?;
+        self.send_file_output(path, mime_type)
+    }
+
+    /// Send a file-typed output (e.g. Path, File return types).
+    ///
+    /// The file is already on disk at `path` — we just send the path reference.
+    /// `mime_type` is an explicit MIME type; when None the parent guesses from extension.
+    pub fn send_file_output(&self, path: PathBuf, mime_type: Option<String>) -> io::Result<()> {
+        let filename = path
+            .to_str()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
+            .to_string();
+        let msg = SlotResponse::FileOutput {
+            filename,
+            kind: FileOutputKind::FileType,
+            mime_type,
+        };
         self.tx
             .send(msg)
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+    }
+
+    /// Send a user metric to the parent process.
+    pub fn send_metric(
+        &self,
+        name: String,
+        value: serde_json::Value,
+        mode: MetricMode,
+    ) -> io::Result<()> {
+        let msg = SlotResponse::Metric { name, value, mode };
+        self.tx
+            .send(msg)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+    }
+
+    /// Send prediction output, either inline or spilled to disk if too large.
+    pub fn send_output(&self, output: serde_json::Value) -> io::Result<()> {
+        let msg = build_output_message(&self.output_dir, output, self.next_output_index())?;
+        self.tx
+            .send(msg)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
+    }
+}
+
+/// Build an output message, spilling to disk if larger than the IPC frame limit.
+fn build_output_message(
+    output_dir: &std::path::Path,
+    output: serde_json::Value,
+    index: u64,
+) -> io::Result<SlotResponse> {
+    let serialized =
+        serde_json::to_vec(&output).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    if serialized.len() > MAX_INLINE_IPC_SIZE {
+        let path = output_dir.join(format!("spill_{}.json", uuid::Uuid::new_v4()));
+        std::fs::write(&path, &serialized)?;
+        let filename = path
+            .to_str()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
+            .to_string();
+        Ok(SlotResponse::FileOutput {
+            filename,
+            kind: FileOutputKind::Oversized,
+            mime_type: None,
+        })
+    } else {
+        Ok(SlotResponse::OutputChunk { output, index })
     }
 }
 
@@ -177,19 +323,52 @@ pub trait PredictHandler: Send + Sync + 'static {
         id: String,
         input: serde_json::Value,
         slot_sender: Arc<SlotSender>,
+        context: std::collections::HashMap<String, String>,
     ) -> PredictResult;
 
     /// Request cancellation of prediction on a slot.
     fn cancel(&self, slot: SlotId);
 
-    /// Get OpenAPI schema for the predictor.
-    fn schema(&self) -> Option<serde_json::Value> {
-        None
-    }
-
     /// Run user-defined healthcheck. Default: healthy.
     async fn healthcheck(&self) -> HealthcheckResult {
         HealthcheckResult::healthy()
+    }
+}
+
+/// Path to the pre-built OpenAPI schema file inside the container.
+/// Written during `cog build` and COPYed into the image.
+const BUNDLED_SCHEMA_PATH: &str = ".cog/openapi_schema.json";
+
+/// Load the bundled OpenAPI schema from disk.
+///
+/// Returns `Some(schema)` if the file exists and parses correctly.
+/// Returns `None` if missing or unparseable — the predictor will accept
+/// any input without schema validation.
+fn load_bundled_schema() -> Option<serde_json::Value> {
+    let path = std::path::Path::new(BUNDLED_SCHEMA_PATH);
+    match std::fs::read_to_string(path) {
+        Ok(contents) => match serde_json::from_str(&contents) {
+            Ok(schema) => {
+                tracing::info!("Loaded OpenAPI schema from {}", BUNDLED_SCHEMA_PATH);
+                Some(schema)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse {}: {}. Running without schema — all input types accepted.",
+                    BUNDLED_SCHEMA_PATH,
+                    e,
+                );
+                None
+            }
+        },
+        Err(_) => {
+            tracing::warn!(
+                "No schema file at {}. Running without schema — all input types accepted. \
+                 Rebuild with a recent version of cog to generate the schema.",
+                BUNDLED_SCHEMA_PATH,
+            );
+            None
+        }
     }
 }
 
@@ -200,6 +379,8 @@ pub enum PredictionOutcome {
     Success {
         output: serde_json::Value,
         predict_time: f64,
+        /// True when the predictor returned a list, generator, or iterator.
+        is_stream: bool,
     },
     /// Prediction failed with an error
     Failed { error: String, predict_time: f64 },
@@ -213,11 +394,12 @@ pub struct PredictResult {
 }
 
 impl PredictResult {
-    pub fn success(output: serde_json::Value, predict_time: f64) -> Self {
+    pub fn success(output: serde_json::Value, predict_time: f64, is_stream: bool) -> Self {
         Self {
             outcome: PredictionOutcome::Success {
                 output,
                 predict_time,
+                is_stream,
             },
         }
     }
@@ -285,6 +467,7 @@ impl SlotCompletion {
 pub async fn run_worker<H: PredictHandler>(
     handler: Arc<H>,
     config: WorkerConfig,
+    transport_info: ChildTransportInfo,
 ) -> io::Result<()> {
     let num_slots = config.num_slots;
 
@@ -297,10 +480,9 @@ pub async fn run_worker<H: PredictHandler>(
     let control_fds =
         crate::fd_redirect::redirect_fds_for_subprocess_isolation(setup_log_tx.clone())?;
 
-    // Connect to slot sockets (transport info from env, set by parent)
-    let child_info = get_transport_info_from_env()?;
-    tracing::trace!(?child_info, "Connecting to slot transport");
-    let mut transport = connect_transport(child_info).await?;
+    // Connect to slot sockets (transport info from Init message)
+    tracing::trace!(?transport_info, "Connecting to slot transport");
+    let mut transport = connect_transport(transport_info).await?;
     tracing::info!(num_slots, "Connected to slot transport");
 
     // Control channel via redirected fds (not stdin/stdout)
@@ -315,6 +497,9 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Generate unique SlotIds for each socket
     let slot_ids: Vec<SlotId> = (0..num_slots).map(|_| SlotId::new()).collect();
+
+    init_fatal_context(setup_log_tx.clone());
+    install_panic_hook();
 
     let setup_cleanup = config.setup_log_hook.map(|hook| hook(setup_log_tx.clone()));
 
@@ -367,13 +552,19 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Run setup
     tracing::info!("Worker starting setup");
+    let setup_start = std::time::Instant::now();
     let setup_result = handler.setup().await;
-    tracing::trace!("Setup handler returned");
+    let setup_elapsed = setup_start.elapsed();
+    tracing::debug!(
+        elapsed_ms = setup_elapsed.as_millis() as u64,
+        success = setup_result.is_ok(),
+        "Setup handler returned"
+    );
 
     // Unregister Python's setup sender, but keep log_forwarder running
     // The fd_redirect capture threads will continue sending subprocess logs
     if let Some(cleanup) = setup_cleanup {
-        tracing::trace!("Running cleanup (unregistering Python setup sender)");
+        tracing::debug!("Running cleanup (unregistering Python setup sender)");
         cleanup();
     }
     // Note: We DON'T drop setup_log_tx or wait for log_forwarder
@@ -381,7 +572,11 @@ pub async fn run_worker<H: PredictHandler>(
 
     // Handle setup failure
     if let Err(e) = setup_result {
-        tracing::error!(error = %e, "Setup failed");
+        tracing::error!(
+            error = %e,
+            elapsed_ms = setup_elapsed.as_millis() as u64,
+            "Setup failed"
+        );
         let slot = slot_ids.first().copied().unwrap_or_else(SlotId::new);
         let mut w = ctrl_writer.lock().await;
         let _ = w
@@ -393,15 +588,16 @@ pub async fn run_worker<H: PredictHandler>(
         return Ok(());
     }
 
-    // Send Ready with slot IDs and schema
-    let schema = handler.schema();
+    // Load the pre-built schema from .cog/openapi_schema.json (written during `cog build`).
+    // No runtime generation — if the file doesn't exist, no schema.
+    let schema = load_bundled_schema();
     if let Some(ref s) = schema {
         let schema_json = serde_json::to_string(s).unwrap_or_else(|_| "{}".to_string());
         let schema_size = schema_json.len();
         tracing::info!(
             schema_size_bytes = schema_size,
             schema_size_kb = schema_size / 1024,
-            "Schema generated"
+            "Schema loaded"
         );
         if schema_size > 1024 * 1024 {
             // Log first 500 chars if schema is >1MB
@@ -463,6 +659,19 @@ pub async fn run_worker<H: PredictHandler>(
         .map(|(id, w)| (id, Arc::new(tokio::sync::Mutex::new(w))))
         .collect();
 
+    // Send protocol version on each slot so the orchestrator can detect mismatches
+    for (slot_id, writer) in &slot_writers {
+        let mut w = writer.lock().await;
+        if let Err(e) = w
+            .send(SlotResponse::ProtocolVersion {
+                version: SLOT_RESPONSE_PROTOCOL_VERSION,
+            })
+            .await
+        {
+            tracing::warn!(%slot_id, error = %e, "Failed to send protocol version");
+        }
+    }
+
     // Main event loop
     loop {
         tokio::select! {
@@ -484,8 +693,14 @@ pub async fn run_worker<H: PredictHandler>(
                         break;
                     }
                     Some(Ok(ControlRequest::Healthcheck { id })) => {
-                        tracing::debug!(%id, "Healthcheck requested");
+                        tracing::trace!(%id, "Healthcheck requested, invoking handler");
                         let result = handler.healthcheck().await;
+                        tracing::trace!(
+                            %id,
+                            status = ?result.status,
+                            error = ?result.error,
+                            "Healthcheck handler returned"
+                        );
                         let mut w = ctrl_writer.lock().await;
                         let _ = w.send(ControlResponse::HealthcheckResult {
                             id,
@@ -532,8 +747,12 @@ pub async fn run_worker<H: PredictHandler>(
                     continue;
                 }
 
-                match request {
-                    SlotRequest::Predict { id, input } => {
+                // Extract the prediction ID before consuming the request, so we
+                // can report a failure even if rehydration itself fails.
+                let prediction_id = request.prediction_id().to_string();
+
+                match request.rehydrate_input() {
+                    Ok((id, input, output_dir, context)) => {
                         tracing::trace!(%slot_id, %id, "Prediction request received");
                         slot_busy.insert(slot_id, true);
 
@@ -552,11 +771,28 @@ pub async fn run_worker<H: PredictHandler>(
                                 slot_id,
                                 id,
                                 input,
+                                PathBuf::from(output_dir),
                                 handler,
                                 writer,
+                                context,
                             ).await;
                             let _ = completion_tx.send(completion).await;
                         });
+                    }
+                    Err(e) => {
+                        tracing::error!(%slot_id, %prediction_id, error = %e, "Failed to rehydrate input");
+                        // Send a failure response so the prediction doesn't hang forever.
+                        if let Some(writer) = slot_writers.get(&slot_id) {
+                            let mut w = writer.lock().await;
+                            let fail_msg = SlotResponse::Failed {
+                                id: prediction_id,
+                                error: format!("Failed to rehydrate input: {}", e),
+                            };
+                            if let Err(send_err) = w.send(fail_msg).await {
+                                tracing::error!(%slot_id, error = %send_err, "Failed to send rehydrate error response");
+                            }
+                        }
+                        let _ = completion_tx.send(SlotCompletion::idle(slot_id)).await;
                     }
                 }
             }
@@ -595,14 +831,16 @@ async fn run_prediction<H: PredictHandler>(
     slot_id: SlotId,
     prediction_id: String,
     input: serde_json::Value,
+    output_dir: PathBuf,
     handler: Arc<H>,
     writer: SlotWriter,
+    context: std::collections::HashMap<String, String>,
 ) -> SlotCompletion {
     tracing::trace!(%slot_id, %prediction_id, "run_prediction starting");
 
     // Create channel for log streaming
     let (log_tx, mut log_rx) = mpsc::unbounded_channel::<SlotResponse>();
-    let slot_sender = Arc::new(SlotSender::new(log_tx));
+    let slot_sender = Arc::new(SlotSender::new(log_tx, output_dir.clone()));
 
     // Forward logs to slot socket
     let writer_for_logs = Arc::clone(&writer);
@@ -617,10 +855,23 @@ async fn run_prediction<H: PredictHandler>(
         tracing::trace!("Prediction log forwarder exiting");
     });
 
-    // Run prediction
-    let result = handler
-        .predict(slot_id, prediction_id.clone(), input, slot_sender)
-        .await;
+    // Run prediction — slot_sender is moved in, dropped when predict returns,
+    // which closes the log channel and lets the log forwarder exit.
+    //
+    // block_in_place tells tokio this thread will block (Python GIL acquisition),
+    // allowing the runtime to move other tasks (like log_forwarder) to free
+    // threads. Without this, the log forwarder can be work-stolen onto the
+    // same thread as the prediction and starved until predict returns, causing
+    // all logs to arrive in a single batch at prediction end.
+    let result = tokio::task::block_in_place(|| {
+        Handle::current().block_on(handler.predict(
+            slot_id,
+            prediction_id.clone(),
+            input,
+            slot_sender,
+            context,
+        ))
+    });
     tracing::trace!(%slot_id, %prediction_id, "handler.predict returned");
 
     // Wait for log forwarder
@@ -628,16 +879,41 @@ async fn run_prediction<H: PredictHandler>(
     let _ = log_forwarder.await;
     tracing::trace!(%slot_id, %prediction_id, "Log forwarder done");
 
-    // Send result on slot socket
+    // Send result on slot socket.
+    // Output is always sent separately from Done so that large values get
+    // spilled to disk and never exceed the IPC frame limit.
+    let mut w = writer.lock().await;
     let response = match result.outcome {
         PredictionOutcome::Success {
             output,
             predict_time,
-        } => SlotResponse::Done {
-            id: prediction_id.clone(),
-            output: Some(output),
-            predict_time,
-        },
+            is_stream,
+        } => {
+            // Send output as a separate message (handles spilling for large values).
+            // Skip if null or empty array — those mean "already streamed" (generators).
+            if !output.is_null() && output != serde_json::Value::Array(vec![]) {
+                let output_msg = match build_output_message(&output_dir, output, 0) {
+                    Ok(msg) => msg,
+                    Err(e) => {
+                        tracing::error!(error = %e, "Failed to build output message");
+                        return SlotCompletion::poisoned(
+                            slot_id,
+                            format!("Output spill error: {}", e),
+                        );
+                    }
+                };
+                if let Err(e) = w.send(output_msg).await {
+                    tracing::error!(error = %e, "Failed to send prediction output");
+                    return SlotCompletion::poisoned(slot_id, format!("Socket write error: {}", e));
+                }
+            }
+            SlotResponse::Done {
+                id: prediction_id.clone(),
+                output: None,
+                predict_time,
+                is_stream,
+            }
+        }
         PredictionOutcome::Cancelled { .. } => SlotResponse::Cancelled {
             id: prediction_id.clone(),
         },
@@ -647,7 +923,6 @@ async fn run_prediction<H: PredictHandler>(
         },
     };
 
-    let mut w = writer.lock().await;
     if let Err(e) = w.send(response).await {
         tracing::error!(error = %e, "Failed to send prediction response");
         return SlotCompletion::poisoned(slot_id, format!("Socket write error: {}", e));
@@ -662,8 +937,20 @@ mod tests {
 
     #[test]
     fn predict_result_success() {
-        let r = PredictResult::success(serde_json::json!("hello"), 0.5);
+        let r = PredictResult::success(serde_json::json!("hello"), 0.5, false);
         assert!(matches!(r.outcome, PredictionOutcome::Success { .. }));
+    }
+
+    #[test]
+    fn predict_result_success_stream() {
+        let r = PredictResult::success(serde_json::json!([]), 0.5, true);
+        assert!(matches!(
+            r.outcome,
+            PredictionOutcome::Success {
+                is_stream: true,
+                ..
+            }
+        ));
     }
 
     #[test]

@@ -1,0 +1,22 @@
+# Test bare dict return type works for predict output
+
+# Build the image
+cog build -t $TEST_IMAGE
+
+# Predict returns a dict
+cog predict $TEST_IMAGE -i name=alice
+stdout '"greeting": "hello alice"'
+stdout '"length": 5'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, name: str) -> dict:
+        return {"greeting": "hello " + name, "length": len(name)}

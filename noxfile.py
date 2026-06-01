@@ -1,6 +1,7 @@
 """Nox sessions for cog Python SDK testing."""
 
 import glob
+import platform
 
 import nox
 
@@ -12,29 +13,68 @@ PYTHON_DEFAULT = "3.13"
 
 # Test dependencies (mirrored from pyproject.toml [dependency-groups].test)
 TEST_DEPS = [
-    "httpx",
-    "hypothesis",
-    "numpy",
-    "pillow",
     "pytest",
-    "pytest-asyncio",
-    "pytest-httpserver",
     "pytest-timeout",
     "pytest-xdist",
     "pytest-cov",
-    "responses",
-    "pexpect",
 ]
 
 
-def _install_package(session: nox.Session) -> None:
-    """Install the package, using pre-built wheel if available."""
-    wheels = glob.glob("dist/cog-*.whl")
-    if wheels:
-        # Use pre-built wheel if available
-        session.install(wheels[0])
+def _find_compatible_wheel(pattern: str) -> str | None:
+    """Find a wheel matching the current platform from dist/.
+
+    Returns None when no wheels exist at all.  Raises RuntimeError when
+    wheels exist but none are compatible — that means the build produced
+    the wrong platform and should be fixed, not silently papered over.
+    """
+    wheels = glob.glob(pattern)
+    if not wheels:
+        return None
+
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    platform_tags = {
+        ("darwin", "arm64"): "macosx",
+        ("darwin", "x86_64"): "macosx",
+        ("linux", "x86_64"): "manylinux",
+        ("linux", "aarch64"): "manylinux",
+    }
+    tag = platform_tags.get((system, machine))
+    if tag:
+        for whl in wheels:
+            if tag in whl or "none-any" in whl:
+                return whl
+        raise RuntimeError(
+            f"Found wheel(s) in dist/ but none compatible with {system}/{machine}:\n"
+            + "\n".join(f"  {w}" for w in wheels)
+            + "\nRun 'mise run build:coglet:wheel' to build a native wheel."
+        )
+
+    # Unknown platform — let pip figure it out
+    return wheels[0]
+
+
+def _install_coglet(session: nox.Session) -> None:
+    """Install coglet wheel (required dependency)."""
+    whl = _find_compatible_wheel("dist/coglet-*.whl")
+    if whl:
+        session.install(whl)
     else:
-        # Editable install
+        session.error(
+            "No coglet wheel found in dist/. Run 'mise run build:coglet:wheel' first."
+        )
+
+
+def _install_package(session: nox.Session) -> None:
+    """Install the cog SDK and coglet dependency."""
+    _install_coglet(session)
+    whl = _find_compatible_wheel("dist/cog-*.whl")
+    if whl:
+        session.install(whl)
+    else:
+        # No pre-built wheel — editable install from source.
+        # This fails in CI (setuptools_scm needs a full git checkout),
+        # so CI must run build:sdk first.
         session.install("-e", ".")
 
 
@@ -64,13 +104,6 @@ def typecheck(session: nox.Session) -> None:
 @nox.session(name="coglet", python=PYTHON_VERSIONS)
 def coglet_tests(session: nox.Session) -> None:
     """Run coglet-python binding tests."""
-    # Install coglet wheel if available, otherwise editable
-    coglet_wheels = glob.glob("dist/coglet-*.whl")
-    if coglet_wheels:
-        session.install(coglet_wheels[0])
-    else:
-        session.install("-e", "crates/coglet-python")
-    # Install cog SDK (editable for local dev)
     _install_package(session)
     session.install("pytest", "requests")
     session.run("pytest", "crates/coglet-python/tests", "-v", *session.posargs)
