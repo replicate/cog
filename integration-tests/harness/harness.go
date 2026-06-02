@@ -29,12 +29,14 @@ import (
 // into testscript environments (Setup) and background processes (cmdCogServe).
 // Keep this list in sync: if you add a new env var to propagate, add it here.
 var propagatedEnvVars = []string{
-	"COG_SDK_WHEEL",     // SDK wheel override
-	"COGLET_WHEEL",      // coglet wheel override
-	"RUST_LOG",          // Rust logging control
-	"COG_CA_CERT",       // custom CA certificates (e.g. Cloudflare WARP)
-	"BUILDKIT_PROGRESS", // Docker build output format
-	"COG_REGISTRY_HOST", // registry host for cog base image resolution
+	"COG_SDK_WHEEL",      // SDK wheel override
+	"COGLET_WHEEL",       // coglet wheel override
+	"COG_CACHE_DIR",      // isolated cache for managed weights
+	"COG_MODEL_REGISTRY", // test registry override for model refs
+	"RUST_LOG",           // Rust logging control
+	"COG_CA_CERT",        // custom CA certificates (e.g. Cloudflare WARP)
+	"BUILDKIT_PROGRESS",  // Docker build output format
+	"COG_REGISTRY_HOST",  // registry host for cog base image resolution
 }
 
 // Harness provides utilities for running cog integration tests.
