@@ -36,6 +36,7 @@ stdout '"status":"succeeded"'
 stdout 'hello world \(weight-size=1024\)'
 
 # Per-invocation mount dir must be cleaned up after serve exits.
+server-stop
 exec sh -c 'test ! -d .cog/mounts || test -z "$(ls -A .cog/mounts)"'
 
 -- cog.yaml --
