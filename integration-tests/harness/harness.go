@@ -29,12 +29,14 @@ import (
 // into testscript environments (Setup) and background processes (cmdCogServe).
 // Keep this list in sync: if you add a new env var to propagate, add it here.
 var propagatedEnvVars = []string{
-	"COG_SDK_WHEEL",     // SDK wheel override
-	"COGLET_WHEEL",      // coglet wheel override
-	"RUST_LOG",          // Rust logging control
-	"COG_CA_CERT",       // custom CA certificates (e.g. Cloudflare WARP)
-	"BUILDKIT_PROGRESS", // Docker build output format
-	"COG_REGISTRY_HOST", // registry host for cog base image resolution
+	"COG_SDK_WHEEL",      // SDK wheel override
+	"COGLET_WHEEL",       // coglet wheel override
+	"COG_CACHE_DIR",      // isolated cache for managed weights
+	"COG_MODEL_REGISTRY", // test registry override for model refs
+	"RUST_LOG",           // Rust logging control
+	"COG_CA_CERT",        // custom CA certificates (e.g. Cloudflare WARP)
+	"BUILDKIT_PROGRESS",  // Docker build output format
+	"COG_REGISTRY_HOST",  // registry host for cog base image resolution
 }
 
 // Harness provides utilities for running cog integration tests.
@@ -242,6 +244,7 @@ func (h *Harness) Commands() map[string]func(ts *testscript.TestScript, neg bool
 		// Built-in commands (defined in this file)
 		NewCommand("cog", h.cmdCog),
 		NewCommand("curl", h.cmdCurl),
+		NewCommand("server-stop", h.cmdServerStop),
 		NewCommand("wait-for", h.cmdWaitFor),
 		NewCommand("docker-run", h.cmdDockerRun),
 
@@ -618,6 +621,17 @@ func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	ts.Fatalf("curl: all %d attempts failed with status %d: %s", maxAttempts, lastStatus, errorMsg)
 }
 
+// cmdServerStop stops the background 'cog serve' process for the current test.
+func (h *Harness) cmdServerStop(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("server-stop: negation is not supported")
+	}
+	if len(args) != 0 {
+		ts.Fatalf("server-stop: usage: server-stop")
+	}
+	h.StopServer(ts)
+}
+
 // StopServer stops the background server process for a test script.
 func (h *Harness) StopServer(ts *testscript.TestScript) {
 	workDir := ts.Getenv("WORK")
@@ -643,11 +657,24 @@ func (h *Harness) stopServerByWorkDir(workDir string) {
 		_ = resp.Body.Close()
 	}
 
-	// Force kill the cog process if still running
+	// Give the cog process time to exit after /shutdown so defers can run.
+	done := make(chan struct{})
+	go func() {
+		_ = info.cmd.Wait()
+		close(done)
+	}()
+
+	// Force kill the cog process if still running.
 	if info.cmd.Process != nil {
-		_ = info.cmd.Process.Kill()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			_ = info.cmd.Process.Kill()
+			<-done
+		}
+	} else {
+		<-done
 	}
-	_ = info.cmd.Wait()
 
 	// Also kill any Docker container that may still be running on this port
 	// Find container by port and kill it
