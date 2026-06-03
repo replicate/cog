@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,7 +11,9 @@ import (
 
 	"github.com/replicate/go/uuid"
 
+	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/provider"
 	"github.com/replicate/cog/pkg/provider/setup"
@@ -64,7 +67,53 @@ func push(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	src, err := model.NewSource(configFilename)
+	image := ""
+	if len(args) > 0 {
+		image = args[0]
+	}
+
+	return RunPush(ctx, dockerClient, registry.NewRegistryClient(), provider.DefaultRegistry(), PushCommandOptions{
+		ConfigFilename: configFilename,
+		Image:          image,
+		Flags:          buildFlagsOptionsFromCobra(cmd),
+	})
+}
+
+// PushCommandOptions holds everything RunPush needs that is independent of the
+// argument parser.
+type PushCommandOptions struct {
+	ConfigFilename string
+	Image          string
+	Flags          BuildFlagsOptions
+}
+
+// ResolvePushTarget resolves the push target image reference from the config
+// image, config model, and positional args, running the push-specific
+// user-input checks. It returns the target string, the resolved model ref (or
+// nil for FormatImage paths), and any validation error.
+func ResolvePushTarget(configImage, configModel string, args []string) (string, *model.ResolvedRef, error) {
+	modelRef, err := validatePushArgs(configImage, configModel, args)
+	if err != nil {
+		return "", nil, err
+	}
+	switch {
+	case modelRef != nil:
+		return modelRef.String(), modelRef, nil
+	case len(args) > 0:
+		return args[0], nil, nil
+	case configImage != "":
+		return configImage, nil, nil
+	default:
+		return "", nil, errors.New("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.example.com/your-username/model-name'")
+	}
+}
+
+// RunPush builds and pushes a model image. It is shared by both the Cobra and
+// Kong push commands.
+func RunPush(ctx context.Context, dockerClient command.Command, regClient registry.Client, providerReg *provider.Registry, opts PushCommandOptions) error {
+	config.BuildSourceEpochTimestamp = opts.Flags.Timestamp
+
+	src, err := model.NewSource(opts.ConfigFilename)
 	if err != nil {
 		return err
 	}
@@ -81,24 +130,17 @@ func push(cmd *cobra.Command, args []string) error {
 	// can drive credential selection from the correct host even when
 	// Build fails (the build-error path calls p.PostPush(...) for
 	// Replicate-specific guidance).
-	modelRef, err := validatePushArgs(src.Config.Image, src.Config.Model, args)
+	var args []string
+	if opts.Image != "" {
+		args = []string{opts.Image}
+	}
+	pushTarget, _, err := ResolvePushTarget(src.Config.Image, src.Config.Model, args)
 	if err != nil {
 		return err
 	}
-	var pushTarget string
-	switch {
-	case modelRef != nil:
-		pushTarget = modelRef.String()
-	case len(args) > 0:
-		pushTarget = args[0]
-	case src.Config.Image != "":
-		pushTarget = src.Config.Image
-	default:
-		return errors.New("To push images, you must either set the 'image' option in cog.yaml or pass an image name as an argument. For example, 'cog push registry.example.com/your-username/model-name'")
-	}
 
 	// Look up the provider for the target registry
-	p := provider.DefaultRegistry().ForImage(pushTarget)
+	p := providerReg.ForImage(pushTarget)
 	if p == nil {
 		return fmt.Errorf("no provider found for image '%s'", pushTarget)
 	}
@@ -116,14 +158,12 @@ func push(cmd *cobra.Command, args []string) error {
 		annotations["run.cog.push_id"] = buildID.String()
 	}
 
-	regClient := registry.NewRegistryClient()
 	resolver := model.NewResolver(dockerClient, regClient)
 
 	// Build the model
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(pushTarget))
 	console.Info("")
-	buildOpts := buildOptionsFromFlags(cmd, pushTarget, annotations)
-	m, err := resolver.Build(ctx, src, buildOpts)
+	m, err := resolver.Build(ctx, src, opts.Flags.ModelBuildOptions(pushTarget, annotations))
 	if err != nil {
 		// Call PostPush to handle error logging/analytics
 		_ = p.PostPush(ctx, pushOpts, err)

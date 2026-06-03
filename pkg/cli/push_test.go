@@ -331,3 +331,34 @@ func TestFormatPushResult_DefensiveGuards(t *testing.T) {
 		assert.NotContains(t, out, "image")
 	})
 }
+
+func TestResolvePushTargetUsesModelRef(t *testing.T) {
+	target, ref, err := ResolvePushTarget("", "r8.im/user/model", nil)
+	require.NoError(t, err)
+	require.NotNil(t, ref)
+	require.Equal(t, ref.String(), target)
+}
+
+func TestResolvePushTargetRejectsPositionalWithModel(t *testing.T) {
+	_, _, err := ResolvePushTarget("", "r8.im/user/model", []string{"example.com/image"})
+	require.ErrorContains(t, err, "positional image argument not supported")
+}
+
+func TestResolvePushTargetUsesConfigImage(t *testing.T) {
+	target, ref, err := ResolvePushTarget("registry.example.com/user/model", "", nil)
+	require.NoError(t, err)
+	require.Nil(t, ref)
+	require.Equal(t, "registry.example.com/user/model", target)
+}
+
+func TestResolvePushTargetUsesPositionalArg(t *testing.T) {
+	target, ref, err := ResolvePushTarget("", "", []string{"registry.example.com/user/model"})
+	require.NoError(t, err)
+	require.Nil(t, ref)
+	require.Equal(t, "registry.example.com/user/model", target)
+}
+
+func TestResolvePushTargetRequiresTarget(t *testing.T) {
+	_, _, err := ResolvePushTarget("", "", nil)
+	require.ErrorContains(t, err, "you must either set the 'image' option")
+}
