@@ -225,3 +225,15 @@ func TestKongCommandVersionExitsBeforeCommandRun(t *testing.T) {
 	})
 	require.Equal(t, "cog version dev (built none)\n", stdout.String())
 }
+
+func TestKongRuntimeCommandFlagsParse(t *testing.T) {
+	parser := newTestParser(t)
+
+	for _, args := range [][]string{
+		{"serve", "--port", "5000", "--upload-url", "https://example.com/upload", "--gpus", "all", "--help"},
+		{"exec", "--gpus", "all", "--publish", "8888", "--env", "A=B", "python", "-c", "print(1)"},
+	} {
+		_, err := parser.Parse(args)
+		require.NoErrorf(t, err, "parse %v", args)
+	}
+}

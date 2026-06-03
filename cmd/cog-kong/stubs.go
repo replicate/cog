@@ -33,12 +33,6 @@ func (cmd *DoctorCmd) Run() error {
 	return errKongCommandNotImplemented
 }
 
-type ExecCmd struct{}
-
-func (cmd *ExecCmd) Run() error {
-	return errKongCommandNotImplemented
-}
-
 type InitCmd struct{}
 
 func (cmd *InitCmd) Run() error {
@@ -60,12 +54,6 @@ func (cmd *PredictCmd) Run() error {
 type RunCmd struct{}
 
 func (cmd *RunCmd) Run() error {
-	return errKongCommandNotImplemented
-}
-
-type ServeCmd struct{}
-
-func (cmd *ServeCmd) Run() error {
 	return errKongCommandNotImplemented
 }
 
