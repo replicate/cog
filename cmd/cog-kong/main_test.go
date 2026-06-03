@@ -251,3 +251,17 @@ func TestKongSimpleCommandFlagsParse(t *testing.T) {
 		require.NoErrorf(t, err, "parse %v", args)
 	}
 }
+
+func TestKongPredictionCommandFlagsParse(t *testing.T) {
+	parser := newTestParser(t)
+
+	for _, args := range [][]string{
+		{"predict", "example/image", "--input", "prompt=cat", "--help"},
+		{"run", "example/image", "--input", "prompt=cat", "--output", "out.png", "--help"},
+		{"run", "--json", "@inputs.json", "--gpus", "all", "--help"},
+		{"train", "example/image", "--input", "dataset=@data.json", "--help"},
+	} {
+		_, err := parser.Parse(args)
+		require.NoErrorf(t, err, "parse %v", args)
+	}
+}

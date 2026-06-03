@@ -55,26 +55,61 @@ Otherwise, it will build the model in the current directory and train it.`,
 }
 
 func cmdTrain(cmd *cobra.Command, args []string) error {
-	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	dockerClient, err := docker.NewClient(ctx)
+	dockerClient, err := docker.NewClient(cmd.Context())
 	if err != nil {
 		return err
 	}
 
+	image := ""
+	if len(args) > 0 {
+		image = args[0]
+	}
+
+	return RunTrain(cmd.Context(), dockerClient, TrainCommandOptions{
+		RuntimeBuildOptions: RuntimeBuildOptions{
+			ConfigFilename:   configFilename,
+			ProgressOutput:   buildProgressOutput,
+			UseCudaBaseImage: buildUseCudaBaseImage,
+			UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
+			GPUs:             gpusFlag,
+			Env:              trainEnvFlags,
+		},
+		Image:        image,
+		Input:        trainInputFlags,
+		OutputPath:   trainOutPath,
+		SetupTimeout: setupTimeout,
+	})
+}
+
+// TrainCommandOptions holds everything RunTrain needs that is independent of
+// the argument parser.
+type TrainCommandOptions struct {
+	RuntimeBuildOptions
+
+	Image        string
+	Input        []string
+	OutputPath   string
+	SetupTimeout uint32
+}
+
+// RunTrain builds or pulls a model image and runs a training job. It is shared
+// by both the Cobra and Kong train commands.
+func RunTrain(parent context.Context, dockerClient command.Command, opts TrainCommandOptions) error {
+	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	imageName := ""
 	volumes := []command.Volume{}
-	gpus := gpusFlag
+	gpus := opts.GPUs
 
 	// Managed-weight mounts only apply when we have cog.yaml in scope.
 	var wm *weights.Manager
 
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
-	if len(args) == 0 {
+	if opts.Image == "" {
 		// Build image
-		src, err := model.NewSource(configFilename)
+		src, err := model.NewSource(opts.ConfigFilename)
 		if err != nil {
 			return err
 		}
@@ -86,7 +121,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 
 		console.Info("Building Docker image from environment in cog.yaml...")
 		console.Info("")
-		m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
+		m, err := resolver.Build(ctx, src, opts.ServeBuildOptions())
 		if err != nil {
 			return err
 		}
@@ -108,7 +143,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Use existing image
-		imageName = args[0]
+		imageName = opts.Image
 
 		// Pull the image (if needed) and validate it's a Cog model
 		ref, err := model.ParseRef(imageName)
@@ -133,7 +168,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			GPUs:    gpus,
 			Image:   imageName,
 			Volumes: volumes,
-			Env:     trainEnvFlags,
+			Env:     opts.Env,
 			Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
 		},
 		IsTrain:       true,
@@ -144,7 +179,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := predictor.Start(ctx, os.Stderr, time.Duration(setupTimeout)*time.Second); err != nil {
+	if err := predictor.Start(ctx, os.Stderr, time.Duration(opts.SetupTimeout)*time.Second); err != nil {
 		return err
 	}
 
@@ -156,5 +191,5 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	return predictIndividualInputs(*predictor, trainInputFlags, trainOutPath, true)
+	return predictIndividualInputs(*predictor, opts.Input, opts.OutputPath, true, false)
 }

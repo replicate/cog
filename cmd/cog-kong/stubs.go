@@ -21,24 +21,6 @@ func (cmd *BaseImageBuildCmd) Run() error {
 	return errKongCommandNotImplemented
 }
 
-type PredictCmd struct{}
-
-func (cmd *PredictCmd) Run() error {
-	return errKongCommandNotImplemented
-}
-
-type RunCmd struct{}
-
-func (cmd *RunCmd) Run() error {
-	return errKongCommandNotImplemented
-}
-
-type TrainCmd struct{}
-
-func (cmd *TrainCmd) Run() error {
-	return errKongCommandNotImplemented
-}
-
 type WeightsCmd struct {
 	Import WeightsImportCmd `cmd:"" help:"Import model weights."`
 	Pull   WeightsPullCmd   `cmd:"" help:"Pull model weights."`
