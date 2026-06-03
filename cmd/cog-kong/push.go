@@ -71,7 +71,7 @@ func (cmd *PushCmd) Run(ctx context.Context, dockerClient command.Command, regCl
 
 	// Push the model
 	console.Infof("\nPushing image '%s'...", m.ImageRef())
-	pushErr := resolver.Push(ctx, m, model.PushOptions{})
+	_, pushErr := resolver.Push(ctx, m, model.PushOptions{})
 
 	// PostPush: the provider handles formatting errors and showing success messages
 	if err := p.PostPush(ctx, pushOpts, pushErr); err != nil {

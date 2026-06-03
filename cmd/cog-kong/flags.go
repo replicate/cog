@@ -65,7 +65,6 @@ func (b *BuildFlags) BuildOptions(imageName string, annotations map[string]strin
 		Strip:            b.Strip,
 		Precompile:       b.Precompile,
 		Annotations:      annotations,
-		OCIIndex:         model.OCIIndexEnabled(),
 	}
 }
 

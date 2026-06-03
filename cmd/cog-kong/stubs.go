@@ -1,0 +1,100 @@
+package main
+
+import "errors"
+
+var errKongCommandNotImplemented = errors.New("kong command not implemented")
+
+type BaseImageCmd struct {
+	Dockerfile BaseImageDockerfileCmd `cmd:"" help:"Generate a Dockerfile for a Cog base image."`
+	Build      BaseImageBuildCmd      `cmd:"" help:"Build a Cog base image."`
+}
+
+type BaseImageDockerfileCmd struct{}
+
+func (cmd *BaseImageDockerfileCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type BaseImageBuildCmd struct{}
+
+func (cmd *BaseImageBuildCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type DebugCmd struct{}
+
+func (cmd *DebugCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type DoctorCmd struct{}
+
+func (cmd *DoctorCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type ExecCmd struct{}
+
+func (cmd *ExecCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type InitCmd struct{}
+
+func (cmd *InitCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type LoginCmd struct{}
+
+func (cmd *LoginCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type PredictCmd struct{}
+
+func (cmd *PredictCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type RunCmd struct{}
+
+func (cmd *RunCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type ServeCmd struct{}
+
+func (cmd *ServeCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type TrainCmd struct{}
+
+func (cmd *TrainCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type WeightsCmd struct {
+	Import WeightsImportCmd `cmd:"" help:"Import model weights."`
+	Pull   WeightsPullCmd   `cmd:"" help:"Pull model weights."`
+	Status WeightsStatusCmd `cmd:"" help:"Show model weight status."`
+}
+
+type WeightsImportCmd struct{}
+
+func (cmd *WeightsImportCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type WeightsPullCmd struct{}
+
+func (cmd *WeightsPullCmd) Run() error {
+	return errKongCommandNotImplemented
+}
+
+type WeightsStatusCmd struct{}
+
+func (cmd *WeightsStatusCmd) Run() error {
+	return errKongCommandNotImplemented
+}
