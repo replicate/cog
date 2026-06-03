@@ -21,30 +21,6 @@ func (cmd *BaseImageBuildCmd) Run() error {
 	return errKongCommandNotImplemented
 }
 
-type DebugCmd struct{}
-
-func (cmd *DebugCmd) Run() error {
-	return errKongCommandNotImplemented
-}
-
-type DoctorCmd struct{}
-
-func (cmd *DoctorCmd) Run() error {
-	return errKongCommandNotImplemented
-}
-
-type InitCmd struct{}
-
-func (cmd *InitCmd) Run() error {
-	return errKongCommandNotImplemented
-}
-
-type LoginCmd struct{}
-
-func (cmd *LoginCmd) Run() error {
-	return errKongCommandNotImplemented
-}
-
 type PredictCmd struct{}
 
 func (cmd *PredictCmd) Run() error {

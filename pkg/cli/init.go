@@ -37,6 +37,12 @@ and run interface. Edit them to match your model's requirements.`,
 }
 
 func initCommand(cmd *cobra.Command, args []string) error {
+	return RunInit()
+}
+
+// RunInit sets up the current directory for use with Cog by writing the base
+// project template. It is shared by both the Cobra and Kong init commands.
+func RunInit() error {
 	console.Info("Setting up the current directory for use with Cog...")
 	console.Info("")
 

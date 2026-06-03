@@ -237,3 +237,17 @@ func TestKongRuntimeCommandFlagsParse(t *testing.T) {
 		require.NoErrorf(t, err, "parse %v", args)
 	}
 }
+
+func TestKongSimpleCommandFlagsParse(t *testing.T) {
+	parser := newTestParser(t)
+
+	for _, args := range [][]string{
+		{"init", "--help"},
+		{"login", "--token-stdin", "--help"},
+		{"doctor", "--fix", "--file", "custom.yaml", "--help"},
+		{"debug", "--image-name", "myimage", "--help"},
+	} {
+		_, err := parser.Parse(args)
+		require.NoErrorf(t, err, "parse %v", args)
+	}
+}
