@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/replicate/cog/pkg/cli"
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/model"
 )
@@ -49,23 +50,28 @@ func (b *BuildFlags) AfterApply() error {
 	return nil
 }
 
+// Options converts the Kong build flags into the parser-independent
+// cli.BuildFlagsOptions shared with the Cobra CLI.
+func (b *BuildFlags) Options() cli.BuildFlagsOptions {
+	return cli.BuildFlagsOptions{
+		NoCache:          b.NoCache,
+		SeparateWeights:  b.SeparateWeights,
+		Secrets:          b.Secrets,
+		ProgressOutput:   b.Progress,
+		UseCudaBaseImage: b.UseCudaBaseImage,
+		UseCogBaseImage:  b.UseCogBaseImage,
+		OpenAPISchema:    b.OpenAPISchema,
+		DockerfileFile:   b.Dockerfile,
+		Strip:            b.Strip,
+		Precompile:       b.Precompile,
+		Timestamp:        b.Timestamp,
+	}
+}
+
 // BuildOptions constructs a model.BuildOptions from the current flag values.
 // The imageName and annotations parameters vary by caller (build vs push).
 func (b *BuildFlags) BuildOptions(imageName string, annotations map[string]string) model.BuildOptions {
-	return model.BuildOptions{
-		ImageName:        imageName,
-		Secrets:          b.Secrets,
-		NoCache:          b.NoCache,
-		SeparateWeights:  b.SeparateWeights,
-		UseCudaBaseImage: b.UseCudaBaseImage,
-		ProgressOutput:   b.Progress,
-		SchemaFile:       b.OpenAPISchema,
-		DockerfileFile:   b.Dockerfile,
-		UseCogBaseImage:  b.UseCogBaseImage,
-		Strip:            b.Strip,
-		Precompile:       b.Precompile,
-		Annotations:      annotations,
-	}
+	return b.Options().ModelBuildOptions(imageName, annotations)
 }
 
 // ValidateMutualExclusivity ensures that at most one of --use-cog-base-image,
