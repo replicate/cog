@@ -278,3 +278,15 @@ func TestKongWeightsCommandFlagsParse(t *testing.T) {
 		require.NoErrorf(t, err, "parse %v", args)
 	}
 }
+
+func TestKongBaseImageCommandFlagsParse(t *testing.T) {
+	parser := newTestParser(t)
+
+	for _, args := range [][]string{
+		{"base-image", "dockerfile", "--cuda", "12.4", "--python", "3.12", "--torch", "2.5.0", "--no-cache", "--progress", "plain", "--help"},
+		{"base-image", "build", "--cuda", "12.4", "--python", "3.12", "--torch", "2.5.0", "--help"},
+	} {
+		_, err := parser.Parse(args)
+		require.NoErrorf(t, err, "parse %v", args)
+	}
+}
