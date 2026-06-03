@@ -47,7 +47,7 @@ type ServeCmd struct {
 
 func (cmd *ServeCmd) Run(ctx context.Context, dockerClient command.Command, regClient registry.Client) error {
 	return cli.RunServe(ctx, dockerClient, regClient, cli.ServeCommandOptions{
-		RuntimeBuildOptions: cmd.RuntimeFlags.Options(),
+		RuntimeBuildOptions: cmd.Options(),
 		Port:                cmd.Port,
 		UploadURL:           cmd.UploadURL,
 	})
@@ -70,7 +70,7 @@ func (cmd *ExecCmd) Validate() error {
 
 func (cmd *ExecCmd) Run(ctx context.Context, dockerClient command.Command, regClient registry.Client) error {
 	return cli.RunExec(ctx, dockerClient, regClient, cli.ExecCommandOptions{
-		RuntimeBuildOptions: cmd.RuntimeFlags.Options(),
+		RuntimeBuildOptions: cmd.Options(),
 		Args:                cmd.Args,
 		Ports:               cmd.Publish,
 	})

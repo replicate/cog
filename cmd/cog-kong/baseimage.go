@@ -46,7 +46,7 @@ type BaseImageDockerfileCmd struct {
 }
 
 func (cmd *BaseImageDockerfileCmd) Run(ctx context.Context) error {
-	opts := cmd.baseImageVersionFlags.options()
+	opts := cmd.options()
 	opts.NoCache = cmd.NoCache
 	opts.ProgressOutput = cmd.Progress
 	return cli.RunBaseImageDockerfile(ctx, opts)
@@ -58,5 +58,5 @@ type BaseImageBuildCmd struct {
 }
 
 func (cmd *BaseImageBuildCmd) Run(ctx context.Context, dockerClient command.Command) error {
-	return cli.RunBaseImageBuild(ctx, dockerClient, cmd.baseImageVersionFlags.options())
+	return cli.RunBaseImageBuild(ctx, dockerClient, cmd.options())
 }

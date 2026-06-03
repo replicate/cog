@@ -26,6 +26,6 @@ func (cmd *PushCmd) Run(ctx context.Context, dockerClient command.Command, regCl
 	return cli.RunPush(ctx, dockerClient, regClient, providerReg, cli.PushCommandOptions{
 		ConfigFilename: cmd.File,
 		Image:          cmd.Image,
-		Flags:          cmd.BuildFlags.Options(),
+		Flags:          cmd.Options(),
 	})
 }

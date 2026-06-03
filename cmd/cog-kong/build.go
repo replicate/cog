@@ -25,6 +25,6 @@ func (cmd *BuildCmd) Run(ctx context.Context, dockerClient command.Command, regC
 	return cli.RunBuild(ctx, dockerClient, regClient, cli.BuildCommandOptions{
 		ConfigFilename: cmd.File,
 		Tag:            cmd.Tag,
-		Flags:          cmd.BuildFlags.Options(),
+		Flags:          cmd.Options(),
 	})
 }

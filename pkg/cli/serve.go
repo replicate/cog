@@ -105,15 +105,6 @@ func runtimeEnv(env []string) []string {
 	return out
 }
 
-// serveBuildOptions creates BuildOptions for cog serve from Cobra flag globals.
-func serveBuildOptions(cmd *cobra.Command) model.BuildOptions {
-	return RuntimeBuildOptions{
-		ProgressOutput:   buildProgressOutput,
-		UseCudaBaseImage: buildUseCudaBaseImage,
-		UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
-	}.ServeBuildOptions()
-}
-
 // ServeCommandOptions holds everything RunServe needs that is independent of
 // the argument parser.
 type ServeCommandOptions struct {

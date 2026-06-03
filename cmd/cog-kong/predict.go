@@ -21,7 +21,7 @@ type predictionFlags struct {
 
 func (f predictionFlags) options(use string) cli.PredictionCommandOptions {
 	return cli.PredictionCommandOptions{
-		RuntimeBuildOptions: f.RuntimeFlags.Options(),
+		RuntimeBuildOptions: f.Options(),
 		Use:                 use,
 		Image:               f.Image,
 		Input:               f.Input,
@@ -38,7 +38,7 @@ type PredictCmd struct {
 }
 
 func (cmd *PredictCmd) Run(ctx context.Context, dockerClient command.Command) error {
-	return cli.RunPrediction(ctx, dockerClient, cmd.predictionFlags.options("predict"))
+	return cli.RunPrediction(ctx, dockerClient, cmd.options("predict"))
 }
 
 // RunCmd implements the "cog run" command.
@@ -47,5 +47,5 @@ type RunCmd struct {
 }
 
 func (cmd *RunCmd) Run(ctx context.Context, dockerClient command.Command) error {
-	return cli.RunPrediction(ctx, dockerClient, cmd.predictionFlags.options("run"))
+	return cli.RunPrediction(ctx, dockerClient, cmd.options("run"))
 }

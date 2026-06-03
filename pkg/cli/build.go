@@ -298,9 +298,3 @@ func addSkipSchemaValidationFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&buildSkipSchemaValidation, "skip-schema-validation", false, "Skip OpenAPI schema generation and validation")
 	_ = cmd.Flags().MarkHidden("skip-schema-validation")
 }
-
-// buildOptionsFromFlags creates BuildOptions from the current CLI flag values.
-// The imageName and annotations parameters vary by command and must be provided.
-func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map[string]string) model.BuildOptions {
-	return buildFlagsOptionsFromCobra(cmd).ModelBuildOptions(imageName, annotations)
-}

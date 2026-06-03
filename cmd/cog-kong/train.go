@@ -19,7 +19,7 @@ type TrainCmd struct {
 
 func (cmd *TrainCmd) Run(ctx context.Context, dockerClient command.Command) error {
 	return cli.RunTrain(ctx, dockerClient, cli.TrainCommandOptions{
-		RuntimeBuildOptions: cmd.RuntimeFlags.Options(),
+		RuntimeBuildOptions: cmd.Options(),
 		Image:               cmd.Image,
 		Input:               cmd.Input,
 		OutputPath:          cmd.Output,

@@ -290,3 +290,20 @@ func TestKongBaseImageCommandFlagsParse(t *testing.T) {
 		require.NoErrorf(t, err, "parse %v", args)
 	}
 }
+
+func TestKongCommandCoverageMatchesExpectedCobraSurface(t *testing.T) {
+	parser := newTestParser(t)
+	commands := map[string]bool{}
+	for _, node := range parser.Model.Children {
+		commands[node.Name] = true
+	}
+
+	expected := []string{
+		"base-image", "build", "debug", "doctor", "exec", "init",
+		"login", "predict", "push", "run", "serve", "train", "weights",
+	}
+	require.Len(t, commands, len(expected))
+	for _, name := range expected {
+		require.Truef(t, commands[name], "missing command %q", name)
+	}
+}
