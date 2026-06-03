@@ -265,3 +265,16 @@ func TestKongPredictionCommandFlagsParse(t *testing.T) {
 		require.NoErrorf(t, err, "parse %v", args)
 	}
 }
+
+func TestKongWeightsCommandFlagsParse(t *testing.T) {
+	parser := newTestParser(t)
+
+	for _, args := range [][]string{
+		{"weights", "import", "--dry-run", "--verbose", "model.safetensors", "--help"},
+		{"weights", "pull", "--verbose", "weights-name", "--help"},
+		{"weights", "status", "--json", "--verbose", "--help"},
+	} {
+		_, err := parser.Parse(args)
+		require.NoErrorf(t, err, "parse %v", args)
+	}
+}

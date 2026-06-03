@@ -17,7 +17,7 @@ type Globals struct {
 	Help     bool             `name:"help" short:"h" help:"Show context-sensitive help."`
 	Registry string           `name:"registry" default:"${registry_default}" env:"COG_REGISTRY_HOST" hidden:"" help:"Registry host."`
 	Profile  bool             `name:"profile" hidden:"" help:"Enable profiling."`
-	Version  kong.VersionFlag `name:"version" short:"v" help:"Show version of Cog."`
+	Version  kong.VersionFlag `name:"version" help:"Show version of Cog."`
 }
 
 // AfterApply runs after flag parsing, before the command's Run.
