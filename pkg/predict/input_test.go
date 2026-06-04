@@ -79,6 +79,74 @@ func TestNewInputsForMode_UnionParsesNumber(t *testing.T) {
 	}
 }
 
+// unionInputSchemaOf builds an OpenAPI doc whose single input field `value`
+// is a union (anyOf) of the given JSON Schema types, in the given order.
+func unionInputSchemaOf(types ...string) *openapi3.T {
+	anyOf := make(openapi3.SchemaRefs, len(types))
+	for i, t := range types {
+		anyOf[i] = &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{t}}}
+	}
+	inputSchema := &openapi3.Schema{
+		Type: &openapi3.Types{"object"},
+		Properties: openapi3.Schemas{
+			"value": {Value: &openapi3.Schema{AnyOf: anyOf}},
+		},
+	}
+	return &openapi3.T{
+		Components: &openapi3.Components{
+			Schemas: openapi3.Schemas{
+				"Input": {Value: inputSchema},
+			},
+		},
+	}
+}
+
+func TestNewInputsForMode_UnionIntFloatAndStrInt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		types   []string
+		val     string
+		wantInt *int32
+		wantFlt *float32
+		wantStr *string
+	}{
+		// int | float: integer member resolves first; a fractional value must
+		// fall back to the float member instead of erroring.
+		{name: "int|float integer", types: []string{"integer", "number"}, val: "1", wantInt: ptrI32(1)},
+		{name: "int|float fractional", types: []string{"integer", "number"}, val: "1.5", wantFlt: ptrF32(1.5)},
+		// str | int: string resolves first; a fractional value is not valid for
+		// the integer member and must fall back to the string member.
+		{name: "str|int integer", types: []string{"string", "integer"}, val: "1", wantInt: ptrI32(1)},
+		{name: "str|int fractional", types: []string{"string", "integer"}, val: "1.5", wantStr: ptrStr("1.5")},
+		{name: "str|int string", types: []string{"string", "integer"}, val: "hello", wantStr: ptrStr("hello")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			schema := unionInputSchemaOf(tt.types...)
+			inputs, err := NewInputsForMode(map[string][]string{"value": {tt.val}}, schema, false)
+			require.NoError(t, err)
+
+			got := inputs["value"]
+			switch {
+			case tt.wantInt != nil:
+				require.NotNil(t, got.Int, "expected int")
+				require.Equal(t, *tt.wantInt, *got.Int)
+			case tt.wantFlt != nil:
+				require.NotNil(t, got.Float, "expected float")
+				require.Equal(t, *tt.wantFlt, *got.Float)
+			case tt.wantStr != nil:
+				require.NotNil(t, got.String, "expected string")
+				require.Equal(t, *tt.wantStr, *got.String)
+			}
+		})
+	}
+}
+
 func TestSchemaAcceptsNumber(t *testing.T) {
 	t.Parallel()
 
@@ -126,6 +194,31 @@ func TestSchemaAcceptsString(t *testing.T) {
 		},
 	}
 	require.False(t, schemaAcceptsString(numericOnlyUnion))
+}
+
+func TestSchemaAcceptsFloat(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, schemaAcceptsFloat(&openapi3.Schema{Type: &openapi3.Types{"number"}}))
+	require.False(t, schemaAcceptsFloat(&openapi3.Schema{Type: &openapi3.Types{"integer"}}))
+	require.False(t, schemaAcceptsFloat(&openapi3.Schema{Type: &openapi3.Types{"string"}}))
+	require.False(t, schemaAcceptsFloat(nil))
+
+	intFloatUnion := &openapi3.Schema{
+		AnyOf: openapi3.SchemaRefs{
+			{Value: &openapi3.Schema{Type: &openapi3.Types{"integer"}}},
+			{Value: &openapi3.Schema{Type: &openapi3.Types{"number"}}},
+		},
+	}
+	require.True(t, schemaAcceptsFloat(intFloatUnion))
+
+	strIntUnion := &openapi3.Schema{
+		AnyOf: openapi3.SchemaRefs{
+			{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+			{Value: &openapi3.Schema{Type: &openapi3.Types{"integer"}}},
+		},
+	}
+	require.False(t, schemaAcceptsFloat(strIntUnion))
 }
 
 func ptrI32(v int32) *int32     { return &v }

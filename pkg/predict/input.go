@@ -115,6 +115,17 @@ func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain b
 						case propertySchema.Type.Is("integer"):
 							value, err := strconv.ParseInt(val, 10, 32)
 							if err != nil {
+								// For a union like `int | float` the schema
+								// resolves to the integer member first; a
+								// fractional value should fall back to the float
+								// member instead of erroring.
+								if schemaAcceptsFloat(originalSchema) {
+									if value, err := strconv.ParseFloat(val, 32); err == nil {
+										float := float32(value)
+										input[key] = Input{Float: &float}
+										continue
+									}
+								}
 								// See the number case above: fall back to a string
 								// member for unions such as `int | str`.
 								if schemaAcceptsString(originalSchema) {
@@ -135,10 +146,16 @@ func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain b
 								input[key] = Input{Int: &valueInt}
 								continue
 							}
-							if value, err := strconv.ParseFloat(val, 32); err == nil {
-								float := float32(value)
-								input[key] = Input{Float: &float}
-								continue
+							// Only parse fractional values as float when the
+							// union actually accepts a float member; otherwise a
+							// value like `1.5` for `str | int` must fall back to
+							// the string member below.
+							if schemaAcceptsFloat(originalSchema) {
+								if value, err := strconv.ParseFloat(val, 32); err == nil {
+									float := float32(value)
+									input[key] = Input{Float: &float}
+									continue
+								}
 							}
 						}
 					}
@@ -233,6 +250,31 @@ func schemaAcceptsString(s *openapi3.Schema) bool {
 	}
 	for _, ref := range s.AllOf {
 		if ref.Value != nil && schemaAcceptsString(ref.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+// schemaAcceptsFloat reports whether the schema accepts a floating-point
+// value, including union (anyOf) members. Unlike schemaAcceptsNumber, it does
+// not match integer-only members, so CLI `-i` parsing can decide whether a
+// fractional value like `1.5` is valid for unions such as `int | float`
+// (accepts float) versus `str | int` (does not).
+func schemaAcceptsFloat(s *openapi3.Schema) bool {
+	if s == nil {
+		return false
+	}
+	if s.Type != nil && s.Type.Is("number") {
+		return true
+	}
+	for _, ref := range s.AnyOf {
+		if ref.Value != nil && schemaAcceptsFloat(ref.Value) {
+			return true
+		}
+	}
+	for _, ref := range s.AllOf {
+		if ref.Value != nil && schemaAcceptsFloat(ref.Value) {
 			return true
 		}
 	}
