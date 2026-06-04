@@ -2,6 +2,7 @@
 
 from typing import Annotated, Any, Dict, List, Optional, TypedDict
 
+import pytest
 from typing_extensions import TypedDict as ExtensionsTypedDict
 
 from cog import Opaque
@@ -322,3 +323,106 @@ class TestFieldTypeExistingTypes:
         ft = FieldType.from_type(Optional[str])
         assert ft.primitive is PrimitiveType.STRING
         assert ft.repetition is Repetition.OPTIONAL
+
+
+class TestUnionInputTypes:
+    def test_union_str_float_field_type(self) -> None:
+        ft = FieldType.from_type(str | float)
+        assert ft.primitive is PrimitiveType.ANY
+        assert ft.repetition is Repetition.REQUIRED
+        assert ft.union_variants is not None
+        assert [v.primitive for v in ft.union_variants] == [
+            PrimitiveType.STRING,
+            PrimitiveType.FLOAT,
+        ]
+
+    def test_union_str_float_none_field_type(self) -> None:
+        ft = FieldType.from_type(str | float | None)
+        assert ft.repetition is Repetition.OPTIONAL
+        assert ft.union_variants is not None
+
+    def test_union_int_float_prefers_int(self) -> None:
+        ft = FieldType.from_type(int | float)
+        assert ft.normalize(1) == 1
+        assert isinstance(ft.normalize(1), int)
+
+    def test_union_bool_int_prefers_bool(self) -> None:
+        ft = FieldType.from_type(bool | int)
+        value = ft.normalize(True)
+        assert value is True
+
+    def test_union_int_float_rejects_bool(self) -> None:
+        ft = FieldType.from_type(int | float)
+        with pytest.raises(ValueError):
+            ft.normalize(True)
+
+    def test_union_str_bool_rejects_int(self) -> None:
+        ft = FieldType.from_type(str | bool)
+        with pytest.raises(ValueError):
+            ft.normalize(1)
+
+    def test_union_str_dict_rejects_scalar(self) -> None:
+        ft = FieldType.from_type(str | dict)
+        with pytest.raises(ValueError):
+            ft.normalize(123)
+
+    def test_union_list_int_float_rejects_bool_element(self) -> None:
+        ft = FieldType.from_type(list[int] | list[float])
+        with pytest.raises(ValueError):
+            ft.normalize([True])
+
+    def test_union_list_int_float_rejects_string_element(self) -> None:
+        ft = FieldType.from_type(list[int] | list[float])
+        with pytest.raises(ValueError):
+            ft.normalize(["3"])
+
+    def test_union_list_int_float_accepts_numeric_elements(self) -> None:
+        ft = FieldType.from_type(list[int] | list[float])
+        assert ft.normalize([1]) == [1]
+        assert isinstance(ft.normalize([1])[0], int)
+        assert ft.normalize([1.5]) == [1.5]
+
+    def test_union_optional_normalize_none(self) -> None:
+        ft = FieldType.from_type(str | float | None)
+        assert ft.repetition is Repetition.OPTIONAL
+        assert ft.normalize(None) is None
+
+    def test_union_required_normalize_none_raises(self) -> None:
+        ft = FieldType.from_type(str | float)
+        assert ft.repetition is Repetition.REQUIRED
+        with pytest.raises(ValueError):
+            ft.normalize(None)
+
+    def test_union_required_json_type_omits_nullable(self) -> None:
+        ft = FieldType.from_type(int | str)
+        assert ft.json_type() == {
+            "anyOf": [{"type": "integer"}, {"type": "string"}],
+        }
+
+    def test_union_list_int_float_accepts_empty_list(self) -> None:
+        ft = FieldType.from_type(list[int] | list[float])
+        assert ft.normalize([]) == []
+
+    def test_union_mixed_scalar_and_list(self) -> None:
+        ft = FieldType.from_type(list[int] | int)
+        assert ft.normalize(5) == 5
+        assert isinstance(ft.normalize(5), int)
+        assert ft.normalize([5]) == [5]
+
+    def test_union_str_float_none_json_type(self) -> None:
+        ft = FieldType.from_type(str | float | None)
+        assert ft.json_type() == {
+            "anyOf": [{"type": "string"}, {"type": "number"}],
+            "nullable": True,
+        }
+
+    def test_union_rejects_path_string(self) -> None:
+        from cog import Path
+
+        try:
+            FieldType.from_type(Path | str)
+        except ValueError as exc:
+            assert "Path" in str(exc)
+            assert "union" in str(exc)
+        else:
+            raise AssertionError("Expected ValueError for Path | str")

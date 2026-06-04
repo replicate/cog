@@ -66,11 +66,11 @@ func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain b
 					propertiesSchemas := properties.(openapi3.Schemas)
 					property, err := propertiesSchemas.JSONLookup(key)
 					if err == nil {
-						propertySchema := property.(*openapi3.Schema)
+						originalSchema := property.(*openapi3.Schema)
 						// Resolve allOf/$ref to find the actual type.
 						// cog-schema-gen emits allOf:[{$ref: ...}] for choices/enums,
 						// where the referenced schema has the concrete type.
-						propertySchema = resolveSchemaType(propertySchema)
+						propertySchema := resolveSchemaType(originalSchema)
 						switch {
 						case propertySchema.Type.Is("object"):
 							encodedVal := json.RawMessage(val)
@@ -99,6 +99,13 @@ func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain b
 							} else {
 								value, err := strconv.ParseFloat(val, 32)
 								if err != nil {
+									// For a union like `float | str` the schema
+									// resolves to the numeric member first; a
+									// non-numeric value should fall back to the
+									// string member instead of erroring.
+									if schemaAcceptsString(originalSchema) {
+										break
+									}
 									return input, err
 								}
 								float := float32(value)
@@ -108,11 +115,31 @@ func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain b
 						case propertySchema.Type.Is("integer"):
 							value, err := strconv.ParseInt(val, 10, 32)
 							if err != nil {
+								// See the number case above: fall back to a string
+								// member for unions such as `int | str`.
+								if schemaAcceptsString(originalSchema) {
+									break
+								}
 								return input, err
 							}
 							valueInt := int32(value)
 							input[key] = Input{Int: &valueInt}
 							continue
+						case schemaAcceptsNumber(originalSchema):
+							// Union input (anyOf) that includes a numeric member, e.g.
+							// `str | float`. Parse numeric-looking values as numbers so
+							// the runtime receives the intended type; otherwise fall
+							// through to the string member below.
+							if value, err := strconv.ParseInt(val, 10, 32); err == nil {
+								valueInt := int32(value)
+								input[key] = Input{Int: &valueInt}
+								continue
+							}
+							if value, err := strconv.ParseFloat(val, 32); err == nil {
+								float := float32(value)
+								input[key] = Input{Float: &float}
+								continue
+							}
 						}
 					}
 				}
@@ -186,6 +213,54 @@ func fileToDataURL(filePath string) (string, error) {
 	mimeType := mime.TypeByExtension(filepath.Ext(expandedVal))
 	dataURL := dataurl.New(content, mimeType).String()
 	return dataURL, nil
+}
+
+// schemaAcceptsString reports whether the schema accepts a string value,
+// including union (anyOf) members. This lets CLI `-i` parsing fall back to a
+// string member when a numeric parse fails for unions such as `float | str`,
+// where resolveSchemaType resolves to the numeric member.
+func schemaAcceptsString(s *openapi3.Schema) bool {
+	if s == nil {
+		return false
+	}
+	if s.Type != nil && s.Type.Is("string") {
+		return true
+	}
+	for _, ref := range s.AnyOf {
+		if ref.Value != nil && schemaAcceptsString(ref.Value) {
+			return true
+		}
+	}
+	for _, ref := range s.AllOf {
+		if ref.Value != nil && schemaAcceptsString(ref.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+// schemaAcceptsNumber reports whether the schema accepts a numeric value,
+// including union (anyOf) members. This lets CLI `-i` parsing coerce
+// numeric-looking strings for union inputs such as `str | float`, where
+// resolveSchemaType resolves to a non-numeric member.
+func schemaAcceptsNumber(s *openapi3.Schema) bool {
+	if s == nil {
+		return false
+	}
+	if s.Type != nil && (s.Type.Is("number") || s.Type.Is("integer")) {
+		return true
+	}
+	for _, ref := range s.AnyOf {
+		if ref.Value != nil && schemaAcceptsNumber(ref.Value) {
+			return true
+		}
+	}
+	for _, ref := range s.AllOf {
+		if ref.Value != nil && schemaAcceptsNumber(ref.Value) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveSchemaType walks through allOf/anyOf/$ref wrappers to find a schema

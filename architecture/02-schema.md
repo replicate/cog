@@ -186,7 +186,13 @@ Each `SchemaType` produces its JSON Schema fragment via `JSONSchema()`:
 | `cog.Secret`                          | `{"type": "string", "format": "password", "x-cog-secret": true}` | Masked in logs             |
 | `list[T]`                             | `{"type": "array", "items": {...}}`                              |                            |
 | `Optional[T]`                         | Type T + not in `required`                                       | Input fields only          |
+| `A \| B` / `Union[A, B]`               | `{"anyOf": [A, B]}`                                              | Input-only, JSON-native unions only |
+| `A \| None` / `Optional[A]`            | Type A + `nullable: true`                                        | Input fields may still be required if no default is supplied |
 | `Literal["a", "b"]` / `choices=[...]` | `{"enum": ["a", "b"]}`                                           |                            |
+
+Input unions are intentionally narrower than output types. Cog supports JSON-native input unions (`str`, `int`, `float`, `bool`, `dict`/`Any`, `list[T]`, and `None`) so request validation can happen at the HTTP boundary and Python normalisation can choose a deterministic value type. Cog rejects unions involving `Path`, `File`, `Secret`, custom coders, and `BaseModel` because those cases are ambiguous for clients or runtime coercion. Output unions remain unsupported (see below).
+
+Nullable behaviour matches every other optional field: `nullable: true` (plus omission from `required` when a default is supplied) means an **omitted** value falls back to the default. An **explicit** JSON `null` is still validated against the field type and is rejected at the HTTP edge, because the runtime validator does not treat OpenAPI's `nullable` keyword as an additional accepted value. "May be null" therefore means "may be omitted", not "accepts an explicit null payload".
 
 ### Output Types
 

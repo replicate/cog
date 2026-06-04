@@ -268,6 +268,52 @@ type enumSchema struct {
 	schema map[string]any
 }
 
+func inputTypeJSONSchema(it InputType) map[string]any {
+	var schema map[string]any
+	switch it.Kind {
+	case InputKindPrimitive:
+		schema = it.Primitive.JSONType()
+	case InputKindAny:
+		schema = TypeAny.JSONType()
+	case InputKindArray:
+		items := TypeAny.JSONType()
+		if it.Elem != nil {
+			items = inputTypeJSONSchema(*it.Elem)
+		}
+		schema = map[string]any{
+			"type":  "array",
+			"items": items,
+		}
+	case InputKindUnion:
+		variants := make([]any, len(it.Variants))
+		for i, variant := range it.Variants {
+			variantSchema := inputTypeJSONSchema(variant)
+			if it.Nullable {
+				variantSchema["nullable"] = true
+			}
+			variants[i] = variantSchema
+		}
+		// A nullable union is represented with OpenAPI's `nullable` keyword
+		// (set below), matching how plain optional fields behave: an omitted
+		// value yields the default, while explicit JSON `null` is validated
+		// against the field type just like any other optional input.
+		schema = map[string]any{"anyOf": variants}
+	default:
+		schema = TypeAny.JSONType()
+	}
+	if it.Nullable {
+		schema["nullable"] = true
+	}
+	return schema
+}
+
+func inputSchemaForField(field InputField) map[string]any {
+	if field.InputType != nil {
+		return inputTypeJSONSchema(*field.InputType)
+	}
+	return field.FieldType.JSONType()
+}
+
 // buildInputSchema builds the Input schema object and any enum schemas for choices.
 func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 	properties := newOrderedMapAny()
@@ -314,7 +360,7 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 		} else {
 			// Regular field — inline type
 			prop["title"] = TitleCase(name)
-			maps.Copy(prop, field.FieldType.JSONType())
+			maps.Copy(prop, inputSchemaForField(field))
 		}
 
 		// Determine effective default. A default of None on a non-nullable
@@ -332,6 +378,9 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 		// `Optional[Secret] = Input(default=None)`. See
 		// TestNoneDefaultOnBareSecretIsOptional for the regression case.
 		isNullable := field.FieldType.Repetition == Optional || field.FieldType.Repetition == OptionalRepeated
+		if field.InputType != nil && field.InputType.Nullable {
+			isNullable = true
+		}
 		if field.FieldType.Primitive == TypeSecret &&
 			field.FieldType.Repetition == Required &&
 			field.Default != nil && field.Default.Kind == DefaultNone {
@@ -343,7 +392,8 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 		}
 
 		// Required?
-		if !hasEffectiveDefault && (field.FieldType.Repetition == Required || field.FieldType.Repetition == Repeated) {
+		isUnionInput := field.InputType != nil && field.InputType.Kind == InputKindUnion
+		if !hasEffectiveDefault && (isUnionInput || field.FieldType.Repetition == Required || field.FieldType.Repetition == Repeated) {
 			required = append(required, name)
 		}
 
