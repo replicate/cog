@@ -102,15 +102,15 @@ class Runner(BaseRunner):
 
 The resolver handles local imports relative to the predictor file and project root:
 
-| Import Style                         | File Resolved                                               |
-| ------------------------------------ | ----------------------------------------------------------- |
-| `from output_types import X`         | `<project>/output_types.py`                                 |
-| `from .output_types import X`        | `<predictor-dir>/output_types.py`                           |
-| `from models.output import X`        | `<project>/models/output.py`                                |
-| `from .models.output import X`       | `<predictor-dir>/models/output.py`                          |
-| `from output_types import X as Y`    | `<project>/output_types.py` (alias tracked)                 |
-| `from .output_types import X as Y`   | `<predictor-dir>/output_types.py` (alias tracked)           |
-| `from . import output_types`         | `<predictor-dir>/output_types.py` (module alias tracked)    |
+| Import Style                       | File Resolved                                            |
+| ---------------------------------- | -------------------------------------------------------- |
+| `from output_types import X`       | `<project>/output_types.py`                              |
+| `from .output_types import X`      | `<predictor-dir>/output_types.py`                        |
+| `from models.output import X`      | `<project>/models/output.py`                             |
+| `from .models.output import X`     | `<predictor-dir>/models/output.py`                       |
+| `from output_types import X as Y`  | `<project>/output_types.py` (alias tracked)              |
+| `from .output_types import X as Y` | `<predictor-dir>/output_types.py` (alias tracked)        |
+| `from . import output_types`       | `<predictor-dir>/output_types.py` (module alias tracked) |
 
 **How it distinguishes local from external**: the resolver converts the module path to a filesystem path and checks if the file exists. If `output_types.py` exists in the project directory, it's local. If not (e.g., `from transformers import ...`), it's external. Known external packages (stdlib, torch, numpy, etc.) are skipped without a filesystem check.
 
@@ -175,24 +175,28 @@ Each `SchemaType` produces its JSON Schema fragment via `JSONSchema()`:
 
 ### Input Types
 
-| Python                                | JSON Schema                                                      | Notes                      |
-| ------------------------------------- | ---------------------------------------------------------------- | -------------------------- |
-| `str`                                 | `{"type": "string"}`                                             |                            |
-| `int`                                 | `{"type": "integer"}`                                            |                            |
-| `float`                               | `{"type": "number"}`                                             |                            |
-| `bool`                                | `{"type": "boolean"}`                                            |                            |
-| `cog.Path`                            | `{"type": "string", "format": "uri"}`                            | URLs downloaded at runtime |
-| `cog.File`                            | `{"type": "string", "format": "uri"}`                            | File uploads               |
-| `cog.Secret`                          | `{"type": "string", "format": "password", "x-cog-secret": true}` | Masked in logs             |
-| `list[T]`                             | `{"type": "array", "items": {...}}`                              |                            |
-| `Optional[T]`                         | Type T + not in `required`                                       | Input fields only          |
-| `A \| B` / `Union[A, B]`               | `{"anyOf": [A, B]}`                                              | Input-only, JSON-native unions only |
-| `A \| None` / `Optional[A]`            | Type A + `nullable: true`                                        | Input fields may still be required if no default is supplied |
-| `Literal["a", "b"]` / `choices=[...]` | `{"enum": ["a", "b"]}`                                           |                            |
+| Python                                | JSON Schema                                                      | Notes                                                                 |
+| ------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `str`                                 | `{"type": "string"}`                                             |                                                                       |
+| `int`                                 | `{"type": "integer"}`                                            |                                                                       |
+| `float`                               | `{"type": "number"}`                                             |                                                                       |
+| `bool`                                | `{"type": "boolean"}`                                            |                                                                       |
+| `cog.Path`                            | `{"type": "string", "format": "uri"}`                            | URLs downloaded at runtime                                            |
+| `cog.File`                            | `{"type": "string", "format": "uri"}`                            | File uploads                                                          |
+| `cog.Secret`                          | `{"type": "string", "format": "password", "x-cog-secret": true}` | Masked in logs                                                        |
+| `list[T]`                             | `{"type": "array", "items": {...}}`                              |                                                                       |
+| `Optional[T]` / `T \| None`           | Type T + `nullable: true`, not in `required`                     | Input fields only; never required                                     |
+| `A \| B` / `Union[A, B]`              | `{"anyOf": [A, B]}`                                              | Input-only, JSON-native unions only                                   |
+| `A \| B \| None`                      | `{"anyOf": [A, B]}` + `nullable: true`                           | Multi-variant union; stays in `required` unless a default is supplied |
+| `Literal["a", "b"]` / `choices=[...]` | `{"enum": ["a", "b"]}`                                           |                                                                       |
 
 Input unions are intentionally narrower than output types. Cog supports JSON-native input unions (`str`, `int`, `float`, `bool`, `dict`/`Any`, `list[T]`, and `None`) so request validation can happen at the HTTP boundary and Python normalisation can choose a deterministic value type. Cog rejects unions involving `Path`, `File`, `Secret`, custom coders, and `BaseModel` because those cases are ambiguous for clients or runtime coercion. Output unions remain unsupported (see below).
 
-Nullable behaviour matches every other optional field: `nullable: true` (plus omission from `required` when a default is supplied) means an **omitted** value falls back to the default. An **explicit** JSON `null` is still validated against the field type and is rejected at the HTTP edge, because the runtime validator does not treat OpenAPI's `nullable` keyword as an additional accepted value. "May be null" therefore means "may be omitted", not "accepts an explicit null payload".
+A plain single-type optional (`Optional[T]` or `T | None`) is **never** placed in `required`, regardless of whether a default is supplied. A multi-variant nullable union (`A | B | None`) is different: because the field carries a concrete `anyOf` value type, it stays in `required` unless a default makes it omittable. This is why the two rows above differ in their `required` behaviour.
+
+Nullable behaviour matches every other optional field: `nullable: true` (plus omission from `required`) means an **omitted** value falls back to the default. An **explicit** JSON `null` is still validated against the field type and is rejected at the HTTP edge, because the runtime validator does not treat OpenAPI's `nullable` keyword as an additional accepted value. "May be null" therefore means "may be omitted", not "accepts an explicit null payload".
+
+> **Runtime caveat:** Cog marks optionals as not-`required` in the schema, but the predictor still needs a Python-level default so the omitted value resolves to `None`. Use `value: Optional[T] = Input(...)` (the `Input(...)` supplies an implicit `None`) or `Input(default=None)`. A bare `value: Optional[T]` annotation with no `= Input(...)` generates a correct "optional" schema but raises `TypeError: missing 1 required positional argument` when the field is omitted at runtime.
 
 ### Output Types
 
