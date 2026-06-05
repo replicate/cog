@@ -53,6 +53,7 @@ ruff = "0.14.13"
 ty = "0.0.10"
 "npm:prettier" = "3.6.2"
 "npm:markdownlint-cli2" = "0.22.0"
+"aqua:jqlang/jq" = "1.8.1"
 "go:golang.org/x/tools/cmd/goimports" = "latest"
 zig = "0.15.2"
 
@@ -325,21 +326,35 @@ depends = ["build:coglet:wheel"]
 run = "nox -s coglet"
 
 [tasks."test:fuzz"]
-description = "Run Go fuzz tests (FUZZTIME=30s per target by default)"
-run = """
+description = "Run all Go fuzz tests (auto-discovered; FUZZTIME=30s per target by default)"
+run = '''
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 FUZZTIME="${FUZZTIME:-30s}"
-echo "Fuzzing schema type resolution ($FUZZTIME)..."
-go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime="$FUZZTIME"
-echo "Fuzzing JSON schema generation ($FUZZTIME)..."
-go test ./pkg/schema/ -run='^$' -fuzz=FuzzJSONSchema -fuzztime="$FUZZTIME"
-echo "Fuzzing Python parser ($FUZZTIME)..."
-go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParsePredictor -fuzztime="$FUZZTIME"
-echo "Fuzzing type annotation parsing ($FUZZTIME)..."
-go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParseTypeAnnotation -fuzztime="$FUZZTIME"
-echo "All fuzz targets passed."
-"""
+
+# Auto-discover every Fuzz* target and the package it lives in, so new fuzz
+# tests are picked up automatically without editing this task. go test only
+# fuzzes one target per invocation, so we still loop and run them one at a time.
+# jq emits "<package> <target>" per line; package and target names never
+# contain spaces, so `read pkg target` splits them cleanly.
+count=0
+while read -r pkg target; do
+  [ -z "$pkg" ] && continue
+  echo "Fuzzing $target in $pkg ($FUZZTIME)..."
+  go test "$pkg" -run="^$" -fuzz="^${target}$" -fuzztime="$FUZZTIME"
+  count=$((count + 1))
+done < <(
+  go test -list "^Fuzz" -json ./... 2>/dev/null \
+    | jq -r 'select(.Action=="output" and (.Output|test("^Fuzz"))) | .Package + " " + (.Output | rtrimstr("\n"))'
+)
+
+if [ "$count" -eq 0 ]; then
+  echo "No fuzz targets found." >&2
+  exit 1
+fi
+
+echo "All $count fuzz targets passed."
+'''
 
 [tasks."test:integration"]
 description = "Run integration tests (skips slow tests by default, set SHORT=0 for full suite)"

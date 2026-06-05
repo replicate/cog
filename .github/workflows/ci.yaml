@@ -440,7 +440,9 @@ jobs:
   fuzz-go:
     name: Fuzz Go
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # test:fuzz auto-discovers every Fuzz* target and runs each for FUZZTIME
+    # (30s default), so this scales as targets are added.
+    timeout-minutes: 15
     env:
       CGO_ENABLED: "1"
     steps:
@@ -449,14 +451,8 @@ jobs:
         with:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
-      - name: Fuzz schema type resolution
-        run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime=30s
-      - name: Fuzz JSON schema generation
-        run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzJSONSchema -fuzztime=30s
-      - name: Fuzz Python parser
-        run: go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParsePredictor -fuzztime=30s
-      - name: Fuzz type annotation parsing
-        run: go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParseTypeAnnotation -fuzztime=30s
+      - name: Fuzz all targets (auto-discovered)
+        run: mise run test:fuzz
 
   test-rust:
     name: Test Rust
