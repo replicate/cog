@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/stretchr/testify/require"
 )
 
 // FuzzResolveInputType builds arbitrary TypeAnnotation trees from fuzz input
@@ -163,12 +164,9 @@ func assertValidOpenAPI(t *testing.T, schemaJSON []byte) {
 	loader := openapi3.NewLoader()
 	loader.IsExternalRefsAllowed = true
 	doc, err := loader.LoadFromData(schemaJSON)
-	if err != nil {
-		t.Fatalf("generated schema failed to load: %v\n%s", err, string(schemaJSON))
-	}
-	if err := doc.Validate(context.Background()); err != nil {
-		t.Fatalf("generated schema is invalid: %v\n%s", err, string(schemaJSON))
-	}
+	require.NoError(t, err, "generated schema failed to load\n%s", string(schemaJSON))
+	err = doc.Validate(context.Background())
+	require.NoError(t, err, "generated schema is invalid\n%s", string(schemaJSON))
 }
 
 // decodeInputType builds an InputType tree from bytes, mirroring the encoding
