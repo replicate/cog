@@ -2070,6 +2070,7 @@ This document defines the API of the `cog` Python module, which is used to defin
   - [`cog.Secret`](#cogsecret)
   - [Wrapper types](#wrapper-types)
     - [`Optional`](#optional)
+    - [`Union`](#union)
     - [`list`](#list)
     - [`dict`](#dict)
     - [`cog.Opaque`](#cogopaque)
@@ -2837,7 +2838,8 @@ Fields in a `BaseModel` output support these types:
 The following type patterns are **not** supported:
 
 - **Nested generics**: `list[list[str]]`, `list[Optional[str]]`, `Optional[list[str]]` are not supported.
-- **Union types beyond Optional**: `str | int`, `Union[str, int, None]` — only `Optional[T]` (i.e. `T | None`) is supported.
+- **Output union types beyond Optional**: union _return_ types and `BaseModel` union fields are not supported. Input unions of JSON-native types (`str | int`, `str | float | None`, etc.) _are_ supported — see [`Union`](#union).
+- **Input unions of non-JSON-native types**: input unions involving `Path`, `File`, `Secret`, custom coders, or `BaseModel` (e.g. `Path | str`) are not supported and fail at build time.
 - **`Optional` as a top-level return type**: `-> Optional[str]` is not allowed. Use a `BaseModel` with optional fields instead.
 - **Nested `BaseModel` fields**: A `BaseModel` field typed as another `BaseModel` is not supported in Cog's type system for schema generation.
 - **Tuple, Set, or other collection types**: Only `list` and `dict` are supported as collection types.
