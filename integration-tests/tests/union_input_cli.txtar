@@ -1,0 +1,45 @@
+# Test schema-directed CLI parsing for JSON-native union inputs.
+#
+# value:   str | float  (string member first)
+# flipped: float | str  (number member first)
+#
+#   - "hello" parses as a string because no numeric parse succeeds
+#   - "1.5" parses as a float because the union accepts a number
+#   - "1" parses as an integer (still a valid JSON number for the union)
+#
+# The `flipped` field exercises the case where resolveSchemaType resolves a
+# union to its numeric member first: a non-numeric value must still fall back
+# to the string member instead of erroring.
+#
+# Note: the worker does not coerce primitives at runtime (validation happens
+# at the HTTP edge against the OpenAPI schema), so the CLI must choose the
+# wire type. A bare integer stays an integer; only fractional values become
+# floats. This matches how a plain `float` input also receives a Python int
+# for `-i num=10`.
+
+cog build -t $TEST_IMAGE
+
+cog predict $TEST_IMAGE -i value=hello -i flipped=world
+stdout 'value=str:hello flipped=str:world'
+
+cog predict $TEST_IMAGE -i value=1.5 -i flipped=2.5
+stdout 'value=float:1.5 flipped=float:2.5'
+
+cog predict $TEST_IMAGE -i value=1 -i flipped=2
+stdout 'value=int:1 flipped=int:2'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, value: str | float, flipped: float | str) -> str:
+        return (
+            f"value={type(value).__name__}:{value} "
+            f"flipped={type(flipped).__name__}:{flipped}"
+        )

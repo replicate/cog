@@ -262,16 +262,17 @@ func typedParameterParts(node *sitter.Node, source []byte) (string, *sitter.Node
 	return name, typeNode
 }
 
-func inputField(name string, order int, fieldType schema.FieldType) schema.InputField {
+func inputField(name string, order int, inputType schema.InputType, fieldType schema.FieldType) schema.InputField {
 	return schema.InputField{
 		Name:      name,
 		Order:     order,
 		FieldType: fieldType,
+		InputType: &inputType,
 	}
 }
 
-func inputFieldWithInfo(name string, order int, fieldType schema.FieldType, info inputCallInfo) schema.InputField {
-	field := inputField(name, order, fieldType)
+func inputFieldWithInfo(name string, order int, inputType schema.InputType, fieldType schema.FieldType, info inputCallInfo) schema.InputField {
+	field := inputField(name, order, inputType, fieldType)
 	field.Default = info.Default
 	field.Description = info.Description
 	field.GE = info.GE
@@ -293,12 +294,12 @@ func firstParamIsSelf(params *sitter.Node, source []byte) bool {
 	return false
 }
 
-func resolveParameterFieldType(typeNode *sitter.Node, source []byte, ctx *inputParseContext) (schema.FieldType, error) {
+func resolveParameterInputTypes(typeNode *sitter.Node, source []byte, ctx *inputParseContext) (schema.InputType, schema.FieldType, error) {
 	typeAnn, err := parseTypeAnnotation(typeNode, source)
 	if err != nil {
-		return schema.FieldType{}, err
+		return schema.InputType{}, schema.FieldType{}, err
 	}
-	return schema.ResolveFieldType(typeAnn, ctx.imports, ctx.typedDicts)
+	return schema.ResolveInputType(typeAnn, ctx.imports, ctx.typedDicts)
 }
 
 func extractInputs(
@@ -362,12 +363,13 @@ func parseTypedParameter(node *sitter.Node, source []byte, order int, ctx *input
 		return schema.InputField{}, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", name, ctx.methodName), nil)
 	}
 
-	fieldType, err := resolveParameterFieldType(typeNode, source, ctx)
+	inputType, fieldType, err := resolveParameterInputTypes(typeNode, source, ctx)
 	if err != nil {
 		return schema.InputField{}, err
 	}
 
-	return inputField(name, order, fieldType), nil
+	field := inputField(name, order, inputType, fieldType)
+	return field, schema.ValidateInputField(field)
 }
 
 func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx *inputParseContext) (schema.InputField, error) {
@@ -382,7 +384,7 @@ func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx
 		return schema.InputField{}, schema.WrapError(schema.ErrMissingTypeAnnotation, fmt.Sprintf("parameter '%s' on %s has no type annotation", name, ctx.methodName), nil)
 	}
 
-	fieldType, err := resolveParameterFieldType(typeNode, source, ctx)
+	inputType, fieldType, err := resolveParameterInputTypes(typeNode, source, ctx)
 	if err != nil {
 		return schema.InputField{}, err
 	}
@@ -396,19 +398,21 @@ func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx
 			if err != nil {
 				return schema.InputField{}, err
 			}
-			return inputFieldWithInfo(name, order, fieldType, info), nil
+			field := inputFieldWithInfo(name, order, inputType, fieldType, info)
+			return field, schema.ValidateInputField(field)
 		}
 
 		// 2. Reference to Input() via class attribute or static method
 		if info, ok := resolveInputReference(valNode, source, ctx.registry); ok {
-			return inputFieldWithInfo(name, order, fieldType, info), nil
+			field := inputFieldWithInfo(name, order, inputType, fieldType, info)
+			return field, schema.ValidateInputField(field)
 		}
 
 		// 3. Plain default — must be statically resolvable
 		if def, ok := resolveDefaultExpr(valNode, source, ctx.scope); ok {
-			field := inputField(name, order, fieldType)
+			field := inputField(name, order, inputType, fieldType)
 			field.Default = &def
-			return field, nil
+			return field, schema.ValidateInputField(field)
 		}
 
 		// Can't resolve — hard error
@@ -418,7 +422,8 @@ func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx
 	}
 
 	// No default — required parameter
-	return inputField(name, order, fieldType), nil
+	field := inputField(name, order, inputType, fieldType)
+	return field, schema.ValidateInputField(field)
 }
 
 func isInputCall(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {

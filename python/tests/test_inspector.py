@@ -168,6 +168,22 @@ def test_inspector_preserves_opaque_input_metadata() -> None:
     assert field.type.repetition is adt.Repetition.REQUIRED
 
 
+def test_inspector_supports_union_input() -> None:
+    class Predictor:
+        def predict(self, value: str | float) -> str:
+            return str(value)
+
+    info = _create_predictor_info(
+        "predict", "Predictor", Predictor.predict, "predict", True
+    )
+    field = info.inputs["value"]
+    assert field.type.union_variants is not None
+    assert [v.primitive for v in field.type.union_variants] == [
+        adt.PrimitiveType.STRING,
+        adt.PrimitiveType.FLOAT,
+    ]
+
+
 def test_inspector_preserves_opaque_list_input_metadata() -> None:
     class Predictor:
         def predict(self, value: Annotated[List[ExternalObject], Opaque]) -> str:
