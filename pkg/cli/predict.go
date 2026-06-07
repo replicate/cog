@@ -179,7 +179,7 @@ func transformJSONValuePathsToBase64URLs(value any) (any, error) {
 		filePath := v[1:]
 		data, err := os.ReadFile(filePath)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to read file %q: %w", filePath, err)
+			return nil, fmt.Errorf("values starting with '@' are treated as file paths; failed to read %q: %w", filePath, err)
 		}
 
 		mimeType := mime.TypeByExtension(filepath.Ext(filePath))
