@@ -79,8 +79,9 @@ pub fn prepare_input(
     func: &Bound<'_, PyAny>,
 ) -> PyResult<PreparedInput> {
     let fields = classify_fields(py, func)?;
+    let mut cleanup_paths = download_cloud_inputs_into_dict(py, input, &fields)?;
     coerce_url_strings(py, input, &fields)?;
-    let cleanup_paths = download_url_paths_into_dict(py, input)?;
+    cleanup_paths.extend(download_url_paths_into_dict(py, input)?);
     Ok(PreparedInput::new(input.clone().unbind(), cleanup_paths))
 }
 
@@ -231,6 +232,103 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
         file_fields,
         path_fields,
     })
+}
+
+/// Where a cloud URL lives in the payload, so we can splice the downloaded
+/// local path back into the same position after the parallel download.
+enum CloudSlot {
+    /// payload[key] is a single string value.
+    Single { key: Py<PyAny> },
+    /// payload[key] is a list; the URL is at list index `idx`.
+    ListItem { key: String, idx: usize },
+}
+
+/// Download cloud-storage URLs (`s3://`, `gs://`, `az://`) for File/Path fields
+/// to temp files, replacing each dict value with the local path string.
+///
+/// Runs BEFORE `coerce_url_strings` so that by the time the rest of the
+/// pipeline runs, cloud inputs look like ordinary local paths. All cloud
+/// downloads happen CONCURRENTLY (see `cloud::download_many_to_temp`), matching
+/// the parallelism of the existing Python ThreadPoolExecutor HTTP path.
+///
+/// Returns the Python `pathlib.Path` objects (one per downloaded file) for
+/// cleanup on drop.
+fn download_cloud_inputs_into_dict(
+    py: Python<'_>,
+    payload: &Bound<'_, PyDict>,
+    fields: &FieldClassification,
+) -> PyResult<Vec<PyObject>> {
+    // Phase 1: collect all cloud URLs and where each one lives.
+    let mut urls: Vec<String> = Vec::new();
+    let mut slots: Vec<CloudSlot> = Vec::new();
+
+    for (key, value) in payload.iter() {
+        let key_str: String = key.extract().unwrap_or_default();
+        let is_file_or_path =
+            fields.file_fields.contains(&key_str) || fields.path_fields.contains(&key_str);
+        if !is_file_or_path {
+            continue;
+        }
+
+        if let Ok(s) = value.extract::<String>() {
+            if crate::cloud::is_cloud_url(&s) {
+                urls.push(s);
+                slots.push(CloudSlot::Single {
+                    key: key.clone().unbind(),
+                });
+            }
+        } else if let Ok(list) = value.extract::<Bound<'_, pyo3::types::PyList>>() {
+            for (idx, item) in list.iter().enumerate() {
+                if let Ok(s) = item.extract::<String>()
+                    && crate::cloud::is_cloud_url(&s)
+                {
+                    urls.push(s);
+                    slots.push(CloudSlot::ListItem {
+                        key: key_str.clone(),
+                        idx,
+                    });
+                }
+            }
+        }
+    }
+
+    if urls.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Phase 2: download all URLs concurrently, releasing the GIL meanwhile.
+    // Returned paths are in the SAME ORDER as `urls`/`slots`.
+    let local_paths = py
+        .detach(|| crate::cloud::download_many_to_temp(&urls))
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("cloud download failed: {e}"))
+        })?;
+
+    // Phase 3: splice local paths back into the payload and build cleanup list.
+    let pathlib = py.import("pathlib")?;
+    let path_class = pathlib.getattr("Path")?;
+    let mut cleanup: Vec<PyObject> = Vec::with_capacity(local_paths.len());
+
+    for (slot, local) in slots.iter().zip(local_paths.iter()) {
+        let local_str = local.to_string_lossy().to_string();
+        cleanup.push(path_class.call1((&local_str,))?.unbind());
+        let new_val = pyo3::types::PyString::new(py, &local_str);
+        match slot {
+            CloudSlot::Single { key } => {
+                payload.set_item(key.bind(py), &new_val)?;
+            }
+            CloudSlot::ListItem { key, idx } => {
+                let item = payload.get_item(key)?.ok_or_else(|| {
+                    pyo3::exceptions::PyKeyError::new_err(format!(
+                        "Input key '{key}' disappeared during cloud download"
+                    ))
+                })?;
+                let list = item.extract::<Bound<'_, pyo3::types::PyList>>()?;
+                list.set_item(*idx, &new_val)?;
+            }
+        }
+    }
+    Ok(cleanup)
 }
 
 /// Coerce URL string values in the input dict to the appropriate cog types.

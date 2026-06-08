@@ -4,12 +4,6 @@
 //! downloads them to temp files using the `object_store` crate, so the rest of
 //! the input pipeline can treat them as ordinary local paths.
 
-// This module is built incrementally. Its public entry points (`is_cloud_url`,
-// `download_many_to_temp`) are wired into `prepare_input` in the next task; until
-// then they read as dead code to the non-test lib build. Remove this allow once
-// the input pipeline consumes them.
-#![allow(dead_code)]
-
 use std::io::Write as _;
 use std::sync::Arc;
 
@@ -166,17 +160,6 @@ pub fn download_many_to_temp(urls: &[String]) -> Result<Vec<std::path::PathBuf>,
         }
     }
     Ok(written)
-}
-
-/// Convenience: download a single cloud URL to a temp file. Implemented in
-/// terms of `download_many_to_temp` so there is one code path.
-pub fn download_to_temp(
-    url: &str,
-    suggested_filename: &str,
-) -> Result<std::path::PathBuf, CloudError> {
-    let _ = suggested_filename; // filename is derived from the URL inside the batch fn
-    let mut paths = download_many_to_temp(std::slice::from_ref(&url.to_string()))?;
-    Ok(paths.pop().expect("one url yields one path"))
 }
 
 /// Build a filesystem-safe temp-file suffix from a suggested filename.
