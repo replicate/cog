@@ -2,6 +2,7 @@
 
 mod audit;
 mod cancel;
+mod cloud;
 mod input;
 mod log_writer;
 mod metric_scope;
