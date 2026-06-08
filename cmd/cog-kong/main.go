@@ -29,17 +29,17 @@ type CLI struct {
 
 	BaseImage  BaseImageCmd `cmd:"" name:"base-image" help:"Tools for working with Cog base images."`
 	Build      BuildCmd     `cmd:"" help:"Build an image from cog.yaml."`
-	Debug      DebugCmd     `cmd:"" help:"Debug Cog internals."`
+	Debug      DebugCmd     `cmd:"" hidden:"" help:"Debug Cog internals."`
 	Doctor     DoctorCmd    `cmd:"" help:"Check your project for common issues and fix them (experimental)."`
 	Exec       ExecCmd      `cmd:"" help:"Execute a command inside a Docker environment."`
 	Init       InitCmd      `cmd:"" help:"Configure your project for use with Cog."`
 	Login      LoginCmd     `cmd:"" help:"Log in to a container registry."`
-	Predict    PredictCmd   `cmd:"" help:"Run a prediction."`
+	Predict    PredictCmd   `cmd:"" hidden:"" help:"Run a prediction."`
 	Push       PushCmd      `cmd:"" help:"Build and push model in current directory to a Docker registry."`
 	RunCommand RunCmd       `cmd:"" name:"run" help:"Run a prediction."`
 	Serve      ServeCmd     `cmd:"" help:"Run an HTTP server."`
-	Train      TrainCmd     `cmd:"" help:"Run a training job."`
-	Weights    WeightsCmd   `cmd:"" help:"Commands for managing model weight files."`
+	Train      TrainCmd     `cmd:"" hidden:"" help:"Run a training job."`
+	Weights    WeightsCmd   `cmd:"" hidden:"" help:"Commands for managing model weight files."`
 }
 
 func main() {
@@ -67,7 +67,6 @@ func main() {
 
 		// otherwise it's a real parse error (e.g. unexpected command or flag), so print the error and exit non-zero.
 		parser.FatalIfErrorf(err)
-		os.Exit(1)
 	}
 	if cli.Help {
 		_ = kctx.PrintUsage(false)
@@ -80,7 +79,6 @@ func main() {
 	// command returned an error. Print and exit non-zero.
 	if err != nil {
 		parser.FatalIfErrorf(err)
-		os.Exit(1)
 	}
 }
 

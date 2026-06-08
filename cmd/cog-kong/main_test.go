@@ -146,8 +146,19 @@ func TestKongRootHelpParses(t *testing.T) {
 	require.Contains(t, help, "Usage: cog <command> [flags]")
 	require.Contains(t, help, "build")
 	require.Contains(t, help, "push")
-	require.Contains(t, help, "weights")
 	require.NotContains(t, help, "Usage: cog default")
+
+	// Commands hidden in Cobra must also be hidden in the Kong model so they
+	// don't appear in the root help output.
+	hiddenByName := map[string]bool{}
+	for _, node := range kctx.Model.Children {
+		if node.Hidden {
+			hiddenByName[node.Name] = true
+		}
+	}
+	for _, name := range []string{"predict", "train", "weights", "debug"} {
+		require.Truef(t, hiddenByName[name], "command %q should be hidden", name)
+	}
 }
 
 func TestKongRootGlobalFlagsParse(t *testing.T) {
