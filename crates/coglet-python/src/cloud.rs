@@ -4,10 +4,17 @@
 //! downloads them to temp files using the `object_store` crate, so the rest of
 //! the input pipeline can treat them as ordinary local paths.
 
+// This module is built incrementally. Its public entry points (`is_cloud_url`,
+// `download_many_to_temp`) are wired into `prepare_input` in the next task; until
+// then they read as dead code to the non-test lib build. Remove this allow once
+// the input pipeline consumes them.
+#![allow(dead_code)]
+
+use std::io::Write as _;
 use std::sync::Arc;
 
 use object_store::path::Path as ObjectPath;
-use object_store::ObjectStore;
+use object_store::{ObjectStore, ObjectStoreExt};
 
 /// Errors that can occur while resolving and downloading a cloud object.
 #[derive(Debug, thiserror::Error)]
@@ -57,13 +64,128 @@ pub fn build_store_for_url(url: &str) -> Result<(Arc<dyn ObjectStore>, ObjectPat
     // GCS falls back to a lazy instance-credential provider, so neither builder
     // performs network I/O at `build()` time.
     let opts: Vec<(String, String)> = std::env::vars().collect();
-    let (store, path) = object_store::parse_url_opts(&parsed, opts).map_err(|source| {
-        CloudError::Store {
+    let (store, path) =
+        object_store::parse_url_opts(&parsed, opts).map_err(|source| CloudError::Store {
             url: url.to_string(),
             source,
-        }
-    })?;
+        })?;
     Ok((Arc::from(store), path))
+}
+
+/// Async: fetch the full object body for an already-built store + path.
+/// Composable so callers can run many fetches concurrently under one runtime.
+async fn fetch_bytes(
+    store: &dyn ObjectStore,
+    path: &ObjectPath,
+    url: &str,
+) -> Result<bytes::Bytes, CloudError> {
+    let get_result = store
+        .get(path)
+        .await
+        .map_err(|source| CloudError::Download {
+            url: url.to_string(),
+            source,
+        })?;
+    get_result
+        .bytes()
+        .await
+        .map_err(|source| CloudError::Download {
+            url: url.to_string(),
+            source,
+        })
+}
+
+/// Write already-fetched bytes to a uniquely-named temp file, preserving the
+/// suggested filename as the suffix (so the extension survives). Returns the
+/// temp file path; cleanup happens later via PreparedInput's drop calling
+/// unlink() on the path we hand to Python.
+fn write_temp(
+    url: &str,
+    suggested_filename: &str,
+    data: &[u8],
+) -> Result<std::path::PathBuf, CloudError> {
+    let suffix = sanitize_suffix(suggested_filename);
+    let mut temp = tempfile::Builder::new()
+        .suffix(&suffix)
+        .tempfile()
+        .map_err(|source| CloudError::Io {
+            url: url.to_string(),
+            source,
+        })?;
+    temp.write_all(data).map_err(|source| CloudError::Io {
+        url: url.to_string(),
+        source,
+    })?;
+    let (_file, pathbuf) = temp.keep().map_err(|e| CloudError::Io {
+        url: url.to_string(),
+        source: e.error,
+    })?;
+    Ok(pathbuf)
+}
+
+/// Download MANY cloud URLs to temp files concurrently, returning the local
+/// temp paths in the SAME ORDER as the input `urls`.
+///
+/// This is synchronous (blocks on a single tokio runtime) but performs all
+/// network transfers concurrently via `try_join_all`. If any download fails,
+/// the whole call fails (first error wins) and already-written temp files are
+/// best-effort removed. Callers holding the GIL should wrap this in
+/// `py.allow_threads(...)`.
+pub fn download_many_to_temp(urls: &[String]) -> Result<Vec<std::path::PathBuf>, CloudError> {
+    if urls.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Build a store + object path for each URL up front (offline, no network).
+    let mut stores: Vec<(Arc<dyn ObjectStore>, ObjectPath, String, String)> =
+        Vec::with_capacity(urls.len());
+    for url in urls {
+        let (store, path) = build_store_for_url(url)?;
+        let filename = url.rsplit('/').next().unwrap_or("file").to_string();
+        stores.push((store, path, url.clone(), filename));
+    }
+
+    let runtime = pyo3_async_runtimes::tokio::get_runtime();
+    let bodies: Vec<bytes::Bytes> = runtime.block_on(async {
+        let fetches = stores
+            .iter()
+            .map(|(store, path, url, _)| fetch_bytes(store.as_ref(), path, url));
+        futures::future::try_join_all(fetches).await
+    })?;
+
+    // Write each body to a temp file, preserving order. Roll back on error.
+    let mut written: Vec<std::path::PathBuf> = Vec::with_capacity(bodies.len());
+    for (body, (_, _, url, filename)) in bodies.iter().zip(stores.iter()) {
+        match write_temp(url, filename, body) {
+            Ok(p) => written.push(p),
+            Err(e) => {
+                for p in &written {
+                    std::fs::remove_file(p).ok();
+                }
+                return Err(e);
+            }
+        }
+    }
+    Ok(written)
+}
+
+/// Convenience: download a single cloud URL to a temp file. Implemented in
+/// terms of `download_many_to_temp` so there is one code path.
+pub fn download_to_temp(
+    url: &str,
+    suggested_filename: &str,
+) -> Result<std::path::PathBuf, CloudError> {
+    let _ = suggested_filename; // filename is derived from the URL inside the batch fn
+    let mut paths = download_many_to_temp(std::slice::from_ref(&url.to_string()))?;
+    Ok(paths.pop().expect("one url yields one path"))
+}
+
+/// Build a filesystem-safe temp-file suffix from a suggested filename.
+fn sanitize_suffix(name: &str) -> String {
+    let base = name.rsplit('/').next().unwrap_or(name);
+    if base.is_empty() {
+        return String::new();
+    }
+    format!("-{}", base.replace(['\0', '/'], "_"))
 }
 
 /// Returns true if `s` is a cloud object-storage URL that this module can
@@ -126,5 +248,82 @@ mod tests {
     fn rejects_unparseable_url() {
         let err = build_store_for_url("s3://").err();
         assert!(err.is_some(), "empty bucket url should error");
+    }
+
+    #[test]
+    fn fetch_and_write_temp_roundtrips() {
+        use object_store::ObjectStoreExt as _;
+        use object_store::memory::InMemory;
+
+        let runtime = pyo3_async_runtimes::tokio::get_runtime();
+        let store = InMemory::new();
+        let obj_path = ObjectPath::from("inputs/hello.txt");
+        runtime
+            .block_on(store.put(&obj_path, b"hello cloud".to_vec().into()))
+            .expect("seed object");
+
+        let body = runtime
+            .block_on(fetch_bytes(
+                &store,
+                &obj_path,
+                "s3://bucket/inputs/hello.txt",
+            ))
+            .expect("fetch should succeed");
+        let temp = write_temp("s3://bucket/inputs/hello.txt", "hello.txt", &body)
+            .expect("write should succeed");
+
+        let contents = std::fs::read(&temp).expect("temp file should exist");
+        assert_eq!(contents, b"hello cloud");
+        assert!(
+            temp.to_string_lossy().ends_with("hello.txt"),
+            "temp file should preserve filename suffix, got {temp:?}"
+        );
+        std::fs::remove_file(&temp).ok();
+    }
+
+    #[test]
+    fn parallel_download_preserves_order() {
+        // Seed three objects in a single InMemory store, then fetch them
+        // concurrently via try_join_all and assert ordering. This is the
+        // ordering contract for download_many_to_temp (which builds a fresh
+        // store per URL from env, so it cannot reuse this single InMemory).
+        use object_store::ObjectStoreExt as _;
+        use object_store::memory::InMemory;
+
+        let runtime = pyo3_async_runtimes::tokio::get_runtime();
+        let store = InMemory::new();
+        for (i, name) in ["a.txt", "b.txt", "c.txt"].iter().enumerate() {
+            let p = ObjectPath::from(format!("in/{name}"));
+            runtime
+                .block_on(store.put(&p, format!("body-{i}").into_bytes().into()))
+                .expect("seed");
+        }
+        let paths = [
+            ObjectPath::from("in/a.txt"),
+            ObjectPath::from("in/b.txt"),
+            ObjectPath::from("in/c.txt"),
+        ];
+        let bodies = runtime
+            .block_on(async {
+                let fs = paths
+                    .iter()
+                    .map(|p| fetch_bytes(&store, p, "s3://bucket/x"));
+                futures::future::try_join_all(fs).await
+            })
+            .expect("all fetches succeed");
+        assert_eq!(bodies[0].as_ref(), b"body-0");
+        assert_eq!(bodies[1].as_ref(), b"body-1");
+        assert_eq!(bodies[2].as_ref(), b"body-2");
+    }
+
+    #[test]
+    fn download_many_empty_is_ok() {
+        assert!(download_many_to_temp(&[]).expect("empty ok").is_empty());
+    }
+
+    #[test]
+    fn sanitize_suffix_strips_path_and_nulls() {
+        assert_eq!(sanitize_suffix("a/b/c.png"), "-c.png");
+        assert_eq!(sanitize_suffix(""), "");
     }
 }
