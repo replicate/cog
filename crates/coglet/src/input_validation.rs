@@ -26,6 +26,26 @@ pub struct InputValidator {
     properties: HashSet<String>,
     /// Required field names from the schema.
     required: Vec<String>,
+    /// Properties that should resolve to `null` when omitted from the request.
+    ///
+    /// These are inputs declared `Optional[T]` / `T | None` that carry no
+    /// real default (schema: `nullable: true`, absent from `required`, no
+    /// `default` key). The Python signature may not have a usable
+    /// `__defaults__` entry for these (e.g. a bare `value: Optional[str]`),
+    /// so omitting them would raise `TypeError: missing 1 required positional
+    /// argument` in the worker. Injecting an explicit `null` makes the
+    /// documented behaviour ("optional inputs default to None") hold, with the
+    /// generated schema staying the source of truth for what is optional.
+    ///
+    /// This rule mirrors the schema-generation discriminator in
+    /// `pkg/schema/openapi.go` (`buildInputSchema`), which emits `nullable`,
+    /// `required` membership, and the `default` key independently. The unit
+    /// tests below hand-build schema JSON, so they cannot catch drift if that
+    /// generator changes shape (e.g. `anyOf`-with-null instead of
+    /// `nullable: true`). The end-to-end guard against such drift is the
+    /// integration test `integration-tests/tests/optional_input_no_default.txtar`,
+    /// which runs the real generator through coglet.
+    inject_null: Vec<String>,
 }
 
 impl InputValidator {
@@ -63,6 +83,30 @@ impl InputValidator {
             })
             .unwrap_or_default();
 
+        // Properties that should resolve to `null` when omitted: nullable,
+        // not required, and with no `default` key. This mirrors the
+        // schema-generation discriminator in pkg/schema/openapi.go, where
+        // `nullable`, membership in `required`, and the presence of a
+        // `default` key are emitted independently.
+        let required_set: HashSet<&str> = required.iter().map(String::as_str).collect();
+        let inject_null: Vec<String> = input_schema
+            .get("properties")
+            .and_then(|p| p.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .filter(|(name, prop)| {
+                        let nullable = prop
+                            .get("nullable")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false);
+                        let has_default = prop.get("default").is_some();
+                        nullable && !has_default && !required_set.contains(name.as_str())
+                    })
+                    .map(|(name, _)| name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let mut resolved = input_schema.clone();
 
         // Inline $ref pointers so the validator can resolve them without
@@ -81,11 +125,32 @@ impl InputValidator {
             validator,
             properties,
             required,
+            inject_null,
         })
     }
 
     pub fn required_count(&self) -> usize {
         self.required.len()
+    }
+
+    /// Inject an explicit `null` for any optional-with-no-default property that
+    /// is absent from the input.
+    ///
+    /// Only injects on true absence — a value already present (including an
+    /// explicit `null`) is never overwritten. Call this only after
+    /// `validate()` succeeds so missing *required* fields still error.
+    pub fn inject_missing_optionals(&self, input: &mut Value) {
+        if self.inject_null.is_empty() {
+            return;
+        }
+        let Some(obj) = input.as_object_mut() else {
+            return;
+        };
+        for name in &self.inject_null {
+            if !obj.contains_key(name) {
+                obj.insert(name.clone(), Value::Null);
+            }
+        }
     }
 
     /// Strip unknown input fields in place, returning the names of removed fields.
@@ -421,5 +486,148 @@ mod tests {
 
         assert!(validator.validate(&json!({"s": "hello"})).is_ok());
         assert!(validator.validate(&json!({"s": "hello", "n": 42})).is_ok());
+    }
+
+    #[test]
+    fn injects_null_for_omitted_optional_without_default() {
+        // `value: Optional[str]` / `value: Optional[str] = Input(description=...)`
+        // emit: nullable, not required, no `default` key.
+        let schema = make_schema(json!({
+            "type": "object",
+            "properties": {
+                "s": {"type": "string", "title": "S"},
+                "value": {"type": "string", "title": "Value", "nullable": true}
+            },
+            "required": ["s"]
+        }));
+
+        let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+
+        let mut input = json!({"s": "hello"});
+        validator.inject_missing_optionals(&mut input);
+        assert_eq!(input, json!({"s": "hello", "value": null}));
+    }
+
+    #[test]
+    fn does_not_override_present_optional_value() {
+        let schema = make_schema(json!({
+            "type": "object",
+            "properties": {
+                "value": {"type": "string", "title": "Value", "nullable": true}
+            }
+        }));
+
+        let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+
+        // Present value (including explicit null) is never overwritten.
+        let mut input = json!({"value": "present"});
+        validator.inject_missing_optionals(&mut input);
+        assert_eq!(input, json!({"value": "present"}));
+
+        let mut input = json!({"value": null});
+        validator.inject_missing_optionals(&mut input);
+        assert_eq!(input, json!({"value": null}));
+    }
+
+    #[test]
+    fn does_not_inject_for_optional_with_explicit_default() {
+        // `Optional[str] = Input(default=None)` emits `default: null`;
+        // `seed: int = Input(default=42)` emits `default: 42`. Python's
+        // __defaults__ already resolves these, so injection must skip them.
+        let schema = make_schema(json!({
+            "type": "object",
+            "properties": {
+                "opt_none": {"type": "string", "title": "OptNone", "nullable": true, "default": null},
+                "with_default": {"type": "integer", "title": "WithDefault", "default": 42}
+            }
+        }));
+
+        let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+
+        let mut input = json!({});
+        validator.inject_missing_optionals(&mut input);
+        assert_eq!(
+            input,
+            json!({}),
+            "fields with a default key are left absent"
+        );
+    }
+
+    #[test]
+    fn injects_null_for_omitted_optional_list() {
+        // `Optional[list[str]]` / `list[str] | None` emits a top-level
+        // `nullable: true` array with no default and is absent from `required`.
+        let schema = make_schema(json!({
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "title": "Items",
+                    "nullable": true
+                }
+            }
+        }));
+
+        let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+
+        let mut input = json!({});
+        validator.inject_missing_optionals(&mut input);
+        assert_eq!(input, json!({"items": null}));
+    }
+
+    #[test]
+    fn injects_null_for_omitted_optional_enum() {
+        // An optional choices field emits `allOf` + `$ref` with a sibling
+        // `nullable: true` and no default. The discriminator reads `nullable`
+        // at the property top level, so it should still inject.
+        let schema = json!({
+            "components": {
+                "schemas": {
+                    "Input": {
+                        "type": "object",
+                        "properties": {
+                            "color": {
+                                "allOf": [{"$ref": "#/components/schemas/Color"}],
+                                "title": "Color",
+                                "nullable": true,
+                                "x-order": 0
+                            }
+                        }
+                    },
+                    "Color": {
+                        "title": "Color",
+                        "description": "An enumeration.",
+                        "enum": ["red", "green", "blue"],
+                        "type": "string"
+                    }
+                }
+            }
+        });
+
+        let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+
+        let mut input = json!({});
+        validator.inject_missing_optionals(&mut input);
+        assert_eq!(input, json!({"color": null}));
+    }
+
+    #[test]
+    fn does_not_inject_for_required_field() {
+        // A required field is never nullable-without-default in practice, but
+        // guard against injecting for anything listed in `required`.
+        let schema = make_schema(json!({
+            "type": "object",
+            "properties": {
+                "r": {"type": "string", "title": "R", "nullable": true}
+            },
+            "required": ["r"]
+        }));
+
+        let validator = InputValidator::from_openapi_schema(&schema).unwrap();
+
+        let mut input = json!({});
+        validator.inject_missing_optionals(&mut input);
+        assert_eq!(input, json!({}), "required fields are not injected");
     }
 }

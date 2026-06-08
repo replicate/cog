@@ -436,12 +436,32 @@ impl PredictionService {
     ) {
         let guard = self.input_validator.read().await;
         if let Some(ref validator) = *guard {
-            let stripped = validator.strip_unknown(input);
-            let result = validator.validate(input);
-            (stripped, result)
+            Self::strip_validate_inject(validator, input)
         } else {
             (Vec::new(), Ok(()))
         }
+    }
+
+    /// Strip unknown fields, validate, then inject `null` for omitted
+    /// optional-with-no-default inputs.
+    ///
+    /// Injection runs only when validation passes, so missing *required*
+    /// fields still error before any default is filled in. Centralizing this
+    /// keeps the ordering invariant identical across the predict and train
+    /// (including fallback) paths.
+    fn strip_validate_inject(
+        validator: &InputValidator,
+        input: &mut serde_json::Value,
+    ) -> (
+        Vec<String>,
+        Result<(), Vec<crate::input_validation::ValidationError>>,
+    ) {
+        let stripped = validator.strip_unknown(input);
+        let result = validator.validate(input);
+        if result.is_ok() {
+            validator.inject_missing_optionals(input);
+        }
+        (stripped, result)
     }
 
     /// Strip unknown fields from training input and validate in one pass.
@@ -456,16 +476,12 @@ impl PredictionService {
     ) {
         let train_guard = self.train_validator.read().await;
         if let Some(ref validator) = *train_guard {
-            let stripped = validator.strip_unknown(input);
-            let result = validator.validate(input);
-            return (stripped, result);
+            return Self::strip_validate_inject(validator, input);
         }
         drop(train_guard);
         let predict_guard = self.input_validator.read().await;
         if let Some(ref validator) = *predict_guard {
-            let stripped = validator.strip_unknown(input);
-            let result = validator.validate(input);
-            return (stripped, result);
+            return Self::strip_validate_inject(validator, input);
         }
         (Vec::new(), Ok(()))
     }
@@ -1791,5 +1807,77 @@ mod tests {
         assert_eq!(id, "p3");
         assert_eq!(rehydrated, input);
         assert_eq!(output_dir, "/tmp/out");
+    }
+
+    /// OpenAPI doc with an optional-with-no-default field under the given
+    /// schema component key (e.g. "Input" or "TrainingInput").
+    fn optional_schema(key: &str) -> serde_json::Value {
+        serde_json::json!({
+            "components": {
+                "schemas": {
+                    key: {
+                        "type": "object",
+                        "properties": {
+                            "s": {"type": "string", "title": "S"},
+                            "value": {"type": "string", "title": "Value", "nullable": true}
+                        },
+                        "required": ["s"]
+                    }
+                }
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn strip_and_validate_input_injects_missing_optional() {
+        let svc = PredictionService::new_no_pool();
+        svc.set_schema(optional_schema("Input")).await;
+
+        let mut input = serde_json::json!({"s": "hello"});
+        let (_stripped, result) = svc.strip_and_validate_input(&mut input).await;
+
+        assert!(result.is_ok(), "valid input should pass validation");
+        assert_eq!(
+            input,
+            serde_json::json!({"s": "hello", "value": null}),
+            "omitted optional-with-no-default should be injected with null"
+        );
+    }
+
+    #[tokio::test]
+    async fn strip_and_validate_input_does_not_inject_when_required_missing() {
+        let svc = PredictionService::new_no_pool();
+        svc.set_schema(optional_schema("Input")).await;
+
+        // "s" is required and absent: validation must fail and nothing should
+        // be injected (the request is rejected before defaults are filled in).
+        let mut input = serde_json::json!({});
+        let (_stripped, result) = svc.strip_and_validate_input(&mut input).await;
+
+        assert!(result.is_err(), "missing required field should fail");
+        assert_eq!(
+            input,
+            serde_json::json!({}),
+            "injection must not run when validation fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn strip_and_validate_train_input_injects_missing_optional() {
+        let svc = PredictionService::new_no_pool();
+        svc.set_schema(optional_schema("TrainingInput")).await;
+
+        let mut input = serde_json::json!({"s": "hello"});
+        let (_stripped, result) = svc.strip_and_validate_train_input(&mut input).await;
+
+        assert!(
+            result.is_ok(),
+            "valid training input should pass validation"
+        );
+        assert_eq!(
+            input,
+            serde_json::json!({"s": "hello", "value": null}),
+            "train path should inject omitted optional-with-no-default"
+        );
     }
 }
