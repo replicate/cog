@@ -138,6 +138,7 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Build SDK
         run: mise run ci:build:sdk
@@ -190,6 +191,7 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Get version from VERSION.txt
         id: version
@@ -221,6 +223,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check Go formatting
         run: mise run fmt:go
@@ -233,6 +236,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Ensure Rust components
         run: rustup component add rustfmt clippy
@@ -247,6 +251,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check Python formatting
         run: mise run fmt:python
@@ -259,6 +264,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check llms.txt is up to date
         run: mise run docs:llm:check
@@ -283,6 +289,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check stubs are up to date
         run: |
@@ -302,6 +309,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Lint Go
         run: mise run lint:go
@@ -318,6 +326,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Ensure Rust components
         run: rustup component add rustfmt clippy
@@ -332,6 +341,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check licenses, bans, and sources
         run: cargo deny --manifest-path crates/Cargo.toml check bans licenses sources
@@ -349,6 +359,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check advisories (informational)
         run: cargo deny --manifest-path crates/Cargo.toml check advisories
@@ -373,6 +384,7 @@ jobs:
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Ensure nox is installed
         run: mise install pipx:nox --force
@@ -387,6 +399,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Lint Markdown
         run: mise run lint:docs
@@ -407,6 +420,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test Go
         shell: bash
@@ -426,22 +440,19 @@ jobs:
   fuzz-go:
     name: Fuzz Go
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # test:fuzz auto-discovers every Fuzz* target and runs each for FUZZTIME
+    # (30s default), so this scales as targets are added.
+    timeout-minutes: 15
     env:
       CGO_ENABLED: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
-      - name: Fuzz schema type resolution
-        run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime=30s
-      - name: Fuzz JSON schema generation
-        run: go test ./pkg/schema/ -run='^$' -fuzz=FuzzJSONSchema -fuzztime=30s
-      - name: Fuzz Python parser
-        run: go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParsePredictor -fuzztime=30s
-      - name: Fuzz type annotation parsing
-        run: go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParseTypeAnnotation -fuzztime=30s
+      - name: Fuzz all targets (auto-discovered)
+        run: mise run test:fuzz
 
   test-rust:
     name: Test Rust
@@ -455,6 +466,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test Rust
         run: mise run test:rust
@@ -478,6 +490,7 @@ jobs:
         run: tar xf dist/*.tar.gz --strip-components=1
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Remove src to ensure tests run against wheel
         run: rm -rf python/cog
@@ -508,6 +521,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test coglet-python bindings
         run: uvx nox -s coglet -p ${{ matrix.python-version }}
@@ -628,6 +642,7 @@ jobs:
           chmod +x ./cog
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Set wheel environment
         run: |
@@ -787,6 +802,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: jdx/mise-action@v4
         with:
+          version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check coglet crates.io publish
         run: cargo publish --dry-run -p coglet --manifest-path crates/Cargo.toml

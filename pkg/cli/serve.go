@@ -14,6 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 var (
@@ -144,6 +145,10 @@ func RunServe(ctx context.Context, dockerClient command.Command, regClient regis
 	}
 	defer src.Close()
 
+	if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
+		return err
+	}
+
 	console.Info("Building Docker image from environment in cog.yaml...")
 	console.Info("")
 	resolver := model.NewResolver(dockerClient, regClient)
@@ -171,6 +176,27 @@ func RunServe(ctx context.Context, dockerClient command.Command, regClient regis
 		Volumes: []command.Volume{{Source: src.ProjectDir, Destination: "/src"}},
 		Workdir: "/src",
 		Ports:   []command.Port{{HostPort: opts.Port, ContainerPort: 5000}},
+	}
+
+	wm, err := newWeightManager(src)
+	if err != nil {
+		return err
+	}
+	mounts, err := wm.Prepare(ctx)
+	if err != nil {
+		return fmt.Errorf("prepare weights: %w", err)
+	}
+	defer func() {
+		if err := mounts.Release(); err != nil {
+			console.Warnf("Failed to clean up weight mounts: %s", err)
+		}
+	}()
+	for _, spec := range mounts.Specs {
+		runOptions.Volumes = append(runOptions.Volumes, command.Volume{
+			Source:      spec.Source,
+			Destination: spec.Target,
+			ReadOnly:    true,
+		})
 	}
 
 	// On Linux, host.docker.internal is not available by default — add it.

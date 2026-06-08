@@ -404,6 +404,129 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeString, name.FieldType.Primitive)
 }
 
+func TestOptionalInputOpenAPINotRequired(t *testing.T) {
+	source := []byte(`
+from typing import Optional
+
+class Predictor:
+    def predict(self, value: Optional[str]) -> str:
+        return "ok"
+`)
+
+	info, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.NoError(t, err)
+
+	out, err := schema.GenerateOpenAPISchema(info)
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(out, &doc))
+	components, ok := doc["components"].(map[string]any)
+	require.True(t, ok)
+	schemas, ok := components["schemas"].(map[string]any)
+	require.True(t, ok)
+	input, ok := schemas["Input"].(map[string]any)
+	require.True(t, ok)
+	_, hasRequired := input["required"]
+	require.False(t, hasRequired)
+
+	properties, ok := input["properties"].(map[string]any)
+	require.True(t, ok)
+	prop, ok := properties["value"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, prop["nullable"])
+}
+
+func TestUnionInputStringFloat(t *testing.T) {
+	source := []byte(`
+class Predictor:
+    def predict(self, value: str | float) -> str:
+        return str(value)
+`)
+
+	info, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.NoError(t, err)
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.NotNil(t, value.InputType)
+	require.Equal(t, schema.InputKindUnion, value.InputType.Kind)
+	require.Len(t, value.InputType.Variants, 2)
+	require.Equal(t, schema.TypeString, value.InputType.Variants[0].Primitive)
+	require.Equal(t, schema.TypeFloat, value.InputType.Variants[1].Primitive)
+	require.False(t, value.InputType.Nullable)
+}
+
+func TestUnionInputStringFloatNone(t *testing.T) {
+	source := []byte(`
+from cog import Input
+
+class Predictor:
+    def predict(self, value: str | float | None = Input(default=None)) -> str:
+        return "ok"
+`)
+
+	info, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.NoError(t, err)
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.NotNil(t, value.InputType)
+	require.Equal(t, schema.InputKindUnion, value.InputType.Kind)
+	require.True(t, value.InputType.Nullable)
+	require.NotNil(t, value.Default)
+	require.Equal(t, schema.DefaultNone, value.Default.Kind)
+}
+
+func TestUnionInputNullableWithoutDefaultOpenAPI(t *testing.T) {
+	source := []byte(`
+class Predictor:
+    def predict(self, value: str | float | None) -> str:
+        return "ok"
+`)
+
+	info, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.NoError(t, err)
+
+	out, err := schema.GenerateOpenAPISchema(info)
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(out, &doc))
+	components, ok := doc["components"].(map[string]any)
+	require.True(t, ok)
+	schemas, ok := components["schemas"].(map[string]any)
+	require.True(t, ok)
+	input, ok := schemas["Input"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, []any{"value"}, input["required"])
+
+	properties, ok := input["properties"].(map[string]any)
+	require.True(t, ok)
+	prop, ok := properties["value"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, prop["nullable"])
+	require.Equal(t, []any{
+		map[string]any{"nullable": true, "type": "string"},
+		map[string]any{"nullable": true, "type": "number"},
+	}, prop["anyOf"])
+}
+
+func TestUnionInputRejectsPathString(t *testing.T) {
+	source := []byte(`
+from cog import Path
+
+class Predictor:
+    def predict(self, value: Path | str) -> str:
+        return "ok"
+`)
+
+	_, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Path")
+	require.Contains(t, err.Error(), "union")
+}
+
 // ---------------------------------------------------------------------------
 // List inputs
 // ---------------------------------------------------------------------------
