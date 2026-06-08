@@ -273,6 +273,77 @@ This produces a random identifier that is 26 ASCII characters long.
 'wjx3whax6rf4vphkegkhcvpv6a'
 ```
 
+## File inputs
+
+A model's `run` function can accept file input through
+[`cog.Path`](python.md#cogpath) or [`cog.File`](python.md#cogfile-deprecated)
+parameters. In the request body, these inputs are passed as URLs:
+
+```http
+POST /predictions HTTP/1.1
+Content-Type: application/json; charset=utf-8
+
+{
+    "input": {"image": "https://example.com/image.jpg"}
+}
+```
+
+The following URL schemes are supported:
+
+- `data:` — a [data URL](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs)
+  carrying the file contents inline (for example `data:image/png;base64,...`).
+- `http:` / `https:` — the server downloads the file over HTTP(S).
+- `s3:`, `gs:`, `az:` — the server downloads the file directly from cloud
+  object storage (see [Cloud storage inputs](#cloud-storage-inputs) below).
+
+Before your `run` function is called, the server resolves each file input to a
+local file on disk and passes that path (or file handle) to your model. Your
+model never sees the original URL.
+
+### Cloud storage inputs
+
+File inputs can reference objects in cloud object storage. Cog downloads them
+natively before the prediction runs. Supported schemes:
+
+- Amazon S3: `s3://bucket/key`
+- Google Cloud Storage: `gs://bucket/key`
+- Azure Blob Storage: `az://container/key`
+
+```http
+POST /predictions HTTP/1.1
+Content-Type: application/json; charset=utf-8
+
+{
+    "input": {"image": "s3://my-bucket/inputs/cat.png"}
+}
+```
+
+Credentials are read from the standard provider environment variables in the
+model container — there is no Cog-specific configuration:
+
+- Amazon S3: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+  `AWS_SESSION_TOKEN`, `AWS_REGION`.
+- Google Cloud Storage: `GOOGLE_SERVICE_ACCOUNT` or
+  `GOOGLE_APPLICATION_CREDENTIALS`.
+- Azure Blob Storage: `AZURE_STORAGE_ACCOUNT_NAME`,
+  `AZURE_STORAGE_ACCOUNT_KEY`.
+
+S3-compatible stores such as **Cloudflare R2** and **MinIO** use the `s3://`
+scheme together with a custom endpoint set via `AWS_ENDPOINT_URL`. For
+Cloudflare R2, also set `AWS_REGION=auto`.
+
+> [!NOTE]
+> Cloud storage is currently supported for **inputs only** (downloading).
+> Uploading file outputs to cloud storage is a separate feature planned for a
+> future release; for now, file outputs are returned as data URLs or uploaded
+> over HTTP (see [File uploads](#file-uploads)).
+
+> [!NOTE]
+> Cloud `cog.File` inputs are downloaded eagerly (the file is fetched before
+> your `run` function is called), whereas `http:`/`https:` `cog.File` inputs are
+> streamed lazily on first read. `cog.Path` inputs are always downloaded
+> eagerly regardless of scheme.
+
 ## File uploads
 
 A model's `run` function can produce file output by yielding or returning
