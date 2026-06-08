@@ -9,8 +9,9 @@ import (
 
 // BaseImageCmd implements the experimental "cog base-image" command group.
 type BaseImageCmd struct {
-	Dockerfile BaseImageDockerfileCmd `cmd:"" help:"Display Cog base image Dockerfile."`
-	Build      BaseImageBuildCmd      `cmd:"" help:"Build Cog base image."`
+	Dockerfile     BaseImageDockerfileCmd     `cmd:"" help:"Display Cog base image Dockerfile."`
+	Build          BaseImageBuildCmd          `cmd:"" help:"Build Cog base image."`
+	GenerateMatrix BaseImageGenerateMatrixCmd `cmd:"" name:"generate-matrix" help:"Generate a matrix of Cog base image versions (JSON)."`
 }
 
 // baseImageVersionFlags groups the version-selecting flags shared by the
@@ -59,4 +60,13 @@ type BaseImageBuildCmd struct {
 
 func (cmd *BaseImageBuildCmd) Run(ctx context.Context, dockerClient command.Command) error {
 	return cli.RunBaseImageBuild(ctx, dockerClient, cmd.options())
+}
+
+// BaseImageGenerateMatrixCmd implements "cog base-image generate-matrix".
+type BaseImageGenerateMatrixCmd struct {
+	baseImageVersionFlags `embed:""`
+}
+
+func (cmd *BaseImageGenerateMatrixCmd) Run() error {
+	return cli.RunBaseImageGenerateMatrix(cmd.options())
 }

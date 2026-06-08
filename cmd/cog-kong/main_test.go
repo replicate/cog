@@ -11,6 +11,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/stretchr/testify/require"
 
+	"github.com/replicate/cog/pkg/cli"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/util/console"
 )
@@ -159,6 +160,11 @@ func TestKongRootHelpParses(t *testing.T) {
 	for _, name := range []string{"predict", "train", "weights", "debug"} {
 		require.Truef(t, hiddenByName[name], "command %q should be hidden", name)
 	}
+	// Visible commands (notably run, the non-hidden twin of predict) must NOT be
+	// hidden — guards against accidentally hiding the wrong prediction command.
+	for _, name := range []string{"run", "build", "push", "serve", "exec", "init", "login", "doctor", "base-image"} {
+		require.Falsef(t, hiddenByName[name], "command %q should be visible", name)
+	}
 }
 
 func TestKongRootGlobalFlagsParse(t *testing.T) {
@@ -296,25 +302,135 @@ func TestKongBaseImageCommandFlagsParse(t *testing.T) {
 	for _, args := range [][]string{
 		{"base-image", "dockerfile", "--cuda", "12.4", "--python", "3.12", "--torch", "2.5.0", "--no-cache", "--progress", "plain", "--help"},
 		{"base-image", "build", "--cuda", "12.4", "--python", "3.12", "--torch", "2.5.0", "--help"},
+		{"base-image", "generate-matrix", "--cuda", "12.4", "--python", "3.12", "--help"},
 	} {
 		_, err := parser.Parse(args)
 		require.NoErrorf(t, err, "parse %v", args)
 	}
 }
 
-func TestKongCommandCoverageMatchesExpectedCobraSurface(t *testing.T) {
-	parser := newTestParser(t)
-	commands := map[string]bool{}
-	for _, node := range parser.Model.Children {
-		commands[node.Name] = true
+// TestKongBuildOnlyFlagsParity asserts that --timestamp and
+// --skip-schema-validation are build-only (not on push), matching Cobra, and
+// that build maps them through to the shared options.
+func TestKongBuildOnlyFlagsParity(t *testing.T) {
+	preserveKongGlobalState(t)
+
+	// build accepts the build-only flags and maps them to options.
+	var buildCLI CLI
+	buildParser, err := newParser(t.Context(), &buildCLI)
+	require.NoError(t, err)
+	_, err = buildParser.Parse([]string{"build", "--timestamp", "42", "--skip-schema-validation", "--tag", "img:latest"})
+	require.NoError(t, err)
+	opts := buildCLI.Build.options()
+	require.Equal(t, int64(42), opts.Timestamp)
+	require.True(t, opts.SkipSchemaValidation)
+
+	// push does NOT expose either flag (parity with Cobra push).
+	for _, flag := range []string{"--timestamp", "--skip-schema-validation"} {
+		pushParser := newTestParser(t)
+		_, err := pushParser.Parse([]string{"push", flag, "x", "img:latest"})
+		require.Errorf(t, err, "push should reject %s", flag)
+		require.Containsf(t, err.Error(), "unknown flag", "push should reject %s as unknown", flag)
 	}
 
-	expected := []string{
-		"base-image", "build", "debug", "doctor", "exec", "init",
-		"login", "predict", "push", "run", "serve", "train", "weights",
+	// push still defaults Timestamp to -1 (timestamp rewriting disabled), not 0.
+	require.Equal(t, int64(-1), (&BuildFlags{}).Options().Timestamp)
+}
+
+// TestKongEnvFlagParity asserts --env is available on exec/predict/run/train but
+// NOT on serve, matching the Cobra CLI (Cobra serve has no --env).
+func TestKongEnvFlagParity(t *testing.T) {
+	// serve has no --env.
+	serveParser := newTestParser(t)
+	_, err := serveParser.Parse([]string{"serve", "--env", "A=B"})
+	require.Error(t, err, "serve should reject --env")
+	require.Contains(t, err.Error(), "unknown flag")
+
+	// exec/predict/run/train accept --env and thread it through.
+	var execCLI CLI
+	execParser, err := newParser(t.Context(), &execCLI)
+	require.NoError(t, err)
+	_, err = execParser.Parse([]string{"exec", "--env", "A=B", "echo", "hi"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"A=B"}, execCLI.Exec.Env)
+
+	var runCLI CLI
+	runParser, err := newParser(t.Context(), &runCLI)
+	require.NoError(t, err)
+	_, err = runParser.Parse([]string{"run", "--env", "A=B", "img"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"A=B"}, runCLI.RunCommand.options("run").Env)
+}
+
+// TestKongExecRequiresCommand asserts the zero-arg exec error matches Cobra's
+// MinimumNArgs(1) message.
+func TestKongExecRequiresCommand(t *testing.T) {
+	cmd := &ExecCmd{}
+	err := cmd.Validate()
+	require.Error(t, err)
+	require.Equal(t, "requires at least 1 arg(s), only received 0", err.Error())
+}
+
+// TestKongCommandCoverageMatchesCobraSurface derives the expected command set
+// and hidden status directly from the real Cobra command tree
+// (cli.NewRootCommand and cli.NewBaseImageRootCommand) and asserts the Kong
+// model matches it node-by-node. Deriving from the actual Cobra surface (rather
+// than a hand-maintained list) means any future Cobra command/hidden-flag change
+// that the Kong CLI doesn't mirror will fail this test.
+func TestKongCommandCoverageMatchesCobraSurface(t *testing.T) {
+	parser := newTestParser(t)
+
+	// Kong top-level command name -> hidden.
+	kongCmds := map[string]bool{}
+	kongChildren := map[string]*kong.Node{}
+	for _, node := range parser.Model.Children {
+		if node.Type != kong.CommandNode {
+			continue
+		}
+		kongCmds[node.Name] = node.Hidden
+		kongChildren[node.Name] = node
 	}
-	require.Len(t, commands, len(expected))
-	for _, name := range expected {
-		require.Truef(t, commands[name], "missing command %q", name)
+
+	// Expected top-level surface from the real Cobra root command.
+	root, err := cli.NewRootCommand()
+	require.NoError(t, err)
+	expected := map[string]bool{}
+	for _, c := range root.Commands() {
+		expected[c.Name()] = c.Hidden
 	}
+	// Cobra ships base-image as a separate binary; Kong folds it under
+	// `cog base-image`, so add it to the expected top-level surface.
+	expected["base-image"] = false
+
+	require.Len(t, kongCmds, len(expected), "top-level command count mismatch: kong=%v expected=%v", keys(kongCmds), keys(expected))
+	for name, hidden := range expected {
+		gotHidden, ok := kongCmds[name]
+		require.Truef(t, ok, "Kong is missing command %q present in Cobra", name)
+		require.Equalf(t, hidden, gotHidden, "hidden mismatch for command %q", name)
+	}
+
+	// base-image subcommands must match the Cobra base-image binary.
+	bi, err := cli.NewBaseImageRootCommand()
+	require.NoError(t, err)
+	expectedBase := map[string]bool{}
+	for _, c := range bi.Commands() {
+		expectedBase[c.Name()] = c.Hidden
+	}
+	kongBase := map[string]bool{}
+	require.NotNil(t, kongChildren["base-image"], "Kong missing base-image group")
+	for _, node := range kongChildren["base-image"].Children {
+		if node.Type != kong.CommandNode {
+			continue
+		}
+		kongBase[node.Name] = node.Hidden
+	}
+	require.Equal(t, expectedBase, kongBase, "base-image subcommand surface mismatch")
+}
+
+func keys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

@@ -28,7 +28,6 @@ func newDebugCommand() *cobra.Command {
 
 	addSeparateWeightsFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
-	addDockerfileFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addBuildTimestampFlag(cmd)
 	addConfigFlag(cmd)

@@ -91,7 +91,6 @@ it.`,
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addBuildProgressOutputFlag(cmd)
-	addDockerfileFlag(cmd)
 	addGpusFlag(cmd)
 	addSetupTimeoutFlag(cmd)
 	addConfigFlag(cmd)

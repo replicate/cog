@@ -10,6 +10,7 @@ import (
 // predictionFlags groups the flags shared by the predict and run commands.
 type predictionFlags struct {
 	RuntimeFlags `embed:""`
+	EnvFlag      `embed:""`
 
 	Image        string   `arg:"" optional:"" name:"image" help:"Image to run. If omitted, builds from cog.yaml in the current directory."`
 	Input        []string `name:"input" short:"i" help:"Inputs, in the form name=value. If value is prefixed with @, it is read from a file on disk, e.g. -i path=@image.jpg."`
@@ -20,8 +21,10 @@ type predictionFlags struct {
 }
 
 func (f predictionFlags) options(use string) cli.PredictionCommandOptions {
+	rbo := f.Options()
+	rbo.Env = f.Env
 	return cli.PredictionCommandOptions{
-		RuntimeBuildOptions: f.Options(),
+		RuntimeBuildOptions: rbo,
 		Use:                 use,
 		Image:               f.Image,
 		Input:               f.Input,

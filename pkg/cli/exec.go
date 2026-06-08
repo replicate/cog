@@ -49,7 +49,6 @@ exploring the environment your model will run in.`,
 		Args:    cobra.MinimumNArgs(1),
 	}
 	addBuildProgressOutputFlag(cmd)
-	addDockerfileFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)

@@ -41,7 +41,6 @@ Otherwise, it will build the model in the current directory and train it.`,
 	}
 
 	addBuildProgressOutputFlag(cmd)
-	addDockerfileFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
 	addGpusFlag(cmd)
 	addUseCogBaseImageFlag(cmd)

@@ -275,7 +275,10 @@ func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {
 	flags := []string{useCogBaseImageFlagKey, "use-cuda-base-image", "dockerfile"}
 	var flagsSet []string
 	for _, flag := range flags {
-		if cmd.Flag(flag).Changed {
+		// Not every command that runs this check registers all of these flags
+		// (e.g. exec has no --dockerfile), so skip flags that aren't defined.
+		f := cmd.Flag(flag)
+		if f != nil && f.Changed {
 			flagsSet = append(flagsSet, "--"+flag)
 		}
 	}

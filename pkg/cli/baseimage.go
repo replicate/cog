@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -61,70 +62,51 @@ func newBaseImageGenerateMatrix() *cobra.Command {
 		Use:   "generate-matrix",
 		Short: "Generate a matrix of Cog base image versions (JSON)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			validCudaVersions := strings.FieldsFunc(baseImageCUDAVersion, func(c rune) bool {
-				return c == ','
-			})
-			validPythonVersions := strings.FieldsFunc(baseImagePythonVersion, func(c rune) bool {
-				return c == ','
-			})
-			validTorchVersions := strings.FieldsFunc(baseImageTorchVersion, func(c rune) bool {
-				return c == ','
-			})
-
-			allConfigurations := dockerfile.BaseImageConfigurations()
-			filteredMatrix := make([]dockerfile.BaseImageConfiguration, 0, len(allConfigurations))
-			for _, config := range allConfigurations {
-				var found bool
-				if len(validCudaVersions) > 0 {
-					found = false
-					for _, validCudaVersion := range validCudaVersions {
-						if config.CUDAVersion == validCudaVersion {
-							found = true
-						}
-					}
-					if !found {
-						continue
-					}
-				}
-
-				if len(validPythonVersions) > 0 {
-					found = false
-					for _, validPythonVersion := range validPythonVersions {
-						if config.PythonVersion == validPythonVersion {
-							found = true
-						}
-					}
-					if !found {
-						continue
-					}
-				}
-
-				if len(validTorchVersions) > 0 {
-					found = false
-					for _, validTorchVersion := range validTorchVersions {
-						if config.TorchVersion == validTorchVersion {
-							found = true
-						}
-					}
-					if !found {
-						continue
-					}
-				}
-
-				filteredMatrix = append(filteredMatrix, config)
-			}
-
-			output, err := json.Marshal(filteredMatrix)
-			if err != nil {
-				return err
-			}
-			fmt.Println(string(output))
-			return nil
+			return RunBaseImageGenerateMatrix(baseImageOptionsFromFlags())
 		},
 		Args: cobra.MaximumNArgs(0),
 	}
 	addBaseImageFlags(cmd)
 	return cmd
+}
+
+// RunBaseImageGenerateMatrix prints, as JSON, the matrix of supported base image
+// configurations filtered by the comma-separated CUDA/Python/Torch versions in
+// opts. Empty version filters match all values. It is shared by both the Cobra
+// and Kong base-image generate-matrix commands.
+func RunBaseImageGenerateMatrix(opts BaseImageOptions) error {
+	split := func(s string) []string {
+		return strings.FieldsFunc(s, func(c rune) bool { return c == ',' })
+	}
+	validCudaVersions := split(opts.CUDAVersion)
+	validPythonVersions := split(opts.PythonVersion)
+	validTorchVersions := split(opts.TorchVersion)
+
+	matches := func(filters []string, value string) bool {
+		return len(filters) == 0 || slices.Contains(filters, value)
+	}
+
+	allConfigurations := dockerfile.BaseImageConfigurations()
+	filteredMatrix := make([]dockerfile.BaseImageConfiguration, 0, len(allConfigurations))
+	for _, config := range allConfigurations {
+		if !matches(validCudaVersions, config.CUDAVersion) {
+			continue
+		}
+		if !matches(validPythonVersions, config.PythonVersion) {
+			continue
+		}
+		if !matches(validTorchVersions, config.TorchVersion) {
+			continue
+		}
+		filteredMatrix = append(filteredMatrix, config)
+	}
+
+	output, err := json.Marshal(filteredMatrix)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(output))
+	return nil
 }
 
 func newBaseImageDockerfileCommand() *cobra.Command {

@@ -48,9 +48,9 @@ type DebugCmd struct {
 	UseCudaBaseImage string `name:"use-cuda-base-image" default:"auto" enum:"auto,true,false" help:"Use Nvidia CUDA base image."`
 	UseCogBaseImage  *bool  `name:"use-cog-base-image" help:"Use pre-built Cog base image for faster cold boots."`
 
-	// Hidden flags for parity with the Cobra debug command.
-	Dockerfile string `name:"dockerfile" hidden:"" type:"existingfile" help:"Path to a Dockerfile."`
-	Timestamp  int64  `name:"timestamp" hidden:"" default:"-1" help:"Number of seconds since Epoch to use for the build timestamp."`
+	// Hidden flag for parity with the Cobra debug command. RunDebug ignores it
+	// (it is a no-op on both CLIs), but it is accepted for surface parity.
+	Timestamp int64 `name:"timestamp" hidden:"" default:"-1" help:"Number of seconds since Epoch to use for the build timestamp."`
 }
 
 func (cmd *DebugCmd) Run(ctx context.Context, dockerClient command.Command, regClient registry.Client) error {
