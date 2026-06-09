@@ -240,7 +240,7 @@ enum CloudSlot {
     /// payload[key] is a single string value.
     Single { key: Py<PyAny> },
     /// payload[key] is a list; the URL is at list index `idx`.
-    ListItem { key: String, idx: usize },
+    ListItem { key: Py<PyAny>, idx: usize },
 }
 
 /// Download cloud-storage URLs (`s3://`, `gs://`, `az://`) for File/Path fields
@@ -284,7 +284,7 @@ fn download_cloud_inputs_into_dict(
                 {
                     urls.push(s);
                     slots.push(CloudSlot::ListItem {
-                        key: key_str.clone(),
+                        key: key.clone().unbind(),
                         idx,
                     });
                 }
@@ -318,6 +318,7 @@ fn download_cloud_inputs_into_dict(
                 payload.set_item(key.bind(py), &new_val)?;
             }
             CloudSlot::ListItem { key, idx } => {
+                let key = key.bind(py);
                 let item = payload.get_item(key)?.ok_or_else(|| {
                     pyo3::exceptions::PyKeyError::new_err(format!(
                         "Input key '{key}' disappeared during cloud download"

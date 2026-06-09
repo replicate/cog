@@ -1612,7 +1612,7 @@ natively before the prediction runs. Supported schemes:
 
 - Amazon S3: `s3://bucket/key`
 - Google Cloud Storage: `gs://bucket/key`
-- Azure Blob Storage: `az://container/key`
+- Azure Blob Storage: `az://container/key` (also accepts `azure://container/key`)
 
 ```http
 POST /predictions HTTP/1.1
