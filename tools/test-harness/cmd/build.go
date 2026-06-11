@@ -47,13 +47,13 @@ func runBuild(ctx context.Context) error {
 
 	// Create runner
 	r, err := runner.New(runner.Options{
-		CogBinary:    resolved.CogBinary,
-		SDKVersion:   resolved.SDKPatchVersion,
-		SDKWheel:     resolved.SDKWheel,
-		ManifestDir:  filepath.Dir(mfPath),
-		CleanImages:  cleanImages,
-		KeepOutputs:  keepOutputs,
-		Parallel:     parallel,
+		CogBinary:   resolved.CogBinary,
+		SDKVersion:  resolved.SDKPatchVersion,
+		SDKWheel:    resolved.SDKWheel,
+		ManifestDir: filepath.Dir(mfPath),
+		CleanImages: cleanImages,
+		KeepOutputs: keepOutputs,
+		Parallel:    parallel,
 	})
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)

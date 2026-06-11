@@ -115,14 +115,14 @@ func (r *Runner) modelOutput(modelName string) (stdout, stderr io.Writer, captur
 
 // Options configures a Runner.
 type Options struct {
-	CogBinary    string
-	SDKVersion   string
-	SDKWheel     string
-	FixturesDir  string
-	ManifestDir  string
-	CleanImages  bool
-	KeepOutputs  bool
-	Parallel     bool // Prefix output lines with model name (for parallel execution)
+	CogBinary   string
+	SDKVersion  string
+	SDKWheel    string
+	FixturesDir string
+	ManifestDir string
+	CleanImages bool
+	KeepOutputs bool
+	Parallel    bool // Prefix output lines with model name (for parallel execution)
 }
 
 // Runner orchestrates the test lifecycle.
