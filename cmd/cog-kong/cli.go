@@ -1,12 +1,11 @@
 package main
 
 import (
-	"context"
+	"os"
 
 	"github.com/alecthomas/kong"
 
 	"github.com/replicate/cog/pkg/global"
-	"github.com/replicate/cog/pkg/update"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -14,25 +13,31 @@ import (
 // The AfterApply hook replaces Cobra's PersistentPreRun.
 type Globals struct {
 	Debug    bool             `name:"debug" short:"d" env:"COG_DEBUG" help:"Show debugging output."`
+	NoColor  bool             `name:"no-color" help:"Disable colored output."`
 	Registry string           `name:"registry" default:"${registry_default}" env:"COG_REGISTRY_HOST" hidden:"" help:"Registry host."`
 	Profile  bool             `name:"profile" hidden:"" help:"Enable profiling."`
-	Version  kong.VersionFlag `name:"version" short:"v" help:"Show version of Cog."`
+	Version  kong.VersionFlag `name:"version" help:"Show version of Cog."`
 }
 
 // AfterApply runs after flag parsing, before the command's Run.
 // This is the Kong equivalent of Cobra's PersistentPreRun.
-func (g *Globals) AfterApply(ctx context.Context) error {
+func (g *Globals) AfterApply() error {
 	if g.Debug {
 		global.Debug = true
 		console.SetLevel(console.DebugLevel)
+	}
+	if g.NoColor {
+		global.NoColor = true
+	}
+	if global.NoColor || !console.ShouldUseColor() {
+		console.SetColor(false)
+	}
+	if global.NoColor {
+		_ = os.Setenv("NO_COLOR", "1")
 	}
 	if g.Profile {
 		global.ProfilingEnabled = true
 	}
 	global.ReplicateRegistryHost = g.Registry
-
-	if err := update.DisplayAndCheckForRelease(ctx); err != nil {
-		console.Debugf("%s", err)
-	}
 	return nil
 }

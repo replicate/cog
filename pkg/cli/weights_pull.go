@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
@@ -40,7 +41,7 @@ home directory is on a different filesystem than your project.
 Use --verbose to show per-layer and per-file progress.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return weightsPullCommand(cmd, args, verbose)
+			return RunWeightsPull(cmd.Context(), configFilename, args, verbose)
 		},
 	}
 
@@ -49,8 +50,10 @@ Use --verbose to show per-layer and per-file progress.`,
 	return cmd
 }
 
-func weightsPullCommand(cmd *cobra.Command, args []string, verbose bool) error {
-	ctx := cmd.Context()
+// RunWeightsPull populates the local weight cache from the registry. It is
+// shared by both the Cobra and Kong weights pull commands.
+func RunWeightsPull(ctx context.Context, configFilename string, args []string, verbose bool) error {
+	weightsExperimentalWarning()
 
 	src, err := model.NewSource(configFilename)
 	if err != nil {

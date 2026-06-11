@@ -27,11 +27,6 @@ func newWeightsCommand() *cobra.Command {
 NOTE: cog weights is experimental. Behavior may change in future versions.
 Do not rely on it in production workflows.`,
 		Hidden: true,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			console.Warnf("NOTE: cog weights is experimental. Behavior may change in future versions.")
-			console.Warnf("Do not rely on it in production workflows.")
-			console.Info("")
-		},
 	}
 
 	cmd.AddCommand(newWeightsImportCommand())
@@ -66,7 +61,7 @@ Use --dry-run to preview what would change without importing anything.
 Add --verbose to see per-file details including which files pass the filter.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return weightsImportCommand(cmd, args, dryRun, verbose)
+			return RunWeightsImport(cmd.Context(), configFilename, args, dryRun, verbose)
 		},
 	}
 
@@ -76,8 +71,18 @@ Add --verbose to see per-file details including which files pass the filter.`,
 	return cmd
 }
 
-func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose bool) error {
-	ctx := cmd.Context()
+// weightsExperimentalWarning prints the experimental notice shared by all
+// weights subcommands. It runs once per subcommand invocation.
+func weightsExperimentalWarning() {
+	console.Warnf("NOTE: cog weights is experimental. Behavior may change in future versions.")
+	console.Warnf("Do not rely on it in production workflows.")
+	console.Info("")
+}
+
+// RunWeightsImport builds and pushes weights to a registry. It is shared by
+// both the Cobra and Kong weights import commands.
+func RunWeightsImport(ctx context.Context, configFilename string, args []string, dryRun, verbose bool) error {
+	weightsExperimentalWarning()
 
 	src, err := model.NewSource(configFilename)
 	if err != nil {
@@ -92,7 +97,7 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 		return err
 	}
 
-	weightSpecs, err := collectWeightSpecs(src, args)
+	weightSpecs, err := collectWeightSpecs(src, configFilename, args)
 	if err != nil {
 		return err
 	}
@@ -233,7 +238,7 @@ func planStatusIcon(status model.WeightImportPlanStatus) string {
 // collectWeightSpecs extracts WeightSpecs from the source, optionally
 // filtered to only the names listed in filterNames. An error is returned
 // if no weights match or if a requested name doesn't exist.
-func collectWeightSpecs(src *model.Source, filterNames []string) ([]*model.WeightSpec, error) {
+func collectWeightSpecs(src *model.Source, configFilename string, filterNames []string) ([]*model.WeightSpec, error) {
 	if len(src.Config.Weights) == 0 {
 		return nil, fmt.Errorf("no weights defined in %s", configFilename)
 	}

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
+	"github.com/replicate/cog/pkg/docker/command"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
@@ -83,7 +85,101 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	src, err := model.NewSource(configFilename)
+	return RunBuild(ctx, dockerClient, registry.NewRegistryClient(), BuildCommandOptions{
+		ConfigFilename: configFilename,
+		Tag:            buildTag,
+		Flags:          buildFlagsOptionsFromCobra(cmd),
+	})
+}
+
+// BuildFlagsOptions holds the parser-independent build flag values shared by
+// both the Cobra and Kong CLIs. It mirrors the flags registered on the build
+// and push commands.
+type BuildFlagsOptions struct {
+	NoCache              bool
+	SeparateWeights      bool
+	Secrets              []string
+	ProgressOutput       string
+	UseCudaBaseImage     string
+	UseCogBaseImage      *bool
+	OpenAPISchema        string
+	DockerfileFile       string
+	Strip                bool
+	Precompile           bool
+	SkipSchemaValidation bool
+	Timestamp            int64
+}
+
+// BuildCommandOptions holds everything RunBuild needs that is independent of
+// the argument parser.
+type BuildCommandOptions struct {
+	ConfigFilename string
+	Tag            string
+	Flags          BuildFlagsOptions
+}
+
+// ResolveBuildImageName resolves the output image name from the config image,
+// config model, an explicit tag, and the project directory, matching the
+// historical precedence: tag > config image > config model > derived name.
+func ResolveBuildImageName(configImage, configModel, tag, projectDir string) string {
+	imageName := configImage
+	if imageName == "" {
+		imageName = configModel
+	}
+	if tag != "" {
+		imageName = tag
+	}
+	if imageName == "" {
+		imageName = config.DockerImageName(projectDir)
+	}
+	return imageName
+}
+
+// ModelBuildOptions converts the shared build flags into model.BuildOptions for
+// the given image name and annotations.
+func (o BuildFlagsOptions) ModelBuildOptions(imageName string, annotations map[string]string) model.BuildOptions {
+	return model.BuildOptions{
+		ImageName:            imageName,
+		Secrets:              o.Secrets,
+		NoCache:              o.NoCache,
+		SeparateWeights:      o.SeparateWeights,
+		UseCudaBaseImage:     o.UseCudaBaseImage,
+		ProgressOutput:       o.ProgressOutput,
+		SchemaFile:           o.OpenAPISchema,
+		DockerfileFile:       o.DockerfileFile,
+		UseCogBaseImage:      o.UseCogBaseImage,
+		Strip:                o.Strip,
+		Precompile:           o.Precompile,
+		Annotations:          annotations,
+		SkipSchemaValidation: o.SkipSchemaValidation,
+	}
+}
+
+// buildFlagsOptionsFromCobra reads the package-level Cobra flag globals into a
+// BuildFlagsOptions value.
+func buildFlagsOptionsFromCobra(cmd *cobra.Command) BuildFlagsOptions {
+	return BuildFlagsOptions{
+		NoCache:              buildNoCache,
+		SeparateWeights:      buildSeparateWeights,
+		Secrets:              buildSecrets,
+		ProgressOutput:       buildProgressOutput,
+		UseCudaBaseImage:     buildUseCudaBaseImage,
+		UseCogBaseImage:      DetermineUseCogBaseImage(cmd),
+		OpenAPISchema:        buildSchemaFile,
+		DockerfileFile:       buildDockerfileFile,
+		Strip:                buildStrip,
+		Precompile:           buildPrecompile,
+		SkipSchemaValidation: buildSkipSchemaValidation,
+		Timestamp:            config.BuildSourceEpochTimestamp,
+	}
+}
+
+// RunBuild builds a Docker image from the model source described by opts. It is
+// shared by both the Cobra and Kong build commands.
+func RunBuild(ctx context.Context, dockerClient command.Command, regClient registry.Client, opts BuildCommandOptions) error {
+	config.BuildSourceEpochTimestamp = opts.Flags.Timestamp
+
+	src, err := model.NewSource(opts.ConfigFilename)
 	if err != nil {
 		return err
 	}
@@ -93,22 +189,13 @@ func buildCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	imageName := src.Config.Image
-	if imageName == "" {
-		imageName = src.Config.Model
-	}
-	if buildTag != "" {
-		imageName = buildTag
-	}
-	if imageName == "" {
-		imageName = config.DockerImageName(src.ProjectDir)
-	}
+	imageName := ResolveBuildImageName(src.Config.Image, src.Config.Model, opts.Tag, src.ProjectDir)
 
 	console.Infof("Building Docker image from environment in cog.yaml as %s...", console.Bold(imageName))
 	console.Info("")
 
-	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
-	m, err := resolver.Build(ctx, src, buildOptionsFromFlags(cmd, imageName, nil))
+	resolver := model.NewResolver(dockerClient, regClient)
+	m, err := resolver.Build(ctx, src, opts.Flags.ModelBuildOptions(imageName, nil))
 	if err != nil {
 		return err
 	}
@@ -188,7 +275,10 @@ func checkMutuallyExclusiveFlags(cmd *cobra.Command, args []string) error {
 	flags := []string{useCogBaseImageFlagKey, "use-cuda-base-image", "dockerfile"}
 	var flagsSet []string
 	for _, flag := range flags {
-		if cmd.Flag(flag).Changed {
+		// Not every command that runs this check registers all of these flags
+		// (e.g. exec has no --dockerfile), so skip flags that aren't defined.
+		f := cmd.Flag(flag)
+		if f != nil && f.Changed {
 			flagsSet = append(flagsSet, "--"+flag)
 		}
 	}
@@ -210,24 +300,4 @@ func DetermineUseCogBaseImage(cmd *cobra.Command) *bool {
 func addSkipSchemaValidationFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&buildSkipSchemaValidation, "skip-schema-validation", false, "Skip OpenAPI schema generation and validation")
 	_ = cmd.Flags().MarkHidden("skip-schema-validation")
-}
-
-// buildOptionsFromFlags creates BuildOptions from the current CLI flag values.
-// The imageName and annotations parameters vary by command and must be provided.
-func buildOptionsFromFlags(cmd *cobra.Command, imageName string, annotations map[string]string) model.BuildOptions {
-	return model.BuildOptions{
-		ImageName:            imageName,
-		Secrets:              buildSecrets,
-		NoCache:              buildNoCache,
-		SeparateWeights:      buildSeparateWeights,
-		UseCudaBaseImage:     buildUseCudaBaseImage,
-		ProgressOutput:       buildProgressOutput,
-		SchemaFile:           buildSchemaFile,
-		DockerfileFile:       buildDockerfileFile,
-		UseCogBaseImage:      DetermineUseCogBaseImage(cmd),
-		Strip:                buildStrip,
-		Precompile:           buildPrecompile,
-		Annotations:          annotations,
-		SkipSchemaValidation: buildSkipSchemaValidation,
-	}
 }

@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/cli"
 	"github.com/replicate/cog/pkg/model"
 )
 
@@ -22,8 +22,9 @@ func (c *ConfigFlag) ProvideModelSource() (*model.Source, error) {
 	return model.NewSource(c.File)
 }
 
-// BuildFlags groups all flags shared across commands that build images.
-// Embed this in any command struct that calls resolver.Build().
+// BuildFlags groups the image-building flags shared by the build and push
+// commands. Build-only flags (timestamp, skip-schema-validation) live on the
+// BuildCmd struct itself so they don't leak onto push, matching the Cobra CLI.
 type BuildFlags struct {
 	ConfigFlag `embed:""`
 
@@ -33,40 +34,42 @@ type BuildFlags struct {
 	Progress         string   `name:"progress" default:"${progress_default}" enum:"auto,plain,tty,quiet" help:"Set type of build progress output: ${enum}."`
 	UseCudaBaseImage string   `name:"use-cuda-base-image" default:"auto" enum:"auto,true,false" help:"Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image)."`
 	UseCogBaseImage  *bool    `name:"use-cog-base-image" help:"Use pre-built Cog base image for faster cold boots."`
-	OpenAPISchema    string   `name:"openapi-schema" type:"existingfile" help:"Load OpenAPI schema from a file."`
+	// Cobra accepts --openapi-schema as a plain string and defers the
+	// file-existence check to build time, so do not use type:"existingfile".
+	OpenAPISchema string `name:"openapi-schema" help:"Load OpenAPI schema from a file."`
 
 	// Hidden flags
-	Dockerfile string `name:"dockerfile" hidden:"" type:"existingfile" help:"Path to a Dockerfile. If set, cog will use this Dockerfile instead of generating one from cog.yaml."`
-	Timestamp  int64  `name:"timestamp" hidden:"" default:"-1" help:"Number of seconds since Epoch to use for the build timestamp."`
+	// Cobra accepts --dockerfile as a plain string and defers the
+	// file-existence check to build time, so do not use type:"existingfile".
+	Dockerfile string `name:"dockerfile" hidden:"" help:"Path to a Dockerfile. If set, cog will use this Dockerfile instead of generating one from cog.yaml."`
 	Strip      bool   `name:"strip" hidden:"" help:"Whether to strip shared libraries for faster inference times."`
 	Precompile bool   `name:"precompile" hidden:"" help:"Whether to precompile python files for faster load times."`
 }
 
-// AfterApply syncs parsed flag values to package-level globals that the build
-// pipeline reads. This runs after Kong parses flags but before Run().
-func (b *BuildFlags) AfterApply() error {
-	config.BuildSourceEpochTimestamp = b.Timestamp
-	return nil
+// Options converts the Kong build flags into the parser-independent
+// cli.BuildFlagsOptions shared with the Cobra CLI. Timestamp defaults to -1
+// (timestamp rewriting disabled), matching push, which has no --timestamp flag;
+// BuildCmd overrides Timestamp and SkipSchemaValidation from its own flags.
+func (b *BuildFlags) Options() cli.BuildFlagsOptions {
+	return cli.BuildFlagsOptions{
+		NoCache:          b.NoCache,
+		SeparateWeights:  b.SeparateWeights,
+		Secrets:          b.Secrets,
+		ProgressOutput:   b.Progress,
+		UseCudaBaseImage: b.UseCudaBaseImage,
+		UseCogBaseImage:  b.UseCogBaseImage,
+		OpenAPISchema:    b.OpenAPISchema,
+		DockerfileFile:   b.Dockerfile,
+		Strip:            b.Strip,
+		Precompile:       b.Precompile,
+		Timestamp:        -1,
+	}
 }
 
 // BuildOptions constructs a model.BuildOptions from the current flag values.
 // The imageName and annotations parameters vary by caller (build vs push).
 func (b *BuildFlags) BuildOptions(imageName string, annotations map[string]string) model.BuildOptions {
-	return model.BuildOptions{
-		ImageName:        imageName,
-		Secrets:          b.Secrets,
-		NoCache:          b.NoCache,
-		SeparateWeights:  b.SeparateWeights,
-		UseCudaBaseImage: b.UseCudaBaseImage,
-		ProgressOutput:   b.Progress,
-		SchemaFile:       b.OpenAPISchema,
-		DockerfileFile:   b.Dockerfile,
-		UseCogBaseImage:  b.UseCogBaseImage,
-		Strip:            b.Strip,
-		Precompile:       b.Precompile,
-		Annotations:      annotations,
-		OCIIndex:         model.OCIIndexEnabled(),
-	}
+	return b.Options().ModelBuildOptions(imageName, annotations)
 }
 
 // ValidateMutualExclusivity ensures that at most one of --use-cog-base-image,

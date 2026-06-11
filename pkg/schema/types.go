@@ -98,6 +98,48 @@ type FieldType struct {
 	Repetition Repetition
 }
 
+// InputTypeKind tags the recursive input type representation.
+type InputTypeKind int
+
+const (
+	InputKindPrimitive InputTypeKind = iota
+	InputKindAny
+	InputKindArray
+	InputKindUnion
+)
+
+// InputType represents JSON-native input types, including unions.
+type InputType struct {
+	Kind      InputTypeKind
+	Primitive PrimitiveType
+	Elem      *InputType
+	Variants  []InputType
+	Nullable  bool
+}
+
+// InputPrimitive creates a primitive input type.
+func InputPrimitive(primitive PrimitiveType) InputType {
+	if primitive == TypeAny {
+		return InputAnyType()
+	}
+	return InputType{Kind: InputKindPrimitive, Primitive: primitive}
+}
+
+// InputAnyType creates an opaque JSON input type.
+func InputAnyType() InputType {
+	return InputType{Kind: InputKindAny, Primitive: TypeAny}
+}
+
+// InputArrayOf creates an array input type.
+func InputArrayOf(elem InputType) InputType {
+	return InputType{Kind: InputKindArray, Elem: &elem}
+}
+
+// InputUnionOf creates a union input type.
+func InputUnionOf(variants ...InputType) InputType {
+	return InputType{Kind: InputKindUnion, Variants: variants}
+}
+
 // JSONType returns the JSON Schema fragment for this field type.
 func (ft FieldType) JSONType() map[string]any {
 	if ft.Repetition == Repeated || ft.Repetition == OptionalRepeated {
@@ -179,6 +221,7 @@ type InputField struct {
 	Name        string
 	Order       int
 	FieldType   FieldType
+	InputType   *InputType
 	Default     *DefaultValue
 	Description *string
 	GE          *float64
@@ -193,6 +236,16 @@ type InputField struct {
 // IsRequired returns true if this field is required in the schema.
 func (f *InputField) IsRequired() bool {
 	return f.Default == nil && (f.FieldType.Repetition == Required || f.FieldType.Repetition == Repeated)
+}
+
+// ValidateInputField checks combinations unsupported by the static input model.
+func ValidateInputField(field InputField) error {
+	if field.InputType != nil && field.InputType.Kind == InputKindUnion {
+		if len(field.Choices) > 0 || field.GE != nil || field.LE != nil || field.MinLength != nil || field.MaxLength != nil || field.Regex != nil {
+			return errUnsupportedType("constraints and choices are not supported on union inputs")
+		}
+	}
+	return nil
 }
 
 // PredictorInfo is the top-level extraction result.
@@ -432,6 +485,208 @@ func ResolveFieldType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[str
 		return FieldType{}, errUnsupportedType("union types other than X | None are not supported")
 	}
 	return FieldType{}, errUnsupportedType("unknown type annotation")
+}
+
+// ResolveInputType resolves a TypeAnnotation into the recursive input type model
+// and the legacy FieldType compatibility layer.
+func ResolveInputType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[string]bool) (InputType, FieldType, error) {
+	inputType, err := resolveInputType(ann, ctx, typedDicts)
+	if err != nil {
+		return InputType{}, FieldType{}, err
+	}
+	return inputType, fieldTypeFromInputType(inputType), nil
+}
+
+func resolveInputType(ann TypeAnnotation, ctx *ImportContext, typedDicts map[string]bool) (InputType, error) {
+	if inner, ok := unwrapOpaqueAnnotated(ann, ctx); ok {
+		return inputTypeFromFieldType(opaqueFieldType(inner, ctx)), nil
+	}
+
+	switch ann.Kind {
+	case TypeAnnotSimple:
+		name := ann.Name
+		if typedDicts[name] {
+			return InputAnyType(), nil
+		}
+		qualifiedEntry := ImportEntry{}
+		if resolved, entry, ok := ctx.ResolveQualifiedName(name); ok {
+			name = resolved
+			qualifiedEntry = entry
+			if typedDicts[entry.Original+"."+name] {
+				return InputAnyType(), nil
+			}
+		}
+		if typedDicts[name] {
+			return InputAnyType(), nil
+		}
+		if name == "dict" || name == "Dict" {
+			return InputAnyType(), nil
+		}
+		prim, ok := PrimitiveFromName(name)
+		if !ok {
+			if qualifiedEntry.Module != "" {
+				return InputType{}, errUnresolvableImportedType(name, qualifiedEntry.Module)
+			}
+			if entry, imported := ctx.Names.Get(name); imported {
+				return InputType{}, errUnresolvableImportedType(name, entry.Module)
+			}
+			return InputType{}, errUnsupportedType(name)
+		}
+		return InputPrimitive(prim), nil
+
+	case TypeAnnotGeneric:
+		outer := ann.Name
+		if resolved, _, ok := ctx.ResolveQualifiedName(outer); ok {
+			outer = resolved
+		}
+		if outer == "dict" || outer == "Dict" {
+			return InputAnyType(), nil
+		}
+		if outer == "Optional" {
+			if len(ann.Args) != 1 {
+				return InputType{}, errUnsupportedType(fmt.Sprintf("Optional expects exactly 1 type argument, got %d", len(ann.Args)))
+			}
+			inner, err := resolveInputType(ann.Args[0], ctx, typedDicts)
+			if err != nil {
+				return InputType{}, err
+			}
+			inner.Nullable = true
+			return inner, nil
+		}
+		if outer == "Union" {
+			return resolveInputUnion(ann.Args, ctx, typedDicts)
+		}
+		if ctx.isAnnotated(ann.Name) {
+			if len(ann.Args) == 0 {
+				return InputType{}, errUnsupportedType("Annotated expects at least 1 type argument")
+			}
+			return resolveInputType(ann.Args[0], ctx, typedDicts)
+		}
+		if outer == "List" || outer == "list" {
+			if len(ann.Args) != 1 {
+				return InputType{}, errUnsupportedType(fmt.Sprintf("List expects exactly 1 type argument, got %d", len(ann.Args)))
+			}
+			if opaqueInner, ok := unwrapOpaqueAnnotated(ann.Args[0], ctx); ok {
+				inner := inputTypeFromFieldType(opaqueFieldType(opaqueInner, ctx))
+				if inner.Nullable || inner.Kind == InputKindArray || inner.Kind == InputKindUnion {
+					return InputType{}, errUnsupportedType("nested generics like List[Optional[X]] are not supported")
+				}
+				return InputArrayOf(inner), nil
+			}
+			inner, err := resolveInputType(ann.Args[0], ctx, typedDicts)
+			if err != nil {
+				return InputType{}, err
+			}
+			if inner.Nullable || inner.Kind == InputKindArray || inner.Kind == InputKindUnion {
+				return InputType{}, errUnsupportedType("nested generics like List[Optional[X]] are not supported")
+			}
+			return InputArrayOf(inner), nil
+		}
+		return InputType{}, errUnsupportedType(fmt.Sprintf("%s[...] is not a supported input type", outer))
+
+	case TypeAnnotUnion:
+		return resolveInputUnion(ann.Args, ctx, typedDicts)
+	}
+	return InputType{}, errUnsupportedType("unknown type annotation")
+}
+
+func resolveInputUnion(args []TypeAnnotation, ctx *ImportContext, typedDicts map[string]bool) (InputType, error) {
+	variants := make([]InputType, 0, len(args))
+	nullable := false
+	for _, arg := range args {
+		if arg.Kind == TypeAnnotSimple && arg.Name == "None" {
+			nullable = true
+			continue
+		}
+		if arg.Kind == TypeAnnotUnion || (arg.Kind == TypeAnnotGeneric && arg.Name == "Union") {
+			return InputType{}, errUnsupportedType("nested union inputs are not supported")
+		}
+		variant, err := resolveInputType(arg, ctx, typedDicts)
+		if err != nil {
+			return InputType{}, err
+		}
+		if variant.Kind == InputKindUnion {
+			return InputType{}, errUnsupportedType("nested union inputs are not supported")
+		}
+		variants = append(variants, variant)
+	}
+
+	if len(variants) == 0 {
+		return InputType{}, errUnsupportedType("union inputs must include at least one non-None type")
+	}
+	if len(variants) == 1 {
+		variant := variants[0]
+		variant.Nullable = variant.Nullable || nullable
+		return variant, nil
+	}
+	for _, variant := range variants {
+		if err := validateUnionVariant(variant); err != nil {
+			return InputType{}, err
+		}
+	}
+
+	union := InputUnionOf(variants...)
+	union.Nullable = nullable
+	return union, nil
+}
+
+func validateUnionVariant(inputType InputType) error {
+	if inputType.Nullable {
+		return errUnsupportedType("nested nullable variants are not supported in union inputs")
+	}
+	switch inputType.Kind {
+	case InputKindPrimitive:
+		if inputType.Primitive == TypePath || inputType.Primitive == TypeFile || inputType.Primitive == TypeSecret {
+			return errUnsupportedType(fmt.Sprintf("%s is not supported in union inputs", inputType.Primitive))
+		}
+	case InputKindArray:
+		if inputType.Elem != nil {
+			return validateUnionVariant(*inputType.Elem)
+		}
+	case InputKindUnion:
+		return errUnsupportedType("nested union inputs are not supported")
+	}
+	return nil
+}
+
+func inputTypeFromFieldType(fieldType FieldType) InputType {
+	var inputType InputType
+	if fieldType.Primitive == TypeAny {
+		inputType = InputAnyType()
+	} else {
+		inputType = InputPrimitive(fieldType.Primitive)
+	}
+	if fieldType.Repetition == Repeated || fieldType.Repetition == OptionalRepeated {
+		inputType = InputArrayOf(inputType)
+	}
+	if fieldType.Repetition == Optional || fieldType.Repetition == OptionalRepeated {
+		inputType.Nullable = true
+	}
+	return inputType
+}
+
+func fieldTypeFromInputType(inputType InputType) FieldType {
+	repetition := Required
+	if inputType.Nullable {
+		repetition = Optional
+	}
+	switch inputType.Kind {
+	case InputKindPrimitive:
+		return FieldType{Primitive: inputType.Primitive, Repetition: repetition}
+	case InputKindArray:
+		arrayRepetition := Repeated
+		if inputType.Nullable {
+			arrayRepetition = OptionalRepeated
+		}
+		if inputType.Elem != nil && inputType.Elem.Kind == InputKindPrimitive {
+			return FieldType{Primitive: inputType.Elem.Primitive, Repetition: arrayRepetition}
+		}
+		return FieldType{Primitive: TypeAny, Repetition: arrayRepetition}
+	case InputKindAny, InputKindUnion:
+		return FieldType{Primitive: TypeAny, Repetition: repetition}
+	default:
+		return FieldType{Primitive: TypeAny, Repetition: repetition}
+	}
 }
 
 func unwrapOpaqueAnnotated(ann TypeAnnotation, ctx *ImportContext) (TypeAnnotation, bool) {

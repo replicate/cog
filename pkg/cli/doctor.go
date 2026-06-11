@@ -32,7 +32,7 @@ NOTE: cog doctor is experimental. Behavior and checks may change in future versi
 By default, cog doctor reports problems without modifying any files.
 Pass --fix to automatically apply safe fixes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDoctor(cmd.Context(), fix)
+			return RunDoctor(cmd.Context(), configFilename, fix)
 		},
 		Args: cobra.NoArgs,
 		// printDoctorResults already prints findings to the user; suppress
@@ -47,7 +47,10 @@ Pass --fix to automatically apply safe fixes.`,
 	return cmd
 }
 
-func runDoctor(ctx context.Context, fix bool) error {
+// RunDoctor diagnoses (and optionally fixes) common issues in the Cog project
+// described by configFilename. It is shared by both the Cobra and Kong doctor
+// commands.
+func RunDoctor(ctx context.Context, configFilename string, fix bool) error {
 	console.Warnf("NOTE: cog doctor is experimental. Behavior and checks may change in future versions.")
 	console.Info("")
 

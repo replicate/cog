@@ -91,7 +91,6 @@ it.`,
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addBuildProgressOutputFlag(cmd)
-	addDockerfileFlag(cmd)
 	addGpusFlag(cmd)
 	addSetupTimeoutFlag(cmd)
 	addConfigFlag(cmd)
@@ -189,21 +188,64 @@ func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
-	if cmd.CalledAs() == "predict" || cmd.Name() == "predict" {
-		console.Warn(`"cog predict" is deprecated, use "cog run"`)
-	}
-
-	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	dockerClient, err := docker.NewClient(ctx)
+	dockerClient, err := docker.NewClient(cmd.Context())
 	if err != nil {
 		return err
 	}
 
+	image := ""
+	if len(args) > 0 {
+		image = args[0]
+	}
+
+	return RunPrediction(cmd.Context(), dockerClient, PredictionCommandOptions{
+		Use: cmd.CalledAs(),
+		RuntimeBuildOptions: RuntimeBuildOptions{
+			ConfigFilename:   configFilename,
+			ProgressOutput:   buildProgressOutput,
+			UseCudaBaseImage: buildUseCudaBaseImage,
+			UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
+			GPUs:             gpusFlag,
+			Env:              envFlags,
+		},
+		Image:           image,
+		Input:           inputFlags,
+		InputJSON:       inputJSON,
+		OutputPath:      outPath,
+		SetupTimeout:    setupTimeout,
+		UseReplicateAPI: useReplicateAPIToken,
+	})
+}
+
+// PredictionCommandOptions holds everything RunPrediction needs that is
+// independent of the argument parser.
+type PredictionCommandOptions struct {
+	RuntimeBuildOptions
+
+	// Use is the invoked command name ("predict" or "run"); when "predict" a
+	// deprecation warning is printed.
+	Use             string
+	Image           string
+	Input           []string
+	InputJSON       string
+	OutputPath      string
+	SetupTimeout    uint32
+	UseReplicateAPI bool
+}
+
+// RunPrediction builds or pulls a model image and runs a prediction. It is
+// shared by both the Cobra and Kong predict/run commands.
+func RunPrediction(parent context.Context, dockerClient command.Command, opts PredictionCommandOptions) error {
+	if opts.Use == "predict" {
+		console.Warn(`"cog predict" is deprecated, use "cog run"`)
+	}
+
+	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	imageName := ""
 	volumes := []command.Volume{}
-	gpus := gpusFlag
+	gpus := opts.GPUs
 
 	// The Manager is built only when we have cog.yaml in scope (the
 	// build-from-source path). Pre-built images are opaque to Cog and
@@ -212,9 +254,9 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
-	if len(args) == 0 {
+	if opts.Image == "" {
 		// Build image
-		src, err := model.NewSource(configFilename)
+		src, err := model.NewSource(opts.ConfigFilename)
 		if err != nil {
 			return err
 		}
@@ -226,7 +268,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		console.Info("Building Docker image from environment in cog.yaml...")
 		console.Info("")
-		m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
+		m, err := resolver.Build(ctx, src, opts.ServeBuildOptions())
 		if err != nil {
 			return err
 		}
@@ -248,7 +290,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Use existing image
-		imageName = args[0]
+		imageName = opts.Image
 
 		// If the image name contains '=', then it's probably a mistake
 		if strings.Contains(imageName, "=") {
@@ -273,11 +315,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Info("Starting Docker image and running setup()...")
 
-	// Automatically propagate RUST_LOG for Rust coglet debugging
-	env := envFlags
-	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
-		env = append(env, "RUST_LOG="+rustLog)
-	}
+	env := runtimeEnv(opts.Env)
 
 	predictor, err := predict.NewPredictor(ctx, predict.PredictorOptions{
 		RunOptions: command.RunOptions{
@@ -294,7 +332,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	timeout := time.Duration(setupTimeout) * time.Second
+	timeout := time.Duration(opts.SetupTimeout) * time.Second
 	if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
 		// Only retry if we're using a GPU but the user didn't explicitly select a GPU with --gpus
 		// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
@@ -332,21 +370,21 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	if inputJSON != "" {
-		if len(inputFlags) > 0 {
+	if opts.InputJSON != "" {
+		if len(opts.Input) > 0 {
 			return fmt.Errorf("Must use one of --json or --input to provide model inputs")
 		}
 
-		return predictJSONInputs(*predictor, inputJSON, outPath, false)
+		return predictJSONInputs(*predictor, opts.InputJSON, opts.OutputPath, false, opts.UseReplicateAPI)
 	}
-	return predictIndividualInputs(*predictor, inputFlags, outPath, false)
+	return predictIndividualInputs(*predictor, opts.Input, opts.OutputPath, false, opts.UseReplicateAPI)
 }
 
 func isURI(ref *openapi3.Schema) bool {
 	return ref != nil && ref.Type.Is("string") && ref.Format == "uri"
 }
 
-func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath string, isTrain bool) error {
+func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath string, isTrain bool, useReplicateAPI bool) error {
 	jsonInputs, err := parseJSONInput(jsonInput)
 	if err != nil {
 		return err
@@ -373,10 +411,10 @@ func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath
 		}
 	}
 
-	return runPrediction(predictor, inputs, outputPath, isTrain, true)
+	return runPrediction(predictor, inputs, outputPath, isTrain, true, useReplicateAPI)
 }
 
-func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool) error {
+func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool, useReplicateAPI bool) error {
 	schema, err := predictor.GetSchema()
 	if err != nil {
 		return err
@@ -387,10 +425,10 @@ func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, o
 		return err
 	}
 
-	return runPrediction(predictor, inputs, outputPath, isTrain, false)
+	return runPrediction(predictor, inputs, outputPath, isTrain, false, useReplicateAPI)
 }
 
-func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPath string, isTrain bool, needsJSON bool) error {
+func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPath string, isTrain bool, needsJSON bool, useReplicateAPI bool) error {
 	if isTrain {
 		console.Info("Running training...")
 	} else {
@@ -421,7 +459,7 @@ func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPat
 
 	context := predict.RequestContext{}
 
-	if useReplicateAPIToken {
+	if useReplicateAPI {
 		context.ReplicateAPIToken = os.Getenv("REPLICATE_API_TOKEN")
 		if context.ReplicateAPIToken == "" {
 			return fmt.Errorf("Failed to find REPLICATE_API_TOKEN in the current environment when called with --use-replicate-token")

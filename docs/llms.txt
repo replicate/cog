@@ -2070,6 +2070,7 @@ This document defines the API of the `cog` Python module, which is used to defin
   - [`cog.Secret`](#cogsecret)
   - [Wrapper types](#wrapper-types)
     - [`Optional`](#optional)
+    - [`Union`](#union)
     - [`list`](#list)
     - [`dict`](#dict)
     - [`cog.Opaque`](#cogopaque)
@@ -2652,6 +2653,30 @@ def run(self, prompt: Optional[str] = Input(description="prompt")) -> str:
 > [!NOTE]
 > `Optional[T]` is supported in `BaseModel` output fields but **not** as a top-level return type. Use a `BaseModel` with optional fields instead.
 
+#### `Union`
+
+Use `A | B` or `Union[A, B]` to accept more than one type for a single input. Cog supports JSON-native union members: `str`, `int`, `float`, `bool`, `dict`/`Any`, `list[T]`, and `None`.
+
+```python
+from cog import BaseRunner, Input
+
+class Runner(BaseRunner):
+    def run(self,
+        value: str | float = Input(description="A string or a number"),
+    ) -> str:
+        return f"{type(value).__name__}:{value}"
+```
+
+At runtime, Cog validates the request against the union and passes the value through as the matching type. For overlapping numeric types, Cog prefers the most specific match (e.g. `bool` before `int`, `int` before `float`), and a JSON integer is accepted for a `float` member.
+
+Combine a union with `None` to make it nullable:
+
+```python
+def run(self, value: str | float | None = Input(default=None)) -> str: ...
+```
+
+Union inputs are validated at the HTTP boundary, so unions involving `Path`, `File`, `Secret`, custom coders, and `BaseModel` are **not** supported, and the build fails if you use them. Union return types are also unsupported — use a `BaseModel` output instead.
+
 #### `list`
 
 Use `list[T]` or `List[T]` to accept or return a list of values. `T` can be a supported Cog type, but nested container types are not supported.
@@ -2813,7 +2838,8 @@ Fields in a `BaseModel` output support these types:
 The following type patterns are **not** supported:
 
 - **Nested generics**: `list[list[str]]`, `list[Optional[str]]`, `Optional[list[str]]` are not supported.
-- **Union types beyond Optional**: `str | int`, `Union[str, int, None]` — only `Optional[T]` (i.e. `T | None`) is supported.
+- **Output union types beyond Optional**: union _return_ types and `BaseModel` union fields are not supported. Input unions of JSON-native types (`str | int`, `str | float | None`, etc.) _are_ supported — see [`Union`](#union).
+- **Input unions of non-JSON-native types**: input unions involving `Path`, `File`, `Secret`, custom coders, or `BaseModel` (e.g. `Path | str`) are not supported and fail at build time.
 - **`Optional` as a top-level return type**: `-> Optional[str]` is not allowed. Use a `BaseModel` with optional fields instead.
 - **Nested `BaseModel` fields**: A `BaseModel` field typed as another `BaseModel` is not supported in Cog's type system for schema generation.
 - **Tuple, Set, or other collection types**: Only `list` and `dict` are supported as collection types.

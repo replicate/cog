@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -81,7 +82,7 @@ Use --verbose to show per-layer status for each weight.
 Exit code is 0 when all weights are ready, 1 otherwise.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return weightsStatusCommand(cmd, jsonOutput, verbose)
+			return RunWeightsStatus(cmd.Context(), configFilename, jsonOutput, verbose)
 		},
 	}
 
@@ -92,8 +93,10 @@ Exit code is 0 when all weights are ready, 1 otherwise.`,
 	return cmd
 }
 
-func weightsStatusCommand(cmd *cobra.Command, jsonOutput, verbose bool) error {
-	ctx := cmd.Context()
+// RunWeightsStatus shows the status of configured weights. It is shared by both
+// the Cobra and Kong weights status commands.
+func RunWeightsStatus(ctx context.Context, configFilename string, jsonOutput, verbose bool) error {
+	weightsExperimentalWarning()
 
 	src, err := model.NewSource(configFilename)
 	if err != nil {

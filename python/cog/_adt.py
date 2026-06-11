@@ -37,6 +37,10 @@ def _is_union(tpe: type) -> bool:
     return False
 
 
+def _is_none_type(tpe: Any) -> bool:
+    return tpe is None or tpe is type(None)
+
+
 def _is_dict_like(tpe: Any) -> bool:
     """Check if a type should be treated like a dict, including TypedDict."""
     if tpe is dict:
@@ -52,7 +56,7 @@ def _is_dict_like(tpe: Any) -> bool:
         pass
 
     is_typeddict = getattr(typing, "is_typeddict", None)
-    return callable(is_typeddict) and is_typeddict(tpe)
+    return bool(callable(is_typeddict) and is_typeddict(tpe))
 
 
 def _unwrap_opaque(tpe: Any) -> tuple[Any, bool]:
@@ -249,6 +253,90 @@ class Repetition(Enum):
     OPTIONAL_REPEATED = 4  # list[X] | None
 
 
+def _is_supported_union_variant(ft: "FieldType") -> bool:
+    if ft.union_variants is not None:
+        return False
+    if ft.primitive in {
+        PrimitiveType.PATH,
+        PrimitiveType.FILE,
+        PrimitiveType.SECRET,
+        PrimitiveType.CUSTOM,
+    }:
+        return False
+    return ft.repetition in {Repetition.REQUIRED, Repetition.REPEATED}
+
+
+def _is_exact_union_match(value: Any, ft: "FieldType") -> bool:
+    if ft.repetition is Repetition.REPEATED:
+        return isinstance(value, list)
+    if ft.repetition is not Repetition.REQUIRED:
+        return False
+    if ft.primitive is PrimitiveType.BOOL:
+        return isinstance(value, bool)
+    if ft.primitive is PrimitiveType.INTEGER:
+        return isinstance(value, int) and not isinstance(value, bool)
+    if ft.primitive is PrimitiveType.FLOAT:
+        return isinstance(value, float)
+    if ft.primitive is PrimitiveType.STRING:
+        return isinstance(value, str)
+    if ft.primitive is PrimitiveType.ANY:
+        return isinstance(value, dict)
+    return False
+
+
+def _union_primitive_accepts_value(value: Any, primitive: PrimitiveType) -> bool:
+    if primitive is PrimitiveType.BOOL:
+        return type(value) is bool
+    if primitive is PrimitiveType.INTEGER:
+        return type(value) is int
+    if primitive is PrimitiveType.FLOAT:
+        return type(value) is float or type(value) is int
+    if primitive is PrimitiveType.STRING:
+        return type(value) is str
+    if primitive is PrimitiveType.ANY:
+        return isinstance(value, dict)
+    return False
+
+
+def _union_variant_accepts_value(value: Any, variant: "FieldType") -> bool:
+    if variant.repetition is Repetition.REPEATED:
+        return isinstance(value, list) and all(
+            _union_primitive_accepts_value(element, variant.primitive)
+            for element in value
+        )
+    if variant.repetition is not Repetition.REQUIRED:
+        return False
+    return _union_primitive_accepts_value(value, variant.primitive)
+
+
+def _union_variant_priority(ft: "FieldType") -> int:
+    primitive_priority = {
+        PrimitiveType.BOOL: 0,
+        PrimitiveType.INTEGER: 1,
+        PrimitiveType.FLOAT: 2,
+        PrimitiveType.STRING: 3,
+        PrimitiveType.ANY: 4,
+    }
+    repetition_offset = 10 if ft.repetition is Repetition.REPEATED else 0
+    return repetition_offset + primitive_priority.get(ft.primitive, 100)
+
+
+def _ordered_union_variants(
+    value: Any, variants: List["FieldType"]
+) -> List["FieldType"]:
+    return [
+        variant
+        for _, variant in sorted(
+            enumerate(variants),
+            key=lambda item: (
+                not _is_exact_union_match(value, item[1]),
+                _union_variant_priority(item[1]),
+                item[0],
+            ),
+        )
+    ]
+
+
 @dataclass(frozen=True)
 class FieldType:
     """Type information for an input/output field."""
@@ -256,6 +344,7 @@ class FieldType:
     primitive: PrimitiveType
     repetition: Repetition
     coder: Optional[Coder]
+    union_variants: Optional[List["FieldType"]] = None
 
     @staticmethod
     def from_type(tpe: type) -> "FieldType":
@@ -317,9 +406,43 @@ class FieldType:
 
         elif _is_union(tpe):
             t_args = typing.get_args(tpe)
-            if not (len(t_args) == 2 and type(None) in t_args):
-                raise ValueError(f"unsupported union type {tpe}")
-            elem_t = t_args[0] if t_args[1] is type(None) else t_args[1]
+            has_none = any(_is_none_type(arg) for arg in t_args)
+            non_none_args = [arg for arg in t_args if not _is_none_type(arg)]
+
+            if len(non_none_args) != 1:
+                repetition = Repetition.OPTIONAL if has_none else Repetition.REQUIRED
+                variants = []
+                for arg in non_none_args:
+                    try:
+                        variant = FieldType.from_type(arg)
+                    except ValueError as exc:
+                        raise ValueError(
+                            f"unsupported union member {_type_name(arg)} in union {tpe}"
+                        ) from exc
+                    if not _is_supported_union_variant(variant):
+                        raise ValueError(
+                            f"unsupported union member {_type_name(arg)} in union {tpe}"
+                        )
+                    variants.append(variant)
+                return FieldType(
+                    primitive=PrimitiveType.ANY,
+                    repetition=repetition,
+                    coder=None,
+                    union_variants=variants,
+                )
+
+            if not has_none:
+                elem_t = non_none_args[0]
+                repetition = Repetition.REQUIRED
+                cog_t = PrimitiveType.from_type(elem_t)
+                coder = None
+                if cog_t is PrimitiveType.CUSTOM:
+                    coder = Coder.lookup(elem_t)
+                    if coder is None:
+                        raise ValueError(f"unsupported Cog type {_type_name(elem_t)}")
+                return FieldType(primitive=cog_t, repetition=repetition, coder=coder)
+
+            elem_t = non_none_args[0]
             inner, elem_is_opaque = _unwrap_opaque(elem_t)
             if elem_is_opaque:
                 return _opaque_field_type(inner | None)
@@ -384,6 +507,20 @@ class FieldType:
 
     def normalize(self, value: Any) -> Any:
         """Normalize a value according to this field type."""
+        if self.union_variants is not None:
+            if value is None:
+                if self.repetition is Repetition.OPTIONAL:
+                    return None
+                raise ValueError("missing value for required union field")
+            for variant in _ordered_union_variants(value, self.union_variants):
+                if not _union_variant_accepts_value(value, variant):
+                    continue
+                try:
+                    return variant.normalize(value)
+                except (TypeError, ValueError):
+                    pass
+            raise ValueError(f"failed to normalize value as {self.python_type_name()}")
+
         if self.repetition is Repetition.REQUIRED:
             return self.primitive.normalize(value)
         elif self.repetition is Repetition.OPTIONAL:
@@ -398,6 +535,14 @@ class FieldType:
 
     def json_type(self) -> Dict[str, Any]:
         """Get the JSON Schema type for this field."""
+        if self.union_variants is not None:
+            jt: Dict[str, Any] = {
+                "anyOf": [variant.json_type() for variant in self.union_variants]
+            }
+            if self.repetition is Repetition.OPTIONAL:
+                jt["nullable"] = True
+            return jt
+
         if self.repetition in (Repetition.REPEATED, Repetition.OPTIONAL_REPEATED):
             return {"type": "array", "items": self.primitive.json_type()}
         return self.primitive.json_type()
@@ -428,6 +573,14 @@ class FieldType:
 
     def python_type_name(self) -> str:
         """Get the Python type name for this field."""
+        if self.union_variants is not None:
+            name = " | ".join(
+                variant.python_type_name() for variant in self.union_variants
+            )
+            if self.repetition is Repetition.OPTIONAL:
+                return f"Optional[{name}]"
+            return name
+
         if self.repetition is Repetition.REQUIRED:
             return self.primitive.python_type_name()
         elif self.repetition is Repetition.OPTIONAL:

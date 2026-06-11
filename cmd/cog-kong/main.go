@@ -12,6 +12,7 @@ import (
 	"github.com/alecthomas/kong"
 
 	"github.com/replicate/cog/pkg/global"
+	"github.com/replicate/cog/pkg/update"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -26,8 +27,19 @@ var (
 type CLI struct {
 	Globals
 
-	Build BuildCmd `cmd:"" help:"Build an image from cog.yaml."`
-	Push  PushCmd  `cmd:"" help:"Build and push model in current directory to a Docker registry."`
+	BaseImage  BaseImageCmd `cmd:"" name:"base-image" help:"Tools for working with Cog base images."`
+	Build      BuildCmd     `cmd:"" help:"Build an image from cog.yaml."`
+	Debug      DebugCmd     `cmd:"" hidden:"" help:"Debug Cog internals."`
+	Doctor     DoctorCmd    `cmd:"" help:"Check your project for common issues and fix them (experimental)."`
+	Exec       ExecCmd      `cmd:"" help:"Execute a command inside a Docker environment."`
+	Init       InitCmd      `cmd:"" help:"Configure your project for use with Cog."`
+	Login      LoginCmd     `cmd:"" help:"Log in to a container registry."`
+	Predict    PredictCmd   `cmd:"" hidden:"" help:"Run a prediction."`
+	Push       PushCmd      `cmd:"" help:"Build and push model in current directory to a Docker registry."`
+	RunCommand RunCmd       `cmd:"" name:"run" help:"Run a prediction."`
+	Serve      ServeCmd     `cmd:"" help:"Run an HTTP server."`
+	Train      TrainCmd     `cmd:"" hidden:"" help:"Run a training job."`
+	Weights    WeightsCmd   `cmd:"" hidden:"" help:"Commands for managing model weight files."`
 }
 
 func main() {
@@ -35,26 +47,7 @@ func main() {
 
 	var cli CLI
 
-	initOpts := []kong.Option{
-		// CLI metadata and variable interpolation for struct tags
-		kong.Name("cog"),
-		kong.Description("Containers for machine learning."),
-		kong.Vars{
-			"version":          fmt.Sprintf("cog version %s (built %s)", version, buildTime),
-			"commit":           commit,
-			"progress_default": progressDefault(),
-			"registry_default": global.DefaultReplicateRegistryHost,
-		},
-		kong.UsageOnError(),
-
-		// bindings for lazily injecting dependencies into Run() methods
-		kong.BindTo(ctx, (*context.Context)(nil)),
-		kong.BindSingletonProvider(provideDockerClient),
-		kong.BindToProvider(provideRegistryClient),
-		kong.BindSingletonProvider(provideProviderRegistry),
-	}
-
-	parser, err := kong.New(&cli, initOpts...)
+	parser, err := newParser(ctx, &cli)
 	if err != nil {
 		// Fatal error creating the parser — this is a bug, so panic to get a stack trace.
 		panic(err)
@@ -76,12 +69,38 @@ func main() {
 		parser.FatalIfErrorf(err)
 	}
 
+	displayUpdateCheck(ctx)
 	err = kctx.Run()
 	cancel()
 	// command returned an error. Print and exit non-zero.
 	if err != nil {
 		parser.FatalIfErrorf(err)
 	}
+}
+
+func displayUpdateCheck(ctx context.Context) {
+	if err := update.DisplayAndCheckForRelease(ctx); err != nil {
+		console.Debugf("%s", err)
+	}
+}
+
+func newParser(ctx context.Context, cli *CLI, options ...kong.Option) (*kong.Kong, error) {
+	defaultOptions := []kong.Option{
+		kong.Name("cog"),
+		kong.Description("Containers for machine learning."),
+		kong.Vars{
+			"version":          fmt.Sprintf("cog version %s (built %s)", version, buildTime),
+			"commit":           commit,
+			"progress_default": progressDefault(),
+			"registry_default": global.DefaultReplicateRegistryHost,
+		},
+		kong.UsageOnError(),
+		kong.BindTo(ctx, (*context.Context)(nil)),
+		kong.BindSingletonProvider(provideDockerClient),
+		kong.BindToProvider(provideRegistryClient),
+		kong.BindSingletonProvider(provideProviderRegistry),
+	}
+	return kong.New(cli, append(defaultOptions, options...)...)
 }
 
 func newCancellationContext() (context.Context, context.CancelFunc) {

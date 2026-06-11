@@ -1,8 +1,8 @@
 package cli
 
 import (
+	"context"
 	"errors"
-	"os"
 	"strconv"
 	"strings"
 
@@ -49,7 +49,6 @@ exploring the environment your model will run in.`,
 		Args:    cobra.MinimumNArgs(1),
 	}
 	addBuildProgressOutputFlag(cmd)
-	addDockerfileFlag(cmd)
 	addUseCudaBaseImageFlag(cmd)
 	addUseCogBaseImageFlag(cmd)
 	addGpusFlag(cmd)
@@ -75,46 +74,59 @@ func execCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	src, err := model.NewSource(configFilename)
+	return RunExec(ctx, dockerClient, registry.NewRegistryClient(), ExecCommandOptions{
+		RuntimeBuildOptions: RuntimeBuildOptions{
+			ConfigFilename:   configFilename,
+			ProgressOutput:   buildProgressOutput,
+			UseCudaBaseImage: buildUseCudaBaseImage,
+			UseCogBaseImage:  DetermineUseCogBaseImage(cmd),
+			GPUs:             gpusFlag,
+			Env:              envFlags,
+		},
+		Args:  args,
+		Ports: execPorts,
+	})
+}
+
+// ExecCommandOptions holds everything RunExec needs that is independent of the
+// argument parser.
+type ExecCommandOptions struct {
+	RuntimeBuildOptions
+	Args  []string
+	Ports []string
+}
+
+// RunExec builds a local image and executes an arbitrary command inside it with
+// the project directory volume-mounted. It is shared by both the Cobra and Kong
+// exec commands.
+func RunExec(ctx context.Context, dockerClient command.Command, regClient registry.Client, opts ExecCommandOptions) error {
+	src, err := model.NewSource(opts.ConfigFilename)
 	if err != nil {
 		return err
 	}
 	defer src.Close()
 
-	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+	resolver := model.NewResolver(dockerClient, regClient)
 
 	console.Info("Building Docker image from environment in cog.yaml...")
 	console.Info("")
-	opts := serveBuildOptions(cmd)
-	opts.SkipSchemaValidation = true
-	m, err := resolver.Build(ctx, src, opts)
+	buildOpts := opts.ServeBuildOptions()
+	buildOpts.SkipSchemaValidation = true
+	m, err := resolver.Build(ctx, src, buildOpts)
 	if err != nil {
 		return err
 	}
 
-	gpus := ""
-	if gpusFlag != "" {
-		gpus = gpusFlag
-	} else if m.HasGPU() {
-		gpus = "all"
-	}
-
-	// Automatically propagate RUST_LOG for Rust coglet debugging
-	env := envFlags
-	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
-		env = append(env, "RUST_LOG="+rustLog)
-	}
-
 	runOptions := command.RunOptions{
-		Args:    args,
-		Env:     env,
-		GPUs:    gpus,
+		Args:    opts.Args,
+		Env:     runtimeEnv(opts.Env),
+		GPUs:    runtimeGPUs(opts.GPUs, m),
 		Image:   m.ImageRef(),
 		Volumes: []command.Volume{{Source: src.ProjectDir, Destination: "/src"}},
 		Workdir: "/src",
 	}
 
-	for _, portString := range execPorts {
+	for _, portString := range opts.Ports {
 		port, err := strconv.Atoi(portString)
 		if err != nil {
 			return err
@@ -124,7 +136,7 @@ func execCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	console.Info("")
-	console.Infof("Running %s in Docker with the current directory mounted as a volume...", console.Bold(strings.Join(args, " ")))
+	console.Infof("Running %s in Docker with the current directory mounted as a volume...", console.Bold(strings.Join(opts.Args, " ")))
 	console.Info("")
 
 	err = docker.Run(ctx, dockerClient, runOptions)
