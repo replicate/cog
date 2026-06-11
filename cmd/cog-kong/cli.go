@@ -14,7 +14,6 @@ import (
 type Globals struct {
 	Debug    bool             `name:"debug" short:"d" env:"COG_DEBUG" help:"Show debugging output."`
 	NoColor  bool             `name:"no-color" help:"Disable colored output."`
-	Help     bool             `name:"help" short:"h" help:"Show context-sensitive help."`
 	Registry string           `name:"registry" default:"${registry_default}" env:"COG_REGISTRY_HOST" hidden:"" help:"Registry host."`
 	Profile  bool             `name:"profile" hidden:"" help:"Enable profiling."`
 	Version  kong.VersionFlag `name:"version" help:"Show version of Cog."`

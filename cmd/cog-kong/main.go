@@ -68,10 +68,6 @@ func main() {
 		// otherwise it's a real parse error (e.g. unexpected command or flag), so print the error and exit non-zero.
 		parser.FatalIfErrorf(err)
 	}
-	if cli.Help {
-		_ = kctx.PrintUsage(false)
-		return
-	}
 
 	displayUpdateCheck(ctx)
 	err = kctx.Run()
@@ -99,7 +95,6 @@ func newParser(ctx context.Context, cli *CLI, options ...kong.Option) (*kong.Kon
 			"registry_default": global.DefaultReplicateRegistryHost,
 		},
 		kong.UsageOnError(),
-		kong.NoDefaultHelp(),
 		kong.BindTo(ctx, (*context.Context)(nil)),
 		kong.BindSingletonProvider(provideDockerClient),
 		kong.BindToProvider(provideRegistryClient),

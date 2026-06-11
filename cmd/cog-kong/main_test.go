@@ -2,10 +2,9 @@ package main
 
 import (
 	"bytes"
-	"errors"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/alecthomas/kong"
@@ -18,9 +17,31 @@ import (
 
 func newTestParser(t *testing.T) *kong.Kong {
 	t.Helper()
-	parser, err := newParser(t.Context(), &CLI{})
+	// Override Exit so Kong's built-in --help flag (which exits the process
+	// after printing help, before validation) doesn't kill the test process.
+	parser, err := newParser(t.Context(), &CLI{}, kong.Exit(func(code int) {
+		panic(testExitCode(code))
+	}))
 	require.NoError(t, err)
+	parser.Stdout = io.Discard
+	parser.Stderr = io.Discard
 	return parser
+}
+
+// parseForTest parses args, tolerating Kong's built-in --help short-circuit,
+// which prints help and calls Exit(0) (translated to a testExitCode(0) panic by
+// newTestParser). It returns the parse error for non-help cases.
+func parseForTest(t *testing.T, parser *kong.Kong, args []string) (err error) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			code, ok := r.(testExitCode)
+			require.Truef(t, ok, "unexpected panic parsing %v: %v", args, r)
+			require.Equalf(t, testExitCode(0), code, "non-zero exit parsing %v", args)
+		}
+	}()
+	_, err = parser.Parse(args)
+	return err
 }
 
 type kongGlobalState struct {
@@ -122,26 +143,25 @@ func TestKongRegistersNestedCommands(t *testing.T) {
 		{"base-image", "dockerfile", "--help"},
 		{"base-image", "build", "--help"},
 	} {
-		_, err := parser.Parse(args)
-		require.NoErrorf(t, err, "parse %v", args)
+		require.NoErrorf(t, parseForTest(t, parser, args), "parse %v", args)
 	}
 }
 
 func TestKongRootHelpParses(t *testing.T) {
 	preserveKongGlobalState(t)
-	parser := newTestParser(t)
+	// Override Exit so the built-in --help flag doesn't terminate the process,
+	// and capture stdout to assert on the rendered help output.
 	var stdout bytes.Buffer
+	parser, err := newParser(t.Context(), &CLI{}, kong.Exit(func(code int) {
+		panic(testExitCode(code))
+	}))
+	require.NoError(t, err)
 	parser.Stdout = &stdout
 	parser.Stderr = &stdout
 
-	kctx, err := parser.Parse([]string{"--help"})
-	if err != nil {
-		var parseErr *kong.ParseError
-		require.True(t, errors.As(err, &parseErr), "expected ParseError, got %T", err)
-		require.True(t, strings.HasPrefix(parseErr.Error(), "expected"), "expected command selection error, got %q", parseErr.Error())
-		kctx = parseErr.Context
-	}
-	require.NoError(t, kctx.PrintUsage(false))
+	require.PanicsWithValue(t, testExitCode(0), func() {
+		_, _ = parser.Parse([]string{"--help"})
+	})
 
 	help := stdout.String()
 	require.Contains(t, help, "Usage: cog <command> [flags]")
@@ -152,7 +172,7 @@ func TestKongRootHelpParses(t *testing.T) {
 	// Commands hidden in Cobra must also be hidden in the Kong model so they
 	// don't appear in the root help output.
 	hiddenByName := map[string]bool{}
-	for _, node := range kctx.Model.Children {
+	for _, node := range parser.Model.Children {
 		if node.Hidden {
 			hiddenByName[node.Name] = true
 		}
@@ -178,8 +198,7 @@ func TestKongRootGlobalFlagsParse(t *testing.T) {
 	} {
 		restoreKongGlobalState(t, state)
 		parser := newTestParser(t)
-		_, err := parser.Parse(args)
-		require.NoErrorf(t, err, "parse %v", args)
+		require.NoErrorf(t, parseForTest(t, parser, args), "parse %v", args)
 	}
 
 	restoreKongGlobalState(t, state)
@@ -201,12 +220,7 @@ func TestKongHelpParsingDoesNotWriteUpdateState(t *testing.T) {
 		{"build", "--help"},
 	} {
 		parser := newTestParser(t)
-		_, err := parser.Parse(args)
-		if err != nil {
-			var parseErr *kong.ParseError
-			require.True(t, errors.As(err, &parseErr), "expected ParseError, got %T", err)
-			require.True(t, strings.HasPrefix(parseErr.Error(), "expected"), "expected command selection error, got %q", parseErr.Error())
-		}
+		_ = parseForTest(t, parser, args)
 		require.NoFileExists(t, filepath.Join(home, ".config", "cog", "update-state.json"), "parse %v", args)
 	}
 }
@@ -250,8 +264,7 @@ func TestKongRuntimeCommandFlagsParse(t *testing.T) {
 		{"serve", "--port", "5000", "--upload-url", "https://example.com/upload", "--gpus", "all", "--help"},
 		{"exec", "--gpus", "all", "--publish", "8888", "--env", "A=B", "python", "-c", "print(1)"},
 	} {
-		_, err := parser.Parse(args)
-		require.NoErrorf(t, err, "parse %v", args)
+		require.NoErrorf(t, parseForTest(t, parser, args), "parse %v", args)
 	}
 }
 
@@ -264,8 +277,7 @@ func TestKongSimpleCommandFlagsParse(t *testing.T) {
 		{"doctor", "--fix", "--file", "custom.yaml", "--help"},
 		{"debug", "--image-name", "myimage", "--help"},
 	} {
-		_, err := parser.Parse(args)
-		require.NoErrorf(t, err, "parse %v", args)
+		require.NoErrorf(t, parseForTest(t, parser, args), "parse %v", args)
 	}
 }
 
@@ -278,8 +290,7 @@ func TestKongPredictionCommandFlagsParse(t *testing.T) {
 		{"run", "--json", "@inputs.json", "--gpus", "all", "--help"},
 		{"train", "example/image", "--input", "dataset=@data.json", "--help"},
 	} {
-		_, err := parser.Parse(args)
-		require.NoErrorf(t, err, "parse %v", args)
+		require.NoErrorf(t, parseForTest(t, parser, args), "parse %v", args)
 	}
 }
 
@@ -291,8 +302,7 @@ func TestKongWeightsCommandFlagsParse(t *testing.T) {
 		{"weights", "pull", "--verbose", "weights-name", "--help"},
 		{"weights", "status", "--json", "--verbose", "--help"},
 	} {
-		_, err := parser.Parse(args)
-		require.NoErrorf(t, err, "parse %v", args)
+		require.NoErrorf(t, parseForTest(t, parser, args), "parse %v", args)
 	}
 }
 
@@ -304,8 +314,7 @@ func TestKongBaseImageCommandFlagsParse(t *testing.T) {
 		{"base-image", "build", "--cuda", "12.4", "--python", "3.12", "--torch", "2.5.0", "--help"},
 		{"base-image", "generate-matrix", "--cuda", "12.4", "--python", "3.12", "--help"},
 	} {
-		_, err := parser.Parse(args)
-		require.NoErrorf(t, err, "parse %v", args)
+		require.NoErrorf(t, parseForTest(t, parser, args), "parse %v", args)
 	}
 }
 

@@ -39,7 +39,9 @@ type BuildFlags struct {
 	OpenAPISchema string `name:"openapi-schema" help:"Load OpenAPI schema from a file."`
 
 	// Hidden flags
-	Dockerfile string `name:"dockerfile" hidden:"" type:"existingfile" help:"Path to a Dockerfile. If set, cog will use this Dockerfile instead of generating one from cog.yaml."`
+	// Cobra accepts --dockerfile as a plain string and defers the
+	// file-existence check to build time, so do not use type:"existingfile".
+	Dockerfile string `name:"dockerfile" hidden:"" help:"Path to a Dockerfile. If set, cog will use this Dockerfile instead of generating one from cog.yaml."`
 	Strip      bool   `name:"strip" hidden:"" help:"Whether to strip shared libraries for faster inference times."`
 	Precompile bool   `name:"precompile" hidden:"" help:"Whether to precompile python files for faster load times."`
 }
