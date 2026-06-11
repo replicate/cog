@@ -1,8 +1,8 @@
-from cog import BasePredictor, Input, Secret
+from cog import BaseRunner, Input, Secret
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self,
         text: str = Input(description="A string input"),
         count: int = Input(description="An integer", default=5),

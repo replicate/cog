@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -40,7 +41,7 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 		return err
 	}
 
-	_, models, resolved, err := resolveSetup()
+	_, models, resolved, mfPath, err := resolveSetup()
 	if err != nil {
 		return err
 	}
@@ -65,12 +66,13 @@ func runRun(ctx context.Context, outputFormat, outputFile string) error {
 
 	// Create runner
 	r, err := runner.New(runner.Options{
-		CogBinary:   resolved.CogBinary,
-		SDKVersion:  resolved.SDKPatchVersion,
-		SDKWheel:    resolved.SDKWheel,
-		CleanImages: cleanImages,
-		KeepOutputs: keepOutputs,
-		Parallel:    parallel,
+		CogBinary:    resolved.CogBinary,
+		SDKVersion:   resolved.SDKPatchVersion,
+		SDKWheel:     resolved.SDKWheel,
+		ManifestDir:  filepath.Dir(mfPath),
+		CleanImages:  cleanImages,
+		KeepOutputs:  keepOutputs,
+		Parallel:     parallel,
 	})
 	if err != nil {
 		return fmt.Errorf("creating runner: %w", err)

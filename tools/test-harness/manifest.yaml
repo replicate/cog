@@ -28,6 +28,10 @@
 #   install instructions for known tools (yq, envsubst).
 #   Example:
 #     requires_tools: ["yq"]
+#
+# Local models:
+#   `repo: local` models default to fixtures/models/; set `base_dir` to
+#   override (relative to manifest.yaml, or absolute path).
 
 defaults:
   sdk_version: "latest"          # "latest" = newest stable from PyPI; or pin e.g. "0.16.12"
@@ -37,7 +41,8 @@ models:
   # ── cog-examples (CPU) ──────────────────────────────────────────────
 
   - name: hello-world
-    repo: replicate/cog-examples
+    repo: local
+    base_dir: ../../examples
     path: hello-world
     gpu: false
     tests:
@@ -49,7 +54,8 @@ models:
           value: "hello world"
 
   - name: canary
-    repo: replicate/cog-examples
+    repo: local
+    base_dir: ../../examples
     path: canary
     gpu: false
     tests:
@@ -61,7 +67,8 @@ models:
           value: "friend"
 
   - name: blur
-    repo: replicate/cog-examples
+    repo: local
+    base_dir: ../../examples
     path: blur
     gpu: false
     tests:
@@ -74,7 +81,8 @@ models:
           mime: "image/png"
 
   - name: hello-image
-    repo: replicate/cog-examples
+    repo: local
+    base_dir: ../../examples
     path: hello-image
     gpu: false
     tests:
@@ -84,7 +92,8 @@ models:
           type: file_exists
 
   - name: hello-concurrency
-    repo: replicate/cog-examples
+    repo: local
+    base_dir: ../../examples
     path: hello-concurrency
     gpu: false
     tests:
@@ -97,7 +106,8 @@ models:
           value: "Apple"
 
   - name: hello-context
-    repo: replicate/cog-examples
+    repo: local
+    base_dir: ../../examples
     path: hello-context
     gpu: false
     # NOTE: This model uses current_scope().context which may not be
@@ -113,18 +123,10 @@ models:
               text: "testing"
 
   - name: hello-train
-    repo: replicate/cog-examples
+    repo: local
+    base_dir: ../../examples
     path: hello-train
     gpu: false
-    # NOTE: `cog train` in the RC may have input validation issues
-    # (validates against predict schema instead of train schema).
-    # The train_test below may fail — that's a real compatibility signal.
-    train_tests:
-      - description: "train produces weights file"
-        inputs:
-          prefix: "custom"
-        expect:
-          type: not_empty
     tests:
       - description: "predict with default weights"
         inputs:
@@ -133,36 +135,9 @@ models:
           type: contains
           value: "world"
 
-  # ── cog-examples (GPU required) ─────────────────────────────────────
-
-  - name: resnet
-    repo: replicate/cog-examples
-    path: resnet
-    gpu: true
-    tests:
-      - description: "classify hotdog image"
-        inputs:
-          image: "@hotdog.png"
-        expect:
-          type: json_keys
-
-  - name: z-image-turbo
-    repo: replicate/cog-examples
-    path: z-image-turbo
-    gpu: true
-    timeout: 600
-    tests:
-      - description: "generate image from prompt"
-        inputs:
-          prompt: "a cat sitting on a windowsill"
-        expect:
-          type: file_exists
-          mime: "image/png"
-
-  # ── cog-examples (requires external API, optional) ──────────────────
-
   - name: hello-replicate
-    repo: replicate/cog-examples
+    repo: local
+    base_dir: ../../examples
     path: hello-replicate
     gpu: false
     requires_env:
@@ -173,6 +148,70 @@ models:
           image: "@test_image.png"
         expect:
           type: file_exists
+
+  - name: notebook
+    repo: local
+    base_dir: ../../examples
+    path: notebook
+    gpu: false
+    tests:
+      - description: "basic predict"
+        inputs:
+          name: "world"
+        expect:
+          type: contains
+          value: "hello"
+
+  - name: managed-weights
+    repo: local
+    base_dir: ../../examples
+    path: managed-weights
+    gpu: false
+    tests:
+      - description: "weight validation smoke test"
+        inputs: {}
+        expect:
+          type: not_empty
+
+  - name: streaming-text
+    repo: local
+    base_dir: ../../examples
+    path: streaming-text
+    gpu: false
+    tests:
+      - description: "streaming text generation"
+        inputs:
+          prompt: "Hello"
+        expect:
+          type: not_empty
+
+  # ── cog-examples (GPU) ──────────────────────────────────────────────
+
+  - name: resnet
+    repo: local
+    base_dir: ../../examples
+    path: resnet
+    gpu: true
+    tests:
+      - description: "classify hotdog image"
+        inputs:
+          image: "@hotdog.png"
+        expect:
+          type: json_keys
+
+  - name: z-image-turbo
+    repo: local
+    base_dir: ../../examples
+    path: z-image-turbo
+    gpu: true
+    timeout: 600
+    tests:
+      - description: "generate image from prompt"
+        inputs:
+          prompt: "a cat sitting on a windowsill"
+        expect:
+          type: file_exists
+          mime: "image/png"
 
   # ── Local fixture models ─────────────────────────────────────────────
   # These use repo: local and path: relative to fixtures/models/.

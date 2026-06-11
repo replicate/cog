@@ -6,7 +6,7 @@
 # Build and push:
 #   cog push
 
-image: <your-registry>/resnet
+model: resnet
 
 build:
   gpu: true

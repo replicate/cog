@@ -1,0 +1,7 @@
+build:
+  gpu: false
+  python_packages:
+    - "jupyterlab==3.2.4"
+  python_version: "3.12"
+
+run: "run.py:Runner"

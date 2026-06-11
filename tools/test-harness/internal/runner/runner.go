@@ -115,13 +115,14 @@ func (r *Runner) modelOutput(modelName string) (stdout, stderr io.Writer, captur
 
 // Options configures a Runner.
 type Options struct {
-	CogBinary   string
-	SDKVersion  string
-	SDKWheel    string
-	FixturesDir string
-	CleanImages bool
-	KeepOutputs bool
-	Parallel    bool // Prefix output lines with model name (for parallel execution)
+	CogBinary    string
+	SDKVersion   string
+	SDKWheel     string
+	FixturesDir  string
+	ManifestDir  string
+	CleanImages  bool
+	KeepOutputs  bool
+	Parallel     bool // Prefix output lines with model name (for parallel execution)
 }
 
 // Runner orchestrates the test lifecycle.
@@ -129,6 +130,7 @@ type Options struct {
 type Runner struct {
 	opts        Options
 	fixturesDir string
+	manifestDir string
 	workDir     string
 	cloneGroup  singleflight.Group // deduplicates concurrent clones of the same repo
 }
@@ -165,6 +167,7 @@ func New(opts Options) (*Runner, error) {
 	return &Runner{
 		opts:        opts,
 		fixturesDir: fixturesDir,
+		manifestDir: opts.ManifestDir,
 		workDir:     workDir,
 	}, nil
 }
@@ -360,13 +363,29 @@ func (r *Runner) BuildModel(ctx context.Context, model manifest.Model) *report.M
 	return result
 }
 
+// resolveLocalBaseDir returns the directory to resolve model.Path against
+// for local models. Uses BaseDir if set (relative to manifest dir),
+// otherwise falls back to fixtures/models.
+func (r *Runner) resolveLocalBaseDir(model manifest.Model) string {
+	if model.BaseDir == "" {
+		return filepath.Join(r.fixturesDir, "models")
+	}
+	if filepath.IsAbs(model.BaseDir) {
+		return model.BaseDir
+	}
+	if r.manifestDir != "" {
+		return filepath.Join(r.manifestDir, model.BaseDir)
+	}
+	return model.BaseDir
+}
+
 func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string, error) {
 	var modelDir string
 
 	// Local fixture models
 	if model.Repo == "local" {
-		fixturesModels := filepath.Join(r.fixturesDir, "models")
-		srcDir, err := safeSubpath(fixturesModels, model.Path)
+		baseDir := r.resolveLocalBaseDir(model)
+		srcDir, err := safeSubpath(baseDir, model.Path)
 		if err != nil {
 			return "", err
 		}

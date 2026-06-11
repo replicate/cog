@@ -1,4 +1,4 @@
-# Example model for testing the v1 managed-weights OCI artifact format.
+# Test fixture for the v1 managed-weights OCI pipeline.
 #
 # The weights/ directory is populated by a human (see README.md) with
 # nvidia/parakeet-tdt-0.6b-v3 from HuggingFace. It's listed in .gitignore
@@ -10,7 +10,7 @@
 # Build and push the full bundle:
 #   cog push
 
-image: <your-registry>/managed-weights
+model: managed-weights
 
 build:
   gpu: false

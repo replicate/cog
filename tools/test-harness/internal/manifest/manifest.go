@@ -26,6 +26,7 @@ type Model struct {
 	Name                 string            `yaml:"name"`
 	Repo                 string            `yaml:"repo"`
 	Path                 string            `yaml:"path"`
+	BaseDir              string            `yaml:"base_dir"`
 	GPU                  bool              `yaml:"gpu"`
 	Timeout              int               `yaml:"timeout"`
 	RequiresEnv          []string          `yaml:"requires_env"`
