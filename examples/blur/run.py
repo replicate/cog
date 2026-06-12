@@ -12,7 +12,7 @@ class Runner(BaseRunner):
         blur: float = Input(description="Blur radius", default=5),
     ) -> Path:
         if blur == 0:
-            return input
+            return image
         im = Image.open(str(image))
         im = im.filter(ImageFilter.BoxBlur(blur))
         out_path = Path(tempfile.mkdtemp()) / "out.png"
