@@ -1,10 +1,10 @@
-from cog import BaseRunner, Input
-
 import my_notebook
+
+from cog import BaseRunner, Input
 
 
 class Runner(BaseRunner):
-    def setup(self):
+    def setup(self) -> None:
         """Prepare the model so multiple predictions run efficiently (optional)"""
 
     def run(self, name: str = Input(description="name of person to greet")) -> str:

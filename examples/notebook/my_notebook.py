@@ -4,5 +4,5 @@
 # In[ ]:
 
 
-def say_hello(name):
+def say_hello(name) -> str:
     return f"hello, {name}"

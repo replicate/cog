@@ -1,6 +1,6 @@
 import warnings
 
-from cog import current_scope, Input, ExperimentalFeatureWarning
+from cog import ExperimentalFeatureWarning, Input, current_scope
 
 warnings.filterwarnings(action="ignore", category=ExperimentalFeatureWarning)
 

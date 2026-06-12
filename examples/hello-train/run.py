@@ -1,11 +1,12 @@
-import requests
-from cog import BaseRunner, Input, Path
-
 from typing import Optional
+
+import requests
+
+from cog import BaseRunner, Input, Path
 
 
 class Runner(BaseRunner):
-    def setup(self, weights: Optional[Path] = None):
+    def setup(self, weights: Optional[Path] = None) -> None:
         if weights:
             self.prefix = requests.get(weights).text
         else:

@@ -7,12 +7,13 @@ os.environ["HF_XET_HIGH_PERFORMANCE"] = "1"
 import tempfile
 
 import torch
-from cog import BaseRunner, Path
 from diffusers import ZImagePipeline
+
+from cog import BaseRunner, Path
 
 
 class Runner(BaseRunner):
-    def setup(self):
+    def setup(self) -> None:
         self.model = ZImagePipeline.from_pretrained(
             "Tongyi-MAI/Z-Image-Turbo",
             torch_dtype=torch.bfloat16,
@@ -29,6 +30,7 @@ class Runner(BaseRunner):
             guidance_scale=0.0,  # Guidance should be 0 for the Turbo models
             generator=torch.Generator("cuda").manual_seed(42),
         ).images[0]
-        output_path = Path(tempfile.mktemp(suffix=".png"))
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            output_path = Path(f.name)
         image.save(output_path)
         return output_path

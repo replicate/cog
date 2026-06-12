@@ -6,19 +6,20 @@ import logging
 import os
 import time
 
-from cog import (
-    AsyncConcatenateIterator,
-    BaseRunner,
-    Input,
-    __version__,
-    current_scope,
-)
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
+)
+
+from cog import (
+    AsyncConcatenateIterator,
+    BaseRunner,
+    Input,
+    __version__,
+    current_scope,
 )
 
 logging.basicConfig(
@@ -32,7 +33,7 @@ try:
     with open("./honeycomb_token.key", "r") as f:
         honeycomb_token = f.read().strip()
 except FileNotFoundError:
-    pass
+    logging.info("honeycomb_token.key not found; OTEL will be disabled")
 
 if not honeycomb_token:
     os.environ["OTEL_SDK_DISABLED"] = "true"

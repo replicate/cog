@@ -1,7 +1,8 @@
 import tempfile
 
-from cog import BaseRunner, Input, Path
 from PIL import Image, ImageFilter
+
+from cog import BaseRunner, Input, Path
 
 
 class Runner(BaseRunner):
