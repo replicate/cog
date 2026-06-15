@@ -127,6 +127,12 @@ models:
     base_dir: ../../examples
     path: hello-train
     gpu: false
+    train_tests:
+      - description: "train produces weights file"
+        inputs:
+          prefix: "custom"
+        expect:
+          type: not_empty
     tests:
       - description: "predict with default weights"
         inputs:

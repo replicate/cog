@@ -613,9 +613,13 @@ func (r *Runner) runCogTest(ctx context.Context, modelDir string, model manifest
 		timeout = 300
 	}
 
-	// Build command — pass setup-timeout matching the model timeout so
-	// cog predict doesn't kill the container during model weight downloads.
-	args := []string{command, "--setup-timeout", fmt.Sprintf("%d", timeout)}
+	// Build command. Pass setup-timeout matching the model timeout so cog
+	// predict doesn't kill the container during model weight downloads.
+	// Only `cog predict` supports --setup-timeout; `cog train` does not.
+	args := []string{command}
+	if command == "predict" {
+		args = append(args, "--setup-timeout", fmt.Sprintf("%d", timeout))
+	}
 	keys := make([]string, 0, len(tc.Inputs))
 	for k := range tc.Inputs {
 		keys = append(keys, k)

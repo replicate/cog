@@ -147,6 +147,8 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
     };
 
     // Helper: returns the FieldKind if ty is File/Path/Secret or list[File]/list[Path].
+    // Note: list[Secret] is intentionally not classified; `coerce_typed_inputs`
+    // only wraps single string Secret values, so lists of secrets are not coerced.
     let classify_type = |ty: &Bound<'_, PyAny>| -> PyResult<Option<FieldKind>> {
         if ty.is(&cog_file_class) {
             return Ok(Some(FieldKind::File));

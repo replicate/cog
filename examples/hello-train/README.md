@@ -13,5 +13,5 @@ This simple trainable model takes a string as input and returns a string as outp
 Run predictions with:
 
 ```console
-cog run -i text=world
+cog predict -i text=world
 ```
