@@ -1,6 +1,8 @@
 # Getting started
 
 This guide will walk you through what you can do with Cog by using an example model.
+If you'd rather start from a complete example, browse the
+[examples in the Cog repository](examples.md).
 
 > [!TIP]
 > Using a language model to help you write the code for your new Cog model?
