@@ -74,8 +74,14 @@ func Load(explicitPath string) (*Manifest, string, error) {
 		return nil, "", fmt.Errorf("parsing manifest: %w", err)
 	}
 
-	// Apply default timeout
+	// Apply default timeout and validate model resolution fields.
 	for i := range manifest.Models {
+		if manifest.Models[i].Repo == "local" {
+			return nil, "", fmt.Errorf(
+				"model %q: 'repo: local' is no longer supported -- use 'base_dir' for local models instead",
+				manifest.Models[i].Name,
+			)
+		}
 		if manifest.Models[i].Timeout == 0 {
 			manifest.Models[i].Timeout = 300
 		}
@@ -126,6 +132,19 @@ func resolvePath(explicitPath string) (string, error) {
 	}
 
 	return "", fmt.Errorf("manifest not found: specify --manifest or run from project root")
+}
+
+// Source returns a human-readable description of where the model is resolved
+// from, mirroring the runner's resolution precedence (base_dir first, then repo).
+func (m *Model) Source() string {
+	if m.BaseDir == "" && m.Repo != "" {
+		return fmt.Sprintf("%s/%s", m.Repo, m.Path)
+	}
+	base := m.BaseDir
+	if base == "" {
+		base = "fixtures/models"
+	}
+	return fmt.Sprintf("%s/%s", base, m.Path)
 }
 
 // GetModel returns a model by name

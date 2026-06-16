@@ -29,9 +29,13 @@
 #   Example:
 #     requires_tools: ["yq"]
 #
-# Local models:
-#   `repo: local` models default to fixtures/models/; set `base_dir` to
-#   override (relative to manifest.yaml, or absolute path).
+# Model resolution (base_dir takes priority over repo):
+#   - Set `base_dir` for local models -- `path` is resolved under it. A
+#     relative `base_dir` is resolved against the repo root; an absolute path
+#     is used as-is. Local only; never clones.
+#   - Set `repo: owner/name` (with no `base_dir`) to clone from GitHub.
+#   - Set neither to default to fixtures/models/ (local fixtures).
+#   `repo: local` is no longer supported -- use `base_dir` instead.
 
 defaults:
   sdk_version: "latest"          # "latest" = newest stable from PyPI; or pin e.g. "0.16.12"
@@ -41,8 +45,7 @@ models:
   # ── cog-examples (CPU) ──────────────────────────────────────────────
 
   - name: hello-world
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: hello-world
     gpu: false
     tests:
@@ -54,8 +57,7 @@ models:
           value: "hello world"
 
   - name: canary
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: canary
     gpu: false
     tests:
@@ -67,8 +69,7 @@ models:
           value: "friend"
 
   - name: blur
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: blur
     gpu: false
     tests:
@@ -81,8 +82,7 @@ models:
           mime: "image/png"
 
   - name: hello-image
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: hello-image
     gpu: false
     tests:
@@ -92,8 +92,7 @@ models:
           type: file_exists
 
   - name: hello-concurrency
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: hello-concurrency
     gpu: false
     tests:
@@ -106,8 +105,7 @@ models:
           value: "Apple"
 
   - name: hello-context
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: hello-context
     gpu: false
     # NOTE: This model uses current_scope().context which may not be
@@ -123,8 +121,7 @@ models:
               text: "testing"
 
   - name: hello-train
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: hello-train
     gpu: false
     train_tests:
@@ -142,8 +139,7 @@ models:
           value: "world"
 
   - name: notebook
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: notebook
     gpu: false
     tests:
@@ -155,8 +151,7 @@ models:
           value: "hello"
 
   - name: managed-weights
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: managed-weights
     gpu: false
     requires_env:
@@ -168,8 +163,7 @@ models:
           type: not_empty
 
   - name: streaming-text
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: streaming-text
     gpu: false
     tests:
@@ -182,8 +176,7 @@ models:
   # ── cog-examples (GPU) ──────────────────────────────────────────────
 
   - name: resnet
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: resnet
     gpu: true
     tests:
@@ -194,8 +187,7 @@ models:
           type: json_keys
 
   - name: z-image-turbo
-    repo: local
-    base_dir: ../../examples
+    base_dir: examples
     path: z-image-turbo
     gpu: true
     timeout: 600
@@ -208,11 +200,12 @@ models:
           mime: "image/png"
 
   # ── Local fixture models ─────────────────────────────────────────────
-  # These use repo: local and path: relative to fixtures/models/.
-  # They cover the full input type matrix for build and prediction testing.
+  # These set base_dir to the fixtures dir (relative to the repo root), so
+  # path is relative to it. They cover the full input type matrix for build
+  # and prediction testing.
 
   - name: fixture-scalar-types
-    repo: local
+    base_dir: tools/test-harness/fixtures/models
     path: scalar-types
     gpu: false
     tests:
@@ -224,7 +217,7 @@ models:
           value: "hello"
 
   - name: fixture-optional-types
-    repo: local
+    base_dir: tools/test-harness/fixtures/models
     path: optional-types
     gpu: false
     tests:
@@ -236,12 +229,12 @@ models:
           value: "hello"
 
   - name: fixture-list-types
-    repo: local
+    base_dir: tools/test-harness/fixtures/models
     path: list-types
     gpu: false
 
   - name: fixture-optional-list-types
-    repo: local
+    base_dir: tools/test-harness/fixtures/models
     path: optional-list-types
     gpu: false
     tests:
@@ -253,7 +246,7 @@ models:
           value: "hello"
 
   - name: fixture-constraints-and-choices
-    repo: local
+    base_dir: tools/test-harness/fixtures/models
     path: constraints-and-choices
     gpu: false
     tests:
@@ -264,12 +257,12 @@ models:
           value: "hello-0.7-50-balanced-1"
 
   - name: fixture-file-path-types
-    repo: local
+    base_dir: tools/test-harness/fixtures/models
     path: file-path-types
     gpu: false
 
   - name: fixture-complex-output
-    repo: local
+    base_dir: tools/test-harness/fixtures/models
     path: complex-output
     gpu: false
     tests:

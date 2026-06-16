@@ -364,8 +364,9 @@ func (r *Runner) BuildModel(ctx context.Context, model manifest.Model) *report.M
 }
 
 // resolveLocalBaseDir returns the directory to resolve model.Path against
-// for local models. Uses BaseDir if set (relative to manifest dir),
-// otherwise falls back to fixtures/models.
+// for local models. A relative BaseDir is resolved against the repo root; an
+// absolute BaseDir is used as-is. When BaseDir is empty it falls back to
+// fixtures/models.
 func (r *Runner) resolveLocalBaseDir(model manifest.Model) string {
 	if model.BaseDir == "" {
 		return filepath.Join(r.fixturesDir, "models")
@@ -373,30 +374,37 @@ func (r *Runner) resolveLocalBaseDir(model manifest.Model) string {
 	if filepath.IsAbs(model.BaseDir) {
 		return model.BaseDir
 	}
-	if r.manifestDir != "" {
-		return filepath.Join(r.manifestDir, model.BaseDir)
+	return filepath.Join(r.repoRoot(), model.BaseDir)
+}
+
+// repoRoot returns the repository root that relative base_dir values are
+// resolved against. It walks up from manifestDir looking for a .git entry,
+// falling back to manifestDir if none is found.
+func (r *Runner) repoRoot() string {
+	if r.manifestDir == "" {
+		return ""
 	}
-	return model.BaseDir
+	dir := r.manifestDir
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return r.manifestDir
+		}
+		dir = parent
+	}
 }
 
 func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string, error) {
 	var modelDir string
 
-	// Local fixture models
-	if model.Repo == "local" {
-		baseDir := r.resolveLocalBaseDir(model)
-		srcDir, err := safeSubpath(baseDir, model.Path)
-		if err != nil {
-			return "", err
-		}
-
-		// Copy to work dir
-		dest := filepath.Join(r.workDir, fmt.Sprintf("local-%s", model.Name))
-		if err := copyDir(srcDir, dest); err != nil {
-			return "", fmt.Errorf("copying model: %w", err)
-		}
-		modelDir = dest
-	} else {
+	// Resolution precedence: base_dir first, then repo.
+	//   - base_dir set        -> local only (never clones)
+	//   - repo set, no base_dir -> clone from GitHub
+	//   - neither set         -> local under fixtures/models (fixtures)
+	if model.BaseDir == "" && model.Repo != "" {
 		// Clone repo (shared cache, thread-safe)
 		repoDir, err := r.cloneRepo(ctx, model.Repo)
 		if err != nil {
@@ -409,6 +417,20 @@ func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string
 		dest := filepath.Join(r.workDir, fmt.Sprintf("model-%s", model.Name))
 		if err := copyDir(srcDir, dest); err != nil {
 			return "", fmt.Errorf("copying repo for model %s: %w", model.Name, err)
+		}
+		modelDir = dest
+	} else {
+		// Local model: resolve model.Path under base_dir (or fixtures/models).
+		baseDir := r.resolveLocalBaseDir(model)
+		srcDir, err := safeSubpath(baseDir, model.Path)
+		if err != nil {
+			return "", err
+		}
+
+		// Copy to work dir
+		dest := filepath.Join(r.workDir, fmt.Sprintf("local-%s", model.Name))
+		if err := copyDir(srcDir, dest); err != nil {
+			return "", fmt.Errorf("copying local model %s from %s: %w", model.Name, srcDir, err)
 		}
 		modelDir = dest
 	}
