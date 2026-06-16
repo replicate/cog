@@ -1,12 +1,62 @@
 package runner
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/tools/test-harness/internal/manifest"
 )
+
+func TestResolveLocalBaseDir(t *testing.T) {
+	// Simulate a repo root (has .git) with the manifest nested under it.
+	repoRoot := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(repoRoot, ".git"), 0o755))
+	manifestDir := filepath.Join(repoRoot, "tools", "test-harness")
+	require.NoError(t, os.MkdirAll(manifestDir, 0o755))
+
+	r := &Runner{
+		fixturesDir: "/fixtures",
+		manifestDir: manifestDir,
+	}
+
+	tests := []struct {
+		name    string
+		baseDir string
+		want    string
+	}{
+		{
+			name:    "no base_dir defaults to fixtures/models",
+			baseDir: "",
+			want:    filepath.Join("/fixtures", "models"),
+		},
+		{
+			name:    "relative base_dir resolves against repo root",
+			baseDir: "examples",
+			want:    filepath.Join(repoRoot, "examples"),
+		},
+		{
+			name:    "nested relative base_dir resolves against repo root",
+			baseDir: "tools/test-harness/fixtures/models",
+			want:    filepath.Join(repoRoot, "tools", "test-harness", "fixtures", "models"),
+		},
+		{
+			name:    "absolute base_dir is used as-is",
+			baseDir: "/abs/examples",
+			want:    "/abs/examples",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := r.resolveLocalBaseDir(manifest.Model{BaseDir: tt.baseDir})
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
 
 func TestSafeSubpathAllowsPathInsideRoot(t *testing.T) {
 	root := t.TempDir()

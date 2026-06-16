@@ -40,7 +40,7 @@ func runList() error {
 			envTag = fmt.Sprintf(" (requires: %s)", strings.Join(m.RequiresEnv, ", "))
 		}
 
-		fmt.Printf("  %-25s %s/%s%s%s\n", m.Name, m.Repo, m.Path, gpuTag, envTag)
+		fmt.Printf("  %-25s %s%s%s\n", m.Name, m.Source(), gpuTag, envTag)
 	}
 
 	fmt.Printf("\n%d model(s) total\n", len(mf.Models))
