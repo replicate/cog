@@ -62,10 +62,10 @@ It reads the same manifest.yaml format as the Python version.`,
 }
 
 // resolveSetup loads the manifest, resolves versions, and filters models.
-func resolveSetup() (*manifest.Manifest, []manifest.Model, *resolver.Result, error) {
+func resolveSetup() (*manifest.Manifest, []manifest.Model, *resolver.Result, string, error) {
 	mf, mfPath, err := manifest.Load(manifestPath)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("loading manifest: %w", err)
+		return nil, nil, nil, "", fmt.Errorf("loading manifest: %w", err)
 	}
 	fmt.Printf("Loaded manifest: %s\n", mfPath)
 
@@ -75,12 +75,12 @@ func resolveSetup() (*manifest.Manifest, []manifest.Model, *resolver.Result, err
 		"cog_version": mf.Defaults.CogVersion,
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("resolving versions: %w", err)
+		return nil, nil, nil, "", fmt.Errorf("resolving versions: %w", err)
 	}
 	fmt.Printf("Using cog CLI: %s (%s)\n", resolved.CogBinary, resolved.CogVersion)
 
 	models := mf.FilterModels(modelFilter, noGPU, gpuOnly)
-	return mf, models, resolved, nil
+	return mf, models, resolved, mfPath, nil
 }
 
 // validateConcurrency checks that the concurrency flag is a valid value.

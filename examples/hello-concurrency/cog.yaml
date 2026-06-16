@@ -1,0 +1,9 @@
+# Configuration for Cog ⚙️
+# Reference: https://github.com/replicate/cog/blob/main/docs/yaml.md
+build:
+  gpu: false
+  python_version: "3.12"
+  python_requirements: requirements.txt
+run: "run.py:Runner"
+concurrency:
+  max: 4

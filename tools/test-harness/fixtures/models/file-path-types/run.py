@@ -1,8 +1,8 @@
-from cog import BasePredictor, File, Input, Path
+from cog import BaseRunner, File, Input, Path
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self,
         image: Path = Input(description="An image path"),
         document: File = Input(description="A file upload"),

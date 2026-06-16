@@ -1,10 +1,10 @@
 from typing import Optional
 
-from cog import BasePredictor, File, Input, Path
+from cog import BaseRunner, File, Input, Path
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self,
         text: str = Input(description="Required string"),
         # PEP 604 style optionals

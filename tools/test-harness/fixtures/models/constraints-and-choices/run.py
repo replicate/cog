@@ -1,8 +1,8 @@
-from cog import BasePredictor, Input
+from cog import BaseRunner, Input
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self,
         prompt: str = Input(description="The prompt", default="hello"),
         temperature: float = Input(
