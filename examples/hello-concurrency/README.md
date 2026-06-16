@@ -7,11 +7,11 @@ The key piece is the new `concurrency` field in the cog.yaml.
 
 ```yaml
 concurrency:
-  max: 32
+  max: 4
 ```
 
-This combined with the async setup and predict methods in the predict.py allows Cog to run up to
-32 concurrent predictions. If cog reaches the max concurrency threshold it will reject subsequent
+This combined with the async setup and run methods in `run.py` allows Cog to run up to
+4 concurrent predictions. If Cog reaches the max concurrency threshold it will reject subsequent
 predictions with a `409 Conflict` response.
 
 ### Telemetry
@@ -23,4 +23,4 @@ This requires a file named `honeycomb_token.key` to be included in the image bui
 It will then start sending events to the `cog-model` data source. You can configure this by
 editing the `OTEL_SERVICE_NAME`. If you use a custom endpoint this can be configured via `OTEL_EXPORTER_OTLP_ENDPOINT`.
 
-Lastly, there is a section in predict.py that can be uncommented to run telemetry locally and print events to the console for debugging.
+Lastly, there is a section in `run.py` that can be uncommented to run telemetry locally and print events to the console for debugging.

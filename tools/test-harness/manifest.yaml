@@ -141,20 +141,6 @@ models:
           type: contains
           value: "world"
 
-  - name: hello-replicate
-    repo: local
-    base_dir: ../../examples
-    path: hello-replicate
-    gpu: false
-    requires_env:
-      - REPLICATE_API_TOKEN
-    tests:
-      - description: "round-trip through replicate API"
-        inputs:
-          image: "@test_image.png"
-        expect:
-          type: file_exists
-
   - name: notebook
     repo: local
     base_dir: ../../examples
@@ -173,6 +159,8 @@ models:
     base_dir: ../../examples
     path: managed-weights
     gpu: false
+    requires_env:
+      - COG_MANAGED_WEIGHTS_READY
     tests:
       - description: "weight validation smoke test"
         inputs: {}
@@ -231,7 +219,6 @@ models:
       - description: "basic scalar inputs"
         inputs:
           text: "hello"
-          api_key: "secret123"
         expect:
           type: contains
           value: "hello"

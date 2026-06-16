@@ -79,21 +79,19 @@ pub fn prepare_input(
     func: &Bound<'_, PyAny>,
 ) -> PyResult<PreparedInput> {
     let fields = classify_fields(py, func)?;
-    coerce_typed_inputs(py, input, &fields)?;
+    coerce_url_strings(py, input, &fields)?;
     let cleanup_paths = download_url_paths_into_dict(py, input)?;
     Ok(PreparedInput::new(input.clone().unbind(), cleanup_paths))
 }
 
-/// Whether a field should be coerced as a `cog.File`, `cog.Path`, or `cog.Secret`.
+/// Whether a field should be coerced as a `cog.File` or `cog.Path`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FieldKind {
     File,
     Path,
-    Secret,
 }
 
-/// Result of inspecting a Python function's type annotations for File, Path,
-/// and Secret fields.
+/// Result of inspecting a Python function's type annotations for File and Path fields.
 #[derive(Debug)]
 struct FieldClassification {
     /// Fields typed as `cog.File` (or `list[File]`, `Optional[File]`, etc.)
@@ -102,27 +100,22 @@ struct FieldClassification {
     /// Fields typed as `cog.Path` (or `list[Path]`, `Optional[Path]`, etc.)
     /// These use `Path.validate()` for URL coercion.
     path_fields: HashSet<String>,
-    /// Fields typed as `cog.Secret` (or `Optional[Secret]`, etc.)
-    /// These wrap plain string values in `cog.types.Secret`.
-    secret_fields: HashSet<String>,
 }
 
 /// Inspect a Python function's type annotations to find parameters typed as
-/// `cog.File`, `cog.Path`, or `cog.Secret` (including `list[...]`,
-/// `Optional[...]`, `... | None`, etc.).
+/// `cog.File` or `cog.Path` (including `list[...]`, `Optional[...]`,
+/// `... | None`, etc.).
 ///
-/// Returns a `FieldClassification` so that `coerce_typed_inputs` only coerces
-/// fields that are actually File-, Path-, or Secret-typed, leaving `str` and
-/// other types untouched.
+/// Returns a `FieldClassification` so that `coerce_url_strings` only coerces
+/// fields that are actually File- or Path-typed, leaving `str` and other types
+/// untouched.
 fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldClassification> {
     let mut file_fields = HashSet::new();
     let mut path_fields = HashSet::new();
-    let mut secret_fields = HashSet::new();
 
     let cog_types = py.import("cog.types")?;
     let cog_file_class = cog_types.getattr("File")?;
     let cog_path_class = cog_types.getattr("Path")?;
-    let cog_secret_class = cog_types.getattr("Secret")?;
 
     // typing.get_type_hints resolves string annotations and handles forward refs
     let typing = py.import("typing")?;
@@ -141,23 +134,17 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
             return Ok(FieldClassification {
                 file_fields,
                 path_fields,
-                secret_fields,
             });
         }
     };
 
-    // Helper: returns the FieldKind if ty is File/Path/Secret or list[File]/list[Path].
-    // Note: list[Secret] is intentionally not classified; `coerce_typed_inputs`
-    // only wraps single string Secret values, so lists of secrets are not coerced.
+    // Helper: returns the FieldKind if ty is File/Path or list[File]/list[Path].
     let classify_type = |ty: &Bound<'_, PyAny>| -> PyResult<Option<FieldKind>> {
         if ty.is(&cog_file_class) {
             return Ok(Some(FieldKind::File));
         }
         if ty.is(&cog_path_class) {
             return Ok(Some(FieldKind::Path));
-        }
-        if ty.is(&cog_secret_class) {
-            return Ok(Some(FieldKind::Secret));
         }
         let inner_origin = get_origin.call1((ty,))?;
         if !inner_origin.is_none() && inner_origin.is(&builtins_list) {
@@ -197,9 +184,6 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
                 FieldKind::Path => {
                     path_fields.insert(name_str);
                 }
-                FieldKind::Secret => {
-                    secret_fields.insert(name_str);
-                }
             }
             continue;
         }
@@ -227,9 +211,6 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
                             FieldKind::Path => {
                                 path_fields.insert(name_str.clone());
                             }
-                            FieldKind::Secret => {
-                                secret_fields.insert(name_str.clone());
-                            }
                         }
                         break;
                     }
@@ -238,39 +219,34 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
         }
     }
 
-    if !file_fields.is_empty() || !path_fields.is_empty() || !secret_fields.is_empty() {
+    if !file_fields.is_empty() || !path_fields.is_empty() {
         tracing::debug!(
-            "Detected File-typed fields: {:?}, Path-typed fields: {:?}, Secret-typed fields: {:?}",
+            "Detected File-typed fields: {:?}, Path-typed fields: {:?}",
             file_fields,
-            path_fields,
-            secret_fields
+            path_fields
         );
     }
 
     Ok(FieldClassification {
         file_fields,
         path_fields,
-        secret_fields,
     })
 }
 
-/// Coerce input dict values to the appropriate cog types.
+/// Coerce URL string values in the input dict to the appropriate cog types.
 ///
-/// After `json.loads()`, all values are plain Python types. Typed fields need
-/// to be converted:
+/// After `json.loads()`, all values are plain Python types. URL strings
+/// (http://, https://, data:) that represent file inputs need to be converted:
 ///   - `File`-typed fields -> `File.validate()` -> returns IO-like `URLFile`
-///     (URL strings only: http://, https://, data:)
 ///   - `Path`-typed fields -> `Path.validate()` -> returns `URLPath` (downloaded later)
-///     (URL strings only)
-///   - `Secret`-typed fields -> `Secret(value)` -> wraps any plain string value
 ///
-/// Only fields whose declared type is `File`, `Path`, or `Secret` (including
-/// `list[...]`, `Optional[...]`, etc.) are coerced. Fields typed as `str` or any
-/// other type are left untouched, even if the value looks like a URL.
+/// Only fields whose declared type is `File` or `Path` (including `list[...]`,
+/// `Optional[...]`, etc.) are coerced. Fields typed as `str` or any other type
+/// are left untouched, even if the value looks like a URL.
 ///
 /// This replaces the type coercion that `_adt.py`'s `PrimitiveType.normalize()`
 /// previously performed.
-fn coerce_typed_inputs(
+fn coerce_url_strings(
     py: Python<'_>,
     payload: &Bound<'_, PyDict>,
     fields: &FieldClassification,
@@ -278,20 +254,9 @@ fn coerce_typed_inputs(
     let cog_types = py.import("cog.types")?;
     let path_validate = cog_types.getattr("Path")?.getattr("validate")?;
     let file_validate = cog_types.getattr("File")?.getattr("validate")?;
-    let secret_class = cog_types.getattr("Secret")?;
 
     for (key, value) in payload.iter() {
         let key_str: String = key.extract().unwrap_or_default();
-
-        // Secret-typed fields: wrap the plain string value in cog.types.Secret.
-        // Unlike File/Path, this is not URL-conditional -- any string is wrapped.
-        if fields.secret_fields.contains(&key_str) {
-            if value.extract::<String>().is_ok() {
-                let coerced = secret_class.call1((&value,))?;
-                payload.set_item(&key, coerced)?;
-            }
-            continue;
-        }
 
         // Only coerce fields that are declared as File or Path types.
         // str-typed and other fields are left as-is even if values look like URLs.
@@ -664,51 +629,6 @@ mod tests {
             c.path_fields.is_empty(),
             "non-Path types incorrectly detected as path: {:?}",
             c.path_fields
-        );
-        assert!(
-            c.secret_fields.is_empty(),
-            "non-Secret types incorrectly detected as secret: {:?}",
-            c.secret_fields
-        );
-    }
-
-    #[test]
-    #[ignore] // Requires cog Python package in PYTHONPATH
-    fn detect_direct_secret() {
-        let c = classify_for("from cog import Secret\ndef func(a: Secret, b: str): ...");
-        assert!(
-            c.secret_fields.contains("a"),
-            "direct Secret annotation not detected"
-        );
-        assert!(
-            !c.secret_fields.contains("b"),
-            "str incorrectly flagged as Secret"
-        );
-        assert!(
-            !c.file_fields.contains("a") && !c.path_fields.contains("a"),
-            "Secret incorrectly flagged as File or Path"
-        );
-    }
-
-    #[test]
-    #[ignore] // Requires cog Python package in PYTHONPATH
-    fn detect_optional_secret() {
-        let c = classify_for(
-            "from typing import Optional\nfrom cog import Secret\ndef func(a: Optional[Secret]): ...",
-        );
-        assert!(
-            c.secret_fields.contains("a"),
-            "Optional[Secret] annotation not detected"
-        );
-    }
-
-    #[test]
-    #[ignore] // Requires cog Python package in PYTHONPATH
-    fn detect_pep604_secret_or_none() {
-        let c = classify_for("from cog import Secret\ndef func(a: Secret | None): ...");
-        assert!(
-            c.secret_fields.contains("a"),
-            "Secret | None annotation not detected as Secret"
         );
     }
 

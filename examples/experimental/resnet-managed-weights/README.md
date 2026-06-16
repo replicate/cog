@@ -98,7 +98,7 @@ into the container at the `target` path. You don't need to push anything to test
 cog push
 ```
 
-This builds the model image and pushes it to the registry specified by `image:`
+This builds the model image and pushes it as the model named by `model:`
 in `cog.yaml`, alongside the weight layers as an OCI image index. The weights
 and model image are separate artifacts in the registry -- the image index ties
 them together.
@@ -117,7 +117,7 @@ build daemon on every `cog build`.
    - Change `source.uri` to your HuggingFace repo (or a local path)
    - Adjust `exclude` patterns for the formats you don't need
    - Set `target` to wherever your code expects to find the weights
-   - Set `image` to your registry destination (required for `cog push`)
+   - Set `model` to your model name (required for `cog push`)
 3. Edit `run.py` to load your model from `WEIGHTS_DIR`
 4. Update `requirements.txt` with your dependencies
 5. Run `cog weights import` to fetch weights and generate the lockfile
