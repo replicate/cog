@@ -102,14 +102,18 @@ struct FieldClassification {
     /// Fields typed as `cog.Path` (or `list[Path]`, `Optional[Path]`, etc.)
     /// These use `Path.validate()` for URL coercion.
     path_fields: HashSet<String>,
-    /// Fields typed as `cog.Secret` (or `Optional[Secret]`, etc.)
+    /// Fields typed as `cog.Secret` (only direct `Secret`, `Optional[Secret]`,
+    /// or `Secret | None`; `list[Secret]` is intentionally not classified).
     /// These wrap plain string values in `cog.types.Secret`.
     secret_fields: HashSet<String>,
 }
 
 /// Inspect a Python function's type annotations to find parameters typed as
-/// `cog.File`, `cog.Path`, or `cog.Secret` (including `list[...]`,
-/// `Optional[...]`, `... | None`, etc.).
+/// `cog.File`, `cog.Path`, or `cog.Secret`. For File and Path this includes
+/// the `list[...]`, `Optional[...]`, and `... | None` forms. For Secret only
+/// the direct `Secret`, `Optional[Secret]`, and `Secret | None` forms are
+/// classified; `list[Secret]` is intentionally not classified (see the note
+/// in `classify_type` below).
 ///
 /// Returns a `FieldClassification` so that `coerce_typed_inputs` only coerces
 /// fields that are actually File-, Path-, or Secret-typed, leaving `str` and
@@ -264,9 +268,12 @@ fn classify_fields(py: Python<'_>, func: &Bound<'_, PyAny>) -> PyResult<FieldCla
 ///     (URL strings only)
 ///   - `Secret`-typed fields -> `Secret(value)` -> wraps any plain string value
 ///
-/// Only fields whose declared type is `File`, `Path`, or `Secret` (including
-/// `list[...]`, `Optional[...]`, etc.) are coerced. Fields typed as `str` or any
-/// other type are left untouched, even if the value looks like a URL.
+/// Only fields whose declared type is `File`, `Path`, or `Secret` are coerced.
+/// For File and Path this includes the `list[...]`, `Optional[...]`, and
+/// `... | None` forms; for Secret only the direct `Secret`, `Optional[Secret]`,
+/// and `Secret | None` forms are coerced (`list[Secret]` is intentionally not).
+/// Fields typed as `str` or any other type are left untouched, even if the
+/// value looks like a URL.
 ///
 /// This replaces the type coercion that `_adt.py`'s `PrimitiveType.normalize()`
 /// previously performed.

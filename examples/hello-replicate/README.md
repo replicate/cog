@@ -31,6 +31,19 @@ underlying value with `get_secret_value()`.
 
 ## Run it
 
+Avoid passing the token literally on the command line, since it can leak
+through your shell history and process listings. Instead, read it from an
+environment variable:
+
 ```sh
-cog predict -i image=@cat.png -i replicate_api_token=r8_...
+export REPLICATE_API_TOKEN=r8_...   # set once, ideally via a secrets manager / not inline in shared shells
+cog predict -i image=@cat.png -i replicate_api_token="$REPLICATE_API_TOKEN"
 ```
+
+You can also read the token from a file (for example
+`-i replicate_api_token="$(cat token.txt)"`) if that fits your workflow better.
+
+> **Note:** `cog.Secret` redacts the value in model logs and string
+> representations, but it cannot protect a secret that is already exposed by
+> your own shell history, environment, or process listing. Keeping the token
+> out of those places is your responsibility.
