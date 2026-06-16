@@ -1,10 +1,10 @@
 from typing import List, Optional
 
-from cog import BasePredictor, File, Input, Path
+from cog import BaseRunner, File, Input, Path
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self,
         text: str = Input(description="Required anchor field"),
         # PEP 604 optional lists

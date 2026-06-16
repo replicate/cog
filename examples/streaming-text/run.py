@@ -9,7 +9,7 @@ from cog import BaseRunner, Input, streaming
 MODEL_NAME = "HuggingFaceTB/SmolLM2-135M-Instruct"
 
 
-class Predictor(BaseRunner):
+class Runner(BaseRunner):
     def setup(self) -> None:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if self.device == "cuda" else torch.float32

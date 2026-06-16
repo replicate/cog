@@ -125,6 +125,55 @@ predict: "predict.py:Predictor"
 
 
 @pytest.fixture
+def secret_predictor(tmp_path: Path) -> Path:
+    """Create a predictor exercising Secret input coercion.
+
+    predict() echoes back, for each parameter, the runtime type name and (for
+    secrets) the unwrapped value so tests can assert how each annotation is
+    coerced. Each field is encoded as ``name=<type>|<value>`` and fields are
+    joined with ``;``. For ``None`` values the unwrapped value is the literal
+    string ``None``.
+    """
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+from typing import Optional
+from cog import BasePredictor, Secret
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+
+    def predict(
+        self,
+        api_token: Secret,
+        plain: str = "",
+        opt_secret: Optional[Secret] = None,
+        pep604_secret: Secret | None = None,
+    ) -> str:
+        def describe(value):
+            type_name = type(value).__name__
+            if isinstance(value, Secret):
+                return f"{type_name}|{value.get_secret_value()}"
+            return f"{type_name}|{value}"
+
+        return ";".join([
+            f"api_token={describe(api_token)}",
+            f"plain={describe(plain)}",
+            f"opt_secret={describe(opt_secret)}",
+            f"pep604_secret={describe(pep604_secret)}",
+        ])
+""")
+
+    # Create cog.yaml
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
 def generator_predictor(tmp_path: Path) -> Path:
     """Create a generator predictor."""
     predictor = tmp_path / "predict.py"
@@ -469,6 +518,66 @@ class TestSyncPredictor:
             assert "metrics" in result
             assert "predict_time" in result["metrics"]
             assert result["metrics"]["predict_time"] >= 0
+
+
+class TestSecretInput:
+    """Tests for cog.Secret input coercion."""
+
+    def _fields(self, output: str) -> dict:
+        """Parse the predictor's ``name=<type>|<value>`` encoding into a dict."""
+        fields = {}
+        for part in output.split(";"):
+            name, encoded = part.split("=", 1)
+            type_name, value = encoded.split("|", 1)
+            fields[name] = (type_name, value)
+        return fields
+
+    def test_direct_secret_is_wrapped(self, secret_predictor: Path):
+        """A ``Secret``-annotated param wraps the submitted string in Secret."""
+        with CogletServer(secret_predictor) as server:
+            result = server.predict({"api_token": "sk-test-12345"})
+            assert result["status"] == "succeeded"
+            fields = self._fields(result["output"])
+            assert fields["api_token"] == ("Secret", "sk-test-12345")
+
+    def test_optional_secret_with_value_is_wrapped(self, secret_predictor: Path):
+        """An ``Optional[Secret]`` param with a value wraps it in Secret."""
+        with CogletServer(secret_predictor) as server:
+            result = server.predict(
+                {"api_token": "sk-test-12345", "opt_secret": "sk-opt-67890"}
+            )
+            assert result["status"] == "succeeded"
+            fields = self._fields(result["output"])
+            assert fields["opt_secret"] == ("Secret", "sk-opt-67890")
+
+    def test_pep604_secret_with_value_is_wrapped(self, secret_predictor: Path):
+        """A ``Secret | None`` (PEP 604) param with a value wraps it in Secret."""
+        with CogletServer(secret_predictor) as server:
+            result = server.predict(
+                {"api_token": "sk-test-12345", "pep604_secret": "sk-604-abcde"}
+            )
+            assert result["status"] == "succeeded"
+            fields = self._fields(result["output"])
+            assert fields["pep604_secret"] == ("Secret", "sk-604-abcde")
+
+    def test_plain_str_is_not_wrapped(self, secret_predictor: Path):
+        """A plain ``str`` param stays a str and is NOT wrapped in Secret."""
+        with CogletServer(secret_predictor) as server:
+            result = server.predict(
+                {"api_token": "sk-test-12345", "plain": "sk-test-12345"}
+            )
+            assert result["status"] == "succeeded"
+            fields = self._fields(result["output"])
+            assert fields["plain"] == ("str", "sk-test-12345")
+
+    def test_optional_secret_omitted_stays_none(self, secret_predictor: Path):
+        """An omitted ``Optional[Secret]`` param stays None, not Secret("")."""
+        with CogletServer(secret_predictor) as server:
+            result = server.predict({"api_token": "sk-test-12345"})
+            assert result["status"] == "succeeded"
+            fields = self._fields(result["output"])
+            assert fields["opt_secret"] == ("NoneType", "None")
+            assert fields["pep604_secret"] == ("NoneType", "None")
 
 
 class TestGeneratorPredictor:

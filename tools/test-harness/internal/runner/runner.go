@@ -119,6 +119,7 @@ type Options struct {
 	SDKVersion  string
 	SDKWheel    string
 	FixturesDir string
+	ManifestDir string
 	CleanImages bool
 	KeepOutputs bool
 	Parallel    bool // Prefix output lines with model name (for parallel execution)
@@ -129,6 +130,7 @@ type Options struct {
 type Runner struct {
 	opts        Options
 	fixturesDir string
+	manifestDir string
 	workDir     string
 	cloneGroup  singleflight.Group // deduplicates concurrent clones of the same repo
 }
@@ -165,6 +167,7 @@ func New(opts Options) (*Runner, error) {
 	return &Runner{
 		opts:        opts,
 		fixturesDir: fixturesDir,
+		manifestDir: opts.ManifestDir,
 		workDir:     workDir,
 	}, nil
 }
@@ -360,24 +363,48 @@ func (r *Runner) BuildModel(ctx context.Context, model manifest.Model) *report.M
 	return result
 }
 
+// resolveLocalBaseDir returns the directory to resolve model.Path against
+// for local models. A relative BaseDir is resolved against the repo root; an
+// absolute BaseDir is used as-is. When BaseDir is empty it falls back to
+// fixtures/models.
+func (r *Runner) resolveLocalBaseDir(model manifest.Model) string {
+	if model.BaseDir == "" {
+		return filepath.Join(r.fixturesDir, "models")
+	}
+	if filepath.IsAbs(model.BaseDir) {
+		return model.BaseDir
+	}
+	return filepath.Join(r.repoRoot(), model.BaseDir)
+}
+
+// repoRoot returns the repository root that relative base_dir values are
+// resolved against. It walks up from manifestDir looking for a .git entry,
+// falling back to manifestDir if none is found.
+func (r *Runner) repoRoot() string {
+	if r.manifestDir == "" {
+		return ""
+	}
+	dir := r.manifestDir
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return r.manifestDir
+		}
+		dir = parent
+	}
+}
+
 func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string, error) {
 	var modelDir string
 
-	// Local fixture models
-	if model.Repo == "local" {
-		fixturesModels := filepath.Join(r.fixturesDir, "models")
-		srcDir, err := safeSubpath(fixturesModels, model.Path)
-		if err != nil {
-			return "", err
-		}
-
-		// Copy to work dir
-		dest := filepath.Join(r.workDir, fmt.Sprintf("local-%s", model.Name))
-		if err := copyDir(srcDir, dest); err != nil {
-			return "", fmt.Errorf("copying model: %w", err)
-		}
-		modelDir = dest
-	} else {
+	// Resolution precedence: base_dir first, then repo.
+	//   - base_dir set        -> local only (never clones)
+	//   - repo set, no base_dir -> clone from GitHub
+	//   - neither set         -> local under fixtures/models (fixtures)
+	if model.BaseDir == "" && model.Repo != "" {
 		// Clone repo (shared cache, thread-safe)
 		repoDir, err := r.cloneRepo(ctx, model.Repo)
 		if err != nil {
@@ -390,6 +417,20 @@ func (r *Runner) prepareModel(ctx context.Context, model manifest.Model) (string
 		dest := filepath.Join(r.workDir, fmt.Sprintf("model-%s", model.Name))
 		if err := copyDir(srcDir, dest); err != nil {
 			return "", fmt.Errorf("copying repo for model %s: %w", model.Name, err)
+		}
+		modelDir = dest
+	} else {
+		// Local model: resolve model.Path under base_dir (or fixtures/models).
+		baseDir := r.resolveLocalBaseDir(model)
+		srcDir, err := safeSubpath(baseDir, model.Path)
+		if err != nil {
+			return "", err
+		}
+
+		// Copy to work dir
+		dest := filepath.Join(r.workDir, fmt.Sprintf("local-%s", model.Name))
+		if err := copyDir(srcDir, dest); err != nil {
+			return "", fmt.Errorf("copying local model %s from %s: %w", model.Name, srcDir, err)
 		}
 		modelDir = dest
 	}
@@ -594,9 +635,13 @@ func (r *Runner) runCogTest(ctx context.Context, modelDir string, model manifest
 		timeout = 300
 	}
 
-	// Build command — pass setup-timeout matching the model timeout so
-	// cog predict doesn't kill the container during model weight downloads.
-	args := []string{command, "--setup-timeout", fmt.Sprintf("%d", timeout)}
+	// Build command. Pass setup-timeout matching the model timeout so cog
+	// predict doesn't kill the container during model weight downloads.
+	// Only `cog predict` supports --setup-timeout; `cog train` does not.
+	args := []string{command}
+	if command == "predict" {
+		args = append(args, "--setup-timeout", fmt.Sprintf("%d", timeout))
+	}
 	keys := make([]string, 0, len(tc.Inputs))
 	for k := range tc.Inputs {
 		keys = append(keys, k)

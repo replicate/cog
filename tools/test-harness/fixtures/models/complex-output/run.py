@@ -1,4 +1,4 @@
-from cog import BaseModel, BasePredictor, Input
+from cog import BaseModel, BaseRunner, Input
 
 
 class Output(BaseModel):
@@ -7,8 +7,8 @@ class Output(BaseModel):
     tags: list[str]
 
 
-class Predictor(BasePredictor):
-    def predict(
+class Runner(BaseRunner):
+    def run(
         self,
         prompt: str = Input(description="Input prompt"),
     ) -> Output:
