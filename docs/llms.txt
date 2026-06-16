@@ -177,7 +177,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 - [Get started with your own model](docs/getting-started-own-model.md)
 - [Using Cog with notebooks](docs/notebooks.md)
 - [Using Cog with Windows 11](docs/wsl2/wsl2.md)
-- [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
+- [Browse the example models in this repo](docs/examples.md)
 - [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
 - [Run interface reference](docs/python.md) to learn how the `Runner` interface works
@@ -516,7 +516,7 @@ that handles HTTP requests, worker process management, and run execution.
 
 This guide assumes you have a model packaged with Cog.
 If you don't, [follow our getting started guide](getting-started-own-model.md),
-or use [an example model](https://github.com/replicate/cog-examples).
+or start from one of the [examples in the Cog repository](examples.md).
 
 ## Getting started
 
@@ -889,6 +889,51 @@ $ COG_PUSH_MULTIPART_THRESHOLD=268435456 cog push
 
 ---
 
+# Examples
+
+Cog's example models now live in the main Cog repository under
+[`examples/`](https://github.com/replicate/cog/tree/main/examples).
+
+If you want a working project to copy from, start with one of these:
+
+- [`hello-world`](https://github.com/replicate/cog/tree/main/examples/hello-world):
+  minimal string input/output example
+- [`hello-image`](https://github.com/replicate/cog/tree/main/examples/hello-image):
+  returns a static image
+- [`hello-context`](https://github.com/replicate/cog/tree/main/examples/hello-context):
+  shows how to read prediction context
+- [`hello-concurrency`](https://github.com/replicate/cog/tree/main/examples/hello-concurrency):
+  demonstrates the `concurrency` setting in `cog.yaml`
+- [`hello-train`](https://github.com/replicate/cog/tree/main/examples/hello-train):
+  defines a training interface
+- [`hello-replicate`](https://github.com/replicate/cog/tree/main/examples/hello-replicate):
+  uses `cog.Secret` inputs and calls the Replicate API
+- [`blur`](https://github.com/replicate/cog/tree/main/examples/blur):
+  simple image-to-image transformation
+- [`resnet`](https://github.com/replicate/cog/tree/main/examples/resnet):
+  GPU image classification with ResNet50
+- [`streaming-text`](https://github.com/replicate/cog/tree/main/examples/streaming-text):
+  streaming text generation with server-sent events
+- [`z-image-turbo`](https://github.com/replicate/cog/tree/main/examples/z-image-turbo):
+  a generative image model example
+- [`notebook`](https://github.com/replicate/cog/tree/main/examples/notebook):
+  runs a Jupyter notebook with Cog
+- [`canary`](https://github.com/replicate/cog/tree/main/examples/canary):
+  small streaming output example used for validation
+- [`managed-weights`](https://github.com/replicate/cog/tree/main/examples/managed-weights):
+  managed weights pipeline fixture
+
+There is also an experimental example:
+
+- [`experimental/resnet-managed-weights`](https://github.com/replicate/cog/tree/main/examples/experimental/resnet-managed-weights):
+  ResNet50 packaged with managed weights
+
+For a quick summary of every example in the tree, see
+[`examples/README.md`](https://github.com/replicate/cog/blob/main/examples/README.md).
+
+
+---
+
 # Getting started with your own model
 
 This guide will show you how to put your own machine learning model in a Docker image using Cog. If you haven't got a model to try out, you'll want to follow the [main getting started guide](getting-started.md).
@@ -1069,6 +1114,8 @@ Next, you might want to take a look at:
 # Getting started
 
 This guide will walk you through what you can do with Cog by using an example model.
+If you'd rather start from a complete example, browse the
+[examples in the Cog repository](examples.md).
 
 > [!TIP]
 > Using a language model to help you write the code for your new Cog model?

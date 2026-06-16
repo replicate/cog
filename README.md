@@ -177,7 +177,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 - [Get started with your own model](docs/getting-started-own-model.md)
 - [Using Cog with notebooks](docs/notebooks.md)
 - [Using Cog with Windows 11](docs/wsl2/wsl2.md)
-- [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
+- [Browse the example models in this repo](docs/examples.md)
 - [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
 - [Run interface reference](docs/python.md) to learn how the `Runner` interface works
