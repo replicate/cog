@@ -9,7 +9,7 @@ that handles HTTP requests, worker process management, and run execution.
 
 This guide assumes you have a model packaged with Cog.
 If you don't, [follow our getting started guide](getting-started-own-model.md),
-or use [an example model](https://github.com/replicate/cog-examples).
+or start from one of the [examples in the Cog repository](examples.md).
 
 ## Getting started
 
