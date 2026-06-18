@@ -57,23 +57,16 @@ Use `-p` to choose a different port:
 cog serve -p 5000
 ```
 
-### cog run
-
-For one-off predictions against a pre-built image,
-use `cog run` with the image name:
-
-```console
-cog run my-model -i image=@input.jpg
-```
-
-This starts the container, runs a single prediction, and prints the result.
-File inputs are passed with `@` prefix (e.g. `-i image=@photo.jpg`).
-
 ## Make a prediction
 
 Once the server is running, make predictions by sending a POST request
 to the `/predictions` endpoint.
-Inputs go inside an `"input"` object in the JSON body:
+Inputs go inside an `"input"` object in the JSON body.
+
+> [!NOTE]
+> The examples below use `localhost:5001`, matching the Docker command above
+> (`-p 5001:5000`). If you used `cog serve`, use `localhost:8393` by default,
+> or the port you passed with `-p`.
 
 ```console
 curl http://localhost:5001/predictions -X POST \
@@ -157,18 +150,25 @@ the response contains a base64-encoded data URL by default:
 ```
 
 To have the server upload output files to external storage instead,
-set the `output_file_prefix` field in the request body:
+start the server with the `--upload-url` flag. The server then uploads each
+file output to that URL prefix and returns the resulting URL in the response.
+
+With `cog serve`:
 
 ```console
-curl http://localhost:5001/predictions -X POST \
-    -H "Content-Type: application/json" \
-    -d '{
-        "input": {"prompt": "a cat"},
-        "output_file_prefix": "https://example.com/upload"
-    }'
+cog serve --upload-url https://example.com/upload/
 ```
 
-The server uploads the file via HTTP PUT and returns the resulting URL:
+When running the image directly with Docker, override the command to start the
+server with `--upload-url`:
+
+```shell
+docker run -d -p 5001:5000 my-model \
+    python -m cog.server.http --upload-url https://example.com/upload/
+```
+
+With an upload URL configured, file outputs are uploaded and the response
+contains the uploaded URL instead of a data URL:
 
 ```json
 {
@@ -176,6 +176,20 @@ The server uploads the file via HTTP PUT and returns the resulting URL:
     "output": "https://example.com/upload/image.png"
 }
 ```
+
+## Run a one-off prediction
+
+The Docker and `cog serve` commands above leave an HTTP server running.
+If you instead want to run a single prediction and exit — without starting a
+server — use `cog run`:
+
+```console
+cog run my-model -i image=@input.jpg
+```
+
+This starts the container, runs one prediction, prints the result, and exits.
+File inputs are passed with the `@` prefix (e.g. `-i image=@photo.jpg`),
+and the CLI handles base64 encoding for you.
 
 ## Health checks
 
@@ -195,7 +209,9 @@ If you started the container with `docker run -d`, stop it with:
 docker kill <container-id>
 ```
 
-If you used `cog serve` or `cog run`, press `Ctrl+C` in the terminal.
+If you used `cog serve`, press `Ctrl+C` in the terminal.
+(`cog run` exits on its own once the prediction finishes, so there's nothing
+to stop.)
 
 ## Concurrency
 
