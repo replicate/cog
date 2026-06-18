@@ -689,7 +689,7 @@ The server uploads the file via HTTP PUT and returns the resulting URL:
 The server exposes a `GET /health-check` endpoint that returns the current status of the model container. Use this for readiness probes in orchestration systems like Kubernetes.
 
 ```console
-curl http://localhost:5000/health-check
+curl http://localhost:5001/health-check
 ```
 
 The response includes a `status` field with values like `STARTING`, `READY`, `BUSY`, `SETUP_FAILED`, or `DEFUNCT`. See the [HTTP API reference](http.md#get-health-check) for full details.
