@@ -192,7 +192,7 @@ Choose your platform for installation instructions.
 <details>
   <summary>Windows</summary>
 
-  Cog does not natively support Windows, but you can run it on Windows 11 using [WSL 2](docs/wsl2/wsl2.md). Once WSL 2 is set up, follow the Linux installation instructions above.
+  Cog does not natively support Windows, but you can run it on Windows 11 using <a href='docs/wsl2/wsl2'>WSL 2</a>. Once WSL 2 is set up, follow the Linux installation instructions above.
 
 </details>
 
