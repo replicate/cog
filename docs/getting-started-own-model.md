@@ -20,7 +20,7 @@ brew install replicate/tap/cog
 **Linux or macOS (manual):**
 
 ```sh
-sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
 sudo chmod +x /usr/local/bin/cog
 ```
 

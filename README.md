@@ -128,8 +128,7 @@ If you're using macOS, you can install Cog using Homebrew:
 brew install replicate/tap/cog
 ```
 
-You can also download and install the latest release using our
-[install script](https://cog.run/install):
+Otherwise, we recommend our [install script](https://cog.run/install):
 
 ```sh
 # bash, zsh, and other shells
@@ -143,11 +142,10 @@ wget -qO- https://cog.run/install.sh
 sh ./install.sh
 ```
 
-You can manually install the latest release of Cog directly from GitHub
-by running the following commands in a terminal:
+Alternatively, install the latest release manually from GitHub:
 
 ```console
-sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
 sudo chmod +x /usr/local/bin/cog
 ```
 
