@@ -50,12 +50,6 @@ with your project directory mounted in:
 cog serve
 ```
 
-Or, from a built image:
-
-```console
-cog serve my-model
-```
-
 By default the server runs on port 8393.
 Use `-p` to choose a different port:
 
@@ -179,7 +173,7 @@ The server uploads the file via HTTP PUT and returns the resulting URL:
 ```json
 {
     "status": "succeeded",
-    "output": "http://example.com/upload/image.png"
+    "output": "https://example.com/upload/image.png"
 }
 ```
 
