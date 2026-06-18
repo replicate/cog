@@ -689,9 +689,26 @@ run = """
 #!/usr/bin/env bash
 set -e
 uv pip install mkdocs-material
-sed 's/docs\\///g' README.md > ./docs/README.md
-cp CONTRIBUTING.md ./docs/
-mkdocs build
+
+# Stage docs in a temporary build directory so we can rewrite links for mkdocs
+# without mutating tracked source files.
+rm -rf .docs-build
+cp -r docs .docs-build
+
+# Rewrite GitHub-style README links to mkdocs-style links in all staged docs.
+# Rewrite GitHub-style README links to mkdocs-style links in all staged docs.
+# This strips exactly one "../" from any relative path to README.md, handling
+# pages at any nesting depth.
+find .docs-build -name '*.md' -type f -exec sed -i.bak 's|\\.\\./\\(\\.\\./\\)*README\\.md|\\1README.md|g' {} +
+find .docs-build -name '*.md.bak' -type f -delete
+
+# Copy root markdown files into the staged docs directory.
+sed 's/docs\\///g' README.md > .docs-build/README.md
+cp CONTRIBUTING.md .docs-build/CONTRIBUTING.md
+
+# Point mkdocs at the staged docs directory.
+sed 's|^docs_dir: docs/|docs_dir: .docs-build/|' mkdocs.yml > .docs-build-mkdocs.yml
+mkdocs build -f .docs-build-mkdocs.yml
 """
 
 [tasks."docs:serve"]
@@ -700,9 +717,25 @@ run = """
 #!/usr/bin/env bash
 set -e
 uv pip install mkdocs-material
-sed 's/docs\\///g' README.md > ./docs/README.md
-cp CONTRIBUTING.md ./docs/
-mkdocs serve
+
+# Stage docs in a temporary build directory so we can rewrite links for mkdocs
+# without mutating tracked source files.
+rm -rf .docs-build
+cp -r docs .docs-build
+
+# Rewrite GitHub-style README links to mkdocs-style links in all staged docs.
+# This strips exactly one "../" from any relative path to README.md, handling
+# pages at any nesting depth.
+find .docs-build -name '*.md' -type f -exec sed -i.bak 's|\\.\\./\\(\\.\\./\\)*README\\.md|\\1README.md|g' {} +
+find .docs-build -name '*.md.bak' -type f -delete
+
+# Copy root markdown files into the staged docs directory.
+sed 's/docs\\///g' README.md > .docs-build/README.md
+cp CONTRIBUTING.md .docs-build/CONTRIBUTING.md
+
+# Point mkdocs at the staged docs directory.
+sed 's|^docs_dir: docs/|docs_dir: .docs-build/|' mkdocs.yml > .docs-build-mkdocs.yml
+mkdocs serve -f .docs-build-mkdocs.yml
 """
 
 [tasks."docs:llm"]

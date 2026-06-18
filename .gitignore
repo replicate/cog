@@ -16,6 +16,8 @@ pkg/wheels/*.whl
 .DS_Store
 docs/README.md
 docs/CONTRIBUTING.md
+.docs-build/
+.docs-build-mkdocs.yml
 venv
 base-image
 flag_file
