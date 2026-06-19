@@ -301,37 +301,31 @@ Content-Type: application/json
 }
 ```
 
-When creating a prediction synchronously,
-the client can configure a base URL to upload output files to instead
-by setting the `output_file_prefix` parameter in the request body:
+To upload output files to external storage instead,
+start the HTTP server with the `--upload-url` flag set to a base URL.
+This applies to both synchronous and asynchronous predictions.
 
-```http
-POST /predictions HTTP/1.1
-Content-Type: application/json; charset=utf-8
-
-{
-    "input": {"prompt": "A picture of an onion with sunglasses"},
-    "output_file_prefix": "https://example.com/upload",
-}
+```console
+python -m cog.server.http --upload-url https://example.com/upload/
 ```
 
 When the model produces a file output,
-the server sends the following request to upload the file to the configured URL:
+the server uploads it with an HTTP `PUT` request to
+`{upload-url}/{filename}`, sending the raw file bytes
+with the file's `Content-Type`:
 
 ```http
-PUT /upload HTTP/1.1
+PUT /upload/image.png HTTP/1.1
 Host: example.com
-Content-Type: multipart/form-data
-
---boundary
-Content-Disposition: form-data; name="file"; filename="image.png"
 Content-Type: image/png
 
 <binary data>
---boundary--
 ```
 
-If the upload succeeds, the server responds with output:
+The resulting URL is taken from the response's `Location` header
+(falling back to the request URL), with query parameters stripped.
+If the upload succeeds, the prediction output is the uploaded URL
+instead of a data URL:
 
 ```http
 HTTP/1.1 200 OK
@@ -339,15 +333,11 @@ Content-Type: application/json
 
 {
     "status": "succeeded",
-    "output": "http://example.com/upload/image.png"
+    "output": "https://example.com/upload/image.png"
 }
 ```
 
 If the upload fails, the server responds with an error.
-
-> [!IMPORTANT]  
-> File uploads for predictions created asynchronously
-> require `--upload-url` to be specified when starting the HTTP server.
 
 <a id="api"></a>
 

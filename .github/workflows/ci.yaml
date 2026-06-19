@@ -281,12 +281,14 @@ jobs:
       # by stub_gen at runtime (PyO3 auto-initialize). mise's
       # python-build-standalone is statically linked and doesn't ship the .so.
       - uses: actions/setup-python@v6
+        id: setup-python
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          key: py-${{ steps.setup-python.outputs.python-version }}
       - uses: jdx/mise-action@v4
         with:
           version: 2026.4.27
