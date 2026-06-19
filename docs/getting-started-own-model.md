@@ -4,25 +4,11 @@ This guide will show you how to put your own machine learning model in a Docker 
 
 ## Prerequisites
 
-- **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
+- **Cog**. If you haven't already installed Cog, follow the [install instructions in the README](../README.md#install).
+- **macOS, Linux, or Windows 11**. Cog works on macOS and Linux. It also works on Windows 11 with [WSL 2](wsl2/wsl2.md).
 - **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
 
 ## Initialization
-
-First, install Cog if you haven't already:
-
-**macOS (recommended):**
-
-```sh
-brew install replicate/tap/cog
-```
-
-**Linux or macOS (manual):**
-
-```sh
-sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
-sudo chmod +x /usr/local/bin/cog
-```
 
 To configure your project for use with Cog, you'll need to add two files:
 

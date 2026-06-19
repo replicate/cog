@@ -11,36 +11,9 @@ If you'd rather start from a complete example, browse the
 
 ## Prerequisites
 
-- **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
+- **Cog**. If you haven't already installed Cog, follow the [install instructions in the README](../README.md#install).
+- **macOS, Linux, or Windows 11**. Cog works on macOS and Linux. It also works on Windows 11 with [WSL 2](wsl2/wsl2.md).
 - **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
-
-## Install Cog
-
-**macOS (recommended):**
-
-```bash
-brew install replicate/tap/cog
-```
-
-**Linux or macOS (manual):**
-
-```bash
-sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
-sudo chmod +x /usr/local/bin/cog
-sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
-
-```
-
-> [!NOTE]
-> **macOS: "cannot be opened because the developer cannot be verified"**
->
-> If you downloaded the binary manually (via `curl` or a browser) and see this Gatekeeper warning, run:
->
-> ```bash
-> sudo xattr -d com.apple.quarantine /usr/local/bin/cog
-> ```
->
-> Installing via `brew install replicate/tap/cog` handles this automatically.
 
 ## Create a project
 
