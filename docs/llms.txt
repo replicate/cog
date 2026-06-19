@@ -150,7 +150,7 @@ Choose your platform for installation instructions.
   Or install manually:
 
   ```console
-  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
+  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
   sudo chmod +x /usr/local/bin/cog
   sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
   ```
@@ -183,7 +183,7 @@ Choose your platform for installation instructions.
   Or install manually:
 
   ```console
-  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
+  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
   sudo chmod +x /usr/local/bin/cog
   ```
 
@@ -568,23 +568,25 @@ This guide assumes you have a model packaged with Cog.
 If you don't, [follow our getting started guide](getting-started-own-model.md),
 or start from one of the [examples in the Cog repository](examples.md).
 
-## Getting started
+## Build a Docker image
 
-First, build your model:
+Build your model into a Docker image:
 
 ```console
 cog build -t my-model
 ```
 
-You can serve your model locally with `cog serve`:
+The image contains your model code, dependencies, the Cog runtime, and everything in between.
+It serves an HTTP server on port 5000 when run.
 
-```console
-cog serve
-# or, from a built image:
-cog serve my-model
-```
+## Run the model
 
-Alternatively, start the Docker container directly:
+You have several options for running a built image.
+
+### Docker
+
+Run the image directly with Docker.
+This is the approach you'd use for production deployment.
 
 ```shell
 # If your model uses a CPU:
@@ -596,33 +598,155 @@ docker run -d -p 5001:5000 --gpus all my-model
 
 The server listens on port 5000 inside the container (mapped to 5001 above).
 
-To view the OpenAPI schema,
-open [localhost:5001/openapi.json](http://localhost:5001/openapi.json)
-in your browser
-or use cURL to make a request:
+### cog serve
+
+For local development, `cog serve` builds the image and starts the server
+with your project directory mounted in:
+
+```console
+cog serve
+```
+
+By default the server runs on port 8393.
+Use `-p` to choose a different port:
+
+```console
+cog serve -p 5000
+```
+
+## Make a prediction
+
+Once the server is running, make predictions by sending a POST request
+to the `/predictions` endpoint.
+Inputs go inside an `"input"` object in the JSON body.
+
+> [!NOTE]
+> The examples below use `localhost:5001`, matching the Docker command above
+> (`-p 5001:5000`). If you used `cog serve`, use `localhost:8393` by default,
+> or the port you passed with `-p`.
+
+```console
+curl http://localhost:5001/predictions -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"input": {"prompt": "a photo of a cat", "steps": 50}}'
+```
+
+```json
+{
+    "status": "succeeded",
+    "output": "data:image/png;base64,...",
+    "metrics": {
+        "predict_time": 4.52
+    }
+}
+```
+
+> [!IMPORTANT]
+> Inputs **must** be wrapped in an `"input"` object.
+> `{"input": {"scale": 2.0}}` is correct; `{"scale": 2.0}` is not.
+
+To discover what inputs your model accepts,
+view the OpenAPI schema:
 
 ```console
 curl http://localhost:5001/openapi.json
 ```
 
-To stop the server, run:
+### Passing file inputs
 
-```console
-docker kill my-model
-```
+File inputs (`cog.Path` or `cog.File` types) are passed as strings
+inside the `"input"` object.
+There are two ways to do this:
 
-To run the model,
-call the `/predictions` endpoint,
-passing input in the format expected by your model:
+**1. HTTP/HTTPS URLs**
+
+Pass a URL to a publicly accessible file.
+The server downloads it inside the container:
 
 ```console
 curl http://localhost:5001/predictions -X POST \
-    --header "Content-Type: application/json" \
-    --data '{"input": {"image": "https://.../input.jpg"}}'
+    -H "Content-Type: application/json" \
+    -d '{"input": {"image": "https://example.com/photo.jpg"}}'
 ```
 
-For more details about the HTTP API,
-see the [HTTP API reference documentation](http.md).
+**2. Data URLs (base64)**
+
+To pass a local file, encode it as a [data URL](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs):
+
+```bash
+# Construct a data URL from a local file
+DATA_URL=$(python3 -c "
+import base64, mimetypes
+with open('input.jpg', 'rb') as f:
+    data = base64.b64encode(f.read()).decode()
+mime = mimetypes.guess_type('input.jpg')[0] or 'application/octet-stream'
+print(f'data:{mime};base64,{data}')
+")
+
+curl http://localhost:5001/predictions -X POST \
+    -H "Content-Type: application/json" \
+    -d "{\"input\": {\"image\": \"$DATA_URL\"}}"
+```
+
+> [!NOTE]
+> The HTTP API only accepts JSON (`application/json`).
+> Multipart form uploads are not supported.
+> When you use `cog run -i image=@photo.jpg`,
+> the CLI handles the base64 encoding for you automatically.
+
+### Getting output files
+
+When a model returns a file output (`cog.Path` or `cog.File`),
+the response contains a base64-encoded data URL by default:
+
+```json
+{
+    "status": "succeeded",
+    "output": "data:image/png;base64,iVBORw0KGgo..."
+}
+```
+
+To have the server upload output files to external storage instead,
+start the server with the `--upload-url` flag. The server then uploads each
+file output to that URL prefix and returns the resulting URL in the response.
+
+With `cog serve`:
+
+```console
+cog serve --upload-url https://example.com/upload/
+```
+
+When running the image directly with Docker, override the command to start the
+server with `--upload-url`:
+
+```shell
+docker run -d -p 5001:5000 my-model \
+    python -m cog.server.http --upload-url https://example.com/upload/
+```
+
+With an upload URL configured, file outputs are uploaded and the response
+contains the uploaded URL instead of a data URL:
+
+```json
+{
+    "status": "succeeded",
+    "output": "https://example.com/upload/image.png"
+}
+```
+
+## Run a one-off prediction
+
+The Docker and `cog serve` commands above leave an HTTP server running.
+If you instead want to run a single prediction and exit — without starting a
+server — use `cog run`:
+
+```console
+cog run my-model -i image=@input.jpg
+```
+
+This starts the container, runs one prediction, prints the result, and exits.
+File inputs are passed with the `@` prefix (e.g. `-i image=@photo.jpg`),
+and the CLI handles base64 encoding for you.
 
 ## Health checks
 
@@ -633,6 +757,18 @@ curl http://localhost:5001/health-check
 ```
 
 The response includes a `status` field with values like `STARTING`, `READY`, `BUSY`, `SETUP_FAILED`, or `DEFUNCT`. See the [HTTP API reference](http.md#get-health-check) for full details.
+
+## Stop the server
+
+If you started the container with `docker run -d`, stop it with:
+
+```console
+docker kill <container-id>
+```
+
+If you used `cog serve`, press `Ctrl+C` in the terminal.
+(`cog run` exits on its own once the prediction finishes, so there's nothing
+to stop.)
 
 ## Concurrency
 
@@ -650,8 +786,15 @@ See the [`cog.yaml` reference](yaml.md#concurrency) for more details.
 You can configure runtime behavior with environment variables:
 
 - `COG_SETUP_TIMEOUT`: Maximum time in seconds for the `setup()` method (default: no timeout).
+- `COG_MAX_CONCURRENCY`: Number of concurrent prediction slots (default: 1).
 
 See the [environment variables reference](environment.md) for the full list.
+
+## Next steps
+
+- [HTTP API reference](http.md) for full endpoint documentation
+- [Private registries](private-package-registry.md) for using private Python package registries
+- [`cog.yaml` reference](yaml.md) for configuration options
 
 
 ---
@@ -1143,6 +1286,756 @@ Next, you might want to take a look at:
 - [A guide explaining how to deploy a model.](deploy.md)
 - [The reference for `cog.yaml`](yaml.md)
 - [The reference for the Python library](python.md)
+
+
+---
+
+# Getting started with your own model
+
+This guide will show you how to put your own machine learning model in a Docker image using Cog. If you haven't got a model to try out, you'll want to follow the [main getting started guide](getting-started.md).
+
+## Prerequisites
+
+- **Cog**. If you haven't already installed Cog, follow the [install instructions in the README](../README.md#install).
+- **macOS, Linux, or Windows 11**. Cog works on macOS and Linux. It also works on Windows 11 with [WSL 2](wsl2/wsl2.md).
+- **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
+
+## Initialization
+
+To configure your project for use with Cog, you'll need to add two files:
+
+- [`cog.yaml`](yaml.md) defines system requirements, Python package dependencies, etc
+- [`run.py`](python.md) describes the run interface for your model
+
+Use the `cog init` command to generate these files in your project:
+
+```sh
+$ cd path/to/your/model
+$ cog init
+```
+
+## Define the Docker environment
+
+The `cog.yaml` file defines all the different things that need to be installed for your model to run. You can think of it as a simple way of defining a Docker image.
+
+For example:
+
+```yaml
+build:
+  python_version: "3.13"
+  python_requirements: requirements.txt
+```
+
+With a `requirements.txt` containing your dependencies:
+
+```
+torch==2.6.0
+```
+
+This will generate a Docker image with Python 3.13 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
+
+To run a command inside this environment, prefix it with `cog exec`:
+
+```
+$ cog exec python
+✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
+Running 'python' in Docker with the current directory mounted as a volume...
+────────────────────────────────────────────────────────────────────────────────────────
+
+Python 3.13.x (main, ...)
+[GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+```
+
+This is handy for ensuring a consistent environment for development or training.
+
+With `cog.yaml`, you can also install system packages and other things. [Take a look at the full reference to see what else you can do.](yaml.md)
+
+## Define how to run your model
+
+The next step is to update `run.py` to define the interface for running your model. The `run.py` generated by `cog init` looks something like this:
+
+```python
+from cog import BaseRunner, Path, Input
+import torch
+
+class Runner(BaseRunner):
+    def setup(self):
+        """Load the model into memory to make running multiple inferences efficient"""
+        self.net = torch.load("weights.pth")
+
+    def run(self,
+            image: Path = Input(description="Image to enlarge"),
+            scale: float = Input(description="Factor to scale image by", default=1.5)
+    ) -> Path:
+        """Run the model"""
+        # ... pre-processing ...
+        output = self.net(input)
+        # ... post-processing ...
+        return output
+```
+
+Edit your `run.py` file and fill in the functions with your own model's setup and run code. You might need to import parts of your model from another file.
+
+You also need to define the inputs to your model as arguments to the `run()` function, as demonstrated above. For each argument, you need to annotate with a type. The supported types are:
+
+- `str`: a string
+- `int`: an integer
+- `float`: a floating point number
+- `bool`: a boolean
+- `cog.File`: a file-like object representing a file (deprecated — use `cog.Path` instead)
+- `cog.Path`: a path to a file on disk
+
+You can provide more information about the input with the `Input()` function, as shown above. It takes these basic arguments:
+
+- `description`: A description of what to pass to this input for users of the model
+- `default`: A default value to set the input to. If this argument is not passed, the input is required. If it is explicitly set to `None`, the input is optional.
+- `ge`: For `int` or `float` types, the value should be greater than or equal to this number.
+- `le`: For `int` or `float` types, the value should be less than or equal to this number.
+- `min_length`: For `str` types, the minimum length of the string.
+- `max_length`: For `str` types, the maximum length of the string.
+- `regex`: For `str` types, the string must match this regular expression.
+- `choices`: For `str` or `int` types, a list of possible values for this input.
+- `deprecated`: Mark this input as deprecated with a message explaining what to use instead.
+
+There are some more advanced options you can pass, too. For more details, [take a look at the run interface documentation](python.md).
+
+Next, add the line `run: "run.py:Runner"` to your `cog.yaml`, so it looks something like this:
+
+```yaml
+build:
+  python_version: "3.13"
+  python_requirements: requirements.txt
+run: "run.py:Runner"
+```
+
+That's it! To test this works, try running the model:
+
+```
+$ cog run -i image=@input.jpg
+✓ Building Docker image from cog.yaml... Successfully built 664ef88bc1f4
+✓ Model running in Docker image 664ef88bc1f4
+
+Written output to output.png
+```
+
+To pass more inputs to the model, you can add more `-i` options:
+
+```
+$ cog run -i image=@image.jpg -i scale=2.0
+```
+
+In this case it is just a number, not a file, so you don't need the `@` prefix.
+
+## Using GPUs
+
+To use GPUs with Cog, add the `gpu: true` option to the `build` section of your `cog.yaml`:
+
+```yaml
+build:
+  gpu: true
+  ...
+```
+
+Cog will use the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image and automatically figure out what versions of CUDA and cuDNN to use based on the version of Python, PyTorch, and Tensorflow that you are using.
+
+For more details, [see the `gpu` section of the `cog.yaml` reference](yaml.md#gpu).
+
+## Next steps
+
+Next, you might want to take a look at:
+
+- [A guide explaining how to deploy a model.](deploy.md)
+- [The reference for `cog.yaml`](yaml.md)
+- [The reference for the Python library](python.md)
+
+
+---
+
+# Getting started with your own model
+
+This guide will show you how to put your own machine learning model in a Docker image using Cog. If you haven't got a model to try out, you'll want to follow the [main getting started guide](getting-started.md).
+
+## Prerequisites
+
+- **Cog**. If you haven't already installed Cog, follow the [install instructions in the README](../README.md#install).
+- **macOS, Linux, or Windows 11**. Cog works on macOS and Linux. It also works on Windows 11 with [WSL 2](wsl2/wsl2.md).
+- **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
+
+## Initialization
+
+To configure your project for use with Cog, you'll need to add two files:
+
+- [`cog.yaml`](yaml.md) defines system requirements, Python package dependencies, etc
+- [`run.py`](python.md) describes the run interface for your model
+
+Use the `cog init` command to generate these files in your project:
+
+```sh
+$ cd path/to/your/model
+$ cog init
+```
+
+## Define the Docker environment
+
+The `cog.yaml` file defines all the different things that need to be installed for your model to run. You can think of it as a simple way of defining a Docker image.
+
+For example:
+
+```yaml
+build:
+  python_version: "3.13"
+  python_requirements: requirements.txt
+```
+
+With a `requirements.txt` containing your dependencies:
+
+```
+torch==2.6.0
+```
+
+This will generate a Docker image with Python 3.13 and PyTorch 2 installed, for both CPU and GPU, with the correct version of CUDA, and various other sensible best-practices.
+
+To run a command inside this environment, prefix it with `cog exec`:
+
+```
+$ cog exec python
+✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
+Running 'python' in Docker with the current directory mounted as a volume...
+────────────────────────────────────────────────────────────────────────────────────────
+
+Python 3.13.x (main, ...)
+[GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+```
+
+This is handy for ensuring a consistent environment for development or training.
+
+With `cog.yaml`, you can also install system packages and other things. [Take a look at the full reference to see what else you can do.](yaml.md)
+
+## Define how to run your model
+
+The next step is to update `run.py` to define the interface for running your model. The `run.py` generated by `cog init` looks something like this:
+
+```python
+from cog import BaseRunner, Path, Input
+import torch
+
+class Runner(BaseRunner):
+    def setup(self):
+        """Load the model into memory to make running multiple inferences efficient"""
+        self.net = torch.load("weights.pth")
+
+    def run(self,
+            image: Path = Input(description="Image to enlarge"),
+            scale: float = Input(description="Factor to scale image by", default=1.5)
+    ) -> Path:
+        """Run the model"""
+        # ... pre-processing ...
+        output = self.net(input)
+        # ... post-processing ...
+        return output
+```
+
+Edit your `run.py` file and fill in the functions with your own model's setup and run code. You might need to import parts of your model from another file.
+
+You also need to define the inputs to your model as arguments to the `run()` function, as demonstrated above. For each argument, you need to annotate with a type. The supported types are:
+
+- `str`: a string
+- `int`: an integer
+- `float`: a floating point number
+- `bool`: a boolean
+- `cog.File`: a file-like object representing a file (deprecated — use `cog.Path` instead)
+- `cog.Path`: a path to a file on disk
+
+You can provide more information about the input with the `Input()` function, as shown above. It takes these basic arguments:
+
+- `description`: A description of what to pass to this input for users of the model
+- `default`: A default value to set the input to. If this argument is not passed, the input is required. If it is explicitly set to `None`, the input is optional.
+- `ge`: For `int` or `float` types, the value should be greater than or equal to this number.
+- `le`: For `int` or `float` types, the value should be less than or equal to this number.
+- `min_length`: For `str` types, the minimum length of the string.
+- `max_length`: For `str` types, the maximum length of the string.
+- `regex`: For `str` types, the string must match this regular expression.
+- `choices`: For `str` or `int` types, a list of possible values for this input.
+- `deprecated`: Mark this input as deprecated with a message explaining what to use instead.
+
+There are some more advanced options you can pass, too. For more details, [take a look at the run interface documentation](python.md).
+
+Next, add the line `run: "run.py:Runner"` to your `cog.yaml`, so it looks something like this:
+
+```yaml
+build:
+  python_version: "3.13"
+  python_requirements: requirements.txt
+run: "run.py:Runner"
+```
+
+That's it! To test this works, try running the model:
+
+```
+$ cog run -i image=@input.jpg
+✓ Building Docker image from cog.yaml... Successfully built 664ef88bc1f4
+✓ Model running in Docker image 664ef88bc1f4
+
+Written output to output.png
+```
+
+To pass more inputs to the model, you can add more `-i` options:
+
+```
+$ cog run -i image=@image.jpg -i scale=2.0
+```
+
+In this case it is just a number, not a file, so you don't need the `@` prefix.
+
+## Using GPUs
+
+To use GPUs with Cog, add the `gpu: true` option to the `build` section of your `cog.yaml`:
+
+```yaml
+build:
+  gpu: true
+  ...
+```
+
+Cog will use the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image and automatically figure out what versions of CUDA and cuDNN to use based on the version of Python, PyTorch, and Tensorflow that you are using.
+
+For more details, [see the `gpu` section of the `cog.yaml` reference](yaml.md#gpu).
+
+## Next steps
+
+Next, you might want to take a look at:
+
+- [A guide explaining how to deploy a model.](deploy.md)
+- [The reference for `cog.yaml`](yaml.md)
+- [The reference for the Python library](python.md)
+
+
+---
+
+# Getting started
+
+This guide will walk you through what you can do with Cog by using an example model.
+If you'd rather start from a complete example, browse the
+[examples in the Cog repository](examples.md).
+
+> [!TIP]
+> Using a language model to help you write the code for your new Cog model?
+>
+> Feed it [https://cog.run/llms.txt](https://cog.run/llms.txt), which has all of Cog's documentation bundled into a single file. To learn more about this format, check out [llmstxt.org](https://llmstxt.org).
+
+## Prerequisites
+
+- **Cog**. If you haven't already installed Cog, follow the [install instructions in the README](../README.md#install).
+- **macOS, Linux, or Windows 11**. Cog works on macOS and Linux. It also works on Windows 11 with [WSL 2](wsl2/wsl2.md).
+- **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
+
+## Create a project
+
+Let's make a directory to work in:
+
+```bash
+mkdir cog-quickstart
+cd cog-quickstart
+
+```
+
+## Run commands
+
+The simplest thing you can do with Cog is run a command inside a Docker environment.
+
+The first thing you need to do is create a file called `cog.yaml`:
+
+```yaml
+build:
+  python_version: "3.13"
+```
+
+Then, you can run any command inside this environment. For example, enter
+
+```bash
+cog exec python
+
+```
+
+and you'll get an interactive Python shell:
+
+```none
+✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
+Running 'python' in Docker with the current directory mounted as a volume...
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Python 3.13.x (main, ...)
+[GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+```
+
+(Hit Ctrl-D to exit the Python shell.)
+
+Inside this Docker environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
+
+## Run a model
+
+Let's pretend we've trained a model. With Cog, we can define how to run it in a standard way, so other people can easily run it without having to hunt around for a run script.
+
+We need to write some code to describe how the model runs.
+
+Save this to `run.py`:
+
+```python
+import os
+os.environ["TORCH_HOME"] = "."
+
+import torch
+from cog import BaseRunner, Input, Path
+from PIL import Image
+from torchvision import models
+
+WEIGHTS = models.ResNet50_Weights.IMAGENET1K_V1
+
+
+class Runner(BaseRunner):
+    def setup(self):
+        """Load the model into memory to make running multiple inferences efficient"""
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = models.resnet50(weights=WEIGHTS).to(self.device)
+        self.model.eval()
+
+    def run(self, image: Path = Input(description="Image to classify")) -> dict:
+        """Run the model"""
+        img = Image.open(image).convert("RGB")
+        preds = self.model(WEIGHTS.transforms()(img).unsqueeze(0).to(self.device))
+        top3 = preds[0].softmax(0).topk(3)
+        categories = WEIGHTS.meta["categories"]
+        return {categories[i]: p.detach().item() for p, i in zip(*top3)}
+```
+
+We also need to point Cog at this, and tell it what Python dependencies to install.
+
+Save this to `requirements.txt`:
+
+```
+pillow==11.1.0
+torch==2.6.0
+torchvision==0.21.0
+```
+
+Then update `cog.yaml` to look like this:
+
+```yaml
+build:
+  python_version: "3.13"
+  python_requirements: requirements.txt
+run: "run.py:Runner"
+```
+
+> [!TIP]
+> If you have a machine with an NVIDIA GPU attached, add `gpu: true` to the `build` section of your `cog.yaml` to enable GPU acceleration.
+
+Let's grab an image to test the model with:
+
+```bash
+IMAGE_URL=https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd94a8/raw/56b19f53f7643bb6c0b822c410c366c3a6244de2/mystery.jpg
+curl $IMAGE_URL > input.jpg
+
+```
+
+Now, let's run the model using Cog:
+
+```bash
+cog run -i image=@input.jpg
+
+```
+
+If you see the following output
+
+```json
+{
+  "tiger_cat": 0.4874822497367859,
+  "tabby": 0.23169134557247162,
+  "Egyptian_cat": 0.09728282690048218
+}
+```
+
+then it worked!
+
+Note: The first time you run `cog run`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog run` the pre-built container will be used.
+
+## Build an image
+
+We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time inference.
+
+```bash
+cog build -t resnet
+# Building Docker image...
+# Built resnet:latest
+
+```
+
+You can run this image with `cog run` by passing the filename as an argument:
+
+```bash
+cog run resnet -i image=@input.jpg
+
+```
+
+Or, you can run it with Docker directly, and it'll serve an HTTP server:
+
+```bash
+docker run -d --rm -p 5000:5000 resnet
+
+```
+
+We can send inputs directly with `curl`:
+
+```bash
+curl http://localhost:5000/predictions -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"image": "https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd94a8/raw/56b19f53f7643bb6c0b822c410c366c3a6244de2/mystery.jpg"}}'
+
+```
+
+As a shorthand, you can add the Docker image's name as an extra line in `cog.yaml`:
+
+```yaml
+image: "r8.im/replicate/resnet"
+```
+
+Once you've done this, you can use `cog push` to build and push the image to a Docker registry:
+
+```bash
+cog push
+# Building r8.im/replicate/resnet...
+# Pushing r8.im/replicate/resnet...
+# Pushed!
+```
+
+The Docker image is now accessible to anyone or any system that has access to this Docker registry.
+
+## Next steps
+
+Those are the basics! Next, you might want to take a look at:
+
+- [A guide to help you set up your own model on Cog.](getting-started-own-model.md)
+- [A guide explaining how to deploy a model.](deploy.md)
+- [Reference for `cog.yaml`](yaml.md)
+- [Reference for the Python library](python.md)
+
+
+---
+
+# Getting started
+
+This guide will walk you through what you can do with Cog by using an example model.
+If you'd rather start from a complete example, browse the
+[examples in the Cog repository](examples.md).
+
+> [!TIP]
+> Using a language model to help you write the code for your new Cog model?
+>
+> Feed it [https://cog.run/llms.txt](https://cog.run/llms.txt), which has all of Cog's documentation bundled into a single file. To learn more about this format, check out [llmstxt.org](https://llmstxt.org).
+
+## Prerequisites
+
+- **Cog**. If you haven't already installed Cog, follow the [install instructions in the README](../README.md#install).
+- **macOS, Linux, or Windows 11**. Cog works on macOS and Linux. It also works on Windows 11 with [WSL 2](wsl2/wsl2.md).
+- **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
+
+## Create a project
+
+Let's make a directory to work in:
+
+```bash
+mkdir cog-quickstart
+cd cog-quickstart
+
+```
+
+## Run commands
+
+The simplest thing you can do with Cog is run a command inside a Docker environment.
+
+The first thing you need to do is create a file called `cog.yaml`:
+
+```yaml
+build:
+  python_version: "3.13"
+```
+
+Then, you can run any command inside this environment. For example, enter
+
+```bash
+cog exec python
+
+```
+
+and you'll get an interactive Python shell:
+
+```none
+✓ Building Docker image from cog.yaml... Successfully built 8f54020c8981
+Running 'python' in Docker with the current directory mounted as a volume...
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Python 3.13.x (main, ...)
+[GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+```
+
+(Hit Ctrl-D to exit the Python shell.)
+
+Inside this Docker environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
+
+## Run a model
+
+Let's pretend we've trained a model. With Cog, we can define how to run it in a standard way, so other people can easily run it without having to hunt around for a run script.
+
+We need to write some code to describe how the model runs.
+
+Save this to `run.py`:
+
+```python
+import os
+os.environ["TORCH_HOME"] = "."
+
+import torch
+from cog import BaseRunner, Input, Path
+from PIL import Image
+from torchvision import models
+
+WEIGHTS = models.ResNet50_Weights.IMAGENET1K_V1
+
+
+class Runner(BaseRunner):
+    def setup(self):
+        """Load the model into memory to make running multiple inferences efficient"""
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = models.resnet50(weights=WEIGHTS).to(self.device)
+        self.model.eval()
+
+    def run(self, image: Path = Input(description="Image to classify")) -> dict:
+        """Run the model"""
+        img = Image.open(image).convert("RGB")
+        preds = self.model(WEIGHTS.transforms()(img).unsqueeze(0).to(self.device))
+        top3 = preds[0].softmax(0).topk(3)
+        categories = WEIGHTS.meta["categories"]
+        return {categories[i]: p.detach().item() for p, i in zip(*top3)}
+```
+
+We also need to point Cog at this, and tell it what Python dependencies to install.
+
+Save this to `requirements.txt`:
+
+```
+pillow==11.1.0
+torch==2.6.0
+torchvision==0.21.0
+```
+
+Then update `cog.yaml` to look like this:
+
+```yaml
+build:
+  python_version: "3.13"
+  python_requirements: requirements.txt
+run: "run.py:Runner"
+```
+
+> [!TIP]
+> If you have a machine with an NVIDIA GPU attached, add `gpu: true` to the `build` section of your `cog.yaml` to enable GPU acceleration.
+
+Let's grab an image to test the model with:
+
+```bash
+IMAGE_URL=https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd94a8/raw/56b19f53f7643bb6c0b822c410c366c3a6244de2/mystery.jpg
+curl $IMAGE_URL > input.jpg
+
+```
+
+Now, let's run the model using Cog:
+
+```bash
+cog run -i image=@input.jpg
+
+```
+
+If you see the following output
+
+```json
+{
+  "tiger_cat": 0.4874822497367859,
+  "tabby": 0.23169134557247162,
+  "Egyptian_cat": 0.09728282690048218
+}
+```
+
+then it worked!
+
+Note: The first time you run `cog run`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog run` the pre-built container will be used.
+
+## Build an image
+
+We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time inference.
+
+```bash
+cog build -t resnet
+# Building Docker image...
+# Built resnet:latest
+
+```
+
+You can run this image with `cog run` by passing the filename as an argument:
+
+```bash
+cog run resnet -i image=@input.jpg
+
+```
+
+Or, you can run it with Docker directly, and it'll serve an HTTP server:
+
+```bash
+docker run -d --rm -p 5000:5000 resnet
+
+```
+
+We can send inputs directly with `curl`:
+
+```bash
+curl http://localhost:5000/predictions -X POST \
+    -H 'Content-Type: application/json' \
+    -d '{"input": {"image": "https://gist.githubusercontent.com/bfirsh/3c2115692682ae260932a67d93fd94a8/raw/56b19f53f7643bb6c0b822c410c366c3a6244de2/mystery.jpg"}}'
+
+```
+
+As a shorthand, you can add the Docker image's name as an extra line in `cog.yaml`:
+
+```yaml
+image: "r8.im/replicate/resnet"
+```
+
+Once you've done this, you can use `cog push` to build and push the image to a Docker registry:
+
+```bash
+cog push
+# Building r8.im/replicate/resnet...
+# Pushing r8.im/replicate/resnet...
+# Pushed!
+```
+
+The Docker image is now accessible to anyone or any system that has access to this Docker registry.
+
+## Next steps
+
+Those are the basics! Next, you might want to take a look at:
+
+- [A guide to help you set up your own model on Cog.](getting-started-own-model.md)
+- [A guide explaining how to deploy a model.](deploy.md)
+- [Reference for `cog.yaml`](yaml.md)
+- [Reference for the Python library](python.md)
 
 
 ---
@@ -1662,37 +2555,31 @@ Content-Type: application/json
 }
 ```
 
-When creating a prediction synchronously,
-the client can configure a base URL to upload output files to instead
-by setting the `output_file_prefix` parameter in the request body:
+To upload output files to external storage instead,
+start the HTTP server with the `--upload-url` flag set to a base URL.
+This applies to both synchronous and asynchronous predictions.
 
-```http
-POST /predictions HTTP/1.1
-Content-Type: application/json; charset=utf-8
-
-{
-    "input": {"prompt": "A picture of an onion with sunglasses"},
-    "output_file_prefix": "https://example.com/upload",
-}
+```console
+python -m cog.server.http --upload-url https://example.com/upload/
 ```
 
 When the model produces a file output,
-the server sends the following request to upload the file to the configured URL:
+the server uploads it with an HTTP `PUT` request to
+`{upload-url}/{filename}`, sending the raw file bytes
+with the file's `Content-Type`:
 
 ```http
-PUT /upload HTTP/1.1
+PUT /upload/image.png HTTP/1.1
 Host: example.com
-Content-Type: multipart/form-data
-
---boundary
-Content-Disposition: form-data; name="file"; filename="image.png"
 Content-Type: image/png
 
 <binary data>
---boundary--
 ```
 
-If the upload succeeds, the server responds with output:
+The resulting URL is taken from the response's `Location` header
+(falling back to the request URL), with query parameters stripped.
+If the upload succeeds, the prediction output is the uploaded URL
+instead of a data URL:
 
 ```http
 HTTP/1.1 200 OK
@@ -1700,15 +2587,11 @@ Content-Type: application/json
 
 {
     "status": "succeeded",
-    "output": "http://example.com/upload/image.png"
+    "output": "https://example.com/upload/image.png"
 }
 ```
 
 If the upload fails, the server responds with an error.
-
-> [!IMPORTANT]  
-> File uploads for predictions created asynchronously
-> require `--upload-url` to be specified when starting the HTTP server.
 
 <a id="api"></a>
 
@@ -3030,6 +3913,438 @@ If you are doing development of a Cog model like Llama or SDXL, you can test tha
 ```console
 cog run -e COG_WEIGHTS=https://replicate.delivery/pbxt/xyz/weights.tar -i prompt="a photo of TOK"
 ```
+
+
+---
+
+# Using `cog` on Windows 11 with WSL 2
+
+- [0. Prerequisites](#0-prerequisites)
+- [1. Install the GPU driver](#1-install-the-gpu-driver)
+- [2. Unlocking features](#2-unlocking-features)
+  - [2.1. Unlock WSL2](#21-unlock-wsl2)
+  - [2.2. Unlock virtualization](#22-unlock-virtualization)
+  - [2.3. Reboot](#23-reboot)
+- [3. Update MS Linux kernel](#3-update-ms-linux-kernel)
+- [4. Configure WSL 2](#4-configure-wsl-2)
+- [5. Configure CUDA WSL-Ubuntu Toolkit](#5-configure-cuda-wsl-ubuntu-toolkit)
+- [6. Install Docker](#6-install-docker)
+- [7. Install `cog` and pull an image](#7-install-cog-and-pull-an-image)
+- [8. Run a model in WSL 2](#8-run-a-model-in-wsl-2)
+- [9. References](#9-references)
+
+Running cog on Windows is now possible thanks to WSL 2. Follow this guide to enable WSL 2 and GPU passthrough on Windows 11.
+
+**Windows 10 is not officially supported, as you need to be on an insider build in order to use GPU passthrough.**
+
+## 0. Prerequisites
+
+Before beginning installation, make sure you have:
+
+- Windows 11.
+- NVIDIA GPU.
+  - RTX 2000/3000 series
+  - Kesler/Tesla/Volta/Ampere series
+  - Other configurations are not guaranteed to work.
+
+## 1. Install the GPU driver
+
+Per NVIDIA, the first order of business is to install the latest Game Ready drivers for your NVIDIA GPU.
+
+<https://www.nvidia.com/download/index.aspx>
+
+I have an NVIDIA RTX 2070 Super, so filled out the form as such:
+
+![a form showing the correct model number selected for an RTX 2070 Super](images/nvidia_driver_select.png)
+
+Click "search", and follow the dialogue to download and install the driver.
+
+Restart your computer once the driver has finished installation.
+
+## 2. Unlocking features
+
+Open Windows Terminal as an administrator.
+
+- Use start to search for "Terminal"
+- Right click -> Run as administrator...
+
+Run the following powershell command to enable the Windows Subsystem for Linux and Virtual Machine Platform capabilities.
+
+### 2.1. Unlock WSL2
+
+```powershell
+dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+```
+
+If you see an error about permissions, make sure the terminal you are using is run as an administrator and that you have an account with administrator-level privileges.
+
+### 2.2. Unlock virtualization
+
+```powershell
+dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+```
+
+If this command fails, make sure to [enable virtualization capabilities](https://docs.microsoft.com/en-us/windows/wsl/troubleshooting#error-0x80370102-the-virtual-machine-could-not-be-started-because-a-required-feature-is-not-installed) in your computer's BIOS/UEFI. A successful output will print `The operation completed successfully.`
+
+![Output from running the above commands successfully. Should read "The operation completed successfully".](images/enable_feature_success.png)
+
+### 2.3. Reboot
+
+Before moving forward, make sure you reboot your computer so that Windows 11 will have WSL2 and virtualization available to it.
+
+## 3. Update MS Linux kernel
+
+Download and run the [WSL2 Linux kernel update package for x64 machines](https://wslstorestorage.blob.core.windows.net/wslblob/wsl_update_x64.msi) msi installer. When prompted for elevated permissions, click 'yes' to approve the installation.
+
+To ensure you are using the correct WSL kernel, `open Windows Terminal as an administrator` and enter:
+
+```powershell
+wsl cat /proc/version
+```
+
+This will return a complicated string such as:
+
+```sh
+Linux version 5.10.102.1-microsoft-standard-WSL2 (oe-user@oe-host) (x86_64-msft-linux-gcc (GCC) 9.3.0, GNU ld (GNU Binutils) 2.34.0.20200220)
+```
+
+The version we are interested in is `Linux version 5.10.102.1`. At this point, you should have updated your kernel to be at least `Linux version 5.10.43.3`.
+
+If you can't get the correct kernel version to show:
+
+Open `Settings` → `Windows Update` → `Advanced options` and ensure `Receive updates for other Microsoft products` is enabled. Then go to `Windows Update` again and click `Check for updates`.
+
+## 4. Configure WSL 2
+
+First, configure Windows to use the virtualization-based version of WSL (version 2) by default. In a Windows Terminal with administrator privileges, type the following:
+
+```powershell
+wsl --set-default-version 2
+```
+
+Now, you will need to go to the Microsoft Store and [Download Ubuntu 18.04](https://www.microsoft.com/store/apps/9N9TNGVNDL3Q)
+
+![Screenshot showing the "Ubuntu" store page](https://docs.microsoft.com/en-us/windows/wsl/media/ubuntustore.png)
+
+Launch the "Ubuntu" app available in your Start Menu. Linux will require its own user account and password, which you will need to enter now:
+
+![a terminal showing input for user account info on WSL 2](https://docs.microsoft.com/en-us/windows/wsl/media/ubuntuinstall.png)
+
+## 5. Configure CUDA WSL-Ubuntu Toolkit
+
+By default, a shimmed version of the CUDA tooling is provided by your Windows GPU drivers.
+
+Important: you should _never_ use instructions for installing CUDA-toolkit in a generic linux fashion. in WSL 2, you _always_ want to use the provided `CUDA Toolkit using WSL-Ubuntu Package`.
+
+First, open PowerShell or Windows Command Prompt in administrator mode
+by right-clicking and selecting "Run as administrator".
+Then enter the following command:
+
+```powershell
+wsl.exe
+```
+
+This should drop you into your running linux VM. Now you can run the following bash commands to install the correct version of cuda-toolkit for WSL-Ubuntu. Note that the version of CUDA used below may not be the version of CUDA your GPU supports.
+
+```sh
+sudo apt-key del 7fa2af80 # if this line fails, you may remove it.
+wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-wsl-ubuntu.pin
+sudo mv cuda-wsl-ubuntu.pin /etc/apt/preferences.d/cuda-repository-pin-600
+wget https://developer.download.nvidia.com/compute/cuda/11.7.0/local_installers/cuda-repo-wsl-ubuntu-11-7-local_11.7.0-1_amd64.deb
+sudo dpkg -i cuda-repo-wsl-ubuntu-11-7-local_11.7.0-1_amd64.deb
+sudo cp /var/cuda-repo-wsl-ubuntu-11-7-local/cuda-B81839D3-keyring.gpg /usr/share/keyrings/
+sudo apt-get update
+sudo apt-get -y install cuda-toolkit-11-7
+```
+
+## 6. Install Docker
+
+Download and install [Docker Desktop for Windows](https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe). It has WSL 2 support built in by default.
+
+Once installed, run `Docker Desktop`, you can ignore the first-run tutorial. Go to **Settings → General** and ensure **Use the WSL 2 based engine** has a checkmark next to it. Click **Apply & Restart**.
+
+!["Use the WSL 2 based engine" is checked in this interface](images/wsl2-enable.png)
+
+Reboot your computer one more time.
+
+## 7. Install `cog` and pull an image
+
+Open Windows Terminal and enter your WSL 2 VM:
+
+```powershell
+wsl.exe
+```
+
+Download and install `cog` inside the VM by following the [Linux install instructions in the README](../../README.md#install).
+
+Make sure it's available by typing:
+
+```bash
+which cog # should output /usr/local/bin/cog
+cog --version # should output the cog version number.
+```
+
+## 8. Run a model in WSL 2
+
+Finally, make sure it works. Let's try running `afiaka87/glid-3-xl` locally:
+
+```bash
+cog run 'r8.im/afiaka87/glid-3-xl' -i prompt="a fresh avocado floating in the water" -o output.json
+```
+
+![Output from a running cog run in Windows Terminal](images/cog_model_output.png)
+
+While your run is executing, you can use `Task Manager` to keep an eye on GPU memory consumption:
+
+![Windows task manager will show the shared host/guest GPU memory](images/memory-usage.png)
+
+This model just barely manages to fit under 8 GB of VRAM.
+
+Notice that output is returned as JSON for this model as it has a complex return type. You will want to convert the base64 string in the json array to an image.
+
+`jq` can help with this:
+
+```sh
+sudo apt install jq
+```
+
+The following bash uses `jq` to grab the first element in our output array and converts it from a base64 string to a `png` file.
+
+```bash
+jq -cs '.[0][0][0]' output.json | cut --delimiter "," --field 2 | base64 --ignore-garbage --decode > output.png
+```
+
+When using WSL 2, you can access Windows binaries with the `.exe` extension. This lets you open photos easily within linux.
+
+```bash
+explorer.exe output.png
+```
+
+![a square image of an avocado, generated by the model](images/glide_out.png)
+
+## 9. References
+
+- <https://docs.nvidia.com/cuda/wsl-user-guide/index.html>
+- <https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu&target_version=2.0>
+- <https://www.docker.com/blog/wsl-2-gpu-support-for-docker-desktop-on-nvidia-gpus/>
+- <https://docs.microsoft.com/en-us/windows/wsl/install-manual#step-4---download-the-linux-kernel-update-package>
+- <https://github.com/replicate/cog>
+
+
+---
+
+# Using `cog` on Windows 11 with WSL 2
+
+- [0. Prerequisites](#0-prerequisites)
+- [1. Install the GPU driver](#1-install-the-gpu-driver)
+- [2. Unlocking features](#2-unlocking-features)
+  - [2.1. Unlock WSL2](#21-unlock-wsl2)
+  - [2.2. Unlock virtualization](#22-unlock-virtualization)
+  - [2.3. Reboot](#23-reboot)
+- [3. Update MS Linux kernel](#3-update-ms-linux-kernel)
+- [4. Configure WSL 2](#4-configure-wsl-2)
+- [5. Configure CUDA WSL-Ubuntu Toolkit](#5-configure-cuda-wsl-ubuntu-toolkit)
+- [6. Install Docker](#6-install-docker)
+- [7. Install `cog` and pull an image](#7-install-cog-and-pull-an-image)
+- [8. Run a model in WSL 2](#8-run-a-model-in-wsl-2)
+- [9. References](#9-references)
+
+Running cog on Windows is now possible thanks to WSL 2. Follow this guide to enable WSL 2 and GPU passthrough on Windows 11.
+
+**Windows 10 is not officially supported, as you need to be on an insider build in order to use GPU passthrough.**
+
+## 0. Prerequisites
+
+Before beginning installation, make sure you have:
+
+- Windows 11.
+- NVIDIA GPU.
+  - RTX 2000/3000 series
+  - Kesler/Tesla/Volta/Ampere series
+  - Other configurations are not guaranteed to work.
+
+## 1. Install the GPU driver
+
+Per NVIDIA, the first order of business is to install the latest Game Ready drivers for your NVIDIA GPU.
+
+<https://www.nvidia.com/download/index.aspx>
+
+I have an NVIDIA RTX 2070 Super, so filled out the form as such:
+
+![a form showing the correct model number selected for an RTX 2070 Super](images/nvidia_driver_select.png)
+
+Click "search", and follow the dialogue to download and install the driver.
+
+Restart your computer once the driver has finished installation.
+
+## 2. Unlocking features
+
+Open Windows Terminal as an administrator.
+
+- Use start to search for "Terminal"
+- Right click -> Run as administrator...
+
+Run the following powershell command to enable the Windows Subsystem for Linux and Virtual Machine Platform capabilities.
+
+### 2.1. Unlock WSL2
+
+```powershell
+dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+```
+
+If you see an error about permissions, make sure the terminal you are using is run as an administrator and that you have an account with administrator-level privileges.
+
+### 2.2. Unlock virtualization
+
+```powershell
+dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+```
+
+If this command fails, make sure to [enable virtualization capabilities](https://docs.microsoft.com/en-us/windows/wsl/troubleshooting#error-0x80370102-the-virtual-machine-could-not-be-started-because-a-required-feature-is-not-installed) in your computer's BIOS/UEFI. A successful output will print `The operation completed successfully.`
+
+![Output from running the above commands successfully. Should read "The operation completed successfully".](images/enable_feature_success.png)
+
+### 2.3. Reboot
+
+Before moving forward, make sure you reboot your computer so that Windows 11 will have WSL2 and virtualization available to it.
+
+## 3. Update MS Linux kernel
+
+Download and run the [WSL2 Linux kernel update package for x64 machines](https://wslstorestorage.blob.core.windows.net/wslblob/wsl_update_x64.msi) msi installer. When prompted for elevated permissions, click 'yes' to approve the installation.
+
+To ensure you are using the correct WSL kernel, `open Windows Terminal as an administrator` and enter:
+
+```powershell
+wsl cat /proc/version
+```
+
+This will return a complicated string such as:
+
+```sh
+Linux version 5.10.102.1-microsoft-standard-WSL2 (oe-user@oe-host) (x86_64-msft-linux-gcc (GCC) 9.3.0, GNU ld (GNU Binutils) 2.34.0.20200220)
+```
+
+The version we are interested in is `Linux version 5.10.102.1`. At this point, you should have updated your kernel to be at least `Linux version 5.10.43.3`.
+
+If you can't get the correct kernel version to show:
+
+Open `Settings` → `Windows Update` → `Advanced options` and ensure `Receive updates for other Microsoft products` is enabled. Then go to `Windows Update` again and click `Check for updates`.
+
+## 4. Configure WSL 2
+
+First, configure Windows to use the virtualization-based version of WSL (version 2) by default. In a Windows Terminal with administrator privileges, type the following:
+
+```powershell
+wsl --set-default-version 2
+```
+
+Now, you will need to go to the Microsoft Store and [Download Ubuntu 18.04](https://www.microsoft.com/store/apps/9N9TNGVNDL3Q)
+
+![Screenshot showing the "Ubuntu" store page](https://docs.microsoft.com/en-us/windows/wsl/media/ubuntustore.png)
+
+Launch the "Ubuntu" app available in your Start Menu. Linux will require its own user account and password, which you will need to enter now:
+
+![a terminal showing input for user account info on WSL 2](https://docs.microsoft.com/en-us/windows/wsl/media/ubuntuinstall.png)
+
+## 5. Configure CUDA WSL-Ubuntu Toolkit
+
+By default, a shimmed version of the CUDA tooling is provided by your Windows GPU drivers.
+
+Important: you should _never_ use instructions for installing CUDA-toolkit in a generic linux fashion. in WSL 2, you _always_ want to use the provided `CUDA Toolkit using WSL-Ubuntu Package`.
+
+First, open PowerShell or Windows Command Prompt in administrator mode
+by right-clicking and selecting "Run as administrator".
+Then enter the following command:
+
+```powershell
+wsl.exe
+```
+
+This should drop you into your running linux VM. Now you can run the following bash commands to install the correct version of cuda-toolkit for WSL-Ubuntu. Note that the version of CUDA used below may not be the version of CUDA your GPU supports.
+
+```sh
+sudo apt-key del 7fa2af80 # if this line fails, you may remove it.
+wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-wsl-ubuntu.pin
+sudo mv cuda-wsl-ubuntu.pin /etc/apt/preferences.d/cuda-repository-pin-600
+wget https://developer.download.nvidia.com/compute/cuda/11.7.0/local_installers/cuda-repo-wsl-ubuntu-11-7-local_11.7.0-1_amd64.deb
+sudo dpkg -i cuda-repo-wsl-ubuntu-11-7-local_11.7.0-1_amd64.deb
+sudo cp /var/cuda-repo-wsl-ubuntu-11-7-local/cuda-B81839D3-keyring.gpg /usr/share/keyrings/
+sudo apt-get update
+sudo apt-get -y install cuda-toolkit-11-7
+```
+
+## 6. Install Docker
+
+Download and install [Docker Desktop for Windows](https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe). It has WSL 2 support built in by default.
+
+Once installed, run `Docker Desktop`, you can ignore the first-run tutorial. Go to **Settings → General** and ensure **Use the WSL 2 based engine** has a checkmark next to it. Click **Apply & Restart**.
+
+!["Use the WSL 2 based engine" is checked in this interface](images/wsl2-enable.png)
+
+Reboot your computer one more time.
+
+## 7. Install `cog` and pull an image
+
+Open Windows Terminal and enter your WSL 2 VM:
+
+```powershell
+wsl.exe
+```
+
+Download and install `cog` inside the VM by following the [Linux install instructions in the README](../../README.md#install).
+
+Make sure it's available by typing:
+
+```bash
+which cog # should output /usr/local/bin/cog
+cog --version # should output the cog version number.
+```
+
+## 8. Run a model in WSL 2
+
+Finally, make sure it works. Let's try running `afiaka87/glid-3-xl` locally:
+
+```bash
+cog run 'r8.im/afiaka87/glid-3-xl' -i prompt="a fresh avocado floating in the water" -o output.json
+```
+
+![Output from a running cog run in Windows Terminal](images/cog_model_output.png)
+
+While your run is executing, you can use `Task Manager` to keep an eye on GPU memory consumption:
+
+![Windows task manager will show the shared host/guest GPU memory](images/memory-usage.png)
+
+This model just barely manages to fit under 8 GB of VRAM.
+
+Notice that output is returned as JSON for this model as it has a complex return type. You will want to convert the base64 string in the json array to an image.
+
+`jq` can help with this:
+
+```sh
+sudo apt install jq
+```
+
+The following bash uses `jq` to grab the first element in our output array and converts it from a base64 string to a `png` file.
+
+```bash
+jq -cs '.[0][0][0]' output.json | cut --delimiter "," --field 2 | base64 --ignore-garbage --decode > output.png
+```
+
+When using WSL 2, you can access Windows binaries with the `.exe` extension. This lets you open photos easily within linux.
+
+```bash
+explorer.exe output.png
+```
+
+![a square image of an avocado, generated by the model](images/glide_out.png)
+
+## 9. References
+
+- <https://docs.nvidia.com/cuda/wsl-user-guide/index.html>
+- <https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu&target_version=2.0>
+- <https://www.docker.com/blog/wsl-2-gpu-support-for-docker-desktop-on-nvidia-gpus/>
+- <https://docs.microsoft.com/en-us/windows/wsl/install-manual#step-4---download-the-linux-kernel-update-package>
+- <https://github.com/replicate/cog>
 
 
 ---
