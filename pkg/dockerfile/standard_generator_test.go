@@ -32,15 +32,27 @@ ENTRYPOINT ["/sbin/tini", "--"]
 var testInstallUVLine = "COPY --from=ghcr.io/astral-sh/uv:" + UVVersion + " /uv /uvx /usr/local/bin/\nENV UV_SYSTEM_PYTHON=true"
 
 func testInstallCog(stripped bool) string {
+	return testInstallCogInner(stripped, false)
+}
+
+func testInstallCogGPU(stripped bool) string {
+	return testInstallCogInner(stripped, true)
+}
+
+func testInstallCogInner(stripped bool, gpu bool) string {
 	strippedCall := ""
 	if stripped {
 		strippedCall += " && find / -type f -name \"*python*.so\" -not -name \"*cpython*.so\" -exec strip -S {} \\;"
 	}
+	breakSys := ""
+	if gpu {
+		breakSys = "--break-system-packages "
+	}
 	// When coglet has no explicit version pin (empty version via pypiWheels()),
 	// the SDK's own dependency handles coglet installation — no explicit coglet line.
 	return fmt.Sprintf(`ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/uv uv pip install --no-cache cog%s
-ENV CFLAGS=`, strippedCall)
+RUN --mount=type=cache,target=/root/.cache/uv uv pip install %s--no-cache cog%s
+ENV CFLAGS=`, breakSys, strippedCall)
 }
 
 // pypiWheels sets the generator to use unpinned PyPI for both cog and coglet,
@@ -132,7 +144,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib64:/usr/local/nvidia/bin
 ENV NVIDIA_DRIVER_CAPABILITIES=all
-` + testTini() + testInstallPython("3.12") + testInstallCog(gen.strip) + `
+` + testTini() + testInstallPython("3.12") + testInstallCogGPU(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 WORKDIR /src
 EXPOSE 5000
@@ -240,9 +252,9 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*
 ` + testInstallPython("3.12") + `COPY --from=cog_build requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
-` + testInstallCog(gen.strip) + `
+` + testInstallCogGPU(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
 WORKDIR /src
@@ -324,6 +336,64 @@ build:
 	require.NoError(t, err)
 	fmt.Println(actual)
 	require.Contains(t, actual, `uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt`)
+}
+
+// GPU builds on nvidia/cuda base images install Python via `uv python install`
+// (in installPythonCUDA), which marks it as externally managed (PEP 668). All
+// pip install lines must include --break-system-packages.
+func TestGPUCUDAPathIncludesBreakSystemPackages(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: true
+  python_version: "3.12"
+  python_packages:
+    - torch==2.0.1
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, t.TempDir(), "", command, client, true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	// User python_packages install must use --break-system-packages
+	require.Contains(t, actual, `uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt`)
+	// Cog SDK install must also use --break-system-packages
+	require.Contains(t, actual, `uv pip install --break-system-packages --no-cache cog`)
+}
+
+// CPU builds use python:X-slim where Python is not uv-managed,
+// so --break-system-packages must NOT appear.
+func TestCPUPathOmitsBreakSystemPackages(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  gpu: false
+  python_version: "3.12"
+  python_packages:
+    - pandas==2.0.3
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(""))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	gen, err := NewStandardGenerator(conf, tmpDir, t.TempDir(), "", command, client, true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	require.NotContains(t, actual, "--break-system-packages")
 }
 
 // mockFileInfo is a test type to mock os.FileInfo
@@ -408,9 +478,9 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all
 ` + testTini() + `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update -qq && apt-get install -qqy ffmpeg cowsay && rm -rf /var/lib/apt/lists/*` + `
 ` + testInstallPython("3.12") + `COPY --from=cog_build requirements.txt /tmp/requirements.txt
 ENV CFLAGS="-O3 -funroll-loops -fno-strict-aliasing -flto -S"
-RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip uv run pip install --break-system-packages --cache-dir /root/.cache/pip -r /tmp/requirements.txt
 ENV CFLAGS=
-` + testInstallCog(gen.strip) + `
+` + testInstallCogGPU(gen.strip) + `
 RUN find / -type f -name "*python*.so" -printf "%h\n" | sort -u > /etc/ld.so.conf.d/cog.conf && ldconfig
 RUN cowsay moo
 COPY --from=weights --link /src/checkpoints /src/checkpoints
