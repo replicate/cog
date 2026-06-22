@@ -678,15 +678,11 @@ run = "rm -f integration-tests/.bin/cog pkg/wheels/cog-*.whl pkg/wheels/coglet-*
 # Docs tasks
 # =============================================================================
 
-[tasks.docs]
-description = "Build documentation"
-sources = ["docs/**/*.md", "README.md", "CONTRIBUTING.md", "mkdocs.yml"]
-outputs = ["site/**"]
+[tasks."docs:stage"]
+description = "Stage documentation for building (preprocess links, prepare .docs-build)"
 run = """
 #!/usr/bin/env bash
 set -e
-uv pip install mkdocs-material
-
 rm -rf .docs-build
 cp -r docs .docs-build
 
@@ -700,7 +696,20 @@ cp CONTRIBUTING.md .docs-build/CONTRIBUTING.md
 
 # Point mkdocs at the staged docs directory.
 sed 's|^docs_dir: docs/|docs_dir: .docs-build/|' mkdocs.yml > .docs-build-mkdocs.yml
-mkdocs build -f .docs-build-mkdocs.yml
+
+echo .docs-build-mkdocs.yml
+"""
+
+[tasks.docs]
+description = "Build documentation"
+sources = ["docs/**/*.md", "README.md", "CONTRIBUTING.md", "mkdocs.yml"]
+outputs = ["site/**"]
+run = """
+#!/usr/bin/env bash
+set -e
+config="$(mise run --quiet docs:stage)"
+uv pip install mkdocs-material
+mkdocs build -f "$config"
 """
 
 [tasks."docs:serve"]
@@ -708,20 +717,9 @@ description = "Serve documentation locally"
 run = """
 #!/usr/bin/env bash
 set -e
+config="$(mise run --quiet docs:stage)"
 uv pip install mkdocs-material
-
-rm -rf .docs-build
-cp -r docs .docs-build
-
-# This strips exactly one "../" from any relative path to README.md, handling pages at any nesting depth.
-find .docs-build -name '*.md' -type f -exec sed -i.bak 's|\\.\\./\\(\\.\\./\\)*README\\.md|\\1README.md|g' {} +
-find .docs-build -name '*.md.bak' -type f -delete
-
-sed 's/docs\\///g' README.md > .docs-build/README.md
-cp CONTRIBUTING.md .docs-build/CONTRIBUTING.md
-
-sed 's|^docs_dir: docs/|docs_dir: .docs-build/|' mkdocs.yml > .docs-build-mkdocs.yml
-mkdocs serve -f .docs-build-mkdocs.yml
+mkdocs serve -f "$config"
 """
 
 [tasks."docs:llm"]

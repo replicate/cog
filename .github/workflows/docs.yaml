@@ -21,12 +21,11 @@ jobs:
       - name: Generate CLI docs
         run: go run ./tools/gendocs/main.go -o docs/cli.md
 
-      - name: Copy top-level docs like README and CONTRIBUTING
-        run: |
-          sed 's/docs\///g' README.md > ./docs/README.md
-          cp CONTRIBUTING.md ./docs/
+      - name: Prepare docs
+        id: stage
+        run: echo "config=$(mise run --quiet docs:stage)" >> "$GITHUB_OUTPUT"
 
       - name: Deploy
         run: |
           pip install mkdocs-material
-          mkdocs gh-deploy --force
+          mkdocs gh-deploy -f "${{ steps.stage.outputs.config }}" --force
