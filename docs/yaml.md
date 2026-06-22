@@ -246,3 +246,24 @@ predict: "predict.py:Predictor"
 ```
 
 See [the Python API documentation for more information](python.md).
+
+## Troubleshooting
+
+### `externally-managed-environment` errors when installing requirements
+
+Image builds can fail while installing `python_requirements` with an error like this:
+
+```text
+error: externally-managed-environment
+This Python installation is managed by uv and should not be modified.
+```
+
+This happens during the generated `uv run pip install -r /tmp/requirements.txt` build step. To allow pip and uv to install packages into the uv-managed Python environment used by the image build, add these environment variables to your `cog.yaml`:
+
+```yaml
+environment:
+  - PIP_BREAK_SYSTEM_PACKAGES=1
+  - UV_BREAK_SYSTEM_PACKAGES=1
+build:
+  python_requirements: requirements.txt
+```
