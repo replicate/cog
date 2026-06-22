@@ -468,6 +468,24 @@ func TestCUDABaseImageTag(t *testing.T) {
 	require.Equal(t, "nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04", imageTag)
 }
 
+func TestCUDABaseImageTagWithExplicitMinorCUDAAndCuDNN(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.10",
+			CUDA:          "11.6",
+			CuDNN:         "8",
+		},
+	}
+
+	err := config.Complete("")
+	require.NoError(t, err)
+
+	imageTag, err := config.CUDABaseImageTag()
+	require.NoError(t, err)
+	require.Equal(t, "nvidia/cuda:11.6.2-cudnn8-devel-ubuntu20.04", imageTag)
+}
+
 func TestBuildRunItemStringYAML(t *testing.T) {
 	type BuildWrapper struct {
 		Build *Build `yaml:"build"`

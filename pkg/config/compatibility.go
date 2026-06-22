@@ -195,7 +195,7 @@ func cudaFromTF(ver string) (cuda string, cuDNN string, err error) {
 func compatibleCuDNNsForCUDA(cuda string) []string {
 	cuDNNs := []string{}
 	for _, image := range CUDABaseImages {
-		if image.CUDA == cuda {
+		if version.Matches(cuda, image.CUDA) {
 			cuDNNs = append(cuDNNs, image.CuDNN)
 		}
 	}
