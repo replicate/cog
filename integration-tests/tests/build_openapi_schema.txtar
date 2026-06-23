@@ -12,6 +12,35 @@ stdout '"text":'
 stdout '"path":'
 stdout '"type":"string"'
 stdout '"format":"uri"'
+stdout '"version":"[^"]*"'
+
+# Check the schema version matches the CLI version
+exec python3 check_schema_version.py
+stdout '^OK$'
+
+-- check_schema_version.py --
+import json
+import os
+import subprocess
+import sys
+
+image = os.environ["TEST_IMAGE"]
+schema_label = subprocess.check_output(
+    ["docker", "inspect", image, '--format={{index .Config.Labels "run.cog.openapi_schema"}}'],
+    text=True,
+).strip()
+schema = json.loads(schema_label)
+schema_version = schema["info"]["version"]
+
+cog_version_output = subprocess.check_output(["cog", "--version"], text=True).strip()
+# Output format: "cog version <version> (built <date>)"
+cli_version = cog_version_output.split()[2]
+
+if schema_version != cli_version:
+    print(f"Schema version {schema_version!r} does not match CLI version {cli_version!r}", file=sys.stderr)
+    sys.exit(1)
+
+print("OK")
 
 -- cog.yaml --
 build:

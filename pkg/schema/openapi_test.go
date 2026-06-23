@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/global"
 )
 
 // ---------------------------------------------------------------------------
@@ -80,7 +82,7 @@ func TestGeneratesValidOpenAPI(t *testing.T) {
 
 	assert.Equal(t, "3.0.2", spec["openapi"])
 	assert.Equal(t, "Cog", getPath(spec, "info", "title"))
-	assert.Equal(t, "0.1.0", getPath(spec, "info", "version"))
+	assert.Equal(t, global.Version, getPath(spec, "info", "version"))
 }
 
 func TestPredictEndpoints(t *testing.T) {
