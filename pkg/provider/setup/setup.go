@@ -11,16 +11,25 @@ import (
 
 var once sync.Once
 
-// Init initializes the default provider registry with all built-in providers
-// This function is idempotent - it only runs once even if called multiple times
+// registerBuiltinProviders registers all built-in providers on the given registry.
+// Providers are registered in priority order: Replicate first (more specific),
+// then Generic as a fallback for any OCI registry.
+func registerBuiltinProviders(reg *provider.Registry) {
+	reg.Register(replicate.New())
+	reg.Register(generic.New())
+}
+
+// NewRegistry creates a new provider registry with all built-in providers registered.
+func NewRegistry() *provider.Registry {
+	reg := provider.NewRegistry()
+	registerBuiltinProviders(reg)
+	return reg
+}
+
+// Init initializes the default provider registry with all built-in providers.
+// This function is idempotent - it only runs once even if called multiple times.
 func Init() {
 	once.Do(func() {
-		registry := provider.DefaultRegistry()
-
-		// Register Replicate provider first (more specific)
-		registry.Register(replicate.New())
-
-		// Register Generic provider last (fallback for any OCI registry)
-		registry.Register(generic.New())
+		registerBuiltinProviders(provider.DefaultRegistry())
 	})
 }

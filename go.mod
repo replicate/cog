@@ -3,6 +3,7 @@ module github.com/replicate/cog
 go 1.26
 
 require (
+	github.com/alecthomas/kong v1.14.0
 	github.com/anaskhan96/soup v1.2.5
 	github.com/containerd/errdefs v1.0.0
 	github.com/creack/pty v1.1.24
