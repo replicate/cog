@@ -56,7 +56,9 @@ func TestGenerateDockerfile(t *testing.T) {
 	dockerfile, err := generator.GenerateDockerfile(t.Context())
 	require.NoError(t, err)
 	require.True(t, strings.Contains(dockerfile, "FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04"))
-	require.NotContains(t, dockerfile, "--break-system-packages")
+	// nvidia/cuda base images install Python via uv, so --break-system-packages
+	// is always required (PEP 668) — even without the explicit flag.
+	require.Contains(t, dockerfile, "--break-system-packages")
 }
 
 func TestGenerateDockerfileWithBreakSystemPackages(t *testing.T) {
