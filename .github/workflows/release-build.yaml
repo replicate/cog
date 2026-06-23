@@ -211,15 +211,25 @@ jobs:
           def relatives(text):
               return [m.group(1) for m in link.finditer(text) if is_relative_link(m.group(1))]
 
-          whl = glob.glob("dist/cog-*.whl")[0]
+          whl_matches = glob.glob("dist/cog-*.whl")
+          if not whl_matches:
+              sys.exit("No wheel found in dist/ matching dist/cog-*.whl")
+          whl = whl_matches[0]
           with zipfile.ZipFile(whl) as z:
-              name = next(n for n in z.namelist() if n.endswith(".dist-info/METADATA"))
-              whl_meta = z.read(name).decode("utf-8")
+              meta_names = [n for n in z.namelist() if n.endswith(".dist-info/METADATA")]
+              if not meta_names:
+                  sys.exit(f"No METADATA file found in wheel: {whl}")
+              whl_meta = z.read(meta_names[0]).decode("utf-8")
 
-          sdist = glob.glob("dist/cog-*.tar.gz")[0]
+          sdist_matches = glob.glob("dist/cog-*.tar.gz")
+          if not sdist_matches:
+              sys.exit("No sdist found in dist/ matching dist/cog-*.tar.gz")
+          sdist = sdist_matches[0]
           with tarfile.open(sdist) as t:
-              name = next(n for n in t.getnames() if n.endswith("/PKG-INFO"))
-              sdist_meta = t.extractfile(name).read().decode("utf-8")
+              pkg_info_names = [n for n in t.getnames() if n.endswith("/PKG-INFO")]
+              if not pkg_info_names:
+                  sys.exit(f"No PKG-INFO file found in sdist: {sdist}")
+              sdist_meta = t.extractfile(pkg_info_names[0]).read().decode("utf-8")
 
           problems = {}
           for path, meta in ((whl, whl_meta), (sdist, sdist_meta)):
