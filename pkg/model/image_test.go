@@ -1,13 +1,19 @@
 package model
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/global"
 )
+
+func openapiSchemaFixture(version string) string {
+	return fmt.Sprintf(`{"openapi":"3.0.2","info":{"title":"Cog","version":%q},"paths":{}}`, version)
+}
 
 func TestImage_IsCogModel(t *testing.T) {
 	tests := []struct {
@@ -284,7 +290,7 @@ func TestImage_ToModel(t *testing.T) {
 				Labels: map[string]string{
 					LabelConfig:        `{"build":{"python_version":"3.12"},"predict":"predict.py:Predictor"}`,
 					LabelVersion:       "0.10.0",
-					LabelOpenAPISchema: `{"openapi":"3.0.2","info":{"title":"Cog","version":"0.1.0"},"paths":{}}`,
+					LabelOpenAPISchema: openapiSchemaFixture(global.Version),
 				},
 				Source: ImageSourceLocal,
 			},
@@ -388,7 +394,7 @@ func TestImage_ParsedOpenAPISchema(t *testing.T) {
 			name: "valid OpenAPI JSON parses correctly",
 			image: &ImageArtifact{
 				Labels: map[string]string{
-					LabelOpenAPISchema: `{"openapi":"3.0.2","info":{"title":"Cog","version":"0.1.0"},"paths":{}}`,
+					LabelOpenAPISchema: openapiSchemaFixture(global.Version),
 				},
 			},
 			expectNil: false,
@@ -396,7 +402,7 @@ func TestImage_ParsedOpenAPISchema(t *testing.T) {
 			checkSchema: func(t *testing.T, schema *openapi3.T) {
 				require.Equal(t, "3.0.2", schema.OpenAPI)
 				require.Equal(t, "Cog", schema.Info.Title)
-				require.Equal(t, "0.1.0", schema.Info.Version)
+				require.Equal(t, global.Version, schema.Info.Version)
 			},
 		},
 		{
