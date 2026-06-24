@@ -3,6 +3,8 @@ package schema
 import (
 	"encoding/json"
 	"maps"
+
+	"github.com/replicate/cog/pkg/global"
 )
 
 // GenerateOpenAPISchema produces a complete OpenAPI 3.0.2 specification
@@ -254,7 +256,7 @@ func buildOpenAPISpec(info *PredictorInfo) map[string]any {
 
 	return map[string]any{
 		"openapi": "3.0.2",
-		"info":    map[string]any{"title": "Cog", "version": "0.1.0"},
+		"info":    map[string]any{"title": "Cog", "version": global.Version},
 		"paths":   paths,
 		"components": map[string]any{
 			"schemas": components,
