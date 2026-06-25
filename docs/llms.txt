@@ -12,7 +12,7 @@ You can deploy your packaged model to your own infrastructure, or to [Replicate]
 
 - ✅ **Define the inputs and outputs for your model with standard Python.** Then, Cog generates an OpenAPI schema and validates the inputs and outputs.
 
-- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
+- 🎁 **Automatic HTTP inference server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
 
 - 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
 
@@ -28,25 +28,25 @@ build:
     - "libglib2.0-0"
   python_version: "3.13"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
-Define how predictions are run on your model with `predict.py`:
+Define how your model runs with `run.py`:
 
 ```python
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 import torch
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Load the model into memory to make running multiple inferences efficient"""
         self.model = torch.load("./weights.pth")
 
     # The arguments and types the model takes as input
-    def predict(self,
+    def run(self,
           image: Path = Input(description="Grayscale input image")
     ) -> Path:
-        """Run a single prediction on the model"""
+        """Run the model"""
         processed_image = preprocess(image)
         output = self.model(processed_image)
         return postprocess(output)
@@ -54,12 +54,12 @@ class Predictor(BasePredictor):
 
 In the above we accept a path to the image as an input, and return a path to our transformed image after running it through our model.
 
-Now, you can run predictions on this model:
+Now, you can run the model:
 
 ```console
-$ cog predict -i image=@input.jpg
+$ cog run -i image=@input.jpg
 --> Building Docker image...
---> Running Prediction...
+--> Running...
 --> Output written to output.jpg
 ```
 
@@ -122,40 +122,90 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Install
 
-If you're using macOS, you can install Cog using Homebrew:
+Choose your platform for installation instructions.
 
-```console
-brew install replicate/tap/cog
-```
+<details>
+  <summary>macOS</summary>
 
-You can also download and install the latest release using our
-[install script](https://cog.run/install):
+  The easiest way to install Cog on macOS is with Homebrew:
 
-```sh
-# bash, zsh, and other shells
-sh <(curl -fsSL https://cog.run/install.sh)
+  ```console
+  brew install replicate/tap/cog
+  ```
 
-# fish shell
-sh (curl -fsSL https://cog.run/install.sh | psub)
+  You can also use the install script:
 
-# download with wget and run in a separate command
-wget -qO- https://cog.run/install.sh
-sh ./install.sh
-```
+  ```sh
+  # bash, zsh, and other shells
+  sh <(curl -fsSL https://cog.run/install.sh)
 
-You can manually install the latest release of Cog directly from GitHub
-by running the following commands in a terminal:
+  # fish shell
+  sh (curl -fsSL https://cog.run/install.sh | psub)
 
-```console
-sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
-sudo chmod +x /usr/local/bin/cog
-```
+  # download with wget and run in a separate command
+  wget -qO- https://cog.run/install.sh
+  sh ./install.sh
+  ```
 
-Or if you are on docker:
+  Or install manually:
 
-```
-RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
-```
+  ```console
+  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
+  sudo chmod +x /usr/local/bin/cog
+  sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
+  ```
+
+  If you see a Gatekeeper warning saying the binary "cannot be opened because the developer cannot be verified", run:
+
+  ```console
+  sudo xattr -d com.apple.quarantine /usr/local/bin/cog
+  ```
+
+</details>
+
+<details>
+  <summary>Linux</summary>
+
+  You can install Cog using the install script:
+
+  ```sh
+  # bash, zsh, and other shells
+  sh <(curl -fsSL https://cog.run/install.sh)
+
+  # fish shell
+  sh (curl -fsSL https://cog.run/install.sh | psub)
+
+  # download with wget and run in a separate command
+  wget -qO- https://cog.run/install.sh
+  sh ./install.sh
+  ```
+
+  Or install manually:
+
+  ```console
+  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
+  sudo chmod +x /usr/local/bin/cog
+  ```
+
+</details>
+
+<details markdown>
+  <summary>Windows</summary>
+
+  Cog does not natively support Windows, but you can run it on Windows 11 using [WSL 2](docs/wsl2/wsl2.md). Once WSL 2 is set up, follow the Linux installation instructions above.
+
+</details>
+
+<details>
+  <summary>Docker</summary>
+
+  To install Cog inside a Docker image:
+
+  ```dockerfile
+  RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
+  ```
+
+</details>
 
 ## Upgrade
 
@@ -177,10 +227,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 - [Get started with your own model](docs/getting-started-own-model.md)
 - [Using Cog with notebooks](docs/notebooks.md)
 - [Using Cog with Windows 11](docs/wsl2/wsl2.md)
-- [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
+- [Browse the example models in this repo](docs/examples.md)
 - [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
-- [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
+- [Run interface reference](docs/python.md) to learn how the `Runner` interface works
 - [Training interface reference](docs/training.md) to learn how to add a fine-tuning API to your model
 - [HTTP API reference](docs/http.md) to learn how to use the HTTP API that models serve
 
@@ -220,12 +270,13 @@ https://github.com/replicate/cog
       --no-color   Disable colored output
       --version    Show version of Cog
 ```
+
 ## `cog build`
 
 Build a Docker image from the cog.yaml in the current directory.
 
 The generated image contains your model code, dependencies, and the Cog
-runtime. It can be run locally with 'cog predict' or pushed to a registry
+runtime. It can be run locally with 'cog run' or pushed to a registry
 with 'cog push'.
 
 ```
@@ -262,6 +313,28 @@ cog build [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
+
+## `cog doctor`
+
+Diagnose and fix common issues in your Cog project.
+
+NOTE: cog doctor is experimental. Behavior and checks may change in future versions.
+
+By default, cog doctor reports problems without modifying any files.
+Pass --fix to automatically apply safe fixes.
+
+```
+cog doctor [flags]
+```
+
+**Options**
+
+```
+  -f, --file string   The name of the config file. (default "cog.yaml")
+      --fix           Automatically apply fixes
+  -h, --help          help for doctor
+```
+
 ## `cog exec`
 
 Execute a command inside a Docker environment defined by cog.yaml.
@@ -302,12 +375,13 @@ cog exec <command> [arg...] [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
+
 ## `cog init`
 
-Create a cog.yaml and predict.py in the current directory.
+Create a cog.yaml and run.py in the current directory.
 
 These files provide a starting template for defining your model's environment
-and prediction interface. Edit them to match your model's requirements.
+and run interface. Edit them to match your model's requirements.
 
 ```
 cog init [flags]
@@ -325,6 +399,7 @@ cog init [flags]
 ```
   -h, --help   help for init
 ```
+
 ## `cog login`
 
 Log in to a container registry.
@@ -345,58 +420,7 @@ cog login [flags]
   -h, --help          help for login
       --token-stdin   Pass login token on stdin instead of opening a browser. You can find your Replicate login token at https://replicate.com/auth/token
 ```
-## `cog predict`
 
-Run a prediction.
-
-If 'image' is passed, it will run the prediction on that Docker image.
-It must be an image that has been built by Cog.
-
-Otherwise, it will build the model in the current directory and run
-the prediction on that.
-
-```
-cog predict [image] [flags]
-```
-
-**Examples**
-
-```
-  # Run a prediction with named inputs
-  cog predict -i prompt="a photo of a cat"
-
-  # Pass a file as input
-  cog predict -i image=@photo.jpg
-
-  # Save output to a file
-  cog predict -i image=@input.jpg -o output.png
-
-  # Pass multiple inputs
-  cog predict -i prompt="sunset" -i width=1024 -i height=768
-
-  # Run against a pre-built image
-  cog predict r8.im/your-username/my-model -i prompt="hello"
-
-  # Pass inputs as JSON
-  echo '{"prompt": "a cat"}' | cog predict --json @-
-```
-
-**Options**
-
-```
-  -e, --env stringArray              Environment variables, in the form name=value
-  -f, --file string                  The name of the config file. (default "cog.yaml")
-      --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
-  -h, --help                         help for predict
-  -i, --input stringArray            Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg
-      --json string                  Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)
-  -o, --output string                Output path
-      --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
-      --setup-timeout uint32         The timeout for a container to setup (in seconds). (default 300)
-      --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
-      --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
-      --use-replicate-token          Pass REPLICATE_API_TOKEN from local environment into the model context
-```
 ## `cog push`
 
 Build a Docker image from cog.yaml and push it to a container registry.
@@ -434,9 +458,63 @@ cog push [IMAGE] [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
+
+## `cog run`
+
+Run the model.
+
+If 'image' is passed, it will run the model on that Docker image.
+It must be an image that has been built by Cog.
+
+Otherwise, it will build the model in the current directory and run
+it.
+
+```
+cog run [image] [flags]
+```
+
+**Examples**
+
+```
+  # Run the model with named inputs
+  cog run -i prompt="a photo of a cat"
+
+  # Pass a file as input
+  cog run -i image=@photo.jpg
+
+  # Save output to a file
+  cog run -i image=@input.jpg -o output.png
+
+  # Pass multiple inputs
+  cog run -i prompt="sunset" -i width=1024 -i height=768
+
+  # Run against a pre-built image
+  cog run r8.im/your-username/my-model -i prompt="hello"
+
+  # Pass inputs as JSON
+  echo '{"prompt": "a cat"}' | cog run --json @-
+```
+
+**Options**
+
+```
+  -e, --env stringArray              Environment variables, in the form name=value
+  -f, --file string                  The name of the config file. (default "cog.yaml")
+      --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
+  -h, --help                         help for run
+  -i, --input stringArray            Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg
+      --json string                  Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)
+  -o, --output string                Output path
+      --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
+      --setup-timeout uint32         The timeout for a container to setup (in seconds). (default 300)
+      --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
+      --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
+      --use-replicate-token          Pass REPLICATE_API_TOKEN from local environment into the model context
+```
+
 ## `cog serve`
 
-Run a prediction HTTP server.
+Run an HTTP server.
 
 Builds the model and starts an HTTP server that exposes the model's inputs
 and outputs as a REST API. Compatible with the Cog HTTP protocol.
@@ -480,33 +558,35 @@ cog serve [flags]
 # Deploy models with Cog
 
 Cog containers are Docker containers that serve an HTTP server
-for running predictions on your model.
+for running your model.
 You can deploy them anywhere that Docker containers run.
 
-The server inside Cog containers is **coglet**, a Rust-based prediction server
-that handles HTTP requests, worker process management, and prediction execution.
+The server inside Cog containers is **coglet**, a Rust-based inference server
+that handles HTTP requests, worker process management, and run execution.
 
 This guide assumes you have a model packaged with Cog.
 If you don't, [follow our getting started guide](getting-started-own-model.md),
-or use [an example model](https://github.com/replicate/cog-examples).
+or start from one of the [examples in the Cog repository](examples.md).
 
-## Getting started
+## Build a Docker image
 
-First, build your model:
+Build your model into a Docker image:
 
 ```console
 cog build -t my-model
 ```
 
-You can serve predictions locally with `cog serve`:
+The image contains your model code, dependencies, the Cog runtime, and everything in between.
+It serves an HTTP server on port 5000 when run.
 
-```console
-cog serve
-# or, from a built image:
-cog serve my-model
-```
+## Run the model
 
-Alternatively, start the Docker container directly:
+You have several options for running a built image.
+
+### Docker
+
+Run the image directly with Docker.
+This is the approach you'd use for production deployment.
 
 ```shell
 # If your model uses a CPU:
@@ -518,33 +598,155 @@ docker run -d -p 5001:5000 --gpus all my-model
 
 The server listens on port 5000 inside the container (mapped to 5001 above).
 
-To view the OpenAPI schema,
-open [localhost:5001/openapi.json](http://localhost:5001/openapi.json)
-in your browser
-or use cURL to make a request:
+### cog serve
+
+For local development, `cog serve` builds the image and starts the server
+with your project directory mounted in:
+
+```console
+cog serve
+```
+
+By default the server runs on port 8393.
+Use `-p` to choose a different port:
+
+```console
+cog serve -p 5000
+```
+
+## Make a prediction
+
+Once the server is running, make predictions by sending a POST request
+to the `/predictions` endpoint.
+Inputs go inside an `"input"` object in the JSON body.
+
+> [!NOTE]
+> The examples below use `localhost:5001`, matching the Docker command above
+> (`-p 5001:5000`). If you used `cog serve`, use `localhost:8393` by default,
+> or the port you passed with `-p`.
+
+```console
+curl http://localhost:5001/predictions -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"input": {"prompt": "a photo of a cat", "steps": 50}}'
+```
+
+```json
+{
+    "status": "succeeded",
+    "output": "data:image/png;base64,...",
+    "metrics": {
+        "predict_time": 4.52
+    }
+}
+```
+
+> [!IMPORTANT]
+> Inputs **must** be wrapped in an `"input"` object.
+> `{"input": {"scale": 2.0}}` is correct; `{"scale": 2.0}` is not.
+
+To discover what inputs your model accepts,
+view the OpenAPI schema:
 
 ```console
 curl http://localhost:5001/openapi.json
 ```
 
-To stop the server, run:
+### Passing file inputs
 
-```console
-docker kill my-model
-```
+File inputs (`cog.Path` or `cog.File` types) are passed as strings
+inside the `"input"` object.
+There are two ways to do this:
 
-To run a prediction on the model,
-call the `/predictions` endpoint,
-passing input in the format expected by your model:
+**1. HTTP/HTTPS URLs**
+
+Pass a URL to a publicly accessible file.
+The server downloads it inside the container:
 
 ```console
 curl http://localhost:5001/predictions -X POST \
-    --header "Content-Type: application/json" \
-    --data '{"input": {"image": "https://.../input.jpg"}}'
+    -H "Content-Type: application/json" \
+    -d '{"input": {"image": "https://example.com/photo.jpg"}}'
 ```
 
-For more details about the HTTP API,
-see the [HTTP API reference documentation](http.md).
+**2. Data URLs (base64)**
+
+To pass a local file, encode it as a [data URL](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs):
+
+```bash
+# Construct a data URL from a local file
+DATA_URL=$(python3 -c "
+import base64, mimetypes
+with open('input.jpg', 'rb') as f:
+    data = base64.b64encode(f.read()).decode()
+mime = mimetypes.guess_type('input.jpg')[0] or 'application/octet-stream'
+print(f'data:{mime};base64,{data}')
+")
+
+curl http://localhost:5001/predictions -X POST \
+    -H "Content-Type: application/json" \
+    -d "{\"input\": {\"image\": \"$DATA_URL\"}}"
+```
+
+> [!NOTE]
+> The HTTP API only accepts JSON (`application/json`).
+> Multipart form uploads are not supported.
+> When you use `cog run -i image=@photo.jpg`,
+> the CLI handles the base64 encoding for you automatically.
+
+### Getting output files
+
+When a model returns a file output (`cog.Path` or `cog.File`),
+the response contains a base64-encoded data URL by default:
+
+```json
+{
+    "status": "succeeded",
+    "output": "data:image/png;base64,iVBORw0KGgo..."
+}
+```
+
+To have the server upload output files to external storage instead,
+start the server with the `--upload-url` flag. The server then uploads each
+file output to that URL prefix and returns the resulting URL in the response.
+
+With `cog serve`:
+
+```console
+cog serve --upload-url https://example.com/upload/
+```
+
+When running the image directly with Docker, override the command to start the
+server with `--upload-url`:
+
+```shell
+docker run -d -p 5001:5000 my-model \
+    python -m cog.server.http --upload-url https://example.com/upload/
+```
+
+With an upload URL configured, file outputs are uploaded and the response
+contains the uploaded URL instead of a data URL:
+
+```json
+{
+    "status": "succeeded",
+    "output": "https://example.com/upload/image.png"
+}
+```
+
+## Run a one-off prediction
+
+The Docker and `cog serve` commands above leave an HTTP server running.
+If you instead want to run a single prediction and exit — without starting a
+server — use `cog run`:
+
+```console
+cog run my-model -i image=@input.jpg
+```
+
+This starts the container, runs one prediction, prints the result, and exits.
+File inputs are passed with the `@` prefix (e.g. `-i image=@photo.jpg`),
+and the CLI handles base64 encoding for you.
 
 ## Health checks
 
@@ -556,9 +758,21 @@ curl http://localhost:5001/health-check
 
 The response includes a `status` field with values like `STARTING`, `READY`, `BUSY`, `SETUP_FAILED`, or `DEFUNCT`. See the [HTTP API reference](http.md#get-health-check) for full details.
 
+## Stop the server
+
+If you started the container with `docker run -d`, stop it with:
+
+```console
+docker kill <container-id>
+```
+
+If you used `cog serve`, press `Ctrl+C` in the terminal.
+(`cog run` exits on its own once the prediction finishes, so there's nothing
+to stop.)
+
 ## Concurrency
 
-By default, the server processes one prediction at a time. To enable concurrent predictions, set the `concurrency.max` option in `cog.yaml`:
+By default, the server processes one run at a time. To enable concurrent runs, set the `concurrency.max` option in `cog.yaml`:
 
 ```yaml
 concurrency:
@@ -572,21 +786,28 @@ See the [`cog.yaml` reference](yaml.md#concurrency) for more details.
 You can configure runtime behavior with environment variables:
 
 - `COG_SETUP_TIMEOUT`: Maximum time in seconds for the `setup()` method (default: no timeout).
+- `COG_MAX_CONCURRENCY`: Number of concurrent prediction slots (default: 1).
 
 See the [environment variables reference](environment.md) for the full list.
+
+## Next steps
+
+- [HTTP API reference](http.md) for full endpoint documentation
+- [Private registries](private-package-registry.md) for using private Python package registries
+- [`cog.yaml` reference](yaml.md) for configuration options
 
 
 ---
 
 # Environment variables
 
-This guide lists the environment variables that change how Cog functions.
+This reference lists the public Cog-specific environment variables that change how Cog behaves.
 
 ## Build-time variables
 
 ### `COG_SDK_WHEEL`
 
-Controls which cog Python SDK wheel is installed in the Docker image during `cog build`. Takes precedence over `build.sdk_version` in `cog.yaml`.
+Controls which Cog Python SDK wheel is installed in the Docker image during `cog build`. Takes precedence over `build.sdk_version` in `cog.yaml`.
 
 **Supported values:**
 
@@ -598,77 +819,39 @@ Controls which cog Python SDK wheel is installed in the Docker image during `cog
 | `https://...`        | Install from URL                                     |
 | `/path/to/wheel.whl` | Install from local file path                         |
 
-**Default behavior:**
+**Default behaviour:**
 
-- **Release builds**: Installs latest cog from PyPI
-- **Development builds**: Auto-detects wheel in `dist/` directory, falls back to latest PyPI
-
-**Examples:**
+- Release builds install the latest Cog SDK from PyPI.
+- Development builds auto-detect a wheel in `dist/`, then fall back to the latest Cog SDK from PyPI.
 
 ```console
-# Use specific PyPI version
 $ COG_SDK_WHEEL=pypi:0.11.0 cog build
-
-# Use local development wheel
 $ COG_SDK_WHEEL=dist cog build
-
-# Use wheel from URL
 $ COG_SDK_WHEEL=https://example.com/cog-0.12.0-py3-none-any.whl cog build
 ```
 
 The `dist` option searches for wheels in:
 
 1. `./dist/` (current directory)
-2. `$REPO_ROOT/dist/` (if REPO_ROOT is set)
+2. `$REPO_ROOT/dist/` (if `REPO_ROOT` is set)
 3. `<git-repo-root>/dist/` (via `git rev-parse`, useful when running from subdirectories)
 
 ### `COGLET_WHEEL`
 
-Controls which coglet wheel is installed in the Docker image. Coglet is the Rust-based prediction server.
+Controls which coglet wheel is installed in the Docker image. Coglet is the Rust-based inference server.
 
-**Supported values:** Same as `COG_SDK_WHEEL`
+**Supported values:** Same as `COG_SDK_WHEEL`.
 
-**Default behavior:** For development builds, auto-detects a wheel in `dist/`. For release builds, installs the latest version from PyPI. Can be overridden with an explicit value.
-
-**Examples:**
+**Default behaviour:** For development builds, auto-detects a wheel in `dist/`. For release builds, installs the latest version from PyPI.
 
 ```console
-# Use local development wheel
 $ COGLET_WHEEL=dist cog build
-
-# Use specific version from PyPI
 $ COGLET_WHEEL=pypi:0.1.0 cog build
-```
-
-## Runtime variables
-
-### `COG_NO_UPDATE_CHECK`
-
-By default, Cog automatically checks for updates
-and notifies you if there is a new version available.
-
-To disable this behavior,
-set the `COG_NO_UPDATE_CHECK` environment variable to any value.
-
-```console
-$ COG_NO_UPDATE_CHECK=1 cog build  # runs without automatic update check
-```
-
-### `COG_SETUP_TIMEOUT`
-
-Controls the maximum time (in seconds) allowed for the model's `setup()` method to complete. If setup exceeds this timeout, the server will report a setup failure.
-
-By default, there is no timeout — setup runs indefinitely.
-
-Set to `0` to disable the timeout (same as default). Invalid values are ignored with a warning.
-
-```console
-$ COG_SETUP_TIMEOUT=300 docker run -p 5000:5000 my-model  # 5-minute setup timeout
 ```
 
 ### `COG_CA_CERT`
 
-Injects a custom CA certificate into the Docker image during `cog build`. This is useful when building behind a corporate proxy or VPN that uses custom certificate authorities (e.g. Cloudflare WARP).
+Injects a custom CA certificate into the Docker image during `cog build`. This is useful when building behind a corporate proxy or VPN that uses custom certificate authorities (for example, Cloudflare WARP).
 
 **Supported values:**
 
@@ -681,18 +864,265 @@ Injects a custom CA certificate into the Docker image during `cog build`. This i
 
 The certificate is installed into the system CA store and the `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` environment variables are set automatically in the built image.
 
-**Examples:**
-
 ```console
-# From a file
 $ COG_CA_CERT=/usr/local/share/ca-certificates/corporate-ca.crt cog build
-
-# From a directory of certs
 $ COG_CA_CERT=/etc/custom-certs/ cog build
-
-# Inline (e.g. from a CI secret)
 $ COG_CA_CERT="$(cat /path/to/cert.pem)" cog build
 ```
+
+### `COG_OPENAPI_SCHEMA`
+
+Uses a pre-built OpenAPI schema instead of generating one from the configured predict or train reference.
+
+The value must be a path to a JSON schema file. Cog reads that file during schema generation and embeds it in the built image.
+
+```console
+$ COG_OPENAPI_SCHEMA=./openapi.json cog build
+```
+
+## CLI and local cache variables
+
+### `COG_NO_UPDATE_CHECK`
+
+Disables Cog's automatic update check. Set it to any non-empty value.
+
+```console
+$ COG_NO_UPDATE_CHECK=1 cog build
+```
+
+### `COG_NO_COLOR`
+
+Disables coloured CLI output. Set it to any non-empty value.
+
+Cog also honours the standard `NO_COLOR` environment variable.
+
+```console
+$ COG_NO_COLOR=1 cog predict -i prompt="hello"
+```
+
+### `COG_SKIP_DOCKER_CHECK`
+
+Skips the `cog doctor` Docker environment check. Set it to any non-empty value.
+
+```console
+$ COG_SKIP_DOCKER_CHECK=1 cog doctor
+```
+
+### `COG_CACHE_DIR`
+
+Overrides Cog's local cache root.
+
+Cog currently uses this cache for the content-addressed weights store. If unset, Cog uses `$XDG_CACHE_HOME/cog` when `XDG_CACHE_HOME` is set, otherwise `$HOME/.cache/cog`.
+
+```console
+$ COG_CACHE_DIR=/mnt/fast-cache cog weights pull
+```
+
+## Model reference and registry variables
+
+### `COG_MODEL`
+
+Overrides the full model reference used by commands that need a model destination, such as `cog push` and weights commands.
+
+The value is parsed as a complete model reference (`registry/repo`, `registry/repo:tag`, or `registry/repo@digest`). If no tag is supplied, Cog generates a timestamp tag.
+
+When `COG_MODEL` is set, it takes precedence over `COG_MODEL_REGISTRY`, `COG_MODEL_REPO`, and `COG_MODEL_TAG`.
+
+```console
+$ COG_MODEL=r8.im/acme/my-model:v1 cog push
+```
+
+### `COG_MODEL_REGISTRY`
+
+Overrides only the registry host of the model reference.
+
+```console
+$ COG_MODEL_REGISTRY=registry.example.com cog push
+```
+
+### `COG_MODEL_REPO`
+
+Overrides only the repository path of the model reference. The value must not include a registry host, tag, or digest.
+
+```console
+$ COG_MODEL_REPO=acme/my-model cog push
+```
+
+### `COG_MODEL_TAG`
+
+Overrides only the tag of the model reference.
+
+Tags starting with `cog-` are reserved for tags that Cog generates internally and are rejected.
+
+```console
+$ COG_MODEL_TAG=staging cog push
+```
+
+### `COG_REGISTRY_HOST`
+
+Changes the default Replicate-compatible registry host used by commands such as `cog login`, base image resolution, and model reference resolution.
+
+The default is `r8.im`.
+
+```console
+$ COG_REGISTRY_HOST=registry.example.com cog login
+```
+
+## Runtime server variables
+
+These variables affect a running model server. Set them in `cog.yaml` under `environment`, pass them with `cog predict -e` or `cog serve -e`, or set them when running the built Docker image.
+
+### `COG_MAX_CONCURRENCY`
+
+Controls how many predictions the model server can run concurrently.
+
+By default, Cog runs one prediction at a time. Invalid values are ignored and the default of `1` is used.
+
+```console
+$ COG_MAX_CONCURRENCY=4 docker run -p 5000:5000 my-model
+```
+
+### `COG_SETUP_TIMEOUT`
+
+Controls the maximum time, in seconds, allowed for the model's `setup()` method to complete. If setup exceeds this timeout, the server reports setup failure.
+
+By default, there is no timeout. Set to `0` to disable the timeout. Invalid values are ignored with a warning.
+
+```console
+$ COG_SETUP_TIMEOUT=300 docker run -p 5000:5000 my-model
+```
+
+### `COG_LOG_LEVEL`
+
+Controls Coglet runtime log verbosity when `RUST_LOG` is not set.
+
+Supported values are `debug`, `info`, `warn`, `warning`, and `error`. The default is `info`.
+
+```console
+$ COG_LOG_LEVEL=debug docker run -p 5000:5000 my-model
+```
+
+### `COG_THROTTLE_RESPONSE_INTERVAL`
+
+Controls how often asynchronous webhook `output` and `logs` events are sent, in seconds.
+
+The default is `0.5` seconds. Invalid values are ignored and the default is used. `start` and `completed` webhook events are always sent immediately.
+
+```console
+$ COG_THROTTLE_RESPONSE_INTERVAL=1 docker run -p 5000:5000 my-model
+```
+
+### `COG_STREAM_HISTORY_CAPACITY`
+
+Controls how many server-sent event stream events are retained per prediction for replay when a client reconnects with `Accept: text/event-stream`.
+
+By default, Cog retains the most recent 1024 events per prediction. Set to `0` to disable replay history while keeping live streaming enabled. Invalid values are ignored with a warning and the default is used.
+
+```console
+$ COG_STREAM_HISTORY_CAPACITY=0 docker run -p 5000:5000 my-model
+$ COG_STREAM_HISTORY_CAPACITY=4096 docker run -p 5000:5000 my-model
+```
+
+### `COG_WEIGHTS`
+
+Provides a weights path or URL to a model whose `setup()` method accepts a `weights` parameter.
+
+```console
+$ cog run -e COG_WEIGHTS=https://example.com/weights.tar -i prompt="hello"
+```
+
+### `COG_USER_AGENT`
+
+Sets the `User-Agent` header used by Cog when downloading URL-backed `File` inputs.
+
+```console
+$ COG_USER_AGENT="my-service/1.0" docker run -p 5000:5000 my-model
+```
+
+## Push tuning variables
+
+### `COG_PUSH_OCI`
+
+Enables Cog's OCI chunked push path for container image layers when set to `1`. If the OCI push fails with a non-fatal error, Cog falls back to Docker's native push path.
+
+```console
+$ COG_PUSH_OCI=1 cog push
+```
+
+### `COG_PUSH_CONCURRENCY`
+
+Controls how many image layers or weight blobs Cog uploads concurrently during push operations.
+
+The default is `5`. Invalid values and values less than `1` are ignored.
+
+```console
+$ COG_PUSH_CONCURRENCY=2 cog push
+```
+
+### `COG_PUSH_DEFAULT_CHUNK_SIZE`
+
+Sets the default multipart upload chunk size, in bytes, when the registry does not advertise a maximum chunk size.
+
+The default is 96 MiB. Invalid values and values less than `1` are ignored.
+
+```console
+$ COG_PUSH_DEFAULT_CHUNK_SIZE=67108864 cog push
+```
+
+### `COG_PUSH_MULTIPART_THRESHOLD`
+
+Sets the minimum blob size, in bytes, before Cog uses multipart upload.
+
+The default is 128 MiB. Invalid values and values less than `1` are ignored.
+
+```console
+$ COG_PUSH_MULTIPART_THRESHOLD=268435456 cog push
+```
+
+
+---
+
+# Examples
+
+Cog's example models now live in the main Cog repository under
+[`examples/`](https://github.com/replicate/cog/tree/main/examples).
+
+If you want a working project to copy from, start with one of these:
+
+- [`hello-world`](https://github.com/replicate/cog/tree/main/examples/hello-world):
+  minimal string input/output example
+- [`hello-image`](https://github.com/replicate/cog/tree/main/examples/hello-image):
+  returns a static image
+- [`hello-context`](https://github.com/replicate/cog/tree/main/examples/hello-context):
+  shows how to read prediction context
+- [`hello-concurrency`](https://github.com/replicate/cog/tree/main/examples/hello-concurrency):
+  demonstrates the `concurrency` setting in `cog.yaml`
+- [`hello-train`](https://github.com/replicate/cog/tree/main/examples/hello-train):
+  defines a training interface
+- [`hello-replicate`](https://github.com/replicate/cog/tree/main/examples/hello-replicate):
+  uses `cog.Secret` inputs and calls the Replicate API
+- [`blur`](https://github.com/replicate/cog/tree/main/examples/blur):
+  simple image-to-image transformation
+- [`resnet`](https://github.com/replicate/cog/tree/main/examples/resnet):
+  GPU image classification with ResNet50
+- [`streaming-text`](https://github.com/replicate/cog/tree/main/examples/streaming-text):
+  streaming text generation with server-sent events
+- [`z-image-turbo`](https://github.com/replicate/cog/tree/main/examples/z-image-turbo):
+  a generative image model example
+- [`notebook`](https://github.com/replicate/cog/tree/main/examples/notebook):
+  runs a Jupyter notebook with Cog
+- [`canary`](https://github.com/replicate/cog/tree/main/examples/canary):
+  small streaming output example used for validation
+- [`managed-weights`](https://github.com/replicate/cog/tree/main/examples/managed-weights):
+  managed weights pipeline fixture
+
+There is also an experimental example:
+
+- [`experimental/resnet-managed-weights`](https://github.com/replicate/cog/tree/main/examples/experimental/resnet-managed-weights):
+  ResNet50 packaged with managed weights
+
+For a quick summary of every example in the tree, see
+[`examples/README.md`](https://github.com/replicate/cog/blob/main/examples/README.md).
 
 
 ---
@@ -703,30 +1133,16 @@ This guide will show you how to put your own machine learning model in a Docker 
 
 ## Prerequisites
 
-- **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
+- **Cog**. If you haven't already installed Cog, follow the [install instructions in the README](../README.md#install).
+- **macOS, Linux, or Windows 11**. Cog works on macOS and Linux. It also works on Windows 11 with [WSL 2](wsl2/wsl2.md).
 - **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
 
 ## Initialization
 
-First, install Cog if you haven't already:
-
-**macOS (recommended):**
-
-```sh
-brew install replicate/tap/cog
-```
-
-**Linux or macOS (manual):**
-
-```sh
-sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
-sudo chmod +x /usr/local/bin/cog
-```
-
 To configure your project for use with Cog, you'll need to add two files:
 
 - [`cog.yaml`](yaml.md) defines system requirements, Python package dependencies, etc
-- [`predict.py`](python.md) describes the prediction interface for your model
+- [`run.py`](python.md) describes the run interface for your model
 
 Use the `cog init` command to generate these files in your project:
 
@@ -773,33 +1189,33 @@ This is handy for ensuring a consistent environment for development or training.
 
 With `cog.yaml`, you can also install system packages and other things. [Take a look at the full reference to see what else you can do.](yaml.md)
 
-## Define how to run predictions
+## Define how to run your model
 
-The next step is to update `predict.py` to define the interface for running predictions on your model. The `predict.py` generated by `cog init` looks something like this:
+The next step is to update `run.py` to define the interface for running your model. The `run.py` generated by `cog init` looks something like this:
 
 ```python
-from cog import BasePredictor, Path, Input
+from cog import BaseRunner, Path, Input
 import torch
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Load the model into memory to make running multiple inferences efficient"""
         self.net = torch.load("weights.pth")
 
-    def predict(self,
+    def run(self,
             image: Path = Input(description="Image to enlarge"),
             scale: float = Input(description="Factor to scale image by", default=1.5)
     ) -> Path:
-        """Run a single prediction on the model"""
+        """Run the model"""
         # ... pre-processing ...
         output = self.net(input)
         # ... post-processing ...
         return output
 ```
 
-Edit your `predict.py` file and fill in the functions with your own model's setup and prediction code. You might need to import parts of your model from another file.
+Edit your `run.py` file and fill in the functions with your own model's setup and run code. You might need to import parts of your model from another file.
 
-You also need to define the inputs to your model as arguments to the `predict()` function, as demonstrated above. For each argument, you need to annotate with a type. The supported types are:
+You also need to define the inputs to your model as arguments to the `run()` function, as demonstrated above. For each argument, you need to annotate with a type. The supported types are:
 
 - `str`: a string
 - `int`: an integer
@@ -820,21 +1236,21 @@ You can provide more information about the input with the `Input()` function, as
 - `choices`: For `str` or `int` types, a list of possible values for this input.
 - `deprecated`: Mark this input as deprecated with a message explaining what to use instead.
 
-There are some more advanced options you can pass, too. For more details, [take a look at the prediction interface documentation](python.md).
+There are some more advanced options you can pass, too. For more details, [take a look at the run interface documentation](python.md).
 
-Next, add the line `predict: "predict.py:Predictor"` to your `cog.yaml`, so it looks something like this:
+Next, add the line `run: "run.py:Runner"` to your `cog.yaml`, so it looks something like this:
 
 ```yaml
 build:
   python_version: "3.13"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
-That's it! To test this works, try running a prediction on the model:
+That's it! To test this works, try running the model:
 
 ```
-$ cog predict -i image=@input.jpg
+$ cog run -i image=@input.jpg
 ✓ Building Docker image from cog.yaml... Successfully built 664ef88bc1f4
 ✓ Model running in Docker image 664ef88bc1f4
 
@@ -844,7 +1260,7 @@ Written output to output.png
 To pass more inputs to the model, you can add more `-i` options:
 
 ```
-$ cog predict -i image=@image.jpg -i scale=2.0
+$ cog run -i image=@image.jpg -i scale=2.0
 ```
 
 In this case it is just a number, not a file, so you don't need the `@` prefix.
@@ -877,6 +1293,8 @@ Next, you might want to take a look at:
 # Getting started
 
 This guide will walk you through what you can do with Cog by using an example model.
+If you'd rather start from a complete example, browse the
+[examples in the Cog repository](examples.md).
 
 > [!TIP]
 > Using a language model to help you write the code for your new Cog model?
@@ -885,36 +1303,9 @@ This guide will walk you through what you can do with Cog by using an example mo
 
 ## Prerequisites
 
-- **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
+- **Cog**. If you haven't already installed Cog, follow the [install instructions in the README](../README.md#install).
+- **macOS, Linux, or Windows 11**. Cog works on macOS and Linux. It also works on Windows 11 with [WSL 2](wsl2/wsl2.md).
 - **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
-
-## Install Cog
-
-**macOS (recommended):**
-
-```bash
-brew install replicate/tap/cog
-```
-
-**Linux or macOS (manual):**
-
-```bash
-sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
-sudo chmod +x /usr/local/bin/cog
-sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
-
-```
-
-> [!NOTE]
-> **macOS: "cannot be opened because the developer cannot be verified"**
->
-> If you downloaded the binary manually (via `curl` or a browser) and see this Gatekeeper warning, run:
->
-> ```bash
-> sudo xattr -d com.apple.quarantine /usr/local/bin/cog
-> ```
->
-> Installing via `brew install replicate/tap/cog` handles this automatically.
 
 ## Create a project
 
@@ -961,35 +1352,35 @@ Type "help", "copyright", "credits" or "license" for more information.
 
 Inside this Docker environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
 
-## Run predictions on a model
+## Run a model
 
-Let's pretend we've trained a model. With Cog, we can define how to run predictions on it in a standard way, so other people can easily run predictions on it without having to hunt around for a prediction script.
+Let's pretend we've trained a model. With Cog, we can define how to run it in a standard way, so other people can easily run it without having to hunt around for a run script.
 
-We need to write some code to describe how predictions are run on the model.
+We need to write some code to describe how the model runs.
 
-Save this to `predict.py`:
+Save this to `run.py`:
 
 ```python
 import os
 os.environ["TORCH_HOME"] = "."
 
 import torch
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 from PIL import Image
 from torchvision import models
 
 WEIGHTS = models.ResNet50_Weights.IMAGENET1K_V1
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Load the model into memory to make running multiple inferences efficient"""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = models.resnet50(weights=WEIGHTS).to(self.device)
         self.model.eval()
 
-    def predict(self, image: Path = Input(description="Image to classify")) -> dict:
-        """Run a single prediction on the model"""
+    def run(self, image: Path = Input(description="Image to classify")) -> dict:
+        """Run the model"""
         img = Image.open(image).convert("RGB")
         preds = self.model(WEIGHTS.transforms()(img).unsqueeze(0).to(self.device))
         top3 = preds[0].softmax(0).topk(3)
@@ -1013,7 +1404,7 @@ Then update `cog.yaml` to look like this:
 build:
   python_version: "3.13"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
 > [!TIP]
@@ -1030,7 +1421,7 @@ curl $IMAGE_URL > input.jpg
 Now, let's run the model using Cog:
 
 ```bash
-cog predict -i image=@input.jpg
+cog run -i image=@input.jpg
 
 ```
 
@@ -1046,11 +1437,11 @@ If you see the following output
 
 then it worked!
 
-Note: The first time you run `cog predict`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog predict` the pre-built container will be used.
+Note: The first time you run `cog run`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog run` the pre-built container will be used.
 
 ## Build an image
 
-We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves predictions with an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time predictions.
+We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time inference.
 
 ```bash
 cog build -t resnet
@@ -1059,10 +1450,10 @@ cog build -t resnet
 
 ```
 
-You can run this image with `cog predict` by passing the filename as an argument:
+You can run this image with `cog run` by passing the filename as an argument:
 
 ```bash
-cog predict resnet -i image=@input.jpg
+cog run resnet -i image=@input.jpg
 
 ```
 
@@ -1130,13 +1521,18 @@ The server supports both synchronous and asynchronous prediction creation:
   and processes the prediction in the background.
 
 The client can create a prediction asynchronously
-by setting the `Prefer: respond-async` header in their request.
-When provided, the server responds immediately after starting the prediction
-with `202 Accepted` status and a prediction object in status `processing`.
+by setting the `Prefer: respond-async` header in their request
+or by requesting a streamed response with `Accept: text/event-stream`.
+With `Prefer: respond-async`,
+the server responds immediately after starting the prediction
+with `202 Accepted` status and a prediction object in status `starting`.
+With `Accept: text/event-stream`,
+the server responds with `200 OK` and keeps the response open
+as a server-sent event stream.
 
 > [!NOTE]
-> The only supported way to receive updates on the status of predictions
-> started asynchronously is using [webhooks](#webhooks).
+> For JSON responses, the only supported way to receive updates on the status
+> of predictions started asynchronously is using [webhooks](#webhooks).
 > Polling for prediction status is not currently supported.
 
 You can also use certain server endpoints to create predictions idempotently,
@@ -1144,27 +1540,162 @@ such that if a client calls this endpoint more than once with the same ID
 (for example, due to a network interruption)
 while the prediction is still running,
 no new prediction is created.
-Instead, the client receives a `202 Accepted` response
-with the initial state of the prediction.
+Instead, the client receives the response type requested by the retry:
+JSON for regular requests or a server-sent event stream for streaming requests.
 
 ---
 
 Here's a summary of the prediction creation endpoints:
 
-| Endpoint                           | Header                  | Behavior                     |
-| ---------------------------------- | ----------------------- | ---------------------------- |
-| `POST /predictions`                | -                       | Synchronous, non-idempotent  |
-| `POST /predictions`                | `Prefer: respond-async` | Asynchronous, non-idempotent |
-| `PUT /predictions/<prediction_id>` | -                       | Synchronous, idempotent      |
-| `PUT /predictions/<prediction_id>` | `Prefer: respond-async` | Asynchronous, idempotent     |
+| Endpoint                           | Header                      | Behavior                     |
+| ---------------------------------- | --------------------------- | ---------------------------- |
+| `POST /predictions`                | -                           | Synchronous, non-idempotent  |
+| `POST /predictions`                | `Prefer: respond-async`     | Asynchronous, non-idempotent |
+| `POST /predictions`                | `Accept: text/event-stream` | Streaming, non-idempotent    |
+| `PUT /predictions/<prediction_id>` | -                           | Synchronous, idempotent      |
+| `PUT /predictions/<prediction_id>` | `Prefer: respond-async`     | Asynchronous, idempotent     |
+| `PUT /predictions/<prediction_id>` | `Accept: text/event-stream` | Streaming, idempotent        |
 
 Choose the endpoint that best fits your needs:
 
 - Use synchronous endpoints when you want to wait for the prediction result.
 - Use asynchronous endpoints when you want to start a prediction
   and receive updates via webhooks.
+- Use streaming endpoints when you want to receive prediction lifecycle events
+  over the HTTP response as they happen.
 - Use idempotent endpoints when you need to safely retry requests
   without creating duplicate predictions.
+
+## Streaming predictions with server-sent events
+
+To produce streamed prediction events,
+the model must return an iterator and opt in to SSE streaming
+with the `streaming` decorator.
+
+```python
+from typing import Iterator
+
+from cog import BaseRunner, Input, streaming
+
+
+class Runner(BaseRunner):
+    @streaming
+    def run(self, prompt: str = Input(description="Prompt")) -> Iterator[str]:
+        for token in generate_tokens(prompt):
+            yield token
+```
+
+The decorator can also be written as `@cog.streaming`
+or, if imported directly from `cog`, `@streaming`.
+The parenthesized forms `@cog.streaming()` and `@streaming()` are also accepted.
+Without the decorator,
+iterator outputs still work in normal JSON responses,
+but requests with `Accept: text/event-stream` return `406 Not Acceptable`.
+
+To consume a streamed prediction,
+send the prediction request with `Accept: text/event-stream`:
+
+```http
+POST /predictions HTTP/1.1
+Content-Type: application/json; charset=utf-8
+Accept: text/event-stream
+
+{
+    "input": {"prompt": "Write a haiku about onions"}
+}
+```
+
+The server starts the prediction asynchronously
+and keeps the HTTP response open as a server-sent event stream.
+Each event has an `event` name and JSON `data` payload:
+
+```text
+event: start
+data: {"id":"abc123","status":"processing"}
+
+event: output
+data: {"chunk":"Onions","index":0}
+
+event: output
+data: {"chunk":" bloom","index":1}
+
+event: completed
+data: {"id":"abc123","status":"succeeded","output":["Onions"," bloom"],"metrics":{"predict_time":0.42}}
+```
+
+Prediction streams can emit these event types:
+
+- `start`: The prediction started processing.
+- `output`: The model yielded an output chunk.
+  The payload includes `chunk` and `index`.
+- `log`: The model wrote to `stdout` or `stderr`.
+  The payload includes `source` and `data`.
+- `metric`: The model recorded a custom metric.
+  The payload includes `name`, `value`, and `mode`.
+- `completed`: The prediction reached a terminal state.
+  The payload is the final prediction object,
+  with `status` set to `succeeded`, `failed`, or `canceled`.
+
+For command-line clients,
+use a client that prints the response as data arrives:
+
+```bash
+curl -N \
+  -H 'Accept: text/event-stream' \
+  -H 'Content-Type: application/json' \
+  -d '{"input":{"prompt":"Write a haiku about onions"}}' \
+  http://localhost:5000/predictions
+```
+
+For browser clients,
+use `fetch()` or another client that supports request bodies.
+The browser `EventSource` API only supports `GET` requests,
+so it cannot create a prediction with `POST /predictions` or
+`PUT /predictions/<prediction_id>`.
+
+```js
+const response = await fetch("/predictions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  },
+  body: JSON.stringify({ input: { prompt: "Write a haiku about onions" } }),
+});
+
+const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  console.log(value);
+}
+```
+
+Use `PUT /predictions/<prediction_id>` when the client needs safe retries
+or wants to reconnect to an in-flight prediction by ID:
+
+```http
+PUT /predictions/wjx3whax6rf4vphkegkhcvpv6a HTTP/1.1
+Content-Type: application/json; charset=utf-8
+Accept: text/event-stream
+
+{
+    "input": {"prompt": "Write a haiku about onions"}
+}
+```
+
+If the prediction is still running,
+the server returns a stream for the existing prediction
+instead of creating a duplicate prediction.
+If earlier events have been dropped from the replay buffer,
+the stream emits an `error` event and closes.
+The replay buffer keeps the most recent 1024 events by default.
+Set `COG_STREAM_HISTORY_CAPACITY` to change this limit,
+or set it to `0` to disable replay history while keeping live streaming enabled.
+Training endpoints do not support SSE streaming;
+requests to `/trainings` with `Accept: text/event-stream`
+return `406 Not Acceptable`.
 
 ## Webhooks
 
@@ -1190,10 +1721,10 @@ at the following times.
   Once, when the prediction starts
   (`status` is `starting`).
 - `output`:
-  Each time a predict function generates an output
+  Each time a run function generates an output
   (either once using `return` or multiple times using `yield`)
 - `logs`:
-  Each time the predict function writes to `stdout`
+  Each time the run function writes to `stdout`
 - `completed`:
   Once, when the prediction reaches a terminal state
   (`status` is `succeeded`, `canceled`, or `failed`)
@@ -1248,7 +1779,7 @@ This produces a random identifier that is 26 ASCII characters long.
 
 ## File uploads
 
-A model's `predict` function can produce file output by yielding or returning
+A model's `run` function can produce file output by yielding or returning
 a `cog.Path` or `cog.File` value.
 
 By default,
@@ -1274,37 +1805,31 @@ Content-Type: application/json
 }
 ```
 
-When creating a prediction synchronously,
-the client can configure a base URL to upload output files to instead
-by setting the `output_file_prefix` parameter in the request body:
+To upload output files to external storage instead,
+start the HTTP server with the `--upload-url` flag set to a base URL.
+This applies to both synchronous and asynchronous predictions.
 
-```http
-POST /predictions HTTP/1.1
-Content-Type: application/json; charset=utf-8
-
-{
-    "input": {"prompt": "A picture of an onion with sunglasses"},
-    "output_file_prefix": "https://example.com/upload",
-}
+```console
+python -m cog.server.http --upload-url https://example.com/upload/
 ```
 
 When the model produces a file output,
-the server sends the following request to upload the file to the configured URL:
+the server uploads it with an HTTP `PUT` request to
+`{upload-url}/{filename}`, sending the raw file bytes
+with the file's `Content-Type`:
 
 ```http
-PUT /upload HTTP/1.1
+PUT /upload/image.png HTTP/1.1
 Host: example.com
-Content-Type: multipart/form-data
-
---boundary
-Content-Disposition: form-data; name="file"; filename="image.png"
 Content-Type: image/png
 
 <binary data>
---boundary--
 ```
 
-If the upload succeeds, the server responds with output:
+The resulting URL is taken from the response's `Location` header
+(falling back to the request URL), with query parameters stripped.
+If the upload succeeds, the prediction output is the uploaded URL
+instead of a data URL:
 
 ```http
 HTTP/1.1 200 OK
@@ -1312,15 +1837,11 @@ Content-Type: application/json
 
 {
     "status": "succeeded",
-    "output": "http://example.com/upload/image.png"
+    "output": "https://example.com/upload/image.png"
 }
 ```
 
 If the upload fails, the server responds with an error.
-
-> [!IMPORTANT]  
-> File uploads for predictions created asynchronously
-> require `--upload-url` to be specified when starting the HTTP server.
 
 <a id="api"></a>
 
@@ -1419,13 +1940,13 @@ The request body is a JSON object with the following fields:
 
 - `input`:
   A JSON object with the same keys as the
-  [arguments to the `predict()` function](python.md).
+  [arguments to the `run()` function](python.md).
   Any `File` or `Path` inputs are passed as URLs.
 
 The response body is a JSON object with the following fields:
 
 - `status`: Either `succeeded` or `failed`.
-- `output`: The return value of the `predict()` function.
+- `output`: The return value of the `run()` function.
 - `error`: If `status` is `failed`, the error message.
 - `metrics`: An object containing prediction metrics.
   Always includes `predict_time` (elapsed seconds).
@@ -1480,6 +2001,11 @@ Content-Type: application/json
 }
 ```
 
+If the client sets the `Accept: text/event-stream` header,
+the server starts the prediction asynchronously and responds with a
+server-sent event stream.
+See [Streaming predictions with server-sent events](#streaming-predictions-with-server-sent-events).
+
 ### `PUT /predictions/<prediction_id>`
 
 Make a single prediction.
@@ -1528,6 +2054,13 @@ Content-Type: application/json
 }
 ```
 
+If the client sets the `Accept: text/event-stream` header,
+the server starts the prediction asynchronously and responds with a
+server-sent event stream.
+If a prediction with the same ID is already running,
+the server returns a stream for the existing prediction.
+See [Streaming predictions with server-sent events](#streaming-predictions-with-server-sent-events).
+
 ### `POST /predictions/<prediction_id>/cancel`
 
 A client can cancel an asynchronous prediction by making a
@@ -1571,10 +2104,10 @@ After cleanup, the exception must be re-raised using a bare `raise` statement.
 Failure to re-raise the exception may result in the termination of the container.
 
 ```python
-from cog import BasePredictor, CancelationException, Input, Path
+from cog import BaseRunner, CancelationException, Input, Path
 
-class Predictor(BasePredictor):
-    def predict(self, image: Path = Input(description="Image to process")) -> Path:
+class Runner(BaseRunner):
+    def run(self, image: Path = Input(description="Image to process")) -> Path:
         try:
             return self.process(image)
         except CancelationException:
@@ -1614,9 +2147,9 @@ Cog can run notebooks in the environment you've defined in `cog.yaml` with the f
 cog exec -p 8888 jupyter lab --allow-root --ip=0.0.0.0
 ```
 
-## Use notebook code in your predictor
+## Use notebook code in your runner
 
-You can also import a notebook into your Cog [Predictor](python.md) file.
+You can also import a notebook into your Cog [Runner](python.md) file.
 
 First, export your notebook to a Python file:
 
@@ -1624,15 +2157,15 @@ First, export your notebook to a Python file:
 jupyter nbconvert --to script my_notebook.ipynb # creates my_notebook.py
 ```
 
-Then import the exported Python script into your `predict.py` file. Any functions or variables defined in your notebook will be available to your predictor:
+Then import the exported Python script into your `run.py` file. Any functions or variables defined in your notebook will be available to your runner:
 
 ```python
-from cog import BasePredictor, Input
+from cog import BaseRunner, Input
 
 import my_notebook
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str = Input(description="string prompt")) -> str:
+class Runner(BaseRunner):
+    def run(self, prompt: str = Input(description="string prompt")) -> str:
       output = my_notebook.do_stuff(prompt)
       return output
 ```
@@ -1686,12 +2219,12 @@ Using a secret mount allows the private registry credentials to be securely pass
 
 ---
 
-# Prediction interface reference
+# Run interface reference
 
-This document defines the API of the `cog` Python module, which is used to define the interface for running predictions on your model.
+This document defines the API of the `cog` Python module, which is used to define the interface for running your model.
 
 > [!TIP]
-> Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `predict.py` file that can be used as a starting point for setting up your model.
+> Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `run.py` file that can be used as a starting point for setting up your model.
 
 > [!TIP]
 > Using a language model to help you write the code for your new Cog model?
@@ -1701,10 +2234,10 @@ This document defines the API of the `cog` Python module, which is used to defin
 ## Contents
 
 - [Contents](#contents)
-- [`BasePredictor`](#basepredictor)
-  - [`Predictor.setup()`](#predictorsetup)
-  - [`Predictor.predict(**kwargs)`](#predictorpredictkwargs)
-- [`async` predictors and concurrency](#async-predictors-and-concurrency)
+- [`BaseRunner`](#baserunner)
+  - [`Runner.setup()`](#runnersetup)
+  - [`Runner.run(**kwargs)`](#runnerrunkwargs)
+- [`async` runners and concurrency](#async-runners-and-concurrency)
 - [`Input(**kwargs)`](#inputkwargs)
   - [Deprecating inputs](#deprecating-inputs)
 - [Output](#output)
@@ -1726,43 +2259,47 @@ This document defines the API of the `cog` Python module, which is used to defin
   - [`cog.Secret`](#cogsecret)
   - [Wrapper types](#wrapper-types)
     - [`Optional`](#optional)
+    - [`Union`](#union)
     - [`list`](#list)
     - [`dict`](#dict)
+    - [`cog.Opaque`](#cogopaque)
   - [Structured output with `BaseModel`](#structured-output-with-basemodel)
     - [Using `cog.BaseModel`](#using-cogbasemodel)
     - [Using Pydantic `BaseModel`](#using-pydantic-basemodel)
     - [`BaseModel` field types](#basemodel-field-types)
   - [Type limitations](#type-limitations)
 
-## `BasePredictor`
+## `BaseRunner`
 
-You define how Cog runs predictions on your model by defining a class that inherits from `BasePredictor`. It looks something like this:
+You define how Cog runs your model by defining a class that inherits from `BaseRunner`. It looks something like this:
 
 ```python
-from cog import BasePredictor, Path, Input
+from cog import BaseRunner, Path, Input
 import torch
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Load the model into memory to make running multiple inferences efficient"""
         self.model = torch.load("weights.pth")
 
-    def predict(self,
+    def run(self,
             image: Path = Input(description="Image to enlarge"),
             scale: float = Input(description="Factor to scale image by", default=1.5)
     ) -> Path:
-        """Run a single prediction on the model"""
+        """Run the model"""
         # ... pre-processing ...
         output = self.model(image)
         # ... post-processing ...
         return output
 ```
 
-Your Predictor class should define two methods: `setup()` and `predict()`.
+Your Runner class should define two methods: `setup()` and `run()`.
 
-### `Predictor.setup()`
+`BasePredictor`, `Predictor`, and `predict()` still work for existing models, but they are deprecated. Cog warns when it loads or inspects those legacy names. Use `BaseRunner`, `Runner`, and `run()` for new code.
 
-Prepare the model so multiple predictions run efficiently.
+### `Runner.setup()`
+
+Prepare the model so multiple runs are efficient.
 
 Use this _optional_ method to include expensive one-off operations like loading trained models, instantiating data transformations, etc.
 
@@ -1784,43 +2321,43 @@ While this will increase your image size and build time, it offers other advanta
 
 > When using this method, you should use the `--separate-weights` flag on `cog build` to store weights in a [separate layer](https://github.com/replicate/cog/blob/12ac02091d93beebebed037f38a0c99cd8749806/docs/getting-started.md?plain=1#L219).
 
-### `Predictor.predict(**kwargs)`
+### `Runner.run(**kwargs)`
 
-Run a single prediction.
+Run the model.
 
 This _required_ method is where you call the model that was loaded during `setup()`, but you may also want to add pre- and post-processing code here.
 
-The `predict()` method takes an arbitrary list of named arguments, where each argument name must correspond to an [`Input()`](#inputkwargs) annotation.
+The `run()` method takes an arbitrary list of named arguments, where each argument name must correspond to an [`Input()`](#inputkwargs) annotation.
 
-`predict()` can return strings, numbers, [`cog.Path`](#cogpath) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`BaseModel`](#structured-output-with-basemodel) for structured return types. See [Input and output types](#input-and-output-types) for the full list of supported types.
+`run()` can return strings, numbers, [`cog.Path`](#cogpath) objects representing files on disk, or lists or dicts of those types. You can also define a custom [`BaseModel`](#structured-output-with-basemodel) for structured return types. See [Input and output types](#input-and-output-types) for the full list of supported types.
 
-## `async` predictors and concurrency
+## `async` runners and concurrency
 
 > Added in cog 0.14.0.
 
-You may specify your `predict()` method as `async def predict(...)`. In
-addition, if you have an async `predict()` function you may also have an async
+You may specify your `run()` method as `async def run(...)`. In
+addition, if you have an async `run()` function you may also have an async
 `setup()` function:
 
 ```py
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     async def setup(self) -> None:
         print("async setup is also supported...")
 
-    async def predict(self) -> str:
-        print("async predict");
+    async def run(self) -> str:
+        print("async run");
         return "hello world";
 ```
 
-Models that have an async `predict()` function can run predictions concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
+Models that have an async `run()` function can run concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
 
 ## `Input(**kwargs)`
 
-Use cog's `Input()` function to define each of the parameters in your `predict()` method:
+Use cog's `Input()` function to define each of the parameters in your `run()` method:
 
 ```py
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
             image: Path = Input(description="Image to enlarge"),
             scale: float = Input(description="Factor to scale image by", default=1.5, ge=1.0, le=10.0)
     ) -> Path:
@@ -1838,13 +2375,13 @@ The `Input()` function takes these keyword arguments:
 - `choices`: For `str` or `int` types, a list of possible values for this input.
 - `deprecated`: (optional) If set to `True`, marks this input as deprecated. Deprecated inputs will still be accepted, but tools and UIs may warn users that the input is deprecated and may be removed in the future. See [Deprecating inputs](#deprecating-inputs).
 
-Each parameter of the `predict()` method must be annotated with a type like `str`, `int`, `float`, `bool`, etc. See [Input and output types](#input-and-output-types) for the full list of supported types.
+Each parameter of the `run()` method must be annotated with a type like `str`, `int`, `float`, `bool`, etc. See [Input and output types](#input-and-output-types) for the full list of supported types.
 
 Using the `Input` function provides better documentation and validation constraints to the users of your model, but it is not strictly required. You can also specify default values for your parameters using plain Python, or omit default assignment entirely:
 
 ```py
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
         prompt: str = "default prompt", # this is valid
         iterations: int                 # also valid
     ) -> str:
@@ -1858,10 +2395,10 @@ You can mark an input as deprecated by passing `deprecated=True` to the `Input()
 This is useful when you want to phase out an input without breaking existing clients immediately:
 
 ```py
-from cog import BasePredictor, Input
+from cog import BaseRunner, Input
 
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
         text: str = Input(description="Some deprecated text", deprecated=True),
         prompt: str = Input(description="Prompt for the model")
     ) -> str:
@@ -1871,31 +2408,31 @@ class Predictor(BasePredictor):
 
 ## Output
 
-Cog predictors can return a simple data type like a string, number, float, or boolean. Use Python's `-> <type>` syntax to annotate the return type.
+Cog runners can return a simple data type like a string, number, float, or boolean. Use Python's `-> <type>` syntax to annotate the return type.
 
-Here's an example of a predictor that returns a string:
+Here's an example of a runner that returns a string:
 
 ```py
-from cog import BasePredictor
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self) -> str:
+class Runner(BaseRunner):
+    def run(self) -> str:
         return "hello"
 ```
 
 ### Returning an object
 
-To return a complex object with multiple values, define an `Output` object with multiple fields to return from your `predict()` method:
+To return a complex object with multiple values, define an `Output` object with multiple fields to return from your `run()` method:
 
 ```py
-from cog import BasePredictor, BaseModel, File
+from cog import BaseRunner, BaseModel, File
 
 class Output(BaseModel):
     file: File
     text: str
 
-class Predictor(BasePredictor):
-    def predict(self) -> Output:
+class Runner(BaseRunner):
+    def run(self) -> Output:
         return Output(text="hello", file=io.StringIO("hello"))
 ```
 
@@ -1903,19 +2440,19 @@ Each of the output object's properties must be one of the supported output types
 
 ### Returning a list
 
-The `predict()` method can return a list of any of the supported output types. Here's an example that outputs multiple files:
+The `run()` method can return a list of any of the supported output types. Here's an example that outputs multiple files:
 
 ```py
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
-class Predictor(BasePredictor):
-    def predict(self) -> list[Path]:
-        predictions = ["foo", "bar", "baz"]
+class Runner(BaseRunner):
+    def run(self) -> list[Path]:
+        items = ["foo", "bar", "baz"]
         output = []
-        for i, prediction in enumerate(predictions):
+        for i, item in enumerate(items):
             out_path = Path(f"/tmp/out-{i}.txt")
             with out_path.open("w") as f:
-                f.write(prediction)
+                f.write(item)
             output.append(out_path)
         return output
 ```
@@ -1927,15 +2464,15 @@ Files are named in the format `output.<index>.<extension>`, e.g. `output.0.txt`,
 To conditionally omit properties from the Output object, define them using `typing.Optional`:
 
 ```py
-from cog import BaseModel, BasePredictor, Path
+from cog import BaseModel, BaseRunner, Path
 from typing import Optional
 
 class Output(BaseModel):
     score: Optional[float]
     file: Optional[Path]
 
-class Predictor(BasePredictor):
-    def predict(self) -> Output:
+class Runner(BaseRunner):
+    def run(self) -> Output:
         if condition:
             return Output(score=1.5)
         else:
@@ -1944,30 +2481,34 @@ class Predictor(BasePredictor):
 
 ### Streaming output
 
-Cog models can stream output as the `predict()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output images as they are being generated.
+Cog models can stream output as the `run()` method is running. For example, a language model can output tokens as they're being generated and an image generation model can output images as they are being generated.
 
-To support streaming output in your Cog model, add `from typing import Iterator` to your predict.py file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `predict()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, or `cog.Path`.
+To support streaming output in your Cog model, add `from typing import Iterator` to your `run.py` file. The `typing` package is a part of Python's standard library so it doesn't need to be installed. Then add a return type annotation to the `run()` method in the form `-> Iterator[<type>]` where `<type>` can be one of `str`, `int`, `float`, `bool`, or `cog.Path`.
+
+To allow clients to receive chunks as server-sent events with `Accept: text/event-stream`, decorate the prediction method (`run()` or `predict()`) with `@cog.streaming` (or `@streaming` if imported directly from `cog`). The parenthesized forms `@cog.streaming()` and `@streaming()` are also accepted. The decorated method must return `Iterator[...]`, `AsyncIterator[...]`, `ConcatenateIterator[...]`, or `AsyncConcatenateIterator[...]`. Without the decorator, iterator outputs still work in normal JSON responses, but SSE requests return `406 Not Acceptable`.
 
 ```py
-from cog import BasePredictor, Path
 from typing import Iterator
+from cog import BaseRunner, Path, streaming
 
-class Predictor(BasePredictor):
-    def predict(self) -> Iterator[Path]:
+class Runner(BaseRunner):
+    @streaming
+    def run(self) -> Iterator[Path]:
         done = False
         while not done:
             output_path, done = do_stuff()
             yield Path(output_path)
 ```
 
-If you have an [async `predict()` method](#async-predictors-and-concurrency), use `AsyncIterator` from the `typing` module:
+If you have an [async `run()` method](#async-runners-and-concurrency), use `AsyncIterator` from the `typing` module:
 
 ```py
 from typing import AsyncIterator
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path, streaming
 
-class Predictor(BasePredictor):
-    async def predict(self) -> AsyncIterator[Path]:
+class Runner(BaseRunner):
+    @streaming
+    async def run(self) -> AsyncIterator[Path]:
         done = False
         while not done:
             output_path, done = do_stuff()
@@ -1977,22 +2518,24 @@ class Predictor(BasePredictor):
 If you're streaming text output, you can use `ConcatenateIterator` to hint that the output should be concatenated together into a single string. This is useful on Replicate to display the output as a string instead of a list of strings.
 
 ```py
-from cog import BasePredictor, Path, ConcatenateIterator
+from cog import BaseRunner, ConcatenateIterator, streaming
 
-class Predictor(BasePredictor):
-    def predict(self) -> ConcatenateIterator[str]:
+class Runner(BaseRunner):
+    @streaming
+    def run(self) -> ConcatenateIterator[str]:
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:
             yield token + " "
 ```
 
-Or for async `predict()` methods, use `AsyncConcatenateIterator`:
+Or for async `run()` methods, use `AsyncConcatenateIterator`:
 
 ```py
-from cog import BasePredictor, Path, AsyncConcatenateIterator
+from cog import AsyncConcatenateIterator, BaseRunner, streaming
 
-class Predictor(BasePredictor):
-    async def predict(self) -> AsyncConcatenateIterator[str]:
+class Runner(BaseRunner):
+    @streaming
+    async def run(self) -> AsyncConcatenateIterator[str]:
         tokens = ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"]
         for token in tokens:
             yield token + " "
@@ -2000,17 +2543,17 @@ class Predictor(BasePredictor):
 
 ## Metrics
 
-You can record custom metrics from your `predict()` function to track model-specific data like token counts, timing breakdowns, or confidence scores. Metrics are included in the prediction response alongside the output.
+You can record custom metrics from your `run()` function to track model-specific data like token counts, timing breakdowns, or confidence scores. Metrics are included in the response alongside the output.
 
 ### Recording metrics
 
-Use `self.record_metric()` inside your `predict()` method:
+Use `self.record_metric()` inside your `run()` method:
 
 ```python
-from cog import BasePredictor
+from cog import BaseRunner
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> str:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
         self.record_metric("temperature", 0.7)
         self.record_metric("token_count", 42)
 
@@ -2025,7 +2568,7 @@ self.scope.metrics["token_count"] = 42
 del self.scope.metrics["token_count"]
 ```
 
-Metrics appear in the prediction response `metrics` field:
+Metrics appear in the response `metrics` field:
 
 ```json
 {
@@ -2122,16 +2665,16 @@ del self.scope.metrics["count"]
 self.record_metric("count", "now a string")
 ```
 
-Outside an active prediction, `self.record_metric()` and `self.scope` are silent no-ops — no need for `None` checks.
+Outside an active run, `self.record_metric()` and `self.scope` are silent no-ops — no need for `None` checks.
 
 ## Cancellation
 
-When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `predict()` function. The exception raised depends on whether the predictor is sync or async:
+When a run is canceled (via the [cancel HTTP endpoint](http.md#post-predictionsprediction_idcancel) or a dropped connection), the Cog runtime interrupts the running `run()` function. The exception raised depends on whether the runner is sync or async:
 
-| Predictor type              | Exception raised         |
-| --------------------------- | ------------------------ |
-| Sync (`def predict`)        | `CancelationException`   |
-| Async (`async def predict`) | `asyncio.CancelledError` |
+| Runner type             | Exception raised         |
+| ----------------------- | ------------------------ |
+| Sync (`def run`)        | `CancelationException`   |
+| Async (`async def run`) | `asyncio.CancelledError` |
 
 ### `CancelationException`
 
@@ -2139,15 +2682,15 @@ When a prediction is canceled (via the [cancel HTTP endpoint](http.md#post-predi
 from cog import CancelationException
 ```
 
-`CancelationException` is raised in **sync** predictors when a prediction is cancelled. It is a `BaseException` subclass — **not** an `Exception` subclass. This means bare `except Exception` blocks in your predict code will not accidentally catch it, matching the behavior of `KeyboardInterrupt` and `asyncio.CancelledError`.
+`CancelationException` is raised in **sync** runners when a run is cancelled. It is a `BaseException` subclass — **not** an `Exception` subclass. This means bare `except Exception` blocks in your run code will not accidentally catch it, matching the behavior of `KeyboardInterrupt` and `asyncio.CancelledError`.
 
-You do **not** need to handle this exception in normal predictor code — the runtime manages cancellation automatically. However, if you need to run cleanup logic when a prediction is cancelled, you can catch it explicitly:
+You do **not** need to handle this exception in normal runner code — the runtime manages cancellation automatically. However, if you need to run cleanup logic when a run is cancelled, you can catch it explicitly:
 
 ```python
-from cog import BasePredictor, CancelationException, Path
+from cog import BaseRunner, CancelationException, Path
 
-class Predictor(BasePredictor):
-    def predict(self, image: Path) -> Path:
+class Runner(BaseRunner):
+    def run(self, image: Path) -> Path:
         try:
             return self.process(image)
         except CancelationException:
@@ -2156,32 +2699,32 @@ class Predictor(BasePredictor):
 ```
 
 > [!WARNING]
-> You **must** re-raise `CancelationException` after cleanup. Swallowing it will prevent the runtime from marking the prediction as canceled, and may result in the termination of the container.
+> You **must** re-raise `CancelationException` after cleanup. Swallowing it will prevent the runtime from marking the run as canceled, and may result in the termination of the container.
 
 `CancelationException` is available as:
 
 - `cog.CancelationException` (recommended)
 - `cog.exceptions.CancelationException`
 
-For **async** predictors, cancellation follows standard Python async conventions and raises `asyncio.CancelledError` instead.
+For **async** runners, cancellation follows standard Python async conventions and raises `asyncio.CancelledError` instead.
 
 ## Input and output types
 
-Each parameter of the `predict()` method must be annotated with a type. The method's return type must also be annotated.
+Each parameter of the `run()` method must be annotated with a type. The method's return type must also be annotated.
 
 ### Primitive types
 
 These types can be used directly as input parameter types and output return types:
 
-| Type | Description | JSON Schema |
-|------|-------------|-------------|
-| `str` | A string | `string` |
-| `int` | An integer | `integer` |
-| `float` | A floating-point number | `number` |
-| `bool` | A boolean | `boolean` |
-| [`cog.Path`](#cogpath) | A path to a file on disk | `string` (format: `uri`) |
-| [`cog.File`](#cogfile-deprecated) | A file-like object (deprecated) | `string` (format: `uri`) |
-| [`cog.Secret`](#cogsecret) | A string containing sensitive information | `string` (format: `password`) |
+| Type                              | Description                               | JSON Schema                   |
+| --------------------------------- | ----------------------------------------- | ----------------------------- |
+| `str`                             | A string                                  | `string`                      |
+| `int`                             | An integer                                | `integer`                     |
+| `float`                           | A floating-point number                   | `number`                      |
+| `bool`                            | A boolean                                 | `boolean`                     |
+| [`cog.Path`](#cogpath)            | A path to a file on disk                  | `string` (format: `uri`)      |
+| [`cog.File`](#cogfile-deprecated) | A file-like object (deprecated)           | `string` (format: `uri`)      |
+| [`cog.Secret`](#cogsecret)        | A string containing sensitive information | `string` (format: `password`) |
 
 ### `cog.Path`
 
@@ -2189,16 +2732,16 @@ These types can be used directly as input parameter types and output return type
 
 `cog.Path` is a subclass of Python's [`pathlib.Path`](https://docs.python.org/3/library/pathlib.html#basic-use) and can be used as a drop-in replacement. Any `os.PathLike` subclass is also accepted as an input type and treated as `cog.Path`.
 
-For models that return a `cog.Path` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
+For models that return a `cog.Path` object, the output returned by Cog's built-in HTTP server will be a URL.
 
 This example takes an input file, resizes it, and returns the resized image:
 
 ```python
 import tempfile
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 
-class Predictor(BasePredictor):
-    def predict(self, image: Path = Input(description="Image to enlarge")) -> Path:
+class Runner(BaseRunner):
+    def run(self, image: Path = Input(description="Image to enlarge")) -> Path:
         upscaled_image = do_some_processing(image)
 
         # To output cog.Path objects the file needs to exist, so create a temporary file first.
@@ -2213,14 +2756,14 @@ class Predictor(BasePredictor):
 > [!WARNING]  
 > `cog.File` is deprecated and will be removed in a future version of Cog. Use [`cog.Path`](#cogpath) instead.
 
-`cog.File` represents a _file handle_. For models that return a `cog.File` object, the prediction output returned by Cog's built-in HTTP server will be a URL.
+`cog.File` represents a _file handle_. For models that return a `cog.File` object, the output returned by Cog's built-in HTTP server will be a URL.
 
 ```python
-from cog import BasePredictor, File, Input
+from cog import BaseRunner, File, Input
 from PIL import Image
 
-class Predictor(BasePredictor):
-    def predict(self, source_image: File = Input(description="Image to enlarge")) -> File:
+class Runner(BaseRunner):
+    def run(self, source_image: File = Input(description="Image to enlarge")) -> File:
         pillow_img = Image.open(source_image)
         upscaled_image = do_some_processing(pillow_img)
         return File(upscaled_image)
@@ -2233,10 +2776,10 @@ class Predictor(BasePredictor):
 `cog.Secret` redacts its contents in string representations to prevent accidental disclosure. Access the underlying value with `get_secret_value()`.
 
 ```python
-from cog import BasePredictor, Secret
+from cog import BaseRunner, Secret
 
-class Predictor(BasePredictor):
-    def predict(self, api_token: Secret) -> None:
+class Runner(BaseRunner):
+    def run(self, api_token: Secret) -> None:
         # Prints '**********'
         print(api_token)
 
@@ -2244,7 +2787,7 @@ class Predictor(BasePredictor):
         print(api_token.get_secret_value())
 ```
 
-A predictor's `Secret` inputs are represented in OpenAPI with the following schema:
+A runner's `Secret` inputs are represented in OpenAPI with the following schema:
 
 ```json
 {
@@ -2254,7 +2797,7 @@ A predictor's `Secret` inputs are represented in OpenAPI with the following sche
 }
 ```
 
-Models uploaded to Replicate treat secret inputs differently throughout its system. When you create a prediction on Replicate, any value passed to a `Secret` input is redacted after being sent to the model.
+Models uploaded to Replicate treat secret inputs differently throughout its system. When you create a run on Replicate, any value passed to a `Secret` input is redacted after being sent to the model.
 
 > [!WARNING]  
 > Passing secret values to untrusted models can result in
@@ -2270,10 +2813,10 @@ Use `Optional[T]` or `T | None` (Python 3.10+) to mark an input as optional. Opt
 
 ```python
 from typing import Optional
-from cog import BasePredictor, Input
+from cog import BaseRunner, Input
 
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
         prompt: Optional[str] = Input(description="Input prompt"),
         seed: int | None = Input(description="Random seed", default=None),
     ) -> str:
@@ -2286,11 +2829,11 @@ Prefer `Optional[T]` or `T | None` over `str = Input(default=None)` for inputs t
 
 ```python
 # Bad: type annotation says str but value can be None
-def predict(self, prompt: str = Input(default=None)) -> str:
+def run(self, prompt: str = Input(default=None)) -> str:
     return "hello" + prompt  # TypeError at runtime if prompt is None
 
 # Good: type annotation matches actual behavior
-def predict(self, prompt: Optional[str] = Input(description="prompt")) -> str:
+def run(self, prompt: Optional[str] = Input(description="prompt")) -> str:
     if prompt is None:
         return "hello"
     return "hello " + prompt
@@ -2299,6 +2842,30 @@ def predict(self, prompt: Optional[str] = Input(description="prompt")) -> str:
 > [!NOTE]
 > `Optional[T]` is supported in `BaseModel` output fields but **not** as a top-level return type. Use a `BaseModel` with optional fields instead.
 
+#### `Union`
+
+Use `A | B` or `Union[A, B]` to accept more than one type for a single input. Cog supports JSON-native union members: `str`, `int`, `float`, `bool`, `dict`/`Any`, `list[T]`, and `None`.
+
+```python
+from cog import BaseRunner, Input
+
+class Runner(BaseRunner):
+    def run(self,
+        value: str | float = Input(description="A string or a number"),
+    ) -> str:
+        return f"{type(value).__name__}:{value}"
+```
+
+At runtime, Cog validates the request against the union and passes the value through as the matching type. For overlapping numeric types, Cog prefers the most specific match (e.g. `bool` before `int`, `int` before `float`), and a JSON integer is accepted for a `float` member.
+
+Combine a union with `None` to make it nullable:
+
+```python
+def run(self, value: str | float | None = Input(default=None)) -> str: ...
+```
+
+Union inputs are validated at the HTTP boundary, so unions involving `Path`, `File`, `Secret`, custom coders, and `BaseModel` are **not** supported, and the build fails if you use them. Union return types are also unsupported — use a `BaseModel` output instead.
+
 #### `list`
 
 Use `list[T]` or `List[T]` to accept or return a list of values. `T` can be a supported Cog type, but nested container types are not supported.
@@ -2306,10 +2873,10 @@ Use `list[T]` or `List[T]` to accept or return a list of values. `T` can be a su
 **As an input type:**
 
 ```py
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
-class Predictor(BasePredictor):
-    def predict(self, paths: list[Path]) -> str:
+class Runner(BaseRunner):
+    def run(self, paths: list[Path]) -> str:
         output_parts = []
         for path in paths:
             with open(path) as f:
@@ -2317,27 +2884,27 @@ class Predictor(BasePredictor):
         return "".join(output_parts)
 ```
 
-With `cog predict`, repeat the input name to pass multiple values:
+With `cog run`, repeat the input name to pass multiple values:
 
 ```bash
 $ echo test1 > 1.txt
 $ echo test2 > 2.txt
-$ cog predict -i paths=@1.txt -i paths=@2.txt
+$ cog run -i paths=@1.txt -i paths=@2.txt
 ```
 
 **As an output type:**
 
 ```py
-from cog import BasePredictor, Path
+from cog import BaseRunner, Path
 
-class Predictor(BasePredictor):
-    def predict(self) -> list[Path]:
-        predictions = ["foo", "bar", "baz"]
+class Runner(BaseRunner):
+    def run(self) -> list[Path]:
+        items = ["foo", "bar", "baz"]
         output = []
-        for i, prediction in enumerate(predictions):
+        for i, item in enumerate(items):
             out_path = Path(f"/tmp/out-{i}.txt")
             with out_path.open("w") as f:
-                f.write(prediction)
+                f.write(item)
             output.append(out_path)
         return output
 ```
@@ -2349,10 +2916,10 @@ Files are named in the format `output.<index>.<extension>`, e.g. `output.0.txt`,
 Use `dict` to accept or return an opaque JSON object. The value is passed through as-is without type validation.
 
 ```python
-from cog import BasePredictor, Input
+from cog import BaseRunner, Input
 
-class Predictor(BasePredictor):
-    def predict(self,
+class Runner(BaseRunner):
+    def run(self,
         params: dict = Input(description="Arbitrary JSON parameters"),
     ) -> dict:
         return {"greeting": "hello", "params": params}
@@ -2360,6 +2927,31 @@ class Predictor(BasePredictor):
 
 > [!NOTE]
 > `dict` inputs and outputs are represented as `{"type": "object"}` in the OpenAPI schema with no additional structure. For structured data with validated fields, use a [`BaseModel`](#structured-output-with-basemodel) instead.
+
+#### `cog.Opaque`
+
+Cog statically analyzes `run()` type annotations to generate schemas. Some third-party package types, such as vLLM `TypedDict` definitions, may not be visible to that static analyzer even though they represent JSON-shaped object values at runtime.
+
+Use `typing.Annotated` with `cog.Opaque` when you want Cog to accept or return those third-party object values without inspecting their fields:
+
+```python
+from typing import Annotated
+
+from cog import BaseRunner, Opaque
+from vllm.entrypoints.chat_utils import CustomChatCompletionMessageParam
+
+
+class Runner(BaseRunner):
+    def run(
+        self,
+        messages: Annotated[list[CustomChatCompletionMessageParam], Opaque],
+    ) -> str:
+        return str(messages)
+```
+
+`Opaque` emits an object schema for the wrapped type and preserves the container shape. For example, `Annotated[list[T], Opaque]` is represented as an array of opaque objects.
+
+`Opaque` does not inspect, validate, encode, decode, or transform values. It only tells Cog's schema generator to treat the wrapped type as an opaque JSON object. If your type needs custom serialization or deserialization, provide that separately; `Opaque` only affects schema generation.
 
 ### Structured output with `BaseModel`
 
@@ -2371,15 +2963,15 @@ To return a complex object with multiple typed fields, define a class that inher
 
 ```python
 from typing import Optional
-from cog import BasePredictor, BaseModel, Path
+from cog import BaseRunner, BaseModel, Path
 
 class Output(BaseModel):
     text: str
     confidence: float
     image: Optional[Path]
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> Output:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Output:
         result = self.model.generate(prompt)
         return Output(
             text=result.text,
@@ -2405,15 +2997,15 @@ If you already use Pydantic v2 in your model, you can use a Pydantic `BaseModel`
 
 ```python
 from pydantic import BaseModel as PydanticBaseModel
-from cog import BasePredictor
+from cog import BaseRunner
 
 class Result(PydanticBaseModel):
     name: str
     score: float
     tags: list[str]
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> Result:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Result:
         return Result(name="example", score=0.95, tags=["fast", "accurate"])
 ```
 
@@ -2421,21 +3013,22 @@ class Predictor(BasePredictor):
 
 Fields in a `BaseModel` output support these types:
 
-| Type | Example |
-|------|---------|
-| `str`, `int`, `float`, `bool` | `score: float` |
-| `cog.Path` | `image: Path` |
-| `cog.File` | `data: File` (deprecated) |
-| `cog.Secret` | `token: Secret` |
-| `Optional[T]` | `error: Optional[str]` |
-| `list[T]` | `tags: list[str]` |
+| Type                          | Example                   |
+| ----------------------------- | ------------------------- |
+| `str`, `int`, `float`, `bool` | `score: float`            |
+| `cog.Path`                    | `image: Path`             |
+| `cog.File`                    | `data: File` (deprecated) |
+| `cog.Secret`                  | `token: Secret`           |
+| `Optional[T]`                 | `error: Optional[str]`    |
+| `list[T]`                     | `tags: list[str]`         |
 
 ### Type limitations
 
 The following type patterns are **not** supported:
 
 - **Nested generics**: `list[list[str]]`, `list[Optional[str]]`, `Optional[list[str]]` are not supported.
-- **Union types beyond Optional**: `str | int`, `Union[str, int, None]` — only `Optional[T]` (i.e. `T | None`) is supported.
+- **Output union types beyond Optional**: union _return_ types and `BaseModel` union fields are not supported. Input unions of JSON-native types (`str | int`, `str | float | None`, etc.) _are_ supported — see [`Union`](#union).
+- **Input unions of non-JSON-native types**: input unions involving `Path`, `File`, `Secret`, custom coders, or `BaseModel` (e.g. `Path | str`) are not supported and fail at build time.
 - **`Optional` as a top-level return type**: `-> Optional[str]` is not allowed. Use a `BaseModel` with optional fields instead.
 - **Nested `BaseModel` fields**: A `BaseModel` field typed as another `BaseModel` is not supported in Cog's type system for schema generation.
 - **Tuple, Set, or other collection types**: Only `list` and `dict` are supported as collection types.
@@ -2452,7 +3045,7 @@ Cog's training API allows you to define a fine-tuning interface for an existing 
 
 ## How it works
 
-If you've used Cog before, you've probably seen the [Predictor](./python.md) class, which defines the interface for creating predictions against your model. Cog's training API works similarly: You define a Python function that describes the inputs and outputs of the training process. The inputs are things like training data, epochs, batch size, seed, etc. The output is typically a file with the fine-tuned weights.
+If you've used Cog before, you've probably seen the [Runner](./python.md) class, which defines the interface for running your model. Cog's training API works similarly: You define a Python function that describes the inputs and outputs of the training process. The inputs are things like training data, epochs, batch size, seed, etc. The output is typically a file with the fine-tuned weights.
 
 `cog.yaml`:
 
@@ -2465,7 +3058,7 @@ train: "train.py:train"
 `train.py`:
 
 ```python
-from cog import BasePredictor, File
+from cog import File
 import io
 
 def train(param: str) -> File:
@@ -2482,7 +3075,7 @@ $ cat weights
 hello train
 ```
 
-You can also use classes if you want to run many model trainings and save on setup time. This works the same way as the [Predictor](./python.md) class with the only difference being the `train` method.
+You can also use classes if you want to run many model trainings and save on setup time. This works the same way as the [Runner](./python.md) class with the only difference being the `train` method.
 
 `cog.yaml`:
 
@@ -2495,7 +3088,7 @@ train: "train.py:Trainer"
 `train.py`:
 
 ```python
-from cog import BasePredictor, File
+from cog import File
 import io
 
 class Trainer:
@@ -2565,10 +3158,10 @@ def train(
 
 ## Testing
 
-If you are doing development of a Cog model like Llama or SDXL, you can test that the fine-tuned code path works before pushing by specifying a `COG_WEIGHTS` environment variable when running `predict`:
+If you are doing development of a Cog model like Llama or SDXL, you can test that the fine-tuned code path works before pushing by specifying a `COG_WEIGHTS` environment variable when running `run`:
 
 ```console
-cog predict -e COG_WEIGHTS=https://replicate.delivery/pbxt/xyz/weights.tar -i prompt="a photo of TOK"
+cog run -e COG_WEIGHTS=https://replicate.delivery/pbxt/xyz/weights.tar -i prompt="a photo of TOK"
 ```
 
 
@@ -2732,12 +3325,7 @@ Open Windows Terminal and enter your WSL 2 VM:
 wsl.exe
 ```
 
-Download and install `cog` inside the VM:
-
-```bash
-sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
-sudo chmod +x /usr/local/bin/cog
-```
+Download and install `cog` inside the VM by following the [Linux install instructions in the README](../../README.md#install).
 
 Make sure it's available by typing:
 
@@ -2751,12 +3339,12 @@ cog --version # should output the cog version number.
 Finally, make sure it works. Let's try running `afiaka87/glid-3-xl` locally:
 
 ```bash
-cog predict 'r8.im/afiaka87/glid-3-xl' -i prompt="a fresh avocado floating in the water" -o prediction.json
+cog run 'r8.im/afiaka87/glid-3-xl' -i prompt="a fresh avocado floating in the water" -o output.json
 ```
 
-![Output from a running cog prediction in Windows Terminal](images/cog_model_output.png)
+![Output from a running cog run in Windows Terminal](images/cog_model_output.png)
 
-While your prediction is running, you can use `Task Manager` to keep an eye on GPU memory consumption:
+While your run is executing, you can use `Task Manager` to keep an eye on GPU memory consumption:
 
 ![Windows task manager will show the shared host/guest GPU memory](images/memory-usage.png)
 
@@ -2770,16 +3358,16 @@ Notice that output is returned as JSON for this model as it has a complex return
 sudo apt install jq
 ```
 
-The following bash uses `jq` to grab the first element in our prediction array and converts it from a base64 string to a `png` file.
+The following bash uses `jq` to grab the first element in our output array and converts it from a base64 string to a `png` file.
 
 ```bash
-jq -cs '.[0][0][0]' prediction.json | cut --delimiter "," --field 2 | base64 --ignore-garbage --decode > prediction.png
+jq -cs '.[0][0][0]' output.json | cut --delimiter "," --field 2 | base64 --ignore-garbage --decode > output.png
 ```
 
 When using WSL 2, you can access Windows binaries with the `.exe` extension. This lets you open photos easily within linux.
 
 ```bash
-explorer.exe prediction.png
+explorer.exe output.png
 ```
 
 ![a square image of an avocado, generated by the model](images/glide_out.png)
@@ -2797,9 +3385,9 @@ explorer.exe prediction.png
 
 # `cog.yaml` reference
 
-`cog.yaml` defines how to build a Docker image and how to run predictions on your model inside that image.
+`cog.yaml` defines how to build a Docker image and how to run your model inside that image.
 
-It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predict). It looks a bit like this:
+It has three keys: [`build`](#build), [`image`](#image), and [`run`](#run). It looks a bit like this:
 
 ```yaml
 build:
@@ -2808,7 +3396,7 @@ build:
   system_packages:
     - "ffmpeg"
     - "git"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
 Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `cog.yaml` file that can be used as a starting point for setting up your model.
@@ -2841,7 +3429,7 @@ build:
   gpu: true
 ```
 
-When you use `cog exec` or `cog predict`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
+When you use `cog exec` or `cog run`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
 
 ### `python_requirements`
 
@@ -2991,7 +3579,7 @@ This stanza describes the concurrency capabilities of the model. It has one opti
 
 ### `max`
 
-The maximum number of concurrent predictions the model can process. If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
+The maximum number of concurrent runs the model can process. If this is set, the model must specify an [async `run()` method](python.md#async-runners-and-concurrency).
 
 For example:
 
@@ -3018,9 +3606,23 @@ If you set this, then you can run `cog push` without specifying the model name.
 
 If you specify an image name argument when pushing (like `cog push your-username/custom-model-name`), the argument will be used and the value of `image` in cog.yaml will be ignored.
 
+## `run`
+
+The pointer to the `Runner` object in your code, which defines how runs are executed on your model.
+
+For example:
+
+```yaml
+run: "run.py:Runner"
+```
+
+`predict:` is still accepted for existing projects, but it is deprecated. New projects should use `run:`.
+
+See [the Python API documentation for more information](python.md).
+
 ## `predict`
 
-The pointer to the `Predictor` object in your code, which defines how predictions are run on your model.
+Deprecated compatibility field for [`run`](#run). Existing projects can continue using it, but Cog will warn and `cog doctor --fix` can migrate common projects to `run:`.
 
 For example:
 

@@ -125,6 +125,55 @@ predict: "predict.py:Predictor"
 
 
 @pytest.fixture
+def secret_predictor(tmp_path: Path) -> Path:
+    """Create a predictor exercising Secret input coercion.
+
+    predict() echoes back, for each parameter, the runtime type name and (for
+    secrets) the unwrapped value so tests can assert how each annotation is
+    coerced. Each field is encoded as ``name=<type>|<value>`` and fields are
+    joined with ``;``. For ``None`` values the unwrapped value is the literal
+    string ``None``.
+    """
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+from typing import Optional
+from cog import BasePredictor, Secret
+
+class Predictor(BasePredictor):
+    def setup(self):
+        pass
+
+    def predict(
+        self,
+        api_token: Secret,
+        plain: str = "",
+        opt_secret: Optional[Secret] = None,
+        pep604_secret: Secret | None = None,
+    ) -> str:
+        def describe(value):
+            type_name = type(value).__name__
+            if isinstance(value, Secret):
+                return f"{type_name}|{value.get_secret_value()}"
+            return f"{type_name}|{value}"
+
+        return ";".join([
+            f"api_token={describe(api_token)}",
+            f"plain={describe(plain)}",
+            f"opt_secret={describe(opt_secret)}",
+            f"pep604_secret={describe(pep604_secret)}",
+        ])
+""")
+
+    # Create cog.yaml
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
 def generator_predictor(tmp_path: Path) -> Path:
     """Create a generator predictor."""
     predictor = tmp_path / "predict.py"
@@ -197,6 +246,115 @@ class Predictor(BasePredictor):
 """)
 
     # Create cog.yaml
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
+def async_setup_predictor(tmp_path: Path) -> Path:
+    """Create a predictor with async def setup()."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def setup(self):
+        await asyncio.sleep(0.01)
+        self.prefix = "async-setup: "
+
+    async def predict(self, name: str = "World") -> str:
+        return self.prefix + name
+""")
+
+    # Create cog.yaml
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
+def async_setup_sync_predict_predictor(tmp_path: Path) -> Path:
+    """Create a predictor with async def setup() but sync def predict()."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def setup(self):
+        await asyncio.sleep(0.01)
+        self.prefix = "async-setup-sync-predict: "
+
+    def predict(self, name: str = "World") -> str:
+        return self.prefix + name
+""")
+
+    # Create cog.yaml
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
+def async_setup_weights_predictor(tmp_path: Path) -> Path:
+    """Create a predictor with async def setup(self, weights)."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def setup(self, weights=None):
+        await asyncio.sleep(0.01)
+        self.weights_value = str(weights) if weights else "no-weights"
+
+    def predict(self, name: str = "World") -> str:
+        return f"{self.weights_value}: {name}"
+""")
+
+    # Create cog.yaml
+    cog_yaml = tmp_path / "cog.yaml"
+    cog_yaml.write_text("""
+predict: "predict.py:Predictor"
+""")
+
+    return predictor
+
+
+@pytest.fixture
+def async_setup_event_loop_predictor(tmp_path: Path) -> Path:
+    """Create a predictor where async setup() stores the event loop and predict() checks it matches."""
+    predictor = tmp_path / "predict.py"
+    predictor.write_text("""
+import asyncio
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def setup(self):
+        self.setup_loop = asyncio.get_running_loop()
+        # Create an event-loop-bound resource (Queue is bound to the running loop)
+        self.queue = asyncio.Queue()
+        await self.queue.put("from-setup")
+
+    async def predict(self, name: str = "test") -> str:
+        predict_loop = asyncio.get_running_loop()
+        same_loop = predict_loop is self.setup_loop
+        # Use the queue created in setup — this fails if loops differ
+        item = self.queue.get_nowait()
+        return f"same_loop={same_loop} item={item}"
+""")
+
     cog_yaml = tmp_path / "cog.yaml"
     cog_yaml.write_text("""
 predict: "predict.py:Predictor"
@@ -362,6 +520,66 @@ class TestSyncPredictor:
             assert result["metrics"]["predict_time"] >= 0
 
 
+class TestSecretInput:
+    """Tests for cog.Secret input coercion."""
+
+    def _fields(self, output: str) -> dict:
+        """Parse the predictor's ``name=<type>|<value>`` encoding into a dict."""
+        fields = {}
+        for part in output.split(";"):
+            name, encoded = part.split("=", 1)
+            type_name, value = encoded.split("|", 1)
+            fields[name] = (type_name, value)
+        return fields
+
+    def test_direct_secret_is_wrapped(self, secret_predictor: Path):
+        """A ``Secret``-annotated param wraps the submitted string in Secret."""
+        with CogletServer(secret_predictor) as server:
+            result = server.predict({"api_token": "sk-test-12345"})
+            assert result["status"] == "succeeded"
+            fields = self._fields(result["output"])
+            assert fields["api_token"] == ("Secret", "sk-test-12345")
+
+    def test_optional_secret_with_value_is_wrapped(self, secret_predictor: Path):
+        """An ``Optional[Secret]`` param with a value wraps it in Secret."""
+        with CogletServer(secret_predictor) as server:
+            result = server.predict(
+                {"api_token": "sk-test-12345", "opt_secret": "sk-opt-67890"}
+            )
+            assert result["status"] == "succeeded"
+            fields = self._fields(result["output"])
+            assert fields["opt_secret"] == ("Secret", "sk-opt-67890")
+
+    def test_pep604_secret_with_value_is_wrapped(self, secret_predictor: Path):
+        """A ``Secret | None`` (PEP 604) param with a value wraps it in Secret."""
+        with CogletServer(secret_predictor) as server:
+            result = server.predict(
+                {"api_token": "sk-test-12345", "pep604_secret": "sk-604-abcde"}
+            )
+            assert result["status"] == "succeeded"
+            fields = self._fields(result["output"])
+            assert fields["pep604_secret"] == ("Secret", "sk-604-abcde")
+
+    def test_plain_str_is_not_wrapped(self, secret_predictor: Path):
+        """A plain ``str`` param stays a str and is NOT wrapped in Secret."""
+        with CogletServer(secret_predictor) as server:
+            result = server.predict(
+                {"api_token": "sk-test-12345", "plain": "sk-test-12345"}
+            )
+            assert result["status"] == "succeeded"
+            fields = self._fields(result["output"])
+            assert fields["plain"] == ("str", "sk-test-12345")
+
+    def test_optional_secret_omitted_stays_none(self, secret_predictor: Path):
+        """An omitted ``Optional[Secret]`` param stays None, not Secret("")."""
+        with CogletServer(secret_predictor) as server:
+            result = server.predict({"api_token": "sk-test-12345"})
+            assert result["status"] == "succeeded"
+            fields = self._fields(result["output"])
+            assert fields["opt_secret"] == ("NoneType", "None")
+            assert fields["pep604_secret"] == ("NoneType", "None")
+
+
 class TestGeneratorPredictor:
     """Tests for generator predictor."""
 
@@ -411,6 +629,51 @@ class TestAsyncGeneratorPredictor:
                 "async chunk 1",
                 "async chunk 2",
             ]
+
+
+class TestAsyncSetup:
+    """Tests for async def setup() — verifies the coroutine is actually awaited."""
+
+    def test_async_setup_with_async_predict(self, async_setup_predictor: Path):
+        """async setup() sets self.prefix, async predict() uses it."""
+        with CogletServer(async_setup_predictor) as server:
+            result = server.predict({"name": "Claude"})
+            assert result["status"] == "succeeded"
+            assert result["output"] == "async-setup: Claude"
+
+    def test_async_setup_with_sync_predict(
+        self, async_setup_sync_predict_predictor: Path
+    ):
+        """async setup() sets self.prefix, sync predict() uses it."""
+        with CogletServer(async_setup_sync_predict_predictor) as server:
+            result = server.predict({"name": "Claude"})
+            assert result["status"] == "succeeded"
+            assert result["output"] == "async-setup-sync-predict: Claude"
+
+    def test_async_setup_with_weights(
+        self, async_setup_weights_predictor: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """async setup(weights) receives the COG_WEIGHTS value."""
+        monkeypatch.setenv("COG_WEIGHTS", "https://example.com/model.tar")
+        with CogletServer(async_setup_weights_predictor) as server:
+            result = server.predict({"name": "Claude"})
+            assert result["status"] == "succeeded"
+            assert result["output"] == "https://example.com/model.tar: Claude"
+
+    def test_async_setup_shares_event_loop_with_predict(
+        self, async_setup_event_loop_predictor: Path
+    ):
+        """async setup() and async predict() must run on the same event loop.
+
+        This catches the bug where async setup() ran via asyncio.run() (ephemeral loop)
+        while predict() ran on a separate shared loop, causing event-loop-bound resources
+        created in setup (httpx.AsyncClient, aiohttp.ClientSession, asyncio.Queue, etc.)
+        to fail in predict.
+        """
+        with CogletServer(async_setup_event_loop_predictor) as server:
+            result = server.predict({"name": "test"})
+            assert result["status"] == "succeeded"
+            assert result["output"] == "same_loop=True item=from-setup"
 
 
 @pytest.fixture

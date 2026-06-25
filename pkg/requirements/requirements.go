@@ -2,45 +2,11 @@ package requirements
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/replicate/cog/pkg/util/files"
 )
-
-const RequirementsFile = "requirements.txt"
-const OverridesFile = "overrides.txt"
-
-func GenerateRequirements(tmpDir string, path string, fileName string) (string, error) {
-	bs, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	requirements := string(bs)
-
-	// Check against the old requirements
-	requirementsFile := filepath.Join(tmpDir, fileName)
-	if err := files.WriteIfDifferent(requirementsFile, requirements); err != nil {
-		return "", err
-	}
-	return requirementsFile, err
-}
-
-func CurrentRequirements(tmpDir string) (string, error) {
-	requirementsFile := filepath.Join(tmpDir, RequirementsFile)
-	_, err := os.Stat(requirementsFile)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
-		return "", err
-	}
-	return requirementsFile, nil
-}
 
 func ReadRequirements(path string) ([]string, error) {
 	re := regexp.MustCompile(`(?m)^\s*-e\s+\.\s*$`)
@@ -181,16 +147,6 @@ func PackageName(pipRequirement string) string {
 	match := re.FindStringSubmatch(pipRequirement)
 	if len(match) > 1 {
 		return match[1]
-	}
-	return ""
-}
-
-func VersionSpecifier(pipRequirement string) string {
-	re := regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+(?:\[[^\]]+\])?\s*([<>=!~]=?\s*[^;,#\s]+(?:\s*,\s*[<>=!~]=?\s*[^;,#\s]+)*(?:\s*\|\|\s*[<>=!~]=?\s*[^;,#\s]+(?:\s*,\s*[<>=!~]=?\s*[^;,#\s]+)*)*)?`)
-	match := re.FindStringSubmatch(pipRequirement)
-	if len(match) > 1 {
-		// Optional: strip spaces for uniform output
-		return strings.ReplaceAll(match[1], " ", "")
 	}
 	return ""
 }

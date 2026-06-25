@@ -24,12 +24,13 @@ https://github.com/replicate/cog
       --no-color   Disable colored output
       --version    Show version of Cog
 ```
+
 ## `cog build`
 
 Build a Docker image from the cog.yaml in the current directory.
 
 The generated image contains your model code, dependencies, and the Cog
-runtime. It can be run locally with 'cog predict' or pushed to a registry
+runtime. It can be run locally with 'cog run' or pushed to a registry
 with 'cog push'.
 
 ```
@@ -66,6 +67,28 @@ cog build [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
+
+## `cog doctor`
+
+Diagnose and fix common issues in your Cog project.
+
+NOTE: cog doctor is experimental. Behavior and checks may change in future versions.
+
+By default, cog doctor reports problems without modifying any files.
+Pass --fix to automatically apply safe fixes.
+
+```
+cog doctor [flags]
+```
+
+**Options**
+
+```
+  -f, --file string   The name of the config file. (default "cog.yaml")
+      --fix           Automatically apply fixes
+  -h, --help          help for doctor
+```
+
 ## `cog exec`
 
 Execute a command inside a Docker environment defined by cog.yaml.
@@ -106,12 +129,13 @@ cog exec <command> [arg...] [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
+
 ## `cog init`
 
-Create a cog.yaml and predict.py in the current directory.
+Create a cog.yaml and run.py in the current directory.
 
 These files provide a starting template for defining your model's environment
-and prediction interface. Edit them to match your model's requirements.
+and run interface. Edit them to match your model's requirements.
 
 ```
 cog init [flags]
@@ -129,6 +153,7 @@ cog init [flags]
 ```
   -h, --help   help for init
 ```
+
 ## `cog login`
 
 Log in to a container registry.
@@ -149,58 +174,7 @@ cog login [flags]
   -h, --help          help for login
       --token-stdin   Pass login token on stdin instead of opening a browser. You can find your Replicate login token at https://replicate.com/auth/token
 ```
-## `cog predict`
 
-Run a prediction.
-
-If 'image' is passed, it will run the prediction on that Docker image.
-It must be an image that has been built by Cog.
-
-Otherwise, it will build the model in the current directory and run
-the prediction on that.
-
-```
-cog predict [image] [flags]
-```
-
-**Examples**
-
-```
-  # Run a prediction with named inputs
-  cog predict -i prompt="a photo of a cat"
-
-  # Pass a file as input
-  cog predict -i image=@photo.jpg
-
-  # Save output to a file
-  cog predict -i image=@input.jpg -o output.png
-
-  # Pass multiple inputs
-  cog predict -i prompt="sunset" -i width=1024 -i height=768
-
-  # Run against a pre-built image
-  cog predict r8.im/your-username/my-model -i prompt="hello"
-
-  # Pass inputs as JSON
-  echo '{"prompt": "a cat"}' | cog predict --json @-
-```
-
-**Options**
-
-```
-  -e, --env stringArray              Environment variables, in the form name=value
-  -f, --file string                  The name of the config file. (default "cog.yaml")
-      --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
-  -h, --help                         help for predict
-  -i, --input stringArray            Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg
-      --json string                  Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)
-  -o, --output string                Output path
-      --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
-      --setup-timeout uint32         The timeout for a container to setup (in seconds). (default 300)
-      --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
-      --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
-      --use-replicate-token          Pass REPLICATE_API_TOKEN from local environment into the model context
-```
 ## `cog push`
 
 Build a Docker image from cog.yaml and push it to a container registry.
@@ -238,9 +212,63 @@ cog push [IMAGE] [flags]
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```
+
+## `cog run`
+
+Run the model.
+
+If 'image' is passed, it will run the model on that Docker image.
+It must be an image that has been built by Cog.
+
+Otherwise, it will build the model in the current directory and run
+it.
+
+```
+cog run [image] [flags]
+```
+
+**Examples**
+
+```
+  # Run the model with named inputs
+  cog run -i prompt="a photo of a cat"
+
+  # Pass a file as input
+  cog run -i image=@photo.jpg
+
+  # Save output to a file
+  cog run -i image=@input.jpg -o output.png
+
+  # Pass multiple inputs
+  cog run -i prompt="sunset" -i width=1024 -i height=768
+
+  # Run against a pre-built image
+  cog run r8.im/your-username/my-model -i prompt="hello"
+
+  # Pass inputs as JSON
+  echo '{"prompt": "a cat"}' | cog run --json @-
+```
+
+**Options**
+
+```
+  -e, --env stringArray              Environment variables, in the form name=value
+  -f, --file string                  The name of the config file. (default "cog.yaml")
+      --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
+  -h, --help                         help for run
+  -i, --input stringArray            Inputs, in the form name=value. if value is prefixed with @, then it is read from a file on disk. E.g. -i path=@image.jpg
+      --json string                  Pass inputs as JSON object, read from file (@inputs.json) or via stdin (@-)
+  -o, --output string                Output path
+      --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
+      --setup-timeout uint32         The timeout for a container to setup (in seconds). (default 300)
+      --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
+      --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
+      --use-replicate-token          Pass REPLICATE_API_TOKEN from local environment into the model context
+```
+
 ## `cog serve`
 
-Run a prediction HTTP server.
+Run an HTTP server.
 
 Builds the model and starts an HTTP server that exposes the model's inputs
 and outputs as a REST API. Compatible with the Cog HTTP protocol.

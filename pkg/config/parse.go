@@ -3,12 +3,8 @@ package config
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"go.yaml.in/yaml/v4"
-
-	"github.com/replicate/cog/pkg/util/files"
 )
 
 // parse reads and parses YAML content from an io.Reader into a configFile.
@@ -23,41 +19,6 @@ func parse(r io.Reader) (*configFile, error) {
 	return parseBytes(contents)
 }
 
-// parseFile reads and parses a cog.yaml file into a configFile.
-// This only does YAML parsing - no validation or defaults.
-// Returns ParseError if the file cannot be read or parsed.
-func parseFile(filename string) (*configFile, error) {
-	exists, err := files.Exists(filename)
-	if err != nil {
-		return nil, &ParseError{Filename: filename, Err: err}
-	}
-
-	if !exists {
-		return nil, &ParseError{
-			Filename: filename,
-			Err:      fmt.Errorf("%s does not exist in %s", filepath.Base(filename), filepath.Dir(filename)),
-		}
-	}
-
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, &ParseError{Filename: filename, Err: err}
-	}
-	defer f.Close()
-
-	cfg, err := parse(f)
-	if err != nil {
-		// Add filename context to the error
-		if parseErr, ok := err.(*ParseError); ok {
-			parseErr.Filename = filename
-			return nil, parseErr
-		}
-		return nil, &ParseError{Filename: filename, Err: err}
-	}
-
-	return cfg, nil
-}
-
 // parseBytes parses YAML content into a configFile.
 func parseBytes(contents []byte) (*configFile, error) {
 	cfg := &configFile{}
@@ -68,8 +29,13 @@ func parseBytes(contents []byte) (*configFile, error) {
 	}
 
 	if err := yaml.Unmarshal(contents, cfg); err != nil {
+		// NOTE: We intentionally use %v instead of %w here.
+		// The yaml v4 library's LoadErrors type has a buggy Is() method
+		// that causes infinite recursion when errors.Is traverses the
+		// error chain. By using %v we break the chain and prevent
+		// stack overflows when callers check the error.
 		return nil, &ParseError{
-			Err: fmt.Errorf("invalid YAML: %w", err),
+			Err: fmt.Errorf("invalid YAML: %v", err),
 		}
 	}
 
@@ -148,7 +114,15 @@ func configFileToConfig(cfg *configFile) (*Config, error) {
 	if cfg.Image != nil {
 		config.Image = *cfg.Image
 	}
-	if cfg.Predict != nil {
+	if cfg.Model != nil {
+		config.Model = *cfg.Model
+	}
+	if cfg.Run != nil && cfg.Predict != nil && *cfg.Run != "" && *cfg.Predict != "" {
+		return nil, &ValidationError{Field: "run", Message: "only one of run or predict can be set"}
+	}
+	if cfg.Run != nil && *cfg.Run != "" {
+		config.Predict = *cfg.Run
+	} else if cfg.Predict != nil {
 		config.Predict = *cfg.Predict
 	}
 	if cfg.Train != nil {

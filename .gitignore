@@ -16,19 +16,14 @@ pkg/wheels/*.whl
 .DS_Store
 docs/README.md
 docs/CONTRIBUTING.md
+.docs-build/
+.docs-build-mkdocs.yml
 venv
 base-image
 flag_file
 
 bin/*
 .beads/
-
-# Compiled test tools
-/weights-gen
-
-# Test directory for weights testing
-/test-weights/
-weights.lock
 
 # Auto-:d version files from setuptools-scm
 python/cog/_version.py

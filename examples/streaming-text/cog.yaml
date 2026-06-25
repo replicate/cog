@@ -1,0 +1,7 @@
+# Streaming text generation example using a small open-weight language model.
+
+build:
+  python_version: "3.12"
+  python_requirements: requirements.txt
+
+run: "run.py:Runner"

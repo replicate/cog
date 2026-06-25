@@ -41,6 +41,7 @@ func (f *DockerfileFactory) Build(ctx context.Context, src *Source, opts BuildOp
 	imageID, err := image.Build(
 		ctx,
 		src.Config,
+		src.DotCog,
 		src.ProjectDir,
 		opts.ImageName,
 		src.ConfigFilename,

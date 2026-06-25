@@ -4,14 +4,14 @@ The Prediction API is the HTTP interface for running model inference. It uses a 
 
 ## Endpoints
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `POST /predictions` | Create | Start a new prediction |
-| `PUT /predictions/{id}` | Create (idempotent) | Start or retrieve existing prediction |
-| `POST /predictions/{id}/cancel` | Cancel | Cancel a running prediction |
-| `GET /health-check` | Health | Check server status |
-| `GET /` | Index | List available endpoints |
-| `GET /openapi.json` | Schema | OpenAPI specification |
+| Endpoint                        | Method              | Purpose                               |
+| ------------------------------- | ------------------- | ------------------------------------- |
+| `POST /predictions`             | Create              | Start a new prediction                |
+| `PUT /predictions/{id}`         | Create (idempotent) | Start or retrieve existing prediction |
+| `POST /predictions/{id}/cancel` | Cancel              | Cancel a running prediction           |
+| `GET /health-check`             | Health              | Check server status                   |
+| `GET /`                         | Index               | List available endpoints              |
+| `GET /openapi.json`             | Schema              | OpenAPI specification                 |
 
 By default, `POST /predictions` blocks until completion. For long-running predictions, use async mode with `Prefer: respond-async` header -- the response returns immediately with status `processing`, and progress updates are delivered via webhook.
 
@@ -30,6 +30,7 @@ flowchart TB
 ```
 
 This pattern means:
+
 - Clients use the same code to call any Cog model
 - Platforms can route requests without understanding model internals
 - Input validation is schema-driven, not hardcoded
@@ -50,15 +51,15 @@ What clients send to start a prediction:
 }
 ```
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| `id` | string (optional) | Client-provided ID for idempotency |
-| `input` | object | **Model-specific** -- validated against schema |
-| `webhook` | URL (optional) | Where to send progress updates |
-| `webhook_events_filter` | array (optional) | Which events to send |
-| `created_at` | datetime (optional) | Client-provided timestamp |
+| Field                   | Type                | Purpose                                        |
+| ----------------------- | ------------------- | ---------------------------------------------- |
+| `id`                    | string (optional)   | Client-provided ID for idempotency             |
+| `input`                 | object              | **Model-specific** -- validated against schema |
+| `webhook`               | URL (optional)      | Where to send progress updates                 |
+| `webhook_events_filter` | array (optional)    | Which events to send                           |
+| `created_at`            | datetime (optional) | Client-provided timestamp                      |
 
-The `input` object is validated against the `Input` schema generated from the predictor's `predict()` signature. Unknown fields are rejected; missing required fields raise validation errors.
+The `input` object is validated against the `Input` schema generated from the runner's `run()` signature. Unknown fields are rejected; missing required fields raise validation errors.
 
 ## PredictionResponse
 
@@ -84,27 +85,27 @@ What comes back from the API:
 }
 ```
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| `id` | string | Prediction identifier |
-| `status` | enum | `starting`, `processing`, `succeeded`, `canceled`, `failed` |
-| `input` | object | Echo of the input (for reference) |
-| `output` | any | **Model-specific** -- type defined by schema |
-| `logs` | string | Captured stdout/stderr from predict() |
-| `error` | string | Error message if status is `failed` |
-| `metrics` | object | Timing and other metrics |
-| `created_at` | datetime | When request was received |
-| `started_at` | datetime | When prediction began |
-| `completed_at` | datetime | When prediction finished |
+| Field          | Type     | Purpose                                                     |
+| -------------- | -------- | ----------------------------------------------------------- |
+| `id`           | string   | Prediction identifier                                       |
+| `status`       | enum     | `starting`, `processing`, `succeeded`, `canceled`, `failed` |
+| `input`        | object   | Echo of the input (for reference)                           |
+| `output`       | any      | **Model-specific** -- type defined by schema                |
+| `logs`         | string   | Captured stdout/stderr from run()                           |
+| `error`        | string   | Error message if status is `failed`                         |
+| `metrics`      | object   | Timing and other metrics                                    |
+| `created_at`   | datetime | When request was received                                   |
+| `started_at`   | datetime | When prediction began                                       |
+| `completed_at` | datetime | When prediction finished                                    |
 
 ## Status Lifecycle
 
 ```mermaid
 stateDiagram-v2
     [*] --> starting: Request received
-    starting --> processing: predict() called
-    processing --> succeeded: predict() returns
-    processing --> failed: predict() raises exception
+    starting --> processing: run() called
+    processing --> succeeded: run() returns
+    processing --> failed: run() raises exception
     processing --> canceled: Cancel requested
     succeeded --> [*]
     failed --> [*]
@@ -130,15 +131,15 @@ Async predictions (via `Prefer: respond-async`) are unaffected -- they continue 
 
 The `/health-check` endpoint always returns HTTP 200 with the status in the JSON body. This allows load balancers and orchestrators to distinguish between "server is running but not ready" vs "server is down."
 
-| State | JSON `status` | Condition |
-|-------|---------------|-----------|
-| `UNKNOWN` | `"UNKNOWN"` | Process just started, not yet serving |
-| `STARTING` | `"STARTING"` | Worker subprocess initializing, running setup() |
-| `READY` | `"READY"` | Worker ready, slots available |
-| `BUSY` | `"BUSY"` | All slots occupied (backpressure) |
-| `SETUP_FAILED` | `"SETUP_FAILED"` | `setup()` threw exception |
-| `DEFUNCT` | `"DEFUNCT"` | Fatal error, worker crashed |
-| `UNHEALTHY` | `"UNHEALTHY"` | User-defined healthcheck failed (transient) |
+| State          | JSON `status`    | Condition                                       |
+| -------------- | ---------------- | ----------------------------------------------- |
+| `UNKNOWN`      | `"UNKNOWN"`      | Process just started, not yet serving           |
+| `STARTING`     | `"STARTING"`     | Worker subprocess initializing, running setup() |
+| `READY`        | `"READY"`        | Worker ready, slots available                   |
+| `BUSY`         | `"BUSY"`         | All slots occupied (backpressure)               |
+| `SETUP_FAILED` | `"SETUP_FAILED"` | `setup()` threw exception                       |
+| `DEFUNCT`      | `"DEFUNCT"`      | Fatal error, worker crashed                     |
+| `UNHEALTHY`    | `"UNHEALTHY"`    | User-defined healthcheck failed (transient)     |
 
 When all concurrency slots are occupied, new predictions receive `409 Conflict` instead of queuing. Clients should implement retry with backoff.
 
@@ -167,6 +168,7 @@ drop(permit);
 ```
 
 Advantages:
+
 - Fixed, predictable concurrency
 - Fair queuing (FIFO permit acquisition)
 - Observable slot usage in metrics
@@ -191,21 +193,21 @@ flowchart LR
     subgraph request["Incoming Request"]
         json["JSON body"]
     end
-    
+
     subgraph validation["Validation"]
         schema["Schema (Input type)"]
         validate["Schema Validation"]
     end
-    
+
     subgraph transform["Transformation"]
         download["Download URLs → Files"]
         coerce["Type Coercion"]
     end
-    
-    subgraph predict["predict()"]
+
+    subgraph predict["run()"]
         kwargs["**kwargs"]
     end
-    
+
     json --> validate
     schema --> validate
     validate --> download
@@ -217,31 +219,31 @@ flowchart LR
 2. **Validate against schema** -- Coglet validates types, required fields, and constraints at the HTTP edge using the OpenAPI schema
 3. **Download files** -- URLs in `cog.Path` fields are fetched to local temp files
 4. **Coerce types** -- Strings become Paths, etc.
-5. **Call predict()** -- Validated input passed as `**kwargs`
+5. **Call run()** -- Validated input passed as `**kwargs`
 
 ### Output Handling Flow
 
 ```mermaid
 flowchart LR
-    subgraph predict["predict()"]
+    subgraph predict["run()"]
         result["Return value / yields"]
     end
-    
+
     subgraph transform["Transformation"]
         upload["Upload files → URLs"]
         serialize["JSON serialization"]
     end
-    
+
     subgraph response["Response"]
         output["output field"]
     end
-    
+
     result --> upload
     upload --> serialize
     serialize --> output
 ```
 
-1. **Capture output** -- Return value or yielded values from predict()
+1. **Capture output** -- Return value or yielded values from run()
 2. **Upload files** -- `cog.Path` outputs are uploaded, replaced with URLs
 3. **Serialize** -- Convert to JSON-compatible format
 4. **Return** -- Place in `output` field of response
@@ -249,15 +251,17 @@ flowchart LR
 ### File Handling
 
 Input files (cog.Path):
+
 ```
 Client sends:    {"input": {"image": "https://example.com/photo.jpg"}}
 Server downloads: /tmp/inputabc123.jpg
-predict() sees:  image = Path("/tmp/inputabc123.jpg")
+run() sees:      image = Path("/tmp/inputabc123.jpg")
 ```
 
 Output files (cog.Path):
+
 ```
-predict() returns: Path("/tmp/output.png")
+run() returns:     Path("/tmp/output.png")
 Server uploads:    https://storage.example.com/output-xyz.png
 Client receives:   {"output": "https://storage.example.com/output-xyz.png"}
 ```
@@ -297,31 +301,32 @@ sequenceDiagram
     participant Client
     participant Cog
     participant Webhook
-    
+
     Client->>Cog: POST /predictions (Prefer: respond-async)
     Cog-->>Client: 202 {status: "starting"}
-    
+
     Cog->>Webhook: {status: "starting"}
-    Note over Cog: predict() starts
+    Note over Cog: run() starts
     Cog->>Webhook: {status: "processing"}
-    
+
     loop Output yields
         Cog->>Webhook: {output: "partial...", logs: "..."}
     end
-    
+
     Cog->>Webhook: {status: "succeeded", output: "final"}
 ```
 
 ### Webhook Events
 
-| Event | When | Payload Contains |
-|-------|------|------------------|
-| `start` | Prediction begins | `status: starting` |
-| `output` | Each yield from iterator | Partial `output` |
-| `logs` | Log lines captured | Updated `logs` |
-| `completed` | Prediction finishes | Final `status`, `output`, `metrics` |
+| Event       | When                     | Payload Contains                    |
+| ----------- | ------------------------ | ----------------------------------- |
+| `start`     | Prediction begins        | `status: starting`                  |
+| `output`    | Each yield from iterator | Partial `output`                    |
+| `logs`      | Log lines captured       | Updated `logs`                      |
+| `completed` | Prediction finishes      | Final `status`, `output`, `metrics` |
 
 Filter events with `webhook_events_filter`:
+
 ```json
 {
   "input": {...},
@@ -337,7 +342,7 @@ Webhook delivery includes structured retry with exponential backoff and automati
 For models that yield output progressively:
 
 ```python
-def predict(self, prompt: str) -> Iterator[str]:
+def run(self, prompt: str) -> Iterator[str]:
     for token in generate(prompt):
         yield token
 ```

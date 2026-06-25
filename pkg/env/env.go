@@ -3,8 +3,6 @@ package env
 import "os"
 
 const SchemeEnvVarName = "R8_SCHEME"
-const WebHostEnvVarName = "R8_WEB_HOST"
-const APIHostEnvVarName = "R8_API_HOST"
 const PytorchHostEnvVarName = "R8_PYTORCH_HOST"
 
 func SchemeFromEnvironment() string {
@@ -13,22 +11,6 @@ func SchemeFromEnvironment() string {
 		scheme = "https"
 	}
 	return scheme
-}
-
-func WebHostFromEnvironment() string {
-	host := os.Getenv(WebHostEnvVarName)
-	if host == "" {
-		host = "cog.replicate.com"
-	}
-	return host
-}
-
-func APIHostFromEnvironment() string {
-	host := os.Getenv(APIHostEnvVarName)
-	if host == "" {
-		host = "api.replicate.com"
-	}
-	return host
 }
 
 func PytorchHostFromEnvironment() string {

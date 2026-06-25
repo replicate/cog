@@ -1,8 +1,8 @@
 # `cog.yaml` reference
 
-`cog.yaml` defines how to build a Docker image and how to run predictions on your model inside that image.
+`cog.yaml` defines how to build a Docker image and how to run your model inside that image.
 
-It has three keys: [`build`](#build), [`image`](#image), and [`predict`](#predict). It looks a bit like this:
+It has three keys: [`build`](#build), [`image`](#image), and [`run`](#run). It looks a bit like this:
 
 ```yaml
 build:
@@ -11,7 +11,7 @@ build:
   system_packages:
     - "ffmpeg"
     - "git"
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
 Tip: Run [`cog init`](getting-started-own-model.md#initialization) to generate an annotated `cog.yaml` file that can be used as a starting point for setting up your model.
@@ -44,7 +44,7 @@ build:
   gpu: true
 ```
 
-When you use `cog exec` or `cog predict`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
+When you use `cog exec` or `cog run`, Cog will automatically pass the `--gpus=all` flag to Docker. When you run a Docker image built with Cog, you'll need to pass this option to `docker run`.
 
 ### `python_requirements`
 
@@ -194,7 +194,7 @@ This stanza describes the concurrency capabilities of the model. It has one opti
 
 ### `max`
 
-The maximum number of concurrent predictions the model can process. If this is set, the model must specify an [async `predict()` method](python.md#async-predictors-and-concurrency).
+The maximum number of concurrent runs the model can process. If this is set, the model must specify an [async `run()` method](python.md#async-runners-and-concurrency).
 
 For example:
 
@@ -221,9 +221,23 @@ If you set this, then you can run `cog push` without specifying the model name.
 
 If you specify an image name argument when pushing (like `cog push your-username/custom-model-name`), the argument will be used and the value of `image` in cog.yaml will be ignored.
 
+## `run`
+
+The pointer to the `Runner` object in your code, which defines how runs are executed on your model.
+
+For example:
+
+```yaml
+run: "run.py:Runner"
+```
+
+`predict:` is still accepted for existing projects, but it is deprecated. New projects should use `run:`.
+
+See [the Python API documentation for more information](python.md).
+
 ## `predict`
 
-The pointer to the `Predictor` object in your code, which defines how predictions are run on your model.
+Deprecated compatibility field for [`run`](#run). Existing projects can continue using it, but Cog will warn and `cog doctor --fix` can migrate common projects to `run:`.
 
 For example:
 

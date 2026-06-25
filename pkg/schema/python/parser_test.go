@@ -24,17 +24,17 @@ func jsonRoundTrip(t *testing.T, v map[string]any) map[string]any {
 }
 
 // helper that parses in predict mode and fails on error.
-func parse(t *testing.T, source, predictRef string) *schema.PredictorInfo {
+func parse(t *testing.T, source, targetRef string) *schema.PredictorInfo {
 	t.Helper()
-	info, err := ParsePredictor([]byte(source), predictRef, schema.ModePredict, "")
+	info, err := ParsePredictor([]byte(source), targetRef, schema.ModePredict, "")
 	require.NoError(t, err)
 	return info
 }
 
 // helper to parse and expect an error.
-func parseErr(t *testing.T, source, predictRef string, mode schema.Mode) *schema.SchemaError {
+func parseErr(t *testing.T, source, targetRef string, mode schema.Mode) *schema.SchemaError {
 	t.Helper()
-	_, err := ParsePredictor([]byte(source), predictRef, mode, "")
+	_, err := ParsePredictor([]byte(source), targetRef, mode, "")
 	require.Error(t, err)
 	var se *schema.SchemaError
 	require.True(t, errors.As(err, &se), "expected *schema.SchemaError, got %T: %v", err, err)
@@ -63,6 +63,264 @@ class Predictor(BasePredictor):
 	require.Nil(t, s.Default)
 	require.True(t, s.IsRequired())
 
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestSimpleStringRunner(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def run(self, s: str) -> str:
+        return "hello " + s
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	s, ok := info.Inputs.Get("s")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, s.FieldType.Primitive)
+	require.Equal(t, schema.Required, s.FieldType.Repetition)
+	require.Nil(t, s.Default)
+	require.True(t, s.IsRequired())
+
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestRunnerWithBothRunAndPredictUsesRun(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def run(self, s: str) -> str:
+        return s
+
+    def predict(self, s: int) -> int:
+        return s
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	s, ok := info.Inputs.Get("s")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, s.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestRunnerWithNoRunOrPredictErrors(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def setup(self) -> None:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrMethodNotFound, se.Kind)
+	require.Contains(t, se.Message, "Predictor must define run() or predict()")
+}
+
+func TestRunMethodIsPrimaryTarget(t *testing.T) {
+	source := `
+from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> str:
+        return prompt
+`
+	info := parse(t, source, "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	prompt, ok := info.Inputs.Get("prompt")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, prompt.FieldType.Primitive)
+	require.Equal(t, schema.Required, prompt.FieldType.Repetition)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestRunMethodPreferredOverLegacyPredict(t *testing.T) {
+	source := `
+from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def predict(self, value: int) -> int:
+        return value
+
+    def run(self, value: str) -> str:
+        return value
+`
+	info := parse(t, source, "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, value.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestLegacyPredictMethodFallback(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, value: int) -> int:
+        return value
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeInteger, value.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeInteger, info.Output.Primitive)
+}
+
+func TestLegacyPredictFallbackCanBeDisabled(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, value: int) -> int:
+        return value
+`
+	opts := defaultParserOptions([]byte(source), "Predictor", schema.ModePredict, "")
+	opts.DisableLegacyPredict = true
+
+	_, err := ParseWithOptions(opts)
+	require.Error(t, err)
+	var se *schema.SchemaError
+	require.True(t, errors.As(err, &se))
+	require.Equal(t, schema.ErrMethodNotFound, se.Kind)
+	require.Contains(t, se.Error(), "run")
+}
+
+func TestMissingRunAndLegacyPredictReportsBothNames(t *testing.T) {
+	source := `
+from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def setup(self) -> None:
+        pass
+`
+	se := parseErr(t, source, "Runner", schema.ModePredict)
+	require.Equal(t, schema.ErrMethodNotFound, se.Kind)
+	require.Contains(t, se.Error(), "run")
+	require.Contains(t, se.Error(), "predict")
+}
+
+func TestStandaloneRunTargetPreferredOverEarlierLegacyPredict(t *testing.T) {
+	source := `
+def predict(value: int) -> int:
+    return value
+
+def run(value: str) -> str:
+    return value
+`
+	info := parse(t, source, "run")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, value.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestStandaloneRunTargetPreferredOverLaterLegacyPredict(t *testing.T) {
+	source := `
+def run(value: str) -> str:
+    return value
+
+def predict(value: int) -> int:
+    return value
+`
+	info := parse(t, source, "run")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, value.FieldType.Primitive)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestRunnerWithInheritedRun(t *testing.T) {
+	source := `
+from cog import BaseRunner
+
+class Shared(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s
+
+class Runner(Shared):
+    pass
+`
+	info := parse(t, source, "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestRunnerWithImportedInheritedRun(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "shared.py", `
+from cog import BaseRunner
+
+class SharedRunner(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s
+`)
+	writeFile(t, dir, "predict.py", `
+from shared import SharedRunner
+
+class Runner(SharedRunner):
+    pass
+`)
+	info := parseFile(t, dir, "predict.py", "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestRunnerWithQualifiedImportedInheritedRun(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "shared.py", `
+from cog import BaseRunner
+
+class SharedRunner(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s
+`)
+	writeFile(t, dir, "predict.py", `
+import shared
+
+class Runner(shared.SharedRunner):
+    pass
+`)
+	info := parseFile(t, dir, "predict.py", "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestRunnerWithInheritedRunAndDirectPredictUsesRun(t *testing.T) {
+	source := `
+from cog import BaseRunner
+
+class Shared(BaseRunner):
+    def run(self, s: str) -> str:
+        return s
+
+class Runner(Shared):
+    def predict(self, s: int) -> int:
+        return s
+`
+	info := parse(t, source, "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+
+	s, ok := info.Inputs.Get("s")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, s.FieldType.Primitive)
 	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
 	require.Equal(t, schema.TypeString, info.Output.Primitive)
 }
@@ -144,6 +402,129 @@ class Predictor(BasePredictor):
 	require.True(t, ok)
 	require.Equal(t, schema.Optional, name.FieldType.Repetition)
 	require.Equal(t, schema.TypeString, name.FieldType.Primitive)
+}
+
+func TestOptionalInputOpenAPINotRequired(t *testing.T) {
+	source := []byte(`
+from typing import Optional
+
+class Predictor:
+    def predict(self, value: Optional[str]) -> str:
+        return "ok"
+`)
+
+	info, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.NoError(t, err)
+
+	out, err := schema.GenerateOpenAPISchema(info)
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(out, &doc))
+	components, ok := doc["components"].(map[string]any)
+	require.True(t, ok)
+	schemas, ok := components["schemas"].(map[string]any)
+	require.True(t, ok)
+	input, ok := schemas["Input"].(map[string]any)
+	require.True(t, ok)
+	_, hasRequired := input["required"]
+	require.False(t, hasRequired)
+
+	properties, ok := input["properties"].(map[string]any)
+	require.True(t, ok)
+	prop, ok := properties["value"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, prop["nullable"])
+}
+
+func TestUnionInputStringFloat(t *testing.T) {
+	source := []byte(`
+class Predictor:
+    def predict(self, value: str | float) -> str:
+        return str(value)
+`)
+
+	info, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.NoError(t, err)
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.NotNil(t, value.InputType)
+	require.Equal(t, schema.InputKindUnion, value.InputType.Kind)
+	require.Len(t, value.InputType.Variants, 2)
+	require.Equal(t, schema.TypeString, value.InputType.Variants[0].Primitive)
+	require.Equal(t, schema.TypeFloat, value.InputType.Variants[1].Primitive)
+	require.False(t, value.InputType.Nullable)
+}
+
+func TestUnionInputStringFloatNone(t *testing.T) {
+	source := []byte(`
+from cog import Input
+
+class Predictor:
+    def predict(self, value: str | float | None = Input(default=None)) -> str:
+        return "ok"
+`)
+
+	info, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.NoError(t, err)
+
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.NotNil(t, value.InputType)
+	require.Equal(t, schema.InputKindUnion, value.InputType.Kind)
+	require.True(t, value.InputType.Nullable)
+	require.NotNil(t, value.Default)
+	require.Equal(t, schema.DefaultNone, value.Default.Kind)
+}
+
+func TestUnionInputNullableWithoutDefaultOpenAPI(t *testing.T) {
+	source := []byte(`
+class Predictor:
+    def predict(self, value: str | float | None) -> str:
+        return "ok"
+`)
+
+	info, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.NoError(t, err)
+
+	out, err := schema.GenerateOpenAPISchema(info)
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(out, &doc))
+	components, ok := doc["components"].(map[string]any)
+	require.True(t, ok)
+	schemas, ok := components["schemas"].(map[string]any)
+	require.True(t, ok)
+	input, ok := schemas["Input"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, []any{"value"}, input["required"])
+
+	properties, ok := input["properties"].(map[string]any)
+	require.True(t, ok)
+	prop, ok := properties["value"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, prop["nullable"])
+	require.Equal(t, []any{
+		map[string]any{"nullable": true, "type": "string"},
+		map[string]any{"nullable": true, "type": "number"},
+	}, prop["anyOf"])
+}
+
+func TestUnionInputRejectsPathString(t *testing.T) {
+	source := []byte(`
+from cog import Path
+
+class Predictor:
+    def predict(self, value: Path | str) -> str:
+        return "ok"
+`)
+
+	_, err := ParsePredictor(source, "Predictor", schema.ModePredict, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Path")
+	require.Contains(t, err.Error(), "union")
 }
 
 // ---------------------------------------------------------------------------
@@ -455,6 +836,133 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.ErrConcatIteratorNotStr, se.Kind)
 }
 
+func TestStreamingDecoratorQualifiedOptIn(t *testing.T) {
+	source := `
+import cog
+from typing import Iterator
+
+class Predictor(cog.BasePredictor):
+    @cog.streaming
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorQualifiedAliasOptIn(t *testing.T) {
+	source := `
+import cog as c
+from typing import Iterator
+
+class Predictor(c.BasePredictor):
+    @c.streaming
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorImportedOptIn(t *testing.T) {
+	source := `
+from cog import BasePredictor, streaming
+from typing import Iterator
+
+class Predictor(BasePredictor):
+    @streaming
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorImportedAliasOptIn(t *testing.T) {
+	source := `
+from cog import BasePredictor, streaming as stream
+from typing import Iterator
+
+class Predictor(BasePredictor):
+    @stream
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorRequiresIteratorOutput(t *testing.T) {
+	source := `
+from cog import BasePredictor, streaming
+
+class Predictor(BasePredictor):
+    @streaming
+    def predict(self) -> str:
+        return "hello"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "@streaming requires")
+}
+
+func TestStreamingDecoratorIgnoredWhenNotFromCog(t *testing.T) {
+	source := `
+from other import streaming
+from typing import Iterator
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    @streaming
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.False(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorParameterizedFormOptIn(t *testing.T) {
+	source := `
+import cog
+from typing import Iterator
+
+class Predictor(cog.BasePredictor):
+    @cog.streaming()
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorImportedParameterizedFormOptIn(t *testing.T) {
+	source := `
+from cog import BasePredictor, streaming
+from typing import Iterator
+
+class Predictor(BasePredictor):
+    @streaming()
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.True(t, info.SupportsStreaming)
+}
+
+func TestStreamingDecoratorClassLevelIgnored(t *testing.T) {
+	source := `
+import cog
+from typing import Iterator
+
+@cog.streaming
+class Predictor(cog.BasePredictor):
+    def predict(self) -> Iterator[str]:
+        yield "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.False(t, info.SupportsStreaming)
+}
+
 func TestListOutput(t *testing.T) {
 	source := `
 from cog import BasePredictor, Path
@@ -535,6 +1043,28 @@ def train(n: int) -> Path:
     pass
 `
 	info, err := ParsePredictor([]byte(source), "train", schema.ModeTrain, "")
+	require.NoError(t, err)
+	require.Equal(t, schema.ModeTrain, info.Mode)
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestTrainModeClassDecoratedMethod(t *testing.T) {
+	source := `
+from functools import wraps
+from cog import BasePredictor, Path
+
+def noop(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        return fn(*args, **kwargs)
+    return wrapper
+
+class Trainer(BasePredictor):
+    @noop
+    def train(self, n: int) -> Path:
+        pass
+`
+	info, err := ParsePredictor([]byte(source), "Trainer", schema.ModeTrain, "")
 	require.NoError(t, err)
 	require.Equal(t, schema.ModeTrain, info.Mode)
 	require.Equal(t, 1, info.Inputs.Len())
@@ -664,6 +1194,23 @@ class Predictor(BasePredictor):
 `
 	se := parseErr(t, source, "Predictor", schema.ModePredict)
 	require.Contains(t, se.Message, "cannot be statically resolved")
+}
+
+func TestDescriptionFromModuleLevelVar(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input
+
+STEP_DESC = "Number of denoising steps. 4 is recommended."
+
+class Predictor(BasePredictor):
+    def predict(self, num_steps: int = Input(default=4, description=STEP_DESC)) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	field, ok := info.Inputs.Get("num_steps")
+	require.True(t, ok)
+	require.NotNil(t, field.Description, "description from module-level variable should be resolved")
+	require.Equal(t, "Number of denoising steps. 4 is recommended.", *field.Description)
 }
 
 // ---------------------------------------------------------------------------
@@ -968,6 +1515,66 @@ class Predictor(BasePredictor):
 	token, ok := info.Inputs.Get("token")
 	require.True(t, ok)
 	require.Equal(t, schema.TypeSecret, token.FieldType.Primitive)
+}
+
+// TestSecretWithDefaultNoneIsOptional verifies that when a predictor declares
+// `api_key: Secret = Input(default=None)` — the documented idiom for an
+// optional credential that falls back to a proxy key — the parser surfaces
+// enough information for the schema generator to render the field as
+// nullable and not required.
+//
+// The parser itself does not flip the Repetition; it records the bare-Secret
+// annotation (Repetition=Required) and the explicit DefaultNone. The
+// openapi.go builder is responsible for treating this combination as optional.
+// What we assert here is the invariant the parser must preserve: the explicit
+// `default=None` kwarg produces a non-nil Default with Kind=DefaultNone,
+// distinct from "no default was supplied" (Default==nil). Without this the
+// downstream generator has no way to tell the two patterns apart.
+func TestSecretWithDefaultNoneIsOptional(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Secret
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        api_key: Secret = Input(
+            description="Your API key (optional - uses proxy if not provided)",
+            default=None,
+        ),
+    ) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	apiKey, ok := info.Inputs.Get("api_key")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeSecret, apiKey.FieldType.Primitive)
+	require.Equal(t, schema.Required, apiKey.FieldType.Repetition,
+		"bare Secret annotation should parse as Required — the openapi builder interprets default=None to flip to optional")
+	require.NotNil(t, apiKey.Default, "explicit default=None must round-trip as a non-nil DefaultValue")
+	require.Equal(t, schema.DefaultNone, apiKey.Default.Kind)
+}
+
+// TestBareSecretHasNoDefault guards against a subtle regression: `Secret`
+// without any `default=` kwarg must produce Default==nil (not
+// &DefaultValue{Kind: DefaultNone}). The openapi builder uses this
+// distinction to keep `api_key: Secret = Input(description="API key")`
+// required while making `api_key: Secret = Input(default=None)` optional.
+func TestBareSecretHasNoDefault(t *testing.T) {
+	source := `
+from cog import BasePredictor, Input, Secret
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        api_key: Secret = Input(description="API key"),
+    ) -> str:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	apiKey, ok := info.Inputs.Get("api_key")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeSecret, apiKey.FieldType.Primitive)
+	require.Nil(t, apiKey.Default, "Input() without a default= kwarg must produce a nil Default, distinct from default=None")
 }
 
 // ---------------------------------------------------------------------------
@@ -1666,6 +2273,21 @@ class Predictor(BasePredictor):
 	require.Contains(t, se.Message, ".pyi stub")
 }
 
+func TestUnresolvableImportedTypeSuggestsOpaque(t *testing.T) {
+	source := `
+from cog import BasePredictor
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: ThirdPartyType) -> str:
+        return "ok"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnresolvableType, se.Kind)
+	require.Contains(t, se.Message, "cannot resolve type 'ThirdPartyType'")
+	require.Contains(t, se.Message, "Annotated[ThirdPartyType, Opaque]")
+}
+
 func TestUnresolvableUndefinedTypeError(t *testing.T) {
 	source := `
 from cog import BasePredictor
@@ -1900,6 +2522,55 @@ class Predictor(BasePredictor):
 	require.Equal(t, true, errProp["nullable"])
 }
 
+func TestAnnotatedOptionalStringFieldNullable(t *testing.T) {
+	source := `
+from typing import Annotated, Optional
+from cog import BasePredictor, BaseModel
+
+class Result(BaseModel):
+    payload: Annotated[Optional[str], "metadata"]
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.NotNil(t, info.Output.Fields)
+
+	payload, ok := info.Output.Fields.Get("payload")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaPrimitive, payload.Type.Kind)
+	require.Equal(t, schema.TypeString, payload.Type.Primitive)
+	require.True(t, payload.Type.Nullable)
+	require.False(t, payload.Required)
+}
+
+func TestOpaqueAnnotatedOptionalImportedFieldNullable(t *testing.T) {
+	source := `
+from typing import Annotated, Optional
+from cog import BasePredictor, BaseModel, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Result(BaseModel):
+    payload: Annotated[Optional[ThirdPartyType], Opaque]
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Result:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.NotNil(t, info.Output.Fields)
+
+	payload, ok := info.Output.Fields.Get("payload")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaPrimitive, payload.Type.Kind)
+	require.Equal(t, schema.TypeAny, payload.Type.Primitive)
+	require.True(t, payload.Type.Nullable)
+	require.False(t, payload.Required)
+}
+
 func TestPydanticOutputWithListField(t *testing.T) {
 	source := `
 from pydantic import BaseModel
@@ -1997,11 +2668,11 @@ func writeFile(t *testing.T, dir, name, content string) {
 }
 
 // parseFile is a test helper that parses a file from disk with sourceDir context.
-func parseFile(t *testing.T, dir, filename, predictRef string) *schema.PredictorInfo {
+func parseFile(t *testing.T, dir, filename, targetRef string) *schema.PredictorInfo {
 	t.Helper()
 	source, err := os.ReadFile(filepath.Join(dir, filename))
 	require.NoError(t, err)
-	info, err := ParsePredictor(source, predictRef, schema.ModePredict, dir)
+	info, err := ParsePredictorWithSourcePath(source, targetRef, schema.ModePredict, dir, filename)
 	require.NoError(t, err)
 	return info
 }
@@ -2161,6 +2832,101 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeFloat, score.Type.Primitive)
 }
 
+func TestImportedModelsFromSameModuleAreResolvedOnce(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "types.py", `
+from cog import BaseModel
+
+class First(BaseModel):
+    value: str
+
+class Second(BaseModel):
+    value: int
+`)
+
+	source := `
+from cog import BaseRunner, BaseModel
+from types import First, Second
+
+class Output(BaseModel):
+    first: First
+    second: Second
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Output:
+        pass
+`
+	info, err := ParseWithOptions(defaultParserOptions([]byte(source), "Runner", schema.ModePredict, dir))
+	require.NoError(t, err)
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	first, ok := info.Output.Fields.Get("first")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaObject, first.Type.Kind)
+	firstValue, ok := first.Type.Fields.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, firstValue.Type.Primitive)
+
+	second, ok := info.Output.Fields.Get("second")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaObject, second.Type.Kind)
+	secondValue, ok := second.Type.Fields.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeInteger, secondValue.Type.Primitive)
+}
+
+func TestLoadModelsFromModuleCachesLoadedModule(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "types.py", `
+from cog import BaseModel
+
+class Output(BaseModel):
+    value: str
+`)
+
+	ctx := &modelParseContext{
+		imports:       schema.NewImportContext(),
+		typedDicts:    make(map[string]bool),
+		loadedModules: make(map[string]ModuleSummary),
+	}
+	first := ctx.loadModelsFromModule(dir, "types")
+	second := ctx.loadModelsFromModule(dir, "types")
+
+	require.Same(t, first, second)
+	require.Len(t, ctx.loadedModules, 1)
+	fields, ok := first.Get("Output")
+	require.True(t, ok)
+	require.Len(t, fields, 1)
+	require.Equal(t, "value", fields[0].Name)
+	require.Equal(t, "str", fields[0].Type.Name)
+}
+
+func TestLoadModelsFromModuleCachesEquivalentModulePaths(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "types.py", `
+from cog import BaseModel
+
+class Output(BaseModel):
+    value: str
+`)
+
+	ctx := &modelParseContext{
+		imports:       schema.NewImportContext(),
+		typedDicts:    make(map[string]bool),
+		loadedModules: make(map[string]ModuleSummary),
+	}
+	absolute := ctx.loadModelsFromModule(dir, "types")
+	relative := ctx.loadModelsFromModule(dir, ".types")
+
+	require.Same(t, absolute, relative)
+	require.Len(t, ctx.loadedModules, 1)
+	fields, ok := absolute.Get("Output")
+	require.True(t, ok)
+	require.Len(t, fields, 1)
+	require.Equal(t, "value", fields[0].Name)
+	require.Equal(t, "str", fields[0].Type.Name)
+}
+
 func TestCrossFileWithOptionalField(t *testing.T) {
 	dir := t.TempDir()
 
@@ -2200,6 +2966,72 @@ class Predictor(BasePredictor):
 	require.Equal(t, false, debug.Default.Bool)
 }
 
+func TestCrossFileNestedImportedModel(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "details.py", `
+from cog import BaseModel
+
+class Details(BaseModel):
+    score: float
+`)
+	writeFile(t, dir, "output.py", `
+from cog import BaseModel
+from details import Details
+
+class Output(BaseModel):
+    text: str
+    details: Details
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BasePredictor
+from output import Output
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Output:
+        pass
+`)
+
+	info := parseFile(t, dir, "predict.py", "Predictor")
+	details, ok := info.Output.Fields.Get("details")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaObject, details.Type.Kind)
+	score, ok := details.Type.Fields.Get("score")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeFloat, score.Type.Primitive)
+}
+
+func TestCrossFileTypedDictInheritsImportedTypedDict(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "base_types.py", `
+from typing import TypedDict
+
+class BasePayload(TypedDict):
+    name: str
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BaseRunner
+from base_types import BasePayload
+
+class Payload(BasePayload):
+    count: int
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Payload:
+        pass
+`)
+
+	info := parseFile(t, dir, "predict.py", "Runner")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+	count, ok := info.Output.Fields.Get("count")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeInteger, count.Type.Primitive)
+}
+
 func TestCrossFileAliasedImport(t *testing.T) {
 	// from output_types import MyOutput as Output
 	dir := t.TempDir()
@@ -2227,6 +3059,337 @@ class Predictor(BasePredictor):
 	require.Equal(t, schema.TypeInteger, val.Type.Primitive)
 }
 
+func TestCrossFileAliasedImportsWithDuplicateClassNames(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.py", `
+from cog import BaseModel
+
+class Payload(BaseModel):
+    a_value: str
+`)
+	writeFile(t, dir, "b.py", `
+from cog import BaseModel
+
+class Payload(BaseModel):
+    b_value: int
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BasePredictor, BaseModel
+from a import Payload as A
+from b import Payload as B
+
+class Output(BaseModel):
+    first: A
+    second: B
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Output:
+        pass
+`)
+
+	info := parseFile(t, dir, "predict.py", "Predictor")
+	first, ok := info.Output.Fields.Get("first")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaObject, first.Type.Kind)
+	_, ok = first.Type.Fields.Get("a_value")
+	require.True(t, ok)
+
+	second, ok := info.Output.Fields.Get("second")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaObject, second.Type.Kind)
+	_, ok = second.Type.Fields.Get("b_value")
+	require.True(t, ok)
+}
+
+func TestCrossFileDirectImportOverridesEarlierDuplicateDiscovery(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.py", `
+from cog import BaseModel
+
+class Payload(BaseModel):
+    a_value: str
+`)
+	writeFile(t, dir, "b.py", `
+from cog import BaseModel
+
+class Payload(BaseModel):
+    b_value: int
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BasePredictor, BaseModel
+from a import Payload as A
+from b import Payload
+
+class Output(BaseModel):
+    first: A
+    second: Payload
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Output:
+        pass
+`)
+
+	info := parseFile(t, dir, "predict.py", "Predictor")
+	second, ok := info.Output.Fields.Get("second")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaObject, second.Type.Kind)
+	_, ok = second.Type.Fields.Get("b_value")
+	require.True(t, ok)
+	_, ok = second.Type.Fields.Get("a_value")
+	require.False(t, ok)
+}
+
+func TestCrossFileQualifiedImportsWithDuplicateClassNames(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.py", `
+from cog import BaseModel
+
+class Payload(BaseModel):
+    a_value: str
+`)
+	writeFile(t, dir, "b.py", `
+from cog import BaseModel
+
+class Payload(BaseModel):
+    b_value: int
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BasePredictor
+import a as a_mod
+import b as b_mod
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> b_mod.Payload:
+        pass
+`)
+
+	info := parseFile(t, dir, "predict.py", "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	_, ok := info.Output.Fields.Get("b_value")
+	require.True(t, ok)
+	_, ok = info.Output.Fields.Get("a_value")
+	require.False(t, ok)
+}
+
+func TestCrossFileQualifiedImportDoesNotFallbackToWrongUnqualifiedModel(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.py", `
+from cog import BaseModel
+
+class Payload(BaseModel):
+    a_value: str
+`)
+	writeFile(t, dir, "b.py", `
+from cog import BaseModel
+
+class Payload(BaseModel):
+    b_value: int
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BasePredictor
+from b import Payload
+import missing as a_mod
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> a_mod.Payload:
+        pass
+`)
+
+	source, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	_, err = ParsePredictorWithSourcePath(source, "Predictor", schema.ModePredict, dir, "predict.py")
+	require.Error(t, err)
+	var se *schema.SchemaError
+	require.True(t, errors.As(err, &se))
+	require.Equal(t, schema.ErrUnresolvableType, se.Kind)
+}
+
+func TestCrossFileModuleImportDoesNotExposeUnqualifiedModel(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.py", `
+from cog import BaseModel
+
+class Payload(BaseModel):
+    a_value: str
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BaseRunner
+import a as a_mod
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Payload:
+        pass
+`)
+
+	source, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	_, err = ParsePredictorWithSourcePath(source, "Runner", schema.ModePredict, dir, "predict.py")
+	require.Error(t, err)
+}
+
+func TestCrossFileModuleImportDoesNotExposeUnqualifiedTypedDict(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.py", `
+from typing import TypedDict
+
+class Payload(TypedDict):
+    a_value: str
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BaseRunner
+import a as a_mod
+
+class Child(Payload):
+    extra: str
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Child:
+        pass
+`)
+
+	source, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	_, err = ParsePredictorWithSourcePath(source, "Runner", schema.ModePredict, dir, "predict.py")
+	require.Error(t, err)
+}
+
+func TestCrossFileFromPackageImportModuleDoesNotExposeUnqualifiedModel(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "models/output.py", `
+from cog import BaseModel
+
+class Output(BaseModel):
+    value: str
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BaseRunner
+from models import output
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Output:
+        pass
+`)
+
+	source, err := os.ReadFile(filepath.Join(dir, "predict.py"))
+	require.NoError(t, err)
+	_, err = ParsePredictorWithSourcePath(source, "Runner", schema.ModePredict, dir, "predict.py")
+	require.Error(t, err)
+}
+
+func TestCrossFileFromPackageImportMultipleModulesWithoutPackageFile(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "models/output.py", `
+from cog import BaseModel
+
+class Output(BaseModel):
+    value: str
+`)
+	writeFile(t, dir, "models/input.py", `
+from cog import BaseModel
+
+class Input(BaseModel):
+    prompt: str
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BaseRunner
+from models import output, input
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> input.Input:
+        pass
+`)
+
+	info := parseFile(t, dir, "predict.py", "Runner")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	_, ok := info.Output.Fields.Get("prompt")
+	require.True(t, ok)
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestCrossFileQualifiedTypedDictParentWithDuplicateNames(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.py", `
+from typing import TypedDict
+
+class Payload(TypedDict):
+    a_value: str
+`)
+	writeFile(t, dir, "b.py", `
+from typing import TypedDict
+
+class Payload(TypedDict):
+    b_value: int
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BaseRunner
+import a as a_mod
+import b as b_mod
+
+class Child(b_mod.Payload):
+    extra: str
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Child:
+        pass
+`)
+
+	info := parseFile(t, dir, "predict.py", "Runner")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	_, ok := info.Output.Fields.Get("b_value")
+	require.True(t, ok)
+	_, ok = info.Output.Fields.Get("a_value")
+	require.False(t, ok)
+	_, ok = info.Output.Fields.Get("extra")
+	require.True(t, ok)
+}
+
+func TestCrossFileCyclicImportsWithAlias(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "a.py", `
+from cog import BaseModel
+from b import B
+
+class A(BaseModel):
+    b: B
+`)
+	writeFile(t, dir, "b.py", `
+from cog import BaseModel
+from a import A as AA
+
+class B(BaseModel):
+    a: AA
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BasePredictor
+from a import A
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> A:
+        pass
+`)
+
+	info := parseFile(t, dir, "predict.py", "Predictor")
+	b, ok := info.Output.Fields.Get("b")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaObject, b.Type.Kind)
+	a, ok := b.Type.Fields.Get("a")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaObject, a.Type.Kind)
+	nestedB, ok := a.Type.Fields.Get("b")
+	require.True(t, ok)
+	require.Equal(t, schema.SchemaAny, nestedB.Type.Kind)
+}
+
 func TestCrossFileExternalPackageStillErrors(t *testing.T) {
 	// Importing from a package that doesn't exist locally should still error
 	dir := t.TempDir()
@@ -2241,7 +3404,7 @@ class Predictor(BasePredictor):
 `)
 	source, err := os.ReadFile(filepath.Join(dir, "predict.py"))
 	require.NoError(t, err)
-	_, err = ParsePredictor(source, "Predictor", schema.ModePredict, dir)
+	_, err = ParsePredictorWithSourcePath(source, "Predictor", schema.ModePredict, dir, "predict.py")
 	require.Error(t, err)
 	var se *schema.SchemaError
 	require.True(t, errors.As(err, &se))
@@ -2333,6 +3496,124 @@ class Predictor(BasePredictor):
 	require.Contains(t, string(data), `"text"`)
 	require.Contains(t, string(data), `"score"`)
 	require.Contains(t, string(data), `"object"`)
+}
+
+func TestCrossFilePackageRelativeImportFromGenerate(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "pkg/types.py", `
+from cog import BaseModel
+
+class Output(BaseModel):
+    text: str
+`)
+	writeFile(t, dir, "pkg/predict.py", `
+from cog import BaseRunner
+from .types import Output
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Output:
+        pass
+`)
+
+	data, err := schema.Generate("pkg/predict.py:Runner", dir, schema.ModePredict, schema.PathAwareParser(ParsePredictorWithSourcePath))
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"Output"`)
+	require.Contains(t, string(data), `"text"`)
+}
+
+func TestCrossFilePackageRelativeImportFromGenerateSourceWithPath(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "pkg/types.py", `
+from cog import BaseModel
+
+class Output(BaseModel):
+    text: str
+`)
+	source := []byte(`
+from cog import BaseRunner
+from .types import Output
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Output:
+        pass
+`)
+
+	data, err := schema.GenerateFromSourceWithPath(source, "Runner", schema.ModePredict, schema.PathAwareParser(ParsePredictorWithSourcePath), dir, "pkg/predict.py")
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"Output"`)
+	require.Contains(t, string(data), `"text"`)
+}
+
+func TestCrossFilePackageRelativeModuleImportFromGenerate(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "pkg/types.py", `
+from cog import BaseModel
+
+class Output(BaseModel):
+    text: str
+`)
+	writeFile(t, dir, "pkg/predict.py", `
+from cog import BaseRunner
+from . import types
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> types.Output:
+        pass
+`)
+
+	data, err := schema.Generate("pkg/predict.py:Runner", dir, schema.ModePredict, schema.PathAwareParser(ParsePredictorWithSourcePath))
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"Output"`)
+	require.Contains(t, string(data), `"text"`)
+}
+
+func TestRunnerWithPackageRelativeModuleImportedInheritedRun(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pkg/shared.py", `
+from cog import BaseRunner
+
+class SharedRunner(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s
+`)
+	writeFile(t, dir, "pkg/predict.py", `
+from . import shared
+
+class Runner(shared.SharedRunner):
+    pass
+`)
+	info := parseFile(t, dir, "pkg/predict.py", "Runner")
+	require.Equal(t, 1, info.Inputs.Len())
+}
+
+func TestGenerateFromSourceWithPathRejectsSourcePathOutsideSourceDir(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "types.py", `
+from cog import BaseModel
+
+class Output(BaseModel):
+    text: str
+`)
+	source := []byte(`
+from cog import BaseRunner
+from .types import Output
+
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Output:
+        pass
+`)
+
+	_, err := schema.GenerateFromSourceWithPath(source, "Runner", schema.ModePredict, schema.PathAwareParser(ParsePredictorWithSourcePath), dir, "../predict.py")
+	require.Error(t, err)
+}
+
+func TestGenerateRejectsPredictRefOutsideSourceDir(t *testing.T) {
+	dir := t.TempDir()
+	_, err := schema.Generate("../predict.py:Runner", dir, schema.ModePredict, schema.PathAwareParser(ParsePredictorWithSourcePath))
+	require.Error(t, err)
 }
 
 // ---------------------------------------------------------------------------
@@ -2597,4 +3878,938 @@ func indexOf(s, substr string) int {
 		}
 	}
 	return -1
+}
+
+// ---------------------------------------------------------------------------
+// dict input types
+// ---------------------------------------------------------------------------
+
+func TestBareDictInput(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: dict) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+}
+
+func TestDictStrAnyInput(t *testing.T) {
+	source := `
+from typing import Dict, Any
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: Dict[str, Any]) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+}
+
+func TestListOfDictInput(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[dict]) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, messages.FieldType.Repetition)
+}
+
+func TestListOfTypingDictInput(t *testing.T) {
+	source := `
+from typing import List, Dict, Any
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: List[Dict[str, Any]]) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, messages.FieldType.Repetition)
+}
+
+func TestOptionalDictInput(t *testing.T) {
+	source := `
+from typing import Optional
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: Optional[dict] = None) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Optional, data.FieldType.Repetition)
+}
+
+func TestOptionalListOfDictInput(t *testing.T) {
+	source := `
+from typing import Optional
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: Optional[list[dict]] = None) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, messages.FieldType.Repetition)
+}
+
+func TestDictInputJSONSchema(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[dict]) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+
+	jt := messages.FieldType.JSONType()
+	require.Equal(t, "array", jt["type"])
+	items, ok := jt["items"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "object", items["type"])
+}
+
+func TestPEP604DictOrNoneInput(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: dict | None = None) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Optional, data.FieldType.Repetition)
+}
+
+func TestPEP604ListDictOrNoneInput(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[dict] | None = None) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, messages.FieldType.Repetition)
+}
+
+func TestDictStrIntInputTypeErasure(t *testing.T) {
+	// dict[str, int] should be accepted as TypeAny — type parameters are
+	// intentionally discarded because FieldType is a flat model (no recursive
+	// structure). The output path uses SchemaType which can represent typed
+	// dicts precisely, but inputs are always opaque JSON objects.
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: dict[str, int]) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+}
+
+func TestDictInputWithDefault(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: dict = {}) -> str:
+        return str(data)
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+	require.NotNil(t, data.Default)
+	require.Equal(t, schema.DefaultDict, data.Default.Kind)
+	require.False(t, data.IsRequired())
+}
+
+func TestListDictInputWithDefault(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[dict] = []) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, messages.FieldType.Repetition)
+	require.NotNil(t, messages.Default)
+	require.Equal(t, schema.DefaultList, messages.Default.Kind)
+	require.Empty(t, messages.Default.List)
+	require.False(t, messages.IsRequired())
+}
+
+func TestTypedDictInput(t *testing.T) {
+	source := `
+from typing import TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict):
+    name: str
+    count: int
+
+class Predictor(BasePredictor):
+    def predict(self, data: Payload) -> str:
+        return data["name"]
+`
+	info := parse(t, source, "Predictor")
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+}
+
+func TestOptionalListOfTypedDictInput(t *testing.T) {
+	source := `
+from typing import TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict):
+    name: str
+
+class Predictor(BasePredictor):
+    def predict(self, messages: list[Payload] | None = None) -> str:
+        return str(messages)
+`
+	info := parse(t, source, "Predictor")
+	messages, ok := info.Inputs.Get("messages")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, messages.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, messages.FieldType.Repetition)
+}
+
+func TestOpaqueImportedInput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: Annotated[ThirdPartyType, Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, value.FieldType.Primitive)
+	require.Equal(t, schema.Required, value.FieldType.Repetition)
+}
+
+func TestOpaqueImportedListInput(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, values: Annotated[List[ThirdPartyType], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, values.FieldType.Repetition)
+}
+
+func TestOpaqueImportedOptionalUnionInput(t *testing.T) {
+	source := `
+from typing import Annotated, Union
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: Annotated[Union[ThirdPartyType, None], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, value.FieldType.Primitive)
+	require.Equal(t, schema.Optional, value.FieldType.Repetition)
+}
+
+func TestOpaqueImportedQualifiedOptionalUnionInput(t *testing.T) {
+	source := `
+import typing
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: typing.Annotated[typing.Union[ThirdPartyType, None], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, value.FieldType.Primitive)
+	require.Equal(t, schema.Optional, value.FieldType.Repetition)
+}
+
+func TestOpaqueImportedOptionalUnionListInput(t *testing.T) {
+	source := `
+from typing import Annotated, List, Union
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, values: Annotated[Union[List[ThirdPartyType], None], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, values.FieldType.Repetition)
+}
+
+func TestOpaqueImportedQualifiedOptionalUnionListInput(t *testing.T) {
+	source := `
+import typing
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, values: typing.Annotated[typing.Union[typing.List[ThirdPartyType], None], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, values.FieldType.Repetition)
+}
+
+func TestOpaqueImportedBareListInput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+
+class Predictor(BasePredictor):
+    def predict(self, values: Annotated[list, Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, values.FieldType.Repetition)
+}
+
+func TestOpaqueImportedQualifiedBareListInput(t *testing.T) {
+	source := `
+import typing
+from cog import BasePredictor, Opaque
+
+class Predictor(BasePredictor):
+    def predict(self, values: typing.Annotated[typing.List, Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, values.FieldType.Repetition)
+}
+
+func TestOpaqueOtherLibQualifiedListInput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+import otherlib
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: Annotated[otherlib.List[ThirdPartyType], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, value.FieldType.Primitive)
+	require.Equal(t, schema.Required, value.FieldType.Repetition)
+}
+
+func TestOpaqueOtherLibQualifiedOptionalInput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+import otherlib
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: Annotated[otherlib.Optional[ThirdPartyType], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, value.FieldType.Primitive)
+	require.Equal(t, schema.Required, value.FieldType.Repetition)
+}
+
+func TestOpaqueOtherLibImportedListInput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+from otherlib import List
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: Annotated[List[ThirdPartyType], Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, value.FieldType.Primitive)
+	require.Equal(t, schema.Required, value.FieldType.Repetition)
+}
+
+func TestOpaqueImportedBareListPipeNoneInput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+
+class Predictor(BasePredictor):
+    def predict(self, values: Annotated[list, Opaque] | None) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.OptionalRepeated, values.FieldType.Repetition)
+}
+
+func TestOpaqueImportedInputInsideList(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, values: List[Annotated[ThirdPartyType, Opaque]]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	values, ok := info.Inputs.Get("values")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, values.FieldType.Primitive)
+	require.Equal(t, schema.Repeated, values.FieldType.Repetition)
+}
+
+func TestOpaqueImportedOutput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[ThirdPartyType, Opaque]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeAny, info.Output.Primitive)
+}
+
+func TestOpaqueImportedListOutput(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[List[ThirdPartyType], Opaque]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
+	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
+}
+
+func TestOpaqueImportedOptionalOutputErrors(t *testing.T) {
+	source := `
+from typing import Annotated, Optional
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[Optional[ThirdPartyType], Opaque]:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrOptionalOutput, se.Kind)
+}
+
+func TestOpaqueImportedQualifiedUnionNoneOutputErrors(t *testing.T) {
+	source := `
+import typing
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> typing.Annotated[typing.Union[list[ThirdPartyType], None], Opaque]:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrOptionalOutput, se.Kind)
+}
+
+func TestAnnotatedStringOutput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[str, "metadata"]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Primitive)
+}
+
+func TestAnnotatedOptionalStringOutputErrors(t *testing.T) {
+	source := `
+from typing import Annotated, Optional
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[Optional[str], "metadata"]:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrOptionalOutput, se.Kind)
+}
+
+func TestAnnotatedStringInsideListOutput(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> List[Annotated[str, "metadata"]]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
+	require.Equal(t, schema.TypeString, info.Output.Items.Primitive)
+}
+
+func TestOpaqueImportedBareListOutput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[list, Opaque]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
+	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
+}
+
+func TestOpaqueImportedTypingBareListOutput(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor, Opaque
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> Annotated[List, Opaque]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
+	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
+}
+
+func TestOpaqueImportedOutputInsideList(t *testing.T) {
+	source := `
+from typing import Annotated, List
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> List[Annotated[ThirdPartyType, Opaque]]:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaArray, info.Output.Kind)
+	require.NotNil(t, info.Output.Items)
+	require.Equal(t, schema.SchemaPrimitive, info.Output.Items.Kind)
+	require.Equal(t, schema.TypeAny, info.Output.Items.Primitive)
+}
+
+func TestOpaqueOtherLibQualifiedListOutput(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor, Opaque
+import otherlib
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: str) -> otherlib.List[Annotated[ThirdPartyType, Opaque]]:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "List")
+}
+
+func TestQualifiedOpaqueImportedInput(t *testing.T) {
+	source := `
+from typing import Annotated
+import cog as c
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(c.BasePredictor):
+    def predict(self, value: Annotated[ThirdPartyType, c.Opaque]) -> str:
+        return "ok"
+`
+	info := parse(t, source, "Predictor")
+	value, ok := info.Inputs.Get("value")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, value.FieldType.Primitive)
+	require.Equal(t, schema.Required, value.FieldType.Repetition)
+}
+
+func TestOtherOpaqueDoesNotMatchCogOpaque(t *testing.T) {
+	source := `
+from typing import Annotated
+from cog import BasePredictor
+import otherlib
+from some_pip_package.deep import ThirdPartyType
+
+class Predictor(BasePredictor):
+    def predict(self, value: Annotated[ThirdPartyType, otherlib.Opaque]) -> str:
+        return "ok"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnresolvableType, se.Kind)
+	require.Contains(t, se.Message, "ThirdPartyType")
+}
+
+func TestTypedDictOutput(t *testing.T) {
+	source := `
+from typing import TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict):
+    name: str
+    count: int
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 2, info.Output.Fields.Len())
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.True(t, name.Required)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+
+	count, ok := info.Output.Fields.Get("count")
+	require.True(t, ok)
+	require.True(t, count.Required)
+	require.Equal(t, schema.TypeInteger, count.Type.Primitive)
+}
+
+func TestTypedDictQualifiedAnnotatedOptionalStringFieldNullable(t *testing.T) {
+	source := `
+import typing
+from typing import TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict):
+    payload: typing.Annotated[typing.Optional[str], "metadata"]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	payload, ok := info.Output.Fields.Get("payload")
+	require.True(t, ok)
+	require.True(t, payload.Required)
+	require.True(t, payload.Type.Nullable)
+	require.Equal(t, schema.SchemaPrimitive, payload.Type.Kind)
+	require.Equal(t, schema.TypeString, payload.Type.Primitive)
+}
+
+func TestTypedDictOpaqueAnnotatedOptionalImportedFieldNullable(t *testing.T) {
+	source := `
+import typing
+from typing import TypedDict
+from cog import BasePredictor, Opaque
+from some_pip_package.deep import ThirdPartyType
+
+class Payload(TypedDict):
+    payload: typing.Annotated[typing.Optional[ThirdPartyType], Opaque]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	payload, ok := info.Output.Fields.Get("payload")
+	require.True(t, ok)
+	require.True(t, payload.Required)
+	require.True(t, payload.Type.Nullable)
+	require.Equal(t, schema.SchemaPrimitive, payload.Type.Kind)
+	require.Equal(t, schema.TypeAny, payload.Type.Primitive)
+}
+
+func TestTypedDictOutputTotalFalse(t *testing.T) {
+	source := `
+from typing import TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict, total=False):
+    name: str
+    count: int
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.False(t, name.Required)
+	require.False(t, name.Type.Nullable)
+
+	count, ok := info.Output.Fields.Get("count")
+	require.True(t, ok)
+	require.False(t, count.Required)
+	require.False(t, count.Type.Nullable)
+}
+
+func TestTypedDictOutputNotRequiredField(t *testing.T) {
+	source := `
+from typing import NotRequired, TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict):
+    name: str
+    count: NotRequired[int]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.True(t, name.Required)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+
+	count, ok := info.Output.Fields.Get("count")
+	require.True(t, ok)
+	require.False(t, count.Required)
+	require.False(t, count.Type.Nullable)
+	require.Equal(t, schema.TypeInteger, count.Type.Primitive)
+}
+
+func TestTypedDictOutputRequiredOptionalField(t *testing.T) {
+	source := `
+from typing import Required, TypedDict
+from cog import BasePredictor
+
+class Payload(TypedDict, total=False):
+    value: Required[int | None]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+
+	value, ok := info.Output.Fields.Get("value")
+	require.True(t, ok)
+	require.True(t, value.Required)
+	require.True(t, value.Type.Nullable)
+	require.Equal(t, schema.TypeInteger, value.Type.Primitive)
+}
+
+func TestCrossFileTypedDictImport(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "types.py", `
+from typing import TypedDict
+
+class Output(TypedDict):
+    text: str
+    score: float
+`)
+	writeFile(t, dir, "predict.py", `
+from cog import BasePredictor
+from types import Output
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Output:
+        pass
+`)
+	info := parseFile(t, dir, "predict.py", "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 2, info.Output.Fields.Len())
+
+	text, ok := info.Output.Fields.Get("text")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeString, text.Type.Primitive)
+	require.True(t, text.Required)
+
+	score, ok := info.Output.Fields.Get("score")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeFloat, score.Type.Primitive)
+	require.True(t, score.Required)
+}
+
+func TestQualifiedTypedDictImportInputAndOutput(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "output_types.py", `
+from typing import TypedDict
+
+class Payload(TypedDict):
+    name: str
+    count: int
+
+class Output(TypedDict):
+    text: str
+`)
+	writeFile(t, dir, "predict.py", `
+import output_types as ot
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self, data: ot.Payload) -> ot.Output:
+        pass
+`)
+	info := parseFile(t, dir, "predict.py", "Predictor")
+
+	data, ok := info.Inputs.Get("data")
+	require.True(t, ok)
+	require.Equal(t, schema.TypeAny, data.FieldType.Primitive)
+	require.Equal(t, schema.Required, data.FieldType.Repetition)
+
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	text, ok := info.Output.Fields.Get("text")
+	require.True(t, ok)
+	require.True(t, text.Required)
+	require.Equal(t, schema.TypeString, text.Type.Primitive)
+}
+
+func TestInheritedTypedDictOutput(t *testing.T) {
+	source := `
+from typing import TypedDict
+from cog import BasePredictor
+
+class BasePayload(TypedDict):
+    name: str
+
+class Payload(BasePayload):
+    count: int
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Payload:
+        pass
+`
+	info := parse(t, source, "Predictor")
+	require.Equal(t, schema.SchemaObject, info.Output.Kind)
+	require.Equal(t, 2, info.Output.Fields.Len())
+
+	name, ok := info.Output.Fields.Get("name")
+	require.True(t, ok)
+	require.True(t, name.Required)
+	require.Equal(t, schema.TypeString, name.Type.Primitive)
+
+	count, ok := info.Output.Fields.Get("count")
+	require.True(t, ok)
+	require.True(t, count.Required)
+	require.Equal(t, schema.TypeInteger, count.Type.Primitive)
+}
+
+func TestNonTypedDictNotRequiredQualifierErrors(t *testing.T) {
+	source := `
+from typing import NotRequired
+from pydantic import BaseModel
+from cog import BasePredictor
+
+class Output(BaseModel):
+    count: NotRequired[int]
+
+class Predictor(BasePredictor):
+    def predict(self, x: str) -> Output:
+        pass
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "NotRequired")
 }

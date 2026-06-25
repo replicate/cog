@@ -615,11 +615,11 @@ mod tests {
 
         let msg = rx.try_recv().unwrap();
         match msg {
-            SlotResponse::Log { source, data } => {
+            SlotResponse::LogLine { source, data } => {
                 assert_eq!(source, LogSource::Stdout);
                 assert_eq!(data, "hello");
             }
-            _ => panic!("expected Log message"),
+            _ => panic!("expected LogLine message"),
         }
     }
 

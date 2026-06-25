@@ -1,0 +1,11 @@
+# Test that cog doctor --fix prints the remediation text for unfixed findings.
+
+! cog doctor --fix
+stderr 'predict.py not found'
+stderr 'Remediation: Create predict.py or update the predict field in cog.yaml'
+! stderr '(no auto-fix available)'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"

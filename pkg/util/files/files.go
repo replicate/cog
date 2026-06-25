@@ -3,14 +3,13 @@ package files
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/vincent-petithory/dataurl"
-	"golang.org/x/sys/unix"
 
 	r8_path "github.com/replicate/cog/pkg/path"
 	"github.com/replicate/cog/pkg/util/mime"
@@ -39,59 +38,6 @@ func IsEmpty(path string) (bool, error) {
 		return false, err
 	}
 	return len(entries) == 0, nil
-}
-
-func IsDir(path string) (bool, error) {
-	file, err := os.Stat(path)
-	if err != nil {
-		return false, err
-	}
-	return file.Mode().IsDir(), nil
-}
-
-func IsExecutable(path string) bool {
-	return unix.Access(path, unix.X_OK) == nil
-}
-
-func CopyFile(src string, dest string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("Failed to open %s while copying to %s: %w", src, dest, err)
-	}
-	defer in.Close()
-
-	out, err := os.Create(dest)
-	if err != nil {
-		return fmt.Errorf("Failed to create %s while copying %s: %w", dest, src, err)
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	if err != nil {
-		return fmt.Errorf("Failed to copy %s to %s: %w", src, dest, err)
-	}
-	return out.Close()
-}
-
-func WriteIfDifferent(file, content string) error {
-	if _, err := os.Stat(file); err == nil {
-		bs, err := os.ReadFile(file)
-		if err != nil {
-			return err
-		}
-		if string(bs) == content {
-			return nil
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-
-	// Write out a new requirements file
-	err := os.WriteFile(file, []byte(content), 0o644)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func WriteDataURLToFile(url string, destination string) (string, error) {
@@ -134,6 +80,52 @@ func WriteDataURLToFile(url string, destination string) (string, error) {
 	}
 
 	return path, nil
+}
+
+// AtomicWrite writes data to path via a temp file + fsync + rename so
+// readers never see a partial file. Parent directories are created as
+// needed. Modeled after tailscale.com/atomicfile.
+func AtomicWrite(path string, data []byte) (err error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create directory for %s: %w", path, err)
+	}
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file for %s: %w", path, err)
+	}
+	tmpPath := f.Name()
+	defer func() {
+		if err != nil {
+			_ = f.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", path, err)
+	}
+	return os.Rename(tmpPath, filepath.Clean(path)) //nolint:gosec // path is constructed internally
+}
+
+// Copy copies src to dst, creating parent directories as needed.
+func Copy(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("create directory for %s: %w", dst, err)
+	}
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	return nil
 }
 
 func WriteFile(output []byte, outputPath string) (string, error) {

@@ -12,7 +12,7 @@ You can deploy your packaged model to your own infrastructure, or to [Replicate]
 
 - ✅ **Define the inputs and outputs for your model with standard Python.** Then, Cog generates an OpenAPI schema and validates the inputs and outputs.
 
-- 🎁 **Automatic HTTP prediction server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
+- 🎁 **Automatic HTTP inference server**: Your model's types are used to dynamically generate a RESTful HTTP API using a high-performance Rust/Axum server.
 
 - 🚀 **Ready for production.** Deploy your model anywhere that Docker images run. Your own infrastructure, or [Replicate](https://replicate.com).
 
@@ -28,25 +28,25 @@ build:
     - "libglib2.0-0"
   python_version: "3.13"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
-Define how predictions are run on your model with `predict.py`:
+Define how your model runs with `run.py`:
 
 ```python
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 import torch
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Load the model into memory to make running multiple inferences efficient"""
         self.model = torch.load("./weights.pth")
 
     # The arguments and types the model takes as input
-    def predict(self,
+    def run(self,
           image: Path = Input(description="Grayscale input image")
     ) -> Path:
-        """Run a single prediction on the model"""
+        """Run the model"""
         processed_image = preprocess(image)
         output = self.model(processed_image)
         return postprocess(output)
@@ -54,12 +54,12 @@ class Predictor(BasePredictor):
 
 In the above we accept a path to the image as an input, and return a path to our transformed image after running it through our model.
 
-Now, you can run predictions on this model:
+Now, you can run the model:
 
 ```console
-$ cog predict -i image=@input.jpg
+$ cog run -i image=@input.jpg
 --> Building Docker image...
---> Running Prediction...
+--> Running...
 --> Output written to output.jpg
 ```
 
@@ -122,40 +122,90 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Install
 
-If you're using macOS, you can install Cog using Homebrew:
+Choose your platform for installation instructions.
 
-```console
-brew install replicate/tap/cog
-```
+<details>
+  <summary>macOS</summary>
 
-You can also download and install the latest release using our
-[install script](https://cog.run/install):
+  The easiest way to install Cog on macOS is with Homebrew:
 
-```sh
-# bash, zsh, and other shells
-sh <(curl -fsSL https://cog.run/install.sh)
+  ```console
+  brew install replicate/tap/cog
+  ```
 
-# fish shell
-sh (curl -fsSL https://cog.run/install.sh | psub)
+  You can also use the install script:
 
-# download with wget and run in a separate command
-wget -qO- https://cog.run/install.sh
-sh ./install.sh
-```
+  ```sh
+  # bash, zsh, and other shells
+  sh <(curl -fsSL https://cog.run/install.sh)
 
-You can manually install the latest release of Cog directly from GitHub
-by running the following commands in a terminal:
+  # fish shell
+  sh (curl -fsSL https://cog.run/install.sh | psub)
 
-```console
-sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
-sudo chmod +x /usr/local/bin/cog
-```
+  # download with wget and run in a separate command
+  wget -qO- https://cog.run/install.sh
+  sh ./install.sh
+  ```
 
-Or if you are on docker:
+  Or install manually:
 
-```
-RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
-```
+  ```console
+  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
+  sudo chmod +x /usr/local/bin/cog
+  sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
+  ```
+
+  If you see a Gatekeeper warning saying the binary "cannot be opened because the developer cannot be verified", run:
+
+  ```console
+  sudo xattr -d com.apple.quarantine /usr/local/bin/cog
+  ```
+
+</details>
+
+<details>
+  <summary>Linux</summary>
+
+  You can install Cog using the install script:
+
+  ```sh
+  # bash, zsh, and other shells
+  sh <(curl -fsSL https://cog.run/install.sh)
+
+  # fish shell
+  sh (curl -fsSL https://cog.run/install.sh | psub)
+
+  # download with wget and run in a separate command
+  wget -qO- https://cog.run/install.sh
+  sh ./install.sh
+  ```
+
+  Or install manually:
+
+  ```console
+  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
+  sudo chmod +x /usr/local/bin/cog
+  ```
+
+</details>
+
+<details markdown>
+  <summary>Windows</summary>
+
+  Cog does not natively support Windows, but you can run it on Windows 11 using [WSL 2](docs/wsl2/wsl2.md). Once WSL 2 is set up, follow the Linux installation instructions above.
+
+</details>
+
+<details>
+  <summary>Docker</summary>
+
+  To install Cog inside a Docker image:
+
+  ```dockerfile
+  RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
+  ```
+
+</details>
 
 ## Upgrade
 
@@ -177,10 +227,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 - [Get started with your own model](docs/getting-started-own-model.md)
 - [Using Cog with notebooks](docs/notebooks.md)
 - [Using Cog with Windows 11](docs/wsl2/wsl2.md)
-- [Take a look at some examples of using Cog](https://github.com/replicate/cog-examples)
+- [Browse the example models in this repo](docs/examples.md)
 - [Deploy models with Cog](docs/deploy.md)
 - [`cog.yaml` reference](docs/yaml.md) to learn how to define your model's environment
-- [Prediction interface reference](docs/python.md) to learn how the `Predictor` interface works
+- [Run interface reference](docs/python.md) to learn how the `Runner` interface works
 - [Training interface reference](docs/training.md) to learn how to add a fine-tuning API to your model
 - [HTTP API reference](docs/http.md) to learn how to use the HTTP API that models serve
 

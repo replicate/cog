@@ -1,0 +1,52 @@
+# Test that an Optional input with no default resolves to None when omitted.
+#
+# A bare `value: Optional[str]` (no `= Input(...)`) is emitted as an optional
+# field in the OpenAPI schema (nullable, absent from `required`, no default),
+# but the Python signature has no usable __defaults__ entry. Historically,
+# omitting it raised `TypeError: missing 1 required positional argument` at
+# prediction time. Coglet now injects an explicit null for omitted
+# optional-with-no-default inputs at the HTTP edge, so omission resolves to
+# None as documented.
+
+cog build -t $TEST_IMAGE
+
+# --- Test via cog predict (CLI) ---
+
+# Providing the optional input should work.
+cog predict $TEST_IMAGE -i value=hello
+stdout 'type=str value=hello'
+
+# Omitting the bare optional input should yield None (not a TypeError).
+cog predict $TEST_IMAGE
+stdout 'type=NoneType value=none'
+
+# --- Test via cog serve (HTTP API) ---
+
+cog serve
+
+# POST with the value present.
+curl POST /predictions '{"input":{"value":"world"}}'
+stdout '"status":"succeeded"'
+stdout 'type=str value=world'
+
+# POST omitting the optional input — should resolve to None.
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+stdout 'type=NoneType value=none'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from typing import Optional
+
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, value: Optional[str]) -> str:
+        if value is None:
+            return "type=NoneType value=none"
+        return f"type={type(value).__name__} value={value}"

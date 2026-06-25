@@ -39,7 +39,7 @@ flowchart TB
     subgraph worker["Worker Subprocess (Python)"]
         subgraph predictor["Predictor"]
             setup["setup() → runs once at startup"]
-            predict["predict() → handles SlotRequest#colon;#colon;Predict"]
+            predict["run() → handles SlotRequest#colon;#colon;Predict"]
         end
     end
 
@@ -62,11 +62,13 @@ The `Prediction` struct is itself a state machine -- its mutation methods (`set_
 ## Process Roles
 
 ### tini (PID 1)
+
 - **What**: Minimal init system (~30KB binary)
 - **Why**: Proper signal forwarding to children, zombie process reaping
 - **Entry**: `ENTRYPOINT ["/sbin/tini", "--"]`
 
 ### Parent Process (Rust HTTP Server)
+
 - **Entry**: `CMD ["python", "-m", "cog.server.http"]` -- this thin Python launcher calls `coglet.server.serve()`
 - **Responsibilities**:
   - HTTP API on port 5000 (Axum)
@@ -78,11 +80,12 @@ The `Prediction` struct is itself a state machine -- its mutation methods (`set_
   - Worker subprocess lifecycle
 
 ### Worker Subprocess (Python)
+
 - **Spawned via**: `python -c "import coglet; coglet.server._run_worker()"`
 - **Responsibilities**:
   - Load user's predictor module
   - Run `setup()` once at startup
-  - Execute `predict()` method
+  - Execute selected `run()` method, or legacy `predict()` method for older models
   - Capture stdout/stderr via ContextVar-based log routing
   - Send events back to parent via slot sockets
 
@@ -107,7 +110,7 @@ stateDiagram-v2
     setup --> dead: setup() raises
 
     idle --> predicting: SlotRequest#colon;#colon;Predict
-    predicting --> idle: predict() returns/raises
+    predicting --> idle: run() returns/raises
 
     idle --> dead: Shutdown / crash
 
@@ -118,13 +121,13 @@ stateDiagram-v2
 
 - **`setup()` runs exactly once**, before any prediction is accepted. Use it to load weights, initialize GPU contexts, and warm caches. If it raises an exception, the worker exits and health becomes `SETUP_FAILED` -- there is no retry.
 
-- **`self` state persists across all `predict()` calls.** Storing your loaded model on `self.model` in `setup()` and using it in every `predict()` call is the intended pattern.
+- **`self` state persists across all `run()` calls.** Storing your loaded model on `self.model` in `setup()` and using it in every `run()` call is the intended pattern.
 
 - **No teardown hook.** There is no `teardown()`, `cleanup()`, or `__del__` contract. When the container shuts down, the process exits. If you need cleanup (e.g., flushing a log buffer), use `atexit`.
 
-- **`predict()` is sequential by default.** With `COG_MAX_CONCURRENCY=1` (the default), `predict()` is never called concurrently -- each call completes before the next begins.
+- **`run()` is sequential by default.** With `COG_MAX_CONCURRENCY=1` (the default), `run()` is never called concurrently -- each call completes before the next begins.
 
-- **With `COG_MAX_CONCURRENCY > 1`, concurrent `predict()` calls share `self`.** Async predictors run multiple coroutines on a shared asyncio event loop -- not truly parallel, but interleaved at `await` points. If your model stores mutable state on `self` that could be accessed across `await` boundaries, take care. If your model isn't safe to call concurrently, leave concurrency at 1.
+- **With `COG_MAX_CONCURRENCY > 1`, concurrent `run()` calls share `self`.** Async runners run multiple coroutines on a shared asyncio event loop -- not truly parallel, but interleaved at `await` points. If your model stores mutable state on `self` that could be accessed across `await` boundaries, take care. If your model isn't safe to call concurrently, leave concurrency at 1.
 
 - **A worker crash is terminal.** If the worker process crashes (segfault, OOM kill), the runtime fails all in-flight predictions and stops accepting new ones. The HTTP server stays up (health endpoints still respond) but the container must be restarted externally -- there is no automatic worker respawn.
 
@@ -138,27 +141,27 @@ Lifecycle messages for the worker as a whole.
 
 **Parent → Worker:**
 
-| Message | Purpose |
-|---------|---------|
+| Message                                            | Purpose                                          |
+| -------------------------------------------------- | ------------------------------------------------ |
 | `Init { predictor_ref, num_slots, is_async, ... }` | Bootstrap worker -- load predictor, create slots |
-| `Cancel { slot }` | Cancel a running prediction on a slot |
-| `Healthcheck { id }` | Request a user-defined healthcheck |
-| `Shutdown` | Graceful shutdown |
+| `Cancel { slot }`                                  | Cancel a running prediction on a slot            |
+| `Healthcheck { id }`                               | Request a user-defined healthcheck               |
+| `Shutdown`                                         | Graceful shutdown                                |
 
 **Worker → Parent:**
 
-| Message | Purpose |
-|---------|---------|
-| `Ready { slots, schema }` | Worker initialized, here are the slot IDs and OpenAPI schema |
-| `Log { source, data }` | Setup-time log line (stdout or stderr) |
-| `WorkerLog { target, level, message }` | Structured log from the worker runtime itself (not user code) |
-| `Idle { slot }` | Slot finished a prediction and is available |
-| `Cancelled { slot }` | Prediction on slot was cancelled |
-| `Failed { slot, error }` | Prediction on slot failed |
-| `Fatal { reason }` | Unrecoverable error -- worker is shutting down |
-| `DroppedLogs { count, interval_millis }` | Worker dropped log messages due to backpressure |
-| `HealthcheckResult { id, status, error }` | Result of a user-defined healthcheck |
-| `ShuttingDown` | Worker is shutting down |
+| Message                                   | Purpose                                                       |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| `Ready { slots, schema }`                 | Worker initialized, here are the slot IDs and OpenAPI schema  |
+| `Log { source, data }`                    | Setup-time log line (stdout or stderr)                        |
+| `WorkerLog { target, level, message }`    | Structured log from the worker runtime itself (not user code) |
+| `Idle { slot }`                           | Slot finished a prediction and is available                   |
+| `Cancelled { slot }`                      | Prediction on slot was cancelled                              |
+| `Failed { slot, error }`                  | Prediction on slot failed                                     |
+| `Fatal { reason }`                        | Unrecoverable error -- worker is shutting down                |
+| `DroppedLogs { count, interval_millis }`  | Worker dropped log messages due to backpressure               |
+| `HealthcheckResult { id, status, error }` | Result of a user-defined healthcheck                          |
+| `ShuttingDown`                            | Worker is shutting down                                       |
 
 ### Slot Channel (Unix socket per slot)
 
@@ -166,21 +169,21 @@ Per-prediction data. Using separate sockets per slot avoids head-of-line blockin
 
 **Parent → Worker:**
 
-| Message | Purpose |
-|---------|---------|
+| Message                                         | Purpose                                                                                                                          |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `Predict { id, input, input_file, output_dir }` | Run a prediction. `input` is inline JSON; for large payloads (>6MiB) it's `null` and `input_file` points to a spill file on disk |
 
 **Worker → Parent:**
 
-| Message | Purpose |
-|---------|---------|
-| `Log { source, data }` | Log line from predict() |
-| `Output { output }` | Yielded output value (for generators/streaming) |
-| `FileOutput { filename, kind, mime_type }` | File produced by predict() -- referenced by path, uploaded by parent |
-| `Metric { name, value, mode }` | Custom metric (mode: `replace`, `increment`, or `append`) |
-| `Done { id, output, predict_time, is_stream }` | Prediction completed successfully |
-| `Failed { id, error }` | Prediction failed |
-| `Cancelled { id }` | Prediction was cancelled |
+| Message                                        | Purpose                                                          |
+| ---------------------------------------------- | ---------------------------------------------------------------- |
+| `Log { source, data }`                         | Log line from run()                                              |
+| `Output { output }`                            | Yielded output value (for generators/streaming)                  |
+| `FileOutput { filename, kind, mime_type }`     | File produced by run() -- referenced by path, uploaded by parent |
+| `Metric { name, value, mode }`                 | Custom metric (mode: `replace`, `increment`, or `append`)        |
+| `Done { id, output, predict_time, is_stream }` | Prediction completed successfully                                |
+| `Failed { id, error }`                         | Prediction failed                                                |
+| `Cancelled { id }`                             | Prediction was cancelled                                         |
 
 ## Health State Machine
 
@@ -188,22 +191,22 @@ Per-prediction data. Using separate sockets per slot avoids head-of-line blockin
 stateDiagram-v2
     [*] --> UNKNOWN: Process starts
     note right of UNKNOWN: Predictions return 503
-    
+
     UNKNOWN --> STARTING: serve() called
     note right of STARTING: Predictions return 503
-    
+
     STARTING --> READY: setup() succeeds
     STARTING --> SETUP_FAILED: setup() raises exception
-    
+
     READY --> BUSY: All slots occupied
     note right of BUSY: New predictions get 409
-    
+
     BUSY --> READY: Slot freed
-    
+
     READY --> DEFUNCT: Fatal error / worker crash
     BUSY --> DEFUNCT: Fatal error / worker crash
     note right of DEFUNCT: Predictions return 503
-    
+
     SETUP_FAILED --> [*]
     DEFUNCT --> [*]
 ```
@@ -220,18 +223,18 @@ sequenceDiagram
     participant Routes
     participant Service
     participant Worker
-    
+
     Client->>Routes: POST /predictions
     Routes->>Service: submit_prediction(id, input, webhook)
     Service-->>Routes: PredictionHandle + slot
-    
+
     Note over Routes: SyncPredictionGuard held<br/>(cancels on connection drop)
-    
+
     Routes->>Service: predict(slot, input)
     Service->>Worker: predict(slot, input)
     Worker-->>Service: result
     Note over Service: Prediction.set_succeeded() fires webhook
-    
+
     Routes-->>Client: 200 {output}
 ```
 
@@ -245,21 +248,21 @@ sequenceDiagram
     participant Routes
     participant Service
     participant Worker
-    
+
     Client->>Routes: POST + respond-async
     Routes->>Service: submit_prediction(id, input, webhook)
     Service-->>Routes: PredictionHandle + slot
-    
+
     Routes-->>Client: 202 {status: "starting"}
-    
+
     Note over Routes,Worker: spawned task continues independently
-    
+
     par Background Task
         Service->>Worker: predict(slot, input)
         Worker-->>Service: result
         Note over Service: Prediction mutations fire webhooks automatically
     end
-    
+
     Service-->>Client: webhook (completed)
 ```
 
@@ -273,13 +276,13 @@ sequenceDiagram
     participant Routes
     participant Service
     participant Worker
-    
+
     Client->>Routes: POST /predictions
     Note over Routes: SyncPredictionGuard armed
     Routes->>Worker: predict(slot)
-    
+
     Client-xRoutes: ✕ connection drops
-    
+
     Note over Routes: guard.drop()
     Routes->>Service: cancel(id)
     Service->>Worker: Cancel
@@ -300,7 +303,7 @@ Following a single prediction from HTTP request to response:
 
 5. **URL inputs downloaded.** The worker fetches any `cog.Path` URL fields to local temp files (using a thread pool for parallel downloads). The predictor receives local file paths, never URLs.
 
-6. **`predict(**kwargs)` called** on the singleton predictor instance. Inputs arrive as native Python types -- strings, ints, `pathlib.Path` objects -- not as a request object or raw JSON.
+6. **`predict(**kwargs)`called** on the singleton predictor instance. Inputs arrive as native Python types -- strings, ints,`pathlib.Path` objects -- not as a request object or raw JSON.
 
 7. **Outputs stream back** over the slot socket. For generators, each `yield` sends an `Output` message immediately -- true streaming, not buffered. For single return values, one `Output` or `FileOutput` message is sent.
 
@@ -308,7 +311,7 @@ Following a single prediction from HTTP request to response:
 
 9. **Response assembled.** The `Prediction` state machine transitions to `succeeded`, the slot permit is released, and the response is returned to the client (or delivered via webhook for async requests).
 
-**On error:** If `predict()` raises an exception, the worker sends a `Failed` message. The prediction is marked `failed`, the slot returns to idle, and the predictor instance survives -- it handles the next request normally. Only a process-level crash (segfault, OOM kill) destroys the instance; see [Predictor Lifecycle](#predictor-lifecycle) for what happens then.
+**On error:** If `run()` raises an exception, the worker sends a `Failed` message. The prediction is marked `failed`, the slot returns to idle, and the runner instance survives -- it handles the next request normally. Only a process-level crash (segfault, OOM kill) destroys the instance; see [Predictor Lifecycle](#predictor-lifecycle) for what happens then.
 
 ## Invocation Path
 
@@ -316,7 +319,7 @@ How coglet gets invoked when running a Cog container:
 
 ```mermaid
 flowchart TB
-    cli["cog predict / cog exec\n(CLI)"]
+    cli["cog run / cog exec\n(CLI)"]
 
     launcher["python -m cog.server.http\nimport coglet\ncoglet.server.serve(predictor_ref, port=5000)"]
 
@@ -324,7 +327,7 @@ flowchart TB
         direction TB
         axum["HTTP Server (axum) #colon;5000\n/predictions, /health-check, etc."]
         svc["PredictionService\n(state, webhooks, permits)"]
-        worker_sub["Worker subprocess (Python)\n- loads predictor_ref\n- runs setup()\n- handles predict() requests"]
+        worker_sub["Worker subprocess (Python)\n- loads runner ref\n- runs setup()\n- handles run() requests"]
 
         axum --> svc
         svc -- "Unix socket + pipes" --> worker_sub
@@ -336,23 +339,27 @@ flowchart TB
 ## Key Design Decisions
 
 ### Why Rust?
+
 - **Performance**: Axum is faster than Python HTTP frameworks for request handling
 - **Stability**: Server doesn't crash when user code fails
 - **Resource management**: Better backpressure and concurrency control
 - **Memory safety**: No Python GIL contention in HTTP layer
 
 ### Why PyO3?
+
 - **ABI3 wheel**: Single wheel works across Python 3.10-3.13
 - **Native performance**: Direct C API calls, no serialization overhead
 - **Same predictor code**: Users don't change anything
 - **Drop-in**: Same HTTP API, same behavior
 
 ### Why Subprocess (not in-process)?
+
 - **Isolation**: Python crashes/segfaults don't kill server
 - **CUDA context**: Clean GPU initialization per worker
 - **Memory**: Fresh address space for model loading
 
 ### Why Slots (not async tasks)?
+
 - **Predictable**: Fixed number of concurrent predictions
 - **Fair**: Permits prevent starvation
 - **Observable**: Easy to monitor slot usage
@@ -364,7 +371,7 @@ When a prediction input exceeds 6MiB, it's too large to send inline through the 
 
 ## File Outputs
 
-When predict() produces file outputs (`cog.Path`), the worker sends a `FileOutput` message with the filename and MIME type. The parent handles uploading the file (or base64-encoding it for inline responses). The `output_dir` field in the `Predict` request tells the worker where to write output files.
+When run() produces file outputs (`cog.Path`), the worker sends a `FileOutput` message with the filename and MIME type. The parent handles uploading the file (or base64-encoding it for inline responses). The `output_dir` field in the `Predict` request tells the worker where to write output files.
 
 `FileOutputKind` distinguishes between normal file outputs (`FileType`) and oversized outputs (`Oversized`) that exceeded an inline size limit.
 
@@ -386,18 +393,19 @@ If the healthcheck fails, the HTTP `/health-check` endpoint returns `UNHEALTHY` 
 
 ## Environment Variables
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `PORT` | 5000 | HTTP server port |
-| `COG_LOG_LEVEL` | INFO | Logging verbosity (ignored if `RUST_LOG` is set) |
-| `COG_MAX_CONCURRENCY` | 1 | Number of concurrent prediction slots |
-| `COG_SETUP_TIMEOUT` | none | Setup timeout in seconds (0 is ignored) |
-| `COG_THROTTLE_RESPONSE_INTERVAL` | 0.5s | Webhook response throttling interval |
-| `LOG_FORMAT` | json | Set to `console` for human-readable log output |
+| Variable                         | Default | Purpose                                          |
+| -------------------------------- | ------- | ------------------------------------------------ |
+| `PORT`                           | 5000    | HTTP server port                                 |
+| `COG_LOG_LEVEL`                  | INFO    | Logging verbosity (ignored if `RUST_LOG` is set) |
+| `COG_MAX_CONCURRENCY`            | 1       | Number of concurrent prediction slots            |
+| `COG_SETUP_TIMEOUT`              | none    | Setup timeout in seconds (0 is ignored)          |
+| `COG_THROTTLE_RESPONSE_INTERVAL` | 0.5s    | Webhook response throttling interval             |
+| `LOG_FORMAT`                     | json    | Set to `console` for human-readable log output   |
 
 ## Where to Look
 
 **coglet core** (`crates/coglet/src/`):
+
 - `service.rs` -- `PredictionService`, the central coordinator. Start here.
 - `orchestrator.rs` -- worker subprocess spawning and lifecycle
 - `bridge/` -- IPC protocol definitions (`protocol.rs`) and Unix socket transport
@@ -406,6 +414,7 @@ If the healthcheck fails, the HTTP `/health-check` endpoint returns `UNHEALTHY` 
 - `prediction.rs` -- prediction state machine, webhook firing on state transitions
 
 **coglet-python** (`crates/coglet-python/src/`):
+
 - `lib.rs` -- PyO3 module entry point: `serve()` and `_run_worker()`
 - `predictor.rs` -- wraps the Python predictor class, handles sync/async detection
 - `worker_bridge.rs` -- implements the `PredictHandler` trait for Python

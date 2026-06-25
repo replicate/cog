@@ -11,6 +11,13 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
+func init() {
+	// Allow child commands to define their own PersistentPreRun hooks
+	// without shadowing the root command's. Cobra will invoke them in
+	// order from root → child.
+	cobra.EnableTraverseRunHooks = true
+}
+
 func NewRootCommand() (*cobra.Command, error) {
 	rootCmd := cobra.Command{
 		Use:   "cog",
@@ -45,9 +52,10 @@ https://github.com/replicate/cog`,
 	rootCmd.AddCommand(
 		newBuildCommand(),
 		newDebugCommand(),
+		newDoctorCommand(),
 		newInitCommand(),
-		newInspectCommand(),
 		newLoginCommand(),
+		newRunCommand(),
 		newPredictCommand(),
 		newPushCommand(),
 		newExecCommand(),

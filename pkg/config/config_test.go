@@ -2,12 +2,15 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/go-version"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v4"
 )
@@ -46,6 +49,11 @@ func TestValidateCudaVersion(t *testing.T) {
 		{
 			name:        "LessThanMinimum",
 			input:       "9.1",
+			expectedErr: true,
+		},
+		{
+			name:        "InvalidMinorVersion",
+			input:       "11.A",
 			expectedErr: true,
 		},
 	}
@@ -117,7 +125,7 @@ foo==1.0.0`), 0o644)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--extra-index-url https://download.pytorch.org/whl/cu117
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu117/
 torch==1.13.1
 torchvision==0.14.1
 torchaudio==0.13.1
@@ -147,7 +155,7 @@ foo==1.0.0`), 0o644)
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--extra-index-url https://download.pytorch.org/whl/cu116
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu116/
 torch==1.12.1
 torchvision==0.13.1
 torchaudio==0.12.1
@@ -351,7 +359,7 @@ func TestPythonPackagesForArchTorchGPU(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--extra-index-url https://download.pytorch.org/whl/cu118
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu118/
 torch==2.0.1
 torchvision==0.15.2
 torchaudio==2.0.2
@@ -378,7 +386,7 @@ func TestPythonPackagesForArchTorchCPU(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--extra-index-url https://download.pytorch.org/whl/cpu
+	expected := `--extra-index-url https://download.pytorch.org/whl/cpu/
 torch==2.0.1
 torchvision==0.15.2
 torchaudio==2.0.2
@@ -435,7 +443,7 @@ func TestPythonPackagesBothTorchAndTensorflow(t *testing.T) {
 
 	requirements, err := config.PythonRequirementsForArch("", "", []string{})
 	require.NoError(t, err)
-	expected := `--extra-index-url https://download.pytorch.org/whl/cu121
+	expected := `--extra-index-url https://download.pytorch.org/whl/cu121/
 tensorflow==2.16.1
 torch==2.3.1`
 	require.Equal(t, expected, requirements)
@@ -458,6 +466,24 @@ func TestCUDABaseImageTag(t *testing.T) {
 	imageTag, err := config.CUDABaseImageTag()
 	require.NoError(t, err)
 	require.Equal(t, "nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04", imageTag)
+}
+
+func TestCUDABaseImageTagWithExplicitMinorCUDAAndCuDNN(t *testing.T) {
+	config := &Config{
+		Build: &Build{
+			GPU:           true,
+			PythonVersion: "3.10",
+			CUDA:          "11.6",
+			CuDNN:         "8",
+		},
+	}
+
+	err := config.Complete("")
+	require.NoError(t, err)
+
+	imageTag, err := config.CUDABaseImageTag()
+	require.NoError(t, err)
+	require.Equal(t, "nvidia/cuda:11.6.2-cudnn8-devel-ubuntu20.04", imageTag)
 }
 
 func TestBuildRunItemStringYAML(t *testing.T) {
@@ -589,19 +615,14 @@ torch==1.12.1`
 
 func TestBlankBuild(t *testing.T) {
 	// Naively, this turns into nil, so make sure it's a real build object
-	// Write a temp file
-	dir := t.TempDir()
-	configPath := path.Join(dir, "cog.yaml")
-	err := os.WriteFile(configPath, []byte(`build:`), 0o644)
-	require.NoError(t, err)
-
-	cfgFile, err := parseFile(configPath)
+	cfgFile, err := parseBytes([]byte(`build:`))
 	require.NoError(t, err)
 	// Note: `build:` by itself in YAML parses to Build: nil (empty map becomes nil pointer)
 	// The completion step should create a default Build
 
 	config, err := configFileToConfig(cfgFile)
 	require.NoError(t, err)
+	dir := t.TempDir()
 	require.NoError(t, config.Complete(dir))
 	require.NotNil(t, config.Build)
 	require.Equal(t, false, config.Build.GPU)
@@ -637,17 +658,17 @@ build:
   run:
   - command: "echo 'Hello, World!'"
 `
-	dir := t.TempDir()
-	configPath := path.Join(dir, "cog.yaml")
-	err := os.WriteFile(configPath, []byte(yamlString), 0o644)
-	require.NoError(t, err)
-
-	_, err = parseFile(configPath)
+	_, err := parseBytes([]byte(yamlString))
 	require.NoError(t, err)
 }
 
 func TestConfigMarshal(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := &Config{
+		Build: &Build{
+			GPU:           false,
+			PythonVersion: "3.13",
+		},
+	}
 	data, err := yaml.Marshal(cfg)
 	require.NoError(t, err)
 	// yaml v4 uses 4-space indentation by default
@@ -655,6 +676,26 @@ func TestConfigMarshal(t *testing.T) {
     python_version: "3.13"
 predict: ""
 `, string(data))
+}
+
+func TestFromYAMLRunPopulatesPredict(t *testing.T) {
+	t.Run("non-empty run wins", func(t *testing.T) {
+		cfg, err := FromYAML([]byte("build:\n  python_version: \"3.13\"\nrun: \"run.py:Runner\"\n"))
+		require.NoError(t, err)
+		require.Equal(t, "run.py:Runner", cfg.Predict)
+	})
+
+	t.Run("empty run falls back to predict", func(t *testing.T) {
+		cfg, err := FromYAML([]byte("build:\n  python_version: \"3.13\"\nrun: \"\"\npredict: \"predict.py:Predictor\"\n"))
+		require.NoError(t, err)
+		require.Equal(t, "predict.py:Predictor", cfg.Predict)
+	})
+}
+
+func TestFromYAMLRunAndPredictConflict(t *testing.T) {
+	_, err := FromYAML([]byte("build:\n  python_version: \"3.13\"\nrun: \"run.py:Runner\"\npredict: \"predict.py:Predictor\"\n"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "only one of run or predict can be set")
 }
 
 func TestAbsolutePathInPythonRequirements(t *testing.T) {
@@ -676,68 +717,85 @@ func TestAbsolutePathInPythonRequirements(t *testing.T) {
 	require.True(t, ok)
 }
 
-func TestWeightsWithNameYAML(t *testing.T) {
+func TestWeightsWithSourceYAML(t *testing.T) {
 	yamlString := `build:
   python_version: "3.12"
+model: "registry.example.com/acme/my-model"
 predict: "predict.py:Predictor"
 
 weights:
   - name: model-v1
-    source: file://./weights/model-v1.zip
     target: "/weights/model-v1"
+    source:
+      uri: "hf://acme/model-v1"
+      exclude: ["*.onnx"]
   - name: model-v2
-    source: file://./weights/model-v2.zip
     target: "/weights/model-v2"
+    source:
+      uri: "./local-weights/"
 `
 
 	config, err := FromYAML([]byte(yamlString))
 	require.NoError(t, err)
 	require.Len(t, config.Weights, 2)
+	require.Equal(t, "registry.example.com/acme/my-model", config.Model)
 
 	require.Equal(t, "model-v1", config.Weights[0].Name)
-	require.Equal(t, "file://./weights/model-v1.zip", config.Weights[0].Source)
 	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
+	require.NotEmpty(t, config.Weights[0].Source.Items)
+	require.Equal(t, "hf://acme/model-v1", config.Weights[0].Source.Items[0].URI)
+	require.Equal(t, []string{"*.onnx"}, config.Weights[0].Source.Items[0].Exclude)
+	require.Empty(t, config.Weights[0].Source.Items[0].Include)
 
 	require.Equal(t, "model-v2", config.Weights[1].Name)
-	require.Equal(t, "file://./weights/model-v2.zip", config.Weights[1].Source)
 	require.Equal(t, "/weights/model-v2", config.Weights[1].Target)
+	require.NotEmpty(t, config.Weights[1].Source.Items)
+	require.Equal(t, "./local-weights/", config.Weights[1].Source.Items[0].URI)
 }
 
-func TestWeightsWithoutNameYAML(t *testing.T) {
+func TestWeightsWithoutSourceYAML(t *testing.T) {
+	// source is required on each weight entry. A config without it
+	// parses (Go doesn't enforce JSON schema) but fails validation.
 	yamlString := `build:
   python_version: "3.12"
+model: "registry.example.com/acme/my-model"
 predict: "predict.py:Predictor"
 
 weights:
-  - source: file://./weights/model.zip
-    target: "/weights/model"
+  - name: base-model
+    target: "/src/weights"
 `
 
 	config, err := FromYAML([]byte(yamlString))
-	require.NoError(t, err)
+	require.NoError(t, err, "parsing should succeed even without source")
 	require.Len(t, config.Weights, 1)
 
-	require.Equal(t, "", config.Weights[0].Name)
-	require.Equal(t, "file://./weights/model.zip", config.Weights[0].Source)
-	require.Equal(t, "/weights/model", config.Weights[0].Target)
+	// Source is empty at the Go level — the schema enforces it, not the parser.
+	require.Empty(t, config.Weights[0].Source.Items)
 }
 
-func TestWeightsWithNameJSON(t *testing.T) {
+func TestWeightsWithSourceJSON(t *testing.T) {
 	jsonString := `{
 	"build": {
 		"python_version": "3.12"
 	},
+	"model": "registry.example.com/acme/my-model",
 	"predict": "predict.py:Predictor",
 	"weights": [
 		{
 			"name": "model-v1",
-			"source": "file://./weights/model-v1.zip",
-			"target": "/weights/model-v1"
+			"target": "/weights/model-v1",
+			"source": {
+				"uri": "hf://acme/model-v1",
+				"exclude": ["*.onnx"]
+			}
 		},
 		{
 			"name": "model-v2",
-			"source": "file://./weights/model-v2.zip",
-			"target": "/weights/model-v2"
+			"target": "/weights/model-v2",
+			"source": {
+				"uri": "./local-weights/"
+			}
 		}
 	]
 }`
@@ -746,14 +804,147 @@ func TestWeightsWithNameJSON(t *testing.T) {
 	err := json.Unmarshal([]byte(jsonString), &config)
 	require.NoError(t, err)
 	require.Len(t, config.Weights, 2)
+	require.Equal(t, "registry.example.com/acme/my-model", config.Model)
 
 	require.Equal(t, "model-v1", config.Weights[0].Name)
-	require.Equal(t, "file://./weights/model-v1.zip", config.Weights[0].Source)
 	require.Equal(t, "/weights/model-v1", config.Weights[0].Target)
+	require.NotEmpty(t, config.Weights[0].Source.Items)
+	require.Equal(t, "hf://acme/model-v1", config.Weights[0].Source.Items[0].URI)
+	require.Equal(t, []string{"*.onnx"}, config.Weights[0].Source.Items[0].Exclude)
 
 	require.Equal(t, "model-v2", config.Weights[1].Name)
-	require.Equal(t, "file://./weights/model-v2.zip", config.Weights[1].Source)
 	require.Equal(t, "/weights/model-v2", config.Weights[1].Target)
+	require.NotEmpty(t, config.Weights[1].Source.Items)
+	require.Equal(t, "./local-weights/", config.Weights[1].Source.Items[0].URI)
+}
+
+// TestWeightsMultiSourceYAML verifies that the array form of `source:`
+// parses into a multi-element WeightSourceList in declaration order.
+func TestWeightsMultiSourceYAML(t *testing.T) {
+	yamlString := `build:
+  python_version: "3.12"
+image: "registry.example.com/acme/my-model"
+predict: "predict.py:Predictor"
+
+weights:
+  - name: merged
+    target: "/weights/merged"
+    source:
+      - uri: "hf://acme/base"
+        include: ["*.safetensors"]
+      - uri: "https://example.com/extras/extras.bin"
+`
+
+	config, err := FromYAML([]byte(yamlString))
+	require.NoError(t, err)
+	require.Len(t, config.Weights, 1)
+
+	w := config.Weights[0]
+	require.Len(t, w.Source.Items, 2)
+	require.Equal(t, "hf://acme/base", w.Source.Items[0].URI)
+	require.Equal(t, []string{"*.safetensors"}, w.Source.Items[0].Include)
+	require.Equal(t, "https://example.com/extras/extras.bin", w.Source.Items[1].URI)
+	require.Empty(t, w.Source.Items[1].Include)
+}
+
+// TestWeightsMultiSourceJSON mirrors TestWeightsMultiSourceYAML for the
+// JSON parser path, which has its own UnmarshalJSON implementation.
+func TestWeightsMultiSourceJSON(t *testing.T) {
+	jsonString := `{
+		"build": {"python_version": "3.12"},
+		"image": "registry.example.com/acme/my-model",
+		"predict": "predict.py:Predictor",
+		"weights": [
+			{
+				"name": "merged",
+				"target": "/weights/merged",
+				"source": [
+					{"uri": "hf://acme/base"},
+					{"uri": "https://example.com/extras/extras.bin"}
+				]
+			}
+		]
+	}`
+
+	var cfg Config
+	require.NoError(t, json.Unmarshal([]byte(jsonString), &cfg))
+	require.Len(t, cfg.Weights, 1)
+	require.Len(t, cfg.Weights[0].Source.Items, 2)
+	require.Equal(t, "hf://acme/base", cfg.Weights[0].Source.Items[0].URI)
+	require.Equal(t, "https://example.com/extras/extras.bin", cfg.Weights[0].Source.Items[1].URI)
+}
+
+// TestWeightSourceList_MarshalRoundTrip verifies that single-element
+// lists serialize as a plain mapping/object and multi-element lists as
+// a sequence/array, in both YAML and JSON. The contract is that input
+// shape round-trips without surprise — a single-source weight written
+// as `source: {uri: ...}` should not come back as `source: [{uri:
+// ...}]` after a Marshal/Unmarshal cycle.
+func TestWeightSourceList_MarshalRoundTrip(t *testing.T) {
+	tests := []struct {
+		name       string
+		list       WeightSourceList
+		isMulti    bool // true: must serialize as a sequence/array
+		wantURISub string
+	}{
+		{
+			name: "single source emits mapping not sequence",
+			list: WeightSourceList{Items: []WeightSourceConfig{
+				{URI: "hf://acme/base"},
+			}},
+			isMulti:    false,
+			wantURISub: "hf://acme/base",
+		},
+		{
+			name: "multi source emits sequence",
+			list: WeightSourceList{Items: []WeightSourceConfig{
+				{URI: "hf://acme/base"},
+				{URI: "https://example.com/extras.bin"},
+			}},
+			isMulti:    true,
+			wantURISub: "hf://acme/base",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// YAML: a sequence starts with "- ", a mapping does not.
+			// Trim leading whitespace before checking the first byte
+			// so doc-level YAML headers don't trip the assertion.
+			yamlBytes, err := yaml.Marshal(tc.list)
+			require.NoError(t, err)
+			yamlStr := strings.TrimSpace(string(yamlBytes))
+			assert.Contains(t, yamlStr, tc.wantURISub)
+			if tc.isMulti {
+				assert.True(t, strings.HasPrefix(yamlStr, "- "),
+					"multi-element list must serialize as YAML sequence, got: %s", yamlStr)
+			} else {
+				assert.False(t, strings.HasPrefix(yamlStr, "- "),
+					"single-element list must serialize as YAML mapping, got: %s", yamlStr)
+			}
+
+			// JSON: an array starts with '[', an object with '{'.
+			jsonBytes, err := json.Marshal(tc.list)
+			require.NoError(t, err)
+			assert.Contains(t, string(jsonBytes), tc.wantURISub)
+			if tc.isMulti {
+				assert.Equal(t, byte('['), jsonBytes[0],
+					"multi-element list must serialize as JSON array, got: %s", jsonBytes)
+			} else {
+				assert.Equal(t, byte('{'), jsonBytes[0],
+					"single-element list must serialize as JSON object, got: %s", jsonBytes)
+			}
+
+			// Round-trip back through the unmarshaler and verify
+			// the Items slice matches the original.
+			var roundtrip WeightSourceList
+			require.NoError(t, yaml.Unmarshal(yamlBytes, &roundtrip))
+			assert.Equal(t, tc.list.Items, roundtrip.Items)
+
+			var roundtripJSON WeightSourceList
+			require.NoError(t, json.Unmarshal(jsonBytes, &roundtripJSON))
+			assert.Equal(t, tc.list.Items, roundtripJSON.Items)
+		})
+	}
 }
 
 func TestSDKVersionConfig(t *testing.T) {
@@ -815,4 +1006,61 @@ predict: predict.py:Predictor
 `))
 	require.NoError(t, err)
 	require.Equal(t, "prerelease", conf.Build.SDKVersion)
+}
+
+// TestInvalidWeightsSourceDoesNotStackOverflow is a regression test for a
+// stack overflow caused by the yaml v4 library's LoadErrors.Is() method,
+// which has infinite recursion when errors.Is traverses the error chain.
+// When weights.source is an array of strings (not objects), yaml.Unmarshal
+// returns a LoadErrors. If we wrap it with %w, any caller doing errors.Is
+// on the returned error triggers the recursion. We use %v instead.
+func TestInvalidWeightsSourceDoesNotStackOverflow(t *testing.T) {
+	data := []byte(`weights:
+  - name: openai-privacy-filter
+    source:
+      - hf://openai/privacy-filter
+    target: /src/weights/openai-privacy-filter`)
+
+	_, err := FromYAML(data)
+	require.Error(t, err)
+
+	// This must not panic or stack overflow
+	require.False(t, errors.Is(err, errors.New("some error")))
+}
+
+func TestModelFieldYAML(t *testing.T) {
+	// model is parsed into Config.Model.
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+model: "registry.example.com/acme/my-model"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.Equal(t, "registry.example.com/acme/my-model", conf.Model)
+	require.Empty(t, conf.Image)
+}
+
+func TestModelFieldPartialNoRegistry(t *testing.T) {
+	// A bare repo without a registry parses fine — the registry will be
+	// supplied later by env vars or defaults.
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+model: "user/project"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.Equal(t, "user/project", conf.Model)
+}
+
+func TestModelFieldOmittedLeavesEmpty(t *testing.T) {
+	// Omitting model leaves Config.Model as the zero value.
+	conf, err := FromYAML([]byte(`
+build:
+  python_version: "3.12"
+predict: predict.py:Predictor
+`))
+	require.NoError(t, err)
+	require.Empty(t, conf.Model)
 }

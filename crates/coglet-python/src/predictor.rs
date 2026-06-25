@@ -2,8 +2,9 @@
 
 use std::sync::{Arc, OnceLock};
 
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyTuple};
 
 use coglet_core::worker::SlotSender;
 use coglet_core::{PredictionError, PredictionOutput, PredictionResult};
@@ -256,15 +257,30 @@ fn send_output_item(
 /// Type alias for Python object (Py<PyAny>).
 type PyObject = Py<PyAny>;
 
-/// How a predict() method executes
+/// How a run()/predict() method executes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PredictKind {
-    /// Synchronous function: def predict(self, **input) -> Output
+    /// Synchronous function: def run/predict(self, **input) -> Output
     Sync,
-    /// Async coroutine: async def predict(self, **input) -> Output
+    /// Async coroutine: async def run/predict(self, **input) -> Output
     Async,
-    /// Async generator: async def predict(self, **input) -> AsyncIterator[Output]
+    /// Async generator: async def run/predict(self, **input) -> AsyncIterator[Output]
     AsyncGen,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PredictMethodName {
+    Run,
+    Predict,
+}
+
+impl PredictMethodName {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Run => "run",
+            Self::Predict => "predict",
+        }
+    }
 }
 
 /// Whether and how train() exists
@@ -281,8 +297,9 @@ pub enum TrainKind {
 /// The predictor's structure and invocation target
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PredictorKind {
-    /// Class instance with predict() method, optionally train()
+    /// Class instance with selected run()/predict() method, optionally train()
     Class {
+        method_name: PredictMethodName,
         predict: PredictKind,
         train: TrainKind,
     },
@@ -299,6 +316,8 @@ pub struct PythonPredictor {
     instance: PyObject,
     /// The predictor's kind (class or standalone function) and method execution types
     kind: PredictorKind,
+    /// Whether the setup() method is an async def
+    setup_is_async: bool,
 }
 
 // PyObject is Send in PyO3 0.23+
@@ -337,16 +356,18 @@ impl PythonPredictor {
             };
             PredictorKind::StandaloneFunction(predict_kind)
         } else {
-            // Class instance - detect predict() and train() methods
-            let (is_async, is_async_gen) = Self::detect_async(py, &instance, "predict")?;
+            // Class instance - detect run()/predict() and train() methods
+            let method_name = Self::selected_predict_method_name(py, &instance)?;
+            let method_name_str = method_name.as_str();
+            let (is_async, is_async_gen) = Self::detect_async(py, &instance, method_name_str)?;
             let predict_kind = if is_async_gen {
-                tracing::info!("Detected async generator predict()");
+                tracing::info!("Detected async generator {}()", method_name_str);
                 PredictKind::AsyncGen
             } else if is_async {
-                tracing::info!("Detected async predict()");
+                tracing::info!("Detected async {}()", method_name_str);
                 PredictKind::Async
             } else {
-                tracing::info!("Detected sync predict()");
+                tracing::info!("Detected sync {}()", method_name_str);
                 PredictKind::Sync
             };
 
@@ -365,12 +386,28 @@ impl PythonPredictor {
             };
 
             PredictorKind::Class {
+                method_name,
                 predict: predict_kind,
                 train: train_kind,
             }
         };
 
-        let predictor = Self { instance, kind };
+        // Detect if setup() is async
+        let setup_is_async = if !is_function && instance.bind(py).hasattr("setup")? {
+            let (is_async, _) = Self::detect_async(py, &instance, "setup")?;
+            if is_async {
+                tracing::info!("Detected async setup()");
+            }
+            is_async
+        } else {
+            false
+        };
+
+        let predictor = Self {
+            instance,
+            kind,
+            setup_is_async,
+        };
 
         // Patch FieldInfo defaults on predict/train methods so Python uses actual
         // default values instead of FieldInfo wrapper objects for missing inputs.
@@ -379,7 +416,9 @@ impl PythonPredictor {
         if is_function {
             Self::unwrap_field_info_defaults(py, &predictor.instance, "")?;
         } else {
-            Self::unwrap_field_info_defaults(py, &predictor.instance, "predict")?;
+            if let PredictorKind::Class { method_name, .. } = &predictor.kind {
+                Self::unwrap_field_info_defaults(py, &predictor.instance, method_name.as_str())?;
+            }
             if matches!(predictor.kind, PredictorKind::Class { train, .. } if train != TrainKind::None)
             {
                 Self::unwrap_field_info_defaults(py, &predictor.instance, "train")?;
@@ -389,9 +428,56 @@ impl PythonPredictor {
         Ok(predictor)
     }
 
+    fn selected_predict_method_name(
+        py: Python<'_>,
+        instance: &PyObject,
+    ) -> PyResult<PredictMethodName> {
+        let class = instance.bind(py).getattr("__class__")?;
+        let mro = class.getattr("__mro__")?.cast_into::<PyTuple>()?;
+        let cog_predictor = py.import("cog.predictor")?;
+        let base_runner = cog_predictor.getattr("BaseRunner")?;
+        let base_predictor = cog_predictor.getattr("BasePredictor")?;
+        let builtins = py.import("builtins")?;
+        let object = builtins.getattr("object")?;
+        let callable = builtins.getattr("callable")?;
+
+        let mut has_run = false;
+        let mut has_predict = false;
+        for owner in mro.iter() {
+            if owner.is(&base_runner) || owner.is(&base_predictor) || owner.is(&object) {
+                // Stop at framework classes so mixins listed after BaseRunner in a
+                // subclass are not treated as selected user overrides.
+                break;
+            }
+            let dict = owner.getattr("__dict__")?;
+            let run_value = dict.call_method1("get", ("run",))?;
+            if !run_value.is_none() && callable.call1((&run_value,))?.extract()? {
+                has_run = true;
+            }
+            let predict_value = dict.call_method1("get", ("predict",))?;
+            if !predict_value.is_none() && callable.call1((&predict_value,))?.extract()? {
+                has_predict = true;
+            }
+        }
+
+        match (has_run, has_predict) {
+            (true, true) => Err(PyValueError::new_err(
+                "predictor must define either run() or predict(), not both",
+            )),
+            (true, false) => Ok(PredictMethodName::Run),
+            (false, true) => {
+                tracing::warn!("predict() is deprecated; use run() instead");
+                Ok(PredictMethodName::Predict)
+            }
+            (false, false) => Err(PyValueError::new_err(
+                "run() or predict() method not found on predictor",
+            )),
+        }
+    }
+
     /// Replace FieldInfo defaults with their `.default` values on a method's signature.
     ///
-    /// When users write `def predict(self, seed: int = Input(default=42, description="..."))`,
+    /// When users write `def run/predict(self, seed: int = Input(default=42, description="..."))`,
     /// the Python default for `seed` is a `FieldInfo(default=42, ...)` object. If `seed` is
     /// missing from the input dict, Python would use this FieldInfo as the value — not `42`.
     ///
@@ -495,7 +581,7 @@ impl PythonPredictor {
         Ok((is_coro, false))
     }
 
-    /// Returns true if this predictor has an async predict() method.
+    /// Returns true if this predictor has an async run()/predict() method.
     pub fn is_async(&self) -> bool {
         match &self.kind {
             PredictorKind::Class { predict, .. } => {
@@ -530,7 +616,13 @@ impl PythonPredictor {
     /// Uses cog.predictor helpers to detect and extract weights:
     /// - `has_setup_weights()` checks if setup() has a weights parameter
     /// - `extract_setup_weights()` reads from COG_WEIGHTS env or ./weights path
-    pub fn setup(&self, py: Python<'_>) -> PyResult<()> {
+    ///
+    /// If setup() is an async def and an event loop is provided, the coroutine
+    /// is submitted to that loop via `run_coroutine_threadsafe` so that
+    /// event-loop-bound resources created during setup (httpx.AsyncClient, etc.)
+    /// remain usable in predict(). If no loop is provided, falls back to
+    /// `asyncio.run()` (used by the non-worker code path).
+    pub fn setup(&self, py: Python<'_>, event_loop: Option<&Py<PyAny>>) -> PyResult<()> {
         let instance = self.instance.bind(py);
 
         // Check if setup method exists
@@ -546,12 +638,31 @@ impl PythonPredictor {
         // Check if setup() has a weights parameter
         let needs_weights: bool = has_setup_weights.call1((&instance,))?.extract()?;
 
-        if needs_weights {
+        let result = if needs_weights {
             // Extract weights from COG_WEIGHTS env or ./weights path
             let weights = extract_setup_weights.call1((&instance,))?;
-            instance.call_method1("setup", (weights,))?;
+            instance.call_method1("setup", (weights,))?
         } else {
-            instance.call_method0("setup")?;
+            instance.call_method0("setup")?
+        };
+
+        // If setup() is async, the call above returns a coroutine — run it.
+        if self.setup_is_async {
+            let asyncio = py.import("asyncio")?;
+            match event_loop {
+                Some(loop_obj) => {
+                    // Submit to the shared event loop so setup and predict share
+                    // the same loop. This keeps event-loop-bound resources alive.
+                    let future = asyncio
+                        .call_method1("run_coroutine_threadsafe", (&result, loop_obj.bind(py)))?;
+                    // Block until setup completes (preserves existing semantics).
+                    future.call_method0("result")?;
+                }
+                None => {
+                    // No shared loop (non-worker path) — use ephemeral loop.
+                    asyncio.call_method1("run", (&result,))?;
+                }
+            }
         }
 
         Ok(())
@@ -561,7 +672,7 @@ impl PythonPredictor {
     pub fn predict_func<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let instance = self.instance.bind(py);
         match &self.kind {
-            PredictorKind::Class { .. } => instance.getattr("predict"),
+            PredictorKind::Class { method_name, .. } => instance.getattr(method_name.as_str()),
             PredictorKind::StandaloneFunction(_) => Ok(instance.clone()),
         }
     }
@@ -575,13 +686,17 @@ impl PythonPredictor {
         }
     }
 
-    /// Call predict() with the given input dict, returning raw Python output.
+    /// Call run()/predict() with the given input dict, returning raw Python output.
     ///
     /// For standalone functions, calls the function directly.
     pub fn predict_raw(&self, py: Python<'_>, input: &Bound<'_, PyDict>) -> PyResult<PyObject> {
         let (method_name, is_async) = match &self.kind {
-            PredictorKind::Class { predict, .. } => (
-                "predict",
+            PredictorKind::Class {
+                method_name,
+                predict,
+                ..
+            } => (
+                method_name.as_str(),
                 matches!(predict, PredictKind::Async | PredictKind::AsyncGen),
             ),
             PredictorKind::StandaloneFunction(predict_kind) => (
@@ -949,11 +1064,19 @@ impl PythonPredictor {
                 .map_err(|e| PredictionError::InvalidInput(format_validation_error(py, &e)))?;
             let input_dict = prepared.dict(py);
 
-            // Call predict - returns coroutine
+            // Call run()/predict() - returns coroutine
             let instance = self.instance.bind(py);
-            let coro = instance
-                .call_method("predict", (), Some(&input_dict))
-                .map_err(|e| PredictionError::Failed(format!("Failed to call predict: {}", e)))?;
+            let method_name = match &self.kind {
+                PredictorKind::Class { method_name, .. } => method_name.as_str(),
+                PredictorKind::StandaloneFunction(_) => "standalone function",
+            };
+            let coro = match &self.kind {
+                PredictorKind::StandaloneFunction(_) => instance.call((), Some(&input_dict)),
+                PredictorKind::Class { .. } => {
+                    instance.call_method(method_name, (), Some(&input_dict))
+                }
+            }
+            .map_err(|e| PredictionError::Failed(format!("Failed to call {method_name}: {e}")))?;
 
             // For async generators, wrap to collect all values
             let is_async_gen = matches!(
@@ -1246,5 +1369,223 @@ impl PythonPredictor {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::path::PathBuf;
+
+    use pyo3::types::PyList;
+
+    fn add_python_sdk_path(py: Python<'_>) {
+        py.run(
+            c"\
+import sys, types
+coglet = types.ModuleType('coglet')
+coglet.CancelationException = Exception
+sys.modules.setdefault('coglet', coglet)
+requests = types.ModuleType('requests')
+sys.modules.setdefault('requests', requests)
+",
+            None,
+            None,
+        )
+        .expect("failed to install coglet test stub");
+
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let sdk_path = manifest_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("crate should live under crates/coglet-python")
+            .join("python");
+        let sys = py.import("sys").expect("sys should import");
+        let path = sys
+            .getattr("path")
+            .expect("sys.path should exist")
+            .cast_into::<PyList>()
+            .expect("sys.path should be a list");
+        path.insert(0, sdk_path.to_string_lossy().as_ref())
+            .expect("failed to prepend SDK path");
+    }
+
+    fn load_predictor_source(source: &str) -> PyResult<PythonPredictor> {
+        pyo3::Python::initialize();
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("predictor.py");
+        std::fs::write(&path, source).expect("failed to write test predictor");
+        Python::attach(|py| {
+            add_python_sdk_path(py);
+            let predictor_ref = format!("{}:Predictor", path.display());
+            PythonPredictor::load(py, &predictor_ref)
+        })
+    }
+
+    fn selected_predict_method_name(predictor: &PythonPredictor) -> String {
+        Python::attach(|py| {
+            predictor
+                .predict_func(py)
+                .expect("predict function should exist")
+                .getattr("__name__")
+                .expect("predict function should have __name__")
+                .extract()
+                .expect("__name__ should be a string")
+        })
+    }
+
+    #[test]
+    fn class_with_run_loads() {
+        let predictor = load_predictor_source(
+            r#"
+from cog import BaseRunner
+
+class Predictor(BaseRunner):
+    def run(self) -> str:
+        return "ok"
+"#,
+        )
+        .expect("predictor with run should load");
+
+        assert_eq!(selected_predict_method_name(&predictor), "run");
+    }
+
+    #[test]
+    fn class_with_run_and_predict_errors() {
+        let err = match load_predictor_source(
+            r#"
+from cog import BaseRunner
+
+class Predictor(BaseRunner):
+    def run(self) -> str:
+        return "run"
+
+    def predict(self) -> str:
+        return "predict"
+"#,
+        ) {
+            Ok(_) => panic!("predictor with run and predict should error"),
+            Err(err) => err,
+        };
+
+        let message = err.to_string();
+        assert!(message.contains("run"), "unexpected error: {message}");
+        assert!(message.contains("predict"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn inherited_user_run_loads() {
+        let predictor = load_predictor_source(
+            r#"
+from cog import BaseRunner
+
+class Parent(BaseRunner):
+    def run(self) -> str:
+        return "ok"
+
+class Predictor(Parent):
+    pass
+"#,
+        )
+        .expect("predictor with inherited user run should load");
+
+        assert_eq!(selected_predict_method_name(&predictor), "run");
+    }
+
+    #[test]
+    fn diamond_inherited_user_run_loads() {
+        let predictor = load_predictor_source(
+            r#"
+from cog import BaseRunner
+
+class Left(BaseRunner):
+    pass
+
+class Right(BaseRunner):
+    def run(self) -> str:
+        return "ok"
+
+class Predictor(Left, Right):
+    pass
+"#,
+        )
+        .expect("predictor with diamond-inherited user run should load");
+
+        assert_eq!(selected_predict_method_name(&predictor), "run");
+    }
+
+    #[test]
+    fn mixin_after_base_runner_is_not_user_predict() {
+        let err = match load_predictor_source(
+            r#"
+from cog import BaseRunner
+
+class PredictMixin:
+    def predict(self) -> str:
+        return "ok"
+
+class Predictor(BaseRunner, PredictMixin):
+    pass
+"#,
+        ) {
+            Ok(_) => panic!("mixin after BaseRunner should not provide selected predict"),
+            Err(err) => err,
+        };
+
+        let message = err.to_string();
+        assert!(message.contains("run"), "unexpected error: {message}");
+        assert!(message.contains("predict"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn no_user_run_or_predict_errors() {
+        let err = match load_predictor_source(
+            r#"
+from cog import BaseRunner
+
+class Predictor(BaseRunner):
+    pass
+"#,
+        ) {
+            Ok(_) => panic!("predictor without run or predict should error"),
+            Err(err) => err,
+        };
+
+        let message = err.to_string();
+        assert!(message.contains("run"), "unexpected error: {message}");
+        assert!(message.contains("predict"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn legacy_predict_loads_with_fallback() {
+        let predictor = load_predictor_source(
+            r#"
+from cog import BaseRunner
+
+class Predictor(BaseRunner):
+    def predict(self) -> str:
+        return "ok"
+"#,
+        )
+        .expect("predictor with legacy predict should load");
+
+        assert_eq!(selected_predict_method_name(&predictor), "predict");
+    }
+
+    #[test]
+    fn legacy_base_predictor_loads() {
+        let predictor = load_predictor_source(
+            r#"
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    def predict(self) -> str:
+        return "ok"
+"#,
+        )
+        .expect("predictor with BasePredictor should load");
+
+        assert_eq!(selected_predict_method_name(&predictor), "predict");
     }
 }

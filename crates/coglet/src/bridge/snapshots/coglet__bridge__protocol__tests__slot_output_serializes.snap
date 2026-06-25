@@ -1,8 +1,0 @@
----
-source: coglet/src/bridge/protocol.rs
-expression: resp
----
-{
-  "type": "output",
-  "output": "chunk 1"
-}

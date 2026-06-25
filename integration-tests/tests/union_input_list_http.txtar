@@ -1,0 +1,48 @@
+# Test list JSON-native union inputs over cog serve.
+#
+# nums: list[int] | list[float]   (required list union)
+#
+#   - list[int] | list[float] accepts [1] and [1.5] and the empty list []
+#   - list element types are validated: ["3"] and [true] are rejected
+#   - integer elements stay int, fractional elements are float (no runtime
+#     coercion: the wire type is preserved)
+
+cog build -t $TEST_IMAGE
+
+cog serve
+
+# Integer list element kept as int
+curl POST /predictions '{"input":{"nums":[1]}}'
+stdout '"output":"int:1"'
+
+# Float list element
+curl POST /predictions '{"input":{"nums":[1.5]}}'
+stdout '"output":"float:1.5"'
+
+# Empty list is accepted
+curl POST /predictions '{"input":{"nums":[]}}'
+stdout '"output":"empty"'
+
+# String element is not valid for list[int] | list[float] -> rejected
+! curl POST /predictions '{"input":{"nums":["3"]}}'
+
+# bool element is not valid for list[int] | list[float] -> rejected
+! curl POST /predictions '{"input":{"nums":[true]}}'
+
+# A bare scalar is not a list -> rejected
+! curl POST /predictions '{"input":{"nums":1}}'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, nums: list[int] | list[float]) -> str:
+        if not nums:
+            return "empty"
+        return f"{type(nums[0]).__name__}:{nums[0]}"
