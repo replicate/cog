@@ -22,7 +22,7 @@ require (
 	github.com/moby/term v0.5.2
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/replicate/go v0.0.0-20250205165008-b772d7cd506b
-	github.com/rogpeppe/go-internal v1.14.1
+	github.com/rogpeppe/go-internal v1.15.0
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
 	github.com/spf13/cobra v1.10.2
@@ -38,7 +38,7 @@ require (
 	golang.org/x/crypto v0.50.0
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.43.0
+	golang.org/x/sys v0.45.0
 	golang.org/x/term v0.42.0
 	google.golang.org/grpc v1.80.0
 	gopkg.in/yaml.v3 v3.0.1
