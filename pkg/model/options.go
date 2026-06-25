@@ -41,15 +41,6 @@ type BuildOptions struct {
 	// DockerfileFile is a custom Dockerfile path.
 	DockerfileFile string
 
-	// WeightsLockPath is the path to weights.lock file.
-	// Default: weights.lock in project directory.
-	WeightsLockPath string
-
-	// TODO(md): OCIIndex is a temporary gate. When true, builds produce weight
-	// artifacts and pushes create an OCI Image Index. Set via COG_OCI_INDEX=1.
-	// Remove this field once index pushes are validated with all registries.
-	OCIIndex bool
-
 	// ExcludeSource skips the COPY . /src step in the generated Dockerfile.
 	// Used by `cog serve` to produce an image identical to `cog build` minus
 	// the source copy — the source directory is volume-mounted at runtime.
@@ -58,12 +49,12 @@ type BuildOptions struct {
 	ExcludeSource bool
 
 	// SkipSchemaValidation skips OpenAPI schema generation and validation.
-	// Used by `cog run` which executes arbitrary commands and may not have
+	// Used by `cog exec` which executes arbitrary commands and may not have
 	// a predictor or trainer defined in cog.yaml.
 	SkipSchemaValidation bool
 
 	// SkipLabels skips adding Cog metadata labels to the built image.
-	// Used by `cog run`, `cog predict`, `cog serve`, and `cog train` where
+	// Used by `cog exec`, `cog predict`, `cog serve`, and `cog train` where
 	// the image is for local use only and not being distributed.
 	SkipLabels bool
 }

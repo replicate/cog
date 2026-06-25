@@ -1,0 +1,35 @@
+# Test that cog doctor --fix removes deprecated imports.
+
+# First, doctor should detect the issue
+! cog doctor
+stderr 'ExperimentalFeatureWarning'
+
+# Fix the issue
+cog doctor --fix
+stderr 'Fixed'
+
+# Verify the import was removed from the file
+exec cat run.py
+! stdout 'ExperimentalFeatureWarning'
+! stdout 'cog.types'
+
+# Re-running doctor should now pass
+cog doctor
+stderr 'no issues found'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+run: "run.py:Runner"
+
+-- run.py --
+import warnings
+from cog import BaseRunner
+from cog.types import ExperimentalFeatureWarning
+
+warnings.filterwarnings("ignore", category=ExperimentalFeatureWarning)
+
+
+class Runner(BaseRunner):
+    def run(self, text: str) -> str:
+        return "hello " + text

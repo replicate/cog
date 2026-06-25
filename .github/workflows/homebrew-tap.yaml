@@ -54,6 +54,12 @@ jobs:
           owner: replicate
           repositories: homebrew-tap
 
+      - name: Checkout cog repository
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/cog.rb.tmpl
+          sparse-checkout-cone-mode: false
+
       - name: Download checksums from release
         run: gh release download "$TAG" -p checksums.txt -R "${{ github.repository }}"
         env:
@@ -86,38 +92,11 @@ jobs:
           echo "  Darwin x86_64: $SHA_X86"
           echo "  Darwin arm64:  $SHA_ARM"
 
-          BASE_URL="https://github.com/replicate/cog/releases/download/${TAG}"
-
-          # Generate cask file (no indentation to avoid stripping issues)
-          cat > cog.rb <<CASK
-          cask "cog" do
-            version "${VERSION}"
-
-            on_intel do
-              url "${BASE_URL}/cog_Darwin_x86_64"
-              sha256 "${SHA_X86}"
-            end
-
-            on_arm do
-              url "${BASE_URL}/cog_Darwin_arm64"
-              sha256 "${SHA_ARM}"
-            end
-
-            name "Cog"
-            desc "Containers for machine learning"
-            homepage "https://cog.run"
-
-            binary "cog_Darwin_#{Hardware::CPU.intel? ? "x86_64" : "arm64"}", target: "cog"
-
-            postflight do
-              system_command "/usr/bin/xattr",
-                             args: ["-dr", "com.apple.quarantine", "#{staged_path}/cog"]
-            end
-          end
-          CASK
-
-          # Strip heredoc indentation
-          sed -i 's/^          //' cog.rb
+          # Generate cask from template.
+          # The template uses ${VERSION}, ${SHA_ARM}, ${SHA_X86} placeholders.
+          # Ruby #{...} interpolation is preserved (envsubst only expands $VAR / ${VAR}).
+          export VERSION SHA_ARM SHA_X86
+          envsubst '${VERSION} ${SHA_ARM} ${SHA_X86}' < .github/cog.rb.tmpl > cog.rb
 
           echo "Generated cask:"
           cat cog.rb

@@ -10,6 +10,7 @@ from cog import (
     Path,
     Secret,
     URLFile,
+    streaming,
 )
 
 
@@ -132,3 +133,25 @@ class TestIterators:
         from typing import AsyncIterator
 
         assert issubclass(AsyncConcatenateIterator, AsyncIterator)
+
+
+class TestStreamingDecorator:
+    """Tests for the streaming opt-in decorator."""
+
+    def test_streaming_returns_same_object(self) -> None:
+        def predict() -> str:
+            return "ok"
+
+        decorated = streaming(predict)
+
+        assert decorated is predict
+        assert not hasattr(predict, "__cog_streaming__")
+
+    def test_streaming_call_form_returns_same_object(self) -> None:
+        def predict() -> str:
+            return "ok"
+
+        decorated = streaming()(predict)
+
+        assert decorated is predict
+        assert not hasattr(predict, "__cog_streaming__")

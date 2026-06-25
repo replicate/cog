@@ -30,6 +30,7 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/util/mime"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 const StdinPath = "-"
@@ -43,18 +44,7 @@ var (
 	inputJSON            string
 )
 
-func newPredictCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "predict [image]",
-		Short: "Run a prediction",
-		Long: `Run a prediction.
-
-If 'image' is passed, it will run the prediction on that Docker image.
-It must be an image that has been built by Cog.
-
-Otherwise, it will build the model in the current directory and run
-the prediction on that.`,
-		Example: `  # Run a prediction with named inputs
+const existingPredictExamples = `  # Run the model with named inputs
   cog predict -i prompt="a photo of a cat"
 
   # Pass a file as input
@@ -70,10 +60,32 @@ the prediction on that.`,
   cog predict r8.im/your-username/my-model -i prompt="hello"
 
   # Pass inputs as JSON
-  echo '{"prompt": "a cat"}' | cog predict --json @-`,
+  echo '{"prompt": "a cat"}' | cog predict --json @-`
+
+func newPredictCommand() *cobra.Command {
+	return newPredictionCommand("predict", true)
+}
+
+func newPredictionCommand(use string, hidden bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   use + " [image]",
+		Short: "Run the model",
+		Long: `Run the model.
+
+If 'image' is passed, it will run the model on that Docker image.
+It must be an image that has been built by Cog.
+
+Otherwise, it will build the model in the current directory and run
+it.`,
+
+		Example:    strings.ReplaceAll(existingPredictExamples, "cog predict", "cog "+use),
 		RunE:       cmdPredict,
 		Args:       cobra.MaximumNArgs(1),
+		Hidden:     hidden,
 		SuggestFor: []string{"infer"},
+	}
+	if hidden {
+		cmd.Short = "Run the model (deprecated, use cog run)"
 	}
 
 	addUseCudaBaseImageFlag(cmd)
@@ -177,7 +189,12 @@ func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
 }
 
 func cmdPredict(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
+	if cmd.CalledAs() == "predict" || cmd.Name() == "predict" {
+		console.Warn(`"cog predict" is deprecated, use "cog run"`)
+	}
+
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
@@ -188,12 +205,22 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	volumes := []command.Volume{}
 	gpus := gpusFlag
 
+	// The Manager is built only when we have cog.yaml in scope (the
+	// build-from-source path). Pre-built images are opaque to Cog and
+	// may grow their own weight-metadata signal later.
+	var wm *weights.Manager
+
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
 	if len(args) == 0 {
 		// Build image
 		src, err := model.NewSource(configFilename)
 		if err != nil {
+			return err
+		}
+		defer src.Close()
+
+		if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
 			return err
 		}
 
@@ -213,6 +240,11 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		if gpus == "" && m.HasGPU() {
 			gpus = "all"
+		}
+
+		wm, err = newWeightManager(src)
+		if err != nil {
+			return err
 		}
 	} else {
 		// Use existing image
@@ -247,27 +279,20 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		env = append(env, "RUST_LOG="+rustLog)
 	}
 
-	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
-		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: volumes,
-		Env:     env,
-	}, false, dockerClient)
+	predictor, err := predict.NewPredictor(ctx, predict.PredictorOptions{
+		RunOptions: command.RunOptions{
+			GPUs:    gpus,
+			Image:   imageName,
+			Volumes: volumes,
+			Env:     env,
+		},
+		IsTrain:       false,
+		Docker:        dockerClient,
+		WeightManager: wm,
+	})
 	if err != nil {
 		return err
 	}
-
-	go func() {
-		captureSignal := make(chan os.Signal, 1)
-		signal.Notify(captureSignal, syscall.SIGINT)
-
-		<-captureSignal
-
-		console.Info("Stopping container...")
-		if err := predictor.Stop(ctx); err != nil {
-			console.Warnf("Failed to stop container: %s", err)
-		}
-	}()
 
 	timeout := time.Duration(setupTimeout) * time.Second
 	if err := predictor.Start(ctx, os.Stderr, timeout); err != nil {
@@ -277,11 +302,16 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			console.Info("Missing device driver, re-trying without GPU")
 
 			_ = predictor.Stop(ctx)
-			predictor, err = predict.NewPredictor(ctx, command.RunOptions{
-				Image:   imageName,
-				Volumes: volumes,
-				Env:     env,
-			}, false, dockerClient)
+			predictor, err = predict.NewPredictor(ctx, predict.PredictorOptions{
+				RunOptions: command.RunOptions{
+					Image:   imageName,
+					Volumes: volumes,
+					Env:     env,
+				},
+				IsTrain:       false,
+				Docker:        dockerClient,
+				WeightManager: wm,
+			})
 			if err != nil {
 				return err
 			}
@@ -294,10 +324,9 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// FIXME: will not run on signal
+	// Use background context to ensure stop signal is still sent after root context is canceled by signal
 	defer func() {
 		console.Debugf("Stopping container...")
-		// use background context to ensure stop signal is still sent after root context is canceled
 		if err := predictor.Stop(context.Background()); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}
@@ -545,7 +574,7 @@ func ensureOutputWriteable(outputPath string, fallbackPath string) (string, erro
 	stat, err := os.Stat(outputPath)
 
 	// If the file doesn't exist, use the parent directory with given filename.
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		if err = unix.Access(path.Dir(outputPath), unix.W_OK); err != nil {
 			return "", fmt.Errorf("Output directory is not writable: %s", path.Dir(outputPath))
 		}

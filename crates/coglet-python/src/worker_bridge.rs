@@ -293,7 +293,13 @@ impl PredictHandler for PythonPredictHandler {
             tracing::info!(sdk_implementation = %sdk_impl, "Detected Cog SDK implementation");
 
             tracing::info!("Running setup");
-            pred.setup(py)
+            let async_loop = self
+                .async_loop
+                .lock()
+                .expect("async_loop mutex poisoned")
+                .as_ref()
+                .map(|l| l.clone_ref(py));
+            pred.setup(py, async_loop.as_ref())
                 .map_err(|e| SetupError::setup(e.to_string()))?;
 
             let mut guard = self.predictor.lock().expect("predictor mutex poisoned");
@@ -400,8 +406,9 @@ impl PredictHandler for PythonPredictHandler {
                     };
 
                     // Submit coroutine and get future + prepared input for cleanup
+                    let scope_ref = scope_guard.as_ref().map(|g| g.scope());
                     let (future, is_async_gen, prepared) = match pred
-                        .train_async_worker(input, &loop_obj, &id)
+                        .train_async_worker(input, &loop_obj, &id, scope_ref)
                     {
                         Ok(f) => f,
                         Err(e) => {
@@ -478,8 +485,9 @@ impl PredictHandler for PythonPredictHandler {
                     };
 
                     // Submit coroutine and get future + prepared input for cleanup
+                    let scope_ref = scope_guard.as_ref().map(|g| g.scope());
                     let (future, is_async_gen, prepared) = match pred
-                        .predict_async_worker(input, &loop_obj, &id)
+                        .predict_async_worker(input, &loop_obj, &id, scope_ref)
                     {
                         Ok(f) => f,
                         Err(e) => {

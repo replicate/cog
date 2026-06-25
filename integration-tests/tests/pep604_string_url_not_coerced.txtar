@@ -1,0 +1,48 @@
+# Regression test: PEP 604 str | None input with a URL must NOT be coerced.
+#
+# This complements string_input_url_not_coerced.txtar by verifying that the
+# PEP 604 union handling in coglet does not accidentally coerce str | None
+# inputs into File/Path objects when the value looks like a URL.
+# The fix in #2878 adds types.UnionType detection — this test ensures it
+# only applies to File/Path unions, not str unions.
+
+cog build -t $TEST_IMAGE
+
+# --- Test via cog predict (CLI) ---
+
+# A URL passed to a str | None input should be returned verbatim.
+cog predict $TEST_IMAGE -i url=https://api.example.com/v1/resource
+stdout 'type=str value=https://api.example.com/v1/resource'
+
+# None default should also work.
+cog predict $TEST_IMAGE
+stdout 'type=NoneType value=none'
+
+# --- Test via cog serve (HTTP API) ---
+
+cog serve
+
+# POST a URL string to a str | None input — should stay a string.
+curl POST /predictions '{"input":{"url":"https://api.example.com/v1/resource"}}'
+stdout '"status":"succeeded"'
+stdout 'type=str value=https://api.example.com/v1/resource'
+
+# POST with empty input — should get None.
+curl POST /predictions '{"input":{}}'
+stdout '"status":"succeeded"'
+stdout 'type=NoneType value=none'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input
+
+
+class Predictor(BasePredictor):
+    def predict(self, url: str | None = Input(default=None)) -> str:
+        if url is None:
+            return "type=NoneType value=none"
+        return f"type={type(url).__name__} value={url}"

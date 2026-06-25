@@ -33,19 +33,9 @@ func Info(msg string) {
 	ConsoleInstance.Info(msg)
 }
 
-// Success level message.
-func Success(msg string) {
-	ConsoleInstance.Success(msg)
-}
-
 // Warn level message.
 func Warn(msg string) {
 	ConsoleInstance.Warn(msg)
-}
-
-// Error level message.
-func Error(msg string) {
-	ConsoleInstance.Error(msg)
 }
 
 // Fatal level message.

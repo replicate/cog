@@ -17,20 +17,9 @@ func parse(s string) (string, string, string) {
 	minor := m[versionRegex.SubexpIndex("minor")]
 	patch := m[versionRegex.SubexpIndex("patch")]
 	return major, minor, patch
-
-}
-
-func CheckMajorOnly(s string) bool {
-	major, minor, patch := parse(s)
-	return major != "" && minor == "" && patch == ""
 }
 
 func CheckMajorMinorOnly(s string) bool {
 	major, minor, patch := parse(s)
 	return major != "" && minor != "" && patch == ""
-}
-
-func CheckMajorMinorPatch(s string) bool {
-	major, minor, patch := parse(s)
-	return major != "" && minor != "" && patch != ""
 }

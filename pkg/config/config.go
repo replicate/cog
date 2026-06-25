@@ -68,29 +68,44 @@ type Concurrency struct {
 	Max int `json:"max,omitempty" yaml:"max"`
 }
 
-// WeightSource defines a weight file or directory to include in the model.
+// WeightSourceConfig describes where to import weights from.
+// This is the "source" sub-object inside a weights entry.
+type WeightSourceConfig struct {
+	URI     string   `json:"uri,omitempty" yaml:"uri,omitempty"`
+	Include []string `json:"include,omitempty" yaml:"include,omitempty"`
+	Exclude []string `json:"exclude,omitempty" yaml:"exclude,omitempty"`
+}
+
+// WeightSourceList accepts a single object or an array in YAML/JSON
+// and normalizes to a slice. Custom unmarshalers are in config_file.go.
+type WeightSourceList struct {
+	Items []WeightSourceConfig
+}
+
+// WeightSource defines a weight directory to include in the model.
 type WeightSource struct {
-	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
-	Source string `json:"source" yaml:"source"`
-	Target string `json:"target,omitempty" yaml:"target,omitempty"`
+	Name   string           `json:"name" yaml:"name"`
+	Target string           `json:"target" yaml:"target"`
+	Source WeightSourceList `json:"source" yaml:"source"`
+}
+
+// WeightNames returns the names of the given weight sources.
+func WeightNames(ws []WeightSource) []string {
+	names := make([]string, len(ws))
+	for i, w := range ws {
+		names[i] = w.Name
+	}
+	return names
 }
 
 type Config struct {
 	Build       *Build         `json:"build" yaml:"build"`
 	Image       string         `json:"image,omitempty" yaml:"image,omitempty"`
+	Model       string         `json:"model,omitempty" yaml:"model,omitempty"`
 	Predict     string         `json:"predict,omitempty" yaml:"predict"`
 	Train       string         `json:"train,omitempty" yaml:"train,omitempty"`
 	Concurrency *Concurrency   `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
 	Weights     []WeightSource `json:"weights,omitempty" yaml:"weights,omitempty"`
-}
-
-func defaultConfig() *Config {
-	return &Config{
-		Build: &Build{
-			GPU:           false,
-			PythonVersion: "3.13",
-		},
-	}
 }
 
 func (r *RunItem) UnmarshalYAML(unmarshal func(any) error) error {
@@ -416,6 +431,11 @@ func validateCudaVersion(cudaVersion string) error {
 	major, err := strconv.Atoi(parts[0])
 	if err != nil {
 		return fmt.Errorf("invalid major version in CUDA version %q", cudaVersion)
+	}
+
+	_, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return fmt.Errorf("invalid minor version in CUDA version %q", cudaVersion)
 	}
 
 	if major < MinimumMajorCudaVersion {

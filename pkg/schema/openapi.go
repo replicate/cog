@@ -3,7 +3,8 @@ package schema
 import (
 	"encoding/json"
 	"maps"
-	"sort"
+
+	"github.com/replicate/cog/pkg/global"
 )
 
 // GenerateOpenAPISchema produces a complete OpenAPI 3.0.2 specification
@@ -188,38 +189,40 @@ func buildOpenAPISpec(info *PredictorInfo) map[string]any {
 	})
 
 	// Main endpoint (predict or train)
-	paths.Set(endpoint, map[string]any{
-		"post": map[string]any{
-			"summary":     summary,
-			"description": description,
-			"operationId": opID,
-			"requestBody": map[string]any{
+	mainOperation := map[string]any{
+		"summary":     summary,
+		"description": description,
+		"operationId": opID,
+		"requestBody": map[string]any{
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": map[string]any{"$ref": requestRef},
+				},
+			},
+		},
+		"responses": map[string]any{
+			"200": map[string]any{
+				"description": "Successful Response",
 				"content": map[string]any{
 					"application/json": map[string]any{
-						"schema": map[string]any{"$ref": requestRef},
+						"schema": map[string]any{"$ref": responseRef},
 					},
 				},
 			},
-			"responses": map[string]any{
-				"200": map[string]any{
-					"description": "Successful Response",
-					"content": map[string]any{
-						"application/json": map[string]any{
-							"schema": map[string]any{"$ref": responseRef},
-						},
-					},
-				},
-				"422": map[string]any{
-					"description": "Validation Error",
-					"content": map[string]any{
-						"application/json": map[string]any{
-							"schema": map[string]any{"$ref": "#/components/schemas/HTTPValidationError"},
-						},
+			"422": map[string]any{
+				"description": "Validation Error",
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": map[string]any{"$ref": "#/components/schemas/HTTPValidationError"},
 					},
 				},
 			},
 		},
-	})
+	}
+	if !isTrain && info.SupportsStreaming {
+		mainOperation["x-cog-streaming"] = true
+	}
+	paths.Set(endpoint, map[string]any{"post": mainOperation})
 
 	// Cancel endpoint
 	paths.Set(cancelEP, map[string]any{
@@ -229,7 +232,7 @@ func buildOpenAPISpec(info *PredictorInfo) map[string]any {
 			"parameters": []any{
 				map[string]any{
 					"required": true,
-					"schema":   map[string]any{"title": TitleCaseSingle(cancelParam), "type": "string"},
+					"schema":   map[string]any{"title": TitleCase(cancelParam), "type": "string"},
 					"name":     cancelParam,
 					"in":       "path",
 				},
@@ -253,7 +256,7 @@ func buildOpenAPISpec(info *PredictorInfo) map[string]any {
 
 	return map[string]any{
 		"openapi": "3.0.2",
-		"info":    map[string]any{"title": "Cog", "version": "0.1.0"},
+		"info":    map[string]any{"title": "Cog", "version": global.Version},
 		"paths":   paths,
 		"components": map[string]any{
 			"schemas": components,
@@ -267,6 +270,52 @@ type enumSchema struct {
 	schema map[string]any
 }
 
+func inputTypeJSONSchema(it InputType) map[string]any {
+	var schema map[string]any
+	switch it.Kind {
+	case InputKindPrimitive:
+		schema = it.Primitive.JSONType()
+	case InputKindAny:
+		schema = TypeAny.JSONType()
+	case InputKindArray:
+		items := TypeAny.JSONType()
+		if it.Elem != nil {
+			items = inputTypeJSONSchema(*it.Elem)
+		}
+		schema = map[string]any{
+			"type":  "array",
+			"items": items,
+		}
+	case InputKindUnion:
+		variants := make([]any, len(it.Variants))
+		for i, variant := range it.Variants {
+			variantSchema := inputTypeJSONSchema(variant)
+			if it.Nullable {
+				variantSchema["nullable"] = true
+			}
+			variants[i] = variantSchema
+		}
+		// A nullable union is represented with OpenAPI's `nullable` keyword
+		// (set below), matching how plain optional fields behave: an omitted
+		// value yields the default, while explicit JSON `null` is validated
+		// against the field type just like any other optional input.
+		schema = map[string]any{"anyOf": variants}
+	default:
+		schema = TypeAny.JSONType()
+	}
+	if it.Nullable {
+		schema["nullable"] = true
+	}
+	return schema
+}
+
+func inputSchemaForField(field InputField) map[string]any {
+	if field.InputType != nil {
+		return inputTypeJSONSchema(*field.InputType)
+	}
+	return field.FieldType.JSONType()
+}
+
 // buildInputSchema builds the Input schema object and any enum schemas for choices.
 func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 	properties := newOrderedMapAny()
@@ -274,14 +323,18 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 	var enums []enumSchema
 
 	info.Inputs.Entries(func(name string, field InputField) {
-		prop := newOrderedMapAny()
-
-		// x-order for field ordering
-		prop.Set("x-order", field.Order)
+		// Each input property is a plain map[string]any. Go's encoding/json
+		// emits map keys in alphabetical order on marshal, keeping bundled
+		// schema output deterministic for tests that assert exact substrings
+		// (see dict_input.txtar, list_dict_input.txtar, typing_dict_input.txtar).
+		prop := map[string]any{
+			"x-order": field.Order,
+		}
 
 		if len(field.Choices) > 0 {
-			// Choices -> use allOf with $ref to enum schema
-			enumName := TitleCaseSingle(name)
+			// Choices -> use allOf with $ref to enum schema.
+			// Use the parameter name as-is because it is the schema component name.
+			enumName := name
 			enumType := field.FieldType.Primitive.JSONType()
 			typeStr, _ := enumType["type"].(string)
 			if typeStr == "" {
@@ -303,66 +356,86 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 				},
 			})
 
-			prop.Set("allOf", []any{
+			prop["allOf"] = []any{
 				map[string]any{"$ref": "#/components/schemas/" + enumName},
-			})
+			}
 		} else {
 			// Regular field — inline type
-			prop.Set("title", TitleCase(name))
-			typeSchema := field.FieldType.JSONType()
-			// Merge type schema keys into prop in sorted order for determinism
-			keys := make([]string, 0, len(typeSchema))
-			for k := range typeSchema {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				prop.Set(k, typeSchema[k])
-			}
+			prop["title"] = TitleCase(name)
+			maps.Copy(prop, inputSchemaForField(field))
+		}
+
+		// Determine effective default. A default of None on a non-nullable
+		// field is not a real default — it's a Python pattern meaning "this
+		// field has no default; generate one when the predictor runs" (e.g. random
+		// seeds). Treat these as required with no default by ignoring the None.
+		//
+		// Secret is the one exception: `api_key: Secret = Input(default=None)`
+		// is a widespread, documented idiom for an optional credential that
+		// falls back to a proxy key when the caller omits it. Unlike
+		// `seed: int = Input(default=None)` (where None signals "generate
+		// at runtime"), None on a Secret unambiguously means "no credential
+		// was supplied". Treat that combination as an optional/nullable
+		// field so the generated schema matches the user's intent and
+		// `Optional[Secret] = Input(default=None)`. See
+		// TestNoneDefaultOnBareSecretIsOptional for the regression case.
+		isNullable := field.FieldType.Repetition == Optional || field.FieldType.Repetition == OptionalRepeated
+		if field.InputType != nil && field.InputType.Nullable {
+			isNullable = true
+		}
+		if field.FieldType.Primitive == TypeSecret &&
+			field.FieldType.Repetition == Required &&
+			field.Default != nil && field.Default.Kind == DefaultNone {
+			isNullable = true
+		}
+		hasEffectiveDefault := field.Default != nil
+		if hasEffectiveDefault && field.Default.Kind == DefaultNone && !isNullable {
+			hasEffectiveDefault = false
 		}
 
 		// Required?
-		if field.IsRequired() {
+		isUnionInput := field.InputType != nil && field.InputType.Kind == InputKindUnion
+		if !hasEffectiveDefault && (isUnionInput || field.FieldType.Repetition == Required || field.FieldType.Repetition == Repeated) {
 			required = append(required, name)
 		}
 
 		// Default value
-		if field.Default != nil {
-			prop.Set("default", field.Default.ToJSON())
+		if hasEffectiveDefault {
+			prop["default"] = field.Default.ToJSON()
 		}
 
 		// Nullable
-		if field.FieldType.Repetition == Optional {
-			prop.Set("nullable", true)
+		if isNullable {
+			prop["nullable"] = true
 		}
 
 		// Description
 		if field.Description != nil {
-			prop.Set("description", *field.Description)
+			prop["description"] = *field.Description
 		}
 
 		// Numeric constraints
 		if field.GE != nil {
-			prop.Set("minimum", *field.GE)
+			prop["minimum"] = *field.GE
 		}
 		if field.LE != nil {
-			prop.Set("maximum", *field.LE)
+			prop["maximum"] = *field.LE
 		}
 
 		// String constraints
 		if field.MinLength != nil {
-			prop.Set("minLength", *field.MinLength)
+			prop["minLength"] = *field.MinLength
 		}
 		if field.MaxLength != nil {
-			prop.Set("maxLength", *field.MaxLength)
+			prop["maxLength"] = *field.MaxLength
 		}
 		if field.Regex != nil {
-			prop.Set("pattern", *field.Regex)
+			prop["pattern"] = *field.Regex
 		}
 
 		// Deprecated
 		if field.Deprecated != nil && *field.Deprecated {
-			prop.Set("deprecated", true)
+			prop["deprecated"] = true
 		}
 
 		properties.Set(name, prop)
@@ -382,7 +455,7 @@ func buildInputSchema(info *PredictorInfo) (map[string]any, []enumSchema) {
 }
 
 // ---------------------------------------------------------------------------
-// Post-processing (mirrors openapi_schema.py fixups)
+// Post-processing for OpenAPI 3.0 compatibility
 // ---------------------------------------------------------------------------
 
 // removeTitleNextToRef removes "title" from any map that also has "$ref".

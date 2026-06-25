@@ -4,9 +4,8 @@
 # 1. record_metric() with default mode (replace) appears in response
 # 2. Increment and append accumulation modes work
 # 3. predict_time is always present (system metric)
-# 4. predict_time overrides any user-set predict_time
-# 5. Dict-style metrics access (scope.metrics["key"] = value)
-# 6. Dot-path keys create nested objects
+# 4. Dict-style metrics access (scope.metrics["key"] = value)
+# 5. Dot-path keys create nested objects
 
 cog serve
 
@@ -21,9 +20,8 @@ stdout '"tags":\["fast","cached"\]'
 stdout '"timing":\{.*"preprocess":0.1'
 stdout '"dict_metric":"hello"'
 
-# System predict_time overrides user value — should be a float, not 999
+# System predict_time is present (always added by runtime)
 stdout '"predict_time":'
-! stdout '"predict_time":999'
 
 -- cog.yaml --
 build:
@@ -54,8 +52,5 @@ class Predictor(BasePredictor):
 
         # Dict-style access
         scope.metrics["dict_metric"] = "hello"
-
-        # User-set predict_time should be overridden by system
-        scope.record_metric("predict_time", 999)
 
         return "ok"

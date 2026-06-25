@@ -3,14 +3,17 @@ package config
 import (
 	// blank import for embeds
 	_ "embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/xeipuuv/gojsonschema"
 
 	"github.com/replicate/cog/pkg/requirements"
@@ -32,20 +35,6 @@ type validateOptions struct {
 func WithProjectDir(dir string) ValidateOption {
 	return func(o *validateOptions) {
 		o.projectDir = dir
-	}
-}
-
-// WithRequirementsFS sets the filesystem for reading python_requirements file.
-func WithRequirementsFS(fsys fs.FS) ValidateOption {
-	return func(o *validateOptions) {
-		o.requirementsFS = fsys
-	}
-}
-
-// WithStrictDeprecations treats deprecation warnings as errors.
-func WithStrictDeprecations() ValidateOption {
-	return func(o *validateOptions) {
-		o.strictDeprecations = true
 	}
 }
 
@@ -74,6 +63,8 @@ func ValidateConfigFile(cfg *configFile, opts ...ValidateOption) *ValidationResu
 	validateBuild(cfg, options, result)
 	validateEnvironment(cfg, result)
 	validateConcurrency(cfg, result)
+	validateModel(cfg, result)
+	validateWeights(cfg, result)
 
 	// Check deprecated fields
 	checkDeprecatedFields(cfg, result)
@@ -110,16 +101,25 @@ func validateSchema(cfg *configFile) error {
 
 // validatePredict validates the predict field.
 func validatePredict(cfg *configFile, result *ValidationResult) {
-	if cfg.Predict == nil || *cfg.Predict == "" {
+	if cfg.Run != nil && *cfg.Run != "" && cfg.Predict != nil && *cfg.Predict != "" {
+		result.AddError(&ValidationError{Field: "run", Message: "only one of run or predict can be set"})
 		return
 	}
 
-	predict := *cfg.Predict
-	if len(strings.Split(predict, ".py:")) != 2 {
+	if cfg.Run != nil && *cfg.Run != "" {
+		validatePredictRef("run", *cfg.Run, "run.py:Runner", result)
+	}
+	if cfg.Predict != nil && *cfg.Predict != "" {
+		validatePredictRef("predict", *cfg.Predict, "predict.py:Predictor", result)
+	}
+}
+
+func validatePredictRef(field string, ref string, example string, result *ValidationResult) {
+	if len(strings.Split(ref, ".py:")) != 2 {
 		result.AddError(&ValidationError{
-			Field:   "predict",
-			Value:   predict,
-			Message: "must be in the form 'predict.py:Predictor'",
+			Field:   field,
+			Value:   ref,
+			Message: fmt.Sprintf("must be in the form '%s'", example),
 		})
 	}
 }
@@ -280,7 +280,7 @@ func validateRequirementsFile(reqPath string, opts *validateOptions) error {
 	}
 
 	// Use the real filesystem
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+	if _, err := os.Stat(fullPath); errors.Is(err, os.ErrNotExist) {
 		return &ValidationError{
 			Field:   "build.python_requirements",
 			Value:   reqPath,
@@ -487,8 +487,240 @@ func validateConcurrency(cfg *configFile, result *ValidationResult) {
 	}
 }
 
+// validateModel validates the model field. It enforces:
+//   - 'model' and 'image' are mutually exclusive.
+//   - 'model' must be a bare repository (no tag, no digest).
+//
+// The "model is required when weights are present" check is intentionally
+// not done here, because environment variables can supply the model ref at
+// command-time. That check belongs to the commands that actually need a
+// resolved ref (push, weights import).
+func validateModel(cfg *configFile, result *ValidationResult) {
+	modelSet := cfg.Model != nil && *cfg.Model != ""
+	imageSet := cfg.Image != nil && *cfg.Image != ""
+
+	if modelSet && imageSet {
+		result.AddError(&ValidationError{
+			Field:   "model",
+			Message: "'model' and 'image' cannot both be set",
+		})
+	}
+
+	if !modelSet {
+		return
+	}
+
+	model := *cfg.Model
+
+	// name.NewRepository accepts host:port repos (e.g. localhost:5000/foo).
+	// If it rejects the string, retry with ParseReference to disambiguate
+	// "looks like repo:tag or repo@digest" from "malformed" so we can give
+	// a more useful error.
+	if _, err := name.NewRepository(model); err != nil {
+		if _, refErr := name.ParseReference(model); refErr == nil {
+			result.AddError(&ValidationError{
+				Field:   "model",
+				Value:   model,
+				Message: "must be a bare repository — tags and digests are not allowed",
+			})
+			return
+		}
+		result.AddError(&ValidationError{
+			Field:   "model",
+			Value:   model,
+			Message: fmt.Sprintf("invalid repository: %v", err),
+		})
+	}
+}
+
+// weightNameRegex matches OCI-safe tag segments: lowercase alphanumeric,
+// separated by hyphens, dots, or underscores. Weight names appear in
+// registry tags (cog-weight.<name>.<digest>), so they must be OCI-safe.
+var weightNameRegex = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
+
+// validateWeights validates the weights stanza.
+func validateWeights(cfg *configFile, result *ValidationResult) {
+	if len(cfg.Weights) == 0 {
+		return
+	}
+
+	// Weights belong to the model's OCI bundle, so they require 'model'.
+	modelSet := cfg.Model != nil && *cfg.Model != ""
+	imageSet := cfg.Image != nil && *cfg.Image != ""
+
+	switch {
+	case imageSet && !modelSet:
+		// User is on the legacy image: path but tried to add weights.
+		// Point them at the rename.
+		result.AddError(&ValidationError{
+			Field:   "image",
+			Message: "weights require 'model', not 'image' — rename 'image' to 'model'",
+		})
+	case !modelSet:
+		result.AddError(&ValidationError{
+			Field:   "model",
+			Message: "weights require 'model' in cog.yaml — rename 'image' to 'model'",
+		})
+	}
+
+	seenNames := make(map[string]bool)
+	seenTargets := make(map[string]bool)
+	var cleanedTargets []string
+
+	for i, w := range cfg.Weights {
+		idx := fmt.Sprintf("weights[%d]", i)
+
+		// Name is required, must be OCI-safe, and must be unique.
+		switch {
+		case w.Name == "":
+			result.AddError(&ValidationError{
+				Field:   idx + ".name",
+				Message: "name is required",
+			})
+		case !weightNameRegex.MatchString(w.Name):
+			result.AddError(&ValidationError{
+				Field:   idx + ".name",
+				Value:   w.Name,
+				Message: "must contain only lowercase alphanumeric characters, hyphens, dots, or underscores (e.g. \"my-model-weights\")",
+			})
+		case seenNames[w.Name]:
+			result.AddError(&ValidationError{
+				Field:   idx + ".name",
+				Value:   w.Name,
+				Message: "duplicate weight name",
+			})
+		default:
+			seenNames[w.Name] = true
+		}
+
+		// Source is required. The schema's oneOf would also reject
+		// a missing source, but with a less actionable error
+		// ("must be a mapping"). Catch the missing case here so the
+		// user sees "source is required".
+		if len(w.Source.Items) == 0 {
+			result.AddError(&ValidationError{
+				Field:   idx + ".source",
+				Message: "source is required",
+			})
+		}
+
+		// Validate each source entry's patterns.
+		for j, src := range w.Source.Items {
+			srcIdx := fmt.Sprintf("%s.source[%d]", idx, j)
+			if len(w.Source.Items) == 1 {
+				srcIdx = idx + ".source"
+			}
+			validateWeightPatterns(srcIdx+".include", src.Include, result)
+			validateWeightPatterns(srcIdx+".exclude", src.Exclude, result)
+		}
+
+		// Target is required, must be absolute, must not be the
+		// container root, and must be unique.
+		if w.Target == "" {
+			result.AddError(&ValidationError{
+				Field:   idx + ".target",
+				Message: "target is required",
+			})
+		} else {
+			if !filepath.IsAbs(w.Target) {
+				result.AddError(&ValidationError{
+					Field:   idx + ".target",
+					Value:   w.Target,
+					Message: "target must be an absolute path",
+				})
+			}
+
+			cleaned := filepath.Clean(w.Target)
+
+			// Mounting weights at "/" would shadow the entire
+			// container root with the weight's bind mount.
+			if cleaned == "/" {
+				result.AddError(&ValidationError{
+					Field:   idx + ".target",
+					Value:   w.Target,
+					Message: "target must not be the container root \"/\"",
+				})
+			}
+
+			if seenTargets[cleaned] {
+				result.AddError(&ValidationError{
+					Field:   idx + ".target",
+					Value:   w.Target,
+					Message: "duplicate weight target",
+				})
+			} else {
+				seenTargets[cleaned] = true
+
+				// Check disjoint subtrees: no target may be an ancestor
+				// or descendant of another target.
+				for _, prev := range cleanedTargets {
+					if isSubpath(cleaned, prev) || isSubpath(prev, cleaned) {
+						result.AddError(&ValidationError{
+							Field:   idx + ".target",
+							Value:   w.Target,
+							Message: fmt.Sprintf("target overlaps with %q; weight targets must be disjoint", prev),
+						})
+						break
+					}
+				}
+				cleanedTargets = append(cleanedTargets, cleaned)
+			}
+		}
+	}
+}
+
+// validateWeightPatterns validates a list of include or exclude glob patterns.
+// It rejects empty-string patterns (including whitespace-only), !-prefixed
+// patterns (gitignore negation), and patterns containing backslashes.
+// Patterns are checked after trimming whitespace, but the input slice is
+// not mutated — the caller must normalize patterns separately.
+func validateWeightPatterns(field string, patterns []string, result *ValidationResult) {
+	for i, raw := range patterns {
+		p := strings.TrimSpace(raw)
+
+		if p == "" {
+			result.AddError(&ValidationError{
+				Field:   fmt.Sprintf("%s[%d]", field, i),
+				Message: "pattern must not be empty",
+			})
+			continue
+		}
+		if strings.HasPrefix(p, "!") {
+			result.AddError(&ValidationError{
+				Field:   fmt.Sprintf("%s[%d]", field, i),
+				Value:   p,
+				Message: "negation patterns (starting with '!') are not supported",
+			})
+		}
+		if strings.Contains(p, `\`) {
+			result.AddError(&ValidationError{
+				Field:   fmt.Sprintf("%s[%d]", field, i),
+				Value:   p,
+				Message: "patterns must use forward slashes, not backslashes",
+			})
+		}
+	}
+}
+
+// isSubpath reports whether child is a strict subdirectory of parent.
+// Both paths must be cleaned absolute paths.
+func isSubpath(child, parent string) bool {
+	if child == parent {
+		return false
+	}
+	return strings.HasPrefix(child, parent+"/")
+}
+
 // checkDeprecatedFields checks for deprecated fields and adds warnings.
 func checkDeprecatedFields(cfg *configFile, result *ValidationResult) {
+	if cfg.Predict != nil && *cfg.Predict != "" {
+		result.AddWarning(DeprecationWarning{
+			Field:       "predict",
+			Replacement: "run",
+			Message:     "use run to point at run.py:Runner",
+		})
+	}
+
 	if cfg.Build == nil {
 		return
 	}

@@ -1,0 +1,16 @@
+cog build -t $TEST_IMAGE
+cog predict $TEST_IMAGE -i s=world
+stderr '"cog predict" is deprecated, use "cog run"'
+stdout 'hello world'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+run: "run.py:Runner"
+
+-- run.py --
+from cog import BaseRunner
+
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s

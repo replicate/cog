@@ -6,9 +6,8 @@
 #   2. Schema is written to .cog/openapi_schema.json inside the image
 #   3. Schema is embedded as the run.cog.openapi_schema Docker label
 #   4. coglet loads the schema from disk and serves it at /openapi.json
-
-# Opt in to static schema generation
-env COG_STATIC_SCHEMA=1
+#
+# Static generation is the default as of 0.19.0, so no env var is needed.
 
 # Build the image
 cog build -t $TEST_IMAGE

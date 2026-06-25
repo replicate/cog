@@ -18,6 +18,16 @@ ignore = [
     "RUSTSEC-2025-0090",  # unic-emoji-char
     "RUSTSEC-2025-0098",  # unic-ucd-version
     "RUSTSEC-2025-0100",  # unic-ucd-ident
+
+    # pyo3 vulnerabilities fixed in 0.29.0, but we are pinned to 0.27 because our
+    # transitive deps numpy (<=0.28) and pyo3-async-runtimes (<=0.28) only support
+    # pyo3 ^0.28 and have no pyo3 0.29-compatible release yet. Neither vulnerable
+    # code path is reachable in coglet: we never call nth/nth_back on PyList/PyTuple
+    # iterators, never use PyCFunction::new_closure, and run GIL-bound (abi3-py310,
+    # no free-threading). Remove these once numpy/pyo3-async-runtimes ship pyo3 0.29
+    # support and we can upgrade.
+    "RUSTSEC-2026-0176",  # Out-of-bounds read in nth/nth_back for PyList/PyTuple iterators
+    "RUSTSEC-2026-0177",  # Missing Sync bound on PyCFunction::new_closure closures
 ]
 
 [licenses]

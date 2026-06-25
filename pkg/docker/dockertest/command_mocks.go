@@ -351,80 +351,12 @@ func (_c *MockCommand2_ImageBuild_Call) Run(run func(ctx context.Context, option
 	return _c
 }
 
-func (_c *MockCommand2_ImageBuild_Call) Return(imageID string, err error) *MockCommand2_ImageBuild_Call {
-	_c.Call.Return(imageID, err)
+func (_c *MockCommand2_ImageBuild_Call) Return(s string, err error) *MockCommand2_ImageBuild_Call {
+	_c.Call.Return(s, err)
 	return _c
 }
 
 func (_c *MockCommand2_ImageBuild_Call) RunAndReturn(run func(ctx context.Context, options command.ImageBuildOptions) (string, error)) *MockCommand2_ImageBuild_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// ImageSave provides a mock function for the type MockCommand2
-func (_mock *MockCommand2) ImageSave(ctx context.Context, imageRef string) (io.ReadCloser, error) {
-	ret := _mock.Called(ctx, imageRef)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ImageSave")
-	}
-
-	var r0 io.ReadCloser
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (io.ReadCloser, error)); ok {
-		return returnFunc(ctx, imageRef)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) io.ReadCloser); ok {
-		r0 = returnFunc(ctx, imageRef)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(io.ReadCloser)
-		}
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = returnFunc(ctx, imageRef)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockCommand2_ImageSave_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ImageSave'
-type MockCommand2_ImageSave_Call struct {
-	*mock.Call
-}
-
-// ImageSave is a helper method to define mock.On call
-//   - ctx context.Context
-//   - imageRef string
-func (_e *MockCommand2_Expecter) ImageSave(ctx interface{}, imageRef interface{}) *MockCommand2_ImageSave_Call {
-	return &MockCommand2_ImageSave_Call{Call: _e.mock.On("ImageSave", ctx, imageRef)}
-}
-
-func (_c *MockCommand2_ImageSave_Call) Run(run func(ctx context.Context, imageRef string)) *MockCommand2_ImageSave_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		run(
-			arg0,
-			arg1,
-		)
-	})
-	return _c
-}
-
-func (_c *MockCommand2_ImageSave_Call) Return(rc io.ReadCloser, err error) *MockCommand2_ImageSave_Call {
-	_c.Call.Return(rc, err)
-	return _c
-}
-
-func (_c *MockCommand2_ImageSave_Call) RunAndReturn(run func(ctx context.Context, imageRef string) (io.ReadCloser, error)) *MockCommand2_ImageSave_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -491,6 +423,74 @@ func (_c *MockCommand2_ImageExists_Call) Return(b bool, err error) *MockCommand2
 }
 
 func (_c *MockCommand2_ImageExists_Call) RunAndReturn(run func(ctx context.Context, ref string) (bool, error)) *MockCommand2_ImageExists_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ImageSave provides a mock function for the type MockCommand2
+func (_mock *MockCommand2) ImageSave(ctx context.Context, imageRef string) (io.ReadCloser, error) {
+	ret := _mock.Called(ctx, imageRef)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ImageSave")
+	}
+
+	var r0 io.ReadCloser
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (io.ReadCloser, error)); ok {
+		return returnFunc(ctx, imageRef)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) io.ReadCloser); ok {
+		r0 = returnFunc(ctx, imageRef)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(io.ReadCloser)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, imageRef)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockCommand2_ImageSave_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ImageSave'
+type MockCommand2_ImageSave_Call struct {
+	*mock.Call
+}
+
+// ImageSave is a helper method to define mock.On call
+//   - ctx context.Context
+//   - imageRef string
+func (_e *MockCommand2_Expecter) ImageSave(ctx interface{}, imageRef interface{}) *MockCommand2_ImageSave_Call {
+	return &MockCommand2_ImageSave_Call{Call: _e.mock.On("ImageSave", ctx, imageRef)}
+}
+
+func (_c *MockCommand2_ImageSave_Call) Run(run func(ctx context.Context, imageRef string)) *MockCommand2_ImageSave_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockCommand2_ImageSave_Call) Return(readCloser io.ReadCloser, err error) *MockCommand2_ImageSave_Call {
+	_c.Call.Return(readCloser, err)
+	return _c
+}
+
+func (_c *MockCommand2_ImageSave_Call) RunAndReturn(run func(ctx context.Context, imageRef string) (io.ReadCloser, error)) *MockCommand2_ImageSave_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -872,6 +872,69 @@ func (_c *MockCommand2_Run_Call) Return(err error) *MockCommand2_Run_Call {
 }
 
 func (_c *MockCommand2_Run_Call) RunAndReturn(run func(ctx context.Context, options command.RunOptions) error) *MockCommand2_Run_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Tag provides a mock function for the type MockCommand2
+func (_mock *MockCommand2) Tag(ctx context.Context, source string, target string) error {
+	ret := _mock.Called(ctx, source, target)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Tag")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
+		r0 = returnFunc(ctx, source, target)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockCommand2_Tag_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Tag'
+type MockCommand2_Tag_Call struct {
+	*mock.Call
+}
+
+// Tag is a helper method to define mock.On call
+//   - ctx context.Context
+//   - source string
+//   - target string
+func (_e *MockCommand2_Expecter) Tag(ctx interface{}, source interface{}, target interface{}) *MockCommand2_Tag_Call {
+	return &MockCommand2_Tag_Call{Call: _e.mock.On("Tag", ctx, source, target)}
+}
+
+func (_c *MockCommand2_Tag_Call) Run(run func(ctx context.Context, source string, target string)) *MockCommand2_Tag_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockCommand2_Tag_Call) Return(err error) *MockCommand2_Tag_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockCommand2_Tag_Call) RunAndReturn(run func(ctx context.Context, source string, target string) error) *MockCommand2_Tag_Call {
 	_c.Call.Return(run)
 	return _c
 }
