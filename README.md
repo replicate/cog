@@ -122,40 +122,90 @@ Hit us up if you're interested in using it or want to collaborate with us. [We'r
 
 ## Install
 
-If you're using macOS, you can install Cog using Homebrew:
+Choose your platform for installation instructions.
 
-```console
-brew install replicate/tap/cog
-```
+<details>
+  <summary>macOS</summary>
 
-You can also download and install the latest release using our
-[install script](https://cog.run/install):
+  The easiest way to install Cog on macOS is with Homebrew:
 
-```sh
-# bash, zsh, and other shells
-sh <(curl -fsSL https://cog.run/install.sh)
+  ```console
+  brew install replicate/tap/cog
+  ```
 
-# fish shell
-sh (curl -fsSL https://cog.run/install.sh | psub)
+  You can also use the install script:
 
-# download with wget and run in a separate command
-wget -qO- https://cog.run/install.sh
-sh ./install.sh
-```
+  ```sh
+  # bash, zsh, and other shells
+  sh <(curl -fsSL https://cog.run/install.sh)
 
-You can manually install the latest release of Cog directly from GitHub
-by running the following commands in a terminal:
+  # fish shell
+  sh (curl -fsSL https://cog.run/install.sh | psub)
 
-```console
-sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
-sudo chmod +x /usr/local/bin/cog
-```
+  # download with wget and run in a separate command
+  wget -qO- https://cog.run/install.sh
+  sh ./install.sh
+  ```
 
-Or if you are on docker:
+  Or install manually:
 
-```
-RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
-```
+  ```console
+  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
+  sudo chmod +x /usr/local/bin/cog
+  sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
+  ```
+
+  If you see a Gatekeeper warning saying the binary "cannot be opened because the developer cannot be verified", run:
+
+  ```console
+  sudo xattr -d com.apple.quarantine /usr/local/bin/cog
+  ```
+
+</details>
+
+<details>
+  <summary>Linux</summary>
+
+  You can install Cog using the install script:
+
+  ```sh
+  # bash, zsh, and other shells
+  sh <(curl -fsSL https://cog.run/install.sh)
+
+  # fish shell
+  sh (curl -fsSL https://cog.run/install.sh | psub)
+
+  # download with wget and run in a separate command
+  wget -qO- https://cog.run/install.sh
+  sh ./install.sh
+  ```
+
+  Or install manually:
+
+  ```console
+  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
+  sudo chmod +x /usr/local/bin/cog
+  ```
+
+</details>
+
+<details markdown>
+  <summary>Windows</summary>
+
+  Cog does not natively support Windows, but you can run it on Windows 11 using [WSL 2](docs/wsl2/wsl2.md). Once WSL 2 is set up, follow the Linux installation instructions above.
+
+</details>
+
+<details>
+  <summary>Docker</summary>
+
+  To install Cog inside a Docker image:
+
+  ```dockerfile
+  RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
+  ```
+
+</details>
 
 ## Upgrade
 

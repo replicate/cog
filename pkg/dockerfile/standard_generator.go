@@ -128,8 +128,20 @@ func (g *StandardGenerator) SetBreakSystemPackages(breakSystemPackages bool) {
 	g.breakSystemPackages = breakSystemPackages
 }
 
+// needsBreakSystemPackages reports whether pip invocations need
+// --break-system-packages. True when either the caller opted in explicitly
+// (SetBreakSystemPackages) or the generated Dockerfile installs Python via
+// `uv python install` (inside installPythonCUDA). The latter happens when the
+// base image is nvidia/cuda — which has no Python — as opposed to python:X-slim
+// or r8.im/cog-base, which ship their own. uv marks its installed Pythons as
+// externally managed (PEP 668).
+func (g *StandardGenerator) needsBreakSystemPackages() bool {
+	return g.breakSystemPackages ||
+		(g.Config.Build.GPU && g.useCudaBaseImage && !g.IsUsingCogBaseImage())
+}
+
 func (g *StandardGenerator) uvPipInstallFlags(flags string) string {
-	if g.breakSystemPackages {
+	if g.needsBreakSystemPackages() {
 		return uvBreakSystemPackages + " " + flags
 	}
 	return flags
@@ -681,7 +693,7 @@ func (g *StandardGenerator) installWheelFromURL(url string) (string, error) {
 	var pipPrefix string
 	if strings.Contains(url, "coglet") {
 		uninstallFlags := ""
-		if g.breakSystemPackages {
+		if g.needsBreakSystemPackages() {
 			uninstallFlags = " " + uvBreakSystemPackages
 		}
 		pipPrefix = uvPip + " uninstall" + uninstallFlags + " cog 2>/dev/null || true && "
@@ -723,7 +735,7 @@ func (g *StandardGenerator) installWheelFromFile(path string) (string, error) {
 		// Some base images (e.g. r8.im/cog-base) have cog pre-installed, which conflicts
 		// with coglet's cog compatibility shim that provides the same module paths.
 		uninstallFlags := ""
-		if g.breakSystemPackages {
+		if g.needsBreakSystemPackages() {
 			uninstallFlags = " " + uvBreakSystemPackages
 		}
 		pipPrefix = uvPip + " uninstall" + uninstallFlags + " cog 2>/dev/null || true && "

@@ -61,6 +61,7 @@ markdown_extensions:
   - admonition
   - codehilite
   - extra
+  - md_in_html
   - pymdownx.highlight
   - pymdownx.superfences
 extra_css:

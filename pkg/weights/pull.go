@@ -231,6 +231,9 @@ func (m *Manager) pullLayer(
 		if err != nil {
 			return fmt.Errorf("read layer %s: %w", layerDigest, err)
 		}
+		if hdr.Typeflag == tar.TypeDir {
+			continue
+		}
 		if hdr.Typeflag != tar.TypeReg {
 			// Spec §1.3 says producers MUST emit only regular
 			// files. A non-regular entry indicates a producer bug
