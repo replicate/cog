@@ -35,8 +35,7 @@ config_roots = ["."]
 go = "latest"
 uv = "0.9.26"
 "pipx:nox" = { version = "2025.11.12", uvx = true, uvx_args = "--python-preference=managed -p 3.13" }
-"aqua:ziglang/zig" = "0.15.2"
-"rust" = { version = "1.93.0", components = "rustfmt,clippy", targets ="x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
+"rust" = { version = "1.93.0", components = "rustfmt,clippy,rust-analyzer", targets = "x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,aarch64-apple-darwin" }
 cargo-binstall = "1.16.6"
 # Cargo tools - use aqua backend where available for faster binary downloads
 # and better security (cosign/SLSA verification). Remaining cargo: tools use binstall.
@@ -49,9 +48,14 @@ cargo-binstall = "1.16.6"
 "aqua:rust-cross/cargo-zigbuild" = "0.20.1"
 "aqua:gotestyourself/gotestsum" = "1.13.0"
 "aqua:golangci/golangci-lint" = "2.10.1"
+"aqua:vektra/mockery" = "3.7.0"
 ruff = "0.14.13"
 ty = "0.0.10"
+"npm:prettier" = "3.6.2"
 "npm:markdownlint-cli2" = "0.22.0"
+"aqua:jqlang/jq" = "1.8.1"
+"go:golang.org/x/tools/cmd/goimports" = "latest"
+zig = "0.15.2"
 
 [env]
 _.path = "./bin"
@@ -95,7 +99,11 @@ run = "rm -f dist/cog-*.whl dist/cog-*.tar.gz dist/coglet-*.whl"
 alias = "build:all"
 description = "Build all components"
 run = [
-  { tasks = ["build:cog", "build:coglet:wheel:linux-x64", "build:sdk"] },
+  { tasks = [
+    "build:cog",
+    "build:sdk",
+  ] },
+  { task = "build:coglet:wheel:linux-x64" },
   { task = "_build_summary" },
 ]
 
@@ -175,7 +183,10 @@ description = "Build coglet Python wheel (native platform)"
 # and falsely matches cross-compiled wheels (e.g. linux-x64), causing skips.
 # Use --force if you need to bypass mise's staleness check.
 run = [
-  { tasks = ["_setup_dist", "_setup_venv"] },
+  { tasks = [
+    "_setup_dist",
+    "_setup_venv",
+  ] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml",
 ]
 
@@ -184,7 +195,10 @@ description = "Build coglet Python wheel for Linux x86_64"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
 outputs = ["dist/coglet-*manylinux*x86_64*.whl"]
 run = [
-  { tasks = ["_setup_dist", "_setup_venv"] },
+  { tasks = [
+    "_setup_dist",
+    "_setup_venv",
+  ] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-unknown-linux-gnu --zig",
 ]
 
@@ -193,7 +207,10 @@ description = "Build coglet Python wheel for Linux ARM64"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
 outputs = ["dist/coglet-*manylinux*aarch64*.whl"]
 run = [
-  { tasks = ["_setup_dist", "_setup_venv"] },
+  { tasks = [
+    "_setup_dist",
+    "_setup_venv",
+  ] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-unknown-linux-gnu --zig",
 ]
 
@@ -202,7 +219,10 @@ description = "Build coglet Python wheel for macOS ARM64"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
 outputs = ["dist/coglet-*-macosx_*_arm64.whl"]
 run = [
-  { tasks = ["_setup_dist", "_setup_venv"] },
+  { tasks = [
+    "_setup_dist",
+    "_setup_venv",
+  ] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target aarch64-apple-darwin",
 ]
 
@@ -211,7 +231,10 @@ description = "Build coglet Python wheel for macOS x86_64"
 sources = ["crates/**/*.rs", "crates/**/Cargo.toml", "Cargo.lock"]
 outputs = ["dist/coglet-*-macosx_*_x86_64.whl"]
 run = [
-  { tasks = ["_setup_dist", "_setup_venv"] },
+  { tasks = [
+    "_setup_dist",
+    "_setup_venv",
+  ] },
   "maturin build --release --out dist --manifest-path crates/coglet-python/Cargo.toml --target x86_64-apple-darwin",
 ]
 
@@ -219,7 +242,10 @@ run = [
 description = "Build coglet Python wheels for all platforms"
 run = [
   { task = "_setup_dist" },
-  { tasks = ["build:coglet:wheel:linux-x64", "build:coglet:wheel:linux-arm64"] },
+  { tasks = [
+    "build:coglet:wheel:linux-x64",
+    "build:coglet:wheel:linux-arm64",
+  ] },
   { task = "build:coglet:wheel" },
 ]
 
@@ -228,7 +254,10 @@ description = "Build cog SDK wheel"
 sources = ["python/**/*.py", "pyproject.toml", "VERSION.txt"]
 outputs = ["dist/cog-*.whl", "dist/cog-*.tar.gz"]
 run = [
-  { tasks = ["_setup_dist", "_setup_venv"] },
+  { tasks = [
+    "_setup_dist",
+    "_setup_venv",
+  ] },
   """
 #!/usr/bin/env bash
 set -euo pipefail
@@ -245,7 +274,10 @@ description = "Build all wheels (coglet + sdk)"
 run = [
   { task = "_clean_dist" },
   { task = "_setup_dist" },
-  { tasks = ["build:coglet:wheel:all", "build:sdk"] },
+  { tasks = [
+    "build:coglet:wheel:all",
+    "build:sdk",
+  ] },
 ]
 
 # =============================================================================
@@ -294,25 +326,44 @@ depends = ["build:coglet:wheel"]
 run = "nox -s coglet"
 
 [tasks."test:fuzz"]
-description = "Run Go fuzz tests (FUZZTIME=30s per target by default)"
-run = """
+description = "Run all Go fuzz tests (auto-discovered; FUZZTIME=30s per target by default)"
+run = '''
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 FUZZTIME="${FUZZTIME:-30s}"
-echo "Fuzzing schema type resolution ($FUZZTIME)..."
-go test ./pkg/schema/ -run='^$' -fuzz=FuzzResolveSchemaType -fuzztime="$FUZZTIME"
-echo "Fuzzing JSON schema generation ($FUZZTIME)..."
-go test ./pkg/schema/ -run='^$' -fuzz=FuzzJSONSchema -fuzztime="$FUZZTIME"
-echo "Fuzzing Python parser ($FUZZTIME)..."
-go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParsePredictor -fuzztime="$FUZZTIME"
-echo "Fuzzing type annotation parsing ($FUZZTIME)..."
-go test ./pkg/schema/python/ -run='^$' -fuzz=FuzzParseTypeAnnotation -fuzztime="$FUZZTIME"
-echo "All fuzz targets passed."
-"""
+
+# Auto-discover every Fuzz* target and the package it lives in, so new fuzz
+# tests are picked up automatically without editing this task. go test only
+# fuzzes one target per invocation, so we still loop and run them one at a time.
+# jq emits "<package> <target>" per line; package and target names never
+# contain spaces, so `read pkg target` splits them cleanly.
+count=0
+while read -r pkg target; do
+  [ -z "$pkg" ] && continue
+  echo "Fuzzing $target in $pkg ($FUZZTIME)..."
+  go test "$pkg" -run="^$" -fuzz="^${target}$" -fuzztime="$FUZZTIME"
+  count=$((count + 1))
+done < <(
+  go test -list "^Fuzz" -json ./... 2>/dev/null \
+    | jq -r 'select(.Action=="output" and (.Output|test("^Fuzz"))) | .Package + " " + (.Output | rtrimstr("\n"))'
+)
+
+if [ "$count" -eq 0 ]; then
+  echo "No fuzz targets found." >&2
+  exit 1
+fi
+
+echo "All $count fuzz targets passed."
+'''
 
 [tasks."test:integration"]
 description = "Run integration tests (skips slow tests by default, set SHORT=0 for full suite)"
-depends = ["clean:integration", "build:cog", "build:sdk", "build:coglet:wheel:linux-x64"]
+depends = [
+  "clean:integration",
+  "build:cog",
+  "build:sdk",
+  "build:coglet:wheel:linux-x64",
+]
 run = """
 #!/usr/bin/env bash
 set -e
@@ -337,15 +388,18 @@ fi
 [tasks.fmt]
 alias = ["format", "fmt:check", "format:check"]
 description = "Check formatting for all languages (non-destructive)"
-run = [
-  { tasks = ["fmt:go", "fmt:rust", "fmt:python", "fmt:docs"] },
-]
+run = [{ tasks = ["fmt:go", "fmt:rust", "fmt:python", "fmt:docs"] }]
 
 [tasks."fmt:fix"]
 alias = "format:fix"
 description = "Fix formatting for all languages"
 run = [
-  { tasks = ["fmt:go:fix", "fmt:rust:fix", "fmt:python:fix", "fmt:docs:fix"] },
+  { tasks = [
+    "fmt:go:fix",
+    "fmt:rust:fix",
+    "fmt:python:fix",
+    "fmt:docs:fix",
+  ] },
 ]
 
 # Go formatting
@@ -387,11 +441,11 @@ run = "ruff format ."
 [tasks."fmt:docs"]
 alias = "fmt:docs:check"
 description = "Check Markdown formatting"
-run = "markdownlint-cli2"
+run = ["bash ./tools/format-markdown.sh --check", "markdownlint-cli2"]
 
 [tasks."fmt:docs:fix"]
 description = "Fix Markdown formatting"
-run = "markdownlint-cli2 --fix"
+run = ["bash ./tools/format-markdown.sh --write", "markdownlint-cli2 --fix"]
 
 # =============================================================================
 # Lint tasks
@@ -400,14 +454,17 @@ run = "markdownlint-cli2 --fix"
 [tasks.lint]
 alias = "lint:check"
 description = "Run linters for all languages (non-destructive)"
-run = [
-  { tasks = ["lint:go", "lint:rust", "lint:python", "lint:docs"] },
-]
+run = [{ tasks = ["lint:go", "lint:rust", "lint:python", "lint:docs"] }]
 
 [tasks."lint:fix"]
 description = "Fix lint issues for all languages"
 run = [
-  { tasks = ["lint:go:fix", "lint:rust:fix", "lint:python:fix", "lint:docs:fix"] },
+  { tasks = [
+    "lint:go:fix",
+    "lint:rust:fix",
+    "lint:python:fix",
+    "lint:docs:fix",
+  ] },
 ]
 
 # Markdown linting
@@ -437,8 +494,12 @@ description = "Lint Rust code (clippy)"
 run = "cargo clippy --manifest-path crates/Cargo.toml --workspace -- -D warnings"
 
 [tasks."lint:rust:deny"]
-description = "Check Rust licenses and advisories"
+description = "Check Rust licenses, bans, sources, and advisories"
 run = "cargo deny --manifest-path crates/Cargo.toml check"
+
+[tasks."lint:rust:deny:advisories"]
+description = "Check Rust advisory database (RUSTSEC)"
+run = "cargo deny --manifest-path crates/Cargo.toml check advisories"
 
 [tasks."lint:rust:fix"]
 description = "Fix Rust lint issues"
@@ -465,9 +526,7 @@ run = "ruff check --fix ."
 
 [tasks.typecheck]
 description = "Run type checking for all languages"
-run = [
-  { tasks = ["typecheck:rust", "typecheck:python"] },
-]
+run = [{ tasks = ["typecheck:rust", "typecheck:python"] }]
 
 [tasks."typecheck:rust"]
 description = "Type check Rust code (cargo check)"
@@ -483,25 +542,48 @@ run = "nox -s typecheck"
 
 [tasks.generate]
 description = "Run all code generation"
-run = [
-  { tasks = ["generate:stubs"] },
-]
+run = [{ tasks = ["generate:stubs", "generate:mocks"] }]
+
+[tasks."generate:mocks"]
+description = "Regenerate Go mocks via mockery (config in .mockery.yml)"
+# Source list mirrors the interfaces mockery generates from (per
+# .mockery.yml). Add to this list when adding new interfaces to that
+# config so mise's source-change detection re-runs generation.
+sources = [".mockery.yml", "pkg/docker/command/*.go"]
+outputs = ["pkg/docker/dockertest/command_mocks.go"]
+run = "mockery"
 
 [tasks."generate:stubs"]
 alias = "stub:generate"
 description = "Generate Python type stubs for coglet"
-sources = ["crates/coglet-python/src/**/*.rs", "crates/coglet-python/Cargo.toml", "crates/coglet-python/coglet/__init__.py"]
-outputs = ["crates/coglet-python/coglet/_sdk/__init__.pyi", "crates/coglet-python/coglet/__init__.pyi"]
 dir = "crates/coglet-python"
 run = [
   { task = "_setup_venv" },
-  "uv run --active cargo run --bin stub_gen",
+  """
+#!/usr/bin/env bash
+set -e
+# stub_gen embeds Python via PyO3 auto-initialize. Py_InitializeEx needs
+# PYTHONHOME to locate the stdlib (encodings, etc.) when the binary lives
+# outside the Python installation tree (common with uv-managed Python).
+PYTHON_PREFIX="$(uv run --active python -c 'import sys; print(sys.base_prefix)')"
+export PYTHONHOME="$PYTHON_PREFIX"
+# On Linux, also ensure the dynamic linker can find libpython.
+export LD_LIBRARY_PATH="${PYTHON_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+uv run --active cargo run --bin stub_gen
+# pyo3-stub-gen output doesn't match ruff style (trailing whitespace in
+# docstrings, long lines, quote style). Format so stub:check is clean.
+find coglet -name '*.pyi' -exec uv run --active ruff format {} +
+""",
 ]
 
 [tasks."generate:compat"]
 description = "Regenerate CUDA/PyTorch/TensorFlow compatibility matrices"
 sources = ["tools/compatgen/**/*.go"]
-outputs = ["pkg/config/cuda_base_images.json", "pkg/config/torch_compatibility_matrix.json", "pkg/config/tf_compatibility_matrix.json"]
+outputs = [
+  "pkg/config/cuda_compatibility.json",
+  "pkg/config/torch_compatibility.json",
+  "pkg/config/tf_compatibility.json",
+]
 run = """
 #!/usr/bin/env bash
 set -e
@@ -509,23 +591,23 @@ target="${1:-all}"
 case "$target" in
   cuda)
     echo "Generating CUDA base images..."
-    go run ./tools/compatgen/main.go cuda -o pkg/config/cuda_base_images.json
+    go run ./tools/compatgen/main.go cuda -o pkg/config/cuda_compatibility.json
     ;;
   torch)
     echo "Generating PyTorch compatibility matrix..."
-    go run ./tools/compatgen/main.go torch -o pkg/config/torch_compatibility_matrix.json
+    go run ./tools/compatgen/main.go torch -o pkg/config/torch_compatibility.json
     ;;
   tensorflow|tf)
     echo "Generating TensorFlow compatibility matrix..."
-    go run ./tools/compatgen/main.go tensorflow -o pkg/config/tf_compatibility_matrix.json
+    go run ./tools/compatgen/main.go tensorflow -o pkg/config/tf_compatibility.json
     ;;
   all)
     echo "Generating CUDA base images..."
-    go run ./tools/compatgen/main.go cuda -o pkg/config/cuda_base_images.json
+    go run ./tools/compatgen/main.go cuda -o pkg/config/cuda_compatibility.json
     echo "Generating PyTorch compatibility matrix..."
-    go run ./tools/compatgen/main.go torch -o pkg/config/torch_compatibility_matrix.json
+    go run ./tools/compatgen/main.go torch -o pkg/config/torch_compatibility.json
     echo "Generating TensorFlow compatibility matrix..."
-    go run ./tools/compatgen/main.go tensorflow -o pkg/config/tf_compatibility_matrix.json
+    go run ./tools/compatgen/main.go tensorflow -o pkg/config/tf_compatibility.json
     ;;
   *)
     echo "Unknown target: $target"
@@ -543,9 +625,7 @@ echo "Done."
 [tasks."stub:check"]
 description = "Check that coglet Python stubs are up to date"
 dir = "crates/coglet-python"
-run = [
-  { task = "generate:stubs" },
-  '''
+run = [{ task = "generate:stubs" }, '''
 #!/usr/bin/env bash
 set -e
 if ! git diff --quiet -- '**/*.pyi'; then
@@ -556,8 +636,7 @@ if ! git diff --quiet -- '**/*.pyi'; then
   exit 1
 fi
 echo "Stubs are up to date."
-''',
-]
+''']
 
 [tasks."stub:typecheck"]
 description = "Type-check coglet stubs with ty"
@@ -570,7 +649,12 @@ run = "ty check crates/coglet-python/coglet/__init__.pyi"
 [tasks.clean]
 description = "Clean all build artifacts"
 run = [
-  { tasks = ["clean:go", "clean:rust", "clean:python", "clean:integration"] },
+  { tasks = [
+    "clean:go",
+    "clean:rust",
+    "clean:python",
+    "clean:integration",
+  ] },
   { task = "_clean_dist" },
 ]
 
@@ -594,6 +678,28 @@ run = "rm -f integration-tests/.bin/cog pkg/wheels/cog-*.whl pkg/wheels/coglet-*
 # Docs tasks
 # =============================================================================
 
+[tasks."docs:stage"]
+description = "Stage documentation for building (preprocess links, prepare .docs-build)"
+run = """
+#!/usr/bin/env bash
+set -e
+rm -rf .docs-build
+cp -r docs .docs-build
+
+# This strips exactly one "../" from any relative path to README.md, handling pages at any nesting depth.
+find .docs-build -name '*.md' -type f -exec sed -i.bak 's|\\.\\./\\(\\.\\./\\)*README\\.md|\\1README.md|g' {} +
+find .docs-build -name '*.md.bak' -type f -delete
+
+# Copy root markdown files into the staged docs directory.
+sed 's/docs\\///g' README.md > .docs-build/README.md
+cp CONTRIBUTING.md .docs-build/CONTRIBUTING.md
+
+# Point mkdocs at the staged docs directory.
+sed 's|^docs_dir: docs/|docs_dir: .docs-build/|' mkdocs.yml > .docs-build-mkdocs.yml
+
+echo .docs-build-mkdocs.yml
+"""
+
 [tasks.docs]
 description = "Build documentation"
 sources = ["docs/**/*.md", "README.md", "CONTRIBUTING.md", "mkdocs.yml"]
@@ -601,10 +707,9 @@ outputs = ["site/**"]
 run = """
 #!/usr/bin/env bash
 set -e
+config="$(mise run --quiet docs:stage)"
 uv pip install mkdocs-material
-sed 's/docs\\///g' README.md > ./docs/README.md
-cp CONTRIBUTING.md ./docs/
-mkdocs build
+mkdocs build -f "$config"
 """
 
 [tasks."docs:serve"]
@@ -612,10 +717,9 @@ description = "Serve documentation locally"
 run = """
 #!/usr/bin/env bash
 set -e
+config="$(mise run --quiet docs:stage)"
 uv pip install mkdocs-material
-sed 's/docs\\///g' README.md > ./docs/README.md
-cp CONTRIBUTING.md ./docs/
-mkdocs serve
+mkdocs serve -f "$config"
 """
 
 [tasks."docs:llm"]
@@ -654,7 +758,10 @@ echo "docs/llms.txt is up to date"
 description = "Generate CLI reference documentation"
 sources = ["pkg/cli/*.go", "cmd/cog/*.go"]
 outputs = ["docs/cli.md"]
-run = "go run ./tools/gendocs/main.go -o docs/cli.md"
+run = [
+  "go run ./tools/gendocs/main.go -o docs/cli.md",
+  "prettier --write docs/cli.md",
+]
 
 [tasks."docs:cli:check"]
 description = "Check that CLI docs are up to date"
@@ -662,9 +769,12 @@ run = """
 #!/usr/bin/env bash
 set -e
 tmpfile=$(mktemp)
+mv "$tmpfile" "$tmpfile.md"
+tmpfile="$tmpfile.md"
 trap 'rm -f "$tmpfile"' EXIT
 # Generate to temp file and compare
 go run ./tools/gendocs/main.go -o "$tmpfile"
+prettier --write "$tmpfile"
 if ! diff -q "$tmpfile" docs/cli.md > /dev/null 2>&1; then
   echo "ERROR: docs/cli.md is out of date. Run 'mise run docs:cli' to update."
   exit 1
@@ -679,9 +789,7 @@ echo "docs/cli.md is up to date"
 # Build tasks (run first to produce artifacts)
 [tasks."ci:build"]
 description = "CI: Build all artifacts"
-run = [
-  { tasks = ["ci:build:sdk", "ci:build:coglet"] },
-]
+run = [{ tasks = ["ci:build:sdk", "ci:build:coglet"] }]
 
 [tasks."ci:build:sdk"]
 description = "CI: Build SDK wheel and sdist"
@@ -700,10 +808,7 @@ uv build --out-dir=dist .
 
 [tasks."ci:build:coglet"]
 description = "CI: Build coglet wheel"
-run = [
-  { task = "_setup_dist" },
-  { task = "build:coglet:wheel:linux-x64" },
-]
+run = [{ task = "_setup_dist" }, { task = "build:coglet:wheel:linux-x64" }]
 
 [tasks."ci:test:integration"]
 description = "CI: Run integration tests with GitHub Actions output (full suite)"

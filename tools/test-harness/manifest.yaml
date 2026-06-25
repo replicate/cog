@@ -13,6 +13,29 @@
 #   json_match  - parse output as JSON, assert `match` is a subset
 #   json_keys   - parse output as JSON dict, assert it has entries
 #   not_empty   - output is non-empty (loose smoke test)
+#
+# Setup commands:
+#   Optional `setup` list of shell commands to run after cloning the repo
+#   but before building. Useful for models that generate cog.yaml from
+#   templates or need other preparation steps.
+#   Example:
+#     setup:
+#       - "script/select.sh dev"
+#
+# Required tools:
+#   Optional `requires_tools` list of CLI tools that must be on PATH for
+#   setup commands to work. The harness checks before running and prints
+#   install instructions for known tools (yq, envsubst).
+#   Example:
+#     requires_tools: ["yq"]
+#
+# Model resolution (base_dir takes priority over repo):
+#   - Set `base_dir` for local models -- `path` is resolved under it. A
+#     relative `base_dir` is resolved against the repo root; an absolute path
+#     is used as-is. Local only; never clones.
+#   - Set `repo: owner/name` (with no `base_dir`) to clone from GitHub.
+#   - Set neither to default to fixtures/models/ (local fixtures).
+#   `repo: local` is no longer supported -- use `base_dir` instead.
 
 defaults:
   sdk_version: "latest"          # "latest" = newest stable from PyPI; or pin e.g. "0.16.12"
@@ -22,7 +45,7 @@ models:
   # ── cog-examples (CPU) ──────────────────────────────────────────────
 
   - name: hello-world
-    repo: replicate/cog-examples
+    base_dir: examples
     path: hello-world
     gpu: false
     tests:
@@ -34,7 +57,7 @@ models:
           value: "hello world"
 
   - name: canary
-    repo: replicate/cog-examples
+    base_dir: examples
     path: canary
     gpu: false
     tests:
@@ -46,7 +69,7 @@ models:
           value: "friend"
 
   - name: blur
-    repo: replicate/cog-examples
+    base_dir: examples
     path: blur
     gpu: false
     tests:
@@ -59,7 +82,7 @@ models:
           mime: "image/png"
 
   - name: hello-image
-    repo: replicate/cog-examples
+    base_dir: examples
     path: hello-image
     gpu: false
     tests:
@@ -69,7 +92,7 @@ models:
           type: file_exists
 
   - name: hello-concurrency
-    repo: replicate/cog-examples
+    base_dir: examples
     path: hello-concurrency
     gpu: false
     tests:
@@ -82,7 +105,7 @@ models:
           value: "Apple"
 
   - name: hello-context
-    repo: replicate/cog-examples
+    base_dir: examples
     path: hello-context
     gpu: false
     # NOTE: This model uses current_scope().context which may not be
@@ -98,12 +121,9 @@ models:
               text: "testing"
 
   - name: hello-train
-    repo: replicate/cog-examples
+    base_dir: examples
     path: hello-train
     gpu: false
-    # NOTE: `cog train` in the RC may have input validation issues
-    # (validates against predict schema instead of train schema).
-    # The train_test below may fail — that's a real compatibility signal.
     train_tests:
       - description: "train produces weights file"
         inputs:
@@ -118,10 +138,45 @@ models:
           type: contains
           value: "world"
 
-  # ── cog-examples (GPU required) ─────────────────────────────────────
+  - name: notebook
+    base_dir: examples
+    path: notebook
+    gpu: false
+    tests:
+      - description: "basic predict"
+        inputs:
+          name: "world"
+        expect:
+          type: contains
+          value: "hello"
+
+  - name: managed-weights
+    base_dir: examples
+    path: managed-weights
+    gpu: false
+    requires_env:
+      - COG_MANAGED_WEIGHTS_READY
+    tests:
+      - description: "weight validation smoke test"
+        inputs: {}
+        expect:
+          type: not_empty
+
+  - name: streaming-text
+    base_dir: examples
+    path: streaming-text
+    gpu: false
+    tests:
+      - description: "streaming text generation"
+        inputs:
+          prompt: "Hello"
+        expect:
+          type: not_empty
+
+  # ── cog-examples (GPU) ──────────────────────────────────────────────
 
   - name: resnet
-    repo: replicate/cog-examples
+    base_dir: examples
     path: resnet
     gpu: true
     tests:
@@ -132,7 +187,7 @@ models:
           type: json_keys
 
   - name: z-image-turbo
-    repo: replicate/cog-examples
+    base_dir: examples
     path: z-image-turbo
     gpu: true
     timeout: 600
@@ -144,20 +199,81 @@ models:
           type: file_exists
           mime: "image/png"
 
-  # ── cog-examples (requires external API, optional) ──────────────────
+  # ── Local fixture models ─────────────────────────────────────────────
+  # These set base_dir to the fixtures dir (relative to the repo root), so
+  # path is relative to it. They cover the full input type matrix for build
+  # and prediction testing.
 
-  - name: hello-replicate
-    repo: replicate/cog-examples
-    path: hello-replicate
+  - name: fixture-scalar-types
+    base_dir: tools/test-harness/fixtures/models
+    path: scalar-types
     gpu: false
-    requires_env:
-      - REPLICATE_API_TOKEN
     tests:
-      - description: "round-trip through replicate API"
+      - description: "basic scalar inputs"
         inputs:
-          image: "@test_image.png"
+          text: "hello"
         expect:
-          type: file_exists
+          type: contains
+          value: "hello"
+
+  - name: fixture-optional-types
+    base_dir: tools/test-harness/fixtures/models
+    path: optional-types
+    gpu: false
+    tests:
+      - description: "optional inputs default to None"
+        inputs:
+          text: "hello"
+        expect:
+          type: exact
+          value: "hello"
+
+  - name: fixture-list-types
+    base_dir: tools/test-harness/fixtures/models
+    path: list-types
+    gpu: false
+
+  - name: fixture-optional-list-types
+    base_dir: tools/test-harness/fixtures/models
+    path: optional-list-types
+    gpu: false
+    tests:
+      - description: "optional lists default to None"
+        inputs:
+          text: "hello"
+        expect:
+          type: exact
+          value: "hello"
+
+  - name: fixture-constraints-and-choices
+    base_dir: tools/test-harness/fixtures/models
+    path: constraints-and-choices
+    gpu: false
+    tests:
+      - description: "defaults with constraints and choices"
+        inputs: {}
+        expect:
+          type: exact
+          value: "hello-0.7-50-balanced-1"
+
+  - name: fixture-file-path-types
+    base_dir: tools/test-harness/fixtures/models
+    path: file-path-types
+    gpu: false
+
+  - name: fixture-complex-output
+    base_dir: tools/test-harness/fixtures/models
+    path: complex-output
+    gpu: false
+    tests:
+      - description: "structured BaseModel output"
+        inputs:
+          prompt: "test"
+        expect:
+          type: json_match
+          match:
+            text: "generated: test"
+            score: 0.95
 
   # ── External models (add your own below) ────────────────────────────
   # - name: my-custom-model
@@ -175,3 +291,18 @@ models:
   #       expect:
   #         type: contains
   #         value: "result"
+  #
+  # Models that need setup commands before building (e.g. generating cog.yaml):
+  # - name: flux-dev
+  #   repo: replicate/cog-flux
+  #   path: "."
+  #   gpu: true
+  #   setup:
+  #     - "script/select.sh dev"
+  #   timeout: 900
+  #   tests:
+  #     - description: "generate image"
+  #       inputs:
+  #         prompt: "a cat"
+  #       expect:
+  #         type: file_exists

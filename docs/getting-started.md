@@ -1,6 +1,8 @@
 # Getting started
 
 This guide will walk you through what you can do with Cog by using an example model.
+If you'd rather start from a complete example, browse the
+[examples in the Cog repository](examples.md).
 
 > [!TIP]
 > Using a language model to help you write the code for your new Cog model?
@@ -9,36 +11,9 @@ This guide will walk you through what you can do with Cog by using an example mo
 
 ## Prerequisites
 
-- **macOS or Linux**. Cog works on macOS and Linux, but does not currently support Windows.
+- **Cog**. If you haven't already installed Cog, follow the [install instructions in the README](../README.md#install).
+- **macOS, Linux, or Windows 11**. Cog works on macOS and Linux. It also works on Windows 11 with [WSL 2](wsl2/wsl2.md).
 - **Docker**. Cog uses Docker to create a container for your model. You'll need to [install Docker](https://docs.docker.com/get-docker/) before you can run Cog.
-
-## Install Cog
-
-**macOS (recommended):**
-
-```bash
-brew install replicate/tap/cog
-```
-
-**Linux or macOS (manual):**
-
-```bash
-sudo curl -o /usr/local/bin/cog -L https://github.com/replicate/cog/releases/latest/download/cog_`uname -s`_`uname -m`
-sudo chmod +x /usr/local/bin/cog
-sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
-
-```
-
-> [!NOTE]
-> **macOS: "cannot be opened because the developer cannot be verified"**
->
-> If you downloaded the binary manually (via `curl` or a browser) and see this Gatekeeper warning, run:
->
-> ```bash
-> sudo xattr -d com.apple.quarantine /usr/local/bin/cog
-> ```
->
-> Installing via `brew install replicate/tap/cog` handles this automatically.
 
 ## Create a project
 
@@ -64,7 +39,7 @@ build:
 Then, you can run any command inside this environment. For example, enter
 
 ```bash
-cog run python
+cog exec python
 
 ```
 
@@ -85,35 +60,35 @@ Type "help", "copyright", "credits" or "license" for more information.
 
 Inside this Docker environment you can do anything – run a Jupyter notebook, your training script, your evaluation script, and so on.
 
-## Run predictions on a model
+## Run a model
 
-Let's pretend we've trained a model. With Cog, we can define how to run predictions on it in a standard way, so other people can easily run predictions on it without having to hunt around for a prediction script.
+Let's pretend we've trained a model. With Cog, we can define how to run it in a standard way, so other people can easily run it without having to hunt around for a run script.
 
-We need to write some code to describe how predictions are run on the model.
+We need to write some code to describe how the model runs.
 
-Save this to `predict.py`:
+Save this to `run.py`:
 
 ```python
 import os
 os.environ["TORCH_HOME"] = "."
 
 import torch
-from cog import BasePredictor, Input, Path
+from cog import BaseRunner, Input, Path
 from PIL import Image
 from torchvision import models
 
 WEIGHTS = models.ResNet50_Weights.IMAGENET1K_V1
 
 
-class Predictor(BasePredictor):
+class Runner(BaseRunner):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Load the model into memory to make running multiple inferences efficient"""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = models.resnet50(weights=WEIGHTS).to(self.device)
         self.model.eval()
 
-    def predict(self, image: Path = Input(description="Image to classify")) -> dict:
-        """Run a single prediction on the model"""
+    def run(self, image: Path = Input(description="Image to classify")) -> dict:
+        """Run the model"""
         img = Image.open(image).convert("RGB")
         preds = self.model(WEIGHTS.transforms()(img).unsqueeze(0).to(self.device))
         top3 = preds[0].softmax(0).topk(3)
@@ -137,7 +112,7 @@ Then update `cog.yaml` to look like this:
 build:
   python_version: "3.13"
   python_requirements: requirements.txt
-predict: "predict.py:Predictor"
+run: "run.py:Runner"
 ```
 
 > [!TIP]
@@ -154,7 +129,7 @@ curl $IMAGE_URL > input.jpg
 Now, let's run the model using Cog:
 
 ```bash
-cog predict -i image=@input.jpg
+cog run -i image=@input.jpg
 
 ```
 
@@ -170,11 +145,11 @@ If you see the following output
 
 then it worked!
 
-Note: The first time you run `cog predict`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog predict` the pre-built container will be used.
+Note: The first time you run `cog run`, the build process will be triggered to generate a Docker container that can run your model. The next time you run `cog run` the pre-built container will be used.
 
 ## Build an image
 
-We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves predictions with an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time predictions.
+We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time inference.
 
 ```bash
 cog build -t resnet
@@ -183,10 +158,10 @@ cog build -t resnet
 
 ```
 
-You can run this image with `cog predict` by passing the filename as an argument:
+You can run this image with `cog run` by passing the filename as an argument:
 
 ```bash
-cog predict resnet -i image=@input.jpg
+cog run resnet -i image=@input.jpg
 
 ```
 

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/dotcog"
 	"github.com/replicate/cog/pkg/util/console"
 )
 
@@ -15,6 +16,7 @@ type Source struct {
 	ProjectDir     string
 	ConfigFilename string // Base filename like "cog.yaml" or "my-config.yaml"
 	Warnings       []config.DeprecationWarning
+	DotCog         *dotcog.Dir // .cog/ project state directory; nil when created via NewSourceFromConfig
 }
 
 // NewSource loads configuration from the given path and returns a Source.
@@ -53,16 +55,23 @@ func NewSource(configPath string) (*Source, error) {
 		console.Warnf("%s", w.Error())
 	}
 
+	dc, err := dotcog.Open(result.RootDir)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Source{
 		Config:         result.Config,
 		ProjectDir:     result.RootDir,
 		ConfigFilename: filepath.Base(configPath),
 		Warnings:       result.Warnings,
+		DotCog:         dc,
 	}, nil
 }
 
 // NewSourceFromConfig creates a Source from an existing Config.
 // Use this when you already have a parsed config and know the project directory.
+// DotCog is not initialized; callers that need it should set it separately.
 func NewSourceFromConfig(cfg *config.Config, projectDir string) *Source {
 	return &Source{
 		Config:         cfg,
@@ -71,23 +80,32 @@ func NewSourceFromConfig(cfg *config.Config, projectDir string) *Source {
 	}
 }
 
-// ArtifactSpecs returns the artifact declarations derived from this source.
-// Always produces at least one ImageSpec. Produces a WeightSpec for each
-// weight declared in the config. Returns nil if Config is nil.
-func (s *Source) ArtifactSpecs() []ArtifactSpec {
-	if s.Config == nil {
+// Close releases resources held by the Source, including the .cog/ directory handle.
+func (s *Source) Close() error {
+	if s.DotCog == nil {
 		return nil
 	}
+	return s.DotCog.Close()
+}
 
-	var specs []ArtifactSpec
-
-	// Always have an image artifact
-	specs = append(specs, NewImageSpec("model", s.Config.Image))
-
-	// Add weight specs from config
-	for _, w := range s.Config.Weights {
-		specs = append(specs, NewWeightSpec(w.Name, w.Source, w.Target))
+// ArtifactSpecs returns the artifact declarations derived from this
+// source: one ImageSpec plus one WeightSpec per configured weight.
+// Returns an error if any weight's source URI is malformed. Returns
+// (nil, nil) if Config is nil.
+func (s *Source) ArtifactSpecs() ([]ArtifactSpec, error) {
+	if s.Config == nil {
+		return nil, nil
 	}
 
-	return specs
+	specs := []ArtifactSpec{NewImageSpec("model", s.Config.Image)}
+
+	for _, w := range s.Config.Weights {
+		ws, err := WeightSpecFromConfig(w)
+		if err != nil {
+			return nil, err
+		}
+		specs = append(specs, ws)
+	}
+
+	return specs, nil
 }

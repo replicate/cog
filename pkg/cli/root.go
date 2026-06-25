@@ -11,6 +11,13 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
+func init() {
+	// Allow child commands to define their own PersistentPreRun hooks
+	// without shadowing the root command's. Cobra will invoke them in
+	// order from root → child.
+	cobra.EnableTraverseRunHooks = true
+}
+
 func NewRootCommand() (*cobra.Command, error) {
 	rootCmd := cobra.Command{
 		Use:   "cog",
@@ -19,8 +26,8 @@ func NewRootCommand() (*cobra.Command, error) {
 
 To get started, take a look at the documentation:
 https://github.com/replicate/cog`,
-		Example: `   To run a command inside a Docker environment defined with Cog:
-      $ cog run echo hello world`,
+		Example: `   To execute a command inside a Docker environment defined with Cog:
+      $ cog exec echo hello world`,
 		Version: fmt.Sprintf("%s (built %s)", global.Version, global.BuildTime),
 		// This stops errors being printed because we print them in cmd/cog/cog.go
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -45,12 +52,13 @@ https://github.com/replicate/cog`,
 	rootCmd.AddCommand(
 		newBuildCommand(),
 		newDebugCommand(),
+		newDoctorCommand(),
 		newInitCommand(),
-		newInspectCommand(),
 		newLoginCommand(),
+		newRunCommand(),
 		newPredictCommand(),
 		newPushCommand(),
-		newRunCommand(),
+		newExecCommand(),
 		newServeCommand(),
 		newTrainCommand(),
 		newWeightsCommand(),

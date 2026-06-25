@@ -54,7 +54,7 @@ func (p *ReplicateProvider) Login(ctx context.Context, opts provider.LoginOption
 			return err
 		}
 	} else {
-		token, err = readTokenInteractively(opts.Host)
+		token, err = readTokenInteractively(ctx, opts.Host)
 		if err != nil {
 			return err
 		}
@@ -66,7 +66,7 @@ func (p *ReplicateProvider) Login(ctx context.Context, opts provider.LoginOption
 		return err
 	}
 
-	username, err := verifyToken(opts.Host, token)
+	username, err := verifyToken(ctx, opts.Host, token)
 	if err != nil {
 		return err
 	}
@@ -90,12 +90,31 @@ If the model already exists, you may be getting this error because you're not lo
 		return pushErr
 	}
 
-	// Success - show Replicate model URL
-	console.Successf("Image %s pushed", console.Bold(opts.Image))
-	replicatePage := fmt.Sprintf("https://%s", strings.Replace(opts.Image, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1))
-	console.Infof("\nRun your model on Replicate:\n    %s", console.Bold(replicatePage))
+	// Success — the CLI prints a structured ref tree as the success
+	// indicator (see pkg/cli/push.go:printPushResult). We add the
+	// Replicate-specific model URL on top of that so users get a
+	// direct link to their published model.
+	console.Infof("\nRun your model on Replicate:\n    %s", console.Bold(replicateModelURL(opts.Image)))
 
 	return nil
+}
+
+// replicateModelURL converts a pushed image reference like
+// "r8.im/owner/model:tag" into the Replicate model page URL
+// "https://replicate.com/owner/model". The Replicate web app routes by
+// model name, so any :tag or @digest suffix must be stripped or the link
+// 404s.
+func replicateModelURL(image string) string {
+	ref := strings.Replace(image, global.ReplicateRegistryHost, global.ReplicateWebsiteHost, 1)
+	if at := strings.Index(ref, "@"); at != -1 {
+		ref = ref[:at]
+	}
+	if slash := strings.LastIndex(ref, "/"); slash != -1 {
+		if colon := strings.Index(ref[slash:], ":"); colon != -1 {
+			ref = ref[:slash+colon]
+		}
+	}
+	return "https://" + ref
 }
 
 // readTokenFromStdin reads the authentication token from stdin
@@ -108,8 +127,8 @@ func readTokenFromStdin() (string, error) {
 }
 
 // readTokenInteractively guides user through browser-based token flow
-func readTokenInteractively(registryHost string) (string, error) {
-	tokenURL, err := getDisplayTokenURL(registryHost)
+func readTokenInteractively(ctx context.Context, registryHost string) (string, error) {
+	tokenURL, err := getDisplayTokenURL(ctx, registryHost)
 	if err != nil {
 		return "", err
 	}
@@ -149,8 +168,13 @@ func readTokenInteractively(registryHost string) (string, error) {
 }
 
 // getDisplayTokenURL fetches the token URL from Replicate's API
-func getDisplayTokenURL(registryHost string) (string, error) {
-	resp, err := http.Get(addressWithScheme(registryHost) + "/cog/v1/display-token-url")
+func getDisplayTokenURL(ctx context.Context, registryHost string) (string, error) {
+	reqURL := addressWithScheme(registryHost) + "/cog/v1/display-token-url"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is intentionally constructed from user-provided registry host
 	if err != nil {
 		return "", fmt.Errorf("failed to log in to %s: %w", registryHost, err)
 	}
@@ -201,14 +225,19 @@ func checkTokenFormat(token string) error {
 }
 
 // verifyToken validates the token with Replicate and returns the username
-func verifyToken(registryHost string, token string) (username string, err error) {
+func verifyToken(ctx context.Context, registryHost string, token string) (username string, err error) {
 	if token == "" {
 		return "", fmt.Errorf("token is empty")
 	}
 
-	resp, err := http.PostForm(addressWithScheme(registryHost)+"/cog/v1/verify-token", url.Values{
-		"token": []string{token},
-	})
+	formData := url.Values{"token": []string{token}}
+	reqURL := addressWithScheme(registryHost) + "/cog/v1/verify-token"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, strings.NewReader(formData.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is intentionally constructed from user-provided registry host
 	if err != nil {
 		return "", fmt.Errorf("failed to verify token: %w", err)
 	}

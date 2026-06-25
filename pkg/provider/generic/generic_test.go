@@ -41,6 +41,11 @@ func TestGenericProvider_Login(t *testing.T) {
 func TestGenericProvider_PostPush(t *testing.T) {
 	p := New()
 
+	// On success, PostPush is intentionally silent — the CLI prints
+	// a structured ref tree (see pkg/cli/push.go:printPushResult) as
+	// the success indicator. Asserting "silent" via stderr capture
+	// adds plumbing we don't have elsewhere in this package; rely on
+	// printPushResult's own tests for the success-output contract.
 	t.Run("success", func(t *testing.T) {
 		opts := provider.PushOptions{
 			Image: "ghcr.io/org/model",

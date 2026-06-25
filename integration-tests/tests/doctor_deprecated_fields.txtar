@@ -1,0 +1,21 @@
+# Test that cog doctor reports deprecated config fields as warnings.
+# Warnings do not cause a non-zero exit code; only errors do.
+
+cog doctor
+stderr 'python_packages'
+stderr 'deprecated'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+  python_packages:
+    - torch==2.0.0
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, text: str) -> str:
+        return "hello " + text

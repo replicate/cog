@@ -377,6 +377,11 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    /// Install the ring crypto provider once for all webhook tests.
+    fn init() {
+        crate::install_crypto_provider();
+    }
+
     #[test]
     fn config_defaults() {
         let config = WebhookConfig::default();
@@ -395,6 +400,7 @@ mod tests {
     }
 
     fn test_config() -> WebhookConfig {
+        init();
         WebhookConfig {
             response_interval: Duration::ZERO,
             max_retries: 2,

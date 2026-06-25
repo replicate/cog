@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/replicate/cog/pkg/global"
 )
 
 // ---------------------------------------------------------------------------
@@ -40,6 +42,25 @@ func parseSpec(t *testing.T, info *PredictorInfo) map[string]any {
 	return spec
 }
 
+func extractInputProperty(t *testing.T, raw []byte, name string) string {
+	t.Helper()
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	components, ok := doc["components"].(map[string]any)
+	require.True(t, ok)
+	schemas, ok := components["schemas"].(map[string]any)
+	require.True(t, ok)
+	input, ok := schemas["Input"].(map[string]any)
+	require.True(t, ok)
+	properties, ok := input["properties"].(map[string]any)
+	require.True(t, ok)
+	prop, ok := properties[name]
+	require.True(t, ok)
+	out, err := json.Marshal(prop)
+	require.NoError(t, err)
+	return string(out)
+}
+
 func getPath(m map[string]any, keys ...string) any {
 	var cur any = m
 	for _, k := range keys {
@@ -61,7 +82,7 @@ func TestGeneratesValidOpenAPI(t *testing.T) {
 
 	assert.Equal(t, "3.0.2", spec["openapi"])
 	assert.Equal(t, "Cog", getPath(spec, "info", "title"))
-	assert.Equal(t, "0.1.0", getPath(spec, "info", "version"))
+	assert.Equal(t, global.Version, getPath(spec, "info", "version"))
 }
 
 func TestPredictEndpoints(t *testing.T) {
@@ -196,6 +217,174 @@ func TestInputDefaultValue(t *testing.T) {
 	countField := props["count"].(map[string]any)
 	// JSON numbers unmarshal as float64
 	assert.Equal(t, float64(42), countField["default"])
+}
+
+func TestNoneDefaultOnRequiredTypeIsRequired(t *testing.T) {
+	// When a non-optional field has default=None (e.g. seed: int = Input(default=None)),
+	// the None is not a valid default — the field should be treated as required
+	// with no default emitted.
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("prompt", InputField{
+		Name:      "prompt",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypeString, Repetition: Required},
+	})
+	inputs.Set("seed", InputField{
+		Name:      "seed",
+		Order:     1,
+		FieldType: FieldType{Primitive: TypeInteger, Repetition: Required},
+		Default:   &DefaultValue{Kind: DefaultNone},
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+
+	// seed should be required (None is not a valid int default)
+	inputSchema := getPath(spec, "components", "schemas", "Input").(map[string]any)
+	required := inputSchema["required"].([]any)
+	assert.Contains(t, required, "prompt")
+	assert.Contains(t, required, "seed")
+
+	// seed should NOT have a "default" key
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+	seedField := props["seed"].(map[string]any)
+	_, hasDefault := seedField["default"]
+	assert.False(t, hasDefault, "non-optional field with default=None should not emit 'default' in schema")
+}
+
+func TestNoneDefaultOnOptionalTypeEmitsNull(t *testing.T) {
+	// When an Optional field has default=None, that IS a valid default.
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("image", InputField{
+		Name:      "image",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypeString, Repetition: Optional},
+		Default:   &DefaultValue{Kind: DefaultNone},
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+
+	// image should NOT be required (it has a valid None default)
+	inputSchema := getPath(spec, "components", "schemas", "Input").(map[string]any)
+	_, hasRequired := inputSchema["required"]
+	assert.False(t, hasRequired, "optional field with default=None should not be required")
+
+	// image SHOULD have "default": null
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+	imageField := props["image"].(map[string]any)
+	assert.Nil(t, imageField["default"]) // nil = JSON null
+	_, hasDefault := imageField["default"]
+	assert.True(t, hasDefault, "optional field with default=None should emit 'default': null")
+}
+
+func TestNoneDefaultOnBareSecretIsOptional(t *testing.T) {
+	// Regression: `api_key: Secret = Input(default=None)` is a documented
+	// idiom for "optional credential — fall back to a proxy key if omitted".
+	// Prior to the fix, the schema generator applied the "DefaultNone on a
+	// non-nullable field is not a real default" rule uniformly (originally
+	// intended for `seed: int = Input(default=None)`), which put the field
+	// in `required` and dropped both the default and the nullable marker.
+	// That broke every proxy-style model with a BYOK credential.
+	//
+	// Secret is special: the idiom is widespread and documented, and the
+	// value of `default=None` is never ambiguous (unlike `int`, where None
+	// conventionally means "generate a random seed at runtime").
+	//
+	// After the fix, a bare `Secret` with an explicit `default=None` should
+	// be equivalent to `Optional[Secret] = Input(default=None)`: nullable,
+	// not required, and emitting `"default": null`.
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("prompt", InputField{
+		Name:      "prompt",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypeString, Repetition: Required},
+	})
+	inputs.Set("api_key", InputField{
+		Name:      "api_key",
+		Order:     1,
+		FieldType: FieldType{Primitive: TypeSecret, Repetition: Required},
+		Default:   &DefaultValue{Kind: DefaultNone},
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+	apiKey := props["api_key"].(map[string]any)
+
+	// The Secret shape itself is unchanged.
+	assert.Equal(t, "string", apiKey["type"])
+	assert.Equal(t, "password", apiKey["format"])
+	assert.Equal(t, true, apiKey["x-cog-secret"])
+	assert.Equal(t, true, apiKey["writeOnly"])
+
+	// And the field should now be treated as optional/nullable with an
+	// explicit null default, matching `Optional[Secret] = Input(default=None)`.
+	assert.Equal(t, true, apiKey["nullable"], "Secret with default=None should be nullable")
+	assert.Nil(t, apiKey["default"], "Secret with default=None should emit 'default': null")
+	_, hasDefault := apiKey["default"]
+	assert.True(t, hasDefault, "Secret with default=None should emit a 'default' key (set to null)")
+
+	// Only `prompt` is required.
+	required := getPath(spec, "components", "schemas", "Input", "required").([]any)
+	assert.Contains(t, required, "prompt")
+	assert.NotContains(t, required, "api_key",
+		"Secret with default=None should not be in required")
+}
+
+func TestBareSecretWithoutDefaultRemainsRequired(t *testing.T) {
+	// Regression guard: `api_key: Secret = Input(description="API key")`
+	// (i.e. no `default=` kwarg at all) should stay required. The fix for
+	// `Secret = Input(default=None)` must not accidentally flip bare Secrets
+	// to optional — the two patterns carry different intent. This mirrors
+	// the behavior exercised by integration-tests/tests/build_openapi_schema_complex.txtar.
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("api_key", InputField{
+		Name:      "api_key",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypeSecret, Repetition: Required},
+		// Default is intentionally nil — no default= kwarg was supplied.
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+	apiKey := props["api_key"].(map[string]any)
+
+	// Still a Secret.
+	assert.Equal(t, "string", apiKey["type"])
+	assert.Equal(t, "password", apiKey["format"])
+	assert.Equal(t, true, apiKey["x-cog-secret"])
+
+	// Not nullable, no default key.
+	_, hasNullable := apiKey["nullable"]
+	assert.False(t, hasNullable, "bare Secret without default should not be nullable")
+	_, hasDefault := apiKey["default"]
+	assert.False(t, hasDefault, "bare Secret without default should not emit 'default'")
+
+	// And still required.
+	required := getPath(spec, "components", "schemas", "Input", "required").([]any)
+	assert.Contains(t, required, "api_key")
 }
 
 func TestInputDescription(t *testing.T) {
@@ -335,6 +524,93 @@ func TestInputRepeatedType(t *testing.T) {
 	assert.Equal(t, "string", items["type"])
 }
 
+func TestInputOptionalRepeatedType(t *testing.T) {
+	none := DefaultValue{Kind: DefaultNone}
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("files", InputField{
+		Name:      "files",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypePath, Repetition: OptionalRepeated},
+		Default:   &none,
+	})
+
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	props := getPath(spec, "components", "schemas", "Input", "properties").(map[string]any)
+	filesField := props["files"].(map[string]any)
+	// Should be array type
+	assert.Equal(t, "array", filesField["type"])
+	items := filesField["items"].(map[string]any)
+	assert.Equal(t, "string", items["type"])
+	assert.Equal(t, "uri", items["format"])
+	// Should be nullable
+	assert.Equal(t, true, filesField["nullable"])
+	// Should NOT be required
+	inputSchema := getPath(spec, "components", "schemas", "Input").(map[string]any)
+	assert.Nil(t, inputSchema["required"])
+}
+
+func TestOpenAPIUnionInputStringFloat(t *testing.T) {
+	inputs := NewOrderedMap[string, InputField]()
+	inputs.Set("value", InputField{
+		Name:      "value",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypeAny, Repetition: Required},
+		InputType: ptr(InputUnionOf(
+			InputPrimitive(TypeString),
+			InputPrimitive(TypeFloat),
+		)),
+	})
+
+	out, err := GenerateOpenAPISchema(&PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"anyOf":[{"type":"string"},{"type":"number"}],"title":"Value","x-order":0}`, extractInputProperty(t, out, "value"))
+}
+
+func TestOpenAPIRequiredNullableUnionInput(t *testing.T) {
+	inputs := NewOrderedMap[string, InputField]()
+	it := InputUnionOf(InputPrimitive(TypeString), InputPrimitive(TypeFloat))
+	it.Nullable = true
+	inputs.Set("value", InputField{
+		Name:      "value",
+		Order:     0,
+		FieldType: FieldType{Primitive: TypeAny, Repetition: Required},
+		InputType: &it,
+	})
+
+	out, err := GenerateOpenAPISchema(&PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaPrim(TypeString),
+		Mode:   ModePredict,
+	})
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(out, &doc))
+	input := doc["components"].(map[string]any)["schemas"].(map[string]any)["Input"].(map[string]any)
+	require.Equal(t, []any{"value"}, input["required"])
+	prop := input["properties"].(map[string]any)["value"].(map[string]any)
+	require.JSONEq(t, `{
+		"anyOf":[
+			{"nullable":true,"type":"string"},
+			{"nullable":true,"type":"number"}
+		],
+		"nullable":true,
+		"title":"Value",
+		"x-order":0
+	}`, extractInputProperty(t, out, "value"))
+	require.Equal(t, true, prop["nullable"])
+}
+
 // ---------------------------------------------------------------------------
 // Tests: Choices / Enums
 // ---------------------------------------------------------------------------
@@ -359,10 +635,10 @@ func TestChoicesGenerateEnum(t *testing.T) {
 
 	spec := parseSpec(t, info)
 
-	// Enum schema created
+	// Enum schema created — name matches the parameter name (lowercase)
 	schemas := getPath(spec, "components", "schemas").(map[string]any)
-	colorEnum := schemas["Color"].(map[string]any)
-	assert.Equal(t, "Color", colorEnum["title"])
+	colorEnum := schemas["color"].(map[string]any)
+	assert.Equal(t, "color", colorEnum["title"])
 	assert.Equal(t, "string", colorEnum["type"])
 	assert.Equal(t, []any{"red", "blue"}, colorEnum["enum"])
 
@@ -372,7 +648,7 @@ func TestChoicesGenerateEnum(t *testing.T) {
 	allOf := colorProp["allOf"].([]any)
 	assert.Len(t, allOf, 1)
 	ref := allOf[0].(map[string]any)
-	assert.Equal(t, "#/components/schemas/Color", ref["$ref"])
+	assert.Equal(t, "#/components/schemas/color", ref["$ref"])
 }
 
 func TestIntegerChoices(t *testing.T) {
@@ -396,7 +672,7 @@ func TestIntegerChoices(t *testing.T) {
 
 	spec := parseSpec(t, info)
 	schemas := getPath(spec, "components", "schemas").(map[string]any)
-	sizeEnum := schemas["Size"].(map[string]any)
+	sizeEnum := schemas["size"].(map[string]any)
 	assert.Equal(t, "integer", sizeEnum["type"])
 	// JSON numbers are float64
 	assert.Equal(t, []any{float64(256), float64(512), float64(1024)}, sizeEnum["enum"])
@@ -456,6 +732,55 @@ func TestOutputConcatenateIterator(t *testing.T) {
 	assert.Equal(t, "array", output["type"])
 	assert.Equal(t, "iterator", output["x-cog-array-type"])
 	assert.Equal(t, "concatenate", output["x-cog-array-display"])
+}
+
+func TestPredictionOperationIncludesStreamingExtensionWhenEnabled(t *testing.T) {
+	inputs := NewOrderedMap[string, InputField]()
+	info := &PredictorInfo{
+		Inputs:            inputs,
+		Output:            SchemaIteratorOf(SchemaPrim(TypeString)),
+		Mode:              ModePredict,
+		SupportsStreaming: true,
+	}
+
+	spec := parseSpec(t, info)
+	postPath := getPath(spec, "paths", "/predictions", "post")
+	require.NotNil(t, postPath)
+	post := postPath.(map[string]any)
+	assert.Equal(t, true, post["x-cog-streaming"])
+}
+
+func TestPredictionOperationOmitsStreamingExtensionByDefault(t *testing.T) {
+	inputs := NewOrderedMap[string, InputField]()
+	info := &PredictorInfo{
+		Inputs: inputs,
+		Output: SchemaIteratorOf(SchemaPrim(TypeString)),
+		Mode:   ModePredict,
+	}
+
+	spec := parseSpec(t, info)
+	postPath := getPath(spec, "paths", "/predictions", "post")
+	require.NotNil(t, postPath)
+	post := postPath.(map[string]any)
+	_, ok := post["x-cog-streaming"]
+	assert.False(t, ok)
+}
+
+func TestTrainingOperationOmitsStreamingExtensionWhenEnabled(t *testing.T) {
+	inputs := NewOrderedMap[string, InputField]()
+	info := &PredictorInfo{
+		Inputs:            inputs,
+		Output:            SchemaIteratorOf(SchemaPrim(TypeString)),
+		Mode:              ModeTrain,
+		SupportsStreaming: true,
+	}
+
+	spec := parseSpec(t, info)
+	postPath := getPath(spec, "paths", "/trainings", "post")
+	require.NotNil(t, postPath)
+	post := postPath.(map[string]any)
+	_, ok := post["x-cog-streaming"]
+	assert.False(t, ok)
 }
 
 func TestOutputObject(t *testing.T) {

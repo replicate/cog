@@ -260,6 +260,17 @@ func (c *apiClient) ImageSave(ctx context.Context, imageRef string) (io.ReadClos
 	return c.client.ImageSave(ctx, []string{imageRef})
 }
 
+func (c *apiClient) Tag(ctx context.Context, source, target string) error {
+	console.Debugf("=== APIClient.Tag %s -> %s", source, target)
+	if err := c.client.ImageTag(ctx, source, target); err != nil {
+		if errdefs.IsNotFound(err) {
+			return &command.NotFoundError{Ref: source, Object: "image"}
+		}
+		return fmt.Errorf("tag %q as %q: %w", source, target, err)
+	}
+	return nil
+}
+
 // TODO[md]: this doesn't need to be on the interface, move to auth handler
 func (c *apiClient) LoadUserInformation(ctx context.Context, registryHost string) (*command.UserInfo, error) {
 	console.Debugf("=== APIClient.LoadUserInformation %s", registryHost)
@@ -315,11 +326,18 @@ func (c *apiClient) ImageExists(ctx context.Context, ref string) (bool, error) {
 func (c *apiClient) ImageBuild(ctx context.Context, options command.ImageBuildOptions) (string, error) {
 	console.Debugf("=== APIClient.ImageBuild %s", options.ImageName)
 
-	buildDir, err := os.MkdirTemp("", "cog-build")
-	if err != nil {
-		return "", err
+	// When the caller provides a BuildCacheDir (e.g. .cog/build/), write
+	// the Dockerfile there alongside other build artifacts. Otherwise
+	// create a throwaway temp dir.
+	buildDir := options.BuildCacheDir
+	if buildDir == "" {
+		var err error
+		buildDir, err = os.MkdirTemp("", "cog-build")
+		if err != nil {
+			return "", err
+		}
+		defer os.RemoveAll(buildDir)
 	}
-	defer os.RemoveAll(buildDir)
 
 	bc, err := buildkitclient.New(ctx, "",
 		// Connect to Docker Engine's embedded Buildkit.
@@ -452,7 +470,11 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	if len(options.Volumes) > 0 {
 		hostCfg.Binds = make([]string, len(options.Volumes))
 		for i, volume := range options.Volumes {
-			hostCfg.Binds[i] = fmt.Sprintf("%s:%s", volume.Source, volume.Destination)
+			bind := fmt.Sprintf("%s:%s", volume.Source, volume.Destination)
+			if volume.ReadOnly {
+				bind += ":ro"
+			}
+			hostCfg.Binds[i] = bind
 		}
 	}
 

@@ -26,6 +26,11 @@ type Platform struct {
 	Variant      string
 }
 
+// PlatformUnknown is the OCI placeholder ("unknown") used for non-platform
+// artifacts such as weight manifests, distinguishing them from the model
+// image manifest in the OCI index.
+const PlatformUnknown = "unknown"
+
 // Label keys for Cog-specific metadata stored in image labels.
 var (
 	LabelConfig          = global.LabelNamespace + "config"
@@ -115,6 +120,19 @@ func NewImageArtifact(name string, desc v1.Descriptor, reference string) *ImageA
 		descriptor: desc,
 		Reference:  reference,
 	}
+}
+
+// WithDigest returns a copy of a with Reference rewritten to
+// "{repo}@{digest}", Digest set to the descriptor's digest, and
+// descriptor populated from desc. Used by the push path to pin an
+// artifact to the digest the registry assigned after the manifest
+// went over the wire.
+func (a *ImageArtifact) WithDigest(repo string, desc v1.Descriptor) *ImageArtifact {
+	out := *a
+	out.Reference = repo + "@" + desc.Digest.String()
+	out.Digest = desc.Digest.String()
+	out.descriptor = desc
+	return &out
 }
 
 // Type returns ArtifactTypeImage.
@@ -214,6 +232,7 @@ func (a *ImageArtifact) ToModel() (*Model, error) {
 	}
 
 	return &Model{
+		Format:     FormatImage,
 		Image:      a,
 		Config:     cfg,
 		Schema:     schema,

@@ -104,7 +104,15 @@ check_docker() {
 
 setup_cog() {
   COG_LOCATION="${INSTALL_DIR}/cog"
-  BINARY_URI="https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m)"
+  # Normalize the machine architecture to match the names of the released
+  # assets. `uname -m` reports `aarch64` on Linux arm64, but the release assets
+  # are named `arm64`, and `x86_64` rather than `amd64`.
+  ARCH="$(uname -m)"
+  case "$ARCH" in
+    aarch64) ARCH="arm64" ;;
+    amd64) ARCH="x86_64" ;;
+  esac
+  BINARY_URI="https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_${ARCH}"
   if [ -f "$COG_LOCATION" ]; then
     echo "A file already exists at $COG_LOCATION"
     echo "Do you want to delete this file and continue with this installation anyway?"

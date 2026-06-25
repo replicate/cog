@@ -195,7 +195,7 @@ func cudaFromTF(ver string) (cuda string, cuDNN string, err error) {
 func compatibleCuDNNsForCUDA(cuda string) []string {
 	cuDNNs := []string{}
 	for _, image := range CUDABaseImages {
-		if image.CUDA == cuda {
+		if version.Matches(cuda, image.CUDA) {
 			cuDNNs = append(cuDNNs, image.CuDNN)
 		}
 	}
@@ -291,7 +291,7 @@ func tfGPUPackage(ver string, cuda string) (name string, cpuVersion string, err 
 func torchCPUPackage(ver, goos, goarch string) (name, cpuVersion, findLinks, extraIndexURL string, err error) {
 	for _, compat := range TorchCompatibilityMatrix {
 		if compat.TorchVersion() == ver && compat.CUDA == nil {
-			return "torch", torchStripCPUSuffixForM1(compat.Torch, goos, goarch), compat.FindLinks, compat.ExtraIndexURL, nil
+			return "torch", version.StripModifier(torchStripCPUSuffixForM1(compat.Torch, goos, goarch)), compat.FindLinks, compat.ExtraIndexURL, nil
 		}
 	}
 
@@ -318,12 +318,13 @@ func torchGPUPackage(ver string, cuda string) (name, cpuVersion, findLinks, extr
 		if latest == nil {
 			latest = &compat
 		} else {
-			greater, err := versionGreater(*compat.CUDA, *latest.CUDA)
+			cudaGreater, err := versionGreater(*compat.CUDA, *latest.CUDA)
 			if err != nil {
 				// should never happen
 				panic(fmt.Sprintf("Invalid CUDA version: %s", err))
 			}
-			if greater {
+			cudaEqual := *compat.CUDA == *latest.CUDA
+			if cudaGreater || (cudaEqual && version.Greater(compat.TorchVersion(), latest.TorchVersion())) {
 				latest = &compat
 			}
 		}
