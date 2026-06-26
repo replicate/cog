@@ -82,11 +82,18 @@ type Predictor struct {
 // NewPredictor constructs a Predictor. See PredictorOptions for the
 // meaning of each field.
 func NewPredictor(_ context.Context, opts PredictorOptions) (*Predictor, error) {
+	// Use human-readable log format for local development
+	env := make([]string, len(opts.RunOptions.Env))
+	copy(env, opts.RunOptions.Env)
+	env = append(env, "LOG_FORMAT=console")
+
 	if global.Debug {
-		opts.RunOptions.Env = append(opts.RunOptions.Env, "COG_LOG_LEVEL=debug")
+		env = append(env, "COG_LOG_LEVEL=debug")
 	} else {
-		opts.RunOptions.Env = append(opts.RunOptions.Env, "COG_LOG_LEVEL=warning")
+		env = append(env, "COG_LOG_LEVEL=warning")
 	}
+
+	opts.RunOptions.Env = env
 
 	return &Predictor{
 		runOptions:    opts.RunOptions,
