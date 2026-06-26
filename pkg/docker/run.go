@@ -38,7 +38,7 @@ func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command,
 	console.Debugf("=== DockerCommand.GetPort %s/%d", containerID, containerPort)
 
 	if hostIP == "" {
-		hostIP = "127.0.0.1"
+		hostIP = command.DefaultHostIP
 	}
 
 	inspect, err := dockerCommand.ContainerInspect(ctx, containerID)
@@ -59,11 +59,23 @@ func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command,
 		return 0, fmt.Errorf("container %s does not have expected network configuration", containerID)
 	}
 
-	for _, portBinding := range inspect.NetworkSettings.Ports[targetPort] {
+	bindings := inspect.NetworkSettings.Ports[targetPort]
+	for _, portBinding := range bindings {
 		if portBinding.HostIP != hostIP {
 			continue
 		}
 		hostPort, err := nat.ParsePort(portBinding.HostPort)
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse host port: %w", err)
+		}
+		return hostPort, nil
+	}
+
+	// Fall back to a single wildcard or unspecified binding. Docker may report
+	// 0.0.0.0 or an empty HostIP even when we requested a specific localhost
+	// address, and such a binding is reachable on localhost.
+	if len(bindings) == 1 && (bindings[0].HostIP == "" || bindings[0].HostIP == "0.0.0.0") {
+		hostPort, err := nat.ParsePort(bindings[0].HostPort)
 		if err != nil {
 			return 0, fmt.Errorf("failed to parse host port: %w", err)
 		}

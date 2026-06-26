@@ -3,6 +3,7 @@ package docker
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	dconfig "github.com/docker/cli/cli/config"
 	dctxdocker "github.com/docker/cli/cli/context/docker"
@@ -39,6 +40,22 @@ func determineDockerHost() (string, error) {
 
 	// 3) if we couldn't get a host from env or context, fallback to the system default
 	return defaultDockerHost, nil
+}
+
+// IsRemoteDockerHost reports whether the configured Docker daemon is not a
+// local Unix socket or named pipe. When true, port bindings are applied on the
+// remote daemon's interfaces, so localhost bindings may not be reachable from
+// the local machine.
+func IsRemoteDockerHost() (bool, string, error) {
+	host, err := determineDockerHost()
+	if err != nil {
+		return false, "", err
+	}
+	return !isLocalDockerHost(host), host, nil
+}
+
+func isLocalDockerHost(host string) bool {
+	return host == "" || strings.HasPrefix(host, "unix://") || strings.HasPrefix(host, "npipe://")
 }
 
 func dockerHostFromContext(contextName string) (string, string, error) {

@@ -98,7 +98,7 @@ func NewPredictor(_ context.Context, opts PredictorOptions) (*Predictor, error) 
 
 func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout time.Duration) (retErr error) {
 	containerPort := 5000
-	hostIP := "127.0.0.1"
+	hostIP := command.DefaultHostIP
 
 	if p.weightManager != nil {
 		mounts, err := p.weightManager.Prepare(ctx)

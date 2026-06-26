@@ -125,7 +125,7 @@ cog exec <command> [arg...] [flags]
       --gpus docker run --gpus       GPU devices to add to the container, in the same format as docker run --gpus.
   -h, --help                         help for exec
       --progress string              Set type of build progress output, 'auto' (default), 'tty', 'plain', or 'quiet' (default "auto")
-  -p, --publish stringArray          Publish a container's port to the host, e.g. -p 8000
+  -p, --publish stringArray          Publish a container's port to the host, e.g. -p 8000 or -p 0.0.0.0:8000
       --use-cog-base-image           Use pre-built Cog base image for faster cold boots (default true)
       --use-cuda-base-image string   Use Nvidia CUDA base image, 'true' (default) or 'false' (use python base image). False results in a smaller image but may cause problems for non-torch projects (default "auto")
 ```

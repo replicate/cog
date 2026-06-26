@@ -3,7 +3,9 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,7 +19,7 @@ import (
 )
 
 var (
-	host      = "127.0.0.1"
+	serveHost = command.DefaultHostIP
 	port      = 8393
 	uploadURL = ""
 )
@@ -60,7 +62,7 @@ the Docker port mapping is published on.`,
 	addGpusFlag(cmd)
 	addConfigFlag(cmd)
 
-	cmd.Flags().StringVar(&host, "host", host, "Host IP to publish the container port on. Use 0.0.0.0 to allow connections from other machines.")
+	cmd.Flags().StringVar(&serveHost, "host", serveHost, "Host IP to publish the container port on. Use 0.0.0.0 to allow connections from other machines.")
 	cmd.Flags().IntVarP(&port, "port", "p", port, "Port on which to listen")
 	cmd.Flags().StringVar(&uploadURL, "upload-url", "", "Upload URL for file outputs (e.g. https://example.com/upload/)")
 
@@ -79,6 +81,28 @@ func serveBuildOptions(cmd *cobra.Command) model.BuildOptions {
 		ExcludeSource:    true,
 		SkipLabels:       true,
 	}
+}
+
+// displayHostForServe returns the host string to show in the "Serving at" URL.
+// Loopback bindings are displayed as "localhost" for clarity; any other
+// address is returned as-is so the URL reflects the actual binding.
+func displayHostForServe(host string) string {
+	if host == command.DefaultHostIP || host == "::1" {
+		return "localhost"
+	}
+	return host
+}
+
+// formatServeURL builds the "Serving at" URL for the given bind host and port.
+// When bound to all interfaces (0.0.0.0), it also shows the usable localhost
+// URL since 0.0.0.0 is not a navigable address.
+func formatServeURL(host string, port int) string {
+	url := fmt.Sprintf("http://%s", net.JoinHostPort(displayHostForServe(host), strconv.Itoa(port)))
+	if host == "0.0.0.0" {
+		localhostURL := fmt.Sprintf("http://%s", net.JoinHostPort("localhost", strconv.Itoa(port)))
+		url = fmt.Sprintf("%s (%s)", url, localhostURL)
+	}
+	return url
 }
 
 func cmdServe(cmd *cobra.Command, arg []string) error {
@@ -168,17 +192,18 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		runOptions.ExtraHosts = []string{"host.docker.internal:host-gateway"}
 	}
 
-	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000, HostIP: host})
+	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000, HostIP: serveHost})
 
-	displayHost := host
-	if displayHost == "0.0.0.0" {
-		displayHost = "localhost"
+	serveURL := formatServeURL(serveHost, port)
+
+	if isRemote, dockerHost, err := docker.IsRemoteDockerHost(); err == nil && isRemote {
+		console.Warnf("Using Docker daemon at %s; the server will bind to %s on that host, not this machine.", dockerHost, serveHost)
 	}
 
 	console.Info("")
 	console.Infof("Running %[1]s in Docker with the current directory mounted as a volume...", console.Bold(strings.Join(args, " ")))
 	console.Info("")
-	console.Infof("Serving at %s", console.Bold(fmt.Sprintf("http://%s:%v", displayHost, port)))
+	console.Infof("Serving at %s", console.Bold(serveURL))
 	console.Info("")
 
 	err = docker.Run(ctx, dockerClient, runOptions)
