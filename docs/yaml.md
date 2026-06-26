@@ -33,6 +33,21 @@ build:
   cuda: "11.8"
 ```
 
+### `environment`
+
+A list of environment variables to set in the built image. These are available both during the build (in `run` commands) and at runtime when running predictions.
+
+Each entry must be in `NAME=value` format:
+
+```yaml
+build:
+  environment:
+    - "HF_TOKEN=my_token"
+    - "MODEL_SIZE=large"
+```
+
+Certain environment variable names are reserved and cannot be set. These include `PATH`, `LD_LIBRARY_PATH`, `PYTHONPATH`, `CUDA_*`, `NVIDIA_*`, and other variables used internally by Cog. Setting a reserved variable will cause a validation error.
+
 ### `gpu`
 
 Enable GPUs for this model. When enabled, the [nvidia-docker](https://github.com/NVIDIA/nvidia-docker) base image will be used, and Cog will automatically figure out what versions of CUDA and cuDNN to use based on the version of Python, PyTorch, and Tensorflow that you are using.
