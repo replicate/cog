@@ -424,11 +424,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 	}
 
 	if len(options.Ports) > 0 {
-		containerCfg.ExposedPorts = make(nat.PortSet)
-		for _, port := range options.Ports {
-			containerPort := nat.Port(fmt.Sprintf("%d/tcp", port.ContainerPort))
-			containerCfg.ExposedPorts[containerPort] = struct{}{}
-		}
+		containerCfg.ExposedPorts = exposedPortsFromRunOptions(options.Ports)
 	}
 
 	hostCfg := &container.HostConfig{
@@ -450,16 +446,7 @@ func (c *apiClient) containerRun(ctx context.Context, options command.RunOptions
 
 	// Configure port bindings
 	if len(options.Ports) > 0 {
-		hostCfg.PortBindings = make(nat.PortMap)
-		for _, port := range options.Ports {
-			containerPort := nat.Port(fmt.Sprintf("%d/tcp", port.ContainerPort))
-			hostCfg.PortBindings[containerPort] = []nat.PortBinding{
-				{
-					HostIP:   "", // use empty string to bind to all interfaces
-					HostPort: strconv.Itoa(port.HostPort),
-				},
-			}
-		}
+		hostCfg.PortBindings = portBindingsFromRunOptions(options.Ports)
 	}
 
 	// Configure volume bindings
@@ -620,6 +607,37 @@ func (c *apiClient) ContainerStart(ctx context.Context, options command.RunOptio
 	options.Detach = true
 	id, err := c.containerRun(ctx, options)
 	return id, err
+}
+
+// exposedPortsFromRunOptions returns the set of container ports that must be
+// exposed for the given port mappings.
+func exposedPortsFromRunOptions(ports []command.Port) nat.PortSet {
+	exposed := make(nat.PortSet, len(ports))
+	for _, port := range ports {
+		containerPort := nat.Port(fmt.Sprintf("%d/tcp", port.ContainerPort))
+		exposed[containerPort] = struct{}{}
+	}
+	return exposed
+}
+
+// portBindingsFromRunOptions returns Docker port bindings for the given port
+// mappings. Empty HostIP values default to command.DefaultHostIP.
+func portBindingsFromRunOptions(ports []command.Port) nat.PortMap {
+	bindings := make(nat.PortMap, len(ports))
+	for _, port := range ports {
+		hostIP := port.HostIP
+		if hostIP == "" {
+			hostIP = command.DefaultHostIP
+		}
+		containerPort := nat.Port(fmt.Sprintf("%d/tcp", port.ContainerPort))
+		bindings[containerPort] = []nat.PortBinding{
+			{
+				HostIP:   hostIP,
+				HostPort: strconv.Itoa(port.HostPort),
+			},
+		}
+	}
+	return bindings
 }
 
 // parseGPURequest converts a Docker CLI --gpus string into a DeviceRequest slice

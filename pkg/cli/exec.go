@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -59,12 +60,80 @@ exploring the environment your model will run in.`,
 	// Flags after first argument are considered args and passed to command
 
 	// This is called `publish` for consistency with `docker run`
-	cmd.Flags().StringArrayVarP(&execPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000")
+	cmd.Flags().StringArrayVarP(&execPorts, "publish", "p", []string{}, "Publish a container's port to the host, e.g. -p 8000 or -p 0.0.0.0:8000")
 	cmd.Flags().StringArrayVarP(&envFlags, "env", "e", []string{}, "Environment variables, in the form name=value")
 
 	flags.SetInterspersed(false)
 
 	return cmd
+}
+
+// parsePublishFlags parses the values passed to `cog exec -p`. Each value may
+// be either a port number ("8000") or a host:port pair ("0.0.0.0:8000" or
+// "[::1]:8000"). When no host is given, the port is bound to
+// command.DefaultHostIP.
+func parsePublishFlags(values []string) ([]command.Port, error) {
+	ports := make([]command.Port, 0, len(values))
+	for _, portString := range values {
+		hostIP, portStr, err := splitPublishFlag(portString)
+		if err != nil {
+			return nil, err
+		}
+
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid port %q: %w", portString, err)
+		}
+		if port < 1 || port > 65535 {
+			return nil, fmt.Errorf("invalid port %q: port must be between 1 and 65535", portString)
+		}
+
+		ports = append(ports, command.Port{HostPort: port, ContainerPort: port, HostIP: hostIP})
+	}
+	return ports, nil
+}
+
+// splitPublishFlag splits a publish flag value into host and port parts. It
+// supports plain ports ("8000"), IPv4 host:port ("0.0.0.0:8000"), bare IPv6
+// ("::1:8000"), and bracketed IPv6 ("[::1]:8000").
+func splitPublishFlag(value string) (host, port string, err error) {
+	host = command.DefaultHostIP
+	port = value
+
+	if value == "" {
+		return "", "", fmt.Errorf("invalid port %q: value cannot be empty", value)
+	}
+
+	// Bracketed IPv6 form: [::1]:8000
+	if strings.HasPrefix(value, "[") {
+		end := strings.Index(value, "]")
+		if end == -1 {
+			return "", "", fmt.Errorf("invalid port %q: missing closing bracket for IPv6 address", value)
+		}
+		if end == len(value)-1 {
+			return "", "", fmt.Errorf("invalid port %q: port is required after IPv6 address", value)
+		}
+		if value[end+1] != ':' {
+			return "", "", fmt.Errorf("invalid port %q: expected ':' after ']'", value)
+		}
+		host = value[1:end]
+		port = value[end+2:]
+		if host == "" {
+			return "", "", fmt.Errorf("invalid port %q: host cannot be empty", value)
+		}
+		return host, port, nil
+	}
+
+	// Standard host:port form, splitting on the last colon to tolerate IPv6.
+	if idx := strings.LastIndex(value, ":"); idx != -1 {
+		host = value[:idx]
+		port = value[idx+1:]
+		if host == "" {
+			return "", "", fmt.Errorf("invalid port %q: host cannot be empty", value)
+		}
+	}
+
+	return host, port, nil
 }
 
 func execCmd(cmd *cobra.Command, args []string) error {
@@ -118,14 +187,11 @@ func execCmd(cmd *cobra.Command, args []string) error {
 		Workdir: "/src",
 	}
 
-	for _, portString := range execPorts {
-		port, err := strconv.Atoi(portString)
-		if err != nil {
-			return err
-		}
-
-		runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: port})
+	ports, err := parsePublishFlags(execPorts)
+	if err != nil {
+		return err
 	}
+	runOptions.Ports = ports
 
 	console.Info("")
 	console.Infof("Running %s in Docker with the current directory mounted as a volume...", console.Bold(strings.Join(args, " ")))

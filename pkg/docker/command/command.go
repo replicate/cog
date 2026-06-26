@@ -76,6 +76,11 @@ type ImageBuildOptions struct {
 	BuildArgs map[string]*string
 }
 
+// DefaultHostIP is the host interface that container ports are published on
+// when no explicit HostIP is provided. Binding to localhost-only prevents
+// prediction endpoints from being accidentally exposed to the network.
+const DefaultHostIP = "127.0.0.1"
+
 type RunOptions struct {
 	Detach     bool
 	Args       []string
@@ -94,6 +99,7 @@ type RunOptions struct {
 type Port struct {
 	HostPort      int
 	ContainerPort int
+	HostIP        string // Host IP to bind to. Defaults to DefaultHostIP if empty.
 }
 
 type Volume struct {

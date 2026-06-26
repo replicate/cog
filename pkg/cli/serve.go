@@ -3,7 +3,9 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,6 +19,7 @@ import (
 )
 
 var (
+	serveHost = command.DefaultHostIP
 	port      = 8393
 	uploadURL = ""
 )
@@ -28,12 +31,20 @@ func newServeCommand() *cobra.Command {
 		Long: `Run an HTTP server.
 
 Builds the model and starts an HTTP server that exposes the model's inputs
-and outputs as a REST API. Compatible with the Cog HTTP protocol.`,
+and outputs as a REST API. Compatible with the Cog HTTP protocol.
+
+By default the container port is published on 127.0.0.1 (localhost), so the
+server is only reachable from your local machine. The server process inside
+the container binds to 0.0.0.0; use --host to control which host interface
+the Docker port mapping is published on.`,
 		Example: `  # Start the server on the default port (8393)
   cog serve
 
   # Start on a custom port
   cog serve -p 5000
+
+  # Listen on all interfaces (e.g. to expose to the network)
+  cog serve --host 0.0.0.0
 
   # Test the server
   curl http://localhost:8393/predictions \
@@ -51,6 +62,7 @@ and outputs as a REST API. Compatible with the Cog HTTP protocol.`,
 	addGpusFlag(cmd)
 	addConfigFlag(cmd)
 
+	cmd.Flags().StringVar(&serveHost, "host", serveHost, "Host IP to publish the container port on. Use 0.0.0.0 to allow connections from other machines.")
 	cmd.Flags().IntVarP(&port, "port", "p", port, "Port on which to listen")
 	cmd.Flags().StringVar(&uploadURL, "upload-url", "", "Upload URL for file outputs (e.g. https://example.com/upload/)")
 
@@ -69,6 +81,28 @@ func serveBuildOptions(cmd *cobra.Command) model.BuildOptions {
 		ExcludeSource:    true,
 		SkipLabels:       true,
 	}
+}
+
+// displayHostForServe returns the host string to show in the "Serving at" URL.
+// Loopback bindings are displayed as "localhost" for clarity; any other
+// address is returned as-is so the URL reflects the actual binding.
+func displayHostForServe(host string) string {
+	if host == command.DefaultHostIP || host == "::1" {
+		return "localhost"
+	}
+	return host
+}
+
+// formatServeURL builds the "Serving at" URL for the given bind host and port.
+// When bound to all interfaces (0.0.0.0), it also shows the usable localhost
+// URL since 0.0.0.0 is not a navigable address.
+func formatServeURL(host string, port int) string {
+	url := fmt.Sprintf("http://%s", net.JoinHostPort(displayHostForServe(host), strconv.Itoa(port)))
+	if host == "0.0.0.0" {
+		localhostURL := fmt.Sprintf("http://%s", net.JoinHostPort("localhost", strconv.Itoa(port)))
+		url = fmt.Sprintf("%s (%s)", url, localhostURL)
+	}
+	return url
 }
 
 func cmdServe(cmd *cobra.Command, arg []string) error {
@@ -162,12 +196,18 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		runOptions.ExtraHosts = []string{"host.docker.internal:host-gateway"}
 	}
 
-	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000})
+	runOptions.Ports = append(runOptions.Ports, command.Port{HostPort: port, ContainerPort: 5000, HostIP: serveHost})
+
+	serveURL := formatServeURL(serveHost, port)
+
+	if isRemote, dockerHost, err := docker.IsRemoteDockerHost(); err == nil && isRemote {
+		console.Warnf("Using Docker daemon at %s; the server will bind to %s on that host, not this machine.", dockerHost, serveHost)
+	}
 
 	console.Info("")
 	console.Infof("Running %[1]s in Docker with the current directory mounted as a volume...", console.Bold(strings.Join(args, " ")))
 	console.Info("")
-	console.Infof("Serving at %s", console.Bold(fmt.Sprintf("http://127.0.0.1:%v", port)))
+	console.Infof("Serving at %s", console.Bold(serveURL))
 	console.Info("")
 
 	err = docker.Run(ctx, dockerClient, runOptions)

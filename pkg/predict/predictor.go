@@ -105,6 +105,7 @@ func NewPredictor(_ context.Context, opts PredictorOptions) (*Predictor, error) 
 
 func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout time.Duration) (retErr error) {
 	containerPort := 5000
+	hostIP := command.DefaultHostIP
 
 	if p.weightManager != nil {
 		mounts, err := p.weightManager.Prepare(ctx)
@@ -131,7 +132,7 @@ func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout tim
 		}
 	}
 
-	p.runOptions.Ports = append(p.runOptions.Ports, command.Port{HostPort: 0, ContainerPort: containerPort})
+	p.runOptions.Ports = append(p.runOptions.Ports, command.Port{HostPort: 0, ContainerPort: containerPort, HostIP: hostIP})
 
 	containerID, err := docker.RunDaemon(ctx, p.dockerClient, p.runOptions, logsWriter)
 	if err != nil {
@@ -139,7 +140,7 @@ func (p *Predictor) Start(ctx context.Context, logsWriter io.Writer, timeout tim
 	}
 	p.containerID = containerID
 
-	p.port, err = docker.GetHostPortForContainer(ctx, p.dockerClient, p.containerID, containerPort)
+	p.port, err = docker.GetHostPortForContainer(ctx, p.dockerClient, p.containerID, containerPort, hostIP)
 	if err != nil {
 		return fmt.Errorf("Failed to determine container port: %w", err)
 	}
