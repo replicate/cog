@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/containerd/errdefs"
+	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -60,6 +61,10 @@ func NewClient(ctx context.Context, opts ...Option) (*apiClient, error) {
 		client.WithVersionFromEnv(),
 		client.WithAPIVersionNegotiation(),
 		client.WithHost(clientOptions.host),
+	}
+
+	if helper, err := connhelper.GetConnectionHelper(clientOptions.host); err == nil && helper != nil {
+		dockerClientOpts = append(dockerClientOpts, client.WithDialContext(helper.Dialer))
 	}
 
 	client, err := client.NewClientWithOpts(dockerClientOpts...)
