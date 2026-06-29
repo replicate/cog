@@ -9,7 +9,7 @@ use axum::{
     extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, StatusCode},
     response::{
-        IntoResponse, Json, Response,
+        Html, IntoResponse, Json, Response,
         sse::{Event, KeepAlive, Sse},
     },
     routing::{get, post, put},
@@ -121,6 +121,7 @@ async fn root(State(service): State<Arc<PredictionService>>) -> Json<serde_json:
     let mut doc = serde_json::json!({
         "cog_version": cog_version,
         "docs_url": "/docs",
+        "playground_url": "/playground",
         "openapi_url": "/openapi.json",
         "shutdown_url": "/shutdown",
         "healthcheck_url": "/health-check",
@@ -804,6 +805,12 @@ async fn openapi_schema(State(service): State<Arc<PredictionService>>) -> impl I
     }
 }
 
+const PLAYGROUND_HTML: &str = include_str!("playground.html");
+
+async fn playground() -> impl IntoResponse {
+    Html(PLAYGROUND_HTML)
+}
+
 // Training routes — same dispatch as predictions but validated against
 // TrainingInput schema instead of Input.
 
@@ -912,6 +919,7 @@ const MAX_HTTP_BODY_SIZE: usize = 100 * 1024 * 1024;
 pub fn routes(service: Arc<PredictionService>) -> Router {
     Router::new()
         .route("/", get(root))
+        .route("/playground", get(playground))
         .route("/health-check", get(health_check))
         .route("/openapi.json", get(openapi_schema))
         .route("/shutdown", post(shutdown))
@@ -1807,6 +1815,7 @@ mod tests {
         // Without a python_sdk version set, falls back to coglet version
         assert_eq!(json["cog_version"], crate::version::COGLET_VERSION);
         assert_eq!(json["docs_url"], "/docs");
+        assert_eq!(json["playground_url"], "/playground");
         assert_eq!(json["openapi_url"], "/openapi.json");
         assert_eq!(json["shutdown_url"], "/shutdown");
         assert_eq!(json["healthcheck_url"], "/health-check");
@@ -1823,6 +1832,29 @@ mod tests {
         assert!(json.get("trainings_url").is_none());
         assert!(json.get("trainings_idempotent_url").is_none());
         assert!(json.get("trainings_cancel_url").is_none());
+    }
+
+    #[tokio::test]
+    async fn playground_returns_html() {
+        let service = Arc::new(PredictionService::new_no_pool());
+        let app = routes(service);
+
+        let response = app
+            .oneshot(Request::get("/playground").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/html; charset=utf-8"
+        );
+
+        let body = response.into_body();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        let html = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("Cog Playground"));
     }
 
     #[tokio::test]

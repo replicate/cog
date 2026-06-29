@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cog Playground</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-hover: #1c2128;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+  --orange: #db6d28;
+  --purple: #bc8cff;
+  --radius: 6px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+header .spacer { flex: 1; }
+header a { color: var(--accent); text-decoration: none; font-size: 13px; }
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.badge-ready, .badge-succeeded { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-starting, .badge-processing { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.badge-failed, .badge-error { background: rgba(248,81,73,0.15); color: var(--red); }
+.badge-canceled { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+.badge-busy { background: rgba(219,109,40,0.15); color: var(--orange); }
+.badge-unknown { background: rgba(139,148,158,0.1); color: var(--text-muted); }
+
+#setup-panel { margin: 0; border-bottom: 1px solid var(--border); }
+#setup-panel summary {
+  padding: 8px 20px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  user-select: none;
+}
+#setup-panel summary:hover { color: var(--text); }
+#setup-logs {
+  margin: 0;
+  padding: 0 20px 12px;
+  max-height: 200px;
+  overflow: auto;
+  font-family: "SF Mono", Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+}
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  min-height: calc(100vh - 90px);
+}
+@media (max-width: 900px) {
+  main { grid-template-columns: 1fr; }
+}
+section {
+  background: var(--bg);
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+section h2 {
+  font-size: 14px;
+  margin: 0 0 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.field { margin-bottom: 14px; }
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.field label .req { color: var(--red); }
+.field .desc {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+input[type="text"], input[type="password"], input[type="url"],
+input[type="number"], select, textarea {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(88,166,255,0.15);
+}
+input[type="file"] {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+input[type="file"]::file-selector-button {
+  padding: 4px 10px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 8px;
+}
+input[type="checkbox"] { width: auto; margin-right: 6px; }
+
+.file-widget { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.file-widget .file-name { font-size: 12px; color: var(--green); }
+.file-widget .url-input { flex: 1; min-width: 120px; }
+
+.array-input { border-left: 2px solid var(--border); padding-left: 10px; }
+.array-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.array-row > :first-child { flex: 1; }
+.array-add-btn, .array-remove-btn {
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.array-add-btn:hover, .array-remove-btn:hover { background: var(--surface-hover); }
+.array-remove-btn { color: var(--red); }
+
+#run-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+#run-controls label { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; }
+button {
+  padding: 7px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--surface-hover); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+#run-btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+#run-btn:hover:not(:disabled) { background: #4493f8; }
+#stop-btn { color: var(--red); border-color: var(--red); }
+#stop-btn:hover:not(:disabled) { background: rgba(248,81,73,0.1); }
+
+#result-status { margin-bottom: 10px; }
+#metrics-container { margin-bottom: 12px; }
+.metrics-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+.metrics-table td {
+  padding: 3px 10px 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.metrics-table td:first-child { color: var(--text-muted); }
+
+#error-container {
+  background: rgba(248,81,73,0.1);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--red);
+  display: none;
+}
+#error-container.visible { display: block; }
+
+#logs-panel { margin-bottom: 12px; }
+#logs-panel summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+#prediction-logs {
+  margin: 0;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 300px;
+  overflow: auto;
+  font-family: "SF Mono", Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-muted);
+}
+
+#output-container { margin-top: 12px; }
+.output-item { margin-bottom: 10px; }
+.output-item img {
+  max-width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.output-item audio, .output-item video {
+  width: 100%;
+  max-width: 500px;
+}
+.output-item pre {
+  margin: 0;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: "SF Mono", Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+.output-item a { color: var(--accent); font-size: 13px; }
+.output-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.streaming-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  background: var(--accent);
+  animation: blink 1s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+#schema-error {
+  color: var(--yellow);
+  font-size: 13px;
+  margin-bottom: 12px;
+  display: none;
+}
+#schema-error.visible { display: block; }
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cog Playground</h1>
+  <span id="health-badge" class="badge badge-unknown">UNKNOWN</span>
+  <span class="spacer"></span>
+  <a href="/openapi.json" target="_blank">Schema</a>
+</header>
+
+<details id="setup-panel">
+  <summary>Setup Logs</summary>
+  <pre id="setup-logs"></pre>
+</details>
+
+<main>
+  <section id="input-panel">
+    <h2>Inputs</h2>
+    <div id="schema-error"></div>
+    <form id="input-form" onsubmit="return false"></form>
+    <div id="run-controls">
+      <label><input type="checkbox" id="sse-checkbox" disabled> Stream</label>
+      <span id="streaming-hint" style="display:none;font-size:12px;color:var(--yellow)"></span>
+      <button id="run-btn">Run</button>
+      <button id="stop-btn" disabled>Stop</button>
+      <button id="reset-btn">Reset</button>
+    </div>
+  </section>
+
+  <section id="output-panel">
+    <h2>Output</h2>
+    <div id="result-status"></div>
+    <div id="metrics-container"></div>
+    <div id="error-container"></div>
+    <details id="logs-panel" open>
+      <summary>Logs</summary>
+      <pre id="prediction-logs"></pre>
+    </details>
+    <div id="output-container"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+var schema = null;
+var outputSchema = null;
+var supportsStreaming = false;
+var fieldGetters = new Map();
+var healthPollId = null;
+var abortController = null;
+var isRunning = false;
+
+function init() {
+  document.getElementById("run-btn").addEventListener("click", runPrediction);
+  document.getElementById("stop-btn").addEventListener("click", stopPrediction);
+  document.getElementById("reset-btn").addEventListener("click", resetAll);
+  fetchHealth();
+  fetchSchema();
+  startHealthPolling();
+}
+
+function startHealthPolling() {
+  if (healthPollId) clearInterval(healthPollId);
+  healthPollId = setInterval(fetchHealth, 5000);
+}
+
+function fetchHealth() {
+  fetch("/health-check")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      setHealthBadge(data.status);
+      var logsEl = document.getElementById("setup-logs");
+      if (data.setup && data.setup.logs) {
+        logsEl.textContent = data.setup.logs;
+      } else if (data.setup) {
+        logsEl.textContent = JSON.stringify(data.setup, null, 2);
+      }
+    })
+    .catch(function() {
+      setHealthBadge("ERROR");
+    });
+}
+
+function setHealthBadge(status) {
+  var el = document.getElementById("health-badge");
+  var s = (status || "UNKNOWN").toLowerCase();
+  el.textContent = status || "UNKNOWN";
+  el.className = "badge badge-" + s;
+}
+
+function fetchSchema() {
+  var errEl = document.getElementById("schema-error");
+  fetch("/openapi.json")
+    .then(function(r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function(data) {
+      schema = data;
+      var components = (schema.components || {}).schemas || {};
+      outputSchema = resolveRef(components.Output || {});
+      var predPost = ((schema.paths || {})["/predictions"] || {}).post || {};
+      supportsStreaming = predPost["x-cog-streaming"] === true;
+      var sseCb = document.getElementById("sse-checkbox");
+      var hintEl = document.getElementById("streaming-hint");
+      sseCb.disabled = !supportsStreaming;
+      if (supportsStreaming) {
+        sseCb.checked = true;
+        hintEl.style.display = "none";
+      } else {
+        sseCb.checked = false;
+        var isIterator = outputSchema["x-cog-array-type"] === "iterator" ||
+          outputSchema["x-cog-array-display"] === "concatenate";
+        if (isIterator) {
+          hintEl.textContent = "Add @cog.streaming to run() for real-time output";
+          hintEl.style.display = "inline";
+        } else {
+          hintEl.style.display = "none";
+        }
+      }
+      errEl.classList.remove("visible");
+      renderForm();
+    })
+    .catch(function(err) {
+      errEl.innerHTML = "";
+      var spinner = document.createElement("span");
+      spinner.className = "spinner";
+      errEl.appendChild(spinner);
+      errEl.appendChild(document.createTextNode("Waiting for schema... (" + err.message + ")"));
+      errEl.classList.add("visible");
+      setTimeout(fetchSchema, 3000);
+    });
+}
+
+function resolveRef(obj) {
+  if (!obj || !obj["$ref"]) return obj;
+  var ref = obj["$ref"];
+  if (ref.indexOf("#/components/schemas/") === 0) {
+    var name = ref.slice("#/components/schemas/".length);
+    var resolved = ((schema || {}).components || {}).schemas || {};
+    return resolved[name] || obj;
+  }
+  return obj;
+}
+
+function renderForm() {
+  var form = document.getElementById("input-form");
+  form.innerHTML = "";
+  fieldGetters.clear();
+  if (!schema) return;
+
+  var components = (schema.components || {}).schemas || {};
+  var inputSchema = resolveRef(components.Input || {});
+  var properties = inputSchema.properties || {};
+  var required = inputSchema.required || [];
+
+  var entries = Object.keys(properties);
+  if (entries.length === 0) {
+    form.innerHTML = "<p style='color:var(--text-muted)'>No inputs required.</p>";
+    return;
+  }
+
+  entries.sort(function(a, b) {
+    var oa = properties[a]["x-order"] !== undefined ? properties[a]["x-order"] : 999;
+    var ob = properties[b]["x-order"] !== undefined ? properties[b]["x-order"] : 999;
+    return oa - ob;
+  });
+
+  for (var i = 0; i < entries.length; i++) {
+    var name = entries[i];
+    var prop = properties[name];
+    var isRequired = required.indexOf(name) >= 0;
+    var field = createField(name, prop, isRequired);
+    form.appendChild(field.element);
+    fieldGetters.set(name, { getValue: field.getValue, isRequired: isRequired });
+  }
+}
+
+function createField(name, prop, isRequired) {
+  prop = resolveRef(prop);
+  if (prop.anyOf) {
+    for (var i = 0; i < prop.anyOf.length; i++) {
+      var t = resolveRef(prop.anyOf[i]);
+      if (t.type !== "null") { prop = t; break; }
+    }
+  }
+
+  var div = document.createElement("div");
+  div.className = "field";
+
+  var label = document.createElement("label");
+  label.textContent = name;
+  if (isRequired) {
+    var star = document.createElement("span");
+    star.className = "req";
+    star.textContent = " *";
+    label.appendChild(star);
+  }
+  div.appendChild(label);
+
+  if (prop.description) {
+    var desc = document.createElement("small");
+    desc.className = "desc";
+    desc.textContent = prop.description;
+    div.appendChild(desc);
+  }
+
+  var widget = createWidget(prop, isRequired);
+  div.appendChild(widget.element);
+
+  return { element: div, getValue: widget.getValue };
+}
+
+function createWidget(prop, isRequired) {
+  prop = resolveRef(prop);
+  var type = prop.type;
+  var format = prop.format;
+
+  if (type === "string" && format === "uri") return createFileWidget(prop);
+  if (type === "string" && (format === "password" || prop["x-cog-secret"])) return createTextWidget("password", prop.default);
+  if (prop.enum) return createSelectWidget(prop.enum, prop.default);
+  if (type === "string") return createTextWidget("text", prop.default);
+  if (type === "integer") return createNumberWidget(prop, true);
+  if (type === "number") return createNumberWidget(prop, false);
+  if (type === "boolean") return createBooleanWidget(prop.default);
+  if (type === "array") return createArrayWidget(prop.items);
+  return createTextWidget("text", prop.default);
+}
+
+function createTextWidget(inputType, defaultValue) {
+  var input = document.createElement("input");
+  input.type = inputType;
+  if (defaultValue !== undefined && defaultValue !== null) input.value = defaultValue;
+  return { element: input, getValue: function() { return input.value; } };
+}
+
+function createSelectWidget(options, defaultValue) {
+  var select = document.createElement("select");
+  var hasEmpty = (defaultValue === undefined || defaultValue === null);
+  if (hasEmpty) {
+    var emptyOpt = document.createElement("option");
+    emptyOpt.value = "";
+    emptyOpt.textContent = "— select —";
+    select.appendChild(emptyOpt);
+  }
+  for (var i = 0; i < options.length; i++) {
+    var opt = document.createElement("option");
+    opt.value = options[i];
+    opt.textContent = String(options[i]);
+    if (options[i] === defaultValue) opt.selected = true;
+    select.appendChild(opt);
+  }
+  return { element: select, getValue: function() { return select.value; } };
+}
+
+function createNumberWidget(prop, isInteger) {
+  var input = document.createElement("input");
+  input.type = "number";
+  if (prop.default !== undefined && prop.default !== null) input.value = prop.default;
+  if (prop.minimum !== undefined) input.min = prop.minimum;
+  if (prop.maximum !== undefined) input.max = prop.maximum;
+  input.step = isInteger ? "1" : "any";
+  return { element: input, getValue: function() {
+    var v = input.value;
+    if (v === "") return "";
+    return isInteger ? parseInt(v, 10) : parseFloat(v);
+  }};
+}
+
+function createBooleanWidget(defaultValue) {
+  var input = document.createElement("input");
+  input.type = "checkbox";
+  if (defaultValue === true) input.checked = true;
+  return { element: input, getValue: function() { return input.checked; } };
+}
+
+function createFileWidget(prop) {
+  var container = document.createElement("div");
+  container.className = "file-widget";
+  var currentValue = "";
+
+  var fileInput = document.createElement("input");
+  fileInput.type = "file";
+
+  var fileName = document.createElement("span");
+  fileName.className = "file-name";
+
+  var orSpan = document.createElement("span");
+  orSpan.textContent = "or URL";
+  orSpan.style.fontSize = "12px";
+  orSpan.style.color = "var(--text-muted)";
+
+  var urlInput = document.createElement("input");
+  urlInput.type = "text";
+  urlInput.className = "url-input";
+  urlInput.placeholder = "https://...";
+
+  fileInput.addEventListener("change", function() {
+    var file = fileInput.files[0];
+    if (!file) return;
+    readFileAsDataURL(file).then(function(dataUri) {
+      currentValue = dataUri;
+      urlInput.value = "";
+      fileName.textContent = file.name + " (" + formatBytes(file.size) + ")";
+    });
+  });
+
+  urlInput.addEventListener("input", function() {
+    currentValue = urlInput.value;
+    fileInput.value = "";
+    fileName.textContent = "";
+  });
+
+  container.appendChild(fileInput);
+  container.appendChild(fileName);
+  container.appendChild(orSpan);
+  container.appendChild(urlInput);
+
+  return { element: container, getValue: function() { return currentValue; } };
+}
+
+function createArrayWidget(itemsSchema) {
+  var container = document.createElement("div");
+  container.className = "array-input";
+  var rowsContainer = document.createElement("div");
+  container.appendChild(rowsContainer);
+  var rowGetters = [];
+
+  function addRow() {
+    var rowDiv = document.createElement("div");
+    rowDiv.className = "array-row";
+    var widget = createWidget(resolveRef(itemsSchema), false);
+    rowDiv.appendChild(widget.element);
+
+    var removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "array-remove-btn";
+    removeBtn.textContent = "\u2212";
+    var getterRef = widget.getValue;
+    removeBtn.onclick = function() {
+      rowDiv.remove();
+      var idx = rowGetters.indexOf(getterRef);
+      if (idx >= 0) rowGetters.splice(idx, 1);
+    };
+    rowDiv.appendChild(removeBtn);
+    rowsContainer.appendChild(rowDiv);
+    rowGetters.push(getterRef);
+  }
+
+  var addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "array-add-btn";
+  addBtn.textContent = "+ Add";
+  addBtn.onclick = addRow;
+  container.appendChild(addBtn);
+
+  addRow();
+
+  return {
+    element: container,
+    getValue: function() {
+      var result = [];
+      for (var i = 0; i < rowGetters.length; i++) {
+        var v = rowGetters[i]();
+        if (v !== "" && v !== null && v !== undefined) result.push(v);
+      }
+      return result;
+    }
+  };
+}
+
+function collectInput() {
+  var input = {};
+  fieldGetters.forEach(function(meta, name) {
+    var value = meta.getValue();
+    if (typeof value === "boolean") {
+      input[name] = value;
+    } else if (meta.isRequired) {
+      input[name] = value;
+    } else if (value !== "" && value !== null && value !== undefined) {
+      if (Array.isArray(value) && value.length === 0) return;
+      input[name] = value;
+    }
+  });
+  return { input: input };
+}
+
+function runPrediction() {
+  if (isRunning) return;
+  clearError();
+  clearOutput();
+  document.getElementById("prediction-logs").textContent = "";
+
+  var payload = collectInput();
+  var useSSE = document.getElementById("sse-checkbox").checked && supportsStreaming;
+  setRunning(true);
+
+  abortController = new AbortController();
+
+  if (useSSE) {
+    runStreaming(payload, abortController.signal);
+  } else {
+    runSync(payload, abortController.signal);
+  }
+}
+
+function runSync(payload, signal) {
+  setResultStatus("processing");
+  fetch("/predictions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: signal,
+  })
+    .then(function(r) { return r.json().then(function(body) { return { ok: r.ok, body: body }; }); })
+    .then(function(resp) {
+      if (!resp.ok) {
+        var msg = "HTTP " + (resp.body.error || resp.body.detail ? JSON.stringify(resp.body) : "error");
+        renderError(msg);
+        setResultStatus("failed");
+        return;
+      }
+      renderResult(resp.body);
+    })
+    .catch(function(err) {
+      if (err.name === "AbortError") {
+        setResultStatus("canceled");
+      } else {
+        renderError("Request failed: " + err.message);
+      }
+    })
+    .finally(function() { setRunning(false); });
+}
+
+function runStreaming(payload, signal) {
+  setResultStatus("processing");
+  var concatBuffer = "";
+  var outputChunks = [];
+  var isConcat = outputSchema["x-cog-array-display"] === "concatenate";
+
+  fetch("/predictions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+    body: JSON.stringify(payload),
+    signal: signal,
+  })
+    .then(function(response) {
+      if (!response.ok) {
+        return response.text().then(function(t) {
+          throw new Error("HTTP " + response.status + ": " + t);
+        });
+      }
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = "";
+
+      function processChunk(_ref) {
+        var done = _ref.done;
+        var value = _ref.value;
+        if (done) {
+          if (buffer.trim()) {
+            var ev = parseSSEEvent(buffer);
+            if (ev) handleSSEEvent(ev, outputChunks, isConcat);
+          }
+          return;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        var events = buffer.split("\n\n");
+        buffer = events.pop();
+        for (var i = 0; i < events.length; i++) {
+          var parsed = parseSSEEvent(events[i]);
+          if (parsed) handleSSEEvent(parsed, outputChunks, isConcat);
+        }
+        return reader.read().then(processChunk);
+      }
+
+      return reader.read().then(processChunk);
+    })
+    .catch(function(err) {
+      if (err.name === "AbortError") {
+        setResultStatus("canceled");
+      } else {
+        renderError("Stream failed: " + err.message);
+      }
+    })
+    .finally(function() { setRunning(false); });
+
+  function handleSSEEvent(event, chunks, isConcat) {
+    var data = event.data;
+    switch (event.type) {
+      case "start":
+        setResultStatus(data.status || "starting");
+        break;
+      case "log":
+        var logsEl = document.getElementById("prediction-logs");
+        logsEl.textContent += (data.data || "") + "\n";
+        logsEl.scrollTop = logsEl.scrollHeight;
+        break;
+      case "output":
+        if (isConcat) {
+          concatBuffer += (typeof data.chunk === "string") ? data.chunk : JSON.stringify(data.chunk);
+          renderStreamingText(concatBuffer);
+        } else {
+          chunks.push(data.chunk);
+          renderOutputList(chunks);
+        }
+        break;
+      case "metric":
+        updateMetric(data.name, data.value);
+        break;
+      case "completed":
+        renderResult(data);
+        break;
+    }
+  }
+}
+
+function parseSSEEvent(str) {
+  var lines = str.split("\n");
+  var eventType = "";
+  var dataLines = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (line.indexOf("event: ") === 0) {
+      eventType = line.slice(7).trim();
+    } else if (line.indexOf("event:") === 0) {
+      eventType = line.slice(6).trim();
+    } else if (line.indexOf("data: ") === 0) {
+      dataLines.push(line.slice(6));
+    } else if (line.indexOf("data:") === 0) {
+      dataLines.push(line.slice(5));
+    }
+  }
+  if (!eventType) return null;
+  var dataStr = dataLines.join("\n");
+  var parsed = {};
+  try { parsed = JSON.parse(dataStr); } catch (e) { parsed = dataStr; }
+  return { type: eventType, data: parsed };
+}
+
+function renderResult(data) {
+  if (!data) return;
+  setResultStatus(data.status || "unknown");
+
+  if (data.metrics) renderMetrics(data.metrics);
+  if (data.logs) {
+    var logsEl = document.getElementById("prediction-logs");
+    logsEl.textContent = data.logs;
+    logsEl.scrollTop = logsEl.scrollHeight;
+  }
+  if (data.error) {
+    renderError(data.error);
+  } else if (data.output !== undefined && data.output !== null) {
+    renderOutput(data.output);
+  }
+}
+
+function renderOutput(output) {
+  var container = document.getElementById("output-container");
+  container.innerHTML = "";
+  renderOutputInto(output, container);
+}
+
+function renderOutputInto(output, container) {
+  if (output === null || output === undefined) return;
+
+  if (typeof output === "string") {
+    if (output.indexOf("data:image/") === 0) {
+      var img = document.createElement("img");
+      img.src = output;
+      container.appendChild(wrapOutput(img));
+    } else if (output.indexOf("data:audio/") === 0) {
+      var audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = output;
+      container.appendChild(wrapOutput(audio));
+    } else if (output.indexOf("data:video/") === 0) {
+      var video = document.createElement("video");
+      video.controls = true;
+      video.src = output;
+      container.appendChild(wrapOutput(video));
+    } else if (output.indexOf("data:") === 0) {
+      var link = document.createElement("a");
+      link.href = output;
+      link.textContent = "Download file";
+      link.download = "output";
+      container.appendChild(wrapOutput(link));
+      var pre = document.createElement("pre");
+      pre.textContent = output.slice(0, 200) + (output.length > 200 ? "..." : "");
+      container.appendChild(wrapOutput(pre));
+    } else if (output.indexOf("http") === 0) {
+      var extLink = document.createElement("a");
+      extLink.href = output;
+      extLink.textContent = output;
+      extLink.target = "_blank";
+      container.appendChild(wrapOutput(extLink));
+    } else {
+      var textPre = document.createElement("pre");
+      textPre.textContent = output;
+      container.appendChild(wrapOutput(textPre));
+    }
+    return;
+  }
+
+  if (Array.isArray(output)) {
+    for (var i = 0; i < output.length; i++) {
+      var itemDiv = document.createElement("div");
+      itemDiv.className = "output-item";
+      var label = document.createElement("div");
+      label.className = "output-label";
+      label.textContent = "[" + i + "]";
+      itemDiv.appendChild(label);
+      renderOutputInto(output[i], itemDiv);
+      container.appendChild(itemDiv);
+    }
+    return;
+  }
+
+  if (typeof output === "object") {
+    var jsonPre = document.createElement("pre");
+    jsonPre.textContent = JSON.stringify(output, null, 2);
+    container.appendChild(wrapOutput(jsonPre));
+    return;
+  }
+
+  var fallback = document.createElement("pre");
+  fallback.textContent = String(output);
+  container.appendChild(wrapOutput(fallback));
+}
+
+function wrapOutput(el) {
+  var div = document.createElement("div");
+  div.className = "output-item";
+  div.appendChild(el);
+  return div;
+}
+
+function renderStreamingText(text) {
+  var container = document.getElementById("output-container");
+  container.innerHTML = "";
+  var pre = document.createElement("pre");
+  pre.textContent = text;
+  var cursor = document.createElement("span");
+  cursor.className = "streaming-cursor";
+  pre.appendChild(cursor);
+  container.appendChild(wrapOutput(pre));
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderOutputList(chunks) {
+  renderOutput(chunks);
+}
+
+function renderMetrics(metrics) {
+  var container = document.getElementById("metrics-container");
+  container.innerHTML = "";
+  var keys = Object.keys(metrics);
+  if (keys.length === 0) return;
+  var table = document.createElement("table");
+  table.className = "metrics-table";
+  for (var i = 0; i < keys.length; i++) {
+    var tr = document.createElement("tr");
+    var td1 = document.createElement("td");
+    td1.textContent = keys[i];
+    var td2 = document.createElement("td");
+    td2.textContent = String(metrics[keys[i]]);
+    tr.appendChild(td1);
+    tr.appendChild(td2);
+    table.appendChild(tr);
+  }
+  container.appendChild(table);
+}
+
+function updateMetric(name, value) {
+  var container = document.getElementById("metrics-container");
+  var existing = container.querySelector("table");
+  if (!existing) {
+    existing = document.createElement("table");
+    existing.className = "metrics-table";
+    container.appendChild(existing);
+  }
+  var row = existing.querySelector('tr[data-metric="' + name + '"]');
+  if (!row) {
+    row = document.createElement("tr");
+    row.setAttribute("data-metric", name);
+    var td1 = document.createElement("td");
+    td1.textContent = name;
+    var td2 = document.createElement("td");
+    td2.textContent = String(value);
+    row.appendChild(td1);
+    row.appendChild(td2);
+    existing.appendChild(row);
+  } else {
+    row.cells[1].textContent = String(value);
+  }
+}
+
+function setResultStatus(status) {
+  var el = document.getElementById("result-status");
+  var s = (status || "unknown").toLowerCase();
+  el.innerHTML = "";
+  var span = document.createElement("span");
+  span.className = "badge badge-" + s;
+  span.textContent = status || "unknown";
+  el.appendChild(span);
+}
+
+function renderError(msg) {
+  var el = document.getElementById("error-container");
+  el.textContent = msg;
+  el.classList.add("visible");
+}
+
+function clearError() {
+  var el = document.getElementById("error-container");
+  el.textContent = "";
+  el.classList.remove("visible");
+}
+
+function clearOutput() {
+  document.getElementById("output-container").innerHTML = "";
+  document.getElementById("metrics-container").innerHTML = "";
+  document.getElementById("result-status").innerHTML = "";
+}
+
+function setRunning(running) {
+  isRunning = running;
+  document.getElementById("run-btn").disabled = running;
+  document.getElementById("stop-btn").disabled = !running;
+  document.getElementById("reset-btn").disabled = running;
+}
+
+function stopPrediction() {
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
+}
+
+function resetAll() {
+  if (isRunning) return;
+  clearError();
+  clearOutput();
+  document.getElementById("prediction-logs").textContent = "";
+  renderForm();
+}
+
+function readFileAsDataURL(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function() { resolve(reader.result); };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1048576).toFixed(1) + " MB";
+}
+
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>
