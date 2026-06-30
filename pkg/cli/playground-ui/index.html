@@ -95,13 +95,23 @@
         font-size: 13px;
       }
 
-      #target-bar {
+      #target-bar,
+      #action-bar {
         display: flex;
         align-items: center;
         gap: 10px;
         padding: 10px 20px;
         background: var(--surface);
         border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+      }
+      #action-bar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+      }
+      #action-bar #reset-btn {
+        margin-left: auto;
       }
       #target-bar label {
         font-size: 13px;
@@ -141,7 +151,7 @@
         grid-template-columns: 1fr 1fr;
         gap: 1px;
         background: var(--border);
-        min-height: calc(100vh - 104px);
+        min-height: 60vh;
       }
       @media (max-width: 900px) {
         main {
@@ -151,7 +161,11 @@
       section {
         background: var(--bg);
         padding: 16px 20px;
-        overflow-y: auto;
+      }
+      #json-container {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
       }
       .panel-head {
         display: flex;
@@ -374,7 +388,9 @@
         display: flex;
         align-items: center;
         gap: 12px;
-        margin-top: 10px;
+        padding: 8px 20px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
         flex-wrap: wrap;
       }
       #webhook-options label {
@@ -403,8 +419,48 @@
         font-size: 12px;
         color: var(--yellow);
       }
-      #json-container textarea {
-        min-height: 240px;
+      .ace-json {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        width: 100%;
+        min-height: 120px;
+      }
+      .editor-copy {
+        position: absolute;
+        top: 6px;
+        right: 14px;
+        z-index: 6;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 500;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text-muted);
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.12s ease;
+      }
+      .ace-json:hover .editor-copy {
+        opacity: 0.95;
+      }
+      .editor-copy:hover {
+        color: var(--text);
+        background: var(--surface-hover);
+      }
+      .ace-output {
+        height: 60vh;
+        min-height: 280px;
+      }
+      .ace-field {
+        height: 140px;
+      }
+      .ace_editor {
+        font-family: "SF Mono", Monaco, Consolas, "Liberation Mono", monospace !important;
+        line-height: 1.5 !important;
+      }
+      #json-editor {
+        height: 360px;
       }
 
       /* Badges */
@@ -583,6 +639,28 @@
       <span id="target-status" class="muted"></span>
     </div>
 
+    <div id="action-bar">
+      <div class="toggle" id="run-mode">
+        <button id="run-mode-sync" class="active" type="button">Sync</button>
+        <button id="run-mode-stream" type="button" hidden>Stream</button>
+        <button id="run-mode-async" type="button" hidden>Async</button>
+      </div>
+      <input id="prediction-id" type="text" placeholder="id (optional)" />
+      <button id="run-btn" type="button">Run</button>
+      <button id="stop-btn" type="button" disabled>Stop</button>
+      <button id="reset-btn" class="ghost-btn" type="button">Reset</button>
+      <span id="stream-hint"></span>
+    </div>
+
+    <div id="webhook-options" hidden>
+      <span class="muted">Webhook events:</span>
+      <label><input type="checkbox" class="wh-filter" value="start" checked /> start</label>
+      <label><input type="checkbox" class="wh-filter" value="output" checked /> output</label>
+      <label><input type="checkbox" class="wh-filter" value="logs" checked /> logs</label>
+      <label><input type="checkbox" class="wh-filter" value="completed" checked /> completed</label>
+      <span id="webhook-base-note" class="muted"></span>
+    </div>
+
     <details id="setup-panel" hidden>
       <summary>Setup <span id="setup-status" class="badge badge-unknown"></span></summary>
       <pre id="setup-logs"></pre>
@@ -603,34 +681,9 @@
         <div id="form-container"></div>
 
         <div id="json-container" hidden>
-          <textarea id="json-editor" class="mono" spellcheck="false"></textarea>
+          <div id="json-editor" class="ace-json"></div>
           <small id="json-error" class="field-error"></small>
           <button id="json-format" class="ghost-btn" type="button">Format</button>
-        </div>
-
-        <div id="run-options">
-          <div class="toggle" id="run-mode">
-            <button id="run-mode-sync" class="active" type="button">Sync</button>
-            <button id="run-mode-stream" type="button" hidden>Stream</button>
-            <button id="run-mode-async" type="button" hidden>Async</button>
-          </div>
-          <input id="prediction-id" type="text" placeholder="id (optional)" />
-        </div>
-
-        <div id="webhook-options" hidden>
-          <span class="muted">Webhook events:</span>
-          <label><input type="checkbox" class="wh-filter" value="start" checked /> start</label>
-          <label><input type="checkbox" class="wh-filter" value="output" checked /> output</label>
-          <label><input type="checkbox" class="wh-filter" value="logs" checked /> logs</label>
-          <label><input type="checkbox" class="wh-filter" value="completed" checked /> completed</label>
-          <span id="webhook-base-note" class="muted"></span>
-        </div>
-
-        <div id="run-controls">
-          <span id="stream-hint"></span>
-          <button id="run-btn" type="button">Run</button>
-          <button id="stop-btn" type="button" disabled>Stop</button>
-          <button id="reset-btn" class="ghost-btn" type="button">Reset</button>
         </div>
       </section>
 
@@ -650,6 +703,10 @@
       </section>
     </main>
 
+    <script src="./vendor/ace/ace.js"></script>
+    <script src="./vendor/ace/mode-json.js"></script>
+    <script src="./vendor/ace/theme-chrome.js"></script>
+    <script src="./vendor/ace/theme-tomorrow_night.js"></script>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

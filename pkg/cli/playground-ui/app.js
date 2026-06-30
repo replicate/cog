@@ -1,7 +1,14 @@
+import { el, clear } from "./dom.js";
 import { CogApi } from "./api.js";
 import { buildForm } from "./form.js";
 import { resolveRef, defaultInput } from "./schema.js";
 import { toggleTheme, currentTheme } from "./theme.js";
+import {
+  createJSONEditor,
+  destroyEditor,
+  refreshEditorThemes,
+  formatEditor,
+} from "./editor.js";
 import {
   setBadge,
   showError,
@@ -10,7 +17,6 @@ import {
   renderMetrics,
   renderOutput,
   renderText,
-  renderRaw,
 } from "./output.js";
 
 const DEFAULT_TARGET = "http://localhost:8393";
@@ -40,6 +46,8 @@ const state = {
   rawEvents: [], // raw frames/payloads exactly as received, for the Raw view
   outputView: "text", // "text" | "raw"
   webhookBase: "",
+  jsonEditor: null, // Ace editor for the Form->JSON input view
+  outputEditor: null, // read-only Ace editor for JSON/raw output
 };
 
 const dom = {};
@@ -57,6 +65,8 @@ const DOM_IDS = [
 async function init() {
   for (const id of DOM_IDS) dom[id] = document.getElementById(id);
 
+  state.jsonEditor = createJSONEditor(dom["json-editor"], { autosize: false });
+
   const params = new URLSearchParams(location.search);
   dom["target-url"].value =
     params.get("target") || localStorage.getItem(STORAGE_KEY) || DEFAULT_TARGET;
@@ -72,6 +82,7 @@ async function init() {
   dom["theme-toggle"].addEventListener("click", () => {
     toggleTheme();
     refreshThemeLabel();
+    refreshEditorThemes();
   });
   dom["run-btn"].addEventListener("click", run);
   dom["stop-btn"].addEventListener("click", stop);
@@ -177,6 +188,10 @@ function applySchema(schema) {
   rebuildForm(defaultInput(schema, state.inputSchema));
 }
 
+function currentOutputSchema() {
+  return state.outputSchema || {};
+}
+
 // configureRunModes shows only the run modes the model advertises.
 function configureRunModes() {
   dom["run-mode-stream"].hidden = !state.supportsStreaming;
@@ -228,6 +243,7 @@ function setMode(mode) {
   dom["mode-json"].classList.toggle("active", mode === "json");
   dom["form-container"].hidden = mode !== "form";
   dom["json-container"].hidden = mode !== "json";
+  if (mode === "json") state.jsonEditor.resize();
 }
 
 function rebuildForm(value) {
@@ -237,12 +253,12 @@ function rebuildForm(value) {
 
 function syncFormToJSON() {
   const value = state.form ? state.form.collect() : {};
-  dom["json-editor"].value = JSON.stringify(value, null, 2);
+  state.jsonEditor.setValue(JSON.stringify(value, null, 2), -1);
   dom["json-error"].textContent = "";
 }
 
 function parseEditor() {
-  const raw = dom["json-editor"].value.trim();
+  const raw = state.jsonEditor.getValue().trim();
   if (raw === "") {
     dom["json-error"].textContent = "";
     return {};
@@ -258,9 +274,11 @@ function parseEditor() {
 }
 
 function formatJSON() {
-  const parsed = parseEditor();
-  if (parsed === undefined) return;
-  dom["json-editor"].value = JSON.stringify(parsed, null, 2);
+  if (!formatEditor(state.jsonEditor)) {
+    dom["json-error"].textContent = "Invalid JSON";
+  } else {
+    dom["json-error"].textContent = "";
+  }
 }
 
 // --- output view toggle (Text vs Raw) ---
@@ -276,31 +294,71 @@ function showOutputView(visible) {
 }
 
 // renderLive renders the current output in the selected view. Raw shows the
-// exact frames/payloads; Text concatenates plain-string output (the streaming
-// "adds up" view) and falls back to the rich renderer for media/structured
-// output so non-text results still display.
+// exact frames/payloads in a read-only code editor; Text concatenates
+// plain-string output, renders media, or shows structured JSON in a read-only
+// code editor (with folding) for objects/arrays.
 function renderLive() {
-  const container = dom["output-container"];
+  // In Raw view the metrics are already part of the payload, so the separate
+  // metrics table is redundant.
+  dom["metrics-container"].hidden = state.outputView === "raw";
   if (state.outputView === "raw") {
-    renderRaw(container, state.rawEvents, state.running);
+    renderCode(state.rawEvents.join("\n\n"));
     return;
   }
   const value = state.outputValue;
   if (value == null) {
-    renderText(container, "", state.running);
+    resetOutputArea();
+    renderText(dom["output-container"], "", state.running);
   } else if (isPlainText(value)) {
-    renderText(container, value, state.running);
+    resetOutputArea();
+    renderText(dom["output-container"], value, state.running);
   } else if (Array.isArray(value) && value.length > 0 && value.every(isPlainText)) {
-    renderText(container, value.join(""), state.running);
+    resetOutputArea();
+    renderText(dom["output-container"], value.join(""), state.running);
+  } else if (hasMedia(value)) {
+    resetOutputArea();
+    renderOutput(dom["output-container"], value, currentOutputSchema());
   } else {
-    renderOutput(container, value, state.outputSchema);
+    renderCode(JSON.stringify(value, null, 2));
   }
 }
 
-// isPlainText is true for a string that isn't a media/URL reference, i.e. one
-// that should be concatenated as text rather than rendered as media.
+// renderCode shows text in the read-only output editor, reusing the instance
+// across updates (e.g. streaming Raw) rather than recreating it.
+function renderCode(text) {
+  if (!state.outputEditor) {
+    clear(dom["output-container"]);
+    const host = el("div", { class: "ace-json ace-output" });
+    dom["output-container"].append(host);
+    state.outputEditor = createJSONEditor(host, {
+      readOnly: true,
+      value: text,
+      autosize: false,
+    });
+  } else {
+    state.outputEditor.setValue(text, -1);
+  }
+  state.outputEditor.resize();
+}
+
+function resetOutputArea() {
+  if (state.outputEditor) {
+    destroyEditor(state.outputEditor);
+    state.outputEditor = null;
+  }
+  clear(dom["output-container"]);
+}
+
 function isPlainText(x) {
   return typeof x === "string" && !x.startsWith("data:") && !/^https?:\/\//i.test(x);
+}
+
+function isMediaString(s) {
+  return typeof s === "string" && (s.startsWith("data:") || /^https?:\/\//i.test(s));
+}
+
+function hasMedia(value) {
+  return isMediaString(value) || (Array.isArray(value) && value.some(isMediaString));
 }
 
 // --- running ---
@@ -319,7 +377,7 @@ function run() {
   if (input === undefined) return; // invalid JSON
 
   clearError(dom["error-container"]);
-  renderOutput(dom["output-container"], null);
+  resetOutputArea();
   renderMetrics(dom["metrics-container"], {});
   dom["result-status"].textContent = "";
   state.metrics = {};
@@ -482,6 +540,10 @@ function reportRunError(err) {
     setBadge(dom["result-status"], "canceled");
     return;
   }
+  // Surface the error in the Raw view too, not just the error banner.
+  state.rawEvents = [
+    JSON.stringify(err.detail ? { detail: err.detail } : { error: err.message }, null, 2),
+  ];
   if (err.detail) {
     renderValidationErrors(dom["error-container"], err.detail);
   } else {
@@ -508,8 +570,9 @@ function stop() {
 function reset() {
   if (state.running || !state.schema) return;
   clearError(dom["error-container"]);
-  renderOutput(dom["output-container"], null);
+  resetOutputArea();
   renderMetrics(dom["metrics-container"], {});
+  dom["metrics-container"].hidden = false;
   dom["result-status"].textContent = "";
   state.showLive = false;
   state.outputValue = null;

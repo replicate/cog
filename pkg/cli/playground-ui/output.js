@@ -126,12 +126,3 @@ export function renderText(container, text, streaming = false) {
   container.scrollTop = container.scrollHeight;
 }
 
-// renderRaw shows exactly what arrived over the wire (raw SSE frames / webhook
-// payloads / the JSON response), unparsed.
-export function renderRaw(container, frames, streaming = false) {
-  clear(container);
-  const pre = el("pre", { class: "mono", text: frames.join("\n\n") });
-  if (streaming) pre.append(el("span", { class: "streaming-cursor" }));
-  container.append(wrap(pre));
-  container.scrollTop = container.scrollHeight;
-}

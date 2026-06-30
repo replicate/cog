@@ -2,11 +2,18 @@ import { el, clear } from "./dom.js";
 import { fieldKind, orderedInputs, coerceEnum } from "./schema.js";
 import { fileToDataURI, formatBytes } from "./api.js";
 import { mediaNode } from "./media.js";
+import { createJSONEditor, destroyEditor } from "./editor.js";
+
+// Ace editors created for object/dict fields in the current form, destroyed and
+// rebuilt whenever the form is rebuilt.
+let activeEditors = [];
 
 // buildForm renders the Input fields into `container` and returns a handle with
 // collect(), which reads the current values on demand. There is no reactive
 // state: inputs are built once and queried when the user runs a prediction.
 export function buildForm(container, root, inputSchema, value = {}) {
+  for (const editor of activeEditors) destroyEditor(editor);
+  activeEditors = [];
   clear(container);
   const inputs = orderedInputs(inputSchema);
   if (inputs.length === 0) {
@@ -20,6 +27,8 @@ export function buildForm(container, root, inputSchema, value = {}) {
     container.append(field.element);
     fields.push({ name, read: field.read, included: field.included });
   }
+  // Editors must be resized once their hosts are attached to the document.
+  for (const editor of activeEditors) editor.resize();
 
   return {
     // collect includes required fields always and optional fields only when
@@ -57,6 +66,7 @@ function buildField(root, name, prop, required, initial) {
     };
     widget.element.addEventListener("input", touch);
     widget.element.addEventListener("change", touch);
+    if (widget.onChange) widget.onChange(touch);
   }
   label.append(name);
   if (required) label.append(el("span", { class: "req", text: " *" }));
@@ -231,24 +241,29 @@ function fileWidget(initial) {
   return { element, read: () => currentValue };
 }
 
+// Object/dict/Any inputs are edited as JSON in a code editor (folding + syntax
+// highlighting) instead of a bare textarea.
 function objectWidget(prop, initial) {
   const text =
-    initial === undefined
-      ? prop.default !== undefined
-        ? JSON.stringify(prop.default, null, 2)
-        : ""
-      : typeof initial === "string"
+    initial !== undefined
+      ? typeof initial === "string"
         ? initial
-        : JSON.stringify(initial, null, 2);
+        : JSON.stringify(initial, null, 2)
+      : prop.default !== undefined && prop.default !== null
+        ? JSON.stringify(prop.default, null, 2)
+        : "";
 
-  const textarea = el("textarea", { rows: "3", class: "mono", value: text });
+  const host = el("div", { class: "ace-json ace-field" });
   const error = el("small", { class: "field-error" });
-  const element = el("div", {}, textarea, error);
+  const element = el("div", {}, host, error);
+  const editor = createJSONEditor(host, { value: text, autosize: false });
+  activeEditors.push(editor);
 
   return {
     element,
+    onChange: (cb) => editor.on("change", cb),
     read: () => {
-      const raw = textarea.value.trim();
+      const raw = editor.getValue().trim();
       if (raw === "") {
         error.textContent = "";
         return "";
