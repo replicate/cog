@@ -12,7 +12,6 @@ The Prediction API is the HTTP interface for running model inference. It uses a 
 | `GET /health-check`             | Health              | Check server status                   |
 | `GET /`                         | Index               | List available endpoints              |
 | `GET /openapi.json`             | Schema              | OpenAPI specification                 |
-| `GET /playground`               | Playground          | Browser UI for testing models         |
 
 By default, `POST /predictions` blocks until completion. For long-running predictions, use async mode with `Prefer: respond-async` header -- the response returns immediately with status `processing`, and progress updates are delivered via webhook.
 

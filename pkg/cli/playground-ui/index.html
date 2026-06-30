@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cog Playground</title>
+    <script>
+      // Set the theme before first paint to avoid a flash of the wrong theme.
+      (function () {
+        var t = localStorage.getItem("cog-playground-theme");
+        if (t !== "light" && t !== "dark") {
+          t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        }
+        document.documentElement.dataset.theme = t;
+      })();
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --surface: #161b22;
+        --surface-hover: #1c2128;
+        --border: #30363d;
+        --text: #c9d1d9;
+        --text-muted: #8b949e;
+        --accent: #58a6ff;
+        --accent-hover: #4493f8;
+        --on-accent: #ffffff;
+        --green: #3fb950;
+        --yellow: #d29922;
+        --red: #f85149;
+        --orange: #db6d28;
+        --shadow: rgba(1, 4, 9, 0.5);
+      }
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --bg: #ffffff;
+        --surface: #f6f8fa;
+        --surface-hover: #eaeef2;
+        --border: #d0d7de;
+        --text: #1f2328;
+        --text-muted: #656d76;
+        --accent: #0969da;
+        --accent-hover: #0860ca;
+        --on-accent: #ffffff;
+        --green: #1a7f37;
+        --yellow: #9a6700;
+        --red: #cf222e;
+        --orange: #bc4c00;
+        --shadow: rgba(140, 149, 159, 0.2);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      /* Ensure the hidden attribute wins over author display rules below. */
+      [hidden] {
+        display: none !important;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .mono {
+        font-family: "SF Mono", Monaco, Consolas, "Liberation Mono", monospace;
+      }
+      .muted {
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+      .spacer {
+        flex: 1;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 20px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+      }
+      header h1 {
+        font-size: 16px;
+        margin: 0;
+        font-weight: 600;
+      }
+      header a {
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 13px;
+      }
+
+      #target-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 20px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+      }
+      #target-bar label {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      #target-url {
+        flex: 1;
+        max-width: 480px;
+      }
+      #target-status {
+        color: var(--yellow);
+      }
+
+      #setup-panel {
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+      #setup-panel summary {
+        padding: 8px 20px;
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      #setup-logs {
+        margin: 0;
+        padding: 0 20px 12px;
+        max-height: 200px;
+        overflow: auto;
+        font-family: "SF Mono", Monaco, Consolas, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        color: var(--text-muted);
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        background: var(--border);
+        min-height: calc(100vh - 104px);
+      }
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+      }
+      section {
+        background: var(--bg);
+        padding: 16px 20px;
+        overflow-y: auto;
+      }
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+      .panel-head h2 {
+        font-size: 13px;
+        margin: 0;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      /* Inputs */
+      input[type="text"],
+      input[type="password"],
+      input[type="url"],
+      input[type="number"],
+      select,
+      textarea {
+        width: 100%;
+        padding: 6px 10px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text);
+        font-size: 13px;
+        font-family: inherit;
+      }
+      textarea {
+        resize: vertical;
+      }
+      input:focus,
+      select:focus,
+      textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+      }
+      input[type="checkbox"] {
+        width: auto;
+        margin-right: 6px;
+      }
+      input[type="file"] {
+        font-size: 12px;
+        color: var(--text-muted);
+        width: auto;
+      }
+      input[type="file"]::file-selector-button {
+        padding: 4px 10px;
+        background: var(--surface-hover);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        margin-right: 8px;
+      }
+
+      .field {
+        margin-bottom: 14px;
+      }
+      .field label {
+        display: block;
+        font-size: 13px;
+        font-weight: 500;
+        margin-bottom: 4px;
+      }
+      .field label .req {
+        color: var(--red);
+      }
+      .field .desc {
+        display: block;
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+      }
+      .field .constraint {
+        display: block;
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+        font-family: "SF Mono", Monaco, Consolas, monospace;
+      }
+      .deprecated-tag {
+        color: var(--yellow);
+        font-weight: 400;
+        font-size: 12px;
+      }
+      .field-error {
+        display: block;
+        color: var(--red);
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      .error-title {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .error-list {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .file-widget {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+      }
+      .file-widget .file-name {
+        font-size: 12px;
+        color: var(--green);
+      }
+      .file-widget .url-input {
+        flex: 1;
+        min-width: 140px;
+      }
+      .input-preview:not(:empty) {
+        margin-top: 8px;
+      }
+      .input-preview img,
+      .input-preview video {
+        max-width: 100%;
+        max-height: 240px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+      }
+      .input-preview audio {
+        width: 100%;
+        max-width: 400px;
+      }
+
+      .array-input {
+        border-left: 2px solid var(--border);
+        padding-left: 10px;
+      }
+      .array-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      .array-row > :first-child {
+        flex: 1;
+      }
+
+      /* Buttons */
+      button {
+        padding: 7px 16px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        background: var(--surface-hover);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .ghost-btn {
+        padding: 4px 10px;
+        font-size: 12px;
+      }
+      .ghost-btn.danger {
+        color: var(--red);
+      }
+      #run-btn {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--on-accent);
+      }
+      #run-btn:hover:not(:disabled) {
+        background: var(--accent-hover);
+      }
+      #stop-btn {
+        color: var(--red);
+        border-color: var(--red);
+      }
+
+      /* Segmented toggle (input mode + output view) */
+      .toggle {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .toggle button {
+        border: none;
+        border-radius: 0;
+        padding: 4px 12px;
+        font-size: 12px;
+        background: var(--surface);
+        color: var(--text-muted);
+      }
+      .toggle button.active {
+        background: var(--accent);
+        color: var(--on-accent);
+      }
+
+      #run-options {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+      }
+      #prediction-id {
+        width: 160px;
+      }
+      #webhook-options {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+      }
+      #webhook-options label {
+        font-size: 12px;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+      }
+      #webhook-base-note {
+        font-size: 11px;
+      }
+      #run-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+      }
+      #run-controls label {
+        font-size: 13px;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+      }
+      #stream-hint {
+        font-size: 12px;
+        color: var(--yellow);
+      }
+      #json-container textarea {
+        min-height: 240px;
+      }
+
+      /* Badges */
+      .badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .badge-ready,
+      .badge-succeeded {
+        background: color-mix(in srgb, var(--green) 18%, transparent);
+        color: var(--green);
+      }
+      .badge-starting,
+      .badge-processing {
+        background: color-mix(in srgb, var(--yellow) 18%, transparent);
+        color: var(--yellow);
+      }
+      .badge-failed,
+      .badge-error,
+      .badge-unreachable,
+      .badge-setup_failed,
+      .badge-unhealthy,
+      .badge-defunct {
+        background: color-mix(in srgb, var(--red) 18%, transparent);
+        color: var(--red);
+      }
+      .badge-busy {
+        background: color-mix(in srgb, var(--orange) 18%, transparent);
+        color: var(--orange);
+      }
+      .badge-canceled,
+      .badge-unknown {
+        background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+        color: var(--text-muted);
+      }
+
+      #result-status {
+        margin-bottom: 10px;
+      }
+      #metrics-container {
+        margin-bottom: 12px;
+      }
+      .metrics-table {
+        border-collapse: collapse;
+        font-size: 12px;
+        width: 100%;
+      }
+      .metrics-table td {
+        padding: 3px 10px 3px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .metrics-table td:first-child {
+        color: var(--text-muted);
+      }
+
+      .notice {
+        display: none;
+        background: color-mix(in srgb, var(--yellow) 12%, transparent);
+        border: 1px solid var(--yellow);
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 13px;
+        color: var(--yellow);
+        margin-bottom: 12px;
+      }
+      .notice.visible {
+        display: block;
+      }
+      #error-container {
+        display: none;
+        background: color-mix(in srgb, var(--red) 10%, transparent);
+        border: 1px solid var(--red);
+        border-radius: 6px;
+        padding: 10px 14px;
+        margin-bottom: 12px;
+        font-size: 13px;
+        color: var(--red);
+      }
+      #error-container.visible {
+        display: block;
+      }
+
+      #logs-panel summary {
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+      }
+      #prediction-logs {
+        margin: 0;
+        padding: 10px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        max-height: 280px;
+        overflow: auto;
+        font-family: "SF Mono", Monaco, Consolas, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--text-muted);
+      }
+
+      #output-container {
+        margin-top: 12px;
+      }
+      .output-item {
+        margin-bottom: 10px;
+      }
+      .output-item img {
+        max-width: 100%;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+      }
+      .output-item audio,
+      .output-item video {
+        width: 100%;
+        max-width: 500px;
+      }
+      .output-item pre {
+        margin: 0;
+        padding: 10px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-family: "SF Mono", Monaco, Consolas, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-x: auto;
+      }
+      .output-item a {
+        color: var(--accent);
+        font-size: 13px;
+      }
+      .output-label {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+      }
+      .streaming-cursor {
+        display: inline-block;
+        width: 8px;
+        height: 14px;
+        background: var(--accent);
+        animation: blink 1s step-end infinite;
+        vertical-align: text-bottom;
+        margin-left: 2px;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Cog Playground</h1>
+      <span id="health-badge" class="badge badge-unknown">unknown</span>
+      <span class="spacer"></span>
+      <span id="version-info" class="muted"></span>
+      <button id="theme-toggle" class="ghost-btn" title="Toggle light/dark">Dark</button>
+      <a id="schema-link" href="#" target="_blank">Schema</a>
+    </header>
+
+    <div id="target-bar">
+      <label for="target-url">Target</label>
+      <input id="target-url" type="url" placeholder="http://localhost:8393" />
+      <button id="connect-btn">Connect</button>
+      <span id="target-status" class="muted"></span>
+    </div>
+
+    <details id="setup-panel" hidden>
+      <summary>Setup <span id="setup-status" class="badge badge-unknown"></span></summary>
+      <pre id="setup-logs"></pre>
+    </details>
+
+    <main>
+      <section id="input-panel">
+        <div class="panel-head">
+          <h2>Input</h2>
+          <div class="toggle" id="mode-toggle">
+            <button id="mode-form" class="active" type="button">Form</button>
+            <button id="mode-json" type="button">JSON</button>
+          </div>
+        </div>
+
+        <div id="schema-error" class="notice"></div>
+
+        <div id="form-container"></div>
+
+        <div id="json-container" hidden>
+          <textarea id="json-editor" class="mono" spellcheck="false"></textarea>
+          <small id="json-error" class="field-error"></small>
+          <button id="json-format" class="ghost-btn" type="button">Format</button>
+        </div>
+
+        <div id="run-options">
+          <div class="toggle" id="run-mode">
+            <button id="run-mode-sync" class="active" type="button">Sync</button>
+            <button id="run-mode-stream" type="button" hidden>Stream</button>
+            <button id="run-mode-async" type="button" hidden>Async</button>
+          </div>
+          <input id="prediction-id" type="text" placeholder="id (optional)" />
+        </div>
+
+        <div id="webhook-options" hidden>
+          <span class="muted">Webhook events:</span>
+          <label><input type="checkbox" class="wh-filter" value="start" checked /> start</label>
+          <label><input type="checkbox" class="wh-filter" value="output" checked /> output</label>
+          <label><input type="checkbox" class="wh-filter" value="logs" checked /> logs</label>
+          <label><input type="checkbox" class="wh-filter" value="completed" checked /> completed</label>
+          <span id="webhook-base-note" class="muted"></span>
+        </div>
+
+        <div id="run-controls">
+          <span id="stream-hint"></span>
+          <button id="run-btn" type="button">Run</button>
+          <button id="stop-btn" type="button" disabled>Stop</button>
+          <button id="reset-btn" class="ghost-btn" type="button">Reset</button>
+        </div>
+      </section>
+
+      <section id="output-panel">
+        <div class="panel-head">
+          <h2>Output</h2>
+          <div class="toggle" id="output-view" hidden>
+            <button id="output-view-text" class="active" type="button">Text</button>
+            <button id="output-view-raw" type="button">Raw</button>
+          </div>
+        </div>
+
+        <div id="result-status"></div>
+        <div id="metrics-container"></div>
+        <div id="error-container"></div>
+        <div id="output-container"></div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

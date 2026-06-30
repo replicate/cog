@@ -175,6 +175,49 @@ cog login [flags]
       --token-stdin   Pass login token on stdin instead of opening a browser. You can find your Replicate login token at https://replicate.com/auth/token
 ```
 
+## `cog playground`
+
+Open a browser playground for talking to a running model.
+
+Starts a local web server that serves a schema-driven UI (a Postman-like tool
+for Cog models). Point it at any running Cog HTTP API -- for example one started
+with 'cog serve' -- and the playground reflects that model's inputs and outputs
+from its OpenAPI schema in real time.
+
+Requests are reverse-proxied through this server, so the target API does not
+need to set CORS headers. The server also hosts a webhook sink so async
+predictions can be observed in the browser.
+
+Async/webhook testing against a containerized model requires the webhook URL to
+be reachable from inside the container. On Docker Desktop the default
+'host.docker.internal' works once the server listens on a reachable interface
+(e.g. --host 0.0.0.0).
+
+```
+cog playground [flags]
+```
+
+**Examples**
+
+```
+  # Start a model API in one terminal
+  cog serve -p 8393
+
+  # Open the playground pointing at it
+  cog playground --target http://localhost:8393
+```
+
+**Options**
+
+```
+  -h, --help                  help for playground
+      --host string           Address to bind (use 0.0.0.0 to receive webhooks from containers) (default "127.0.0.1")
+      --no-open               Do not open the browser automatically
+  -p, --port int              Port to listen on (0 picks a free port)
+      --target string         Default target model API URL (default "http://localhost:8393")
+      --webhook-host string   Hostname the model uses to reach this server for webhooks (default "host.docker.internal")
+```
+
 ## `cog push`
 
 Build a Docker image from cog.yaml and push it to a container registry.
