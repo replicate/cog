@@ -172,7 +172,7 @@ func writeWeightBuildProgress(pw *docker.ProgressWriter, prog model.WeightBuildP
 		id = model.ShortDigest(prog.FileDigest)
 	}
 
-	if prog.Done && prog.Complete >= prog.Total {
+	if prog.Done {
 		pw.WriteStatus(id, "Download complete")
 		return
 	}
