@@ -200,6 +200,46 @@ func TestPlaygroundWebhookRelay(t *testing.T) {
 	}
 }
 
+// A payload containing newlines must be framed as one SSE event with a
+// "data: " prefix per line, not terminate the event early or inject fields.
+func TestPlaygroundWebhookRelayPreservesNewlines(t *testing.T) {
+	ts := newTestPlayground(t)
+	const token = "tok-nl"
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/events?token="+token, nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	got := make(chan []string, 1)
+	go func() {
+		scanner := bufio.NewScanner(resp.Body)
+		var data []string
+		for scanner.Scan() {
+			line := scanner.Text()
+			if after, ok := strings.CutPrefix(line, "data: "); ok {
+				data = append(data, after)
+			} else if line == "" && len(data) > 0 {
+				got <- data
+				return
+			}
+		}
+	}()
+
+	whResp, err := http.Post(ts.URL+"/webhook/"+token, "application/json",
+		strings.NewReader("{\"a\":1}\n{\"b\":2}"))
+	require.NoError(t, err)
+	whResp.Body.Close()
+
+	select {
+	case data := <-got:
+		assert.Equal(t, []string{`{"a":1}`, `{"b":2}`}, data)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for relayed webhook event")
+	}
+}
+
 func TestPlaygroundEventsMissingToken(t *testing.T) {
 	ts := newTestPlayground(t)
 	resp, err := http.Get(ts.URL + "/events")

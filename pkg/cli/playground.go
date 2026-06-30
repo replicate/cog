@@ -198,13 +198,23 @@ func (s *playgroundServer) handleEvents(w http.ResponseWriter, r *http.Request) 
 		case <-ctx.Done():
 			return
 		case msg := <-ch:
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", msg)
+			writeSSEData(w, msg)
 			flusher.Flush()
 		case <-keepAlive.C:
 			_, _ = fmt.Fprint(w, ": keep-alive\n\n")
 			flusher.Flush()
 		}
 	}
+}
+
+// writeSSEData emits a payload as a single SSE event, prefixing every line with
+// "data: ". This preserves embedded newlines without letting them terminate the
+// event early or inject additional SSE fields (e.g. a spoofed "event:" line).
+func writeSSEData(w io.Writer, msg []byte) {
+	for line := range strings.SplitSeq(string(msg), "\n") {
+		_, _ = fmt.Fprintf(w, "data: %s\n", line)
+	}
+	_, _ = fmt.Fprint(w, "\n")
 }
 
 // handlePlaygroundProxy reverse-proxies /proxy/* to the target model API. The

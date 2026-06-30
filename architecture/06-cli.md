@@ -258,9 +258,11 @@ pkg/cli/
 ├── predict.go      # prediction execution and legacy cog predict
 ├── exec.go         # cog exec
 ├── serve.go        # cog serve
+├── playground.go   # cog playground (UI server, reverse proxy, webhook sink)
 ├── push.go         # cog push
 ├── login.go        # cog login
-└── init.go         # cog init
+├── init.go         # cog init
+└── playground/     # embedded playground UI assets (go:embed)
 ```
 
 Commands delegate to packages under `pkg/`:
