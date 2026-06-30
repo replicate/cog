@@ -382,6 +382,28 @@ func packedFilesFromPlan(layers []packedLayer) []packedFile {
 // silently producing a tar whose member digest disagrees with the
 // inventory.
 func ingressFromInventory(ctx context.Context, owners map[string]weightsource.Source, st store.Store, inv weightsource.Inventory) error {
+	return ingressFromInventoryWithProgress(ctx, "", owners, st, inv, nil)
+}
+
+// WeightBuildProgress reports progress while missing source files are fetched
+// into the local content-addressed weight store during import.
+type WeightBuildProgress struct {
+	WeightName string
+	FilePath   string
+	FileDigest string
+	Complete   int64
+	Total      int64
+	Done       bool
+}
+
+func ingressFromInventoryWithProgress(ctx context.Context, weightName string, owners map[string]weightsource.Source, st store.Store, inv weightsource.Inventory, progressFn func(WeightBuildProgress)) error {
+	type missingFile struct {
+		source weightsource.Source
+		file   weightsource.InventoryFile
+	}
+
+	missing := make([]missingFile, 0, len(inv.Files))
+	var total int64
 	for _, f := range inv.Files {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -397,20 +419,91 @@ func ingressFromInventory(ctx context.Context, owners map[string]weightsource.So
 		if !ok {
 			return fmt.Errorf("no source owner for file %s", f.Path)
 		}
-		if err := ingressOne(ctx, src, st, f); err != nil {
-			return fmt.Errorf("ingress %s: %w", f.Path, err)
+		missing = append(missing, missingFile{source: src, file: f})
+		total += f.Size
+	}
+
+	var complete int64
+	for _, m := range missing {
+		if err := ingressOne(ctx, weightName, m.source, st, m.file, complete, total, progressFn); err != nil {
+			return fmt.Errorf("ingress %s: %w", m.file.Path, err)
 		}
+		complete += m.file.Size
 	}
 	return nil
 }
 
-func ingressOne(ctx context.Context, src weightsource.Source, st store.Store, f weightsource.InventoryFile) error {
+func ingressOne(ctx context.Context, weightName string, src weightsource.Source, st store.Store, f weightsource.InventoryFile, baseComplete, total int64, progressFn func(WeightBuildProgress)) error {
+	if progressFn != nil {
+		progressFn(WeightBuildProgress{
+			WeightName: weightName,
+			FilePath:   f.Path,
+			FileDigest: f.Digest,
+			Complete:   baseComplete,
+			Total:      total,
+		})
+	}
+
 	rc, err := src.Open(ctx, f.Path)
 	if err != nil {
 		return fmt.Errorf("open source: %w", err)
 	}
 	defer rc.Close() //nolint:errcheck // best-effort close on read path
-	return st.PutFile(ctx, f.Digest, f.Size, rc)
+
+	var r io.Reader = rc
+	if progressFn != nil {
+		r = &progressReader{
+			r:        rc,
+			interval: 250 * time.Millisecond,
+			fn: func(complete int64) {
+				progressFn(WeightBuildProgress{
+					WeightName: weightName,
+					FilePath:   f.Path,
+					FileDigest: f.Digest,
+					Complete:   baseComplete + complete,
+					Total:      total,
+				})
+			},
+		}
+	}
+
+	if err := st.PutFile(ctx, f.Digest, f.Size, r); err != nil {
+		return err
+	}
+	if progressFn != nil {
+		progressFn(WeightBuildProgress{
+			WeightName: weightName,
+			FilePath:   f.Path,
+			FileDigest: f.Digest,
+			Complete:   baseComplete + f.Size,
+			Total:      total,
+			Done:       true,
+		})
+	}
+	return nil
+}
+
+type progressReader struct {
+	r            io.Reader
+	complete     int64
+	lastReported int64
+	lastUpdate   time.Time
+	interval     time.Duration
+	fn           func(int64)
+}
+
+func (r *progressReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if n > 0 {
+		r.complete += int64(n)
+		now := time.Now()
+		if r.lastReported == 0 || now.Sub(r.lastUpdate) >= r.interval {
+			r.lastReported = r.complete
+			r.lastUpdate = now
+			r.fn(r.complete)
+		}
+	}
+	return n, err
 }
 
 // writeLayer writes the in-tar layout for a layer: deterministic

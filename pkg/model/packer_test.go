@@ -146,6 +146,43 @@ func TestPack_SingleSmallFile(t *testing.T) {
 	assert.Equal(t, "config.json", entries[0])
 }
 
+func TestIngressFromInventoryReportsProgress(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte("download progress")
+	relPath := "model.safetensors"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, relPath), content, 0o644))
+
+	src, err := weightsource.NewFileSource("file://"+dir, "")
+	require.NoError(t, err)
+	inv, err := src.Inventory(t.Context())
+	require.NoError(t, err)
+	require.Len(t, inv.Files, 1)
+
+	st, err := store.NewFileStore(t.TempDir())
+	require.NoError(t, err)
+
+	var events []WeightBuildProgress
+	err = ingressFromInventoryWithProgress(t.Context(), "test-weight", sourceOwners(src, inv), st, inv, func(event WeightBuildProgress) {
+		events = append(events, event)
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, events)
+
+	first := events[0]
+	assert.Equal(t, "test-weight", first.WeightName)
+	assert.Equal(t, relPath, first.FilePath)
+	assert.Equal(t, int64(0), first.Complete)
+	assert.Equal(t, int64(len(content)), first.Total)
+	assert.False(t, first.Done)
+
+	last := events[len(events)-1]
+	assert.Equal(t, "test-weight", last.WeightName)
+	assert.Equal(t, relPath, last.FilePath)
+	assert.Equal(t, int64(len(content)), last.Complete)
+	assert.Equal(t, int64(len(content)), last.Total)
+	assert.True(t, last.Done)
+}
+
 func TestPack_SingleLargeFile_Incompressible(t *testing.T) {
 	dir := t.TempDir()
 	createTestFile(t, dir, "model.safetensors", 100*1024*1024) // 100 MB
