@@ -19,7 +19,7 @@ import (
 
 func newTestPlayground(t *testing.T) *httptest.Server {
 	t.Helper()
-	uiFS, err := fs.Sub(playgroundUI, "playground-ui")
+	uiFS, err := fs.Sub(playgroundUI, "playground")
 	require.NoError(t, err)
 	s := &playgroundServer{hub: newEventHub(), webhookBase: "http://wh.example/cb"}
 	ts := httptest.NewServer(s.routes(uiFS))

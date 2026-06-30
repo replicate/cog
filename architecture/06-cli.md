@@ -135,7 +135,7 @@ flowchart LR
 
 The UI is plain HTML/JS (no build step); JSON is edited and displayed with a vendored Ace editor. Assets are compiled into the binary with `go:embed`.
 
-**Code**: `pkg/cli/playground.go` (server, reverse proxy, webhook sink); `pkg/cli/playground-ui/` (embedded UI assets)
+**Code**: `pkg/cli/playground.go` (server, reverse proxy, webhook sink); `pkg/cli/playground/` (embedded UI assets)
 
 ## Build Commands
 

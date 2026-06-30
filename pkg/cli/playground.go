@@ -23,7 +23,7 @@ import (
 	"github.com/replicate/cog/pkg/util/console"
 )
 
-//go:embed playground-ui
+//go:embed playground
 var playgroundUI embed.FS
 
 // maxWebhookBody caps a single webhook payload relayed to the browser.
@@ -82,7 +82,7 @@ type playgroundServer struct {
 }
 
 func cmdPlayground(cmd *cobra.Command, _ []string) error {
-	uiFS, err := fs.Sub(playgroundUI, "playground-ui")
+	uiFS, err := fs.Sub(playgroundUI, "playground")
 	if err != nil {
 		return fmt.Errorf("loading playground assets: %w", err)
 	}
