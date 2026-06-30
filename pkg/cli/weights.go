@@ -3,11 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
-	"path"
 	"path/filepath"
 	"time"
 
-	"github.com/logrusorgru/aurora"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
@@ -125,7 +123,7 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 	builder = model.NewWeightBuilder(src, fileStore, lockPath)
 
 	console.Infof("Building %d weight(s)...", len(weightSpecs))
-	buildProgress := docker.NewProgressWriter()
+	buildProgress := newWeightDownloadProgress()
 	builder.SetProgressFn(func(prog model.WeightBuildProgress) {
 		writeWeightBuildProgress(buildProgress, prog)
 	})
@@ -157,65 +155,6 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 	console.Infof("\nPushing %d weight(s) to %s...", len(artifacts), repo)
 
 	return pushWeightArtifacts(ctx, repo, artifacts, "Imported")
-}
-
-func writeWeightBuildProgress(pw *docker.ProgressWriter, prog model.WeightBuildProgress) {
-	id := compactProgressID(prog.WeightName)
-	if id == "" {
-		id = cogProgressPrefix() + model.ShortDigest(prog.FileDigest)
-	}
-
-	if prog.Done && prog.Complete >= prog.Total {
-		pw.WriteStatus(id, downloadDoneStatus())
-		return
-	}
-
-	status := downloadStatusIcon() + " downloading"
-	if prog.FilePath != "" {
-		status = downloadStatusIcon() + " " + compactProgressText(path.Base(prog.FilePath), 18)
-	}
-	pw.Write(id, status, prog.Complete, prog.Total)
-}
-
-func compactProgressID(id string) string {
-	if id == "" {
-		return ""
-	}
-	return cogProgressPrefix() + compactProgressText(id, 40)
-}
-
-func cogProgressPrefix() string {
-	gear := "⚙"
-	if console.ConsoleInstance.Color {
-		gear = aurora.Faint(gear).String()
-	}
-	return " " + gear + "  "
-}
-
-func downloadStatusIcon() string {
-	icon := "↓"
-	if console.ConsoleInstance.Color {
-		return aurora.Yellow(icon).String()
-	}
-	return icon
-}
-
-func downloadDoneStatus() string {
-	status := "✓ done"
-	if console.ConsoleInstance.Color {
-		return aurora.Green("✓").String() + " done"
-	}
-	return status
-}
-
-func compactProgressText(text string, maxLen int) string {
-	if len(text) <= maxLen {
-		return text
-	}
-	if maxLen <= 2 {
-		return text[:maxLen]
-	}
-	return text[:maxLen-2] + ".."
 }
 
 // planWeightImports runs PlanImport for each spec without side effects.
