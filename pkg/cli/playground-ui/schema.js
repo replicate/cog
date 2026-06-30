@@ -102,12 +102,15 @@ export function orderedInputs(inputSchema) {
     .sort((a, b) => a.order - b.order);
 }
 
-// defaultInput builds the initial input object from schema defaults.
+// defaultInput builds the initial input object from schema defaults. Only
+// fields with a real default are included; a null/None default is treated as
+// "no default", so such optional fields start out unchecked (omitted) rather
+// than sending an explicit null.
 export function defaultInput(root, inputSchema) {
   const out = {};
   for (const { name, prop } of orderedInputs(inputSchema)) {
     const p = effectiveProp(root, prop);
-    if (p.default !== undefined) out[name] = p.default;
+    if (p.default !== undefined && p.default !== null) out[name] = p.default;
   }
   return out;
 }

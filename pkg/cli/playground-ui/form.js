@@ -49,6 +49,7 @@ function buildField(root, name, prop, required, initial) {
       type: "checkbox",
       class: "include-box",
       checked: initial !== undefined,
+      title: "Include this optional field in the request",
     });
     label.append(includeBox);
     const touch = () => {
@@ -152,9 +153,17 @@ function numberWidget(prop, isInt, initial) {
   };
 }
 
+// Booleans render as a true/false select rather than a checkbox so they don't
+// collide visually with the optional-field include checkbox.
 function booleanWidget(initial) {
-  const input = el("input", { type: "checkbox", checked: initial === true });
-  return { element: input, read: () => input.checked };
+  const select = el("select");
+  const current = initial === true;
+  for (const option of [true, false]) {
+    const opt = el("option", { value: String(option), text: String(option) });
+    if (option === current) opt.selected = true;
+    select.append(opt);
+  }
+  return { element: select, read: () => select.value === "true" };
 }
 
 function enumWidget(choices, prop, initial) {
