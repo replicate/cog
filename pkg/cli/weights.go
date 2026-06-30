@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 	"time"
 
@@ -123,7 +124,7 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 	builder = model.NewWeightBuilder(src, fileStore, lockPath)
 
 	console.Infof("Building %d weight(s)...", len(weightSpecs))
-	buildProgress := newWeightDownloadProgress()
+	buildProgress := docker.NewProgressWriter()
 	builder.SetProgressFn(func(prog model.WeightBuildProgress) {
 		writeWeightBuildProgress(buildProgress, prog)
 	})
@@ -155,6 +156,27 @@ func weightsImportCommand(cmd *cobra.Command, args []string, dryRun, verbose boo
 	console.Infof("\nPushing %d weight(s) to %s...", len(artifacts), repo)
 
 	return pushWeightArtifacts(ctx, repo, artifacts, "Imported")
+}
+
+func writeWeightBuildProgress(pw *docker.ProgressWriter, prog model.WeightBuildProgress) {
+	id := prog.WeightName
+	if prog.FilePath != "" {
+		file := path.Base(prog.FilePath)
+		if id == "" {
+			id = file
+		} else {
+			id += "/" + file
+		}
+	}
+	if id == "" {
+		id = model.ShortDigest(prog.FileDigest)
+	}
+
+	if prog.Done && prog.Complete >= prog.Total {
+		pw.WriteStatus(id, "Download complete")
+		return
+	}
+	pw.Write(id, "Downloading", prog.Complete, prog.Total)
 }
 
 // planWeightImports runs PlanImport for each spec without side effects.
