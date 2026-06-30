@@ -301,8 +301,11 @@ function renderLive() {
   // In Raw view the metrics are already part of the payload, so the separate
   // metrics table is redundant.
   dom["metrics-container"].hidden = state.outputView === "raw";
+  // Streaming/async runs append output over time, so follow the tail; sync
+  // (one-shot) output keeps the top in view.
+  const follow = state.runMode !== "sync";
   if (state.outputView === "raw") {
-    renderCode(state.rawEvents.join("\n\n"));
+    renderCode(state.rawEvents.join("\n\n"), follow);
     return;
   }
   const value = state.outputValue;
@@ -319,26 +322,26 @@ function renderLive() {
     resetOutputArea();
     renderOutput(dom["output-container"], value, currentOutputSchema());
   } else {
-    renderCode(JSON.stringify(value, null, 2));
+    renderCode(JSON.stringify(value, null, 2), follow);
   }
 }
 
 // renderCode shows text in the read-only output editor, reusing the instance
 // across updates (e.g. streaming Raw) rather than recreating it.
-function renderCode(text) {
+function renderCode(text, follow = false) {
   if (!state.outputEditor) {
     clear(dom["output-container"]);
     const host = el("div", { class: "ace-json ace-output" });
     dom["output-container"].append(host);
-    state.outputEditor = createJSONEditor(host, {
-      readOnly: true,
-      value: text,
-      autosize: false,
-    });
-  } else {
-    state.outputEditor.setValue(text, -1);
+    state.outputEditor = createJSONEditor(host, { readOnly: true, autosize: false });
   }
+  // cursorPos 1 sends the cursor (and viewport) to the end so the editor
+  // follows newly streamed content; -1 keeps the top in view for static output.
+  state.outputEditor.setValue(text, follow ? 1 : -1);
   state.outputEditor.resize();
+  if (follow) {
+    state.outputEditor.renderer.scrollToLine(state.outputEditor.session.getLength(), false, false);
+  }
 }
 
 function resetOutputArea() {
