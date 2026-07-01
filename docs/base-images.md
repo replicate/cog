@@ -20,6 +20,8 @@ r8.im/cog-base:python3.13
 
 When you run `cog build` or `cog push`, Cog selects the base image that matches your Python version, CUDA version, and PyTorch version. Because these images are pre-pulled on Replicate's infrastructure, models built on top of them start faster.
 
+The entire list of available base images can be viewed at [https://r8.im/v2/cog-base/tags/list](https://r8.im/v2/cog-base/tags/list).
+
 ## Using the Cog base image
 
 The `--use-cog-base-image` flag controls whether Cog uses a prebuilt base image. It is **enabled by default** on the following commands:
