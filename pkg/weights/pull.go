@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
@@ -303,16 +304,28 @@ func (m *Manager) pullLayer(
 }
 
 type pullProgressReader struct {
-	r        io.Reader
-	complete int64
-	fn       func(int64)
+	r            io.Reader
+	complete     int64
+	lastReported int64
+	lastUpdate   time.Time
+	interval     time.Duration
+	fn           func(int64)
 }
 
 func (r *pullProgressReader) Read(p []byte) (int, error) {
 	n, err := r.r.Read(p)
 	if n > 0 {
 		r.complete += int64(n)
-		r.fn(r.complete)
+		now := time.Now()
+		interval := r.interval
+		if interval == 0 {
+			interval = 250 * time.Millisecond
+		}
+		if r.lastReported == 0 || now.Sub(r.lastUpdate) >= interval {
+			r.lastReported = r.complete
+			r.lastUpdate = now
+			r.fn(r.complete)
+		}
 	}
 	return n, err
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -640,6 +641,29 @@ func TestManager_Pull_EmitsFullyCachedEvent(t *testing.T) {
 	assert.Empty(t, events[0].ManifestRef, "fully-cached weight should not set manifest ref")
 	assert.Equal(t, PullEventWeightDone, events[1].Kind)
 	assert.True(t, events[1].FullyCached)
+}
+
+func TestPullProgressReaderThrottlesEvents(t *testing.T) {
+	t.Parallel()
+
+	var events []int64
+	r := &pullProgressReader{
+		r:        bytes.NewReader([]byte("abcdef")),
+		interval: time.Hour,
+		fn: func(complete int64) {
+			events = append(events, complete)
+		},
+	}
+
+	buf := make([]byte, 2)
+	n, err := r.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	n, err = r.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+
+	assert.Equal(t, []int64{2}, events)
 }
 
 func TestNewManager_RequiresStore(t *testing.T) {
