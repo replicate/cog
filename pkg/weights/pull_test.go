@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -572,21 +573,10 @@ func TestManager_Pull_EmitsEvents(t *testing.T) {
 	_, err := mgr.Pull(ctx, nil, func(e PullEvent) { events = append(events, e) })
 	require.NoError(t, err)
 
-	// Expected sequence for a single weight with one layer of two
-	// files: WeightStart, LayerStart, FileStored x2, LayerDone,
-	// WeightDone.
-	kinds := make([]PullEventKind, len(events))
-	for i, e := range events {
-		kinds[i] = e.Kind
-	}
-	require.Equal(t, []PullEventKind{
-		PullEventWeightStart,
-		PullEventLayerStart,
-		PullEventFileStored,
-		PullEventFileStored,
-		PullEventLayerDone,
-		PullEventWeightDone,
-	}, kinds)
+	require.Equal(t, PullEventWeightStart, events[0].Kind)
+	require.Equal(t, PullEventLayerStart, events[1].Kind)
+	require.Equal(t, PullEventLayerDone, events[len(events)-2].Kind)
+	require.Equal(t, PullEventWeightDone, events[len(events)-1].Kind)
 
 	// WeightStart carries the manifest reference and file counts.
 	start := events[0]
@@ -596,10 +586,29 @@ func TestManager_Pull_EmitsEvents(t *testing.T) {
 	assert.Equal(t, 2, start.MissingFiles)
 	assert.Equal(t, testRepo+"@"+entry.Digest, start.ManifestRef)
 
-	// FileStored events carry path + digest.
-	for _, e := range events[2:4] {
+	var progressEvents, storedEvents []PullEvent
+	for _, e := range events {
+		switch e.Kind {
+		case PullEventFileProgress:
+			progressEvents = append(progressEvents, e)
+		case PullEventFileStored:
+			storedEvents = append(storedEvents, e)
+		}
+	}
+	require.NotEmpty(t, progressEvents)
+	require.Len(t, storedEvents, 2)
+
+	// File progress + stored events carry path, digest, and byte counts.
+	for _, e := range progressEvents {
 		assert.NotEmpty(t, e.FilePath)
 		assert.NotEmpty(t, e.FileDigest)
+		assert.GreaterOrEqual(t, e.FileComplete, int64(0))
+		assert.LessOrEqual(t, e.FileComplete, e.FileSize)
+	}
+	for _, e := range storedEvents {
+		assert.NotEmpty(t, e.FilePath)
+		assert.NotEmpty(t, e.FileDigest)
+		assert.Greater(t, e.FileSize, int64(0))
 	}
 }
 
@@ -632,6 +641,29 @@ func TestManager_Pull_EmitsFullyCachedEvent(t *testing.T) {
 	assert.Empty(t, events[0].ManifestRef, "fully-cached weight should not set manifest ref")
 	assert.Equal(t, PullEventWeightDone, events[1].Kind)
 	assert.True(t, events[1].FullyCached)
+}
+
+func TestPullProgressReaderThrottlesEvents(t *testing.T) {
+	t.Parallel()
+
+	var events []int64
+	r := &pullProgressReader{
+		r:        bytes.NewReader([]byte("abcdef")),
+		interval: time.Hour,
+		fn: func(complete int64) {
+			events = append(events, complete)
+		},
+	}
+
+	buf := make([]byte, 2)
+	n, err := r.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	n, err = r.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+
+	assert.Equal(t, []int64{2}, events)
 }
 
 func TestNewManager_RequiresStore(t *testing.T) {

@@ -2,10 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/paths"
 	"github.com/replicate/cog/pkg/util/console"
@@ -78,14 +80,16 @@ func weightsPullCommand(cmd *cobra.Command, args []string, verbose bool) error {
 		console.Info("")
 	}
 
-	results, err := mgr.Pull(ctx, args, pullEventPrinter(verbose))
+	progress := docker.NewProgressWriter()
+	results, err := mgr.Pull(ctx, args, pullEventPrinter(verbose, progress))
+	progress.Close()
 	printPullSummary(results, verbose)
 	return err
 }
 
 // pullEventPrinter returns a PullEvent handler that writes progress to
 // the console. Verbose mode adds per-layer / per-file detail.
-func pullEventPrinter(verbose bool) func(weights.PullEvent) {
+func pullEventPrinter(verbose bool, progress *docker.ProgressWriter) func(weights.PullEvent) {
 	return func(e weights.PullEvent) {
 		switch e.Kind {
 		case weights.PullEventWeightStart:
@@ -109,7 +113,15 @@ func pullEventPrinter(verbose bool) func(weights.PullEvent) {
 				size = formatSize(e.LayerSize)
 			}
 			console.Infof("  layer %s (%s)", model.ShortDigest(e.LayerDigest), size)
+		case weights.PullEventFileProgress:
+			if progress == nil {
+				return
+			}
+			progress.Write(pullProgressID(e), "Downloading", e.FileComplete, e.FileSize)
 		case weights.PullEventFileStored:
+			if progress != nil {
+				progress.WriteStatus(pullProgressID(e), "Download complete")
+			}
 			if !verbose {
 				return
 			}
@@ -124,6 +136,22 @@ func pullEventPrinter(verbose bool) func(weights.PullEvent) {
 				e.Weight, formatSize(e.BytesFetched), e.FilesFetched, e.LayersFetched)
 		}
 	}
+}
+
+func pullProgressID(e weights.PullEvent) string {
+	id := e.Weight
+	if e.FilePath != "" {
+		file := path.Base(e.FilePath)
+		if id == "" {
+			id = file
+		} else {
+			id += "/" + file
+		}
+	}
+	if id == "" {
+		id = model.ShortDigest(e.FileDigest)
+	}
+	return id
 }
 
 func printPullSummary(results []weights.PullResult, verbose bool) {
