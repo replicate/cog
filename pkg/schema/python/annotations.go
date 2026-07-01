@@ -2,6 +2,7 @@ package python
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -301,6 +302,9 @@ func decoratorCogConcurrentMax(node *sitter.Node, source []byte, imports *schema
 	}
 	if val.Int < 1 {
 		return nil, true, schema.WrapError(schema.ErrUnsupportedType, "@concurrent max must be at least 1", nil)
+	}
+	if val.Int > int64(math.MaxInt) {
+		return nil, true, schema.WrapError(schema.ErrUnsupportedType, "@concurrent max is too large", nil)
 	}
 	concurrencyMax := int(val.Int)
 	return &concurrencyMax, true, nil
