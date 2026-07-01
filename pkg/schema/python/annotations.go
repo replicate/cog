@@ -243,6 +243,69 @@ func functionSupportsStreaming(node *sitter.Node, source []byte, imports *schema
 	return false
 }
 
+func functionIsAsync(node *sitter.Node, source []byte) bool {
+	return strings.HasPrefix(strings.TrimSpace(Content(node, source)), "async def ")
+}
+
+func functionConcurrencyMax(node *sitter.Node, source []byte, imports *schema.ImportContext) (*int, error) {
+	decorated := decoratedFunctionNode(node)
+	if decorated == nil {
+		return nil, nil
+	}
+
+	for _, child := range NamedChildren(decorated) {
+		if child.Type() != "decorator" {
+			continue
+		}
+		concurrencyMax, ok, err := decoratorCogConcurrentMax(child, source, imports)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return concurrencyMax, nil
+		}
+	}
+	return nil, nil
+}
+
+func decoratorCogConcurrentMax(node *sitter.Node, source []byte, imports *schema.ImportContext) (*int, bool, error) {
+	expr := decoratorExpression(node)
+	if expr == nil || !expressionIsCogConcurrent(expr, source, imports) {
+		return nil, false, nil
+	}
+
+	call := decoratorCall(node)
+	if call == nil {
+		concurrencyMax := 1
+		return &concurrencyMax, true, nil
+	}
+
+	argList := callArgumentList(call)
+	if argList == nil || len(NamedChildren(argList)) == 0 {
+		concurrencyMax := 1
+		return &concurrencyMax, true, nil
+	}
+
+	args := NamedChildren(argList)
+	if len(args) != 1 || args[0].Type() != "keyword_argument" {
+		return nil, true, schema.WrapError(schema.ErrUnsupportedType, "@concurrent only supports literal integer max=... arguments", nil)
+	}
+	nameNode := args[0].ChildByFieldName("name")
+	valueNode := args[0].ChildByFieldName("value")
+	if nameNode == nil || valueNode == nil || Content(nameNode, source) != "max" {
+		return nil, true, schema.WrapError(schema.ErrUnsupportedType, "@concurrent only supports literal integer max=... arguments", nil)
+	}
+	val, ok := parseDefaultValue(valueNode, source)
+	if !ok || val.Kind != schema.DefaultInt {
+		return nil, true, schema.WrapError(schema.ErrUnsupportedType, "@concurrent max must be an integer literal", nil)
+	}
+	if val.Int < 1 {
+		return nil, true, schema.WrapError(schema.ErrUnsupportedType, "@concurrent max must be at least 1", nil)
+	}
+	concurrencyMax := int(val.Int)
+	return &concurrencyMax, true, nil
+}
+
 func decoratedFunctionNode(node *sitter.Node) *sitter.Node {
 	if node.Type() == "decorated_definition" {
 		return node
@@ -277,12 +340,40 @@ func decoratorExpression(node *sitter.Node) *sitter.Node {
 	return child
 }
 
+func decoratorCall(node *sitter.Node) *sitter.Node {
+	children := NamedChildren(node)
+	if len(children) == 0 || children[0].Type() != "call" {
+		return nil
+	}
+	return children[0]
+}
+
+func callArgumentList(node *sitter.Node) *sitter.Node {
+	for _, child := range NamedChildren(node) {
+		if child.Type() == "argument_list" {
+			return child
+		}
+	}
+	return nil
+}
+
 func expressionIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
 	switch node.Type() {
 	case "attribute":
 		return attributeIsCogStreaming(node, source, imports)
 	case "identifier":
 		return identifierIsCogStreaming(node, source, imports)
+	default:
+		return false
+	}
+}
+
+func expressionIsCogConcurrent(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	switch node.Type() {
+	case "attribute":
+		return attributeIsCogConcurrent(node, source, imports)
+	case "identifier":
+		return identifierIsCogConcurrent(node, source, imports)
 	default:
 		return false
 	}
@@ -297,9 +388,23 @@ func attributeIsCogStreaming(node *sitter.Node, source []byte, imports *schema.I
 	return ok && entry.Module == "cog" && entry.Original == "cog"
 }
 
+func attributeIsCogConcurrent(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	name, attr, ok := strings.Cut(Content(node, source), ".")
+	if !ok || attr != "concurrent" {
+		return false
+	}
+	entry, ok := imports.Names.Get(name)
+	return ok && entry.Module == "cog" && entry.Original == "cog"
+}
+
 func identifierIsCogStreaming(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
 	entry, ok := imports.Names.Get(Content(node, source))
 	return ok && entry.Module == "cog" && entry.Original == "streaming"
+}
+
+func identifierIsCogConcurrent(node *sitter.Node, source []byte, imports *schema.ImportContext) bool {
+	entry, ok := imports.Names.Get(Content(node, source))
+	return ok && entry.Module == "cog" && entry.Original == "concurrent"
 }
 
 func supportsStreamingOutput(output schema.SchemaType) bool {

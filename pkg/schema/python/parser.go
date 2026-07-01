@@ -35,6 +35,47 @@ func ParsePredictorWithSourcePath(source []byte, targetRef string, mode schema.M
 	return ParseWithOptions(opts)
 }
 
+func ParsePredictorMetadataWithSourcePath(source []byte, targetRef string, mode schema.Mode, sourceDir string, sourcePath string) (*schema.PredictorInfo, error) {
+	opts := defaultParserOptions(source, targetRef, mode, sourceDir)
+	opts.SourcePath = sourcePath
+	return ParseMetadataWithOptions(opts)
+}
+
+func ParseMetadataWithOptions(opts ParserOptions) (*schema.PredictorInfo, error) {
+	sourcePath, err := normalizeSourcePath(opts.SourceDir, opts.SourcePath)
+	if err != nil {
+		return nil, err
+	}
+	opts.SourcePath = sourcePath
+	state := newParseState(opts)
+	phases := []parserPhase{
+		{Name: "parse module", From: phaseInitial, To: phaseModuleParsed, Run: parseModulePhase},
+		{Name: "collect imports", From: phaseModuleParsed, To: phaseImportsCollected, Run: collectImportsPhase},
+		{Name: "collect module scope", From: phaseImportsCollected, To: phaseModuleScopeCollected, Run: collectModuleScopePhase},
+		{Name: "collect local models", From: phaseModuleScopeCollected, To: phaseLocalModelsCollected, Run: collectLocalModelsPhase},
+		{Name: "resolve imported models", From: phaseLocalModelsCollected, To: phaseImportedModelsResolved, Run: resolveImportedModelsPhase},
+		{Name: "collect input registry", From: phaseImportedModelsResolved, To: phaseInputRegistryCollected, Run: collectInputRegistryPhase},
+		{Name: "find target callable", From: phaseInputRegistryCollected, To: phaseTargetFound, Run: findTargetCallablePhase},
+	}
+	if err := runPhases(state, phases); err != nil {
+		return nil, err
+	}
+	targetSource := state.TargetFunc.file.source
+	isAsync := functionIsAsync(state.TargetFunc.node, targetSource)
+	concurrencyMax, err := functionConcurrencyMax(state.TargetFunc.node, targetSource, state.TargetFunc.file.imports)
+	if err != nil {
+		return nil, err
+	}
+	if concurrencyMax != nil && *concurrencyMax > 1 && !isAsync {
+		return nil, schema.WrapError(schema.ErrUnsupportedType, "@concurrent(max > 1) requires an async run() or predict() method", nil)
+	}
+	return &schema.PredictorInfo{
+		Mode:           opts.Mode,
+		ConcurrencyMax: concurrencyMax,
+		IsAsync:        isAsync,
+	}, nil
+}
+
 func ParseWithOptions(opts ParserOptions) (*schema.PredictorInfo, error) {
 	sourcePath, err := normalizeSourcePath(opts.SourceDir, opts.SourcePath)
 	if err != nil {
@@ -62,6 +103,8 @@ func ParseWithOptions(opts ParserOptions) (*schema.PredictorInfo, error) {
 		Output:            state.Output,
 		Mode:              opts.Mode,
 		SupportsStreaming: state.SupportsStreaming,
+		ConcurrencyMax:    state.ConcurrencyMax,
+		IsAsync:           state.IsAsync,
 	}, nil
 }
 
@@ -208,6 +251,7 @@ func extractInputsPhase(state *ParseState) error {
 	}
 	state.Target = &TargetCallable{MethodName: actualMethodName, Node: funcNode, IsMethod: isMethod}
 	state.Inputs = inputs
+	state.IsAsync = functionIsAsync(funcNode, targetSource)
 	return nil
 }
 
@@ -231,8 +275,16 @@ func resolveOutputPhase(state *ParseState) error {
 	if supportsStreaming && !supportsStreamingOutput(output) {
 		return schema.WrapError(schema.ErrUnsupportedType, "@streaming requires Iterator[...], AsyncIterator[...], ConcatenateIterator[...] or AsyncConcatenateIterator[...] return type", nil)
 	}
+	concurrencyMax, err := functionConcurrencyMax(state.TargetFunc.node, state.TargetFunc.file.source, state.TargetFunc.file.imports)
+	if err != nil {
+		return err
+	}
+	if concurrencyMax != nil && *concurrencyMax > 1 && !state.IsAsync {
+		return schema.WrapError(schema.ErrUnsupportedType, "@concurrent(max > 1) requires an async run() or predict() method", nil)
+	}
 	state.Output = output
 	state.SupportsStreaming = supportsStreaming
+	state.ConcurrencyMax = concurrencyMax
 	state.OutputSet = true
 	return nil
 }
