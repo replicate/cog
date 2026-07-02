@@ -29,6 +29,7 @@ const (
 	ErrChoicesNotResolvable
 	ErrDefaultNotResolvable
 	ErrUnresolvableType
+	ErrAcceptOnNonFileType
 	ErrOther
 )
 

@@ -27,6 +27,7 @@ class FieldInfo:
     regex: Optional[str] = None
     choices: Optional[List[Union[str, int]]] = None
     deprecated: Optional[bool] = None
+    accept: Optional[str] = None
 
 
 def Input(
@@ -41,6 +42,7 @@ def Input(
     regex: Optional[str] = None,
     choices: Optional[List[Union[str, int]]] = None,
     deprecated: Optional[bool] = None,
+    accept: Optional[str] = None,
 ) -> Any:
     """
     Create an input field specification for a predictor parameter.
@@ -70,6 +72,9 @@ def Input(
         regex: Regular expression pattern for string inputs.
         choices: List of allowed values.
         deprecated: Whether the input is deprecated.
+        accept: Allowed MIME types or file extensions for Path/File inputs,
+            using the same format as the HTML accept attribute (e.g.
+            ``"image/*"``, ``"image/png,image/jpeg"``, ``".safetensors,.bin"``).
 
     Returns:
         A FieldInfo instance containing the field metadata.
@@ -92,4 +97,5 @@ def Input(
         regex=regex,
         choices=choices,
         deprecated=deprecated,
+        accept=accept,
     )

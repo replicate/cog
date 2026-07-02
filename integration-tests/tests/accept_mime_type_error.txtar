@@ -1,0 +1,25 @@
+# Test that using accept on a non-Path/File input type causes a build error.
+#
+# The accept parameter is only valid on Path or File inputs. Using it on
+# str, int, float, etc. should produce a clear error at build time.
+
+env COG_STATIC_SCHEMA=1
+
+! cog build -t $TEST_IMAGE
+stderr 'accept is only valid on Path or File inputs'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input
+
+
+class Predictor(BasePredictor):
+    def predict(
+        self,
+        name: str = Input(description="User name", accept="text/plain"),
+    ) -> str:
+        return f"hello {name}"
