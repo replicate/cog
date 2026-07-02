@@ -19,7 +19,6 @@ from cog import (
     BaseRunner,
     Input,
     __version__,
-    concurrent,
     current_scope,
 )
 
@@ -73,7 +72,6 @@ class Runner(BaseRunner):
             logging.info(f"completed setup in {duration} seconds")
             span.set_attribute("model.setup_time_seconds", duration)
 
-    @concurrent(max=4)
     async def run(  # pyright: ignore
         self,
         total: int = Input(default=5),

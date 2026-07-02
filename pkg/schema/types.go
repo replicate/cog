@@ -254,8 +254,6 @@ type PredictorInfo struct {
 	Output            SchemaType
 	Mode              Mode
 	SupportsStreaming bool
-	ConcurrencyMax    *int
-	IsAsync           bool
 }
 
 // TypeAnnotation is a parsed Python type annotation (intermediate, before resolution).

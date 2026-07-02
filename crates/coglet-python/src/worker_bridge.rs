@@ -101,12 +101,11 @@ pub struct PythonPredictHandler {
     async_loop: Mutex<Option<Py<PyAny>>>,
     /// Handle to the asyncio loop thread for joining on shutdown.
     async_thread: Mutex<Option<JoinHandle<()>>>,
-    max_concurrency: usize,
 }
 
 impl PythonPredictHandler {
     /// Create a handler in prediction mode.
-    pub fn new(predictor_ref: String, max_concurrency: usize) -> Result<Self, SetupError> {
+    pub fn new(predictor_ref: String) -> Result<Self, SetupError> {
         let (loop_obj, thread) = Self::init_async_loop()?;
         Ok(Self {
             predictor_ref,
@@ -115,7 +114,6 @@ impl PythonPredictHandler {
             mode: HandlerMode::Predict,
             async_loop: Mutex::new(Some(loop_obj)),
             async_thread: Mutex::new(Some(thread)),
-            max_concurrency,
         })
     }
 
@@ -124,7 +122,7 @@ impl PythonPredictHandler {
     /// NOTE: For bug-for-bug compatibility with cog mainline, use new() instead.
     /// Cog mainline's training routes incorrectly use a predict-mode worker.
     #[allow(dead_code)]
-    pub fn new_train(predictor_ref: String, max_concurrency: usize) -> Result<Self, SetupError> {
+    pub fn new_train(predictor_ref: String) -> Result<Self, SetupError> {
         let (loop_obj, thread) = Self::init_async_loop()?;
         Ok(Self {
             predictor_ref,
@@ -133,7 +131,6 @@ impl PythonPredictHandler {
             mode: HandlerMode::Train,
             async_loop: Mutex::new(Some(loop_obj)),
             async_thread: Mutex::new(Some(thread)),
-            max_concurrency,
         })
     }
 
@@ -284,11 +281,6 @@ impl PredictHandler for PythonPredictHandler {
 
             let pred = PythonPredictor::load(py, &self.predictor_ref)
                 .map_err(|e| SetupError::load(e.to_string()))?;
-            if self.max_concurrency > 1 && !pred.is_async() {
-                return Err(SetupError::setup(
-                    "COG_MAX_CONCURRENCY > 1 requires an async run() or predict() method",
-                ));
-            }
 
             // Detect SDK implementation
             let sdk_impl = match py.import("cog") {

@@ -1,16 +1,13 @@
 # hello-concurrency
 
-This is an example Cog project that demonstrates concurrency support within Cog.
+This is an example Cog project that demonstrates the newly added concurrency support within
+cog >= 0.14.0.
 
-The key piece is the `@concurrent(max=4)` decorator on the async `run()` method.
+The key piece is the new `concurrency` field in the cog.yaml.
 
-```py
-from cog import BaseRunner, concurrent
-
-class Runner(BaseRunner):
-    @concurrent(max=4)
-    async def run(self) -> str:
-        return "hello"
+```yaml
+concurrency:
+  max: 4
 ```
 
 This combined with the async setup and run methods in `run.py` allows Cog to run up to

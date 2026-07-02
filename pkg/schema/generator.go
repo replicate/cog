@@ -40,15 +40,6 @@ func Generate(predictRef string, sourceDir string, mode Mode, parse any) ([]byte
 		return data, nil
 	}
 
-	info, err := GenerateInfo(predictRef, sourceDir, mode, parse)
-	if err != nil {
-		return nil, err
-	}
-	return GenerateOpenAPISchema(info)
-}
-
-// GenerateInfo parses predictor source and returns the extracted predictor info.
-func GenerateInfo(predictRef string, sourceDir string, mode Mode, parse any) (*PredictorInfo, error) {
 	filePath, className, err := parsePredictRef(predictRef)
 	if err != nil {
 		return nil, err
@@ -68,7 +59,7 @@ func GenerateInfo(predictRef string, sourceDir string, mode Mode, parse any) (*P
 		return nil, fmt.Errorf("failed to read predictor source %s: %w", fullPath, err)
 	}
 
-	return parsePredictorInfo(parse, source, className, mode, sourceDir, filePath)
+	return generateFromSource(source, className, mode, parse, sourceDir, filePath)
 }
 
 func cleanSourceFilePath(filePath string) (string, error) {
