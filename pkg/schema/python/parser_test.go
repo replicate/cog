@@ -1051,8 +1051,6 @@ class Predictor(c.BasePredictor):
 }
 
 func TestConcurrentDecoratorIgnoredWhenNotFromCog(t *testing.T) {
-
-func TestConcurrentDecoratorIgnoredWhenNotFromCog(t *testing.T) {
 	source := `
 from other import concurrent
 from cog import BasePredictor
