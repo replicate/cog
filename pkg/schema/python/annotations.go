@@ -303,7 +303,8 @@ func decoratorCogConcurrentMax(node *sitter.Node, source []byte, imports *schema
 	if val.Int < 1 {
 		return nil, true, schema.WrapError(schema.ErrUnsupportedType, "@concurrent max must be at least 1", nil)
 	}
-	if val.Int > int64(math.MaxInt) {
+	maxSupportedInt := int64(math.MaxInt)
+	if val.Int > maxSupportedInt {
 		return nil, true, schema.WrapError(schema.ErrUnsupportedType, "@concurrent max is too large", nil)
 	}
 	concurrencyMax := int(val.Int)
