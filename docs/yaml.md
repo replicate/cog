@@ -189,8 +189,9 @@ build:
 ## `concurrency`
 
 > Added in cog 0.14.0.
+> Deprecated: use [`@cog.concurrent(max=N)`](python.md#async-runners-and-concurrency) on your async `run()` method instead.
 
-This stanza describes the concurrency capabilities of the model. It has one option:
+This stanza describes the concurrency capabilities of the model. It is still supported for backwards compatibility, but new models should use `@cog.concurrent(max=N)`. It has one option:
 
 ### `max`
 

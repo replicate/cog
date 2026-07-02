@@ -188,8 +188,22 @@ fn detect_version(py: Python<'_>, build: &BuildInfo) -> VersionInfo {
 
 fn read_max_concurrency() -> usize {
     match std::env::var("COG_MAX_CONCURRENCY") {
-        Ok(val) => val.parse::<usize>().unwrap_or(1),
+        Ok(val) => match parse_max_concurrency(&val) {
+            Some(n) => n,
+            None => {
+                warn!(value = %val, "Invalid COG_MAX_CONCURRENCY value, defaulting to 1");
+                1
+            }
+        },
         Err(_) => 1,
+    }
+}
+
+fn parse_max_concurrency(val: &str) -> Option<usize> {
+    match val.parse::<usize>() {
+        Ok(0) => None,
+        Ok(n) => Some(n),
+        Err(_) => None,
     }
 }
 
@@ -542,10 +556,10 @@ async fn run_worker_with_init() -> Result<(), String> {
     info!(predictor_ref = %predictor_ref, num_slots, is_train, "Init received, connecting to transport");
 
     let handler = Arc::new(if is_train {
-        worker_bridge::PythonPredictHandler::new_train(predictor_ref)
+        worker_bridge::PythonPredictHandler::new_train(predictor_ref, num_slots)
             .map_err(|e| format!("Failed to create handler: {}", e))?
     } else {
-        worker_bridge::PythonPredictHandler::new(predictor_ref)
+        worker_bridge::PythonPredictHandler::new(predictor_ref, num_slots)
             .map_err(|e| format!("Failed to create handler: {}", e))?
     });
 
@@ -566,6 +580,26 @@ async fn run_worker_with_init() -> Result<(), String> {
     coglet_core::run_worker(handler, config, transport_info)
         .await
         .map_err(|e| format!("Worker error: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_max_concurrency_reads_valid_value() {
+        assert_eq!(parse_max_concurrency("4"), Some(4));
+    }
+
+    #[test]
+    fn parse_max_concurrency_rejects_invalid_value() {
+        assert_eq!(parse_max_concurrency("wat"), None);
+    }
+
+    #[test]
+    fn parse_max_concurrency_rejects_zero() {
+        assert_eq!(parse_max_concurrency("0"), None);
+    }
 }
 
 // =============================================================================

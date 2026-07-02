@@ -173,9 +173,18 @@ These variables affect a running model server. Set them in `cog.yaml` under `env
 
 ### `COG_MAX_CONCURRENCY`
 
-Controls how many predictions the model server can run concurrently.
+Controls how many predictions the model server can run concurrently. This overrides both `@cog.concurrent(max=N)` and the deprecated `concurrency.max` field in `cog.yaml`.
 
-By default, Cog runs one prediction at a time. Invalid values are ignored and the default of `1` is used.
+By default, Cog runs one prediction at a time unless the model uses `@cog.concurrent(max=N)`. Invalid values are ignored and the default of `1` is used.
+
+Values greater than `1` require an async `run()` method. This applies even when `COG_MAX_CONCURRENCY` is set as a runtime operator override.
+
+Concurrency is resolved in this order, from highest to lowest precedence:
+
+1. `COG_MAX_CONCURRENCY` set at runtime
+2. Deprecated `concurrency.max` in `cog.yaml`, which is baked into the image as `COG_MAX_CONCURRENCY`
+3. `@cog.concurrent(max=N)` on the async `run()` method
+4. Default: `1`
 
 ```console
 $ COG_MAX_CONCURRENCY=4 docker run -p 5000:5000 my-model
