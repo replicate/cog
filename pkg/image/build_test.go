@@ -14,7 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/replicate/cog/pkg/config"
+	"github.com/replicate/cog/pkg/docker/command"
+	"github.com/replicate/cog/pkg/docker/dockertest"
 	"github.com/replicate/cog/pkg/dotcog"
+	"github.com/replicate/cog/pkg/schema"
 	"github.com/replicate/cog/pkg/weights/lockfile"
 )
 
@@ -60,6 +63,103 @@ func TestIsGitWorkTree(t *testing.T) {
 
 	r.False(isGitWorkTree(ctx, "/dev/null"))
 	r.True(isGitWorkTree(ctx, setupGitWorkTree(t)))
+}
+
+func TestConfigWithDecoratorConcurrencyAppliesWhenYAMLAbsent(t *testing.T) {
+	concurrencyMax := 4
+	cfg := &config.Config{}
+	info := &schema.PredictorInfo{ConcurrencyMax: &concurrencyMax, IsAsync: true}
+
+	got, err := configWithDecoratorConcurrency(cfg, info)
+
+	require.NoError(t, err)
+	require.NotSame(t, cfg, got)
+	require.Nil(t, cfg.Concurrency)
+	require.NotNil(t, got.Concurrency)
+	require.Equal(t, 4, got.Concurrency.Max)
+}
+
+func TestConfigWithDecoratorConcurrencyPreservesYAMLPrecedence(t *testing.T) {
+	concurrencyMax := 4
+	cfg := &config.Config{Concurrency: &config.Concurrency{Max: 2}}
+	info := &schema.PredictorInfo{ConcurrencyMax: &concurrencyMax, IsAsync: true}
+
+	got, err := configWithDecoratorConcurrency(cfg, info)
+
+	require.NoError(t, err)
+	require.Same(t, cfg, got)
+	require.Equal(t, 2, got.Concurrency.Max)
+}
+
+func TestConfigWithDecoratorConcurrencyRejectsSyncYAMLConcurrency(t *testing.T) {
+	cfg := &config.Config{Concurrency: &config.Concurrency{Max: 2}}
+	info := &schema.PredictorInfo{IsAsync: false}
+
+	_, err := configWithDecoratorConcurrency(cfg, info)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "requires an async")
+}
+
+func TestConfigWithDecoratorConcurrencyRejectsOldPythonVersion(t *testing.T) {
+	concurrencyMax := 2
+	cfg := &config.Config{Build: &config.Build{PythonVersion: "3.10"}}
+	info := &schema.PredictorInfo{ConcurrencyMax: &concurrencyMax, IsAsync: true}
+
+	_, err := configWithDecoratorConcurrency(cfg, info)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Python 3.11 or higher")
+}
+
+func TestConcurrencyDockerfileSetsEnv(t *testing.T) {
+	dockerfile := concurrencyDockerfile("my-image", 4)
+
+	require.Equal(t, "FROM my-image\nENV COG_MAX_CONCURRENCY=4\n", dockerfile)
+}
+
+type recordingCommand struct {
+	*dockertest.MockCommand
+	builds []command.ImageBuildOptions
+}
+
+func (c *recordingCommand) ImageBuild(ctx context.Context, options command.ImageBuildOptions) (string, error) {
+	c.builds = append(c.builds, options)
+	return "sha256:test", nil
+}
+
+func TestAddConcurrencyToCustomDockerfileImageBuildsWrapperLayer(t *testing.T) {
+	dockerCommand := &recordingCommand{MockCommand: dockertest.NewMockCommand()}
+	concurrency := &config.Concurrency{Max: 4}
+
+	err := addConcurrencyToCustomDockerfileImage(t.Context(), dockerCommand, "my-image", concurrency, "plain", "/tmp/build-cache")
+
+	require.NoError(t, err)
+	require.Len(t, dockerCommand.builds, 1)
+	require.Equal(t, "FROM my-image\nENV COG_MAX_CONCURRENCY=4\n", dockerCommand.builds[0].DockerfileContents)
+	require.Equal(t, "my-image", dockerCommand.builds[0].ImageName)
+	require.Equal(t, "plain", dockerCommand.builds[0].ProgressOutput)
+	require.Equal(t, "/tmp/build-cache", dockerCommand.builds[0].BuildCacheDir)
+}
+
+func TestGeneratePredictorMetadataDoesNotRequireValidOutputSchema(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "predict.py"), []byte(`
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent(max=3)
+    async def predict(self) -> NotARealType:
+        return "hello"
+`), 0o644))
+	cfg := &config.Config{Predict: "predict.py:Predictor"}
+
+	info, err := generatePredictorMetadata(cfg, dir)
+
+	require.NoError(t, err)
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 3, *info.ConcurrencyMax)
+	require.True(t, info.IsAsync)
 }
 
 func TestGitHead(t *testing.T) {

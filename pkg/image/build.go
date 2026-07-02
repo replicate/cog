@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -124,6 +125,10 @@ func Build(
 	// Generate schema before the Docker build so schema errors fail fast and the
 	// schema file is available in the build context.
 	var schemaJSON []byte
+	predictorInfo, err := generatePredictorMetadata(cfg, dir)
+	if err != nil {
+		return "", fmt.Errorf("image build failed: %w", err)
+	}
 	switch {
 	case needsSchema:
 		if err := validateStaticSchemaSDKVersion(cfg); err != nil {
@@ -157,6 +162,11 @@ func Build(
 		if err := files.Copy(bp.rootSchemaFile, bp.schemaFile); err != nil {
 			return "", err
 		}
+	}
+
+	dockerfileCfg, err := configWithDecoratorConcurrency(cfg, predictorInfo)
+	if err != nil {
+		return "", err
 	}
 
 	// --- Runtime weights manifest (/.cog/weights.json) ---
@@ -206,8 +216,11 @@ func Build(
 		if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
 			return "", fmt.Errorf("Failed to build Docker image: %w", err)
 		}
+		if err := addConcurrencyToCustomDockerfileImage(ctx, dockerCommand, tmpImageId, dockerfileCfg.Concurrency, progressOutput, bp.buildDir); err != nil {
+			return "", err
+		}
 	} else {
-		generator, err := dockerfile.NewStandardGenerator(cfg, dir, bp.buildDir, configFilename, dockerCommand, client, true)
+		generator, err := dockerfile.NewStandardGenerator(dockerfileCfg, dir, bp.buildDir, configFilename, dockerCommand, client, true)
 		if err != nil {
 			return "", fmt.Errorf("Error creating Dockerfile generator: %w", err)
 		}
@@ -446,6 +459,83 @@ func generateStaticSchema(cfg *config.Config, dir string) ([]byte, error) {
 		return nil, fmt.Errorf("no predict or train reference found in cog.yaml")
 	}
 	return schema.GenerateCombined(dir, cfg.Predict, cfg.Train, schema.PathAwareParser(python.ParsePredictorWithSourcePath))
+}
+
+func generatePredictorMetadata(cfg *config.Config, dir string) (*schema.PredictorInfo, error) {
+	if cfg.Predict == "" && cfg.Train == "" {
+		return nil, nil
+	}
+	if cfg.Predict != "" {
+		return schema.GenerateInfo(cfg.Predict, dir, schema.ModePredict, schema.PathAwareParser(python.ParsePredictorMetadataWithSourcePath))
+	}
+	return schema.GenerateInfo(cfg.Train, dir, schema.ModeTrain, schema.PathAwareParser(python.ParsePredictorMetadataWithSourcePath))
+}
+
+func configWithDecoratorConcurrency(cfg *config.Config, info *schema.PredictorInfo) (*config.Config, error) {
+	if cfg.Concurrency != nil && cfg.Concurrency.Max > 1 && info != nil && !info.IsAsync {
+		return nil, fmt.Errorf("concurrency.max > 1 requires an async run() or predict() method")
+	}
+	if cfg.Concurrency != nil || info == nil || info.ConcurrencyMax == nil {
+		return cfg, validateEffectiveConcurrency(cfg, info)
+	}
+	if *info.ConcurrencyMax > 1 && !info.IsAsync {
+		return nil, fmt.Errorf("@cog.concurrent(max > 1) requires an async run() or predict() method")
+	}
+	cfgCopy := *cfg
+	cfgCopy.Concurrency = &config.Concurrency{Max: *info.ConcurrencyMax}
+	return &cfgCopy, validateEffectiveConcurrency(&cfgCopy, info)
+}
+
+func addConcurrencyToCustomDockerfileImage(ctx context.Context, dockerCommand command.Command, imageName string, concurrency *config.Concurrency, progressOutput string, buildCacheDir string) error {
+	if concurrency == nil || concurrency.Max <= 0 {
+		return nil
+	}
+	buildOpts := command.ImageBuildOptions{
+		DockerfileContents: concurrencyDockerfile(imageName, concurrency.Max),
+		ImageName:          imageName,
+		ProgressOutput:     progressOutput,
+		BuildCacheDir:      buildCacheDir,
+	}
+	if _, err := dockerCommand.ImageBuild(ctx, buildOpts); err != nil {
+		return fmt.Errorf("Failed to add concurrency configuration to Docker image: %w", err)
+	}
+	return nil
+}
+
+func validateEffectiveConcurrency(cfg *config.Config, info *schema.PredictorInfo) error {
+	if cfg.Concurrency == nil || cfg.Concurrency.Max <= 1 {
+		return nil
+	}
+	if info != nil && !info.IsAsync {
+		return fmt.Errorf("concurrency.max > 1 requires an async run() or predict() method")
+	}
+	if cfg.Build == nil || cfg.Build.PythonVersion == "" {
+		return nil
+	}
+	major, minor, err := splitPythonVersionForBuild(cfg.Build.PythonVersion)
+	if err != nil {
+		return nil
+	}
+	if major == config.MinimumMajorPythonVersion && minor < config.MinimumMinorPythonVersionForConcurrency {
+		return fmt.Errorf("concurrency requires Python %d.%d or higher", config.MinimumMajorPythonVersion, config.MinimumMinorPythonVersionForConcurrency)
+	}
+	return nil
+}
+
+func splitPythonVersionForBuild(version string) (major int, minor int, err error) {
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return 0, 0, fmt.Errorf("invalid Python version %q", version)
+	}
+	major, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, err
+	}
+	minor, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, err
+	}
+	return major, minor, nil
 
 }
 
@@ -544,6 +634,10 @@ func bundleDockerfile(baseImage string, files []string) string {
 		fmt.Fprintf(&b, "COPY --from=%s %s %s/\n", cogBuildContextName, filepath.Base(f), dotcog.Name)
 	}
 	return b.String()
+}
+
+func concurrencyDockerfile(baseImage string, maxConcurrency int) string {
+	return fmt.Sprintf("FROM %s\nENV COG_MAX_CONCURRENCY=%d\n", baseImage, maxConcurrency)
 }
 
 func isGitWorkTree(ctx context.Context, dir string) bool {
