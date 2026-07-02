@@ -76,11 +76,11 @@ curl http://localhost:5001/predictions -X POST \
 
 ```json
 {
-    "status": "succeeded",
-    "output": "data:image/png;base64,...",
-    "metrics": {
-        "predict_time": 4.52
-    }
+  "status": "succeeded",
+  "output": "data:image/png;base64,...",
+  "metrics": {
+    "predict_time": 4.52
+  }
 }
 ```
 
@@ -144,8 +144,8 @@ the response contains a base64-encoded data URL by default:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "data:image/png;base64,iVBORw0KGgo..."
+  "status": "succeeded",
+  "output": "data:image/png;base64,iVBORw0KGgo..."
 }
 ```
 
@@ -172,8 +172,8 @@ contains the uploaded URL instead of a data URL:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "https://example.com/upload/image.png"
+  "status": "succeeded",
+  "output": "https://example.com/upload/image.png"
 }
 ```
 

@@ -151,6 +151,8 @@ Note: The first time you run `cog run`, the build process will be triggered to g
 
 We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time inference.
 
+By default, Cog builds on top of a [prebuilt base image](base-images.md) that includes Python, common system libraries, and the Cog runtime. This significantly reduces cold boot times when deploying your model.
+
 ```bash
 cog build -t resnet
 # Building Docker image...
@@ -197,6 +199,9 @@ cog push
 ```
 
 The Docker image is now accessible to anyone or any system that has access to this Docker registry.
+
+> [!TIP]
+> `cog push` uses a [prebuilt Cog base image](base-images.md) by default for faster cold boots. If you run into build issues, try disabling it with `--use-cog-base-image=false`.
 
 ## Next steps
 

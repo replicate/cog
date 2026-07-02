@@ -58,6 +58,8 @@ Type "help", "copyright", "credits" or "license" for more information.
 
 This is handy for ensuring a consistent environment for development or training.
 
+By default, Cog builds on top of a [prebuilt base image](base-images.md) that includes Python, common system libraries, and the Cog runtime. This speeds up builds and reduces cold boot times when you deploy with `cog push`.
+
 With `cog.yaml`, you can also install system packages and other things. [Take a look at the full reference to see what else you can do.](yaml.md)
 
 ## Define how to run your model

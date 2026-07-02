@@ -127,83 +127,83 @@ Choose your platform for installation instructions.
 <details>
   <summary>macOS</summary>
 
-  The easiest way to install Cog on macOS is with Homebrew:
+The easiest way to install Cog on macOS is with Homebrew:
 
-  ```console
-  brew install replicate/tap/cog
-  ```
+```console
+brew install replicate/tap/cog
+```
 
-  You can also use the install script:
+You can also use the install script:
 
-  ```sh
-  # bash, zsh, and other shells
-  sh <(curl -fsSL https://cog.run/install.sh)
+```sh
+# bash, zsh, and other shells
+sh <(curl -fsSL https://cog.run/install.sh)
 
-  # fish shell
-  sh (curl -fsSL https://cog.run/install.sh | psub)
+# fish shell
+sh (curl -fsSL https://cog.run/install.sh | psub)
 
-  # download with wget and run in a separate command
-  wget -qO- https://cog.run/install.sh
-  sh ./install.sh
-  ```
+# download with wget and run in a separate command
+wget -qO- https://cog.run/install.sh
+sh ./install.sh
+```
 
-  Or install manually:
+Or install manually:
 
-  ```console
-  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
-  sudo chmod +x /usr/local/bin/cog
-  sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
-  ```
+```console
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
+sudo chmod +x /usr/local/bin/cog
+sudo xattr -d com.apple.quarantine /usr/local/bin/cog 2>/dev/null || true
+```
 
-  If you see a Gatekeeper warning saying the binary "cannot be opened because the developer cannot be verified", run:
+If you see a Gatekeeper warning saying the binary "cannot be opened because the developer cannot be verified", run:
 
-  ```console
-  sudo xattr -d com.apple.quarantine /usr/local/bin/cog
-  ```
+```console
+sudo xattr -d com.apple.quarantine /usr/local/bin/cog
+```
 
 </details>
 
 <details>
   <summary>Linux</summary>
 
-  You can install Cog using the install script:
+You can install Cog using the install script:
 
-  ```sh
-  # bash, zsh, and other shells
-  sh <(curl -fsSL https://cog.run/install.sh)
+```sh
+# bash, zsh, and other shells
+sh <(curl -fsSL https://cog.run/install.sh)
 
-  # fish shell
-  sh (curl -fsSL https://cog.run/install.sh | psub)
+# fish shell
+sh (curl -fsSL https://cog.run/install.sh | psub)
 
-  # download with wget and run in a separate command
-  wget -qO- https://cog.run/install.sh
-  sh ./install.sh
-  ```
+# download with wget and run in a separate command
+wget -qO- https://cog.run/install.sh
+sh ./install.sh
+```
 
-  Or install manually:
+Or install manually:
 
-  ```console
-  sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
-  sudo chmod +x /usr/local/bin/cog
-  ```
+```console
+sudo curl -o /usr/local/bin/cog -L "https://github.com/replicate/cog/releases/latest/download/cog_$(uname -s)_$(uname -m | sed 's/aarch64/arm64/')"
+sudo chmod +x /usr/local/bin/cog
+```
 
 </details>
 
 <details markdown>
   <summary>Windows</summary>
 
-  Cog does not natively support Windows, but you can run it on Windows 11 using [WSL 2](docs/wsl2/wsl2.md). Once WSL 2 is set up, follow the Linux installation instructions above.
+Cog does not natively support Windows, but you can run it on Windows 11 using [WSL 2](docs/wsl2/wsl2.md). Once WSL 2 is set up, follow the Linux installation instructions above.
 
 </details>
 
 <details>
   <summary>Docker</summary>
 
-  To install Cog inside a Docker image:
+To install Cog inside a Docker image:
 
-  ```dockerfile
-  RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
-  ```
+```dockerfile
+RUN sh -c "INSTALL_DIR=\"/usr/local/bin\" SUDO=\"\" $(curl -fsSL https://cog.run/install.sh)"
+```
 
 </details>
 
@@ -240,6 +240,82 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environme
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/replicate/cog)
 
+
+
+---
+
+# Base images
+
+Cog builds your model into a Docker image. To speed up builds and reduce cold boot times, Cog uses **prebuilt base images** by default. These images contain the common dependencies that most models need, so Cog doesn't have to install them from scratch every time you build or push.
+
+## What is a Cog base image?
+
+A Cog base image is a Docker image maintained by Replicate that includes:
+
+- **Python runtime** — the Python version specified in your `cog.yaml`.
+- **System libraries** — common dependencies for machine learning and media processing, including `ffmpeg`, `git`, `curl`, `build-essential`, `cmake`, OpenCV libraries, audio libraries (`sox`, `libsndfile1`), and graphics libraries (`libgl1`, `libsm6`, `libxext6`).
+- **CUDA and PyTorch** (GPU images only) — the appropriate CUDA toolkit and PyTorch stack for your configuration.
+- **Cog runtime** — the Cog SDK and coglet prediction server.
+
+Base images are tagged by their configuration, for example:
+
+```
+r8.im/cog-base:cuda12-python3.13-torch2.6
+r8.im/cog-base:python3.13
+```
+
+When you run `cog build` or `cog push`, Cog selects the base image that matches your Python version, CUDA version, and PyTorch version. Because these images are pre-pulled on Replicate's infrastructure, models built on top of them start faster.
+
+The entire list of available base images can be viewed at [https://r8.im/v2/cog-base/tags/list](https://r8.im/v2/cog-base/tags/list).
+
+## Using the Cog base image
+
+The `--use-cog-base-image` flag controls whether Cog uses a prebuilt base image. It is **enabled by default** on the following commands:
+
+- [`cog build`](cli.md#cog-build)
+- [`cog push`](cli.md#cog-push)
+- [`cog run`](cli.md#cog-run)
+- [`cog serve`](cli.md#cog-serve)
+- [`cog exec`](cli.md#cog-exec)
+
+Since it's on by default, you don't need to pass any flags:
+
+```bash
+cog push r8.im/your-username/my-model
+```
+
+This builds and pushes your model using a prebuilt Cog base image for faster cold boots.
+
+## Disabling the Cog base image
+
+If you encounter build issues or need a custom base layer, you can disable the Cog base image:
+
+```bash
+cog build --use-cog-base-image=false
+```
+
+When disabled, Cog generates a Dockerfile from scratch using either an NVIDIA CUDA base image or a slim Python base image, depending on the `--use-cuda-base-image` flag.
+
+## Relationship to `--use-cuda-base-image`
+
+The `--use-cuda-base-image` flag controls which underlying base image Cog uses **when the Cog base image is disabled**. It has no effect when `--use-cog-base-image` is enabled (the default), because the Cog base image already includes the appropriate CUDA and Python stack.
+
+When you disable the Cog base image with `--use-cog-base-image=false`, Cog chooses the base image automatically:
+
+- **GPU models** (`gpu: true` in `cog.yaml`): uses an NVIDIA CUDA base image.
+- **CPU models**: uses a slim Python base image.
+
+These flags — along with `--dockerfile` — are **mutually exclusive**: you can only set one of them explicitly on a given command. To customize the base image, disable the Cog base image and let Cog choose between CUDA and Python automatically.
+
+## Troubleshooting
+
+If `cog build` or `cog push` fails with the Cog base image enabled, try disabling it:
+
+```bash
+cog push --use-cog-base-image=false r8.im/your-username/my-model
+```
+
+This falls back to building from a standard CUDA or Python base image, which can help diagnose whether the issue is with the base image or your model's configuration.
 
 
 ---
@@ -633,11 +709,11 @@ curl http://localhost:5001/predictions -X POST \
 
 ```json
 {
-    "status": "succeeded",
-    "output": "data:image/png;base64,...",
-    "metrics": {
-        "predict_time": 4.52
-    }
+  "status": "succeeded",
+  "output": "data:image/png;base64,...",
+  "metrics": {
+    "predict_time": 4.52
+  }
 }
 ```
 
@@ -701,8 +777,8 @@ the response contains a base64-encoded data URL by default:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "data:image/png;base64,iVBORw0KGgo..."
+  "status": "succeeded",
+  "output": "data:image/png;base64,iVBORw0KGgo..."
 }
 ```
 
@@ -729,8 +805,8 @@ contains the uploaded URL instead of a data URL:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "https://example.com/upload/image.png"
+  "status": "succeeded",
+  "output": "https://example.com/upload/image.png"
 }
 ```
 
@@ -1187,6 +1263,8 @@ Type "help", "copyright", "credits" or "license" for more information.
 
 This is handy for ensuring a consistent environment for development or training.
 
+By default, Cog builds on top of a [prebuilt base image](base-images.md) that includes Python, common system libraries, and the Cog runtime. This speeds up builds and reduces cold boot times when you deploy with `cog push`.
+
 With `cog.yaml`, you can also install system packages and other things. [Take a look at the full reference to see what else you can do.](yaml.md)
 
 ## Define how to run your model
@@ -1443,6 +1521,8 @@ Note: The first time you run `cog run`, the build process will be triggered to g
 
 We can bake your model's code, the trained weights, and the Docker environment into a Docker image. This image serves an HTTP server, and can be deployed to anywhere that Docker runs to serve real-time inference.
 
+By default, Cog builds on top of a [prebuilt base image](base-images.md) that includes Python, common system libraries, and the Cog runtime. This significantly reduces cold boot times when deploying your model.
+
 ```bash
 cog build -t resnet
 # Building Docker image...
@@ -1489,6 +1569,9 @@ cog push
 ```
 
 The Docker image is now accessible to anyone or any system that has access to this Docker registry.
+
+> [!TIP]
+> `cog push` uses a [prebuilt Cog base image](base-images.md) by default for faster cold boots. If you run into build issues, try disabling it with `--use-cog-base-image=false`.
 
 ## Next steps
 
