@@ -29,6 +29,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  MISE_LOCKED: "1"
 
 jobs:
   verify-tag:
@@ -126,9 +127,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: jdx/mise-action@v4
         with:
-          python-version: "3.13"
+          version: 2026.4.27
+          cache_key_prefix: mise-rel-${{ github.job }}
 
       - name: Update coglet version constraint
         run: |
@@ -141,12 +143,104 @@ jobs:
           # Verify the change took effect
           grep "coglet>=$VERSION" pyproject.toml
 
+      # PyPI renders the README baked into the package metadata at build time and
+      # ships no other repo files, so the README's relative links (docs/*,
+      # CONTRIBUTING.md) 404 there. Rewrite them to absolute GitHub blob URLs
+      # pinned to this release tag, editing the checked-out README in place
+      # (never committed) before uv build bakes it into the long_description.
+      - name: Rewrite README links to absolute URLs for PyPI
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          ref = os.environ["REF_NAME"]
+          base = f"https://github.com/replicate/cog/blob/{ref}/"
+
+          def is_relative_link(target):
+              # Relative = no URL scheme (https:, mailto:, ...), not protocol-relative
+              # (//host), and not an in-page anchor (#...). Any absolute link is left
+              # untouched; only relative links are rewritten.
+              parts = urlsplit(target)
+              return not (parts.scheme or parts.netloc or target.startswith("#"))
+
+          def repl(m):
+              bang, label, target = m.group(1), m.group(2), m.group(3)
+              # Skip images (![...](...)): a blob/ URL serves an HTML page, not the
+              # raw bytes, so a relative image must not become a blob link. Leaving
+              # it relative makes the verify step below fail loudly instead.
+              if bang or not is_relative_link(target):
+                  return m.group(0)
+              return f"[{label}]({base}{target})"
+
+          readme = Path("README.md")
+          text = re.sub(r"(!?)\[([^\[\]]*)\]\(([^)]+)\)", repl, readme.read_text(encoding="utf-8"))
+          readme.write_text(text, encoding="utf-8")
+          print(f"Rewrote README.md links to {base}")
+          PY
+
       - name: Build SDK wheel
         run: |
           echo "Building SDK with version: $SETUPTOOLS_SCM_PRETEND_VERSION"
           uv build --out-dir dist .
         env:
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ needs.verify-tag.outputs.pep440 }}
+
+      # Backstop for the rewrite above: the wheel METADATA and sdist PKG-INFO are
+      # the exact bytes PyPI renders, so fail if any relative link remains in them.
+      - name: Verify PyPI README links are absolute
+        run: |
+          python3 - <<'PY'
+          import glob
+          import re
+          import sys
+          import tarfile
+          import zipfile
+          from urllib.parse import urlsplit
+
+          link = re.compile(r"\]\(([^)]+)\)")
+
+          def is_relative_link(target):
+              parts = urlsplit(target)
+              return not (parts.scheme or parts.netloc or target.startswith("#"))
+
+          def relatives(text):
+              return [m.group(1) for m in link.finditer(text) if is_relative_link(m.group(1))]
+
+          whl_matches = glob.glob("dist/cog-*.whl")
+          if not whl_matches:
+              sys.exit("No wheel found in dist/ matching dist/cog-*.whl")
+          whl = whl_matches[0]
+          with zipfile.ZipFile(whl) as z:
+              meta_names = [n for n in z.namelist() if n.endswith(".dist-info/METADATA")]
+              if not meta_names:
+                  sys.exit(f"No METADATA file found in wheel: {whl}")
+              whl_meta = z.read(meta_names[0]).decode("utf-8")
+
+          sdist_matches = glob.glob("dist/cog-*.tar.gz")
+          if not sdist_matches:
+              sys.exit("No sdist found in dist/ matching dist/cog-*.tar.gz")
+          sdist = sdist_matches[0]
+          with tarfile.open(sdist) as t:
+              pkg_info_names = [n for n in t.getnames() if n.endswith("/PKG-INFO")]
+              if not pkg_info_names:
+                  sys.exit(f"No PKG-INFO file found in sdist: {sdist}")
+              sdist_meta = t.extractfile(pkg_info_names[0]).read().decode("utf-8")
+
+          problems = {}
+          for path, meta in ((whl, whl_meta), (sdist, sdist_meta)):
+              bad = relatives(meta)
+              if bad:
+                  problems[path] = bad
+
+          if problems:
+              sys.exit(f"Relative links remain in built metadata: {problems}")
+          print("OK: wheel METADATA and sdist PKG-INFO contain only absolute links")
+          PY
 
       - name: Upload SDK artifacts
         uses: actions/upload-artifact@v6
@@ -183,20 +277,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
           key: release-${{ matrix.target }}
 
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: "3.13"
-          enable-cache: false
-
+      # maturin-action bundles maturin, zig, and Rust inside a manylinux container
       - name: Build coglet wheel
         uses: PyO3/maturin-action@v1
         with:
@@ -224,13 +310,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
+      - uses: jdx/mise-action@v4
         with:
-          go-version-file: go.mod
-
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
+          version: 2026.4.27
+          cache_key_prefix: mise-rel-${{ github.job }}
 
       - name: Check for existing release
         run: |

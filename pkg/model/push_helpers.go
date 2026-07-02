@@ -31,11 +31,37 @@ func GetPushConcurrency() int {
 	return DefaultPushConcurrency
 }
 
-// PushProgress reports progress for a layer or blob upload.
+// PushPhase represents a phase of the push process.
+// The image pusher reports phase transitions so the CLI can display appropriate
+// progress indicators (e.g., a status line during export, progress bars during push).
+type PushPhase string
+
+const (
+	// PushPhaseExporting indicates the image is being exported from the Docker
+	// daemon to a local tarball. This phase has no granular progress — the
+	// caller typically shows an indeterminate status indicator.
+	PushPhaseExporting PushPhase = "exporting"
+
+	// PushPhasePushing indicates layers are being pushed to the registry.
+	// During this phase, per-layer progress is reported via PushProgress callbacks.
+	PushPhasePushing PushPhase = "pushing"
+)
+
+// PushProgress reports progress for a push operation.
+//
+// There are two kinds of updates:
+//   - Phase transitions: Phase is set, byte fields are zero. Indicates the push
+//     has moved to a new phase (e.g., exporting image, pushing layers).
+//   - Byte progress: Phase is empty, Complete/Total track upload progress for
+//     a specific layer or blob identified by LayerDigest.
+//
 // Used by both ImagePusher (container image layers) and WeightPusher (weight blobs).
 type PushProgress struct {
+	// Phase indicates a push phase transition. When set, this is a phase-only
+	// update and the byte progress fields should be ignored.
+	Phase PushPhase
 	// LayerDigest identifies which layer this progress is for.
-	// Empty for single-layer pushes (e.g., weight uploads).
+	// Empty for phase transitions and single-layer pushes (e.g., weight uploads).
 	LayerDigest string
 	// Complete is the number of bytes uploaded so far.
 	Complete int64

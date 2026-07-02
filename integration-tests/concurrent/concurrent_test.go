@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -376,6 +377,170 @@ predict: "predict.py:Predictor"
 concurrency:
   max: 2
 `
+
+// TestConcurrentAsyncMetrics tests that metrics recorded via current_scope().record_metric()
+// in async predict functions are correctly routed to each prediction's response when
+// running with concurrency > 1.
+//
+// This reproduces https://github.com/replicate/cog/issues/2901:
+// The metric scope ContextVar is set on the worker thread but async predict coroutines
+// run on a shared event loop thread where the ContextVar is not propagated. Under
+// concurrency > 1, metrics are either silently dropped (noop scope) or attributed to
+// the wrong prediction (SYNC_SCOPE race).
+func TestConcurrentAsyncMetrics(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "cog-async-metrics-test-*")
+	require.NoError(t, err, "failed to create temp dir")
+	defer os.RemoveAll(tmpDir)
+
+	metricsCogYAML := `build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+concurrency:
+  max: 5
+`
+	metricsPredictPy := `import asyncio
+from cog import BasePredictor, current_scope
+
+
+class Predictor(BasePredictor):
+    async def predict(self, idx: int = 0, sleep: float = 0.5) -> str:
+        scope = current_scope()
+        scope.record_metric("prediction_index", idx)
+        scope.record_metric("model_name", "test-model")
+        await asyncio.sleep(sleep)
+        scope.record_metric("completed", True)
+        return f"done-{idx}"
+`
+
+	err = os.WriteFile(filepath.Join(tmpDir, "cog.yaml"), []byte(metricsCogYAML), 0o644)
+	require.NoError(t, err, "failed to write cog.yaml")
+	err = os.WriteFile(filepath.Join(tmpDir, "predict.py"), []byte(metricsPredictPy), 0o644)
+	require.NoError(t, err, "failed to write predict.py")
+
+	cogBinary, err := harness.ResolveCogBinary()
+	require.NoError(t, err, "failed to resolve cog binary")
+
+	imageName := fmt.Sprintf("cog-async-metrics-test-%d", time.Now().UnixNano())
+	defer func() {
+		exec.Command("docker", "rmi", "-f", imageName).Run()
+	}()
+
+	t.Log("Building image...")
+	buildCmd := exec.Command(cogBinary, "build", "-t", imageName)
+	buildCmd.Dir = tmpDir
+	buildCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+	output, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "failed to build image\n%s", output)
+
+	t.Log("Starting server...")
+	port, err := allocatePort()
+	require.NoError(t, err, "failed to allocate port")
+
+	serveCmd := exec.Command(cogBinary, "serve", "-p", fmt.Sprintf("%d", port))
+	serveCmd.Dir = tmpDir
+	serveCmd.Env = append(os.Environ(), "COG_NO_UPDATE_CHECK=1")
+
+	err = serveCmd.Start()
+	require.NoError(t, err, "failed to start server")
+	defer func() {
+		serveCmd.Process.Kill()
+		serveCmd.Wait()
+	}()
+
+	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	t.Log("Waiting for server to be ready...")
+	require.True(t, waitForServerReady(serverURL, 60*time.Second), "server did not become ready within timeout")
+
+	// Fire 5 concurrent predictions, each with a unique index
+	const numPredictions = 5
+	var wg sync.WaitGroup
+	type metricsResult struct {
+		statusCode int
+		output     string
+		metrics    map[string]any
+		err        error
+	}
+	results := make([]metricsResult, numPredictions)
+
+	for i := range numPredictions {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			reqBody := fmt.Sprintf(`{"id":"metrics-%d","input":{"idx":%d,"sleep":0.5}}`, idx, idx)
+			resp, err := http.Post(
+				serverURL+"/predictions",
+				"application/json",
+				strings.NewReader(reqBody),
+			)
+			if err != nil {
+				results[idx] = metricsResult{err: err}
+				return
+			}
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				results[idx] = metricsResult{statusCode: resp.StatusCode, err: err}
+				return
+			}
+
+			var response struct {
+				Output  string         `json:"output"`
+				Status  string         `json:"status"`
+				Metrics map[string]any `json:"metrics"`
+			}
+			if err := json.Unmarshal(body, &response); err != nil {
+				results[idx] = metricsResult{statusCode: resp.StatusCode, err: fmt.Errorf("unmarshal: %w\nbody: %s", err, body)}
+				return
+			}
+
+			results[idx] = metricsResult{
+				statusCode: resp.StatusCode,
+				output:     response.Output,
+				metrics:    response.Metrics,
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify each prediction has correct, non-cross-contaminated metrics
+	for i, result := range results {
+		if !assert.NoError(t, result.err, "prediction %d failed", i) {
+			continue
+		}
+		assert.Equal(t, http.StatusOK, result.statusCode, "prediction %d returned unexpected status", i)
+
+		expectedOutput := fmt.Sprintf("done-%d", i)
+		assert.Equal(t, expectedOutput, result.output, "prediction %d output mismatch", i)
+
+		// The core assertion: metrics must exist and contain the correct prediction_index.
+		// Before the fix, this will either:
+		// - Be nil/empty (noop scope — metric silently dropped)
+		// - Contain the wrong index (SYNC_SCOPE race — metric attributed to wrong prediction)
+		require.NotNil(t, result.metrics, "prediction %d: metrics is nil (scope was not propagated to async coroutine)", i)
+
+		predIdx, ok := result.metrics["prediction_index"]
+		require.True(t, ok, "prediction %d: prediction_index metric missing from response metrics: %v", i, result.metrics)
+		assert.Equal(t, float64(i), predIdx, "prediction %d: prediction_index metric has wrong value (cross-contamination)", i)
+
+		completed, ok := result.metrics["completed"]
+		assert.True(t, ok, "prediction %d: completed metric missing", i)
+		assert.Equal(t, true, completed, "prediction %d: completed metric should be true", i)
+
+		modelName, ok := result.metrics["model_name"]
+		assert.True(t, ok, "prediction %d: model_name metric missing", i)
+		assert.Equal(t, "test-model", modelName, "prediction %d: model_name metric mismatch", i)
+
+		_, hasPredictTime := result.metrics["predict_time"]
+		assert.True(t, hasPredictTime, "prediction %d: predict_time system metric missing", i)
+	}
+}
 
 // TestSIGTERMDuringSetup tests that SIGTERM during setup() causes clean shutdown.
 func TestSIGTERMDuringSetup(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 var (
@@ -54,7 +55,8 @@ Otherwise, it will build the model in the current directory and train it.`,
 }
 
 func cmdTrain(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	dockerClient, err := docker.NewClient(ctx)
 	if err != nil {
@@ -65,12 +67,20 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	volumes := []command.Volume{}
 	gpus := gpusFlag
 
+	// Managed-weight mounts only apply when we have cog.yaml in scope.
+	var wm *weights.Manager
+
 	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
 	if len(args) == 0 {
 		// Build image
 		src, err := model.NewSource(configFilename)
 		if err != nil {
+			return err
+		}
+		defer src.Close()
+
+		if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
 			return err
 		}
 
@@ -90,6 +100,11 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 
 		if gpus == "" && m.HasGPU() {
 			gpus = "all"
+		}
+
+		wm, err = newWeightManager(src)
+		if err != nil {
+			return err
 		}
 	} else {
 		// Use existing image
@@ -113,37 +128,29 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	console.Info("")
 	console.Info("Starting Docker image and running setup()...")
 
-	predictor, err := predict.NewPredictor(ctx, command.RunOptions{
-		GPUs:    gpus,
-		Image:   imageName,
-		Volumes: volumes,
-		Env:     trainEnvFlags,
-		Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
-	}, true, dockerClient)
+	predictor, err := predict.NewPredictor(ctx, predict.PredictorOptions{
+		RunOptions: command.RunOptions{
+			GPUs:    gpus,
+			Image:   imageName,
+			Volumes: volumes,
+			Env:     trainEnvFlags,
+			Args:    []string{"python", "-m", "cog.server.http", "--x-mode", "train"},
+		},
+		IsTrain:       true,
+		Docker:        dockerClient,
+		WeightManager: wm,
+	})
 	if err != nil {
 		return err
 	}
-
-	go func() {
-		captureSignal := make(chan os.Signal, 1)
-		signal.Notify(captureSignal, syscall.SIGINT)
-
-		<-captureSignal
-
-		console.Info("Stopping container...")
-		if err := predictor.Stop(ctx); err != nil {
-			console.Warnf("Failed to stop container: %s", err)
-		}
-	}()
 
 	if err := predictor.Start(ctx, os.Stderr, time.Duration(setupTimeout)*time.Second); err != nil {
 		return err
 	}
 
-	// FIXME: will not run on signal
+	// Use background context to ensure stop signal is still sent after root context is canceled by signal
 	defer func() {
 		console.Debugf("Stopping container...")
-		// use background context to ensure stop signal is still sent after root context is canceled
 		if err := predictor.Stop(context.Background()); err != nil {
 			console.Warnf("Failed to stop container: %s", err)
 		}

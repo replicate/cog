@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -15,17 +16,21 @@ import (
 // imports (e.g. "from .types import Output"). Pass "" if unknown.
 type Parser func(source []byte, predictRef string, mode Mode, sourceDir string) (*PredictorInfo, error)
 
+// PathAwareParser is a parser that can also receive the source file path
+// relative to sourceDir for package-relative import resolution.
+type PathAwareParser func(source []byte, predictRef string, mode Mode, sourceDir string, sourcePath string) (*PredictorInfo, error)
+
 // Generate produces an OpenAPI 3.0.2 JSON schema from a predict/train reference.
 //
 // predictRef has the format "module.py:ClassName" (e.g. "predict.py:Predictor").
-// sourceDir is the directory containing the source file.
+// sourceDir is the project root containing the source file path from predictRef.
 // mode selects predict vs train.
 // parse is the parser implementation (use python.ParsePredictor).
 //
 // If the COG_OPENAPI_SCHEMA environment variable is set, its value is treated
 // as a path to a pre-built JSON schema file. The file contents are returned
 // directly and no parsing or generation takes place.
-func Generate(predictRef string, sourceDir string, mode Mode, parse Parser) ([]byte, error) {
+func Generate(predictRef string, sourceDir string, mode Mode, parse any) ([]byte, error) {
 	// "Bring your own schema" override
 	if schemaPath := os.Getenv("COG_OPENAPI_SCHEMA"); schemaPath != "" {
 		data, err := os.ReadFile(schemaPath) //nolint:gosec // G703: path from trusted env var
@@ -39,10 +44,14 @@ func Generate(predictRef string, sourceDir string, mode Mode, parse Parser) ([]b
 	if err != nil {
 		return nil, err
 	}
+	filePath, err = cleanSourceFilePath(filePath)
+	if err != nil {
+		return nil, err
+	}
 
 	fullPath := filePath
 	if sourceDir != "" {
-		fullPath = sourceDir + "/" + filePath
+		fullPath = filepath.Join(sourceDir, filePath)
 	}
 
 	source, err := os.ReadFile(fullPath)
@@ -50,7 +59,19 @@ func Generate(predictRef string, sourceDir string, mode Mode, parse Parser) ([]b
 		return nil, fmt.Errorf("failed to read predictor source %s: %w", fullPath, err)
 	}
 
-	return GenerateFromSource(source, className, mode, parse, sourceDir)
+	return generateFromSource(source, className, mode, parse, sourceDir, filePath)
+}
+
+func cleanSourceFilePath(filePath string) (string, error) {
+	clean := filepath.Clean(filePath)
+	if filepath.IsAbs(clean) || pathEscapesSourceDir(clean) {
+		return "", fmt.Errorf("predictor source path %q is outside source directory", filePath)
+	}
+	return clean, nil
+}
+
+func pathEscapesSourceDir(path string) bool {
+	return path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator))
 }
 
 // GenerateFromSource produces an OpenAPI 3.0.2 JSON schema from Python source bytes.
@@ -59,12 +80,43 @@ func Generate(predictRef string, sourceDir string, mode Mode, parse Parser) ([]b
 // parse is the parser implementation (use python.ParsePredictor).
 // sourceDir is the project root for resolving cross-file imports. Pass "" if unknown.
 // This is the lower-level API — it does not read files or check COG_OPENAPI_SCHEMA.
-func GenerateFromSource(source []byte, predictRef string, mode Mode, parse Parser, sourceDir string) ([]byte, error) {
-	info, err := parse(source, predictRef, mode, sourceDir)
+func GenerateFromSource(source []byte, predictRef string, mode Mode, parse any, sourceDir string) ([]byte, error) {
+	return generateFromSource(source, predictRef, mode, parse, sourceDir, "")
+}
+
+// GenerateFromSourceWithPath is like GenerateFromSource, but also provides the
+// source file path to parsers that need it for package-relative imports.
+func GenerateFromSourceWithPath(source []byte, predictRef string, mode Mode, parse any, sourceDir string, sourcePath string) ([]byte, error) {
+	return generateFromSource(source, predictRef, mode, parse, sourceDir, sourcePath)
+}
+
+func generateFromSource(source []byte, predictRef string, mode Mode, parse any, sourceDir string, sourcePath string) ([]byte, error) {
+	info, err := parsePredictorInfo(parse, source, predictRef, mode, sourceDir, sourcePath)
 	if err != nil {
 		return nil, err
 	}
 	return GenerateOpenAPISchema(info)
+}
+
+func parsePredictorInfo(parse any, source []byte, predictRef string, mode Mode, sourceDir string, sourcePath string) (*PredictorInfo, error) {
+	switch parser := parse.(type) {
+	case PathAwareParser:
+		if sourcePath != "" {
+			return parser(source, predictRef, mode, sourceDir, sourcePath)
+		}
+		return parser(source, predictRef, mode, sourceDir, "")
+	case func([]byte, string, Mode, string, string) (*PredictorInfo, error):
+		if sourcePath != "" {
+			return parser(source, predictRef, mode, sourceDir, sourcePath)
+		}
+		return parser(source, predictRef, mode, sourceDir, "")
+	case Parser:
+		return parser(source, predictRef, mode, sourceDir)
+	case func([]byte, string, Mode, string) (*PredictorInfo, error):
+		return parser(source, predictRef, mode, sourceDir)
+	default:
+		return nil, fmt.Errorf("unsupported parser type %T", parse)
+	}
 }
 
 // GenerateCombined produces an OpenAPI schema for both predict and train (when
@@ -73,7 +125,7 @@ func GenerateFromSource(source []byte, predictRef string, mode Mode, parse Parse
 //
 // If the COG_OPENAPI_SCHEMA environment variable is set, its value is treated
 // as a path to a pre-built JSON schema file and returned directly.
-func GenerateCombined(sourceDir string, predictRef string, trainRef string, parse Parser) ([]byte, error) {
+func GenerateCombined(sourceDir string, predictRef string, trainRef string, parse any) ([]byte, error) {
 	// "Bring your own schema" override
 	if schemaPath := os.Getenv("COG_OPENAPI_SCHEMA"); schemaPath != "" {
 		data, err := os.ReadFile(schemaPath) //nolint:gosec // G703: path from trusted env var

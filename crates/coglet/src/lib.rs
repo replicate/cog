@@ -31,3 +31,11 @@ pub use version::{COGLET_VERSION, VersionInfo};
 pub use worker::{
     PredictHandler, PredictResult, SetupError, SetupLogHook, SlotSender, WorkerConfig, run_worker,
 };
+
+/// Install the `ring` TLS crypto provider for `rustls`.
+///
+/// Must be called once before any `reqwest::Client` is created. Safe to call
+/// multiple times — subsequent calls are no-ops (returns `Err` which we ignore).
+pub fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}

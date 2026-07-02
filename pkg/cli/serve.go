@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/replicate/cog/pkg/model"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/weights"
 )
 
 var (
@@ -22,8 +24,8 @@ var (
 func newServeCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run a prediction HTTP server",
-		Long: `Run a prediction HTTP server.
+		Short: "Run an HTTP server",
+		Long: `Run an HTTP server.
 
 Builds the model and starts an HTTP server that exposes the model's inputs
 and outputs as a REST API. Compatible with the Cog HTTP protocol.`,
@@ -81,6 +83,11 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	if err != nil {
 		return err
 	}
+	defer src.Close()
+
+	if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
+		return err
+	}
 
 	console.Info("Building Docker image from environment in cog.yaml...")
 	console.Info("")
@@ -108,8 +115,12 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		args = append(args, "--upload-url", uploadURL)
 	}
 
+	// Use human-readable log format for local development
+	env := make([]string, len(envFlags))
+	copy(env, envFlags)
+	env = append(env, "LOG_FORMAT=console")
+
 	// Automatically propagate RUST_LOG for Rust coglet debugging
-	env := envFlags
 	if rustLog := os.Getenv("RUST_LOG"); rustLog != "" {
 		env = append(env, "RUST_LOG="+rustLog)
 	}
@@ -121,6 +132,27 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 		Image:   m.ImageRef(),
 		Volumes: []command.Volume{{Source: src.ProjectDir, Destination: "/src"}},
 		Workdir: "/src",
+	}
+
+	wm, err := newWeightManager(src)
+	if err != nil {
+		return err
+	}
+	mounts, err := wm.Prepare(ctx)
+	if err != nil {
+		return fmt.Errorf("prepare weights: %w", err)
+	}
+	defer func() {
+		if err := mounts.Release(); err != nil {
+			console.Warnf("Failed to clean up weight mounts: %s", err)
+		}
+	}()
+	for _, spec := range mounts.Specs {
+		runOptions.Volumes = append(runOptions.Volumes, command.Volume{
+			Source:      spec.Source,
+			Destination: spec.Target,
+			ReadOnly:    true,
+		})
 	}
 
 	// On Linux, host.docker.internal is not available by default — add it.
@@ -141,7 +173,7 @@ func cmdServe(cmd *cobra.Command, arg []string) error {
 	err = docker.Run(ctx, dockerClient, runOptions)
 	// Only retry if we're using a GPU but the user didn't explicitly select a GPU with --gpus
 	// If the user specified the wrong GPU, they are explicitly selecting a GPU and they'll want to hear about it
-	if runOptions.GPUs == "all" && err == docker.ErrMissingDeviceDriver {
+	if runOptions.GPUs == "all" && errors.Is(err, docker.ErrMissingDeviceDriver) {
 		console.Info("Missing device driver, re-trying without GPU")
 
 		runOptions.GPUs = ""

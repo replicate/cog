@@ -15,6 +15,7 @@ flowchart TB
 ```
 
 Without the schema, consumers would have no way to know:
+
 - What inputs the model accepts
 - What types those inputs should be
 - What constraints apply (required fields, min/max values, allowed choices)
@@ -22,40 +23,24 @@ Without the schema, consumers would have no way to know:
 
 ### How It's Used Today
 
-| Consumer | What They Use the Schema For |
-|----------|------------------------------|
-| **Replicate platform** | Generate input forms in the web UI, validate requests before routing to models |
-| **HTTP server (coglet)** | Validate incoming JSON, reject malformed requests before they reach user code |
-| **CLI (`cog predict`)** | Parse `-i key=value` flags into correctly-typed Python objects |
-| **Docker label** | Extract model interface without running the container |
-| **API clients** | Know what to send and what to expect back without reading source code |
+| Consumer                 | What They Use the Schema For                                                   |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| **Replicate platform**   | Generate input forms in the web UI, validate requests before routing to models |
+| **HTTP server (coglet)** | Validate incoming JSON, reject malformed requests before they reach user code  |
+| **CLI (`cog run`)**      | Parse `-i key=value` flags into correctly-typed Python objects                 |
+| **Docker label**         | Extract model interface without running the container                          |
+| **API clients**          | Know what to send and what to expect back without reading source code          |
 
 ## How It's Generated
 
-Cog supports two schema generation paths:
+Cog generates schemas statically. The Go schema generator parses Python source code at `cog build` time using [tree-sitter](https://tree-sitter.github.io/tree-sitter/). No Python process is invoked and no container boots to discover the model interface. The schema is produced from the model's source files before Docker build begins, which keeps schema generation deterministic, fast, and independent of the model's installed dependencies.
 
-### Runtime Path (default)
-
-The **runtime path** boots the built Docker container and runs `python -m cog.command.openapi_schema` to introspect the model at runtime. This is the default for all builds. It uses Python's `inspect` module and `typing.get_type_hints()` to extract parameter types, then builds OpenAPI JSON from a hand-rolled ADT type system (dataclasses in `_adt.py`). No pydantic is involved in schema generation -- `cog.BaseModel` is a dataclass wrapper, not pydantic.
-
-### Static Path (experimental)
-
-The **static path** parses Python source code at `cog build` time using [tree-sitter](https://tree-sitter.github.io/tree-sitter/) in Go. No Python runtime is invoked. The goal is to replace the runtime path entirely -- making schema generation deterministic, fast, and independent of the model's dependencies. It's not there yet.
-
-Enable it for testing with the `COG_STATIC_SCHEMA` environment variable:
-
-```bash
-COG_STATIC_SCHEMA=1 cog build -t my-model
-```
-
-The static path requires SDK >= 0.17.0. If the static parser encounters a type it can't resolve, it **falls back to the runtime path** automatically with a warning -- so builds don't break due to static parser limitations.
-
-For local commands (`cog serve`, `cog predict`), the static path is always used regardless of the `COG_STATIC_SCHEMA` flag, because these commands run before the post-build runtime generation step -- the CLI needs the schema to parse `-i` input flags.
+If the static parser encounters a type it can't resolve, the build fails with a typed schema error. Hard user errors such as parse failures and unsupported features like `default_factory` also fail before Docker build starts.
 
 ```mermaid
 flowchart LR
     subgraph source["Model Source"]
-        predict["predict.py"]
+        predict["run.py"]
         types["output_types.py"]
     end
 
@@ -78,16 +63,18 @@ flowchart LR
 
 ### Static Path Pipeline Steps
 
-1. **Parse** the predictor file with tree-sitter (concrete syntax tree, not AST)
-2. **Collect imports** -- track where each name came from (`from cog import Path`, `from cog import BaseModel`)
-3. **Collect module scope** -- resolve module-level variable assignments (for default values, choices lists)
-4. **Collect BaseModel subclasses** -- find all classes that inherit from `BaseModel` (cog's dataclass-based version; pydantic BaseModel also supported for compatibility)
-5. **Resolve cross-file models** — for imported names not found locally, find the `.py` file on disk, parse it, and extract its BaseModel definitions
-6. **Extract inputs** — walk the `predict()` method parameters, resolve types, defaults, and `Input()` metadata
-7. **Resolve output type** — recursively resolve the return type annotation into a `SchemaType`
-8. **Generate OpenAPI** — convert the extracted `PredictorInfo` into a full OpenAPI 3.0.2 JSON document
+1. **Parse module** -- parse Python source with tree-sitter and store the concrete syntax tree.
+2. **Collect imports** -- track local names, aliases, Cog types, typing helpers, and builtins.
+3. **Collect module scope** -- resolve module-level constants that can be used by defaults, descriptions, and choices.
+4. **Collect local schema models** -- find local `BaseModel` and `TypedDict` classes.
+5. **Resolve imported models** -- parse each local imported module at most once and merge schema model definitions and aliases.
+6. **Collect input registry** -- record reusable class-level `Input()` attributes and helper methods.
+7. **Find target callable** -- resolve the configured runner target. Predict-mode class targets prefer `run()` and fall back to legacy `predict()` for backward compatibility; train-mode class targets resolve `train()`. Standalone targets use the configured function name first, then fall back to the mode default if absent.
+8. **Extract inputs** -- walk the resolved callable parameters and resolve types, defaults, and `Input()` metadata.
+9. **Resolve output type** -- recursively resolve the return annotation into a `SchemaType`.
+10. **Generate OpenAPI** -- convert the extracted schema information into a full OpenAPI 3.0.2 JSON document.
 
-If any step fails with an unresolvable type, the build falls back to the runtime path.
+If any step fails, the build stops before Docker starts.
 
 ### Cross-File Resolution
 
@@ -104,24 +91,26 @@ class Prediction(BaseModel):
 ```
 
 ```python
-# predict.py
-from cog import BasePredictor
+# run.py
+from cog import BaseRunner
 from output_types import Prediction
 
-class Predictor(BasePredictor):
-    def predict(self, prompt: str) -> Prediction:
+class Runner(BaseRunner):
+    def run(self, prompt: str) -> Prediction:
         ...
 ```
 
-The resolver handles every permutation of local imports:
+The resolver handles local imports relative to the predictor file and project root:
 
-| Import Style | File Resolved |
-|-------------|---------------|
-| `from output_types import X` | `<project>/output_types.py` |
-| `from .output_types import X` | `<project>/output_types.py` |
-| `from models.output import X` | `<project>/models/output.py` |
-| `from .models.output import X` | `<project>/models/output.py` |
-| `from output_types import X as Y` | `<project>/output_types.py` (alias tracked) |
+| Import Style                       | File Resolved                                            |
+| ---------------------------------- | -------------------------------------------------------- |
+| `from output_types import X`       | `<project>/output_types.py`                              |
+| `from .output_types import X`      | `<predictor-dir>/output_types.py`                        |
+| `from models.output import X`      | `<project>/models/output.py`                             |
+| `from .models.output import X`     | `<predictor-dir>/models/output.py`                       |
+| `from output_types import X as Y`  | `<project>/output_types.py` (alias tracked)              |
+| `from .output_types import X as Y` | `<predictor-dir>/output_types.py` (alias tracked)        |
+| `from . import output_types`       | `<predictor-dir>/output_types.py` (module alias tracked) |
 
 **How it distinguishes local from external**: the resolver converts the module path to a filesystem path and checks if the file exists. If `output_types.py` exists in the project directory, it's local. If not (e.g., `from transformers import ...`), it's external. Known external packages (stdlib, torch, numpy, etc.) are skipped without a filesystem check.
 
@@ -132,6 +121,8 @@ cannot resolve output type 'WeirdType' (imported from 'some_package') —
 external types cannot be statically analyzed. Define it as a BaseModel
 subclass in your predict file, or provide a .pyi stub
 ```
+
+For external values that are already JSON-shaped but not visible to the schema resolver, `Annotated[..., cog.Opaque]` is the escape hatch. It tells Cog to treat the value as an opaque JSON object while preserving container shape: `Annotated[ExternalType, cog.Opaque]` becomes an object, and `Annotated[list[ExternalType], cog.Opaque]` becomes an array of objects. The same shape is preserved for fields inside `cog.BaseModel` outputs and supported pydantic models.
 
 ## SchemaType: The Type System
 
@@ -169,68 +160,83 @@ This recursive structure means nested types like `dict[str, list[dict[str, int]]
 
 Each `SchemaType` produces its JSON Schema fragment via `JSONSchema()`:
 
-| SchemaType Kind | JSON Schema |
-|-----------------|-------------|
-| `SchemaPrimitive(str)` | `{"type": "string"}` |
-| `SchemaPrimitive(Path)` | `{"type": "string", "format": "uri"}` |
-| `SchemaAny` | `{"type": "object"}` |
-| `SchemaArray(items)` | `{"type": "array", "items": items.JSONSchema()}` |
-| `SchemaDict(valueType)` | `{"type": "object", "additionalProperties": valueType.JSONSchema()}` |
-| `SchemaObject(fields)` | `{"type": "object", "properties": {...}, "required": [...]}` |
-| `SchemaIterator(elem)` | `{"type": "array", "items": elem.JSONSchema(), "x-cog-array-type": "iterator"}` |
-| `SchemaConcatIterator` | `{"type": "array", "items": {"type": "string"}, "x-cog-array-type": "iterator", "x-cog-array-display": "concatenate"}` |
+| SchemaType Kind         | JSON Schema                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `SchemaPrimitive(str)`  | `{"type": "string"}`                                                                                                   |
+| `SchemaPrimitive(Path)` | `{"type": "string", "format": "uri"}`                                                                                  |
+| `SchemaAny`             | `{"type": "object"}`                                                                                                   |
+| `SchemaArray(items)`    | `{"type": "array", "items": items.JSONSchema()}`                                                                       |
+| `SchemaDict(valueType)` | `{"type": "object", "additionalProperties": valueType.JSONSchema()}`                                                   |
+| `SchemaObject(fields)`  | `{"type": "object", "properties": {...}, "required": [...]}`                                                           |
+| `SchemaIterator(elem)`  | `{"type": "array", "items": elem.JSONSchema(), "x-cog-array-type": "iterator"}`                                        |
+| `SchemaConcatIterator`  | `{"type": "array", "items": {"type": "string"}, "x-cog-array-type": "iterator", "x-cog-array-display": "concatenate"}` |
 
 ## Type Mappings
 
 ### Input Types
 
-| Python | JSON Schema | Notes |
-|--------|-------------|-------|
-| `str` | `{"type": "string"}` | |
-| `int` | `{"type": "integer"}` | |
-| `float` | `{"type": "number"}` | |
-| `bool` | `{"type": "boolean"}` | |
-| `cog.Path` | `{"type": "string", "format": "uri"}` | URLs downloaded at runtime |
-| `cog.File` | `{"type": "string", "format": "uri"}` | File uploads |
-| `cog.Secret` | `{"type": "string", "format": "password", "x-cog-secret": true}` | Masked in logs |
-| `list[T]` | `{"type": "array", "items": {...}}` | |
-| `Optional[T]` | Type T + not in `required` | Input fields only |
-| `Literal["a", "b"]` / `choices=[...]` | `{"enum": ["a", "b"]}` | |
+| Python                                | JSON Schema                                                      | Notes                                                                 |
+| ------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `str`                                 | `{"type": "string"}`                                             |                                                                       |
+| `int`                                 | `{"type": "integer"}`                                            |                                                                       |
+| `float`                               | `{"type": "number"}`                                             |                                                                       |
+| `bool`                                | `{"type": "boolean"}`                                            |                                                                       |
+| `cog.Path`                            | `{"type": "string", "format": "uri"}`                            | URLs downloaded at runtime                                            |
+| `cog.File`                            | `{"type": "string", "format": "uri"}`                            | File uploads                                                          |
+| `cog.Secret`                          | `{"type": "string", "format": "password", "x-cog-secret": true}` | Masked in logs                                                        |
+| `list[T]`                             | `{"type": "array", "items": {...}}`                              |                                                                       |
+| `Optional[T]` / `T \| None`           | Type T + `nullable: true`, not in `required`                     | Input fields only; never required                                     |
+| `A \| B` / `Union[A, B]`              | `{"anyOf": [A, B]}`                                              | Input-only, JSON-native unions only                                   |
+| `A \| B \| None`                      | `{"anyOf": [A, B]}` + `nullable: true`                           | Multi-variant union; stays in `required` unless a default is supplied |
+| `Literal["a", "b"]` / `choices=[...]` | `{"enum": ["a", "b"]}`                                           |                                                                       |
+
+Input unions are intentionally narrower than output types. Cog supports JSON-native input unions (`str`, `int`, `float`, `bool`, `dict`/`Any`, `list[T]`, and `None`) so request validation can happen at the HTTP boundary and Python normalisation can choose a deterministic value type. Cog rejects unions involving `Path`, `File`, `Secret`, custom coders, and `BaseModel` because those cases are ambiguous for clients or runtime coercion. Output unions remain unsupported (see below).
+
+A plain single-type optional (`Optional[T]` or `T | None`) is **never** placed in `required`, regardless of whether a default is supplied. A multi-variant nullable union (`A | B | None`) is different: because the field carries a concrete `anyOf` value type, it stays in `required` unless a default makes it omittable. This is why the two rows above differ in their `required` behaviour.
+
+Nullable behaviour matches every other optional field: `nullable: true` (plus omission from `required`) means an **omitted** value falls back to the default. An **explicit** JSON `null` is still validated against the field type and is rejected at the HTTP edge, because the runtime validator does not treat OpenAPI's `nullable` keyword as an additional accepted value. "May be null" therefore means "may be omitted", not "accepts an explicit null payload".
+
+> **Runtime caveat:** Cog marks optionals as not-`required` in the schema, but the predictor still needs a Python-level default so the omitted value resolves to `None`. Use `value: Optional[T] = Input(...)` (the `Input(...)` supplies an implicit `None`) or `Input(default=None)`. A bare `value: Optional[T]` annotation with no `= Input(...)` generates a correct "optional" schema but raises `TypeError: missing 1 required positional argument` when the field is omitted at runtime.
 
 ### Output Types
 
-| Python | SchemaType | JSON Schema |
-|--------|------------|-------------|
-| `str` | `SchemaPrimitive` | `{"type": "string"}` |
-| `int` | `SchemaPrimitive` | `{"type": "integer"}` |
-| `float` | `SchemaPrimitive` | `{"type": "number"}` |
-| `bool` | `SchemaPrimitive` | `{"type": "boolean"}` |
-| `Path` | `SchemaPrimitive` | `{"type": "string", "format": "uri"}` |
-| `dict` (bare) | `SchemaAny` | `{"type": "object"}` |
-| `dict[str, V]` | `SchemaDict` | `{"type": "object", "additionalProperties": V}` |
-| `list` (bare) | `SchemaArray(SchemaAny)` | `{"type": "array", "items": {"type": "object"}}` |
-| `list[T]` | `SchemaArray` | `{"type": "array", "items": T}` |
-| `BaseModel` subclass | `SchemaObject` | `{"type": "object", "properties": {...}}` |
-| `Iterator[T]` | `SchemaIterator` | `{"type": "array", "items": T, "x-cog-array-type": "iterator"}` |
-| `ConcatenateIterator[str]` | `SchemaConcatIterator` | Streaming token output |
-| Nested types | Recursive | `dict[str, list[dict[str, int]]]` fully supported |
+| Python                           | SchemaType                              | JSON Schema                                                     |
+| -------------------------------- | --------------------------------------- | --------------------------------------------------------------- |
+| `str`                            | `SchemaPrimitive`                       | `{"type": "string"}`                                            |
+| `int`                            | `SchemaPrimitive`                       | `{"type": "integer"}`                                           |
+| `float`                          | `SchemaPrimitive`                       | `{"type": "number"}`                                            |
+| `bool`                           | `SchemaPrimitive`                       | `{"type": "boolean"}`                                           |
+| `Path`                           | `SchemaPrimitive`                       | `{"type": "string", "format": "uri"}`                           |
+| `dict` (bare)                    | `SchemaAny`                             | `{"type": "object"}`                                            |
+| `dict[str, V]`                   | `SchemaDict`                            | `{"type": "object", "additionalProperties": V}`                 |
+| `list` (bare)                    | `SchemaArray(SchemaAny)`                | `{"type": "array", "items": {"type": "object"}}`                |
+| `list[T]`                        | `SchemaArray`                           | `{"type": "array", "items": T}`                                 |
+| `Annotated[T, cog.Opaque]`       | `SchemaPrimitive(TypeAny)`              | `{"type": "object"}`                                            |
+| `Annotated[list[T], cog.Opaque]` | `SchemaArray(SchemaPrimitive(TypeAny))` | `{"type": "array", "items": {"type": "object"}}`                |
+| `BaseModel` subclass             | `SchemaObject`                          | `{"type": "object", "properties": {...}}`                       |
+| `Iterator[T]`                    | `SchemaIterator`                        | `{"type": "array", "items": T, "x-cog-array-type": "iterator"}` |
+| `ConcatenateIterator[str]`       | `SchemaConcatIterator`                  | Streaming token output                                          |
+| Nested types                     | Recursive                               | `dict[str, list[dict[str, int]]]` fully supported               |
 
 ### Unsupported Output Types
 
-| Python | Error |
-|--------|-------|
-| `Optional[T]` / `T \| None` | Predictions must succeed with a value or fail with an error |
-| `Union[A, B]` | Ambiguous for downstream consumers |
-| External package types | Cannot be statically analyzed — define as BaseModel or use .pyi stub |
+| Python                      | Error                                                                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `Optional[T]` / `T \| None` | Predictions must succeed with a value or fail with an error                                                                      |
+| `Union[A, B]`               | Ambiguous for downstream consumers                                                                                               |
+| External package types      | Cannot be statically analyzed — define as BaseModel, use .pyi stub, or mark JSON-shaped values with `Annotated[..., cog.Opaque]` |
 
 ## Cog-Specific Extensions
 
-| Extension | Purpose |
-|-----------|---------|
-| `x-order` | Preserves parameter order from function signature |
-| `x-cog-array-type` | Marks iterators vs regular arrays |
-| `x-cog-array-display` | Hints for how to display streaming output |
-| `x-cog-secret` | Marks sensitive inputs |
+| Extension             | Purpose                                             |
+| --------------------- | --------------------------------------------------- |
+| `x-order`             | Preserves parameter order from function signature   |
+| `x-cog-array-type`    | Marks iterators vs regular arrays                   |
+| `x-cog-array-display` | Hints for how to display streaming output           |
+| `x-cog-secret`        | Marks sensitive inputs                              |
+| `x-cog-streaming`     | Marks prediction operations that accept SSE clients |
+
+Iterator output types describe the shape of accumulated JSON output. SSE response support is a separate prediction operation capability and is only advertised when the prediction handler opts in with `@cog.streaming`.
 
 ## Where the Schema Lives
 
@@ -246,20 +252,19 @@ Also written to `.cog/openapi_schema.json` inside the image for the runtime to s
 
 ### At Runtime
 
-| Endpoint | Format |
-|----------|--------|
+| Endpoint            | Format           |
+| ------------------- | ---------------- |
 | `GET /openapi.json` | Raw OpenAPI spec |
 
 ### Override and Configuration
 
-| Environment Variable | Purpose |
-|---------------------|---------|
-| `COG_STATIC_SCHEMA=1` | Enable experimental static schema generator (falls back to runtime path on failure) |
-| `COG_OPENAPI_SCHEMA=path` | Skip generation entirely and use a pre-built schema file |
+| Environment Variable      | Purpose                                                   |
+| ------------------------- | --------------------------------------------------------- |
+| `COG_OPENAPI_SCHEMA=path` | Skip generation entirely and use a pre-built schema file. |
 
 ```bash
-# Use static schema generation
-COG_STATIC_SCHEMA=1 cog build -t my-model
+# Default: static schema generation
+cog build -t my-model
 
 # Use a pre-built schema file
 COG_OPENAPI_SCHEMA=my_schema.json cog build
@@ -314,8 +319,8 @@ A simplified example showing a multi-file predictor with structured output:
         },
         "required": ["text", "score"]
       },
-      "PredictionRequest": { "..." : "..." },
-      "PredictionResponse": { "..." : "..." }
+      "PredictionRequest": { "...": "..." },
+      "PredictionResponse": { "...": "..." }
     }
   }
 }
@@ -323,17 +328,12 @@ A simplified example showing a multi-file predictor with structured output:
 
 ## Code References
 
-| File | Purpose |
-|------|---------|
-| `pkg/schema/schema_type.go` | `SchemaType` ADT, `ResolveSchemaType()`, `JSONSchema()` generation |
-| `pkg/schema/types.go` | `PredictorInfo`, `PrimitiveType`, `FieldType`, `InputField`, `ImportContext` |
-| `pkg/schema/python/parser.go` | Tree-sitter Python parser, `ParsePredictor()`, cross-file resolution |
-| `pkg/schema/openapi.go` | OpenAPI document assembly from `PredictorInfo` |
-| `pkg/schema/generator.go` | Top-level `Generate()`, `GenerateCombined()`, `Parser` type |
-| `pkg/schema/errors.go` | Typed error kinds (`ErrUnresolvableType`, `ErrOptionalOutput`, etc.) |
-| `pkg/image/build.go` | `canUseStaticSchemaGen()` -- opt-in gate, `generateStaticSchema()` -- entry point, fallback to runtime path on `ErrUnresolvableType` |
-| `pkg/image/openapi_schema.go` | `GenerateOpenAPISchema()` -- runtime path (boots container, runs `python -m cog.command.openapi_schema`) |
-| `python/cog/_adt.py` | Internal ADT types for Python-side predictor introspection |
-| `python/cog/_inspector.py` | Python-side predictor inspector (runtime introspection) |
-| `python/cog/_schemas.py` | Python-side OpenAPI schema generation from inspected predictor info |
-| `python/cog/command/openapi_schema.py` | CLI entry point for `python -m cog.command.openapi_schema` (invoked by runtime path) |
+| File                        | Purpose                                                              |
+| --------------------------- | -------------------------------------------------------------------- |
+| `pkg/schema/schema_type.go` | `SchemaType` ADT, `ResolveSchemaType()`, `JSONSchema()` generation   |
+| `pkg/schema/types.go`       | `PredictorInfo`, `PrimitiveType`, `FieldType`, `InputField`, imports |
+| `pkg/schema/python/`        | Tree-sitter Python parser and cross-file resolution                  |
+| `pkg/schema/openapi.go`     | OpenAPI document assembly from `PredictorInfo`                       |
+| `pkg/schema/generator.go`   | Top-level `Generate()`, `GenerateCombined()`, `Parser` type          |
+| `pkg/schema/errors.go`      | Typed schema error kinds                                             |
+| `pkg/image/build.go`        | Build-time schema generation entry point and schema file validation  |

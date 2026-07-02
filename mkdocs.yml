@@ -4,6 +4,7 @@ docs_dir: docs/
 nav:
   - README: README.md
   - Getting Started: getting-started.md
+  - Examples: examples.md
   - Using your own model: getting-started-own-model.md
   - Deploy your model: deploy.md
   - YAML spec: yaml.md
@@ -60,6 +61,7 @@ markdown_extensions:
   - admonition
   - codehilite
   - extra
+  - md_in_html
   - pymdownx.highlight
   - pymdownx.superfences
 extra_css:

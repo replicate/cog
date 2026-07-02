@@ -1,0 +1,4 @@
+build:
+  python_version: "3.12"
+run: "run.py:Runner"
+train: "train.py:train"

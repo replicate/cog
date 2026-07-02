@@ -14,7 +14,7 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use futures::{SinkExt, StreamExt};
 use tokio::runtime::Handle;
@@ -133,7 +133,7 @@ fn init_worker_tracing(tx: mpsc::Sender<ControlResponse>) {
 use crate::bridge::codec::JsonCodec;
 use crate::bridge::protocol::{
     ControlRequest, ControlResponse, FileOutputKind, LogSource, MAX_INLINE_IPC_SIZE, MetricMode,
-    SlotId, SlotOutcome, SlotRequest, SlotResponse,
+    SLOT_RESPONSE_PROTOCOL_VERSION, SlotId, SlotOutcome, SlotRequest, SlotResponse,
 };
 use crate::bridge::transport::{ChildTransportInfo, connect_transport};
 use crate::orchestrator::HealthcheckResult;
@@ -151,6 +151,7 @@ pub struct SlotSender {
     tx: mpsc::UnboundedSender<SlotResponse>,
     output_dir: PathBuf,
     file_counter: Arc<AtomicUsize>,
+    output_counter: Arc<AtomicU64>,
 }
 
 impl SlotSender {
@@ -159,7 +160,12 @@ impl SlotSender {
             tx,
             output_dir,
             file_counter: Arc::new(AtomicUsize::new(0)),
+            output_counter: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    fn next_output_index(&self) -> u64 {
+        self.output_counter.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Generate a unique filename in the output dir.
@@ -173,7 +179,7 @@ impl SlotSender {
             return Ok(());
         }
 
-        let msg = SlotResponse::Log {
+        let msg = SlotResponse::LogLine {
             source,
             data: truncate_worker_log(data.to_string()),
         };
@@ -232,7 +238,7 @@ impl SlotSender {
 
     /// Send prediction output, either inline or spilled to disk if too large.
     pub fn send_output(&self, output: serde_json::Value) -> io::Result<()> {
-        let msg = build_output_message(&self.output_dir, output)?;
+        let msg = build_output_message(&self.output_dir, output, self.next_output_index())?;
         self.tx
             .send(msg)
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "slot channel closed"))
@@ -243,6 +249,7 @@ impl SlotSender {
 fn build_output_message(
     output_dir: &std::path::Path,
     output: serde_json::Value,
+    index: u64,
 ) -> io::Result<SlotResponse> {
     let serialized =
         serde_json::to_vec(&output).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -260,7 +267,7 @@ fn build_output_message(
             mime_type: None,
         })
     } else {
-        Ok(SlotResponse::Output { output })
+        Ok(SlotResponse::OutputChunk { output, index })
     }
 }
 
@@ -652,6 +659,19 @@ pub async fn run_worker<H: PredictHandler>(
         .map(|(id, w)| (id, Arc::new(tokio::sync::Mutex::new(w))))
         .collect();
 
+    // Send protocol version on each slot so the orchestrator can detect mismatches
+    for (slot_id, writer) in &slot_writers {
+        let mut w = writer.lock().await;
+        if let Err(e) = w
+            .send(SlotResponse::ProtocolVersion {
+                version: SLOT_RESPONSE_PROTOCOL_VERSION,
+            })
+            .await
+        {
+            tracing::warn!(%slot_id, error = %e, "Failed to send protocol version");
+        }
+    }
+
     // Main event loop
     loop {
         tokio::select! {
@@ -872,7 +892,7 @@ async fn run_prediction<H: PredictHandler>(
             // Send output as a separate message (handles spilling for large values).
             // Skip if null or empty array — those mean "already streamed" (generators).
             if !output.is_null() && output != serde_json::Value::Array(vec![]) {
-                let output_msg = match build_output_message(&output_dir, output) {
+                let output_msg = match build_output_message(&output_dir, output, 0) {
                     Ok(msg) => msg,
                     Err(e) => {
                         tracing::error!(error = %e, "Failed to build output message");

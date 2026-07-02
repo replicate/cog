@@ -25,12 +25,13 @@ import (
 
 // ociMockClient implements registry.Client for testing ImagePusher.
 type ociMockClient struct {
-	mu              sync.Mutex
-	writtenLayers   []v1.Hash
-	pushedImages    []string
-	writeLayerErr   error
-	pushImageErr    error
-	writeLayerCount int
+	mu                    sync.Mutex
+	writtenLayers         []v1.Hash
+	layerMediaTypeHeaders []string
+	pushedImages          []string
+	writeLayerErr         error
+	pushImageErr          error
+	writeLayerCount       int
 }
 
 func (m *ociMockClient) WriteLayer(_ context.Context, opts registry.WriteLayerOptions) error {
@@ -45,6 +46,7 @@ func (m *ociMockClient) WriteLayer(_ context.Context, opts registry.WriteLayerOp
 		return err
 	}
 	m.writtenLayers = append(m.writtenLayers, digest)
+	m.layerMediaTypeHeaders = append(m.layerMediaTypeHeaders, opts.LayerMediaTypeHeader)
 
 	// Send progress if channel is provided
 	if opts.ProgressCh != nil {
@@ -75,6 +77,9 @@ func (m *ociMockClient) GetDescriptor(context.Context, string) (v1.Descriptor, e
 	return v1.Descriptor{}, nil
 }
 func (m *ociMockClient) PushIndex(context.Context, string, v1.ImageIndex) error { return nil }
+func (m *ociMockClient) BlobExists(context.Context, string, string) (bool, error) {
+	return false, nil
+}
 
 // testArtifact creates an *ImageArtifact for testing with the given reference string.
 func testArtifact(ref string) *ImageArtifact {
@@ -119,6 +124,7 @@ func TestImagePusher_Push(t *testing.T) {
 
 		// Should have pushed 2 layers + 1 config blob = 3 WriteLayer calls
 		assert.Equal(t, 3, mock.writeLayerCount)
+		assert.Equal(t, []string{"", "", ""}, mock.layerMediaTypeHeaders)
 
 		// Should have pushed the manifest
 		require.Len(t, mock.pushedImages, 1)
@@ -147,7 +153,22 @@ func TestImagePusher_Push(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		assert.NotEmpty(t, progressUpdates)
+
+		// Verify phase transitions were reported
+		var phases []PushPhase
+		var byteUpdates []PushProgress
 		for _, p := range progressUpdates {
+			if p.Phase != "" {
+				phases = append(phases, p.Phase)
+			} else {
+				byteUpdates = append(byteUpdates, p)
+			}
+		}
+		assert.Equal(t, []PushPhase{PushPhaseExporting, PushPhasePushing}, phases)
+
+		// Verify byte progress was reported for layers
+		assert.NotEmpty(t, byteUpdates)
+		for _, p := range byteUpdates {
 			assert.NotEmpty(t, p.LayerDigest)
 			assert.True(t, p.Complete > 0)
 			assert.True(t, p.Total > 0)

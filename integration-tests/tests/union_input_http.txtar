@@ -1,0 +1,54 @@
+# Test JSON-native union inputs over cog serve.
+# value: str | float | None = Input(default=None)
+#   - string accepted, returns "str:..."
+#   - float accepted, returns "float:..."
+#   - integer accepted (valid JSON number), returns "int:..."
+#   - omitted optional defaults to None, returns "NoneType:none"
+#   - explicit null is rejected, matching how every optional field behaves
+#     today (validation happens at the HTTP edge and the runtime validator
+#     does not accept explicit JSON null for a typed field)
+#   - bool rejected (not a member of str | float), returns a validation error
+
+cog build -t $TEST_IMAGE
+
+cog serve
+
+# String member
+curl POST /predictions '{"input":{"value":"hello"}}'
+stdout '"output":"str:hello"'
+
+# Float member
+curl POST /predictions '{"input":{"value":1.5}}'
+stdout '"output":"float:1.5"'
+
+# Integer is a valid JSON number for the union; passed through as int
+curl POST /predictions '{"input":{"value":1}}'
+stdout '"output":"int:1"'
+
+# Omitted optional value defaults to None
+curl POST /predictions '{"input":{}}'
+stdout '"output":"NoneType:none"'
+
+# Explicit null is rejected, consistent with all optional fields
+! curl POST /predictions '{"input":{"value":null}}'
+
+# bool is not a member of str | float -> rejected
+! curl POST /predictions '{"input":{"value":true}}'
+
+# nested object is not a member of str | float -> rejected
+! curl POST /predictions '{"input":{"value":{"x":1}}}'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input
+
+
+class Predictor(BasePredictor):
+    def predict(self, value: str | float | None = Input(default=None)) -> str:
+        if value is None:
+            return "NoneType:none"
+        return f"{type(value).__name__}:{value}"

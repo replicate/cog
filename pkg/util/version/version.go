@@ -100,15 +100,39 @@ func (v *Version) PatchVersion() int {
 }
 
 func Equal(v1 string, v2 string) bool {
-	return MustVersion(v1).Equal(MustVersion(v2))
+	leftVersion, err := NewVersion(v1)
+	if err != nil {
+		return v1 == v2
+	}
+	rightVersion, err := NewVersion(v2)
+	if err != nil {
+		return v1 == v2
+	}
+	return leftVersion.Equal(rightVersion)
 }
 
 func EqualMinor(v1 string, v2 string) bool {
-	return MustVersion(v1).EqualMinor(MustVersion(v2))
+	leftVersion, err := NewVersion(v1)
+	if err != nil {
+		return false
+	}
+	rightVersion, err := NewVersion(v2)
+	if err != nil {
+		return false
+	}
+	return leftVersion.EqualMinor(rightVersion)
 }
 
 func Greater(v1 string, v2 string) bool {
-	return MustVersion(v1).Greater(MustVersion(v2))
+	leftVersion, err := NewVersion(v1)
+	if err != nil {
+		return false
+	}
+	rightVersion, err := NewVersion(v2)
+	if err != nil {
+		return false
+	}
+	return leftVersion.Greater(rightVersion)
 }
 
 func GreaterOrEqual(v1 string, v2 string) bool {
@@ -137,11 +161,22 @@ func (v *Version) Matches(other *Version) bool {
 }
 
 func Matches(v1 string, v2 string) bool {
-	return MustVersion(v1).Matches(MustVersion(v2))
+	leftVersion, err := NewVersion(v1)
+	if err != nil {
+		return false
+	}
+	rightVersion, err := NewVersion(v2)
+	if err != nil {
+		return false
+	}
+	return leftVersion.Matches(rightVersion)
 }
 
 func StripPatch(v string) string {
-	ver := MustVersion(v)
+	ver, err := NewVersion(v)
+	if err != nil {
+		return v
+	}
 	return fmt.Sprintf("%d.%d", ver.Major, ver.Minor)
 }
 

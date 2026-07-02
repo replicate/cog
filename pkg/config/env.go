@@ -41,13 +41,13 @@ func validateEnvName(name string) error {
 	for _, pattern := range environmentVariableDenyList {
 		// Check for exact match
 		if pattern == name {
-			return fmt.Errorf("environment variable %q is not allowed", name)
+			return fmt.Errorf("environment variable %q is not allowed: reserved for internal use", name)
 		}
 
 		// Check for wildcard pattern
 		if strings.HasSuffix(pattern, "*") {
 			if strings.HasPrefix(name, pattern[:len(pattern)-1]) {
-				return fmt.Errorf("environment variable %q is not allowed", name)
+				return fmt.Errorf("environment variable %q is not allowed: reserved for internal use", name)
 			}
 		}
 	}

@@ -14,6 +14,14 @@ type Command interface {
 	// When force is true, it will always attempt to pull the image.
 	Pull(ctx context.Context, ref string, force bool) (*image.InspectResponse, error)
 	Push(ctx context.Context, ref string) error
+	// Tag assigns target as an additional local tag for the image
+	// referenced by source. source accepts anything `docker tag`
+	// accepts on its source side: an existing tag, a digest reference,
+	// or a raw image ID (with or without the sha256: prefix).
+	//
+	// Returns a *command.NotFoundError when source does not resolve
+	// to an image in the local daemon.
+	Tag(ctx context.Context, source, target string) error
 	RemoveImage(ctx context.Context, ref string) error
 	LoadUserInformation(ctx context.Context, registryHost string) (*UserInfo, error)
 	Inspect(ctx context.Context, ref string) (*image.InspectResponse, error)
@@ -47,6 +55,23 @@ type ImageBuildOptions struct {
 	BuildContexts  map[string]string
 	Labels         map[string]string
 
+	// ExcludePatterns are fsutil glob patterns applied to the context
+	// mount at the BuildKit session level. Matched paths are never sent
+	// to the daemon, regardless of what the user's .dockerignore says.
+	ExcludePatterns []string
+
+	// BuildCacheDir is the directory used to stage build artifacts
+	// (the generated Dockerfile, wheels, requirements.txt, schemas,
+	// etc.). When set, the Dockerfile is written here and the
+	// "dockerfile" BuildKit mount points at this directory. When
+	// empty, a temporary directory is created and cleaned up after
+	// the build.
+	//
+	// Typically equals BuildContexts["cog_build"] when both are set,
+	// since the same directory serves as both the Dockerfile location
+	// and the named build context for COPY --from=cog_build.
+	BuildCacheDir string
+
 	// only supported on buildkit client, not cli client
 	BuildArgs map[string]*string
 }
@@ -74,4 +99,5 @@ type Port struct {
 type Volume struct {
 	Source      string
 	Destination string
+	ReadOnly    bool
 }

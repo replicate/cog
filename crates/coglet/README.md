@@ -67,7 +67,7 @@ coglet/
     │   # Orchestrator (Parent Process)
     ├── orchestrator.rs     # spawn_worker, OrchestratorHandle, event loop
     │
-    │   # Worker (Child Process)  
+    │   # Worker (Child Process)
     ├── worker.rs           # run_worker, PredictHandler trait, SetupError
     │
     │   # Concurrency Control
@@ -97,6 +97,7 @@ coglet/
 ### PredictionService (`service.rs`)
 
 Single owner of prediction state. Manages:
+
 - Health state (Unknown → Starting → Ready/SetupFailed)
 - PermitPool + Orchestrator reference
 - Active predictions (DashMap — single source of truth)
@@ -131,8 +132,9 @@ spawn_worker(config)
 ```
 
 Event loop handles:
+
 - `ControlResponse::Idle` - Slot ready for next prediction
-- `ControlResponse::Failed` - Slot poisoned, mark unavailable  
+- `ControlResponse::Failed` - Slot poisoned, mark unavailable
 - `SlotResponse::Log/Output/Done/Failed` - Route to prediction
 - Worker crash - Fail all in-flight predictions
 
@@ -179,10 +181,12 @@ drop(permit);
 Message types for parent-worker communication.
 
 **Control Channel:**
+
 - `ControlRequest`: Init, Cancel, Shutdown
 - `ControlResponse`: Ready, Log, Idle, Failed, Cancelled, ShuttingDown
 
 **Slot Channel:**
+
 - `SlotRequest`: Predict
 - `SlotResponse`: Log, Output, Done, Failed, Cancelled
 
@@ -225,6 +229,7 @@ Starting ──▶ Processing ──┬──▶ Succeeded
 ### Shutdown
 
 **Graceful (SIGTERM with await_explicit_shutdown):**
+
 1. Stop accepting new predictions
 2. Wait for in-flight to complete
 3. Send `ControlRequest::Shutdown`
@@ -232,11 +237,13 @@ Starting ──▶ Processing ──┬──▶ Succeeded
 5. Parent exits
 
 **Immediate (SIGTERM without flag):**
+
 1. Send `ControlRequest::Shutdown`
 2. Cancel in-flight predictions
 3. Exit
 
 **Worker crash:**
+
 1. Control channel closes
 2. Event loop detects, fails all in-flight predictions
 3. Health → Defunct

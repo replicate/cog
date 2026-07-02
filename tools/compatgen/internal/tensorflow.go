@@ -1,7 +1,9 @@
 package internal
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -56,6 +58,15 @@ func FetchTensorFlowCompatibilityMatrix() ([]config.TFCompatibility, error) {
 	if len(compats) < 12 {
 		return nil, fmt.Errorf("Tensorflow compatibility matrix only had %d rows, has the html changed?", len(compats))
 	}
+
+	// stable sort for deterministic output
+	slices.SortFunc(compats, func(a, b config.TFCompatibility) int {
+		return cmp.Or(
+			cmp.Compare(a.TF, b.TF),
+			cmp.Compare(a.CUDA, b.CUDA),
+			cmp.Compare(a.CuDNN, b.CuDNN),
+		)
+	})
 
 	return compats, nil
 }

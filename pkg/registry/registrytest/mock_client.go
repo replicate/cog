@@ -52,3 +52,7 @@ func (c *MockRegistryClient) GetDescriptor(ctx context.Context, imageRef string)
 func (c *MockRegistryClient) WriteLayer(ctx context.Context, opts registry.WriteLayerOptions) error {
 	return nil
 }
+
+func (c *MockRegistryClient) BlobExists(ctx context.Context, repo string, digest string) (bool, error) {
+	return false, nil
+}

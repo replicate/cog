@@ -1,14 +1,9 @@
 # Test Python 3.13 works with --use-cog-base-image
 # Source: test_build.py::test_python_313_base_images
 #
-# Uses a local test registry to avoid depending on the live r8.im registry.
+# Resolves cog-base images from GHCR via COG_REGISTRY_HOST (set in CI).
 
-# Start local registry and seed a cog-base image from Docker Hub's python:3.13-slim
-registry-start
-registry-seed docker.io/library/python:3.13-slim cog-base:python3.13
-
-# Build using Python 3.13 with --use-cog-base-image against local registry
-env COG_REGISTRY_HOST=$TEST_REGISTRY
+# Build using Python 3.13 with --use-cog-base-image
 cog build -t $TEST_IMAGE --use-cog-base-image
 
 # Verify build succeeded by running a prediction

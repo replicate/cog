@@ -1,0 +1,10 @@
+# Test that cog doctor exits with code 1 when predict file is missing.
+
+! cog doctor
+stderr 'predict.py'
+stderr 'not found'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"

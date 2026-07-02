@@ -12,7 +12,7 @@ import (
 	"github.com/replicate/cog/pkg/config"
 	"github.com/replicate/cog/pkg/docker"
 	"github.com/replicate/cog/pkg/docker/command"
-	"github.com/replicate/cog/pkg/dockercontext"
+
 	"github.com/replicate/cog/pkg/dockerfile"
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
@@ -21,9 +21,11 @@ import (
 )
 
 var (
-	baseImageCUDAVersion   string
-	baseImagePythonVersion string
-	baseImageTorchVersion  string
+	baseImageCUDAVersion         string
+	baseImagePythonVersion       string
+	baseImageTorchVersion        string
+	baseImageBreakSystemPackages bool
+	baseImageBuildContextDir     string
 )
 
 func NewBaseImageRootCommand() (*cobra.Command, error) {
@@ -186,7 +188,7 @@ func newBaseImageBuildCommand() *cobra.Command {
 				NoCache:            buildNoCache,
 				ProgressOutput:     buildProgressOutput,
 				Epoch:              &config.BuildSourceEpochTimestamp,
-				ContextDir:         dockercontext.StandardBuildDirectory,
+				ContextDir:         ".",
 			}
 			if _, err := dockerClient.ImageBuild(ctx, buildOpts); err != nil {
 				return err
@@ -205,6 +207,10 @@ func addBaseImageFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&baseImageCUDAVersion, "cuda", "", "CUDA version")
 	cmd.Flags().StringVar(&baseImagePythonVersion, "python", "", "Python version")
 	cmd.Flags().StringVar(&baseImageTorchVersion, "torch", "", "Torch version")
+	cmd.Flags().BoolVar(&baseImageBreakSystemPackages, "break-system-packages", false, "Allow pip to modify uv-managed Python installs")
+	_ = cmd.Flags().MarkHidden("break-system-packages")
+	cmd.Flags().StringVar(&baseImageBuildContextDir, "build-context-dir", "", "Directory for generated Docker build context artifacts")
+	_ = cmd.Flags().MarkHidden("build-context-dir")
 	addBuildTimestampFlag(cmd)
 }
 
@@ -214,7 +220,7 @@ func baseImageGeneratorFromFlags(ctx context.Context) (*dockerfile.BaseImageGene
 		return nil, err
 	}
 	client := registry.NewRegistryClient()
-	return dockerfile.NewBaseImageGenerator(
+	generator, err := dockerfile.NewBaseImageGenerator(
 		ctx,
 		client,
 		baseImageCUDAVersion,
@@ -223,4 +229,10 @@ func baseImageGeneratorFromFlags(ctx context.Context) (*dockerfile.BaseImageGene
 		dockerClient,
 		true,
 	)
+	if err != nil {
+		return nil, err
+	}
+	generator.SetBreakSystemPackages(baseImageBreakSystemPackages)
+	generator.SetBuildContextDir(baseImageBuildContextDir)
+	return generator, nil
 }

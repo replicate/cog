@@ -1,15 +1,9 @@
 # Test that cog correctly resolves a cog-base image for Torch 2.0.1+cu118
 # and generates the expected Dockerfile with --use-cog-base-image.
 #
-# Uses a local test registry seeded with a dummy image to avoid depending
-# on the live r8.im registry, which can be flaky in CI.
+# Resolves cog-base images from GHCR via COG_REGISTRY_HOST (set in CI).
 
-# Start local registry and seed a dummy cog-base image
-registry-start
-registry-seed alpine:latest cog-base:cuda11.8-python3.10-torch2.0.1
-
-# Generate Dockerfile using the local registry as the cog-base source
-env COG_REGISTRY_HOST=$TEST_REGISTRY
+# Generate Dockerfile — should use cog-base image
 cog debug --use-cog-base-image
 stdout 'FROM.*cog-base:cuda11.8-python3.10-torch2.0.1'
 
