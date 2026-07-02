@@ -6,15 +6,16 @@ The Cog CLI is a Go binary that provides commands for the full model lifecycle: 
 
 ## Commands Overview
 
-| Command     | Job To Be Done                        |
-| ----------- | ------------------------------------- |
-| `cog init`  | Bootstrap a new model project         |
-| `cog build` | Create a container image              |
-| `cog run`   | Run a prediction in a container       |
-| `cog exec`  | Run arbitrary commands in a container |
-| `cog serve` | Start HTTP server in a container      |
-| `cog push`  | Deploy to Replicate                   |
-| `cog login` | Authenticate with Replicate           |
+| Command          | Job To Be Done                        |
+| ---------------- | ------------------------------------- |
+| `cog init`       | Bootstrap a new model project         |
+| `cog build`      | Create a container image              |
+| `cog run`        | Run a prediction in a container       |
+| `cog exec`       | Run arbitrary commands in a container |
+| `cog serve`      | Start HTTP server in a container      |
+| `cog playground` | Browser UI to talk to a running model |
+| `cog push`       | Deploy to Replicate                   |
+| `cog login`      | Authenticate with Replicate           |
 
 ## Development Commands
 
@@ -97,6 +98,44 @@ Builds the image (if needed) and starts a container running the [Container Runti
 - Check health at `/health-check`
 
 **Code**: `pkg/cli/serve.go`
+
+---
+
+### cog playground
+
+**Job**: Open a browser UI for talking to a running model.
+
+```bash
+cog serve -p 8393      # terminal 1: start the model API
+cog playground         # terminal 2: opens the UI in your browser
+```
+
+Unlike the other commands, `cog playground` doesn't build an image or run model code. It starts a small Go web server that serves a schema-driven browser UI -- a Postman-like tool for Cog models -- and reverse-proxies requests to a _separate_ running model API, typically one started with `cog serve`. The UI reflects the model's [Schema](./02-schema.md) from `/openapi.json` and lets you run sync, streaming (SSE), and async predictions with either a generated form or raw JSON input.
+
+The browser only ever talks to the playground's own origin, which forwards to the target API chosen at runtime (via an `X-Cog-Target` header). Proxying sidesteps CORS -- the model API sets none -- and keeps SSE streaming intact. Async predictions have no GET-by-id endpoint, so the server also hosts a webhook sink and relays delivered events back to the browser over its own SSE stream.
+
+```mermaid
+flowchart LR
+    Browser["Browser UI"]
+
+    subgraph Playground["cog playground (host)"]
+        Static["Static UI assets<br/>(go:embed)"]
+        Proxy["Reverse proxy<br/>/proxy/*"]
+        Sink["Webhook sink + relay<br/>/webhook/{token} → /events"]
+    end
+
+    Model["Target model API<br/>(e.g. cog serve)"]
+
+    Browser -->|"load UI"| Static
+    Browser -->|"schema, predictions, SSE"| Proxy
+    Proxy -->|"X-Cog-Target"| Model
+    Model -->|"webhook (async)"| Sink
+    Sink -->|"SSE events"| Browser
+```
+
+The UI is plain HTML/JS (no build step); JSON is edited and displayed with a vendored Ace editor. Assets are compiled into the binary with `go:embed`.
+
+**Code**: `pkg/cli/playground.go` (server, reverse proxy, webhook sink); `pkg/cli/playground/` (embedded UI assets)
 
 ## Build Commands
 
@@ -219,9 +258,11 @@ pkg/cli/
 ├── predict.go      # prediction execution and legacy cog predict
 ├── exec.go         # cog exec
 ├── serve.go        # cog serve
+├── playground.go   # cog playground (UI server, reverse proxy, webhook sink)
 ├── push.go         # cog push
 ├── login.go        # cog login
-└── init.go         # cog init
+├── init.go         # cog init
+└── playground/     # embedded playground UI assets (go:embed)
 ```
 
 Commands delegate to packages under `pkg/`:

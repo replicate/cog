@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cog Playground</title>
+    <script>
+      // Set the theme before first paint to avoid a flash of the wrong theme.
+      (function () {
+        var t = localStorage.getItem("cog-playground-theme");
+        if (t !== "light" && t !== "dark") {
+          t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        }
+        document.documentElement.dataset.mode = t;
+      })();
+    </script>
+    <link rel="stylesheet" href="./vendor/kumo.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Cog Playground</h1>
+      <span id="health-badge" class="badge badge-unknown">unknown</span>
+      <span class="spacer"></span>
+      <span id="version-info" class="muted"></span>
+      <button id="theme-toggle" class="ghost-btn" title="Toggle light/dark">Dark</button>
+      <a id="schema-link" href="#" target="_blank">Schema</a>
+    </header>
+
+    <div id="target-bar">
+      <label for="target-url">Target</label>
+      <input id="target-url" type="url" placeholder="http://localhost:8393" />
+      <button id="connect-btn">Connect</button>
+      <span id="target-status" class="muted"></span>
+    </div>
+
+    <div id="action-bar">
+      <div class="toggle" id="run-mode">
+        <button id="run-mode-sync" class="active" type="button">Sync</button>
+        <button id="run-mode-stream" type="button" hidden>Stream</button>
+        <button id="run-mode-async" type="button" hidden>Async</button>
+      </div>
+      <input id="prediction-id" type="text" placeholder="id (optional)" />
+      <button id="run-btn" type="button">Run</button>
+      <button id="stop-btn" type="button" disabled>Stop</button>
+      <button id="reset-btn" class="ghost-btn" type="button">Reset</button>
+      <span id="stream-hint"></span>
+    </div>
+
+    <div id="webhook-options" hidden>
+      <span class="muted">Webhook events:</span>
+      <label><input type="checkbox" class="wh-filter" value="start" checked /> start</label>
+      <label><input type="checkbox" class="wh-filter" value="output" checked /> output</label>
+      <label><input type="checkbox" class="wh-filter" value="logs" checked /> logs</label>
+      <label><input type="checkbox" class="wh-filter" value="completed" checked /> completed</label>
+      <span id="webhook-base-note" class="muted"></span>
+    </div>
+
+    <details id="setup-panel" hidden>
+      <summary>Setup <span id="setup-status" class="badge badge-unknown"></span></summary>
+      <pre id="setup-logs"></pre>
+    </details>
+
+    <main>
+      <section id="input-panel">
+        <div class="panel-head">
+          <h2>Input</h2>
+          <div class="toggle" id="mode-toggle">
+            <button id="mode-form" class="active" type="button">Form</button>
+            <button id="mode-json" type="button">JSON</button>
+          </div>
+        </div>
+
+        <div id="schema-error" class="notice"></div>
+
+        <div id="form-container"></div>
+
+        <div id="json-container" hidden>
+          <div id="json-editor" class="ace-json"></div>
+          <small id="json-error" class="field-error"></small>
+          <button id="json-format" class="ghost-btn" type="button">Format</button>
+        </div>
+      </section>
+
+      <section id="output-panel">
+        <div class="panel-head">
+          <h2>Output</h2>
+          <div class="toggle" id="output-view" hidden>
+            <button id="output-view-text" class="active" type="button">Text</button>
+            <button id="output-view-raw" type="button">Raw</button>
+          </div>
+        </div>
+
+        <div id="result-status"></div>
+        <div id="metrics-container"></div>
+        <div id="error-container"></div>
+        <div id="output-container"></div>
+      </section>
+    </main>
+
+    <script src="./vendor/ace/ace.js"></script>
+    <script src="./vendor/ace/mode-json.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

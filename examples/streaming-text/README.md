@@ -9,7 +9,7 @@ This example shows how a Cog runner can yield text chunks as a model generates t
 From this directory:
 
 ```sh
-cog predict -i prompt="Write a short haiku about databases"
+cog run -i prompt="Write a short haiku about databases"
 ```
 
 This returns the final accumulated output after the prediction completes.
@@ -46,6 +46,6 @@ data: {"id":"streaming-demo","status":"succeeded",...}
 
 ## How it works
 
-`predict.py` defines `run() -> Iterator[str]`. Each `yield` becomes one streamed output chunk. The example uses Hugging Face `TextIteratorStreamer` to receive generated text from `model.generate()` while generation is still running.
+`run.py` defines `run() -> Iterator[str]`. Each `yield` becomes one streamed output chunk. The example uses Hugging Face `TextIteratorStreamer` to receive generated text from `model.generate()` while generation is still running.
 
 The normal prediction response still contains the accumulated output for compatibility. Requesting `Accept: text/event-stream` is useful when clients want to display tokens as they arrive.
