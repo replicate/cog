@@ -1035,6 +1035,23 @@ class Predictor(BasePredictor):
 	require.Equal(t, 2, *info.ConcurrencyMax)
 }
 
+func TestConcurrentDecoratorQualifiedAliasMax(t *testing.T) {
+	source := `
+import cog as c
+
+class Predictor(c.BasePredictor):
+    @c.concurrent(max=4)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 4, *info.ConcurrencyMax)
+	require.True(t, info.IsAsync)
+}
+
+func TestConcurrentDecoratorIgnoredWhenNotFromCog(t *testing.T) {
+
 func TestConcurrentDecoratorIgnoredWhenNotFromCog(t *testing.T) {
 	source := `
 from other import concurrent
