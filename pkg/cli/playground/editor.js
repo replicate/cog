@@ -3,10 +3,51 @@
 
 const EDITORS = new Set();
 
+// Ace theme colors are sourced from the Kumo design tokens (vendor/kumo.css) so
+// the editor matches the rest of the UI and recolors with the data-mode toggle.
+// We register two themes (light/dark) that share the same token-driven CSS; they
+// differ only in `isDark`, which Ace uses for cursor/selection contrast. JSON
+// token classes come from vendor/ace/mode-json.js: object keys -> `variable`,
+// string values -> `string`, numbers -> `constant.numeric`, booleans ->
+// `constant.language`, brackets -> `paren`, commas -> `punctuation.operator`.
+function kumoThemeCss(cssClass) {
+  const s = `.${cssClass}`;
+  return `
+${s} { background-color: var(--color-kumo-base); color: var(--text-color-kumo-default); }
+${s} .ace_gutter { background: var(--color-kumo-elevated); color: var(--text-color-kumo-subtle); }
+${s} .ace_print-margin { width: 1px; background: var(--color-kumo-hairline); }
+${s} .ace_cursor { color: var(--text-color-kumo-default); }
+${s} .ace_marker-layer .ace_selection { background: var(--color-kumo-info-tint); }
+${s} .ace_marker-layer .ace_active-line { background: color-mix(in srgb, var(--color-kumo-fill) 45%, transparent); }
+${s} .ace_gutter-active-line { background-color: color-mix(in srgb, var(--color-kumo-fill) 45%, transparent); }
+${s} .ace_marker-layer .ace_selected-word { border: 1px solid var(--color-kumo-line); }
+${s} .ace_fold { background-color: var(--color-kumo-brand); border-color: var(--text-color-kumo-default); }
+${s} .ace_variable { color: var(--text-color-kumo-link); }
+${s} .ace_string { color: var(--text-color-kumo-success); }
+${s} .ace_constant.ace_numeric { color: var(--text-color-kumo-warning); }
+${s} .ace_constant.ace_language { color: var(--text-color-kumo-brand); }
+${s} .ace_constant.ace_language.ace_escape { color: var(--text-color-kumo-info); }
+${s} .ace_paren, ${s} .ace_punctuation { color: var(--text-color-kumo-subtle); }
+`;
+}
+
+function defineKumoTheme(id, cssClass, isDark) {
+  const cssText = kumoThemeCss(cssClass);
+  ace.define("ace/theme/" + id, ["require", "exports", "module", "ace/lib/dom"], function (require, exports) {
+    exports.isDark = isDark;
+    exports.cssClass = cssClass;
+    exports.cssText = cssText;
+    require("ace/lib/dom").importCssString(cssText, cssClass, false);
+  });
+}
+
+defineKumoTheme("kumo-light", "ace-kumo-light", false);
+defineKumoTheme("kumo-dark", "ace-kumo-dark", true);
+
 function aceTheme() {
-  return document.documentElement.dataset.theme === "light"
-    ? "ace/theme/chrome"
-    : "ace/theme/tomorrow_night";
+  return document.documentElement.dataset.mode === "light"
+    ? "ace/theme/kumo-light"
+    : "ace/theme/kumo-dark";
 }
 
 // createJSONEditor turns a host element into an Ace JSON editor. Read-only mode

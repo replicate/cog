@@ -54,6 +54,18 @@ func TestPlaygroundServesUI(t *testing.T) {
 	body2, _ := io.ReadAll(resp2.Body)
 	assert.Equal(t, http.StatusOK, resp2.StatusCode)
 	assert.Contains(t, string(body2), "CogApi")
+
+	// Styling is split across two embedded stylesheets (the vendored Kumo
+	// design tokens and the playground's own styles); both must ship.
+	for _, path := range []string{"/styles.css", "/vendor/kumo.css"} {
+		resp, err := http.Get(ts.URL + path)
+		require.NoError(t, err, "requesting %s", path)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode, "%s should be served", path)
+		assert.Contains(t, resp.Header.Get("Content-Type"), "text/css", "%s content-type", path)
+		assert.Contains(t, string(body), "--color-kumo", "%s should contain Kumo tokens", path)
+	}
 }
 
 func TestPlaygroundConfig(t *testing.T) {
