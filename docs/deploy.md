@@ -76,11 +76,11 @@ curl http://localhost:5001/predictions -X POST \
 
 ```json
 {
-    "status": "succeeded",
-    "output": "data:image/png;base64,...",
-    "metrics": {
-        "predict_time": 4.52
-    }
+  "status": "succeeded",
+  "output": "data:image/png;base64,...",
+  "metrics": {
+    "predict_time": 4.52
+  }
 }
 ```
 
@@ -144,8 +144,8 @@ the response contains a base64-encoded data URL by default:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "data:image/png;base64,iVBORw0KGgo..."
+  "status": "succeeded",
+  "output": "data:image/png;base64,iVBORw0KGgo..."
 }
 ```
 
@@ -172,8 +172,8 @@ contains the uploaded URL instead of a data URL:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "https://example.com/upload/image.png"
+  "status": "succeeded",
+  "output": "https://example.com/upload/image.png"
 }
 ```
 
@@ -215,21 +215,25 @@ to stop.)
 
 ## Concurrency
 
-By default, the server processes one run at a time. To enable concurrent runs, set the `concurrency.max` option in `cog.yaml`:
+By default, the server processes one run at a time. To enable concurrent runs, make your `run()` method async and decorate it with `@cog.concurrent(max=N)`:
 
-```yaml
-concurrency:
-  max: 4
+```py
+import cog
+
+class Runner(cog.BaseRunner):
+    @cog.concurrent(max=4)
+    async def run(self) -> str:
+        return "hello world"
 ```
 
-See the [`cog.yaml` reference](yaml.md#concurrency) for more details.
+The deprecated [`concurrency.max`](yaml.md#concurrency) field in `cog.yaml` is still supported and takes precedence over the decorator by baking `COG_MAX_CONCURRENCY` into the image.
 
 ## Environment variables
 
 You can configure runtime behavior with environment variables:
 
 - `COG_SETUP_TIMEOUT`: Maximum time in seconds for the `setup()` method (default: no timeout).
-- `COG_MAX_CONCURRENCY`: Number of concurrent prediction slots (default: 1).
+- `COG_MAX_CONCURRENCY`: Number of concurrent prediction slots (default: 1). Overrides both `@cog.concurrent` and deprecated `cog.yaml` concurrency.
 
 See the [environment variables reference](environment.md) for the full list.
 

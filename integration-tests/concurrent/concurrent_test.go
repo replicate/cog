@@ -259,15 +259,14 @@ func allocatePort() (int, error) {
 const cogYAML = `build:
   python_version: "3.11"
 predict: "predict.py:Predictor"
-concurrency:
-  max: 5
 `
 
 const predictPy = `import asyncio
-from cog import BasePredictor
+from cog import BasePredictor, concurrent
 
 
 class Predictor(BasePredictor):
+    @concurrent(max=5)
     async def predict(self, s: str, sleep: float) -> str:
         await asyncio.sleep(sleep)
         return f"wake up {s}"
@@ -399,14 +398,13 @@ func TestConcurrentAsyncMetrics(t *testing.T) {
 	metricsCogYAML := `build:
   python_version: "3.12"
 predict: "predict.py:Predictor"
-concurrency:
-  max: 5
 `
 	metricsPredictPy := `import asyncio
-from cog import BasePredictor, current_scope
+from cog import BasePredictor, concurrent, current_scope
 
 
 class Predictor(BasePredictor):
+    @concurrent(max=5)
     async def predict(self, idx: int = 0, sleep: float = 0.5) -> str:
         scope = current_scope()
         scope.record_metric("prediction_index", idx)

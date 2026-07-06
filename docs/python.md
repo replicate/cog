@@ -112,7 +112,7 @@ The `run()` method takes an arbitrary list of named arguments, where each argume
 
 ## `async` runners and concurrency
 
-> Added in cog 0.14.0.
+> Async runners were added in cog 0.14.0. The `@cog.concurrent` decorator was added in cog 0.21.0.
 
 You may specify your `run()` method as `async def run(...)`. In
 addition, if you have an async `run()` function you may also have an async
@@ -128,7 +128,20 @@ class Runner(BaseRunner):
         return "hello world";
 ```
 
-Models that have an async `run()` function can run concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
+Models that have an async `run()` function can run concurrently. Use the `@cog.concurrent(max=N)` decorator (added in cog 0.21.0) to configure the default maximum concurrency for the function:
+
+```py
+import cog
+
+class Runner(cog.BaseRunner):
+    @cog.concurrent(max=4)
+    async def run(self) -> str:
+        return "hello world"
+```
+
+Attempting to exceed this limit will return a 409 Conflict response. `max` values greater than `1` require an async `run()` method. The `COG_MAX_CONCURRENCY` environment variable can override the decorator at runtime.
+
+The `max` value must be an integer literal so Cog can configure the model at build time. Use `COG_MAX_CONCURRENCY` when you need to set concurrency dynamically at runtime.
 
 ## `Input(**kwargs)`
 
