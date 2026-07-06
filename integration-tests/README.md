@@ -12,6 +12,7 @@ However, some tests require capabilities that don't fit txtar's sequential execu
 | --------------------------- | ------------- | ---------------------------------------------------------------- |
 | `TestConcurrentPredictions` | `concurrent/` | Requires parallel HTTP requests with precise timing coordination |
 | `TestLogin*`                | `login/`      | Login requires interactive PTY input and mock HTTP servers       |
+| `TestPlayground*`           | `playground/` | Requires coordinating two long-running processes and comparing direct/proxied HTTP responses |
 
 Note: PTY/TTY tests now use the `pty-run` command in txtar format (see Custom Commands below).
 
@@ -47,6 +48,8 @@ integration-tests/
 │   └── concurrent_test.go  # Concurrent request tests
 ├── login/
 │   └── login_test.go   # Login tests with PTY
+├── playground/
+│   └── playground_test.go  # cog playground proxy tests
 └── .bin/
     └── cog             # Cached cog binary (auto-generated)
 ```

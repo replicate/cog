@@ -1,4 +1,5 @@
 /cog
+*.test
 .ipynb_checkpoints/
 Untitled*.ipynb
 __pycache__
