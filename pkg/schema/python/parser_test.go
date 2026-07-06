@@ -361,6 +361,66 @@ class Predictor(BasePredictor):
 	require.False(t, scale.IsRequired())
 }
 
+func TestPathAndFileInputsRejectDefaults(t *testing.T) {
+	tests := []struct {
+		name    string
+		source  string
+		wantErr schema.SchemaErrorKind
+	}{
+		{
+			name: "path string default",
+			source: `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(default="image.png")) -> str:
+        return "ok"
+`,
+			wantErr: schema.ErrUnsupportedType,
+		},
+		{
+			name: "file string default",
+			source: `
+from cog import BasePredictor, File, Input
+
+class Predictor(BasePredictor):
+    def predict(self, image: File = Input(default="image.png")) -> str:
+        return "ok"
+`,
+			wantErr: schema.ErrUnsupportedType,
+		},
+		{
+			name: "path constructor default",
+			source: `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, image: Path = Input(default=Path("image.png"))) -> str:
+        return "ok"
+`,
+			wantErr: schema.ErrDefaultNotResolvable,
+		},
+		{
+			name: "path list default",
+			source: `
+from cog import BasePredictor, Input, Path
+
+class Predictor(BasePredictor):
+    def predict(self, images: list[Path] = Input(default=["image.png"])) -> str:
+        return "ok"
+`,
+			wantErr: schema.ErrUnsupportedType,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			se := parseErr(t, tt.source, "Predictor", schema.ModePredict)
+			require.Equal(t, tt.wantErr, se.Kind)
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Optional / union inputs
 // ---------------------------------------------------------------------------

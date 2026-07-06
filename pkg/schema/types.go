@@ -245,7 +245,36 @@ func ValidateInputField(field InputField) error {
 			return errUnsupportedType("constraints and choices are not supported on union inputs")
 		}
 	}
+	if inputFieldContainsFileOrPath(field) && field.Default != nil && field.Default.Kind != DefaultNone {
+		return errUnsupportedType("defaults are not supported on Path or File inputs")
+	}
 	return nil
+}
+
+// InputTypeContainsFileOrPath reports whether a recursive input type contains
+// a Path or File primitive. It is used by parser frontends that need to reject
+// unsupported file/path defaults after annotation resolution.
+func InputTypeContainsFileOrPath(inputType InputType) bool {
+	switch inputType.Kind {
+	case InputKindPrimitive:
+		return inputType.Primitive == TypePath || inputType.Primitive == TypeFile
+	case InputKindArray:
+		return inputType.Elem != nil && InputTypeContainsFileOrPath(*inputType.Elem)
+	case InputKindUnion:
+		for _, variant := range inputType.Variants {
+			if InputTypeContainsFileOrPath(variant) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func inputFieldContainsFileOrPath(field InputField) bool {
+	if field.InputType != nil {
+		return InputTypeContainsFileOrPath(*field.InputType)
+	}
+	return field.FieldType.Primitive == TypePath || field.FieldType.Primitive == TypeFile
 }
 
 // PredictorInfo is the top-level extraction result.

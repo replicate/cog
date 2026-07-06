@@ -9,15 +9,16 @@ import (
 )
 
 type inputCallInfo struct {
-	Default     *schema.DefaultValue
-	Description *string
-	GE          *float64
-	LE          *float64
-	MinLength   *uint64
-	MaxLength   *uint64
-	Regex       *string
-	Choices     []schema.DefaultValue
-	Deprecated  *bool
+	Default           *schema.DefaultValue
+	DefaultUnresolved bool
+	Description       *string
+	GE                *float64
+	LE                *float64
+	MinLength         *uint64
+	MaxLength         *uint64
+	Regex             *string
+	Choices           []schema.DefaultValue
+	Deprecated        *bool
 }
 
 type inputMethodInfo struct {
@@ -216,6 +217,11 @@ func resolveInputReference(node *sitter.Node, source []byte, registry *inputRegi
 			case "default":
 				if val, ok := parseDefaultValue(callNode, source); ok {
 					resolved.Default = &val
+					resolved.DefaultUnresolved = false
+				} else {
+					none := schema.DefaultValue{Kind: schema.DefaultNone}
+					resolved.Default = &none
+					resolved.DefaultUnresolved = true
 				}
 			case "description":
 				if s, ok := parseStringLiteral(callNode, source); ok {
@@ -283,6 +289,14 @@ func inputFieldWithInfo(name string, order int, inputType schema.InputType, fiel
 	field.Choices = info.Choices
 	field.Deprecated = info.Deprecated
 	return field
+}
+
+func validateInputFieldWithInfo(field schema.InputField, info inputCallInfo) error {
+	if info.DefaultUnresolved && field.InputType != nil && schema.InputTypeContainsFileOrPath(*field.InputType) {
+		return schema.WrapError(schema.ErrDefaultNotResolvable,
+			fmt.Sprintf("parameter '%s': Path and File defaults cannot be statically resolved", field.Name), nil)
+	}
+	return schema.ValidateInputField(field)
 }
 
 func firstParamIsSelf(params *sitter.Node, source []byte) bool {
@@ -399,13 +413,13 @@ func parseTypedDefaultParameter(node *sitter.Node, source []byte, order int, ctx
 				return schema.InputField{}, err
 			}
 			field := inputFieldWithInfo(name, order, inputType, fieldType, info)
-			return field, schema.ValidateInputField(field)
+			return field, validateInputFieldWithInfo(field, info)
 		}
 
 		// 2. Reference to Input() via class attribute or static method
 		if info, ok := resolveInputReference(valNode, source, ctx.registry); ok {
 			field := inputFieldWithInfo(name, order, inputType, fieldType, info)
-			return field, schema.ValidateInputField(field)
+			return field, validateInputFieldWithInfo(field, info)
 		}
 
 		// 3. Plain default — must be statically resolvable
@@ -469,6 +483,7 @@ func parseInputCall(node *sitter.Node, source []byte, paramName string, scope mo
 			if !ok {
 				none := schema.DefaultValue{Kind: schema.DefaultNone}
 				val = none
+				info.DefaultUnresolved = true
 			}
 			info.Default = &val
 		case "default_factory":
