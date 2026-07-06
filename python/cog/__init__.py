@@ -19,6 +19,7 @@ Example:
             return self.model.generate(prompt, image)
 """
 
+import inspect as _inspect
 import sys as _sys
 from collections.abc import Callable
 from typing import TypeVar, overload
@@ -61,6 +62,45 @@ def streaming(fn: _F | None = None) -> _F | Callable[[_F], _F]:
 
     if fn is None:
         return decorate
+    return decorate(fn)
+
+
+@overload
+def concurrent(fn: _F) -> _F:
+    pass
+
+
+@overload
+def concurrent(fn: None = None, *, max: int = 1) -> Callable[[_F], _F]:  # noqa: A002
+    pass
+
+
+def concurrent(
+    fn: _F | None = None,
+    *,
+    max: int = 1,  # noqa: A002
+) -> _F | Callable[[_F], _F]:
+    """Configure the maximum concurrency for an async predict handler."""
+
+    if isinstance(max, bool) or not isinstance(max, int):
+        raise TypeError("concurrent max must be an integer")
+    if max < 1:
+        raise ValueError("concurrent max must be at least 1")
+
+    def decorate(inner: _F) -> _F:
+        if max > 1 and not (
+            _inspect.iscoroutinefunction(inner) or _inspect.isasyncgenfunction(inner)
+        ):
+            raise TypeError("concurrent max greater than 1 requires an async function")
+        inner.__cog_concurrent_max__ = max  # type: ignore[attr-defined]
+        return inner
+
+    if fn is None:
+        return decorate
+    if not callable(fn):
+        raise TypeError(
+            "concurrent must be used as @concurrent or @concurrent(max=...)"
+        )
     return decorate(fn)
 
 
@@ -161,6 +201,7 @@ __all__ = [
     "current_scope",
     # Decorators
     "streaming",
+    "concurrent",
     # Deprecated compat shims
     "ExperimentalFeatureWarning",
     "emit_metric",

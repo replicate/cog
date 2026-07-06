@@ -688,6 +688,14 @@ func checkDeprecatedFields(cfg *configFile, result *ValidationResult) {
 		})
 	}
 
+	if cfg.Concurrency != nil && cfg.Concurrency.Max != nil {
+		result.AddWarning(DeprecationWarning{
+			Field:       "concurrency.max",
+			Replacement: "@cog.concurrent(max=...)",
+			Message:     "configure prediction concurrency with @cog.concurrent on your async run() method instead",
+		})
+	}
+
 	if cfg.Build == nil {
 		return
 	}
