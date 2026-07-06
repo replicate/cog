@@ -244,8 +244,20 @@ func functionSupportsStreaming(node *sitter.Node, source []byte, imports *schema
 	return false
 }
 
-func functionIsAsync(node *sitter.Node, source []byte) bool {
-	return strings.HasPrefix(strings.TrimSpace(Content(node, source)), "async def ")
+func functionIsAsync(node *sitter.Node, _ []byte) bool {
+	fn := UnwrapFunction(node)
+	if fn == nil {
+		return false
+	}
+	// tree-sitter-python represents an async function as a function_definition
+	// with a leading anonymous "async" token, so detecting it via the parse
+	// tree is robust to whitespace variations like "async  def".
+	for i := 0; i < int(fn.ChildCount()); i++ {
+		if fn.Child(i).Type() == "async" {
+			return true
+		}
+	}
+	return false
 }
 
 func functionConcurrencyMax(node *sitter.Node, source []byte, imports *schema.ImportContext) (*int, error) {

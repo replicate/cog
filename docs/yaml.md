@@ -197,6 +197,8 @@ This stanza describes the concurrency capabilities of the model. It is still sup
 
 The maximum number of concurrent runs the model can process. If this is set, the model must specify an [async `run()` method](python.md#async-runners-and-concurrency).
 
+If both `concurrency.max` and `@cog.concurrent(max=N)` are set, `concurrency.max` takes precedence and is the value baked into the image. Remove `concurrency.max` when migrating to `@cog.concurrent`.
+
 For example:
 
 ```yaml

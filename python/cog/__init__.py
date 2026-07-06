@@ -97,6 +97,10 @@ def concurrent(
 
     if fn is None:
         return decorate
+    if not callable(fn):
+        raise TypeError(
+            "concurrent must be used as @concurrent or @concurrent(max=...)"
+        )
     return decorate(fn)
 
 

@@ -121,14 +121,25 @@ func Build(
 
 	needsSchema := !skipSchemaValidation && schemaFile == ""
 
+	// --- Predictor metadata (decorator concurrency, async detection) ---
+	// Statically parse the predictor for decorator-derived concurrency. When
+	// schema validation is skipped or an external schema is supplied, the user
+	// has opted out of static source parsing, so treat parse failures as
+	// non-fatal and fall back to cog.yaml-only concurrency instead of failing
+	// the build.
+	predictorInfo, err := generatePredictorMetadata(cfg, dir)
+	if err != nil {
+		if needsSchema {
+			return "", fmt.Errorf("image build failed: %w", err)
+		}
+		console.Debugf("Skipping decorator concurrency detection: %v", err)
+		predictorInfo = nil
+	}
+
 	// --- Pre-build static schema generation ---
 	// Generate schema before the Docker build so schema errors fail fast and the
 	// schema file is available in the build context.
 	var schemaJSON []byte
-	predictorInfo, err := generatePredictorMetadata(cfg, dir)
-	if err != nil {
-		return "", fmt.Errorf("image build failed: %w", err)
-	}
 	switch {
 	case needsSchema:
 		if err := validateStaticSchemaSDKVersion(cfg); err != nil {
@@ -340,7 +351,11 @@ func Build(
 	// We used to set the cog_version and config labels in Dockerfile, because we didn't require running the
 	// built image to get those. But, the escaping of JSON inside a label inside a Dockerfile was gnarly, and
 	// doesn't seem to be a problem here, so do it here instead.
-	configJSON, err := json.Marshal(cfg)
+	//
+	// Marshal the effective config (dockerfileCfg) so the label reflects
+	// decorator-derived concurrency baked into the image, keeping the config
+	// label consistent with the COG_MAX_CONCURRENCY runtime env.
+	configJSON, err := json.Marshal(dockerfileCfg)
 	if err != nil {
 		return "", fmt.Errorf("Failed to convert config to JSON: %w", err)
 	}

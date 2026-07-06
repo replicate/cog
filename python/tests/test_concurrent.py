@@ -72,3 +72,8 @@ def test_concurrent_rejects_max_less_than_one(value: int) -> None:
 def test_concurrent_rejects_non_integer_max(value: object) -> None:
     with pytest.raises(TypeError, match="must be an integer"):
         concurrent(max=value)  # type: ignore[arg-type]
+
+
+def test_concurrent_rejects_positional_argument() -> None:
+    with pytest.raises(TypeError, match="@concurrent or @concurrent\\(max=...\\)"):
+        concurrent(2)  # type: ignore[arg-type]
