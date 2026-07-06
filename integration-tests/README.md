@@ -12,7 +12,6 @@ However, some tests require capabilities that don't fit txtar's sequential execu
 | --------------------------- | ------------- | ---------------------------------------------------------------- |
 | `TestConcurrentPredictions` | `concurrent/` | Requires parallel HTTP requests with precise timing coordination |
 | `TestLogin*`                | `login/`      | Login requires interactive PTY input and mock HTTP servers       |
-| `TestPlayground*`           | `playground/` | Requires coordinating two long-running processes and comparing direct/proxied HTTP responses |
 
 Note: PTY/TTY tests now use the `pty-run` command in txtar format (see Custom Commands below).
 
@@ -48,8 +47,6 @@ integration-tests/
 │   └── concurrent_test.go  # Concurrent request tests
 ├── login/
 │   └── login_test.go   # Login tests with PTY
-├── playground/
-│   └── playground_test.go  # cog playground proxy tests
 └── .bin/
     └── cog             # Cached cog binary (auto-generated)
 ```
@@ -128,12 +125,13 @@ class Predictor(BasePredictor):
 
 The harness automatically sets these environment variables:
 
-| Variable      | Description                                   |
-| ------------- | --------------------------------------------- |
-| `$TEST_IMAGE` | Unique Docker image name for test isolation   |
-| `$WORK`       | Test's temporary working directory            |
-| `$SERVER_URL` | URL of running cog server (after `cog serve`) |
-| `$HOME`       | Real home directory (for Docker credentials)  |
+| Variable        | Description                                         |
+| --------------- | --------------------------------------------------- |
+| `$TEST_IMAGE`   | Unique Docker image name for test isolation         |
+| `$WORK`         | Test's temporary working directory                  |
+| `$SERVER_URL`   | URL of running cog server (after `cog serve`)       |
+| `$PLAYGROUND_URL` | URL of running cog playground (after `cog playground`) |
+| `$HOME`         | Real home directory (for Docker credentials)        |
 
 You can also use:
 
@@ -162,6 +160,14 @@ Special handling for `cog serve`:
 - Sets `$SERVER_URL` for subsequent commands
 - Cleans up on test completion
 
+Special handling for `cog playground`:
+
+- Runs in background automatically
+- Allocates a random port
+- Waits for the playground to be ready
+- Sets `$PLAYGROUND_URL` for subsequent commands
+- Cleans up on test completion
+
 ### `curl` - Make HTTP requests to cog server
 
 ```txtar
@@ -171,7 +177,16 @@ curl POST /predictions '{"input":{"s":"hello"}}'
 stdout '"output":"hello"'
 ```
 
-Usage: `curl METHOD PATH [BODY]`
+Usage: `curl [-u baseURL] [-H key:value]... METHOD PATH [BODY]`
+
+Use `-u` to target a custom base URL (e.g. the playground) and `-H` to add
+extra headers. For example, to proxy a request through `cog playground`:
+
+```txtar
+cog serve
+cog playground --no-open --target $SERVER_URL
+curl -u $PLAYGROUND_URL -H 'X-Cog-Target: $SERVER_URL' GET /proxy/health-check
+```
 
 The `curl` command includes built-in retry logic (10 attempts, 500ms delay) for resilience against timing issues in integration tests.
 

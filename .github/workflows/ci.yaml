@@ -688,28 +688,6 @@ jobs:
             ./integration-tests/... &
           wait $!
 
-      # Playground integration tests live outside the txtar suite because they
-      # need coordination that doesn't fit testscript's sequential model, so
-      # they aren't covered by the txtar sharding above. Run them once, on
-      # shard 0, after the sharded txtar tests complete.
-      - name: Run playground integration tests
-        if: matrix.shard.index == 0
-        env:
-          COG_BINARY: ./cog
-          TEST_PARALLEL: 4
-          BUILDKIT_PROGRESS: 'quiet'
-          # Resolve cog-base images from GHCR instead of r8.im.
-          # Images are mirrored by integration-tests/mirror-cog-base-images.sh.
-          COG_REGISTRY_HOST: 'ghcr.io/replicate/cog'
-        shell: bash
-        run: |
-          set -euo pipefail
-          gotestsum --format github-actions -- \
-            -tags integration \
-            -parallel $TEST_PARALLEL \
-            -timeout 30m \
-            ./integration-tests/playground/...
-
 # =============================================================================
 # Gate Job - Single required check for branch protection
 # =============================================================================

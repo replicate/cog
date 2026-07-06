@@ -1,0 +1,30 @@
+# Test that cog playground proxies requests to a running model.
+#
+# Verifies that the playground's /proxy path forwards requests to the target
+# model and returns the model's response unchanged.
+
+cog build -t $TEST_IMAGE
+cog serve
+cog playground --no-open --target $SERVER_URL
+
+# Proxy health-check through the playground.
+curl -u $PLAYGROUND_URL -H 'X-Cog-Target: $SERVER_URL' GET /proxy/health-check
+stdout '"status":"READY"'
+
+# Proxy a prediction through the playground.
+curl -u $PLAYGROUND_URL -H 'X-Cog-Target: $SERVER_URL' POST /proxy/predictions '{"input":{"s":"world"}}'
+stdout '"output":"hello world"'
+stdout '"status":"succeeded"'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+run: "run.py:Runner"
+
+-- run.py --
+from cog import BaseRunner
+
+
+class Runner(BaseRunner):
+    def run(self, s: str) -> str:
+        return "hello " + s

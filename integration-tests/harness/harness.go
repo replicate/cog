@@ -98,6 +98,10 @@ type Harness struct {
 	// serverProcs tracks background cog serve processes for cleanup, keyed by work directory
 	serverProcs   map[string]*serverInfo
 	serverProcsMu sync.Mutex
+	// playgroundProcs tracks background cog playground processes for cleanup,
+	// keyed by work directory.
+	playgroundProcs   map[string]*serverInfo
+	playgroundProcsMu sync.Mutex
 	// registries tracks test registry containers for cleanup, keyed by work directory
 	registries   map[string]*registryInfo
 	registriesMu sync.Mutex
@@ -120,13 +124,14 @@ func New() (*Harness, error) {
 		return nil, err
 	}
 	return &Harness{
-		CogBinary:      cogBinary,
-		realHome:       os.Getenv("HOME"),
-		repoRoot:       repoRoot,
-		serverProcs:    make(map[string]*serverInfo),
-		registries:     make(map[string]*registryInfo),
-		uploadServers:  make(map[string]*mockUploadServer),
-		webhookServers: make(map[string]*webhookServer),
+		CogBinary:       cogBinary,
+		realHome:        os.Getenv("HOME"),
+		repoRoot:        repoRoot,
+		serverProcs:     make(map[string]*serverInfo),
+		playgroundProcs: make(map[string]*serverInfo),
+		registries:      make(map[string]*registryInfo),
+		uploadServers:   make(map[string]*mockUploadServer),
+		webhookServers:  make(map[string]*webhookServer),
 	}, nil
 }
 
@@ -283,6 +288,11 @@ func (h *Harness) cmdCog(ts *testscript.TestScript, neg bool, args []string) {
 		h.cmdCogServe(ts, neg, args[1:])
 		return
 	}
+	if len(args) > 0 && args[0] == "playground" {
+		// Special handling for 'cog playground' - run in background
+		h.cmdCogPlayground(ts, neg, args[1:])
+		return
+	}
 
 	// Default: run cog command normally
 	expandedArgs := make([]string, len(args))
@@ -357,6 +367,8 @@ func (h *Harness) Setup(env *testscript.Env) error {
 	env.Defer(func() {
 		// Stop the server for this specific test (if any)
 		h.stopServerByWorkDir(workDir)
+		// Stop the playground for this specific test (if any)
+		h.stopPlaygroundByWorkDir(workDir)
 		// Stop the registry for this specific test (if any)
 		h.stopRegistryByWorkDir(workDir)
 		// Stop the upload server for this specific test (if any)
@@ -480,40 +492,153 @@ func (h *Harness) cmdCogServe(ts *testscript.TestScript, neg bool, args []string
 	}
 }
 
+// cmdCogPlayground implements background 'cog playground' for testscript.
+// It starts a cog playground process in the background and waits for it to be
+// ready. Usage: cog playground [flags]
+// Exports $PLAYGROUND_URL environment variable with the playground address.
+func (h *Harness) cmdCogPlayground(ts *testscript.TestScript, neg bool, args []string) {
+	workDir := ts.Getenv("WORK")
+
+	// Check if playground is already running
+	h.playgroundProcsMu.Lock()
+	if _, exists := h.playgroundProcs[workDir]; exists {
+		h.playgroundProcsMu.Unlock()
+		ts.Fatalf("playground already running")
+	}
+	h.playgroundProcsMu.Unlock()
+
+	// Allocate a random available port
+	port, err := allocatePort()
+	if err != nil {
+		ts.Fatalf("failed to allocate port: %v", err)
+	}
+
+	// Build command arguments. --no-open is forced so the browser doesn't pop
+	// up during tests; user args (e.g. --target) follow.
+	cmdArgs := []string{"playground", "--no-open", "--port", strconv.Itoa(port)}
+	cmdArgs = append(cmdArgs, args...)
+
+	// Expand environment variables in arguments
+	expandedArgs := make([]string, len(cmdArgs))
+	for i, arg := range cmdArgs {
+		expandedArgs[i] = os.Expand(arg, ts.Getenv)
+	}
+
+	// Start the playground process
+	cmd := exec.Command(h.CogBinary, expandedArgs...)
+	cmd.Dir = workDir
+
+	// Build environment from testscript.
+	var env []string
+	for _, key := range []string{"HOME", "PATH", "REPO_ROOT", "COG_NO_UPDATE_CHECK", "TEST_IMAGE"} {
+		if val := ts.Getenv(key); val != "" {
+			env = append(env, key+"="+val)
+		}
+	}
+	for _, key := range propagatedEnvVars {
+		if val := ts.Getenv(key); val != "" {
+			env = append(env, key+"="+val)
+		}
+	}
+	cmd.Env = env
+
+	cmd.Stdout = ts.Stdout()
+	cmd.Stderr = ts.Stderr()
+
+	if err := cmd.Start(); err != nil {
+		ts.Fatalf("failed to start playground: %v", err)
+	}
+
+	// Store the process for cleanup
+	h.playgroundProcsMu.Lock()
+	h.playgroundProcs[workDir] = &serverInfo{cmd: cmd, port: port}
+	h.playgroundProcsMu.Unlock()
+
+	// Wait for playground to be ready
+	playgroundURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	ts.Setenv("PLAYGROUND_URL", playgroundURL)
+
+	if !waitForPlayground(playgroundURL, 30*time.Second) {
+		if neg {
+			return
+		}
+		_ = cmd.Process.Kill()
+		ts.Fatalf("playground did not become ready within timeout")
+	}
+
+	if neg {
+		ts.Fatalf("playground became ready, but expected setup failure")
+	}
+}
+
+// waitForPlayground polls the playground's /config endpoint until it responds
+// successfully.
+func waitForPlayground(url string, timeout time.Duration) bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url + "/config")
+		if err != nil {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	return false
+}
+
 // cmdCurl implements the 'curl' command for testscript.
 // It makes HTTP requests to the server started with 'serve'.
 // Includes built-in retry logic (10 attempts, 500ms delay) for resilience.
-// Usage: curl [-H key:value]... [method] [path] [body]
+// Usage: curl [-u baseURL] [-H key:value]... [method] [path] [body]
 // Examples:
 //
 //	curl GET /health-check
 //	curl POST /predictions '{"input":{"s":"hello"}}'
 //	curl -H Prefer:respond-async POST /predictions '{"input":{}}'
+//	curl -u $PLAYGROUND_URL -H 'X-Cog-Target: $SERVER_URL' GET /proxy/health-check
 func (h *Harness) cmdCurl(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) < 2 {
-		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body | @file]")
+		ts.Fatalf("curl: usage: curl [-u baseURL] [-H key:value]... [method] [path] [body | @file]")
 	}
 
-	// Parse -H flags for extra headers
-	var extraHeaders [][2]string
-	for len(args) >= 2 && args[0] == "-H" {
-		kv := args[1]
-		parts := strings.SplitN(kv, ":", 2)
-		if len(parts) != 2 {
-			ts.Fatalf("curl: invalid header %q (expected key:value)", kv)
+	// Parse -u and -H flags for custom base URL and extra headers.
+	var (
+		extraHeaders [][2]string
+		baseURL      string
+	)
+	for len(args) >= 2 && (args[0] == "-H" || args[0] == "-u") {
+		switch args[0] {
+		case "-H":
+			kv := args[1]
+			parts := strings.SplitN(kv, ":", 2)
+			if len(parts) != 2 {
+				ts.Fatalf("curl: invalid header %q (expected key:value)", kv)
+			}
+			extraHeaders = append(extraHeaders, [2]string{
+				strings.TrimSpace(parts[0]),
+				os.Expand(strings.TrimSpace(parts[1]), ts.Getenv),
+			})
+		case "-u":
+			baseURL = os.Expand(args[1], ts.Getenv)
 		}
-		extraHeaders = append(extraHeaders, [2]string{
-			strings.TrimSpace(parts[0]),
-			strings.TrimSpace(parts[1]),
-		})
 		args = args[2:]
 	}
 
 	if len(args) < 2 {
-		ts.Fatalf("curl: usage: curl [-H key:value]... [method] [path] [body | @file]")
+		ts.Fatalf("curl: usage: curl [-u baseURL] [-H key:value]... [method] [path] [body | @file]")
 	}
 
 	serverURL := ts.Getenv("SERVER_URL")
+	if baseURL != "" {
+		serverURL = baseURL
+	}
 	if serverURL == "" {
 		ts.Fatalf("curl: SERVER_URL not set (did you call 'cog serve' first?)")
 	}
@@ -684,6 +809,36 @@ func (h *Harness) stopServerByWorkDir(workDir string) {
 		if containerID != "" {
 			exec.Command("docker", "kill", containerID).Run() //nolint:errcheck,gosec
 		}
+	}
+}
+
+// stopPlaygroundByWorkDir stops the playground process associated with a work
+// directory.
+func (h *Harness) stopPlaygroundByWorkDir(workDir string) {
+	h.playgroundProcsMu.Lock()
+	info, exists := h.playgroundProcs[workDir]
+	if !exists {
+		h.playgroundProcsMu.Unlock()
+		return
+	}
+	delete(h.playgroundProcs, workDir)
+	h.playgroundProcsMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		_ = info.cmd.Wait()
+		close(done)
+	}()
+
+	if info.cmd.Process != nil {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			_ = info.cmd.Process.Kill()
+			<-done
+		}
+	} else {
+		<-done
 	}
 }
 
