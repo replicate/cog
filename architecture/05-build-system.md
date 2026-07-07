@@ -217,7 +217,7 @@ Resolution follows a 3-tier priority for each wheel:
 | 2. Auto-detect `dist/coglet-*.whl` | Dev builds only   |
 | 3. Default                         | Install from PyPI |
 
-Local wheel files are copied into `.cog/build/` and referenced via the `cog_build` named build context, then `COPY --from=cog_build`'d and `pip install`'d in the Dockerfile.
+Local wheel files are copied into `.cog/build/` and referenced via the `cog_build` named build context, then `COPY --from=cog_build`'d and `pip install`'d in the Dockerfile. User-provided local wheel and source archive requirements use the same staging boundary: Cog copies only the referenced artifacts into `.cog/build/` before the requirements install, preserving the later `COPY . /src` source layer.
 
 ---
 

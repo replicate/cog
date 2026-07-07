@@ -1,8 +1,11 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -60,6 +63,14 @@ type Build struct {
 	SDKVersion string `json:"sdk_version,omitempty" yaml:"sdk_version,omitempty"`
 
 	pythonRequirementsContent []string
+	localPackageArtifacts     []LocalPackageArtifact
+}
+
+type LocalPackageArtifact struct {
+	Requirement string
+	SourcePath  string
+	StagedDir   string
+	Filename    string
 }
 
 type Concurrency struct {
@@ -277,6 +288,9 @@ func (c *Config) Complete(projectDir string) error {
 			return fmt.Errorf("failed to open python_requirements file: %w", err)
 		}
 		c.Build.pythonRequirementsContent = reqs
+		if err := c.loadLocalPackageArtifacts(projectDir, requirementsFilePath); err != nil {
+			return err
+		}
 	} else if len(c.Build.PythonPackages) > 0 {
 		// Backwards compatibility: if using deprecated python_packages, populate requirements content
 		c.Build.pythonRequirementsContent = c.Build.PythonPackages
@@ -295,6 +309,80 @@ func (c *Config) Complete(projectDir string) error {
 	}
 
 	return nil
+}
+
+func (c *Config) loadLocalPackageArtifacts(projectDir string, requirementsFilePath string) error {
+	projectRoot, err := filepath.Abs(projectDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve project directory: %w", err)
+	}
+	projectRoot, err = filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		return fmt.Errorf("failed to resolve project directory symlinks: %w", err)
+	}
+
+	requirementsDir := filepath.Dir(requirementsFilePath)
+	seen := map[string]LocalPackageArtifact{}
+	artifacts := []LocalPackageArtifact{}
+	for _, line := range c.Build.pythonRequirementsContent {
+		artifactPath, ok, err := requirements.ParseLocalArtifactRequirement(line)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+
+		resolvedPath := artifactPath
+		if !filepath.IsAbs(resolvedPath) {
+			resolvedPath = filepath.Join(requirementsDir, resolvedPath)
+		}
+		absPath, err := filepath.Abs(resolvedPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve local Python package artifact %q: %w", artifactPath, err)
+		}
+		canonicalPath, err := filepath.EvalSymlinks(absPath)
+		if err != nil {
+			return fmt.Errorf("local Python package artifact %q not found: %w", artifactPath, err)
+		}
+		info, err := os.Stat(canonicalPath)
+		if err != nil {
+			return fmt.Errorf("failed to inspect local Python package artifact %q: %w", artifactPath, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("local Python package artifact %q must be a regular file", artifactPath)
+		}
+		if !pathWithin(projectRoot, canonicalPath) {
+			return fmt.Errorf("local Python package artifact %q must be inside the project directory", artifactPath)
+		}
+
+		if artifact, ok := seen[canonicalPath]; ok {
+			artifact.Requirement = line
+			artifacts = append(artifacts, artifact)
+			continue
+		}
+
+		relPath, err := filepath.Rel(projectRoot, canonicalPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve local Python package artifact %q relative to project directory: %w", artifactPath, err)
+		}
+		hash := sha256.Sum256([]byte(filepath.ToSlash(relPath)))
+		artifact := LocalPackageArtifact{
+			Requirement: line,
+			SourcePath:  canonicalPath,
+			StagedDir:   hex.EncodeToString(hash[:])[:16],
+			Filename:    filepath.Base(absPath),
+		}
+		seen[canonicalPath] = artifact
+		artifacts = append(artifacts, artifact)
+	}
+	c.Build.localPackageArtifacts = artifacts
+	return nil
+}
+
+func pathWithin(root string, target string) bool {
+	rel, err := filepath.Rel(root, target)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // PythonRequirementsForArch returns a requirements.txt file with all the GPU packages resolved for given OS and architecture.
@@ -544,6 +632,13 @@ Compatible cuDNN version is: %s`, c.Build.CuDNN, tfVersion, tfCuDNN)
 
 func (c *Config) RequirementsFile(projectDir string) string {
 	return filepath.Join(projectDir, c.Build.PythonRequirements)
+}
+
+func (c *Config) LocalPackageArtifacts() []LocalPackageArtifact {
+	if c.Build == nil {
+		return nil
+	}
+	return slices.Clone(c.Build.localPackageArtifacts)
 }
 
 func (c *Config) ParsedEnvironment() map[string]string {

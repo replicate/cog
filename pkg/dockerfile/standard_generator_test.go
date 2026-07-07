@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -336,6 +337,47 @@ build:
 	require.NoError(t, err)
 	fmt.Println(actual)
 	require.Contains(t, actual, `uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt`)
+}
+
+func TestPythonRequirementsLocalPackageArtifact(t *testing.T) {
+	tmpDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "requirements", "dist"), 0o755))
+	artifactPath := path.Join(tmpDir, "requirements", "dist", "local_pkg-0.1.0-py3-none-any.whl")
+	require.NoError(t, os.WriteFile(artifactPath, []byte("wheel"), 0o644))
+	require.NoError(t, os.WriteFile(path.Join(tmpDir, "requirements", "requirements.txt"), []byte("./dist/local_pkg-0.1.0-py3-none-any.whl\ndist/local_pkg-0.1.0-py3-none-any.whl"), 0o644))
+
+	conf, err := config.FromYAML([]byte(`
+build:
+  python_version: "3.12"
+  python_requirements: "requirements/requirements.txt"
+`))
+	require.NoError(t, err)
+	require.NoError(t, conf.Complete(tmpDir))
+	command := dockertest.NewMockCommand()
+	client := registrytest.NewMockRegistryClient()
+	buildDir := t.TempDir()
+	gen, err := NewStandardGenerator(conf, tmpDir, buildDir, "", command, client, true)
+	require.NoError(t, err)
+	gen.SetUseCogBaseImage(false)
+	pypiWheels(gen)
+	_, actual, _, err := gen.GenerateModelBaseWithSeparateWeights(t.Context(), "r8.im/replicate/cog-test")
+	require.NoError(t, err)
+
+	artifact := conf.LocalPackageArtifacts()[0]
+	copyArtifacts := "COPY --from=cog_build local_package_artifacts/ /tmp/local_package_artifacts/"
+	copyRequirements := "COPY --from=cog_build requirements.txt /tmp/requirements.txt"
+	pipInstall := "uv run pip install --cache-dir /root/.cache/pip -r /tmp/requirements.txt"
+	require.Contains(t, actual, copyArtifacts)
+	require.Less(t, strings.Index(actual, copyArtifacts), strings.Index(actual, copyRequirements))
+	require.Less(t, strings.Index(actual, copyRequirements), strings.Index(actual, pipInstall))
+
+	stagedArtifact, err := os.ReadFile(path.Join(buildDir, "local_package_artifacts", artifact.StagedDir, artifact.Filename))
+	require.NoError(t, err)
+	require.Equal(t, []byte("wheel"), stagedArtifact)
+
+	requirements, err := os.ReadFile(path.Join(buildDir, "requirements.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "/tmp/local_package_artifacts/"+artifact.StagedDir+"/local_pkg-0.1.0-py3-none-any.whl\n/tmp/local_package_artifacts/"+artifact.StagedDir+"/local_pkg-0.1.0-py3-none-any.whl", string(requirements))
 }
 
 // GPU builds on nvidia/cuda base images install Python via `uv python install`

@@ -14,6 +14,7 @@ import (
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/requirements"
 	"github.com/replicate/cog/pkg/util/console"
+	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/util/version"
 	"github.com/replicate/cog/pkg/weightslegacy"
 	"github.com/replicate/cog/pkg/wheels"
@@ -902,6 +903,11 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 	// Strip cog/coglet from user requirements — we always install them ourselves
 	// via installCog(). Leaving them in would cause pip to overwrite our version.
 	g.pythonRequirementsContents = g.filterManagedPackages(g.pythonRequirementsContents)
+	artifactCopyLines, err := g.stageLocalPackageArtifacts()
+	if err != nil {
+		return "", err
+	}
+	g.pythonRequirementsContents = g.rewriteLocalPackageArtifacts(g.pythonRequirementsContents)
 
 	if strings.Trim(g.pythonRequirementsContents, "") == "" {
 		return "", nil
@@ -917,12 +923,55 @@ func (g *StandardGenerator) pipInstalls() (string, error) {
 	if g.strip {
 		pipInstallLine += " && " + StripDebugSymbolsCommand
 	}
-	return strings.Join([]string{
+	lines := []string{}
+	lines = append(lines, artifactCopyLines...)
+	lines = append(lines,
 		copyLine[0],
 		CFlags,
 		pipInstallLine,
 		"ENV CFLAGS=",
-	}, "\n"), nil
+	)
+	return strings.Join(lines, "\n"), nil
+}
+
+func (g *StandardGenerator) stageLocalPackageArtifacts() ([]string, error) {
+	artifacts := g.Config.LocalPackageArtifacts()
+	if len(artifacts) == 0 {
+		return nil, nil
+	}
+	staged := map[string]bool{}
+	for _, artifact := range artifacts {
+		dst := filepath.Join(g.tmpDir, "local_package_artifacts", artifact.StagedDir, artifact.Filename)
+		if staged[dst] {
+			continue
+		}
+		if err := files.Copy(artifact.SourcePath, dst); err != nil {
+			return nil, fmt.Errorf("failed to stage local Python package artifact %s: %w", artifact.SourcePath, err)
+		}
+		staged[dst] = true
+	}
+	return []string{"COPY --from=cog_build local_package_artifacts/ /tmp/local_package_artifacts/"}, nil
+}
+
+func (g *StandardGenerator) rewriteLocalPackageArtifacts(reqContents string) string {
+	artifacts := map[string]string{}
+	for _, artifact := range g.Config.LocalPackageArtifacts() {
+		containerPath := path.Join("/tmp/local_package_artifacts", artifact.StagedDir, artifact.Filename)
+		artifacts[artifact.Requirement] = containerPath
+	}
+	if len(artifacts) == 0 {
+		return reqContents
+	}
+
+	lines := []string{}
+	for line := range strings.SplitSeq(reqContents, "\n") {
+		if replacement, ok := artifacts[strings.TrimSpace(line)]; ok {
+			lines = append(lines, replacement)
+		} else {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (g *StandardGenerator) runCommands() (string, error) {

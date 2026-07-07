@@ -20,6 +20,46 @@ func TestReadRequirements(t *testing.T) {
 	require.Equal(t, []string{"torch==2.5.1"}, requirements)
 }
 
+func TestParseLocalArtifactRequirement(t *testing.T) {
+	testCases := []struct {
+		name       string
+		line       string
+		expected   string
+		expectedOK bool
+		expectsErr bool
+	}{
+		{name: "Wheel", line: "./dist/pkg-0.1.0-py3-none-any.whl", expected: "./dist/pkg-0.1.0-py3-none-any.whl", expectedOK: true},
+		{name: "Zip", line: "mylibpackage.zip", expected: "mylibpackage.zip", expectedOK: true},
+		{name: "TarGz", line: "../pkg-0.1.0.tar.gz", expected: "../pkg-0.1.0.tar.gz", expectedOK: true},
+		{name: "TarBz2", line: "/tmp/pkg-0.1.0.tar.bz2", expected: "/tmp/pkg-0.1.0.tar.bz2", expectedOK: true},
+		{name: "Package", line: "torch==2.5.1"},
+		{name: "URL", line: "https://example.com/pkg.zip"},
+		{name: "VCS", line: "git+https://example.com/repo.git"},
+		{name: "FileURL", line: "name @ file:./pkg.whl", expectsErr: true},
+		{name: "DirectFileURL", line: "file:///tmp/pkg.whl", expectsErr: true},
+		{name: "NamedFileURL", line: "name @ file:///tmp/pkg.whl", expectsErr: true},
+		{name: "LocalFindLinks", line: "--find-links ./wheels", expectsErr: true},
+		{name: "LocalFindLinksEquals", line: "--find-links=./wheels", expectsErr: true},
+		{name: "RemoteFindLinks", line: "--find-links https://example.com/wheels"},
+		{name: "LocalRecursiveRequirement", line: "-r requirements-local.txt", expectsErr: true},
+		{name: "InlineHash", line: "./pkg.whl --hash=sha256:abc", expectsErr: true},
+		{name: "LocalDirectory", line: "./pkg", expectsErr: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, ok, err := ParseLocalArtifactRequirement(tc.line)
+			if tc.expectsErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedOK, ok)
+			require.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
 func TestReadRequirementsLineContinuations(t *testing.T) {
 	srcDir := t.TempDir()
 	reqFile := path.Join(srcDir, "requirements.txt")

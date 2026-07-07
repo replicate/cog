@@ -3470,6 +3470,20 @@ Your `cog.yaml` file can set either `python_packages` or `python_requirements`, 
 
 This follows the standard [requirements.txt](https://pip.pypa.io/en/stable/reference/requirements-file-format/) format.
 
+Requirements files can also reference local Python package artifacts, such as wheels and source archives:
+
+`requirements.txt`:
+
+```
+./dist/mylib-0.1.0-py3-none-any.whl
+./vendor/helperlib.zip
+./packages/localpkg.tar.gz
+```
+
+Local artifact paths are resolved relative to the requirements file, and the referenced files must be inside your project directory. Cog stages these artifacts before installing requirements, so this is the supported way to install a local package artifact during `cog build`.
+
+Local package directories, `name @ file:...` requirements, local `--find-links` directories, recursive local artifact includes, and inline hashes or options on local artifact lines are not supported.
+
 To install Git-hosted Python packages, add `git` to the `system_packages` list, then use the `git+https://` syntax to specify the package name. For example:
 
 `cog.yaml`:
@@ -3547,7 +3561,7 @@ build:
     - cd cowsay-3.7.0 && make install
 ```
 
-Your code is _not_ available to commands in `run`. This is so we can build your image efficiently when running locally.
+Your code is _not_ available to commands in `run`. This is so we can build your image efficiently when running locally. To install a local wheel or source archive, list it in your `python_requirements` file instead of running `pip install ./artifact.zip` from `run`.
 
 Each command in `run` can be either a string or a dictionary in the following format:
 
