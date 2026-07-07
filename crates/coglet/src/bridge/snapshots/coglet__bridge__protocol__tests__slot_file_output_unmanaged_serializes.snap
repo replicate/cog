@@ -1,0 +1,12 @@
+---
+source: coglet/src/bridge/protocol.rs
+expression: resp
+---
+{
+  "type": "file_output",
+  "filename": "/home/user/model/output.wav",
+  "kind": {
+    "type": "file_type"
+  },
+  "managed": false
+}

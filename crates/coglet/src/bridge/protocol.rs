@@ -327,6 +327,10 @@ pub enum SlotResponse {
         /// Explicit MIME type from the predictor. Falls back to mime_guess when None.
         #[serde(skip_serializing_if = "Option::is_none")]
         mime_type: Option<String>,
+        /// True if Coglet created this file (IOBase write or oversized spill).
+        /// False for user-authored Path outputs — must not be deleted.
+        #[serde(default)]
+        managed: bool,
     },
 
     /// Streaming output chunk for generator and iterator output.
@@ -588,6 +592,39 @@ mod tests {
     fn slot_cancelled_serializes() {
         let resp = SlotResponse::Cancelled {
             id: "pred_123".to_string(),
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_file_output_managed_serializes() {
+        let resp = SlotResponse::FileOutput {
+            filename: "/tmp/coglet/predictions/pred_123/outputs/0.png".to_string(),
+            kind: FileOutputKind::FileType,
+            mime_type: Some("image/png".to_string()),
+            managed: true,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_file_output_unmanaged_serializes() {
+        let resp = SlotResponse::FileOutput {
+            filename: "/home/user/model/output.wav".to_string(),
+            kind: FileOutputKind::FileType,
+            mime_type: None,
+            managed: false,
+        };
+        insta::assert_json_snapshot!(resp);
+    }
+
+    #[test]
+    fn slot_file_output_oversized_serializes() {
+        let resp = SlotResponse::FileOutput {
+            filename: "/tmp/coglet/predictions/pred_123/outputs/spill_abc.json".to_string(),
+            kind: FileOutputKind::Oversized,
+            mime_type: None,
+            managed: true,
         };
         insta::assert_json_snapshot!(resp);
     }

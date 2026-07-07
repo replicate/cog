@@ -201,14 +201,21 @@ impl SlotSender {
     ) -> io::Result<()> {
         let path = self.next_output_path(extension);
         std::fs::write(&path, data)?;
-        self.send_file_output(path, mime_type)
+        self.send_file_output(path, mime_type, true)
     }
 
     /// Send a file-typed output (e.g. Path, File return types).
     ///
     /// The file is already on disk at `path` — we just send the path reference.
     /// `mime_type` is an explicit MIME type; when None the parent guesses from extension.
-    pub fn send_file_output(&self, path: PathBuf, mime_type: Option<String>) -> io::Result<()> {
+    /// `managed` is true when Coglet created the file (safe to delete after consumption);
+    /// false for user-authored Path outputs.
+    pub fn send_file_output(
+        &self,
+        path: PathBuf,
+        mime_type: Option<String>,
+        managed: bool,
+    ) -> io::Result<()> {
         let filename = path
             .to_str()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 path"))?
@@ -217,6 +224,7 @@ impl SlotSender {
             filename,
             kind: FileOutputKind::FileType,
             mime_type,
+            managed,
         };
         self.tx
             .send(msg)
@@ -265,6 +273,7 @@ fn build_output_message(
             filename,
             kind: FileOutputKind::Oversized,
             mime_type: None,
+            managed: true,
         })
     } else {
         Ok(SlotResponse::OutputChunk { output, index })

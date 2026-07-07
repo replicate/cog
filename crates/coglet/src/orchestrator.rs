@@ -1072,7 +1072,7 @@ async fn run_event_loop(
                             predictions.remove(&slot_id);
                         }
                     }
-                    Ok(SlotResponse::FileOutput { filename, kind, mime_type }) => {
+                    Ok(SlotResponse::FileOutput { filename, kind, mime_type, managed }) => {
                         tracing::debug!(%slot_id, %filename, ?kind, "FileOutput received");
                         let bytes = match std::fs::read(&filename) {
                             Ok(b) => b,
@@ -1081,6 +1081,11 @@ async fn run_event_loop(
                                 continue;
                             }
                         };
+                        if managed
+                            && let Err(e) = std::fs::remove_file(&filename)
+                        {
+                            tracing::debug!(%slot_id, %filename, error = %e, "Failed to delete managed output file");
+                        }
                         match kind {
                             FileOutputKind::Oversized => {
                                 let output: serde_json::Value = match serde_json::from_slice(&bytes) {

@@ -657,8 +657,7 @@ impl PredictionService {
             .await;
 
         // Create per-prediction dirs for file-based inputs/outputs
-        let prediction_dir =
-            std::path::PathBuf::from("/tmp/coglet/predictions").join(&prediction_id);
+        let prediction_dir = prediction_dir_for(&prediction_id);
         let output_dir = prediction_dir.join("outputs");
         let input_dir = prediction_dir.join("inputs");
         std::fs::create_dir_all(&output_dir)
@@ -797,9 +796,20 @@ impl PredictionService {
         }
     }
 
-    /// Remove a prediction from the DashMap after completion.
+    /// Remove a prediction from the DashMap after completion and clean up
+    /// its on-disk prediction directory as a backstop for any output files
+    /// that were not deleted individually (e.g. aborted uploads, cancelled
+    /// predictions).
     pub fn remove_prediction(&self, id: &str) {
         self.predictions.remove(id);
+        let dir = prediction_dir_for(id);
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                tracing::debug!(prediction_id = %id, error = %e, "Failed to remove prediction dir")
+            }
+        }
     }
 
     pub fn trigger_shutdown(&self) {
@@ -809,6 +819,10 @@ impl PredictionService {
     pub fn shutdown_rx(&self) -> watch::Receiver<bool> {
         self.shutdown_rx.clone()
     }
+}
+
+fn prediction_dir_for(id: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from("/tmp/coglet/predictions").join(id)
 }
 
 fn spawn_orchestrator_cancel(orch: Arc<dyn Orchestrator>, id: String) {
@@ -1721,6 +1735,26 @@ mod tests {
         assert!(svc.prediction_exists("test-remove"));
         svc.remove_prediction("test-remove");
         assert!(!svc.prediction_exists("test-remove"));
+    }
+
+    #[test]
+    fn remove_prediction_deletes_prediction_dir() {
+        let svc = PredictionService::new_no_pool();
+        let dir = prediction_dir_for("test-dir-cleanup");
+        std::fs::create_dir_all(dir.join("outputs")).unwrap();
+        std::fs::create_dir_all(dir.join("inputs")).unwrap();
+        std::fs::write(dir.join("outputs").join("0.png"), b"fake").unwrap();
+
+        svc.remove_prediction("test-dir-cleanup");
+
+        assert!(!dir.exists(), "prediction dir should be removed");
+    }
+
+    #[test]
+    fn remove_prediction_missing_dir_is_ok() {
+        let svc = PredictionService::new_no_pool();
+        // Should not panic or error when the prediction dir doesn't exist
+        svc.remove_prediction("nonexistent-prediction");
     }
 
     #[test]

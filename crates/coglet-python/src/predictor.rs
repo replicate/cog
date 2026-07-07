@@ -195,7 +195,7 @@ fn send_output_item(
             .and_then(|p| p.extract())
             .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
         slot_sender
-            .send_file_output(std::path::PathBuf::from(path_str), None)
+            .send_file_output(std::path::PathBuf::from(path_str), None, false)
             .map_err(|e| PredictionError::Failed(format!("Failed to send file output: {}", e)))?;
         return Ok(());
     }
@@ -954,7 +954,7 @@ impl PythonPredictor {
                 .and_then(|p| p.extract())
                 .map_err(|e| PredictionError::Failed(format!("Failed to get fspath: {}", e)))?;
             slot_sender
-                .send_file_output(std::path::PathBuf::from(path_str), None)
+                .send_file_output(std::path::PathBuf::from(path_str), None, false)
                 .map_err(|e| {
                     PredictionError::Failed(format!("Failed to send file output: {}", e))
                 })?;
