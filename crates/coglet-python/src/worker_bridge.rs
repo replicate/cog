@@ -101,11 +101,12 @@ pub struct PythonPredictHandler {
     async_loop: Mutex<Option<Py<PyAny>>>,
     /// Handle to the asyncio loop thread for joining on shutdown.
     async_thread: Mutex<Option<JoinHandle<()>>>,
+    max_concurrency: usize,
 }
 
 impl PythonPredictHandler {
     /// Create a handler in prediction mode.
-    pub fn new(predictor_ref: String) -> Result<Self, SetupError> {
+    pub fn new(predictor_ref: String, max_concurrency: usize) -> Result<Self, SetupError> {
         let (loop_obj, thread) = Self::init_async_loop()?;
         Ok(Self {
             predictor_ref,
@@ -114,6 +115,7 @@ impl PythonPredictHandler {
             mode: HandlerMode::Predict,
             async_loop: Mutex::new(Some(loop_obj)),
             async_thread: Mutex::new(Some(thread)),
+            max_concurrency,
         })
     }
 
@@ -122,7 +124,7 @@ impl PythonPredictHandler {
     /// NOTE: For bug-for-bug compatibility with cog mainline, use new() instead.
     /// Cog mainline's training routes incorrectly use a predict-mode worker.
     #[allow(dead_code)]
-    pub fn new_train(predictor_ref: String) -> Result<Self, SetupError> {
+    pub fn new_train(predictor_ref: String, max_concurrency: usize) -> Result<Self, SetupError> {
         let (loop_obj, thread) = Self::init_async_loop()?;
         Ok(Self {
             predictor_ref,
@@ -131,6 +133,7 @@ impl PythonPredictHandler {
             mode: HandlerMode::Train,
             async_loop: Mutex::new(Some(loop_obj)),
             async_thread: Mutex::new(Some(thread)),
+            max_concurrency,
         })
     }
 
@@ -281,6 +284,11 @@ impl PredictHandler for PythonPredictHandler {
 
             let pred = PythonPredictor::load(py, &self.predictor_ref)
                 .map_err(|e| SetupError::load(e.to_string()))?;
+            if self.max_concurrency > 1 && !pred.is_async() {
+                return Err(SetupError::setup(
+                    "COG_MAX_CONCURRENCY > 1 requires an async run() or predict() method",
+                ));
+            }
 
             // Detect SDK implementation
             let sdk_impl = match py.import("cog") {
@@ -701,5 +709,109 @@ fn output_to_json(output: coglet_core::PredictionOutput) -> serde_json::Value {
     match output {
         coglet_core::PredictionOutput::Single(v) => v,
         coglet_core::PredictionOutput::Stream(v) => serde_json::Value::Array(v),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::path::PathBuf;
+
+    use pyo3::types::PyList;
+    use tempfile::TempDir;
+
+    fn add_python_sdk_path(py: Python<'_>) {
+        py.run(
+            c"\
+import sys, types
+coglet = types.ModuleType('coglet')
+coglet.CancelationException = Exception
+sys.modules.setdefault('coglet', coglet)
+requests = types.ModuleType('requests')
+sys.modules.setdefault('requests', requests)
+",
+            None,
+            None,
+        )
+        .expect("failed to install coglet test stub");
+
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let sdk_path = manifest_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("crate should live under crates/coglet-python")
+            .join("python");
+        let sys = py.import("sys").expect("sys should import");
+        let path = sys
+            .getattr("path")
+            .expect("sys.path should exist")
+            .cast_into::<PyList>()
+            .expect("sys.path should be a list");
+        path.insert(0, sdk_path.to_string_lossy().as_ref())
+            .expect("failed to prepend SDK path");
+    }
+
+    fn write_predictor(source: &str) -> (TempDir, String) {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("predictor.py");
+        std::fs::write(&path, source).expect("failed to write test predictor");
+        let predictor_ref = format!("{}:Predictor", path.display());
+        (dir, predictor_ref)
+    }
+
+    // Runtime guard: an operator/env override of COG_MAX_CONCURRENCY > 1 must
+    // fail setup when the predictor is synchronous, mirroring the static
+    // parser and build-time checks.
+    #[tokio::test]
+    async fn setup_rejects_sync_predictor_with_concurrency() {
+        pyo3::Python::initialize();
+        Python::attach(add_python_sdk_path);
+
+        let (_dir, predictor_ref) = write_predictor(
+            r#"
+from cog import BaseRunner
+
+class Predictor(BaseRunner):
+    def run(self) -> str:
+        return "ok"
+"#,
+        );
+
+        let handler =
+            PythonPredictHandler::new(predictor_ref, 2).expect("handler should initialize");
+        let err = handler
+            .setup()
+            .await
+            .expect_err("setup should fail for a sync predictor with concurrency > 1");
+        assert!(
+            err.to_string()
+                .contains("COG_MAX_CONCURRENCY > 1 requires an async run() or predict() method"),
+            "unexpected error: {err}"
+        );
+    }
+
+    // The same guard must allow an async predictor with concurrency > 1.
+    #[tokio::test]
+    async fn setup_allows_async_predictor_with_concurrency() {
+        pyo3::Python::initialize();
+        Python::attach(add_python_sdk_path);
+
+        let (_dir, predictor_ref) = write_predictor(
+            r#"
+from cog import BaseRunner
+
+class Predictor(BaseRunner):
+    async def run(self) -> str:
+        return "ok"
+"#,
+        );
+
+        let handler =
+            PythonPredictHandler::new(predictor_ref, 2).expect("handler should initialize");
+        handler
+            .setup()
+            .await
+            .expect("setup should succeed for an async predictor with concurrency > 1");
     }
 }

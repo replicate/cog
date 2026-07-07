@@ -633,11 +633,11 @@ curl http://localhost:5001/predictions -X POST \
 
 ```json
 {
-    "status": "succeeded",
-    "output": "data:image/png;base64,...",
-    "metrics": {
-        "predict_time": 4.52
-    }
+  "status": "succeeded",
+  "output": "data:image/png;base64,...",
+  "metrics": {
+    "predict_time": 4.52
+  }
 }
 ```
 
@@ -701,8 +701,8 @@ the response contains a base64-encoded data URL by default:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "data:image/png;base64,iVBORw0KGgo..."
+  "status": "succeeded",
+  "output": "data:image/png;base64,iVBORw0KGgo..."
 }
 ```
 
@@ -729,8 +729,8 @@ contains the uploaded URL instead of a data URL:
 
 ```json
 {
-    "status": "succeeded",
-    "output": "https://example.com/upload/image.png"
+  "status": "succeeded",
+  "output": "https://example.com/upload/image.png"
 }
 ```
 
@@ -772,21 +772,25 @@ to stop.)
 
 ## Concurrency
 
-By default, the server processes one run at a time. To enable concurrent runs, set the `concurrency.max` option in `cog.yaml`:
+By default, the server processes one run at a time. To enable concurrent runs, make your `run()` method async and decorate it with `@cog.concurrent(max=N)`:
 
-```yaml
-concurrency:
-  max: 4
+```py
+import cog
+
+class Runner(cog.BaseRunner):
+    @cog.concurrent(max=4)
+    async def run(self) -> str:
+        return "hello world"
 ```
 
-See the [`cog.yaml` reference](yaml.md#concurrency) for more details.
+The deprecated [`concurrency.max`](yaml.md#concurrency) field in `cog.yaml` is still supported and takes precedence over the decorator by baking `COG_MAX_CONCURRENCY` into the image.
 
 ## Environment variables
 
 You can configure runtime behavior with environment variables:
 
 - `COG_SETUP_TIMEOUT`: Maximum time in seconds for the `setup()` method (default: no timeout).
-- `COG_MAX_CONCURRENCY`: Number of concurrent prediction slots (default: 1).
+- `COG_MAX_CONCURRENCY`: Number of concurrent prediction slots (default: 1). Overrides both `@cog.concurrent` and deprecated `cog.yaml` concurrency.
 
 See the [environment variables reference](environment.md) for the full list.
 
@@ -974,9 +978,18 @@ These variables affect a running model server. Set them in `cog.yaml` under `env
 
 ### `COG_MAX_CONCURRENCY`
 
-Controls how many predictions the model server can run concurrently.
+Controls how many predictions the model server can run concurrently. This overrides both `@cog.concurrent(max=N)` and the deprecated `concurrency.max` field in `cog.yaml`.
 
-By default, Cog runs one prediction at a time. Invalid values are ignored and the default of `1` is used.
+By default, Cog runs one prediction at a time unless the model uses `@cog.concurrent(max=N)`. Invalid values are ignored and the default of `1` is used.
+
+Values greater than `1` require an async `run()` method. This applies even when `COG_MAX_CONCURRENCY` is set as a runtime operator override.
+
+Concurrency is resolved in this order, from highest to lowest precedence:
+
+1. `COG_MAX_CONCURRENCY` set at runtime
+2. Deprecated `concurrency.max` in `cog.yaml`, which is baked into the image as `COG_MAX_CONCURRENCY`
+3. `@cog.concurrent(max=N)` on the async `run()` method
+4. Default: `1`
 
 ```console
 $ COG_MAX_CONCURRENCY=4 docker run -p 5000:5000 my-model
@@ -1096,7 +1109,7 @@ If you want a working project to copy from, start with one of these:
 - [`hello-context`](https://github.com/replicate/cog/tree/main/examples/hello-context):
   shows how to read prediction context
 - [`hello-concurrency`](https://github.com/replicate/cog/tree/main/examples/hello-concurrency):
-  demonstrates the `concurrency` setting in `cog.yaml`
+  demonstrates the `@cog.concurrent` decorator
 - [`hello-train`](https://github.com/replicate/cog/tree/main/examples/hello-train):
   defines a training interface
 - [`hello-replicate`](https://github.com/replicate/cog/tree/main/examples/hello-replicate):
@@ -1759,7 +1772,7 @@ Prefer: respond-async
 Endpoints for creating and canceling a prediction idempotently
 accept a `prediction_id` parameter in their path.
 By default, the server runs one prediction at a time,
-but this can be increased with the [`concurrency.max`](yaml.md#concurrency) setting.
+but this can be increased with [`@cog.concurrent(max=N)`](python.md#async-runners-and-concurrency).
 When all prediction slots are in use, the server returns `409 Conflict`.
 The client should ensure prediction slots are available
 before creating a new prediction with a different ID.
@@ -2333,7 +2346,7 @@ The `run()` method takes an arbitrary list of named arguments, where each argume
 
 ## `async` runners and concurrency
 
-> Added in cog 0.14.0.
+> Async runners were added in cog 0.14.0. The `@cog.concurrent` decorator was added in cog 0.21.0.
 
 You may specify your `run()` method as `async def run(...)`. In
 addition, if you have an async `run()` function you may also have an async
@@ -2349,7 +2362,20 @@ class Runner(BaseRunner):
         return "hello world";
 ```
 
-Models that have an async `run()` function can run concurrently, up to the limit specified by [`concurrency.max`](yaml.md#max) in cog.yaml. Attempting to exceed this limit will return a 409 Conflict response.
+Models that have an async `run()` function can run concurrently. Use the `@cog.concurrent(max=N)` decorator (added in cog 0.21.0) to configure the default maximum concurrency for the function:
+
+```py
+import cog
+
+class Runner(cog.BaseRunner):
+    @cog.concurrent(max=4)
+    async def run(self) -> str:
+        return "hello world"
+```
+
+Attempting to exceed this limit will return a 409 Conflict response. `max` values greater than `1` require an async `run()` method. The `COG_MAX_CONCURRENCY` environment variable can override the decorator at runtime.
+
+The `max` value must be an integer literal so Cog can configure the model at build time. Use `COG_MAX_CONCURRENCY` when you need to set concurrency dynamically at runtime.
 
 ## `Input(**kwargs)`
 
@@ -3574,12 +3600,15 @@ build:
 ## `concurrency`
 
 > Added in cog 0.14.0.
+> Deprecated: use [`@cog.concurrent(max=N)`](python.md#async-runners-and-concurrency) on your async `run()` method instead.
 
-This stanza describes the concurrency capabilities of the model. It has one option:
+This stanza describes the concurrency capabilities of the model. It is still supported for backwards compatibility, but new models should use `@cog.concurrent(max=N)`. It has one option:
 
 ### `max`
 
 The maximum number of concurrent runs the model can process. If this is set, the model must specify an [async `run()` method](python.md#async-runners-and-concurrency).
+
+If both `concurrency.max` and `@cog.concurrent(max=N)` are set, `concurrency.max` takes precedence and is the value baked into the image. Remove `concurrency.max` when migrating to `@cog.concurrent`.
 
 For example:
 

@@ -963,6 +963,178 @@ class Predictor(cog.BasePredictor):
 	require.False(t, info.SupportsStreaming)
 }
 
+func TestConcurrentDecoratorQualifiedMax(t *testing.T) {
+	source := `
+import cog
+
+class Predictor(cog.BasePredictor):
+    @cog.concurrent(max=4)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 4, *info.ConcurrencyMax)
+	require.True(t, info.IsAsync)
+}
+
+func TestConcurrentDecoratorImportedMax(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent(max=3)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 3, *info.ConcurrencyMax)
+}
+
+func TestConcurrentDecoratorBareDefaultsToOne(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent
+    def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 1, *info.ConcurrencyMax)
+	require.False(t, info.IsAsync)
+}
+
+func TestConcurrentDecoratorCallDefaultsToOne(t *testing.T) {
+	source := `
+import cog
+
+class Predictor(cog.BasePredictor):
+    @cog.concurrent()
+    def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 1, *info.ConcurrencyMax)
+}
+
+func TestConcurrentDecoratorImportedAliasMax(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent as concurrent_predictions
+
+class Predictor(BasePredictor):
+    @concurrent_predictions(max=2)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 2, *info.ConcurrencyMax)
+}
+
+func TestConcurrentDecoratorQualifiedAliasMax(t *testing.T) {
+	source := `
+import cog as c
+
+class Predictor(c.BasePredictor):
+    @c.concurrent(max=4)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.NotNil(t, info.ConcurrencyMax)
+	require.Equal(t, 4, *info.ConcurrencyMax)
+	require.True(t, info.IsAsync)
+}
+
+func TestConcurrentDecoratorIgnoredWhenNotFromCog(t *testing.T) {
+	source := `
+from other import concurrent
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    @concurrent(max=4)
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.Nil(t, info.ConcurrencyMax)
+}
+
+func TestConcurrentDecoratorRequiresAsyncForMaxGreaterThanOne(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent(max=2)
+    def predict(self) -> str:
+        return "hello"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "requires an async")
+}
+
+func TestConcurrentDecoratorRejectsNonLiteralMax(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+MAX_CONCURRENCY = 2
+
+class Predictor(BasePredictor):
+    @concurrent(max=MAX_CONCURRENCY)
+    async def predict(self) -> str:
+        return "hello"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "integer literal")
+}
+
+func TestConcurrentDecoratorRejectsPositionalArgument(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent(2)
+    async def predict(self) -> str:
+        return "hello"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "max=...")
+}
+
+func TestConcurrentDecoratorRejectsStringMax(t *testing.T) {
+	source := `
+from cog import BasePredictor, concurrent
+
+class Predictor(BasePredictor):
+    @concurrent(max="2")
+    async def predict(self) -> str:
+        return "hello"
+`
+	se := parseErr(t, source, "Predictor", schema.ModePredict)
+	require.Equal(t, schema.ErrUnsupportedType, se.Kind)
+	require.Contains(t, se.Message, "integer literal")
+}
+
+func TestConcurrentDecoratorUndecoratedHasNoMax(t *testing.T) {
+	source := `
+from cog import BasePredictor
+
+class Predictor(BasePredictor):
+    async def predict(self) -> str:
+        return "hello"
+`
+	info := parse(t, source, "Predictor")
+	require.Nil(t, info.ConcurrencyMax)
+	require.True(t, info.IsAsync)
+}
+
 func TestListOutput(t *testing.T) {
 	source := `
 from cog import BasePredictor, Path

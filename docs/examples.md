@@ -12,7 +12,7 @@ If you want a working project to copy from, start with one of these:
 - [`hello-context`](https://github.com/replicate/cog/tree/main/examples/hello-context):
   shows how to read prediction context
 - [`hello-concurrency`](https://github.com/replicate/cog/tree/main/examples/hello-concurrency):
-  demonstrates the `concurrency` setting in `cog.yaml`
+  demonstrates the `@cog.concurrent` decorator
 - [`hello-train`](https://github.com/replicate/cog/tree/main/examples/hello-train):
   defines a training interface
 - [`hello-replicate`](https://github.com/replicate/cog/tree/main/examples/hello-replicate):
