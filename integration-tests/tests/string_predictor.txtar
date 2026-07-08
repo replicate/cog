@@ -8,7 +8,7 @@ stdout 'hello world'
 
 # Missing required input fails
 ! cog predict $TEST_IMAGE -i wrong=value
-stderr 's: Field required'
+stderr 'unknown input "wrong"'
 
 -- cog.yaml --
 build:

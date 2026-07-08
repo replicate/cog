@@ -27,6 +27,7 @@ import (
 	r8_path "github.com/replicate/cog/pkg/path"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
+	staticschema "github.com/replicate/cog/pkg/schema/static"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/util/mime"
@@ -196,21 +197,24 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	dockerClient, err := docker.NewClient(ctx)
-	if err != nil {
-		return err
+	if inputJSON != "" && len(inputFlags) > 0 {
+		return fmt.Errorf("Must use one of --json or --input to provide model inputs")
 	}
 
 	imageName := ""
 	volumes := []command.Volume{}
 	gpus := gpusFlag
+	var preparedInputs predict.Inputs
+	needsJSON := false
+	inputsPrepared := false
+	var dockerClient command.Command
+	var err error
+	var m *model.Model
 
 	// The Manager is built only when we have cog.yaml in scope (the
 	// build-from-source path). Pre-built images are opaque to Cog and
 	// may grow their own weight-metadata signal later.
 	var wm *weights.Manager
-
-	resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
 
 	if len(args) == 0 {
 		// Build image
@@ -220,13 +224,29 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 		defer src.Close()
 
+		schema, err := generateLocalOpenAPISchema(src)
+		if err != nil {
+			return err
+		}
+		preparedInputs, needsJSON, err = prepareInputs(inputFlags, inputJSON, schema, false)
+		if err != nil {
+			return err
+		}
+		inputsPrepared = true
+
 		if err := weights.CheckDrift(src.ProjectDir, src.Config.Weights); err != nil {
 			return err
 		}
 
+		dockerClient, err = docker.NewClient(ctx)
+		if err != nil {
+			return err
+		}
+		resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+
 		console.Info("Building Docker image from environment in cog.yaml...")
 		console.Info("")
-		m, err := resolver.Build(ctx, src, serveBuildOptions(cmd))
+		m, err = resolver.Build(ctx, src, serveBuildOptions(cmd))
 		if err != nil {
 			return err
 		}
@@ -247,6 +267,12 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
+		dockerClient, err = docker.NewClient(ctx)
+		if err != nil {
+			return err
+		}
+		resolver := model.NewResolver(dockerClient, registry.NewRegistryClient())
+
 		// Use existing image
 		imageName = args[0]
 
@@ -260,9 +286,20 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		m, err := resolver.Pull(ctx, ref)
+		m, err = resolver.Pull(ctx, ref)
 		if err != nil {
 			return err
+		}
+
+		// Preflight-validate inputs when the image ships an OpenAPI schema
+		// label. Older images without the label fall back to the runtime
+		// schema fetched from the container after it starts.
+		if m.Schema != nil {
+			preparedInputs, needsJSON, err = prepareInputs(inputFlags, inputJSON, m.Schema, false)
+			if err != nil {
+				return err
+			}
+			inputsPrepared = true
 		}
 
 		if gpus == "" && m.HasGPU() {
@@ -332,62 +369,96 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	if inputJSON != "" {
-		if len(inputFlags) > 0 {
-			return fmt.Errorf("Must use one of --json or --input to provide model inputs")
+	// Images without an OpenAPI schema label couldn't be validated before
+	// start, so prepare and validate inputs now against the runtime schema.
+	if !inputsPrepared {
+		schema, err := predictor.GetSchema()
+		if err != nil {
+			return err
 		}
-
-		return predictJSONInputs(*predictor, inputJSON, outPath, false)
+		preparedInputs, needsJSON, err = prepareInputs(inputFlags, inputJSON, schema, false)
+		if err != nil {
+			return err
+		}
 	}
-	return predictIndividualInputs(*predictor, inputFlags, outPath, false)
+
+	return runPrediction(*predictor, preparedInputs, outPath, false, needsJSON)
 }
 
-func isURI(ref *openapi3.Schema) bool {
-	return ref != nil && ref.Type.Is("string") && ref.Format == "uri"
+func generateLocalOpenAPISchema(src *model.Source) (*openapi3.T, error) {
+	data, err := staticschema.Generate(src.Config, src.ProjectDir)
+	if err != nil {
+		return nil, err
+	}
+	loader := openapi3.NewLoader()
+	loader.IsExternalRefsAllowed = true
+	schema, err := loader.LoadFromData(data)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to load model schema JSON: %w", err)
+	}
+	if err := schema.Validate(loader.Context); err != nil {
+		return nil, fmt.Errorf("Model schema is invalid: %w", err)
+	}
+	return schema, nil
 }
 
-func predictJSONInputs(predictor predict.Predictor, jsonInput string, outputPath string, isTrain bool) error {
+func prepareInputs(inputFlags []string, jsonInput string, schema *openapi3.T, isTrain bool) (predict.Inputs, bool, error) {
+	if jsonInput != "" {
+		if len(inputFlags) > 0 {
+			return nil, false, fmt.Errorf("Must use one of --json or --input to provide model inputs")
+		}
+		inputs, err := prepareJSONInputs(jsonInput, schema, isTrain)
+		return inputs, true, err
+	}
+	inputs, err := prepareIndividualInputs(inputFlags, schema, isTrain)
+	return inputs, false, err
+}
+
+func prepareIndividualInputs(inputFlags []string, schema *openapi3.T, isTrain bool) (predict.Inputs, error) {
+	inputs, err := parseInputFlags(inputFlags, schema, isTrain)
+	if err != nil {
+		return nil, err
+	}
+	if err := predict.ValidateInputsForMode(inputs, schema, isTrain); err != nil {
+		return nil, err
+	}
+	return inputs, nil
+}
+
+func prepareJSONInputs(jsonInput string, schema *openapi3.T, isTrain bool) (predict.Inputs, error) {
 	jsonInputs, err := parseJSONInput(jsonInput)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
+	if err := predict.ValidateInputNamesForMode(jsonInputs, schema, isTrain); err != nil {
+		return nil, err
+	}
 	transformedInputs, err := transformPathsToBase64URLs(jsonInputs)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if err := predict.ValidateInputMapForMode(transformedInputs, schema, isTrain); err != nil {
+		return nil, err
 	}
 
-	// Convert to predict.Inputs format
 	inputs := make(predict.Inputs)
 	for key, value := range transformedInputs {
 		if strValue, ok := value.(string); ok {
 			inputs[key] = predict.Input{String: &strValue}
-		} else {
-			// For non-string values, marshal to JSON
-			jsonBytes, err := json.Marshal(value)
-			if err != nil {
-				return fmt.Errorf("Failed to marshal input %q to JSON: %w", key, err)
-			}
-			jsonRaw := json.RawMessage(jsonBytes)
-			inputs[key] = predict.Input{Json: &jsonRaw}
+			continue
 		}
+		jsonBytes, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to marshal input %q to JSON: %w", key, err)
+		}
+		jsonRaw := json.RawMessage(jsonBytes)
+		inputs[key] = predict.Input{Json: &jsonRaw}
 	}
-
-	return runPrediction(predictor, inputs, outputPath, isTrain, true)
+	return inputs, nil
 }
 
-func predictIndividualInputs(predictor predict.Predictor, inputFlags []string, outputPath string, isTrain bool) error {
-	schema, err := predictor.GetSchema()
-	if err != nil {
-		return err
-	}
-
-	inputs, err := parseInputFlags(inputFlags, schema, isTrain)
-	if err != nil {
-		return err
-	}
-
-	return runPrediction(predictor, inputs, outputPath, isTrain, false)
+func isURI(ref *openapi3.Schema) bool {
+	return ref != nil && ref.Type.Is("string") && ref.Format == "uri"
 }
 
 func runPrediction(predictor predict.Predictor, inputs predict.Inputs, outputPath string, isTrain bool, needsJSON bool) error {

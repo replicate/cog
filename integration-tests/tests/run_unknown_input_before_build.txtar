@@ -1,0 +1,19 @@
+# Unknown local-source input fails before Docker build starts.
+
+! cog run -i unknown=value
+stderr 'unknown input "unknown"'
+! stderr 'Building Docker image'
+! stderr 'Starting Docker image and running setup'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> str:
+        return prompt

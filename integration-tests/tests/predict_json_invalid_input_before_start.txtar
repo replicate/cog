@@ -1,0 +1,20 @@
+# Invalid existing-image JSON input fails before the container starts.
+
+cog build -t $TEST_IMAGE
+
+! cog predict $TEST_IMAGE --json '{"unknown": 1}'
+stderr 'unknown input "unknown"'
+! stderr 'Starting Docker image and running setup'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor
+
+
+class Predictor(BasePredictor):
+    def predict(self, prompt: str) -> str:
+        return prompt

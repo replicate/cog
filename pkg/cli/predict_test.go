@@ -7,6 +7,66 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestPrepareInputsRejectsJSONAndInput(t *testing.T) {
+	_, _, err := prepareInputs([]string{"prompt=hello"}, `{"prompt":"hello"}`, cliValidationTestSchema(t), false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Must use one of --json or --input")
+}
+
+func TestPrepareIndividualInputsValidatesUnknownKey(t *testing.T) {
+	_, err := prepareIndividualInputs([]string{"typo=hello"}, cliValidationTestSchema(t), false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown input \"typo\"")
+}
+
+func TestPrepareIndividualInputsCoercesBeforeValidation(t *testing.T) {
+	inputs, err := prepareIndividualInputs([]string{"count=3"}, cliValidationTestSchema(t), false)
+	require.NoError(t, err)
+	require.NotNil(t, inputs["count"].Int)
+}
+
+func TestPrepareJSONInputsValidatesUnknownKey(t *testing.T) {
+	_, err := prepareJSONInputs(`{"typo":"hello"}`, cliValidationTestSchema(t), false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown input \"typo\"")
+}
+
+func TestPrepareJSONInputsValidatesUnknownKeyBeforeFileReads(t *testing.T) {
+	_, err := prepareJSONInputs(`{"typo":"@/no/such/file"}`, cliValidationTestSchema(t), false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown input \"typo\"")
+	require.NotContains(t, err.Error(), "/no/such/file")
+}
+
+func TestPrepareJSONInputsValidatesType(t *testing.T) {
+	_, err := prepareJSONInputs(`{"count":"bad"}`, cliValidationTestSchema(t), false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid input \"count\": expected integer, got string")
+}
+
+func cliValidationTestSchema(t *testing.T) *openapi3.T {
+	t.Helper()
+	data := []byte(`{
+  "openapi": "3.0.2",
+  "info": {"title": "Cog", "version": "test"},
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Input": {
+        "type": "object",
+        "properties": {
+          "prompt": {"type": "string"},
+          "count": {"type": "integer"}
+        }
+      }
+    }
+  }
+}`)
+	schema, err := openapi3.NewLoader().LoadFromData(data)
+	require.NoError(t, err)
+	return schema
+}
+
 func TestExtractOutputSchemaFromMalformedSchema(t *testing.T) {
 	// Test that we don't panic when extracting output schema from malformed OpenAPI schemas
 	testCases := []struct {

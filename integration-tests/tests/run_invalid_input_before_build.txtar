@@ -1,0 +1,21 @@
+# Schema-invalid local-source input fails before Docker build starts.
+# count=0 parses as an int but violates the ge=1 constraint, so it must be
+# rejected by preflight schema validation, not by flag parsing.
+
+! cog run -i count=0
+stderr 'invalid input "count"'
+! stderr 'Building Docker image'
+! stderr 'Starting Docker image and running setup'
+
+-- cog.yaml --
+build:
+  python_version: "3.12"
+predict: "predict.py:Predictor"
+
+-- predict.py --
+from cog import BasePredictor, Input
+
+
+class Predictor(BasePredictor):
+    def predict(self, count: int = Input(ge=1)) -> int:
+        return count
