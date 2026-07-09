@@ -27,7 +27,7 @@ import (
 	r8_path "github.com/replicate/cog/pkg/path"
 	"github.com/replicate/cog/pkg/predict"
 	"github.com/replicate/cog/pkg/registry"
-	staticschema "github.com/replicate/cog/pkg/schema/static"
+	"github.com/replicate/cog/pkg/schema/openapi"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 	"github.com/replicate/cog/pkg/util/mime"
@@ -386,7 +386,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 }
 
 func generateLocalOpenAPISchema(src *model.Source) (*openapi3.T, error) {
-	data, err := staticschema.Generate(src.Config, src.ProjectDir)
+	data, err := openapi.Generate(src.Config, src.ProjectDir)
 	if err != nil {
 		return nil, err
 	}

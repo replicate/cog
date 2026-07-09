@@ -28,8 +28,8 @@ import (
 	"github.com/replicate/cog/pkg/global"
 	"github.com/replicate/cog/pkg/registry"
 	"github.com/replicate/cog/pkg/schema"
+	"github.com/replicate/cog/pkg/schema/openapi"
 	"github.com/replicate/cog/pkg/schema/python"
-	staticschema "github.com/replicate/cog/pkg/schema/static"
 	"github.com/replicate/cog/pkg/util/console"
 	"github.com/replicate/cog/pkg/util/files"
 	weightslockfile "github.com/replicate/cog/pkg/weights/lockfile"
@@ -140,7 +140,7 @@ func Build(
 	switch {
 	case needsSchema:
 		console.Debug("Generating model schema (static)...")
-		data, err := staticschema.Generate(cfg, dir)
+		data, err := openapi.Generate(cfg, dir)
 		if err != nil {
 			return "", fmt.Errorf("image build failed: %w", err)
 		}

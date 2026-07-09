@@ -1,4 +1,4 @@
-package static
+package openapi
 
 import (
 	"testing"
