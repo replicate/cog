@@ -1,6 +1,7 @@
 package predict
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +18,7 @@ import (
 // instead of failing preflight validation.
 func HasInputComponent(schema *openapi3.T, isTrain bool) bool {
 	_, err := inputComponentForMode(schema, isTrain)
-	return err == nil
+	return err == nil && schema.Validate(context.Background()) == nil
 }
 
 // ValidateInputsForMode validates CLI inputs after schema-directed coercion.
@@ -49,7 +50,7 @@ func ValidateInputMapForMode(input map[string]any, schema *openapi3.T, isTrain b
 	if err := ValidateInputNamesForMode(input, schema, isTrain); err != nil {
 		return err
 	}
-	if err := rejectExplicitNulls(input); err != nil {
+	if err := rejectExplicitNulls(input, component, nil); err != nil {
 		return err
 	}
 	if err := component.VisitJSON(input, openapi3.VisitAsRequest(), openapi3.MultiErrors()); err != nil {
@@ -61,23 +62,187 @@ func ValidateInputMapForMode(input map[string]any, schema *openapi3.T, isTrain b
 // rejectExplicitNulls rejects inputs whose value is an explicit JSON null.
 //
 // The runtime validates inputs as strict JSON Schema and ignores the OpenAPI
-// `nullable` keyword, so it rejects an explicit null for every field, including
-// optional ones — the way to get a null default is to omit the input entirely.
-// kin-openapi honors `nullable`, so without this check it would accept a null
-// that the server would then reject with a 422. Rejecting here keeps preflight
-// consistent with runtime.
-func rejectExplicitNulls(input map[string]any) error {
-	nullKeys := make([]string, 0)
-	for key, value := range input {
-		if value == nil {
-			nullKeys = append(nullKeys, key)
+// `nullable` keyword. kin-openapi honors `nullable`, so without this check it
+// would accept null for typed optional fields that the server rejects with a
+// 422. Schemas that permit null under strict JSON Schema semantics remain
+// valid, including unconstrained values.
+func rejectExplicitNulls(value any, schema *openapi3.Schema, path []string) error {
+	if value == nil {
+		if schemaAllowsNullWithoutNullable(schema) {
+			return nil
 		}
+		return fmt.Errorf("invalid input %q: must not be null (omit the input to use its default)", strings.Join(path, "."))
 	}
-	if len(nullKeys) == 0 {
+	if schema == nil {
 		return nil
 	}
-	sort.Strings(nullKeys)
-	return fmt.Errorf("invalid input %q: must not be null (omit the input to use its default)", nullKeys[0])
+
+	switch value := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			propertySchema := nestedPropertySchema(schema, key)
+			if propertySchema == nil {
+				propertySchema = nestedAdditionalPropertySchema(schema)
+			}
+			if propertySchema == nil {
+				continue
+			}
+			if err := rejectExplicitNulls(value[key], propertySchema, append(path, key)); err != nil {
+				return err
+			}
+		}
+	case []any:
+		itemSchema := arrayItemSchema(schema)
+		if itemSchema == nil {
+			return nil
+		}
+		for i, item := range value {
+			if err := rejectExplicitNulls(item, itemSchema, append(path, fmt.Sprintf("%d", i))); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// schemaAllowsNullWithoutNullable evaluates the JSON Schema constraints that
+// can apply to null while deliberately ignoring OpenAPI's nullable extension.
+func schemaAllowsNullWithoutNullable(schema *openapi3.Schema) bool {
+	if schema == nil {
+		return true
+	}
+	allowed := true
+	if schema.Type != nil {
+		allowed = false
+		for _, schemaType := range schema.Type.Slice() {
+			allowed = allowed || schemaType == "null"
+		}
+	}
+	if len(schema.Enum) > 0 {
+		containsNull := false
+		for _, value := range schema.Enum {
+			containsNull = containsNull || value == nil
+		}
+		allowed = allowed && containsNull
+	}
+	for _, ref := range schema.AllOf {
+		if ref.Value != nil {
+			allowed = allowed && schemaAllowsNullWithoutNullable(ref.Value)
+		}
+	}
+	if len(schema.AnyOf) > 0 {
+		anyAllows := false
+		for _, ref := range schema.AnyOf {
+			if ref.Value != nil {
+				anyAllows = anyAllows || schemaAllowsNullWithoutNullable(ref.Value)
+			}
+		}
+		allowed = allowed && anyAllows
+	}
+	if len(schema.OneOf) > 0 {
+		matching := 0
+		for _, ref := range schema.OneOf {
+			if ref.Value != nil && schemaAllowsNullWithoutNullable(ref.Value) {
+				matching++
+			}
+		}
+		allowed = allowed && matching == 1
+	}
+	if schema.Not != nil && schema.Not.Value != nil {
+		allowed = allowed && !schemaAllowsNullWithoutNullable(schema.Not.Value)
+	}
+	if schema.Const != nil {
+		allowed = false
+	}
+	return allowed
+}
+
+func nestedPropertySchema(schema *openapi3.Schema, key string) *openapi3.Schema {
+	constraints := openapi3.SchemaRefs{}
+	if property := declaredPropertySchema(schema, key); property != nil {
+		constraints = append(constraints, &openapi3.SchemaRef{Value: property})
+	}
+	if properties := nestedPropertySchemas(schema.AllOf, key); len(properties) > 0 {
+		constraints = append(constraints, properties...)
+	}
+	if properties := nestedPropertySchemas(schema.AnyOf, key); len(properties) > 0 {
+		constraints = append(constraints, &openapi3.SchemaRef{Value: &openapi3.Schema{AnyOf: properties}})
+	}
+	if properties := nestedPropertySchemas(schema.OneOf, key); len(properties) > 0 {
+		constraints = append(constraints, &openapi3.SchemaRef{Value: &openapi3.Schema{OneOf: properties}})
+	}
+	if len(constraints) == 0 {
+		return nil
+	}
+	if len(constraints) == 1 {
+		return constraints[0].Value
+	}
+	return &openapi3.Schema{AllOf: constraints}
+}
+
+func nestedPropertySchemas(refs openapi3.SchemaRefs, key string) openapi3.SchemaRefs {
+	properties := make(openapi3.SchemaRefs, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Value == nil {
+			continue
+		}
+		property := nestedPropertySchema(ref.Value, key)
+		if property == nil {
+			property = &openapi3.Schema{}
+		}
+		properties = append(properties, &openapi3.SchemaRef{Value: property})
+	}
+	return properties
+}
+
+func declaredPropertySchema(schema *openapi3.Schema, key string) *openapi3.Schema {
+	if property := schema.Properties[key]; property != nil && property.Value != nil {
+		return property.Value
+	}
+	return nil
+}
+
+func additionalPropertySchema(schema *openapi3.Schema) *openapi3.Schema {
+	if schema.AdditionalProperties.Schema != nil && schema.AdditionalProperties.Schema.Value != nil {
+		return schema.AdditionalProperties.Schema.Value
+	}
+	return nil
+}
+
+func nestedAdditionalPropertySchema(schema *openapi3.Schema) *openapi3.Schema {
+	if additional := additionalPropertySchema(schema); additional != nil {
+		return additional
+	}
+	if schemas := nestedAdditionalPropertySchemas(schema.AllOf); len(schemas) > 0 {
+		return &openapi3.Schema{AllOf: schemas}
+	}
+	if schemas := nestedAdditionalPropertySchemas(schema.AnyOf); len(schemas) > 0 {
+		return &openapi3.Schema{AnyOf: schemas}
+	}
+	if schemas := nestedAdditionalPropertySchemas(schema.OneOf); len(schemas) > 0 {
+		return &openapi3.Schema{OneOf: schemas}
+	}
+	return nil
+}
+
+func nestedAdditionalPropertySchemas(refs openapi3.SchemaRefs) openapi3.SchemaRefs {
+	schemas := make(openapi3.SchemaRefs, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Value == nil {
+			continue
+		}
+		additional := nestedAdditionalPropertySchema(ref.Value)
+		if additional == nil {
+			additional = &openapi3.Schema{}
+		}
+		schemas = append(schemas, &openapi3.SchemaRef{Value: additional})
+	}
+	return schemas
 }
 
 // ValidateInputNamesForMode validates top-level input names without reading or converting values.
@@ -123,11 +288,11 @@ func validateKnownInputNames(inputs Inputs, component *openapi3.Schema) error {
 //
 // This is intentionally stricter than the runtime, which strips unknown fields
 // and continues with a warning. Rejecting at the CLI catches typos before an
-// expensive build/pull/start rather than silently ignoring them.
+// expensive build or container start rather than silently ignoring them.
 func validateKnownInputs(input map[string]any, component *openapi3.Schema) error {
 	var unknown []string
 	for key := range input {
-		if _, ok := component.Properties[key]; !ok {
+		if declaredPropertySchema(component, key) == nil {
 			unknown = append(unknown, key)
 		}
 	}
@@ -194,10 +359,13 @@ func formatSchemaValidationError(err error) string {
 		if reason == "" {
 			reason = fmt.Sprintf("doesn't match schema %q", schemaErr.SchemaField)
 		}
+		path := schemaErr.JSONPointer()
 		if missingInput, ok := missingRequiredInput(reason); ok {
+			if len(path) > 0 {
+				missingInput = strings.Join(path, ".")
+			}
 			return fmt.Sprintf("missing required input %q", missingInput)
 		}
-		path := schemaErr.JSONPointer()
 		if len(path) > 0 {
 			inputName := strings.Join(path, ".")
 			if typeErr, ok := formatTypeValidationError(schemaErr); ok {

@@ -56,12 +56,25 @@ func TestValidateInputMapForMode(t *testing.T) {
 			wantErr: "invalid input \"opts.scale\": expected number, got string",
 		},
 		{
-			// The runtime ignores OpenAPI `nullable` and rejects explicit null
-			// for every field; preflight must match instead of accepting a
-			// value the server would 422 on.
+			name:    "nested missing required",
+			input:   map[string]any{"prompt": "hello", "opts": map[string]any{}},
+			wantErr: "missing required input \"opts.scale\"",
+		},
+		{
+			// The runtime ignores OpenAPI `nullable`; preflight must not accept
+			// a typed null that the server would reject with a 422.
 			name:    "explicit null",
 			input:   map[string]any{"prompt": "hello", "steps": nil},
 			wantErr: "invalid input \"steps\": must not be null",
+		},
+		{
+			name:    "nested explicit null",
+			input:   map[string]any{"prompt": "hello", "opts": map[string]any{"scale": nil}},
+			wantErr: "invalid input \"opts.scale\": must not be null",
+		},
+		{
+			name:  "null in unconstrained additional property",
+			input: map[string]any{"prompt": "hello", "metadata": map[string]any{"value": nil}},
 		},
 	}
 
@@ -117,6 +130,50 @@ func TestValidateInputMapForModeNoInputs(t *testing.T) {
 	require.Contains(t, err.Error(), "unknown input \"typo\"; model does not accept inputs")
 }
 
+func TestValidateInputMapForModeRejectsNullInConstrainedAdditionalProperty(t *testing.T) {
+	schema := validationTestSchema(t)
+	schema.Components.Schemas["Input"].Value.Properties["labels"] = &openapi3.SchemaRef{Value: &openapi3.Schema{
+		Type: &openapi3.Types{"object"},
+		AdditionalProperties: openapi3.AdditionalProperties{Schema: &openapi3.SchemaRef{Value: &openapi3.Schema{
+			Type:     &openapi3.Types{"string"},
+			Nullable: true,
+		}}},
+	}}
+	err := ValidateInputMapForMode(map[string]any{"prompt": "hello", "labels": map[string]any{"team": nil}}, schema, false)
+	require.EqualError(t, err, `invalid input "labels.team": must not be null (omit the input to use its default)`)
+}
+
+func TestValidateInputMapForModeRejectsNestedNullThroughAllOf(t *testing.T) {
+	schema := validationTestSchema(t)
+	schema.Components.Schemas["Input"].Value.Properties["opts"] = &openapi3.SchemaRef{Value: &openapi3.Schema{
+		AllOf: openapi3.SchemaRefs{{Value: &openapi3.Schema{
+			Type: &openapi3.Types{"object"},
+			Properties: openapi3.Schemas{
+				"scale": {Value: &openapi3.Schema{Type: &openapi3.Types{"number"}, Nullable: true}},
+			},
+		}}},
+	}}
+	err := ValidateInputMapForMode(map[string]any{"prompt": "hello", "opts": map[string]any{"scale": nil}}, schema, false)
+	require.EqualError(t, err, `invalid input "opts.scale": must not be null (omit the input to use its default)`)
+}
+
+func TestValidateInputMapForModeCombinesDirectAndAllOfNullConstraints(t *testing.T) {
+	schema := validationTestSchema(t)
+	schema.Components.Schemas["Input"].Value.Properties["opts"] = &openapi3.SchemaRef{Value: &openapi3.Schema{
+		Type: &openapi3.Types{"object"},
+		Properties: openapi3.Schemas{
+			"scale": {Value: &openapi3.Schema{}},
+		},
+		AllOf: openapi3.SchemaRefs{{Value: &openapi3.Schema{
+			Properties: openapi3.Schemas{
+				"scale": {Value: &openapi3.Schema{Type: &openapi3.Types{"number"}, Nullable: true}},
+			},
+		}}},
+	}}
+	err := ValidateInputMapForMode(map[string]any{"prompt": "hello", "opts": map[string]any{"scale": nil}}, schema, false)
+	require.EqualError(t, err, `invalid input "opts.scale": must not be null (omit the input to use its default)`)
+}
+
 func TestValidateInputMapForModeTrainingInput(t *testing.T) {
 	schema := validationTestSchema(t)
 	require.NoError(t, ValidateInputMapForMode(map[string]any{"epochs": 1.0}, schema, true))
@@ -134,7 +191,7 @@ func TestValidateInputMapForModeTrainingFallbackToInput(t *testing.T) {
 func TestValidateInputMapForModeMultipleUnknown(t *testing.T) {
 	schema := validationTestSchema(t)
 	err := ValidateInputMapForMode(map[string]any{"a": 1, "b": 2}, schema, false)
-	require.EqualError(t, err, `unknown inputs "a", "b"; valid inputs are: flag, mode, nums, opts, prompt, steps`)
+	require.EqualError(t, err, `unknown inputs "a", "b"; valid inputs are: flag, metadata, mode, nums, opts, prompt, steps`)
 }
 
 func TestValidateInputMapForModeMultipleUnknownNoInputs(t *testing.T) {
@@ -173,6 +230,40 @@ func TestInputComponentForModeTrainingAndInputMissing(t *testing.T) {
 		"OpenAPI schema is missing Input component")
 }
 
+func TestHasInputComponentRejectsInvalidComponent(t *testing.T) {
+	schema := validationTestSchema(t)
+	schema.Components.Schemas["Input"].Value.Properties["broken"] = &openapi3.SchemaRef{Value: &openapi3.Schema{
+		Type: &openapi3.Types{"invalid"},
+	}}
+	require.False(t, HasInputComponent(schema, false))
+}
+
+func TestHasInputComponentFallbacks(t *testing.T) {
+	schema := validationTestSchema(t)
+	require.True(t, HasInputComponent(schema, false))
+	require.True(t, HasInputComponent(schema, true))
+
+	delete(schema.Components.Schemas, "TrainingInput")
+	require.True(t, HasInputComponent(schema, true), "training should fall back to Input")
+
+	delete(schema.Components.Schemas, "Input")
+	require.False(t, HasInputComponent(schema, false))
+	require.False(t, HasInputComponent(schema, true))
+}
+
+func TestSchemaAllowsNullWithoutNullable(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{}))
+	require.False(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{Type: &openapi3.Types{"string"}, Nullable: true}))
+	require.True(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{AnyOf: openapi3.SchemaRefs{
+		{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+		{Value: &openapi3.Schema{}},
+	}}))
+	require.False(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{Const: "value"}))
+	require.True(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{Type: &openapi3.Types{"string", "null"}}))
+}
+
 // TestValidationErrorMessagesAreStable pins the exact user-facing wording so a
 // kin-openapi upgrade that changes the library's internal reason strings (which
 // we string-match and pass through) is caught instead of silently degrading.
@@ -186,6 +277,7 @@ func TestValidationErrorMessagesAreStable(t *testing.T) {
 		{"missing required", map[string]any{"steps": 5.0}, `missing required input "prompt"`},
 		{"wrong type", map[string]any{"prompt": 10.0}, `invalid input "prompt": expected string, got number`},
 		{"nested type", map[string]any{"prompt": "hi", "opts": map[string]any{"scale": "bad"}}, `invalid input "opts.scale": expected number, got string`},
+		{"nested missing required", map[string]any{"prompt": "hi", "opts": map[string]any{}}, `missing required input "opts.scale"`},
 		{"enum via allOf", map[string]any{"prompt": "hi", "mode": "medium"}, `invalid input "mode": must be one of: fast, slow`},
 		{"minimum", map[string]any{"prompt": "hi", "steps": 0.0}, `invalid input "steps": number must be at least 1`},
 	}
@@ -233,8 +325,10 @@ func validationTestSchema(t *testing.T) *openapi3.T {
           "mode": {"allOf": [{"$ref": "#/components/schemas/Mode"}]},
           "opts": {
             "type": "object",
-            "properties": {"scale": {"type": "number"}}
-          }
+            "required": ["scale"],
+            "properties": {"scale": {"type": "number", "nullable": true}}
+          },
+          "metadata": {"type": "object", "additionalProperties": true}
         }
       },
       "TrainingInput": {
