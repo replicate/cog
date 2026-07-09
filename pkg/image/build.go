@@ -80,6 +80,7 @@ func Build(
 	useCudaBaseImage string,
 	progressOutput string,
 	schemaFile string,
+	openAPISchema []byte,
 	dockerfileFile string,
 	useCogBaseImage *bool,
 	strip bool,
@@ -134,26 +135,11 @@ func Build(
 	}
 
 	// --- Pre-build static schema generation ---
-	// Generate schema before the Docker build so schema errors fail fast and the
-	// schema file is available in the build context.
-	var schemaJSON []byte
-	switch {
-	case needsSchema:
-		console.Debug("Generating model schema (static)...")
-		generatedSchema, err := openapi.GenerateSchema(cfg, dir)
-		if err != nil {
-			return "", fmt.Errorf("image build failed: %w", err)
-		}
-		schemaJSON = generatedSchema
-	case !skipSchemaValidation && schemaFile != "":
-		console.Infof("Validating model schema from %s...", schemaFile)
-		data, err := os.ReadFile(schemaFile)
-		if err != nil {
-			return "", fmt.Errorf("Failed to read schema file: %w", err)
-		}
-		schemaJSON = data
-	case skipSchemaValidation:
-		console.Debug("Skipping model schema validation")
+	// Resolve the schema before the Docker build so schema errors fail fast and
+	// the schema file is available in the build context.
+	schemaJSON, err := resolveBuildSchema(cfg, dir, schemaFile, openAPISchema, needsSchema, skipSchemaValidation)
+	if err != nil {
+		return "", err
 	}
 
 	// Write and validate pre-build schema (static or from file).
@@ -459,6 +445,38 @@ func BuildAddLabelsAndSchemaToImage(ctx context.Context, dockerClient command.Co
 		return "", fmt.Errorf("Failed to add labels to image: %w", err)
 	}
 	return imageID, nil
+}
+
+// resolveBuildSchema returns the OpenAPI schema JSON to use for the build,
+// choosing among (in priority order): a pre-generated schema supplied by the
+// caller, static generation from source, an external schema file, or nothing
+// when schema validation is skipped.
+func resolveBuildSchema(cfg *config.Config, dir, schemaFile string, openAPISchema []byte, needsSchema, skipSchemaValidation bool) ([]byte, error) {
+	switch {
+	case len(openAPISchema) > 0:
+		// The caller already generated (and validated) the schema for input
+		// preflight; reuse it so validation and the image label share one
+		// source of truth instead of regenerating.
+		console.Debug("Using pre-generated model schema...")
+		return openAPISchema, nil
+	case needsSchema:
+		console.Debug("Generating model schema (static)...")
+		generatedSchema, err := openapi.GenerateSchema(cfg, dir)
+		if err != nil {
+			return nil, fmt.Errorf("image build failed: %w", err)
+		}
+		return generatedSchema, nil
+	case !skipSchemaValidation && schemaFile != "":
+		console.Infof("Validating model schema from %s...", schemaFile)
+		data, err := os.ReadFile(schemaFile)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to read schema file: %w", err)
+		}
+		return data, nil
+	case skipSchemaValidation:
+		console.Debug("Skipping model schema validation")
+	}
+	return nil, nil
 }
 
 func generatePredictorMetadata(cfg *config.Config, dir string) (*schema.PredictorInfo, error) {

@@ -49,10 +49,35 @@ func ValidateInputMapForMode(input map[string]any, schema *openapi3.T, isTrain b
 	if err := ValidateInputNamesForMode(input, schema, isTrain); err != nil {
 		return err
 	}
+	if err := rejectExplicitNulls(input); err != nil {
+		return err
+	}
 	if err := component.VisitJSON(input, openapi3.VisitAsRequest(), openapi3.MultiErrors()); err != nil {
 		return formatInputValidationError(err)
 	}
 	return nil
+}
+
+// rejectExplicitNulls rejects inputs whose value is an explicit JSON null.
+//
+// The runtime validates inputs as strict JSON Schema and ignores the OpenAPI
+// `nullable` keyword, so it rejects an explicit null for every field, including
+// optional ones — the way to get a null default is to omit the input entirely.
+// kin-openapi honors `nullable`, so without this check it would accept a null
+// that the server would then reject with a 422. Rejecting here keeps preflight
+// consistent with runtime.
+func rejectExplicitNulls(input map[string]any) error {
+	nullKeys := make([]string, 0)
+	for key, value := range input {
+		if value == nil {
+			nullKeys = append(nullKeys, key)
+		}
+	}
+	if len(nullKeys) == 0 {
+		return nil
+	}
+	sort.Strings(nullKeys)
+	return fmt.Errorf("invalid input %q: must not be null (omit the input to use its default)", nullKeys[0])
 }
 
 // ValidateInputNamesForMode validates top-level input names without reading or converting values.
@@ -94,6 +119,11 @@ func validateKnownInputNames(inputs Inputs, component *openapi3.Schema) error {
 	return validateKnownInputs(inputMap, component)
 }
 
+// validateKnownInputs rejects inputs that are not declared by the model.
+//
+// This is intentionally stricter than the runtime, which strips unknown fields
+// and continues with a warning. Rejecting at the CLI catches typos before an
+// expensive build/pull/start rather than silently ignoring them.
 func validateKnownInputs(input map[string]any, component *openapi3.Schema) error {
 	var unknown []string
 	for key := range input {

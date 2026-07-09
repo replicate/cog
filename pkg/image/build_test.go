@@ -240,6 +240,34 @@ func TestBuildCodeDoesNotReferenceLegacyRuntimeSchemaGeneration(t *testing.T) {
 	}
 }
 
+func TestResolveBuildSchema_PrefersPreGenerated(t *testing.T) {
+	pre := []byte(`{"openapi":"3.0.2","x":"pre"}`)
+
+	// A pre-generated schema is reused verbatim, even when needsSchema is true,
+	// so the build does not regenerate (and cannot drift from) the schema used
+	// for preflight validation.
+	got, err := resolveBuildSchema(&config.Config{Predict: "predict.py:Predictor"}, t.TempDir(), "", pre, true, false)
+	require.NoError(t, err)
+	assert.Equal(t, pre, got)
+}
+
+func TestResolveBuildSchema_ReadsSchemaFile(t *testing.T) {
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.json")
+	contents := []byte(`{"openapi":"3.0.2","x":"file"}`)
+	require.NoError(t, os.WriteFile(schemaPath, contents, 0o644))
+
+	got, err := resolveBuildSchema(&config.Config{}, dir, schemaPath, nil, false, false)
+	require.NoError(t, err)
+	assert.Equal(t, contents, got)
+}
+
+func TestResolveBuildSchema_SkipValidation(t *testing.T) {
+	got, err := resolveBuildSchema(&config.Config{}, t.TempDir(), "", nil, false, true)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
 func TestWriteRuntimeWeightsManifest(t *testing.T) {
 	dir := t.TempDir()
 

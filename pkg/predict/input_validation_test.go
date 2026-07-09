@@ -55,6 +55,14 @@ func TestValidateInputMapForMode(t *testing.T) {
 			input:   map[string]any{"prompt": "hello", "opts": map[string]any{"scale": "bad"}},
 			wantErr: "invalid input \"opts.scale\": expected number, got string",
 		},
+		{
+			// The runtime ignores OpenAPI `nullable` and rejects explicit null
+			// for every field; preflight must match instead of accepting a
+			// value the server would 422 on.
+			name:    "explicit null",
+			input:   map[string]any{"prompt": "hello", "steps": nil},
+			wantErr: "invalid input \"steps\": must not be null",
+		},
 	}
 
 	for _, tt := range tests {

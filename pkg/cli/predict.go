@@ -226,7 +226,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 		defer src.Close()
 
-		schema, err := generateLocalOpenAPISchema(src)
+		schemaJSON, schema, err := generateLocalOpenAPISchema(src)
 		if err != nil {
 			return err
 		}
@@ -248,7 +248,9 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 
 		console.Info("Building Docker image from environment in cog.yaml...")
 		console.Info("")
-		m, err = resolver.Build(ctx, src, serveBuildOptions(cmd))
+		buildOpts := serveBuildOptions(cmd)
+		buildOpts.OpenAPISchema = schemaJSON
+		m, err = resolver.Build(ctx, src, buildOpts)
 		if err != nil {
 			return err
 		}
@@ -388,21 +390,25 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	return runPrediction(*predictor, preparedInputs, outPath, false, needsJSON)
 }
 
-func generateLocalOpenAPISchema(src *model.Source) (*openapi3.T, error) {
+// generateLocalOpenAPISchema generates the OpenAPI schema from local source and
+// returns both the raw JSON and the parsed document. The raw JSON is threaded
+// into the build (BuildOptions.OpenAPISchema) so preflight validation and the
+// image label share one schema instead of generating it twice.
+func generateLocalOpenAPISchema(src *model.Source) ([]byte, *openapi3.T, error) {
 	openapiSchema, err := openapi.GenerateSchema(src.Config, src.ProjectDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	loader := openapi3.NewLoader()
 	loader.IsExternalRefsAllowed = true
 	spec, err := loader.LoadFromData(openapiSchema)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to load model schema JSON: %w", err)
+		return nil, nil, fmt.Errorf("Failed to load model schema JSON: %w", err)
 	}
 	if err := spec.Validate(loader.Context); err != nil {
-		return nil, fmt.Errorf("Model schema is invalid: %w", err)
+		return nil, nil, fmt.Errorf("Model schema is invalid: %w", err)
 	}
-	return spec, nil
+	return openapiSchema, spec, nil
 }
 
 func prepareInputs(inputFlags []string, jsonInput string, schema *openapi3.T, isTrain bool) (predict.Inputs, bool, error) {
