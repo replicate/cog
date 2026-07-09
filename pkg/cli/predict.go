@@ -201,15 +201,17 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Must use one of --json or --input to provide model inputs")
 	}
 
-	imageName := ""
-	volumes := []command.Volume{}
-	gpus := gpusFlag
-	var preparedInputs predict.Inputs
-	needsJSON := false
-	inputsPrepared := false
-	var dockerClient command.Command
-	var err error
-	var m *model.Model
+	var (
+		imageName      string
+		volumes        = []command.Volume{}
+		gpus           = gpusFlag
+		preparedInputs predict.Inputs
+		needsJSON      = false
+		inputsPrepared = false
+		dockerClient   command.Command
+		err            error
+		m              *model.Model
+	)
 
 	// The Manager is built only when we have cog.yaml in scope (the
 	// build-from-source path). Pre-built images are opaque to Cog and

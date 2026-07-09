@@ -58,14 +58,16 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	imageName := ""
-	volumes := []command.Volume{}
-	gpus := gpusFlag
-	var preparedInputs predict.Inputs
-	inputsPrepared := false
-	var dockerClient command.Command
-	var err error
-	var m *model.Model
+	var (
+		imageName      string
+		volumes        = []command.Volume{}
+		gpus           = gpusFlag
+		preparedInputs predict.Inputs
+		inputsPrepared = false
+		dockerClient   command.Command
+		err            error
+		m              *model.Model
+	)
 
 	// Managed-weight mounts only apply when we have cog.yaml in scope.
 	var wm *weights.Manager
