@@ -226,11 +226,11 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 		defer src.Close()
 
-		schemaJSON, schema, err := generateLocalOpenAPISchema(src)
+		openAPISchemaJSON, openAPISchema, err := generateLocalOpenAPISchema(src)
 		if err != nil {
 			return err
 		}
-		preparedInputs, needsJSON, err = prepareInputs(inputFlags, inputJSON, schema, false)
+		preparedInputs, needsJSON, err = prepareInputs(inputFlags, inputJSON, openAPISchema, false)
 		if err != nil {
 			return err
 		}
@@ -249,7 +249,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		console.Info("Building Docker image from environment in cog.yaml...")
 		console.Info("")
 		buildOpts := serveBuildOptions(cmd)
-		buildOpts.OpenAPISchema = schemaJSON
+		buildOpts.OpenAPISchema = openAPISchemaJSON
 		m, err = resolver.Build(ctx, src, buildOpts)
 		if err != nil {
 			return err

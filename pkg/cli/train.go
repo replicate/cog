@@ -80,11 +80,11 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 		defer src.Close()
 
-		schemaJSON, schema, err := generateLocalOpenAPISchema(src)
+		openAPISchemaJSON, openAPISchema, err := generateLocalOpenAPISchema(src)
 		if err != nil {
 			return err
 		}
-		preparedInputs, err = prepareIndividualInputs(trainInputFlags, schema, true)
+		preparedInputs, err = prepareIndividualInputs(trainInputFlags, openAPISchema, true)
 		if err != nil {
 			return err
 		}
@@ -103,7 +103,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		console.Info("Building Docker image from environment in cog.yaml...")
 		console.Info("")
 		buildOpts := serveBuildOptions(cmd)
-		buildOpts.OpenAPISchema = schemaJSON
+		buildOpts.OpenAPISchema = openAPISchemaJSON
 		m, err = resolver.Build(ctx, src, buildOpts)
 		if err != nil {
 			return err
