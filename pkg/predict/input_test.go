@@ -221,6 +221,42 @@ func TestSchemaAcceptsFloat(t *testing.T) {
 	require.False(t, schemaAcceptsFloat(strIntUnion))
 }
 
+func TestNewInputsForMode_CoercesBool(t *testing.T) {
+	t.Parallel()
+
+	schema := validationTestSchema(t)
+	for _, val := range []string{"true", "false"} {
+		inputs, err := NewInputsForMode(map[string][]string{"prompt": {"hi"}, "flag": {val}}, schema, false)
+		require.NoError(t, err)
+		require.NotNil(t, inputs["flag"].Bool, "flag=%s should coerce to bool", val)
+		require.Equal(t, val == "true", *inputs["flag"].Bool)
+		// The coerced value must satisfy preflight validation.
+		require.NoError(t, ValidateInputsForMode(inputs, schema, false))
+	}
+}
+
+func TestNewInputsForMode_CoercesRepeatedIntArray(t *testing.T) {
+	t.Parallel()
+
+	schema := validationTestSchema(t)
+	inputs, err := NewInputsForMode(map[string][]string{"prompt": {"hi"}, "nums": {"1", "2"}}, schema, false)
+	require.NoError(t, err)
+	require.NotNil(t, inputs["nums"].Array)
+	require.Equal(t, []any{int32(1), int32(2)}, *inputs["nums"].Array)
+	require.NoError(t, ValidateInputsForMode(inputs, schema, false))
+}
+
+func TestNewInputsForMode_CoercesSingleIntArray(t *testing.T) {
+	t.Parallel()
+
+	schema := validationTestSchema(t)
+	inputs, err := NewInputsForMode(map[string][]string{"prompt": {"hi"}, "nums": {"1"}}, schema, false)
+	require.NoError(t, err)
+	require.NotNil(t, inputs["nums"].Array)
+	require.Equal(t, []any{int32(1)}, *inputs["nums"].Array)
+	require.NoError(t, ValidateInputsForMode(inputs, schema, false))
+}
+
 func ptrI32(v int32) *int32     { return &v }
 func ptrF32(v float32) *float32 { return &v }
 func ptrStr(v string) *string   { return &v }

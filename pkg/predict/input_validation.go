@@ -10,6 +10,16 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
+// HasInputComponent reports whether the schema carries the Input (or, for
+// training, TrainingInput) component this validator needs. Existing images may
+// ship a minimal or malformed-but-parseable OpenAPI schema label; when the
+// component is absent the caller should fall back to the runtime schema
+// instead of failing preflight validation.
+func HasInputComponent(schema *openapi3.T, isTrain bool) bool {
+	_, err := inputComponentForMode(schema, isTrain)
+	return err == nil
+}
+
 // ValidateInputsForMode validates CLI inputs after schema-directed coercion.
 func ValidateInputsForMode(inputs Inputs, schema *openapi3.T, isTrain bool) error {
 	component, err := inputComponentForMode(schema, isTrain)

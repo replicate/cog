@@ -167,7 +167,7 @@ func transformPathsToBase64URLs(inputs map[string]any) (map[string]any, error) {
 			// Read file
 			data, err := os.ReadFile(filePath)
 			if err != nil {
-				return nil, fmt.Errorf("Failed to read file %q: %w", filePath, err)
+				return nil, fmt.Errorf("input %q: failed to read file %q: %w", key, filePath, err)
 			}
 
 			// Get MIME type
@@ -294,9 +294,10 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 
 		// Preflight-validate inputs when the image ships an OpenAPI schema
-		// label. Older images without the label fall back to the runtime
-		// schema fetched from the container after it starts.
-		if m.Schema != nil {
+		// label with a usable Input component. Older or third-party images
+		// whose label is missing or lacks that component fall back to the
+		// runtime schema fetched from the container after it starts.
+		if m.Schema != nil && predict.HasInputComponent(m.Schema, false) {
 			preparedInputs, needsJSON, err = prepareInputs(inputFlags, inputJSON, m.Schema, false)
 			if err != nil {
 				return err

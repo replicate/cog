@@ -6,9 +6,14 @@ cog build -t $TEST_IMAGE
 cog predict $TEST_IMAGE -i s=world
 stdout 'hello world'
 
-# Missing required input fails
+# Unknown input fails
 ! cog predict $TEST_IMAGE -i wrong=value
 stderr 'unknown input "wrong"'
+
+# Omitting a required input fails before the container starts
+! cog predict $TEST_IMAGE
+stderr 'missing required input "s"'
+! stderr 'Starting Docker image and running setup'
 
 -- cog.yaml --
 build:

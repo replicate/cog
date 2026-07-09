@@ -126,7 +126,7 @@ func TestValidateInputMapForModeTrainingFallbackToInput(t *testing.T) {
 func TestValidateInputMapForModeMultipleUnknown(t *testing.T) {
 	schema := validationTestSchema(t)
 	err := ValidateInputMapForMode(map[string]any{"a": 1, "b": 2}, schema, false)
-	require.EqualError(t, err, `unknown inputs "a", "b"; valid inputs are: mode, opts, prompt, steps`)
+	require.EqualError(t, err, `unknown inputs "a", "b"; valid inputs are: flag, mode, nums, opts, prompt, steps`)
 }
 
 func TestValidateInputMapForModeMultipleUnknownNoInputs(t *testing.T) {
@@ -220,6 +220,8 @@ func validationTestSchema(t *testing.T) *openapi3.T {
         "properties": {
           "prompt": {"type": "string", "minLength": 1},
           "steps": {"type": "integer", "minimum": 1, "maximum": 10},
+          "flag": {"type": "boolean"},
+          "nums": {"type": "array", "items": {"type": "integer"}},
           "mode": {"allOf": [{"$ref": "#/components/schemas/Mode"}]},
           "opts": {
             "type": "object",
