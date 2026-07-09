@@ -140,11 +140,11 @@ func Build(
 	switch {
 	case needsSchema:
 		console.Debug("Generating model schema (static)...")
-		data, err := openapi.Generate(cfg, dir)
+		generatedSchema, err := openapi.GenerateSchema(cfg, dir)
 		if err != nil {
 			return "", fmt.Errorf("image build failed: %w", err)
 		}
-		schemaJSON = data
+		schemaJSON = generatedSchema
 	case !skipSchemaValidation && schemaFile != "":
 		console.Infof("Validating model schema from %s...", schemaFile)
 		data, err := os.ReadFile(schemaFile)

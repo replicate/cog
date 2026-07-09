@@ -386,20 +386,20 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 }
 
 func generateLocalOpenAPISchema(src *model.Source) (*openapi3.T, error) {
-	data, err := openapi.Generate(src.Config, src.ProjectDir)
+	openapiSchema, err := openapi.GenerateSchema(src.Config, src.ProjectDir)
 	if err != nil {
 		return nil, err
 	}
 	loader := openapi3.NewLoader()
 	loader.IsExternalRefsAllowed = true
-	schema, err := loader.LoadFromData(data)
+	spec, err := loader.LoadFromData(openapiSchema)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to load model schema JSON: %w", err)
 	}
-	if err := schema.Validate(loader.Context); err != nil {
+	if err := spec.Validate(loader.Context); err != nil {
 		return nil, fmt.Errorf("Model schema is invalid: %w", err)
 	}
-	return schema, nil
+	return spec, nil
 }
 
 func prepareInputs(inputFlags []string, jsonInput string, schema *openapi3.T, isTrain bool) (predict.Inputs, bool, error) {

@@ -13,11 +13,11 @@ import (
 
 const minimumStaticSchemaSDKVersion = "0.17.0"
 
-// Generate is the config-aware entry point for OpenAPI schema generation, used
-// by both image builds and local CLI preflight validation. It reads the
+// GenerateSchema is the config-aware entry point for OpenAPI schema generation,
+// used by both image builds and local CLI preflight validation. It reads the
 // predict/train references from cfg, enforces the minimum SDK version, and
 // delegates the tree-sitter parsing and OpenAPI rendering to pkg/schema.
-func Generate(cfg *config.Config, dir string) ([]byte, error) {
+func GenerateSchema(cfg *config.Config, dir string) ([]byte, error) {
 	if err := ValidateSDKVersion(cfg); err != nil {
 		return nil, err
 	}
