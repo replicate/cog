@@ -60,6 +60,7 @@ https://github.com/replicate/cog`,
 		newPushCommand(),
 		newExecCommand(),
 		newServeCommand(),
+		newPlaygroundCommand(),
 		newTrainCommand(),
 		newWeightsCommand(),
 	)

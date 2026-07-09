@@ -327,6 +327,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify embedded playground assets
+        run: |
+          mise run --force build:playground
+          test -z "$(git status --porcelain -- pkg/cli/playground)"
+
       # Goreleaser builds CLI binaries and creates draft release
       - name: Build CLI and create draft release
         uses: goreleaser/goreleaser-action@v7
