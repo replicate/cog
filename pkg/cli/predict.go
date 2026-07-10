@@ -295,10 +295,8 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// Preflight-validate inputs when the image ships an OpenAPI schema
-		// label with a usable Input component. Older or third-party images
-		// whose label is missing or lacks that component fall back to the
-		// runtime schema fetched from the container after it starts.
+		// Preflight-validate inputs when the image has a usable Input component;
+		// otherwise fall back to the runtime schema after the container starts.
 		if m.Schema != nil && predict.HasInputComponent(m.Schema, false) {
 			preparedInputs, needsJSON, err = prepareInputs(inputFlags, inputJSON, m.Schema, false)
 			if err != nil {
@@ -374,8 +372,7 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// Images without an OpenAPI schema label couldn't be validated before
-	// start, so prepare and validate inputs now against the runtime schema.
+	// Validate against the runtime schema when the image label was unusable.
 	if !inputsPrepared {
 		schema, err := predictor.GetSchema()
 		if err != nil {
@@ -390,10 +387,8 @@ func cmdPredict(cmd *cobra.Command, args []string) error {
 	return runPrediction(*predictor, preparedInputs, outPath, false, needsJSON)
 }
 
-// generateLocalOpenAPISchema generates the OpenAPI schema from local source and
-// returns both the raw JSON and the parsed document. The raw JSON is threaded
-// into the build (BuildOptions.OpenAPISchema) so preflight validation and the
-// image label share one schema instead of generating it twice.
+// generateLocalOpenAPISchema generates the OpenAPI schema from local source,
+// returning the raw JSON (threaded into the build) and the parsed document.
 func generateLocalOpenAPISchema(src *model.Source) ([]byte, *openapi3.T, error) {
 	openapiSchema, err := openapi.GenerateSchema(src.Config, src.ProjectDir)
 	if err != nil {
@@ -439,8 +434,7 @@ func prepareJSONInputs(jsonInput string, schema *openapi3.T, isTrain bool) (pred
 	if err != nil {
 		return nil, err
 	}
-	// Fail fast on unknown names before transformPathsToBase64URLs reads any
-	// files; ValidateInputMapForMode below re-validates names authoritatively.
+	// Fail fast on unknown names before reading any @file values.
 	if err := predict.ValidateInputNamesForMode(jsonInputs, schema, isTrain); err != nil {
 		return nil, err
 	}

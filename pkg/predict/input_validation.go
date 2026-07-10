@@ -11,21 +11,15 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
-// HasInputComponent reports whether the schema carries the Input (or, for
-// training, TrainingInput) component this validator needs. Existing images may
-// ship a minimal or malformed-but-parseable OpenAPI schema label; when the
-// component is absent the caller should fall back to the runtime schema
-// instead of failing preflight validation.
+// HasInputComponent reports whether the schema has the Input (or TrainingInput)
+// component needed by preflight validation, so callers can fall back to the
+// runtime schema for images with minimal or missing labels.
 func HasInputComponent(schema *openapi3.T, isTrain bool) bool {
 	_, err := inputComponentForMode(schema, isTrain)
 	return err == nil && schema.Validate(context.Background()) == nil
 }
 
 // ValidateInputsForMode validates CLI inputs after schema-directed coercion.
-//
-// ValidateInputMapForMode is the authoritative validator and re-checks names
-// itself; the validateKnownInputNames call below is a fail-fast guard so a
-// typo'd input errors before inputs.toMap() reads any @file values off disk.
 func ValidateInputsForMode(inputs Inputs, schema *openapi3.T, isTrain bool) error {
 	component, err := inputComponentForMode(schema, isTrain)
 	if err != nil {
@@ -45,11 +39,7 @@ func ValidateInputsForMode(inputs Inputs, schema *openapi3.T, isTrain bool) erro
 	return ValidateInputMapForMode(normalized, schema, isTrain)
 }
 
-// ValidateInputMapForMode validates an already JSON-shaped input map. It is the
-// authoritative, self-contained validator: it checks names, rejects explicit
-// nulls, and runs schema validation. Callers that read files or transform
-// values first may call ValidateInputNamesForMode beforehand purely to fail
-// fast; this function still re-validates names so it is safe on its own.
+// ValidateInputMapForMode validates an already JSON-shaped input map.
 func ValidateInputMapForMode(input map[string]any, schema *openapi3.T, isTrain bool) error {
 	component, err := inputComponentForMode(schema, isTrain)
 	if err != nil {
@@ -67,13 +57,8 @@ func ValidateInputMapForMode(input map[string]any, schema *openapi3.T, isTrain b
 	return nil
 }
 
-// rejectExplicitNulls rejects inputs whose value is an explicit JSON null.
-//
-// The runtime validates inputs as strict JSON Schema and ignores the OpenAPI
-// `nullable` keyword. kin-openapi honors `nullable`, so without this check it
-// would accept null for typed optional fields that the server rejects with a
-// 422. Schemas that permit null under strict JSON Schema semantics remain
-// valid, including unconstrained values.
+// rejectExplicitNulls rejects explicit nulls that the runtime would reject.
+// The runtime uses strict JSON Schema and ignores OpenAPI's nullable keyword.
 func rejectExplicitNulls(value any, schema *openapi3.Schema, path []string) error {
 	if value == nil {
 		if schemaAllowsNullWithoutNullable(schema) {
@@ -118,8 +103,6 @@ func rejectExplicitNulls(value any, schema *openapi3.Schema, path []string) erro
 	return nil
 }
 
-// schemaAllowsNullWithoutNullable evaluates the JSON Schema constraints that
-// can apply to null while deliberately ignoring OpenAPI's nullable extension.
 func schemaAllowsNullWithoutNullable(schema *openapi3.Schema) bool {
 	if schema == nil {
 		return true
@@ -292,11 +275,8 @@ func validateKnownInputNames(inputs Inputs, component *openapi3.Schema) error {
 	return validateKnownInputs(inputMap, component)
 }
 
-// validateKnownInputs rejects inputs that are not declared by the model.
-//
-// This is intentionally stricter than the runtime, which strips unknown fields
-// and continues with a warning. Rejecting at the CLI catches typos before an
-// expensive build or container start rather than silently ignoring them.
+// validateKnownInputs rejects inputs not declared by the model.
+// The CLI is stricter than the runtime so typos fail before build/start.
 func validateKnownInputs(input map[string]any, component *openapi3.Schema) error {
 	var unknown []string
 	for key := range input {
@@ -391,9 +371,7 @@ func formatSchemaValidationError(err error) string {
 	return err.Error()
 }
 
-// enumValues walks the error and its Origin chain looking for an enum
-// validation failure, returning the allowed values. This surfaces the useful
-// values even when the failure is wrapped (e.g. an enum referenced via allOf).
+// enumValues finds allowed enum values, even when the enum error is wrapped.
 func enumValues(err error) ([]any, bool) {
 	for err != nil {
 		var schemaErr *openapi3.SchemaError
@@ -417,11 +395,7 @@ func formatEnumValues(values []any) string {
 	return strings.Join(parts, ", ")
 }
 
-// missingRequiredInput detects a missing-required-property failure and returns
-// the property name. It keys off the structured SchemaField ("required") so a
-// kin-openapi upgrade that rewords the free-text reason narrows the blast
-// radius; the name is still parsed out of the reason since kin-openapi does not
-// expose it structurally.
+// missingRequiredInput extracts the property name from a required-field error.
 func missingRequiredInput(err *openapi3.SchemaError) (string, bool) {
 	if err.SchemaField != "required" {
 		return "", false

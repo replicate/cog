@@ -144,11 +144,8 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// Preflight-validate inputs when the image ships an OpenAPI schema
-		// label with a usable TrainingInput/Input component. Older or
-		// third-party images whose label is missing or lacks that component
-		// fall back to the runtime schema fetched from the container after it
-		// starts.
+		// Preflight-validate inputs when the image has a usable input component;
+		// otherwise fall back to the runtime schema after the container starts.
 		if m.Schema != nil && predict.HasInputComponent(m.Schema, true) {
 			preparedInputs, err = prepareIndividualInputs(trainInputFlags, m.Schema, true)
 			if err != nil {
@@ -193,8 +190,7 @@ func cmdTrain(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// Images without an OpenAPI schema label couldn't be validated before
-	// start, so prepare and validate inputs now against the runtime schema.
+	// Validate against the runtime schema when the image label was unusable.
 	if !inputsPrepared {
 		schema, err := predictor.GetSchema()
 		if err != nil {
