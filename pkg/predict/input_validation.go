@@ -103,6 +103,19 @@ func rejectExplicitNulls(value any, schema *openapi3.Schema, path []string) erro
 	return nil
 }
 
+// schemaAllowsNullWithoutNullable reports whether JSON null is valid under
+// strict JSON Schema, deliberately ignoring OpenAPI's nullable keyword so it
+// mirrors the runtime validator.
+//
+// Only the Type, AllOf, and AnyOf branches fire for schemas the Cog generator
+// emits today (typed fields, choices via allOf, unions via anyOf). The
+// enum-with-null, OneOf, Not, and Const branches are defensive: the generator
+// never produces those shapes. OneOf and Not are valid OpenAPI 3.0 and would
+// become live only if the Cog type system grew; Const (and null in a type
+// array) is 3.1-only. Note that a real move to 3.1 would more likely pass
+// openapi3.EnableJSONSchema2020() to VisitJSON and drop the nullable keyword, so
+// kin-openapi matches the runtime directly -- that could replace this walker
+// rather than extend it.
 func schemaAllowsNullWithoutNullable(schema *openapi3.Schema) bool {
 	if schema == nil {
 		return true
@@ -135,6 +148,9 @@ func schemaAllowsNullWithoutNullable(schema *openapi3.Schema) bool {
 		}
 		allowed = allowed && anyAllows
 	}
+	// Defensive: Cog emits unions as anyOf and choices as allOf, never oneOf,
+	// not, or const. oneOf and not are valid OpenAPI 3.0; const is 3.1-only.
+	// These branches matter only if the generator starts emitting them.
 	if len(schema.OneOf) > 0 {
 		matching := 0
 		for _, ref := range schema.OneOf {
@@ -153,6 +169,14 @@ func schemaAllowsNullWithoutNullable(schema *openapi3.Schema) bool {
 	return allowed
 }
 
+// nestedPropertySchema resolves a declared object property's schema, projecting
+// through allOf/anyOf/oneOf composition so nested nulls are checked against it.
+//
+// Defensive for inputs: Cog inputs are flat and dict/Any is an opaque
+// {"type":"object"} with no declared properties, so this returns nil for
+// generated schemas and nested values stay unconstrained. Typed nested
+// properties are valid OpenAPI 3.0; this matters only if the Cog type system
+// grows to emit them (e.g. nested models).
 func nestedPropertySchema(schema *openapi3.Schema, key string) *openapi3.Schema {
 	constraints := openapi3.SchemaRefs{}
 	if property := declaredPropertySchema(schema, key); property != nil {
@@ -205,6 +229,13 @@ func additionalPropertySchema(schema *openapi3.Schema) *openapi3.Schema {
 	return nil
 }
 
+// nestedAdditionalPropertySchema resolves a typed additionalProperties schema,
+// projecting through composition.
+//
+// Defensive: Cog emits dict/Any as an opaque object with no typed
+// additionalProperties, so this is unused for generated schemas today. Typed
+// additionalProperties is valid OpenAPI 3.0; needed only if the Cog type system
+// grows to emit typed maps.
 func nestedAdditionalPropertySchema(schema *openapi3.Schema) *openapi3.Schema {
 	if additional := additionalPropertySchema(schema); additional != nil {
 		return additional
