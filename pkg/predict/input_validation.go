@@ -22,6 +22,10 @@ func HasInputComponent(schema *openapi3.T, isTrain bool) bool {
 }
 
 // ValidateInputsForMode validates CLI inputs after schema-directed coercion.
+//
+// ValidateInputMapForMode is the authoritative validator and re-checks names
+// itself; the validateKnownInputNames call below is a fail-fast guard so a
+// typo'd input errors before inputs.toMap() reads any @file values off disk.
 func ValidateInputsForMode(inputs Inputs, schema *openapi3.T, isTrain bool) error {
 	component, err := inputComponentForMode(schema, isTrain)
 	if err != nil {
@@ -41,7 +45,11 @@ func ValidateInputsForMode(inputs Inputs, schema *openapi3.T, isTrain bool) erro
 	return ValidateInputMapForMode(normalized, schema, isTrain)
 }
 
-// ValidateInputMapForMode validates an already JSON-shaped input map.
+// ValidateInputMapForMode validates an already JSON-shaped input map. It is the
+// authoritative, self-contained validator: it checks names, rejects explicit
+// nulls, and runs schema validation. Callers that read files or transform
+// values first may call ValidateInputNamesForMode beforehand purely to fail
+// fast; this function still re-validates names so it is safe on its own.
 func ValidateInputMapForMode(input map[string]any, schema *openapi3.T, isTrain bool) error {
 	component, err := inputComponentForMode(schema, isTrain)
 	if err != nil {
@@ -305,24 +313,26 @@ func validateKnownInputs(input map[string]any, component *openapi3.Schema) error
 		valid = append(valid, key)
 	}
 	sort.Strings(valid)
+
+	var suffix string
 	if len(valid) == 0 {
-		if len(unknown) == 1 {
-			return fmt.Errorf("unknown input %q; model does not accept inputs", unknown[0])
-		}
-		quoted := make([]string, len(unknown))
-		for i, key := range unknown {
-			quoted[i] = fmt.Sprintf("%q", key)
-		}
-		return fmt.Errorf("unknown inputs %s; model does not accept inputs", strings.Join(quoted, ", "))
+		suffix = "model does not accept inputs"
+	} else {
+		suffix = fmt.Sprintf("valid inputs are: %s", strings.Join(valid, ", "))
 	}
 	if len(unknown) == 1 {
-		return fmt.Errorf("unknown input %q; valid inputs are: %s", unknown[0], strings.Join(valid, ", "))
+		return fmt.Errorf("unknown input %q; %s", unknown[0], suffix)
 	}
-	quoted := make([]string, len(unknown))
-	for i, key := range unknown {
+	return fmt.Errorf("unknown inputs %s; %s", quoteJoin(unknown), suffix)
+}
+
+// quoteJoin renders keys as a comma-separated list of %q-quoted values.
+func quoteJoin(keys []string) string {
+	quoted := make([]string, len(keys))
+	for i, key := range keys {
 		quoted[i] = fmt.Sprintf("%q", key)
 	}
-	return fmt.Errorf("unknown inputs %s; valid inputs are: %s", strings.Join(quoted, ", "), strings.Join(valid, ", "))
+	return strings.Join(quoted, ", ")
 }
 
 func normalizeJSONMap(input map[string]any) (map[string]any, error) {
@@ -360,7 +370,7 @@ func formatSchemaValidationError(err error) string {
 			reason = fmt.Sprintf("doesn't match schema %q", schemaErr.SchemaField)
 		}
 		path := schemaErr.JSONPointer()
-		if missingInput, ok := missingRequiredInput(reason); ok {
+		if missingInput, ok := missingRequiredInput(schemaErr); ok {
 			if len(path) > 0 {
 				missingInput = strings.Join(path, ".")
 			}
@@ -407,7 +417,16 @@ func formatEnumValues(values []any) string {
 	return strings.Join(parts, ", ")
 }
 
-func missingRequiredInput(reason string) (string, bool) {
+// missingRequiredInput detects a missing-required-property failure and returns
+// the property name. It keys off the structured SchemaField ("required") so a
+// kin-openapi upgrade that rewords the free-text reason narrows the blast
+// radius; the name is still parsed out of the reason since kin-openapi does not
+// expose it structurally.
+func missingRequiredInput(err *openapi3.SchemaError) (string, bool) {
+	if err.SchemaField != "required" {
+		return "", false
+	}
+	reason := err.Reason
 	if !strings.HasPrefix(reason, "property \"") || !strings.HasSuffix(reason, "\" is missing") {
 		return "", false
 	}

@@ -439,6 +439,8 @@ func prepareJSONInputs(jsonInput string, schema *openapi3.T, isTrain bool) (pred
 	if err != nil {
 		return nil, err
 	}
+	// Fail fast on unknown names before transformPathsToBase64URLs reads any
+	// files; ValidateInputMapForMode below re-validates names authoritatively.
 	if err := predict.ValidateInputNamesForMode(jsonInputs, schema, isTrain); err != nil {
 		return nil, err
 	}

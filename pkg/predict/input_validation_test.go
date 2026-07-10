@@ -254,6 +254,10 @@ func TestHasInputComponentFallbacks(t *testing.T) {
 func TestSchemaAllowsNullWithoutNullable(t *testing.T) {
 	t.Parallel()
 
+	nullType := &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"null"}}}
+	stringType := &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}}
+	integerType := &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{"integer"}}}
+
 	require.True(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{}))
 	require.False(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{Type: &openapi3.Types{"string"}, Nullable: true}))
 	require.True(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{AnyOf: openapi3.SchemaRefs{
@@ -262,6 +266,48 @@ func TestSchemaAllowsNullWithoutNullable(t *testing.T) {
 	}}))
 	require.False(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{Const: "value"}))
 	require.True(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{Type: &openapi3.Types{"string", "null"}}))
+
+	// enum: null allowed only when the enum contains null.
+	require.False(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{Enum: []any{"a", "b"}}))
+	require.True(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{Enum: []any{"a", nil}}))
+
+	// oneOf: null allowed only when exactly one member admits it.
+	require.False(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{OneOf: openapi3.SchemaRefs{stringType, integerType}}), "zero members admit null")
+	require.True(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{OneOf: openapi3.SchemaRefs{stringType, nullType}}), "exactly one member admits null")
+	require.False(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{OneOf: openapi3.SchemaRefs{nullType, {Value: &openapi3.Schema{}}}}), "two members admit null")
+
+	// not: null allowed only when the negated schema forbids it.
+	require.True(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{Not: stringType}), "negated string forbids null, so null is allowed")
+	require.False(t, schemaAllowsNullWithoutNullable(&openapi3.Schema{Not: nullType}), "negated null-type forbids null")
+}
+
+// TestValidateInputMapForModeRejectsNullThroughOneOf pins the oneOf null branch
+// through the public entry point: the runtime rejects an explicit null when no
+// (or more than one) oneOf member admits it under strict JSON Schema.
+func TestValidateInputMapForModeRejectsNullThroughOneOf(t *testing.T) {
+	schema := validationTestSchema(t)
+	schema.Components.Schemas["Input"].Value.Properties["choice"] = &openapi3.SchemaRef{Value: &openapi3.Schema{
+		OneOf: openapi3.SchemaRefs{
+			{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+			{Value: &openapi3.Schema{Type: &openapi3.Types{"integer"}, Nullable: true}},
+		},
+	}}
+	err := ValidateInputMapForMode(map[string]any{"prompt": "hello", "choice": nil}, schema, false)
+	require.EqualError(t, err, `invalid input "choice": must not be null (omit the input to use its default)`)
+}
+
+// TestValidateInputMapForModeAllowsNullThroughOneOf covers the accepting side:
+// exactly one oneOf member is the null type, so null is valid under strict JSON
+// Schema and preflight must not reject it.
+func TestValidateInputMapForModeAllowsNullThroughOneOf(t *testing.T) {
+	schema := validationTestSchema(t)
+	schema.Components.Schemas["Input"].Value.Properties["choice"] = &openapi3.SchemaRef{Value: &openapi3.Schema{
+		OneOf: openapi3.SchemaRefs{
+			{Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+			{Value: &openapi3.Schema{Type: &openapi3.Types{"null"}}},
+		},
+	}}
+	require.NoError(t, rejectExplicitNulls(map[string]any{"prompt": "hello", "choice": nil}, schema.Components.Schemas["Input"].Value, nil))
 }
 
 // TestValidationErrorMessagesAreStable pins the exact user-facing wording so a

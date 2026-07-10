@@ -33,6 +33,12 @@ func NewInputsForMode(keyVals map[string][]string, schema *openapi3.T, isTrain b
 		schemaKey = "TrainingInput"
 	}
 	var inputComponent *openapi3.SchemaRef
+	// Defensive: callers guard against a schema without components (build paths
+	// generate+validate it, existing images gate on HasInputComponent), but
+	// guard here too so a future caller can't trip a nil-map deref.
+	if schema == nil || schema.Components == nil {
+		return Inputs{}, nil
+	}
 	for name, component := range schema.Components.Schemas {
 		if name == schemaKey {
 			inputComponent = component
