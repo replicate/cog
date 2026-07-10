@@ -144,7 +144,7 @@ func (inputs *Inputs) toMap() (map[string]any, error) {
 			// Single file handling: read content and convert to a data URL
 			dataURL, err := fileToDataURL(*input.File)
 			if err != nil {
-				return keyVals, fmt.Errorf("input %q: %w", key, err)
+				return nil, fmt.Errorf("input %q: %w", key, err)
 			}
 			keyVals[key] = dataURL
 		case input.Array != nil:
@@ -155,7 +155,7 @@ func (inputs *Inputs) toMap() (map[string]any, error) {
 				if str, ok := elem.(string); ok && strings.HasPrefix(str, "@") {
 					dataURL, err := fileToDataURL(str[1:]) // strip '@' prefix
 					if err != nil {
-						return keyVals, fmt.Errorf("input %q: %w", key, err)
+						return nil, fmt.Errorf("input %q: %w", key, err)
 					}
 					values[i] = dataURL
 					continue
