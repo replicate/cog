@@ -7,5 +7,5 @@
   "env": {
     "browser": true
   },
-  "ignorePatterns": ["coverage", "playwright-report", "test-results"]
+  "ignorePatterns": ["coverage"]
 }
