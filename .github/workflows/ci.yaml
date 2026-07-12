@@ -86,10 +86,8 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-  playground-check:
-    name: Check playground frontend
-    needs: playground-changes
-    if: needs.playground-changes.outputs.changed == 'true'
+  fmt-playground:
+    name: Format playground
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -100,12 +98,45 @@ jobs:
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Check formatting
         run: mise run fmt:playground
+
+  lint-playground:
+    name: Lint playground
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.4.27
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Lint
         run: mise run lint:playground
-      - name: Type check
-        run: mise run typecheck:playground
+
+  test-playground:
+    name: Test playground
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.4.27
+          cache_key_prefix: mise-ci-${{ github.job }}
       - name: Test
         run: mise run test:playground
+
+  playground-check:
+    name: Check playground
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.4.27
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Type check
+        run: mise run typecheck:playground
       - name: Build embedded assets
         run: mise run --force build:playground
       - name: Upload playground assets
@@ -235,10 +266,6 @@ jobs:
   build-cog:
     name: Build cog CLI
     needs: [playground-changes, playground-check]
-    if: >-
-      always() &&
-      needs.playground-changes.result == 'success' &&
-      (needs.playground-check.result == 'success' || needs.playground-check.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -250,14 +277,10 @@ jobs:
           version: 2026.4.27
           cache_key_prefix: mise-ci-${{ github.job }}
       - name: Download verified playground assets
-        if: needs.playground-changes.outputs.changed == 'true'
         uses: actions/download-artifact@v8
         with:
           name: PlaygroundAssets
           path: pkg/cli/playground
-      - name: Build playground assets for CLI
-        if: needs.playground-changes.outputs.changed != 'true'
-        run: mise run build:playground
       - name: Get version from VERSION.txt
         id: version
         run: echo "version=$(tr -d '[:space:]' < VERSION.txt)" >> "$GITHUB_OUTPUT"
@@ -599,7 +622,15 @@ jobs:
 
   test-playground-e2e:
     name: Playground Playwright integration tests (Chromium)
-    needs: [playground-changes, playground-check, build-cog, build-sdk, build-rust]
+    needs:
+      - playground-changes
+      - fmt-playground
+      - lint-playground
+      - test-playground
+      - playground-check
+      - build-cog
+      - build-sdk
+      - build-rust
     if: needs.playground-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest-16-cores
     timeout-minutes: 30
@@ -813,6 +844,9 @@ jobs:
     needs:
       - setup
       - playground-changes
+      - fmt-playground
+      - lint-playground
+      - test-playground
       - playground-check
       - version-check
       - build-cog
@@ -845,6 +879,9 @@ jobs:
         run: |
           echo "Job results:"
           echo "  playground-changes: ${{ needs.playground-changes.result }}"
+          echo "  fmt-playground: ${{ needs.fmt-playground.result }}"
+          echo "  lint-playground: ${{ needs.lint-playground.result }}"
+          echo "  test-playground: ${{ needs.test-playground.result }}"
           echo "  playground-check: ${{ needs.playground-check.result }}"
           echo "  version-check: ${{ needs.version-check.result }}"
           echo "  build-cog: ${{ needs.build-cog.result }}"
@@ -881,6 +918,10 @@ jobs:
           # lint-rust-advisories is informational and intentionally excluded.
           check_success setup "${{ needs.setup.result }}"
           check_success playground-changes "${{ needs.playground-changes.result }}"
+          check_success fmt-playground "${{ needs.fmt-playground.result }}"
+          check_success lint-playground "${{ needs.lint-playground.result }}"
+          check_success test-playground "${{ needs.test-playground.result }}"
+          check_success playground-check "${{ needs.playground-check.result }}"
           check_success version-check "${{ needs.version-check.result }}"
           check_success build-cog "${{ needs.build-cog.result }}"
           check_success build-sdk "${{ needs.build-sdk.result }}"
@@ -904,12 +945,10 @@ jobs:
           check_success test-integration "${{ needs.test-integration.result }}"
 
           if [ "${{ needs.playground-changes.outputs.changed }}" = "true" ]; then
-            check_success playground-check "${{ needs.playground-check.result }}"
             check_success test-playground-e2e "${{ needs.test-playground-e2e.result }}"
           else
-            if [ "${{ needs.playground-check.result }}" != "skipped" ] || \
-               [ "${{ needs.test-playground-e2e.result }}" != "skipped" ]; then
-              echo "::error::Playground jobs should be skipped when playground sources are unchanged"
+            if [ "${{ needs.test-playground-e2e.result }}" != "skipped" ]; then
+              echo "::error::Playground integration tests should be skipped when playground sources are unchanged"
               FAILED=true
             fi
           fi
