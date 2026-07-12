@@ -597,6 +597,57 @@ jobs:
       - name: Test coglet-python bindings
         run: uvx nox -s coglet -p ${{ matrix.python-version }}
 
+  test-playground-e2e:
+    name: Playground Playwright integration tests (Chromium)
+    needs: [playground-changes, playground-check, build-cog, build-sdk, build-rust]
+    if: needs.playground-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest-16-cores
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+        with:
+          registry: index.docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Install cog binary
+        run: |
+          cp dist/cog ./cog
+          chmod +x ./cog
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.4.27
+          cache_key_prefix: mise-ci-${{ github.job }}
+      - name: Install playground dependencies and Chromium
+        run: |
+          mise run playground:install
+          pnpm --dir playground exec playwright install --with-deps chromium
+      - name: Run browser integration tests
+        env:
+          BUILDKIT_PROGRESS: quiet
+          COG_BINARY: ${{ github.workspace }}/cog
+          COG_REGISTRY_HOST: ghcr.io/replicate/cog
+          COG_SDK_WHEEL: ${{ github.workspace }}/dist
+          COGLET_WHEEL: ${{ github.workspace }}/dist
+        run: pnpm --dir playground run test:e2e
+      - name: Upload browser test report
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: PlaygroundPlaywrightReport
+          path: |
+            playground/playwright-report
+            playground/test-results
+
   # Compute integration test shards dynamically.
   # Slow tests (tagged with [short] skip) are distributed round-robin first,
   # then remaining tests fill in. This ensures slow tests don't pile up on one runner.
@@ -783,6 +834,7 @@ jobs:
       - test-rust
       - test-python
       - test-coglet-python
+      - test-playground-e2e
       - integration-shards
       - test-integration
     if: always()
@@ -814,6 +866,7 @@ jobs:
           echo "  test-rust: ${{ needs.test-rust.result }}"
           echo "  test-python: ${{ needs.test-python.result }}"
           echo "  test-coglet-python: ${{ needs.test-coglet-python.result }}"
+          echo "  test-playground-e2e: ${{ needs.test-playground-e2e.result }}"
           echo "  integration-shards: ${{ needs.integration-shards.result }}"
           echo "  test-integration: ${{ needs.test-integration.result }}"
 
@@ -852,9 +905,11 @@ jobs:
 
           if [ "${{ needs.playground-changes.outputs.changed }}" = "true" ]; then
             check_success playground-check "${{ needs.playground-check.result }}"
+            check_success test-playground-e2e "${{ needs.test-playground-e2e.result }}"
           else
-            if [ "${{ needs.playground-check.result }}" != "skipped" ]; then
-              echo "::error::Playground check should be skipped when playground sources are unchanged"
+            if [ "${{ needs.playground-check.result }}" != "skipped" ] || \
+               [ "${{ needs.test-playground-e2e.result }}" != "skipped" ]; then
+              echo "::error::Playground jobs should be skipped when playground sources are unchanged"
               FAILED=true
             fi
           fi
