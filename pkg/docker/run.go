@@ -34,8 +34,12 @@ func RunDaemon(ctx context.Context, dockerClient command.Command, options comman
 	return dockerClient.ContainerStart(ctx, options)
 }
 
-func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command, containerID string, containerPort int) (int, error) {
+func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command, containerID string, containerPort int, hostIP string) (int, error) {
 	console.Debugf("=== DockerCommand.GetPort %s/%d", containerID, containerPort)
+
+	if hostIP == "" {
+		hostIP = command.DefaultHostIP
+	}
 
 	inspect, err := dockerCommand.ContainerInspect(ctx, containerID)
 	if err != nil {
@@ -55,9 +59,9 @@ func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command,
 		return 0, fmt.Errorf("container %s does not have expected network configuration", containerID)
 	}
 
-	for _, portBinding := range inspect.NetworkSettings.Ports[targetPort] {
-		// TODO[md]: this should not be hardcoded since docker may be bound to a different address
-		if portBinding.HostIP != "0.0.0.0" {
+	bindings := inspect.NetworkSettings.Ports[targetPort]
+	for _, portBinding := range bindings {
+		if portBinding.HostIP != hostIP {
 			continue
 		}
 		hostPort, err := nat.ParsePort(portBinding.HostPort)
@@ -67,5 +71,16 @@ func GetHostPortForContainer(ctx context.Context, dockerCommand command.Command,
 		return hostPort, nil
 	}
 
-	return 0, fmt.Errorf("container %s does not have a port bound to 0.0.0.0", containerID)
+	// Fall back to a single wildcard or unspecified binding. Docker may report
+	// 0.0.0.0 or an empty HostIP even when we requested a specific localhost
+	// address, and such a binding is reachable on localhost.
+	if len(bindings) == 1 && (bindings[0].HostIP == "" || bindings[0].HostIP == "0.0.0.0") {
+		hostPort, err := nat.ParsePort(bindings[0].HostPort)
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse host port: %w", err)
+		}
+		return hostPort, nil
+	}
+
+	return 0, fmt.Errorf("container %s does not have a port bound to %s", containerID, hostIP)
 }
