@@ -13,6 +13,7 @@ describe("SetupPanel", () => {
     fireEvent.click(summary);
 
     expect(screen.getByText("processing")).toBeVisible();
-    expect(screen.getByText("downloading weights")).toBeVisible();
+    expect(screen.getByLabelText("Setup logs")).toHaveTextContent("downloading weights");
+    expect(screen.getByLabelText("Setup logs")).toHaveAttribute("tabindex", "0");
   });
 });

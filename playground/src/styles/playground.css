@@ -138,6 +138,38 @@ header a {
 .playground-segmented [role="presentation"] {
   display: none;
 }
+.playground-options {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  gap: 2px;
+  padding: 3px;
+  background: var(--color-kumo-fill);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0;
+}
+.playground-options button {
+  min-height: 26px;
+  margin: 0;
+  padding: 4px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.playground-options button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 20%, transparent);
+}
+.playground-options button[aria-pressed="false"]:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
 
 #setup-panel {
   border-bottom: 1px solid var(--border);
@@ -298,6 +330,10 @@ input[type="file"]::file-selector-button {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+  margin: 0;
+}
+#webhook-options legend {
+  padding: 0;
 }
 #webhook-options label {
   font-size: 12px;
@@ -403,11 +439,14 @@ input[type="file"]::file-selector-button {
   font-size: 12px;
   width: 100%;
 }
-.metrics-table td {
+.metrics-table td,
+.metrics-table th {
   padding: 3px 10px 3px 0;
   border-bottom: 1px solid var(--border);
+  font-weight: normal;
+  text-align: left;
 }
-.metrics-table td:first-child {
+.metrics-table th {
   color: var(--text-muted);
 }
 

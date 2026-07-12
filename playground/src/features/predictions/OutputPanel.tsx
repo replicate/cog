@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { SegmentedTabs } from "../../components/SegmentedTabs";
+import { SegmentedTabs, tabId, tabPanelId } from "../../components/SegmentedTabs";
 import { StatusBadge } from "../../components/StatusBadge";
 import type { OpenAPISchema, PredictionEnvelope, RequestTrace } from "../../domain/types";
 import { LazyJsonEditor } from "@/editor/LazyJsonEditor";
@@ -11,6 +11,7 @@ type PanelView = "output" | "response" | InspectorView;
 
 type Props = {
   envelope?: PredictionEnvelope;
+  error?: string;
   output: unknown;
   rawEvents: string[];
   running: boolean;
@@ -21,6 +22,7 @@ type Props = {
 
 export function OutputPanel({
   envelope,
+  error,
   output,
   rawEvents,
   running,
@@ -31,6 +33,14 @@ export function OutputPanel({
   const hasResult = envelope || rawEvents.length > 0 || output !== undefined;
   const [panelView, setPanelView] = useState<PanelView>("output");
   const hasLogs = Boolean(envelope?.logs?.trim());
+  const displayedError = error || envelope?.error;
+  const panelItems: { value: PanelView; label: string }[] = [
+    { value: "output", label: "Output" },
+    { value: "response", label: "Response" },
+    ...(hasLogs ? [{ value: "logs" as const, label: "Logs" }] : []),
+    { value: "timeline", label: "Timeline" },
+    { value: "request", label: "Request" },
+  ];
   useEffect(() => {
     if (panelView === "logs" && !hasLogs) setPanelView("output");
   }, [hasLogs, panelView]);
@@ -44,48 +54,53 @@ export function OutputPanel({
           <h2>Response</h2>
           {envelope?.status && <StatusBadge status={envelope.status} />}
         </div>
-        <SegmentedTabs
+        <SegmentedTabs<PanelView>
+          id="response-view"
           label="Response details"
-          items={[
-            { value: "output", label: "Output" },
-            { value: "response", label: "Response" },
-            ...(hasLogs ? [{ value: "logs", label: "Logs" }] : []),
-            { value: "timeline", label: "Timeline" },
-            { value: "request", label: "Request" },
-          ]}
+          items={panelItems}
           value={panelView}
-          onChange={(next) => setPanelView(next as PanelView)}
+          onChange={setPanelView}
         />
       </div>
-      {envelope?.error && (
+      <output className="sr-only" aria-live="polite">
+        {running ? "Prediction running" : envelope?.status ? `Prediction ${envelope.status}` : ""}
+      </output>
+      {displayedError && (
         <div className="error-container" role="alert">
-          {envelope.error}
+          {displayedError}
         </div>
       )}
-      {panelView === "output" ? (
-        <LiveOutput running={running}>
-          {envelope?.metrics && <Metrics metrics={envelope.metrics} />}
-          {hasResult ? (
-            <RenderedOutput value={output} running={running} schema={outputSchema} />
+      <div
+        id={tabPanelId("response-view", panelView)}
+        role="tabpanel"
+        aria-labelledby={tabId("response-view", panelView)}
+        tabIndex={0}
+      >
+        {panelView === "output" ? (
+          <LiveOutput running={running}>
+            {envelope?.metrics && <Metrics metrics={envelope.metrics} />}
+            {hasResult ? (
+              <RenderedOutput value={output} running={running} schema={outputSchema} />
+            ) : (
+              <div className="empty-output">Run a prediction to see its output.</div>
+            )}
+          </LiveOutput>
+        ) : panelView === "response" ? (
+          hasResult ? (
+            <LazyJsonEditor
+              value={responseDocument(rawEvents, envelope)}
+              label="Prediction response"
+              className="response-editor"
+              readOnly
+              followTail={streaming}
+            />
           ) : (
-            <div className="empty-output">Run a prediction to see its output.</div>
-          )}
-        </LiveOutput>
-      ) : panelView === "response" ? (
-        hasResult ? (
-          <LazyJsonEditor
-            value={responseDocument(rawEvents, envelope)}
-            label="Prediction response"
-            className="response-editor"
-            readOnly
-            followTail={streaming}
-          />
+            <div className="empty-output">Run a prediction to see its response.</div>
+          )
         ) : (
-          <div className="empty-output">Run a prediction to see its response.</div>
-        )
-      ) : (
-        <RequestInspector view={panelView} trace={trace} envelope={envelope} />
-      )}
+          <RequestInspector view={panelView} trace={trace} envelope={envelope} />
+        )}
+      </div>
     </section>
   );
 }
@@ -104,29 +119,30 @@ function LiveOutput({ children, running }: { children: ReactNode; running: boole
     if (node && followTail.current) node.scrollTop = node.scrollHeight;
   }, [children, running]);
   return (
-    <div
+    <section
       ref={viewport}
       className="live-output"
-      role="log"
-      aria-live="polite"
-      aria-busy={running}
+      aria-label="Prediction output"
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- scrollable output must be keyboard reachable
+      tabIndex={0}
       onScroll={(event) => {
         const node = event.currentTarget;
         followTail.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
       }}
     >
       {children}
-    </div>
+    </section>
   );
 }
 
 function Metrics({ metrics }: { metrics: Record<string, number> }) {
   return (
     <table className="metrics-table">
+      <caption className="sr-only">Prediction metrics</caption>
       <tbody>
         {Object.entries(metrics).map(([name, value]) => (
           <tr key={name}>
-            <td>{name}</td>
+            <th scope="row">{name}</th>
             <td>{String(value)}</td>
           </tr>
         ))}

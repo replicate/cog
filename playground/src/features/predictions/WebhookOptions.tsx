@@ -1,16 +1,18 @@
 import { Checkbox } from "@cloudflare/kumo/components/checkbox";
 
+import { WEBHOOK_EVENTS, type WebhookEvent } from "../../domain/types";
+
 type Props = {
-  value: string[];
+  value: WebhookEvent[];
   webhookBase: string;
-  onChange: (value: string[]) => void;
+  onChange: (value: WebhookEvent[]) => void;
 };
 
 export function WebhookOptions({ value, webhookBase, onChange }: Props) {
   return (
-    <div id="webhook-options">
-      <span className="muted">Webhook events</span>
-      {["start", "output", "logs"].map((event) => (
+    <fieldset id="webhook-options">
+      <legend className="muted">Webhook events</legend>
+      {WEBHOOK_EVENTS.map((event) => (
         <Checkbox
           key={event}
           label={event}
@@ -24,6 +26,6 @@ export function WebhookOptions({ value, webhookBase, onChange }: Props) {
       <span className="muted">
         {webhookBase ? `Webhook: ${webhookBase}/webhook/...` : "No webhook host configured"}
       </span>
-    </div>
+    </fieldset>
   );
 }

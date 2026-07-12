@@ -12,7 +12,8 @@ describe("CodeViewer", () => {
     });
     render(<CodeViewer value="response body" label="Response body" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect(screen.getByLabelText("Response body")).toHaveAttribute("tabindex", "0");
+    fireEvent.click(screen.getByRole("button", { name: "Copy Response body" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("response body"));
   });

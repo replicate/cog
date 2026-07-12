@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CogApi } from "../../api/cog";
 import type { OpenAPIDocument } from "../../domain/types";
+import { deferred } from "../../test/deferred";
 import { useConnection } from "./useConnection";
 
 const document: OpenAPIDocument = {
@@ -65,6 +66,26 @@ describe("useConnection", () => {
     expect(result.current.target).toBe("http://localhost:9001/");
   });
 
+  it("does not replace a manual target when initial configuration arrives late", async () => {
+    const config = deferred<{ target: string; webhookBase: string }>();
+    const api = fakeApi({ config: vi.fn(() => config.promise) });
+    const { result } = renderHook(() => useConnection(api));
+
+    act(() => result.current.setTargetDraft("http://manual.example"));
+    act(() => result.current.connect());
+    await waitFor(() => expect(api.setTarget).toHaveBeenCalledWith("http://manual.example"));
+
+    config.resolve({
+      target: "http://configured.example",
+      webhookBase: "https://hooks.example",
+    });
+    await waitFor(() => expect(result.current.webhookBase).toBe("https://hooks.example"));
+
+    expect(result.current.target).toBe("http://manual.example");
+    expect(result.current.targetDraft).toBe("http://manual.example");
+    expect(api.setTarget).not.toHaveBeenCalledWith("http://configured.example");
+  });
+
   it("reports failures and retries schema and health requests", async () => {
     vi.useFakeTimers();
     const api = fakeApi({
@@ -95,14 +116,16 @@ describe("useConnection", () => {
   });
 });
 
-function fakeApi(overrides: Partial<CogApi> = {}): CogApi {
+type ConnectionApi = Pick<CogApi, "config" | "health" | "schema" | "setTarget">;
+
+function fakeApi(overrides: Partial<ConnectionApi> = {}): ConnectionApi {
   return {
     config: vi.fn(async () => ({})),
     health: vi.fn(async () => ({ status: "healthy" })),
     schema: vi.fn(async () => document),
     setTarget: vi.fn(),
     ...overrides,
-  } as unknown as CogApi;
+  };
 }
 
 async function flushPromises(): Promise<void> {

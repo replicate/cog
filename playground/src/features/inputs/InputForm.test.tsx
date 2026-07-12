@@ -1,18 +1,36 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { deferred } from "../../test/deferred";
+
+const { mockFileToDataURI } = vi.hoisted(() => ({ mockFileToDataURI: vi.fn() }));
+
+vi.mock("../../api/cog", () => ({ fileToDataURI: mockFileToDataURI }));
 
 vi.mock("@/editor/LazyJsonEditor", () => ({
   LazyJsonEditor: ({
     label,
     onChange,
+    describedBy,
+    disabled,
+    invalid,
+    readOnly,
     value,
   }: {
     label: string;
     onChange: (value: string) => void;
+    describedBy?: string;
+    disabled?: boolean;
+    invalid?: boolean;
+    readOnly?: boolean;
     value: string;
   }) => (
     <textarea
       aria-label={label}
+      aria-describedby={describedBy}
+      aria-invalid={invalid}
+      disabled={disabled}
+      readOnly={readOnly}
       value={value}
       onChange={(event) => onChange(event.currentTarget.value)}
     />
@@ -26,6 +44,13 @@ const document = {
 };
 
 describe("InputForm", () => {
+  beforeEach(() => {
+    mockFileToDataURI.mockReset();
+    mockFileToDataURI.mockImplementation(
+      async (file: File) => `data:${file.type};base64,${file.name}`,
+    );
+  });
+
   it("preserves typed enum values and validates constrained numbers", () => {
     const onChange = vi.fn();
     const onValidityChange = vi.fn();
@@ -123,6 +148,29 @@ describe("InputForm", () => {
     expect(screen.getByLabelText("note")).toBeEnabled();
   });
 
+  it("associates required controls with constraints and invalid state", () => {
+    render(
+      <InputForm
+        document={document}
+        schema={{
+          required: ["prompt"],
+          properties: {
+            prompt: { type: "string", description: "Model prompt", minLength: 2 },
+          },
+        }}
+        value={{ prompt: "" }}
+        onChange={vi.fn()}
+        onBusyChange={vi.fn()}
+        onValidityChange={vi.fn()}
+      />,
+    );
+
+    const prompt = screen.getByRole("textbox", { name: "prompt" });
+    expect(prompt).toBeRequired();
+    expect(prompt).toHaveAttribute("aria-invalid", "true");
+    expect(prompt).toHaveAccessibleDescription("Model prompt · min 2 chars");
+  });
+
   it("reports and recovers from structured JSON errors", () => {
     const onChange = vi.fn();
     const onValidityChange = vi.fn();
@@ -176,8 +224,43 @@ describe("InputForm", () => {
       expect(onChange).toHaveBeenCalledWith({ file: expect.stringMatching(/^data:/) }),
     );
     expect(onBusyChange).toHaveBeenCalledWith(true);
-    expect(onBusyChange).toHaveBeenLastCalledWith(false);
+    await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
     expect(screen.getByText("hello.txt (5 B)")).toBeVisible();
+  });
+
+  it("ignores a stale file read when a newer selection finishes later", async () => {
+    const first = deferred<string>();
+    const second = deferred<string>();
+    mockFileToDataURI.mockImplementation((file: File) =>
+      file.name === "first.txt" ? first.promise : second.promise,
+    );
+    const onChange = vi.fn();
+    const onBusyChange = vi.fn();
+    const { container } = render(
+      <InputForm
+        document={document}
+        schema={{
+          required: ["file"],
+          properties: { file: { type: "string", format: "uri" } },
+        }}
+        value={{ file: "" }}
+        onChange={onChange}
+        onBusyChange={onBusyChange}
+        onValidityChange={vi.fn()}
+      />,
+    );
+    const input = container.querySelector('input[type="file"]')!;
+
+    fireEvent.change(input, { target: { files: [new File(["a"], "first.txt")] } });
+    fireEvent.change(input, { target: { files: [new File(["b"], "second.txt")] } });
+    first.resolve("data:first");
+    await first.promise;
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onBusyChange).toHaveBeenLastCalledWith(true);
+
+    second.resolve("data:second");
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ file: "data:second" }));
+    expect(onBusyChange).toHaveBeenLastCalledWith(false);
   });
 
   it("renders the no-input and selected-image states", () => {

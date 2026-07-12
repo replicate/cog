@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -94,7 +95,7 @@ func cmdPlayground(cmd *cobra.Command, _ []string) error {
 		return errors.New("playground assets are not included; build Cog with 'mise run build:cog'")
 	}
 
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	uiFS, err := fs.Sub(playgroundUI, "playground")
@@ -132,20 +133,35 @@ func cmdPlayground(cmd *cobra.Command, _ []string) error {
 		ReadTimeout:       5 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    64 * 1024,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 
-	// Shut down gracefully when the command's context is canceled (Ctrl+C).
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	return servePlayground(ctx, srv, ln, 5*time.Second)
+}
+
+func servePlayground(ctx context.Context, srv *http.Server, ln net.Listener, timeout time.Duration) error {
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ln) }()
+
+	select {
+	case err := <-serveErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
-	}()
-
-	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			_ = srv.Close()
+			<-serveErr
+			return fmt.Errorf("shutting down playground server: %w", err)
+		}
+		if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
 	}
-	return nil
 }
 
 func playgroundAddress(host string, port int) string {

@@ -1,7 +1,6 @@
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 
-import { SegmentedTabs } from "../../components/SegmentedTabs";
 import { RUN_MODES, type RunMode } from "../../domain/types";
 
 type Props = {
@@ -29,15 +28,19 @@ export function RunToolbar(props: Props) {
   return (
     <div id="action-bar">
       {(props.streaming || props.async) && (
-        <SegmentedTabs
-          label="Prediction mode"
-          items={availableModes.map((mode) => ({
-            value: mode,
-            label: mode[0].toUpperCase() + mode.slice(1),
-          }))}
-          value={props.runMode}
-          onChange={(next) => props.onRunModeChange(next as RunMode)}
-        />
+        <fieldset className="playground-options">
+          <legend className="sr-only">Prediction mode</legend>
+          {availableModes.map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={props.runMode === mode}
+              onClick={() => props.onRunModeChange(mode)}
+            >
+              {mode[0].toUpperCase() + mode.slice(1)}
+            </button>
+          ))}
+        </fieldset>
       )}
       <Input
         aria-label="Prediction ID"

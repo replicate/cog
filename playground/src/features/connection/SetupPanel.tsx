@@ -8,7 +8,10 @@ export function SetupPanel({ setup }: { setup: HealthResponse["setup"] }) {
       <summary>
         Setup <StatusBadge status={setup.status} />
       </summary>
-      <pre id="setup-logs">{setup.logs}</pre>
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- scrollable logs must be keyboard reachable */}
+      <pre id="setup-logs" aria-label="Setup logs" tabIndex={0}>
+        {setup.logs}
+      </pre>
     </details>
   );
 }

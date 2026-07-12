@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { CogApi } from "../../api/cog";
 import { inputAndOutputSchemas } from "../../domain/schema";
@@ -6,14 +6,16 @@ import type { HealthResponse, OpenAPIDocument } from "../../domain/types";
 
 const DEFAULT_TARGET = "http://localhost:8393";
 const REQUEST_TIMEOUT = 10_000;
+type ConnectionApi = Pick<CogApi, "config" | "health" | "schema" | "setTarget">;
 
-export function useConnection(api: CogApi) {
+export function useConnection(api: ConnectionApi) {
   const [targetDraft, setTargetDraft] = useState("");
   const [target, setTarget] = useState("");
   const [health, setHealth] = useState<HealthResponse>({ status: "unknown" });
   const [schema, setSchema] = useState<OpenAPIDocument>();
   const [schemaError, setSchemaError] = useState("");
   const [webhookBase, setWebhookBase] = useState("");
+  const targetTouched = useRef(false);
   const capabilities = useMemo(
     () => (schema ? inputAndOutputSchemas(schema) : undefined),
     [schema],
@@ -21,20 +23,26 @@ export function useConnection(api: CogApi) {
 
   useEffect(() => {
     const controller = new AbortController();
+    let canceled = false;
     api
       .config(AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT)]))
       .then((config) => {
+        if (canceled) return;
+        setWebhookBase(config.webhookBase ?? "");
+        if (targetTouched.current) return;
         const initialTarget = config.target?.trim() || DEFAULT_TARGET;
         setTargetDraft(initialTarget);
         setTarget(initialTarget);
-        setWebhookBase(config.webhookBase ?? "");
       })
       .catch((error: unknown) => {
-        if (isAbortError(error)) return;
+        if (canceled || isAbortError(error) || targetTouched.current) return;
         setTargetDraft(DEFAULT_TARGET);
         setTarget(DEFAULT_TARGET);
       });
-    return () => controller.abort();
+    return () => {
+      canceled = true;
+      controller.abort();
+    };
   }, [api]);
 
   useEffect(() => {
@@ -99,10 +107,16 @@ export function useConnection(api: CogApi) {
   return {
     target,
     targetDraft,
-    setTargetDraft,
+    setTargetDraft: (next: string) => {
+      targetTouched.current = true;
+      setTargetDraft(next);
+    },
     connect: () => {
       const next = targetDraft.trim();
-      if (next) setTarget(next);
+      if (next) {
+        targetTouched.current = true;
+        setTarget(next);
+      }
     },
     health,
     schema,

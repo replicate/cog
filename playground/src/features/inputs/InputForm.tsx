@@ -1,6 +1,6 @@
 import { Checkbox } from "@cloudflare/kumo/components/checkbox";
 import { Input, InputArea } from "@cloudflare/kumo/components/input";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { fileToDataURI } from "../../api/cog";
 import {
@@ -57,9 +57,14 @@ export function InputForm({
 
   const setField = (name: string, next: unknown) => onChange({ ...value, [name]: next });
   const setIncluded = (name: string, included: boolean) => {
+    setValidity(({ [name]: _removed, ...current }) => current);
+    setBusy(({ [name]: _removed, ...current }) => current);
     if (included) {
       const property = effectiveSchema(document, schema.properties?.[name] ?? {});
-      setField(name, property.default ?? emptyValue(property));
+      setField(
+        name,
+        property.default ?? enumValues(document, property)?.[0] ?? emptyValue(property),
+      );
       return;
     }
     const next = { ...value };
@@ -107,6 +112,7 @@ type FieldProps = {
 function Field(props: FieldProps) {
   const { schema, name, required, included } = props;
   const description = [schema.description, constraintText(schema)].filter(Boolean).join(" · ");
+  const descriptionId = `field-${name}-description`;
   return (
     <div className="field">
       <div className="field-heading">
@@ -123,8 +129,16 @@ function Field(props: FieldProps) {
           {schema.deprecated && <span className="deprecated-tag"> (deprecated)</span>}
         </label>
       </div>
-      {description && <small className="desc">{description}</small>}
-      <div aria-disabled={!included} className={!included ? "field-disabled" : undefined}>
+      {description && (
+        <small id={descriptionId} className="desc">
+          {description}
+        </small>
+      )}
+      <div
+        inert={!included}
+        aria-disabled={!included}
+        className={!included ? "field-disabled" : undefined}
+      >
         <FieldControl {...props} disabled={!included} />
       </div>
     </div>
@@ -133,7 +147,18 @@ function Field(props: FieldProps) {
 
 function FieldControl(props: FieldProps & { disabled: boolean }) {
   const choices = enumValues(props.document, props.schema);
-  const common = { id: `field-${props.name}`, disabled: props.disabled };
+  const describedBy =
+    props.schema.description || constraintText(props.schema)
+      ? `field-${props.name}-description`
+      : undefined;
+  const invalid = props.included && !validValue(props.schema, props.value, props.required);
+  const common = {
+    id: `field-${props.name}`,
+    disabled: props.disabled,
+    required: props.required,
+    "aria-describedby": describedBy,
+    "aria-invalid": invalid || undefined,
+  };
 
   if (choices) {
     return (
@@ -216,6 +241,11 @@ function StructuredControl(props: FieldProps & { disabled: boolean }) {
   const initial = props.value === undefined ? emptyValue(props.schema) : props.value;
   const [raw, setRaw] = useState(JSON.stringify(initial, null, 2));
   const [error, setError] = useState("");
+  const descriptionId =
+    props.schema.description || constraintText(props.schema)
+      ? `field-${props.name}-description`
+      : undefined;
+  const errorId = `field-${props.name}-error`;
   useEffect(() => {
     setRaw(
       JSON.stringify(props.value === undefined ? emptyValue(props.schema) : props.value, null, 2),
@@ -229,6 +259,11 @@ function StructuredControl(props: FieldProps & { disabled: boolean }) {
         label={`${props.name} JSON`}
         className="json-field"
         readOnly={props.disabled}
+        disabled={props.disabled}
+        invalid={Boolean(error)}
+        describedBy={
+          [descriptionId, error ? errorId : undefined].filter(Boolean).join(" ") || undefined
+        }
         onChange={(next) => {
           setRaw(next);
           try {
@@ -241,14 +276,39 @@ function StructuredControl(props: FieldProps & { disabled: boolean }) {
           }
         }}
       />
-      {error && <small className="field-error">Invalid JSON: {error}</small>}
+      {error && (
+        <small id={errorId} className="field-error" role="alert">
+          Invalid JSON: {error}
+        </small>
+      )}
     </>
   );
 }
 
 function FileControl(props: FieldProps & { disabled: boolean }) {
+  const { disabled } = props;
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
+  const readToken = useRef(0);
+  const descriptionId =
+    props.schema.description || constraintText(props.schema)
+      ? `field-${props.name}-description`
+      : undefined;
+  const errorId = `field-${props.name}-error`;
+  const describedBy =
+    [descriptionId, error ? errorId : undefined].filter(Boolean).join(" ") || undefined;
+  const clearBusy = useEffectEvent(() => props.onBusyChange(false));
+  useEffect(() => {
+    if (!disabled) return;
+    readToken.current += 1;
+    clearBusy();
+  }, [disabled]);
+  useEffect(
+    () => () => {
+      readToken.current += 1;
+    },
+    [],
+  );
   const accept = Array.isArray(props.schema["x-cog-accept"])
     ? props.schema["x-cog-accept"].join(",")
     : typeof props.schema["x-cog-accept"] === "string"
@@ -261,18 +321,25 @@ function FileControl(props: FieldProps & { disabled: boolean }) {
         type="file"
         accept={accept}
         disabled={props.disabled}
+        required={props.required}
+        aria-describedby={describedBy}
+        aria-invalid={Boolean(error) || undefined}
         onChange={async (event) => {
           const file = event.currentTarget.files?.[0];
           if (!file) return;
+          const token = ++readToken.current;
           props.onBusyChange(true);
           setError("");
           try {
-            props.onChange(await fileToDataURI(file));
+            const data = await fileToDataURI(file);
+            if (readToken.current !== token) return;
+            props.onChange(data);
             setFileName(`${file.name} (${formatBytes(file.size)})`);
           } catch (readError) {
+            if (readToken.current !== token) return;
             setError(readError instanceof Error ? readError.message : "Could not read file");
           } finally {
-            props.onBusyChange(false);
+            if (readToken.current === token) props.onBusyChange(false);
           }
         }}
       />
@@ -280,14 +347,26 @@ function FileControl(props: FieldProps & { disabled: boolean }) {
       <span className="muted">or URL</span>
       <Input
         aria-label={`${props.name} URL`}
+        aria-describedby={describedBy}
+        aria-invalid={Boolean(error) || undefined}
         disabled={props.disabled}
         placeholder="https://..."
         value={
           typeof props.value === "string" && !props.value.startsWith("data:") ? props.value : ""
         }
-        onInput={(event) => props.onChange(event.currentTarget.value)}
+        onInput={(event) => {
+          readToken.current += 1;
+          props.onBusyChange(false);
+          setFileName("");
+          setError("");
+          props.onChange(event.currentTarget.value);
+        }}
       />
-      {error && <small className="field-error">{error}</small>}
+      {error && (
+        <small id={errorId} className="field-error" role="alert">
+          {error}
+        </small>
+      )}
       {typeof props.value === "string" && <MediaPreview value={props.value} />}
     </div>
   );

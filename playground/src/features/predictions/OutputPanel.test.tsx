@@ -38,8 +38,31 @@ describe("OutputPanel", () => {
 
     expect(screen.getByText("hello")).toBeVisible();
     expect(screen.getByText("model failed")).toHaveAttribute("role", "alert");
-    expect(screen.getByText("predict_time")).toBeVisible();
+    expect(screen.getByRole("rowheader", { name: "predict_time" })).toBeVisible();
     expect(screen.getByText("0.2")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Prediction output" })).toHaveAttribute(
+      "tabindex",
+      "0",
+    );
+    expect(screen.getByRole("tabpanel")).toHaveAttribute(
+      "aria-labelledby",
+      "response-view-tab-output",
+    );
+  });
+
+  it("announces a prediction error only once", () => {
+    render(
+      <OutputPanel
+        envelope={{ status: "failed", error: "model failed" }}
+        error="model failed"
+        output={undefined}
+        rawEvents={[]}
+        running={false}
+        streaming={false}
+      />,
+    );
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
   it.each([
@@ -138,7 +161,8 @@ describe("OutputPanel", () => {
       <OutputPanel output={["hello "]} outputSchema={schema} rawEvents={[]} running streaming />,
     );
 
-    expect(screen.getByRole("log")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("region", { name: "Prediction output" })).toBeVisible();
+    expect(screen.getByText("Prediction running")).toHaveAttribute("aria-live", "polite");
     expect(screen.getByText("hello")).toBeVisible();
     expect(container.querySelector(".streaming-cursor")).toBeVisible();
 
@@ -152,7 +176,7 @@ describe("OutputPanel", () => {
         streaming
       />,
     );
-    expect(screen.getByRole("log")).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByText("Prediction succeeded")).toHaveAttribute("aria-live", "polite");
     expect(screen.getByText("hello world")).toBeVisible();
     expect(container.querySelector(".streaming-cursor")).not.toBeInTheDocument();
   });
@@ -161,7 +185,7 @@ describe("OutputPanel", () => {
     const { rerender } = render(
       <OutputPanel output="first" rawEvents={[]} running={false} streaming />,
     );
-    const output = screen.getByRole("log");
+    const output = screen.getByRole("region", { name: "Prediction output" });
     Object.defineProperties(output, {
       clientHeight: { configurable: true, value: 100 },
       scrollHeight: { configurable: true, value: 1000 },

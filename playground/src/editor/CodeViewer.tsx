@@ -24,10 +24,16 @@ export function CodeViewer({ value, label, className = "", followTail = false }:
 
   return (
     <div className={`code-viewer ${className}`}>
-      <pre ref={content} aria-label={label}>
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- scrollable code must be keyboard reachable */}
+      <pre ref={content} aria-label={label} tabIndex={0}>
         {value}
       </pre>
-      <button type="button" className="editor-copy" onClick={() => void copy()}>
+      <button
+        type="button"
+        className="editor-copy"
+        aria-label={`Copy ${label}`}
+        onClick={() => void copy()}
+      >
         Copy
       </button>
     </div>

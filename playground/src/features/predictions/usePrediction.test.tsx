@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HttpError } from "../../api/cog";
 import type { CogApi } from "../../api/cog";
+import type { StreamEvent } from "../../domain/types";
+import { deferred } from "../../test/deferred";
 import { usePrediction } from "./usePrediction";
 
 const options = {
@@ -10,7 +12,7 @@ const options = {
   input: { prompt: "hello" },
   mode: "sync" as const,
   webhookBase: "http://webhook.example",
-  webhookEvents: ["start"],
+  webhookEvents: ["start" as const],
 };
 
 describe("usePrediction", () => {
@@ -270,6 +272,63 @@ describe("usePrediction", () => {
     });
   });
 
+  it("ignores a late response from a finished run after a new run starts", async () => {
+    const sources: MockEventSource[] = [];
+    vi.stubGlobal(
+      "EventSource",
+      class extends MockEventSource {
+        constructor(url: string) {
+          super(url);
+          sources.push(this);
+          queueMicrotask(() => this.onopen?.(new Event("open")));
+        }
+      },
+    );
+    const firstResponse = deferred<{ id: string; status: string }>();
+    let firstRequest: { onResponse?: (response: Response) => void } | undefined;
+    const submit = vi
+      .fn()
+      .mockImplementationOnce((request: { onResponse?: (response: Response) => void }) => {
+        firstRequest = request;
+        return firstResponse.promise;
+      })
+      .mockImplementationOnce(async (request: { onResponse?: (response: Response) => void }) => {
+        request.onResponse?.(
+          new Response("{}", { status: 201, headers: { "X-Prediction": "second" } }),
+        );
+        return { id: "p2", status: "succeeded", output: "second" };
+      });
+    const api = fakeApi({ submit });
+    const { result } = renderHook(() => usePrediction(api));
+    let firstRun: Promise<void> | undefined;
+
+    act(() => {
+      firstRun = result.current.run({ ...options, mode: "async" });
+    });
+    await waitFor(() => expect(firstRequest).toBeDefined());
+    await act(async () =>
+      sources[0].onmessage?.(new MessageEvent("message", { data: '{"status":"succeeded"}' })),
+    );
+    await act(() => result.current.run({ ...options, input: { prompt: "second" } }));
+    expect(result.current.trace).toMatchObject({
+      responseStatus: 201,
+      responseHeaders: { "x-prediction": "second" },
+    });
+
+    act(() => {
+      firstRequest?.onResponse?.(
+        new Response("{}", { status: 202, headers: { "X-Prediction": "first" } }),
+      );
+    });
+    expect(result.current.trace).toMatchObject({
+      responseStatus: 201,
+      responseHeaders: { "x-prediction": "second" },
+    });
+
+    firstResponse.resolve({ id: "p1", status: "starting" });
+    await act(async () => firstRun);
+  });
+
   it("closes an asynchronous event stream when connecting times out", async () => {
     vi.useFakeTimers();
     const sources: MockEventSource[] = [];
@@ -339,27 +398,31 @@ describe("usePrediction", () => {
   });
 });
 
-function fakeApi(overrides: Partial<Record<"submit" | "stream" | "cancel", unknown>>): CogApi {
+type PredictionApi = Pick<CogApi, "cancel" | "stream" | "submit">;
+
+function fakeApi(overrides: Partial<PredictionApi>): PredictionApi {
   return {
     submit: vi.fn().mockResolvedValue({}),
     stream: vi.fn(() => eventStream([])),
     cancel: vi.fn().mockResolvedValue(undefined),
     ...overrides,
-  } as unknown as CogApi;
+  };
 }
 
-async function* eventStream(
-  events: { type: string; data: Record<string, unknown>; raw: string }[],
-) {
+async function* eventStream(events: StreamEvent[]): AsyncGenerator<StreamEvent> {
   yield* events;
 }
 
-async function* pendingStream(setRelease: (release: () => void) => void) {
+async function* pendingStream(
+  setRelease: (release: () => void) => void,
+): AsyncGenerator<StreamEvent> {
   yield { type: "start", data: { id: "p1", status: "processing" }, raw: "event: start" };
   await new Promise<void>((resolve) => setRelease(resolve));
 }
 
-async function* progressiveStream(setRelease: (release: () => void) => void) {
+async function* progressiveStream(
+  setRelease: (release: () => void) => void,
+): AsyncGenerator<StreamEvent> {
   yield { type: "start", data: { id: "p1", status: "processing" }, raw: "event: start" };
   yield { type: "output", data: { chunk: "hello " }, raw: "event: output" };
   await new Promise<void>((resolve) => setRelease(resolve));

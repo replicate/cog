@@ -26,7 +26,10 @@ export function RequestInspector({ view, trace, envelope }: Props) {
 
 function Logs({ logs }: { logs?: string }) {
   return logs ? (
-    <pre className="inspector-logs">{logs}</pre>
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- scrollable logs must be keyboard reachable
+    <pre className="inspector-logs" aria-label="Prediction logs" tabIndex={0}>
+      {logs}
+    </pre>
   ) : (
     <div className="empty-output">No prediction logs were received.</div>
   );

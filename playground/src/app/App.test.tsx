@@ -110,6 +110,11 @@ describe("App", () => {
     render(<App />);
     const runButton = screen.getByRole("button", { name: "Run" });
     await waitFor(() => expect(runButton).toBeDisabled());
+    expect(screen.getByRole("tablist", { name: "Input editor mode" })).toBeVisible();
+    expect(screen.getByRole("tabpanel", { name: "Form" })).toHaveAttribute(
+      "aria-labelledby",
+      "input-mode-tab-form",
+    );
 
     fireEvent.click(screen.getByRole("tab", { name: "JSON" }));
     fireEvent.change(screen.getByLabelText("Prediction input JSON"), {

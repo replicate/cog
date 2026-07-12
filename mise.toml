@@ -151,7 +151,7 @@ echo "Installed $DEST/cog -> $BINARY"
 [tasks."build:cog"]
 description = "Build cog CLI (development)"
 depends = ["build:playground"]
-sources = ["cmd/**/*.go", "pkg/**/*.go", "pkg/cli/playground/**", "go.mod", "go.sum", "VERSION.txt"]
+sources = ["cmd/**/*.go", "pkg/**/*.go", "pkg/cli/playground/**", ".goreleaser.yaml", "go.mod", "go.sum", "mise.toml", "mise.lock", "VERSION.txt"]
 outputs = ["dist/go/*/cog"]
 run = """
 #!/usr/bin/env bash

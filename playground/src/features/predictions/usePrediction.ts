@@ -1,7 +1,13 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 
 import { type CogApi, HttpError } from "../../api/cog";
-import type { PredictionEnvelope, RequestTrace, RunMode, TraceEventKind } from "../../domain/types";
+import type {
+  PredictionEnvelope,
+  RequestTrace,
+  RunMode,
+  TraceEventKind,
+  WebhookEvent,
+} from "../../domain/types";
 
 const TERMINAL = new Set(["succeeded", "failed", "canceled"]);
 const MAX_RAW_EVENT_TEXT = 1024 * 1024;
@@ -28,7 +34,7 @@ type RunOptions = {
   input: Record<string, unknown>;
   mode: RunMode;
   webhookBase: string;
-  webhookEvents: string[];
+  webhookEvents: WebhookEvent[];
 };
 
 type StreamBuffer = {
@@ -38,7 +44,9 @@ type StreamBuffer = {
   frame?: number;
 };
 
-export function usePrediction(api: CogApi) {
+type PredictionApi = Pick<CogApi, "cancel" | "stream" | "submit">;
+
+export function usePrediction(api: PredictionApi) {
   const [running, setRunning] = useState(false);
   const [envelope, setEnvelope] = useState<PredictionEnvelope>();
   const [output, setOutput] = useState<unknown>();
@@ -375,6 +383,7 @@ export function usePrediction(api: CogApi) {
   };
 
   const captureResponse = (token: string, response: Response, label?: string) => {
+    if (traceToken.current !== token) return;
     recordTraceEvent(
       token,
       "response",

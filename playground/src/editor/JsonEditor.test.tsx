@@ -27,9 +27,22 @@ describe("JsonEditor", () => {
     });
     render(<JsonEditor value={'{"answer":42}'} label="Copy JSON" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy Copy JSON" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('{"answer":42}'));
+  });
+
+  it("removes disabled editors and copy controls from keyboard navigation", () => {
+    render(
+      <JsonEditor value="{}" label="Disabled JSON" disabled invalid describedBy="disabled-help" />,
+    );
+
+    const editor = screen.getByRole("textbox", { name: "Disabled JSON" });
+    expect(editor).toHaveAttribute("tabindex", "-1");
+    expect(editor).toHaveAttribute("aria-disabled", "true");
+    expect(editor).toHaveAttribute("aria-invalid", "true");
+    expect(editor).toHaveAttribute("aria-describedby", "disabled-help");
+    expect(screen.getByRole("button", { name: "Copy Disabled JSON" })).toBeDisabled();
   });
 
   it("leaves Tab available for keyboard navigation", () => {

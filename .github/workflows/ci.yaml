@@ -80,7 +80,18 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- playground; then
+          elif git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- \
+            playground \
+            'pkg/cli/playground*' \
+            pkg/cli/root.go \
+            cmd/cog \
+            .goreleaser.yaml \
+            mise.toml \
+            mise.lock \
+            go.mod \
+            go.sum \
+            .github/workflows/ci.yaml \
+            .github/workflows/release-build.yaml; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -139,6 +150,8 @@ jobs:
         run: mise run typecheck:playground
       - name: Build embedded assets
         run: mise run --force build:playground
+      - name: Test embedded assets
+        run: go test -tags playground_assets ./pkg/cli -run '^TestPlaygroundServesUI$'
       - name: Upload playground assets
         uses: actions/upload-artifact@v6
         with:

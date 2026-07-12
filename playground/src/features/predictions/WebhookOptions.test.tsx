@@ -10,6 +10,7 @@ describe("WebhookOptions", () => {
       <WebhookOptions value={["start", "logs"]} webhookBase="http://host" onChange={onChange} />,
     );
 
+    expect(screen.getByRole("group", { name: "Webhook events" })).toBeVisible();
     fireEvent.click(screen.getByRole("checkbox", { name: "start" }));
     expect(onChange).toHaveBeenLastCalledWith(["logs"]);
     fireEvent.click(screen.getByRole("checkbox", { name: "output" }));

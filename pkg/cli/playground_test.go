@@ -3,10 +3,12 @@ package cli
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -72,6 +74,47 @@ func TestPlaygroundServesUI(t *testing.T) {
 			assert.Contains(t, assetResp.Header.Get("Content-Type"), "javascript")
 		}
 	}
+}
+
+func TestServePlaygroundWaitsForHandlers(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	release := make(chan struct{})
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			close(started)
+			<-r.Context().Done()
+			close(canceled)
+			<-release
+		}),
+		BaseContext: func(net.Listener) context.Context { return ctx },
+	}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- servePlayground(ctx, srv, ln, time.Second) }()
+	requestDone := make(chan struct{})
+	go func() {
+		defer close(requestDone)
+		resp, requestErr := http.Get("http://" + ln.Addr().String())
+		if requestErr == nil {
+			resp.Body.Close()
+		}
+	}()
+
+	<-started
+	cancel()
+	<-canceled
+	select {
+	case err := <-serveDone:
+		require.FailNow(t, "server returned before the active handler finished", "%v", err)
+	default:
+	}
+	close(release)
+	require.NoError(t, <-serveDone)
+	<-requestDone
 }
 
 func TestPlaygroundConfig(t *testing.T) {

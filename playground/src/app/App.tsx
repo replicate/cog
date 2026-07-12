@@ -2,10 +2,10 @@ import { Button } from "@cloudflare/kumo/components/button";
 import { useEffect, useMemo, useState } from "react";
 
 import { CogApi } from "@/api/cog";
-import { SegmentedTabs } from "@/components/SegmentedTabs";
+import { SegmentedTabs, tabId, tabPanelId } from "@/components/SegmentedTabs";
 import { StatusBadge } from "@/components/StatusBadge";
 import { defaultInput } from "@/domain/schema";
-import type { InputMode, RunMode } from "@/domain/types";
+import { WEBHOOK_EVENTS, type InputMode, type RunMode, type WebhookEvent } from "@/domain/types";
 import { LazyJsonEditor } from "@/editor/LazyJsonEditor";
 import { ConnectionBar } from "@/features/connection/ConnectionBar";
 import { SetupPanel } from "@/features/connection/SetupPanel";
@@ -31,7 +31,7 @@ export function App() {
   const [formValid, setFormValid] = useState(true);
   const [formRevision, setFormRevision] = useState(0);
   const [theme, setThemeState] = useState<ThemeMode>(currentTheme());
-  const [webhookEvents, setWebhookEvents] = useState(["start", "output", "logs", "completed"]);
+  const [webhookEvents, setWebhookEvents] = useState<WebhookEvent[]>([...WEBHOOK_EVENTS]);
   const { schema, capabilities } = connection;
   const resetPrediction = prediction.reset;
 
@@ -100,7 +100,7 @@ export function App() {
     setJsonError("");
   };
 
-  const changeInputMode = (next: string) => {
+  const changeInputMode = (next: InputMode) => {
     if (next === inputMode) return;
     if (next === "json") {
       setJsonInput(JSON.stringify(input, null, 2));
@@ -209,6 +209,7 @@ export function App() {
           <div className="panel-head">
             <h2>Input</h2>
             <SegmentedTabs
+              id="input-mode"
               label="Input editor mode"
               items={[
                 { value: "form", label: "Form" },
@@ -221,39 +222,48 @@ export function App() {
           {connection.schemaError && (
             <output className="notice visible">{connection.schemaError}</output>
           )}
-          {prediction.error && (
-            <div className="error-container" role="alert">
-              {prediction.error}
-            </div>
-          )}
-          {connection.schema && connection.capabilities && inputMode === "form" && (
-            <InputForm
-              key={formRevision}
-              document={connection.schema}
-              schema={connection.capabilities.input}
-              value={input}
-              onChange={changeFormInput}
-              onBusyChange={setFormBusy}
-              onValidityChange={setFormValid}
-            />
-          )}
-          {inputMode === "json" && (
-            <div id="json-container">
-              <LazyJsonEditor
-                value={jsonInput}
-                label="Prediction input JSON"
-                className="json-input"
-                onChange={changeJsonInput}
+          <div
+            id={tabPanelId("input-mode", inputMode)}
+            role="tabpanel"
+            aria-labelledby={tabId("input-mode", inputMode)}
+            tabIndex={0}
+          >
+            {connection.schema && connection.capabilities && inputMode === "form" && (
+              <InputForm
+                key={formRevision}
+                document={connection.schema}
+                schema={connection.capabilities.input}
+                value={input}
+                onChange={changeFormInput}
+                onBusyChange={setFormBusy}
+                onValidityChange={setFormValid}
               />
-              {jsonError && <small className="field-error">{jsonError}</small>}
-              <Button size="sm" variant="ghost" onClick={formatJsonInput}>
-                Format
-              </Button>
-            </div>
-          )}
+            )}
+            {inputMode === "json" && (
+              <div id="json-container">
+                <LazyJsonEditor
+                  value={jsonInput}
+                  label="Prediction input JSON"
+                  className="json-input"
+                  describedBy={jsonError ? "json-input-error" : undefined}
+                  invalid={Boolean(jsonError)}
+                  onChange={changeJsonInput}
+                />
+                {jsonError && (
+                  <small id="json-input-error" className="field-error" role="alert">
+                    {jsonError}
+                  </small>
+                )}
+                <Button size="sm" variant="ghost" onClick={formatJsonInput}>
+                  Format
+                </Button>
+              </div>
+            )}
+          </div>
         </section>
         <OutputPanel
           envelope={prediction.envelope}
+          error={prediction.error}
           output={prediction.output}
           rawEvents={prediction.rawEvents}
           running={prediction.running}

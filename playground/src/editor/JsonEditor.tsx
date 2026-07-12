@@ -18,6 +18,9 @@ export type JsonEditorProps = {
   value: string;
   onChange?: (value: string) => void;
   readOnly?: boolean;
+  disabled?: boolean;
+  invalid?: boolean;
+  describedBy?: string;
   followTail?: boolean;
   className?: string;
   label: string;
@@ -28,6 +31,9 @@ export function JsonEditor({
   value,
   onChange,
   readOnly = false,
+  disabled = false,
+  invalid = false,
+  describedBy,
   followTail = false,
   className = "",
   label,
@@ -38,6 +44,9 @@ export function JsonEditor({
   const initialValue = useRef(value);
   const initialLabel = useRef(label);
   const initialReadOnly = useRef(readOnly);
+  const initialDisabled = useRef(disabled);
+  const initialInvalid = useRef(invalid);
+  const initialDescribedBy = useRef(describedBy);
   const onChangeRef = useRef(onChange);
   const updatingValue = useRef(false);
   const followRef = useRef(true);
@@ -63,7 +72,15 @@ export function JsonEditor({
           syntaxHighlighting(kumoHighlightStyle),
           kumoEditorTheme,
           EditorView.lineWrapping,
-          behavior.current.of(editorBehavior(initialReadOnly.current, initialLabel.current)),
+          behavior.current.of(
+            editorBehavior(
+              initialReadOnly.current,
+              initialDisabled.current,
+              initialInvalid.current,
+              initialLabel.current,
+              initialDescribedBy.current,
+            ),
+          ),
           EditorView.updateListener.of((update) => {
             if (update.docChanged && !updatingValue.current) {
               onChangeRef.current?.(update.state.doc.toString());
@@ -87,9 +104,11 @@ export function JsonEditor({
 
   useEffect(() => {
     editorRef.current?.dispatch({
-      effects: behavior.current.reconfigure(editorBehavior(readOnly, label)),
+      effects: behavior.current.reconfigure(
+        editorBehavior(readOnly, disabled, invalid, label, describedBy),
+      ),
     });
-  }, [label, readOnly]);
+  }, [describedBy, disabled, invalid, label, readOnly]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -129,7 +148,13 @@ export function JsonEditor({
       style={autoHeight ? { height: `${editorHeight(value)}px` } : undefined}
     >
       <div ref={hostRef} />
-      <button type="button" className="editor-copy" onClick={() => void copy()}>
+      <button
+        type="button"
+        className="editor-copy"
+        aria-label={`Copy ${label}`}
+        disabled={disabled}
+        onClick={() => void copy()}
+      >
         Copy
       </button>
     </div>
@@ -140,15 +165,30 @@ function editorHeight(value: string): number {
   return Math.min(320, Math.max(80, value.split("\n").length * 18 + 18));
 }
 
-function editorBehavior(readOnly: boolean, label: string) {
+function editorBehavior(
+  readOnly: boolean,
+  disabled: boolean,
+  invalid: boolean,
+  label: string,
+  describedBy?: string,
+) {
+  const attributes: Record<string, string> = {
+    "aria-label": label,
+    "aria-readonly": String(readOnly || disabled),
+    spellcheck: "false",
+  };
+  if (describedBy) attributes["aria-describedby"] = describedBy;
+  if (invalid) attributes["aria-invalid"] = "true";
+  if (disabled) {
+    attributes["aria-disabled"] = "true";
+    attributes.tabindex = "-1";
+  } else if (readOnly) {
+    attributes.tabindex = "0";
+  }
   return [
-    EditorState.readOnly.of(readOnly),
-    EditorView.editable.of(!readOnly),
-    EditorView.contentAttributes.of({
-      "aria-label": label,
-      "aria-readonly": String(readOnly),
-      spellcheck: "false",
-    }),
+    EditorState.readOnly.of(readOnly || disabled),
+    EditorView.editable.of(!readOnly && !disabled),
+    EditorView.contentAttributes.of(attributes),
   ];
 }
 

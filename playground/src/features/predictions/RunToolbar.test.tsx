@@ -27,8 +27,10 @@ describe("RunToolbar", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Stream" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Async" }));
+    expect(screen.getByRole("group", { name: "Prediction mode" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sync" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Stream" }));
+    fireEvent.click(screen.getByRole("button", { name: "Async" }));
     fireEvent.input(screen.getByRole("textbox", { name: "Prediction ID" }), {
       target: { value: "prediction-1" },
     });
@@ -81,8 +83,8 @@ describe("RunToolbar", () => {
         onReset={vi.fn()}
       />,
     );
-    expect(screen.queryByRole("tab", { name: "Stream" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Async" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stream" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Async" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run" })).toBeDisabled();
   });
 });
