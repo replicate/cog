@@ -60,7 +60,6 @@ export type RunMode = (typeof RUN_MODES)[number];
 
 export const INPUT_MODES = ["form", "json"] as const;
 export type InputMode = (typeof INPUT_MODES)[number];
-export type OutputView = "text" | "raw";
 
 export type TraceEventKind = "request" | "response" | "sse" | "webhook" | "cancel" | "error";
 

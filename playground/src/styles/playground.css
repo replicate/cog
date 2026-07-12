@@ -305,14 +305,20 @@ input[type="file"]::file-selector-button {
   display: flex;
   align-items: center;
 }
-.ace-json {
+.json-editor {
   position: relative;
   border: 1px solid var(--border);
   border-radius: 6px;
   width: 100%;
   min-height: 120px;
+  overflow: hidden;
 }
-.ace-json > div:first-child {
+.json-editor:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.json-editor > div:first-child,
+.json-editor .cm-editor {
   width: 100%;
   height: 100%;
 }
@@ -332,7 +338,7 @@ input[type="file"]::file-selector-button {
   opacity: 0;
   transition: opacity 0.12s ease;
 }
-.ace-json:hover .editor-copy,
+.json-editor:hover .editor-copy,
 .code-viewer:hover .editor-copy {
   opacity: 0.95;
 }
@@ -343,11 +349,11 @@ input[type="file"]::file-selector-button {
   color: var(--text);
   background: var(--surface-hover);
 }
-.viewer-output {
+.response-editor {
   height: 60vh;
   min-height: 280px;
 }
-.ace-input {
+.json-input {
   height: min(55vh, 520px);
   min-height: 280px;
 }
@@ -365,12 +371,11 @@ input[type="file"]::file-selector-button {
   min-height: 80px;
   max-height: 240px;
 }
-.ace-field {
+.json-field {
   height: 140px;
 }
-.ace_editor {
-  font-family: "SF Mono", Monaco, Consolas, "Liberation Mono", monospace !important;
-  line-height: 1.5 !important;
+.structured-output {
+  min-height: 120px;
 }
 .code-viewer {
   position: relative;
@@ -457,13 +462,30 @@ input[type="file"]::file-selector-button {
   color: var(--text-muted);
   text-align: center;
 }
-.text-output {
-  min-height: 120px;
-  margin: 0;
-  padding: 10px;
+.live-output {
+  min-height: 280px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 16px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+.live-output .empty-output {
+  border: 0;
+}
+.live-output .metrics-table {
+  margin-bottom: 14px;
+}
+.text-output {
+  min-height: 120px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -627,6 +649,9 @@ input[type="file"]::file-selector-button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .live-output {
+    scroll-behavior: auto;
+  }
   .streaming-cursor {
     animation: none;
   }

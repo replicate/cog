@@ -172,7 +172,7 @@ run = "pnpm install --frozen-lockfile && touch node_modules/.cog-playground-inst
 description = "Build embedded playground assets"
 depends = ["playground:install"]
 dir = "playground"
-sources = ["src/**/*", "index.html", "package.json", "pnpm-lock.yaml", "tsconfig.json", "vite.config.ts", "../mise.toml", "../mise.lock"]
+sources = ["src/**/*", "scripts/**/*", "index.html", "package.json", "pnpm-lock.yaml", "tsconfig.json", "vite.config.ts", "../mise.toml", "../mise.lock"]
 outputs = ["../pkg/cli/playground/index.html", "../pkg/cli/playground/THIRD_PARTY_LICENSES.md", "../pkg/cli/playground/assets/*"]
 run = [
   "pnpm run build",

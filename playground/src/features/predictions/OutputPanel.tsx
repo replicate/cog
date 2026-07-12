@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { SegmentedTabs } from "../../components/SegmentedTabs";
 import { StatusBadge } from "../../components/StatusBadge";
 import type { OpenAPISchema, PredictionEnvelope, RequestTrace } from "../../domain/types";
-import { CodeViewer } from "@/editor/CodeViewer";
+import { LazyJsonEditor } from "@/editor/LazyJsonEditor";
 import { type InspectorView, RequestInspector } from "./RequestInspector";
 
-type PanelView = "output" | "raw" | InspectorView;
+type PanelView = "output" | "response" | InspectorView;
 
 type Props = {
   envelope?: PredictionEnvelope;
@@ -34,6 +34,9 @@ export function OutputPanel({
   useEffect(() => {
     if (panelView === "logs" && !hasLogs) setPanelView("output");
   }, [hasLogs, panelView]);
+  useEffect(() => {
+    if (running) setPanelView("output");
+  }, [running]);
   return (
     <section id="output-panel">
       <div className="panel-head">
@@ -45,7 +48,7 @@ export function OutputPanel({
           label="Response details"
           items={[
             { value: "output", label: "Output" },
-            { value: "raw", label: "Raw" },
+            { value: "response", label: "Response" },
             ...(hasLogs ? [{ value: "logs", label: "Logs" }] : []),
             { value: "timeline", label: "Timeline" },
             { value: "request", label: "Request" },
@@ -60,29 +63,60 @@ export function OutputPanel({
         </div>
       )}
       {panelView === "output" ? (
-        <>
+        <LiveOutput running={running}>
           {envelope?.metrics && <Metrics metrics={envelope.metrics} />}
           {hasResult ? (
             <RenderedOutput value={output} running={running} schema={outputSchema} />
           ) : (
             <div className="empty-output">Run a prediction to see its output.</div>
           )}
-        </>
-      ) : panelView === "raw" ? (
+        </LiveOutput>
+      ) : panelView === "response" ? (
         hasResult ? (
-          <CodeViewer
-            value={rawEvents.join("\n\n")}
-            label="Raw prediction events"
-            className="viewer-output"
+          <LazyJsonEditor
+            value={responseDocument(rawEvents, envelope)}
+            label="Prediction response"
+            className="response-editor"
+            readOnly
             followTail={streaming}
           />
         ) : (
-          <div className="empty-output">Run a prediction to see its raw response.</div>
+          <div className="empty-output">Run a prediction to see its response.</div>
         )
       ) : (
         <RequestInspector view={panelView} trace={trace} envelope={envelope} />
       )}
     </section>
+  );
+}
+
+function LiveOutput({ children, running }: { children: ReactNode; running: boolean }) {
+  const viewport = useRef<HTMLDivElement>(null);
+  const followTail = useRef(true);
+  useEffect(() => {
+    if (!running) return;
+    followTail.current = true;
+    const node = viewport.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [running]);
+  useEffect(() => {
+    const node = viewport.current;
+    if (node && followTail.current) node.scrollTop = node.scrollHeight;
+  }, [children, running]);
+  return (
+    <div
+      ref={viewport}
+      className="live-output"
+      role="log"
+      aria-live="polite"
+      aria-busy={running}
+      onScroll={(event) => {
+        const node = event.currentTarget;
+        followTail.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -142,12 +176,23 @@ function RenderedOutput({
     }
     const concatenated = schema?.["x-cog-array-display"] === "concatenate";
     if (!concatenated) {
+      const jsonValue = JSON.stringify(strings, null, 2);
+      if (running) {
+        return (
+          <pre className="text-output">
+            {jsonValue}
+            <span className="streaming-cursor" />
+          </pre>
+        );
+      }
       return (
-        <CodeViewer
-          value={JSON.stringify(strings, null, 2)}
+        <LazyJsonEditor
+          value={jsonValue}
           label="Structured prediction output"
-          className="viewer-output"
+          className="structured-output"
+          readOnly
           followTail={running}
+          autoHeight
         />
       );
     }
@@ -158,14 +203,55 @@ function RenderedOutput({
       </pre>
     );
   }
+  const jsonValue = JSON.stringify(value, null, 2);
+  if (running) {
+    return (
+      <pre className="text-output">
+        {jsonValue}
+        <span className="streaming-cursor" />
+      </pre>
+    );
+  }
   return (
-    <CodeViewer
-      value={JSON.stringify(value, null, 2)}
+    <LazyJsonEditor
+      value={jsonValue}
       label="Structured prediction output"
-      className="viewer-output"
+      className="structured-output"
+      readOnly
       followTail={running}
+      autoHeight
     />
   );
+}
+
+function responseDocument(rawEvents: string[], envelope?: PredictionEnvelope): string {
+  const events = rawEvents.map(parseResponseEvent);
+  const response = events.length === 0 ? envelope : events.length === 1 ? events[0] : events;
+  return JSON.stringify(response ?? {}, null, 2);
+}
+
+function parseResponseEvent(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    const lines = raw.split("\n");
+    const event = lines
+      .find((line) => line.startsWith("event:"))
+      ?.slice(6)
+      .trim();
+    const data = lines
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+    if (!event && !data) return raw;
+    let parsedData: unknown = data;
+    try {
+      parsedData = JSON.parse(data) as unknown;
+    } catch {
+      // Keep non-JSON event data as text.
+    }
+    return { event: event ?? "message", data: parsedData };
+  }
 }
 
 function media(value: string): ReactNode {

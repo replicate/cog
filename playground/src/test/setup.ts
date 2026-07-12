@@ -14,6 +14,14 @@ vi.stubGlobal(
 );
 
 HTMLElement.prototype.scrollIntoView = vi.fn();
+Object.defineProperty(Range.prototype, "getClientRects", {
+  configurable: true,
+  value: () => [] as unknown as DOMRectList,
+});
+Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+  configurable: true,
+  value: () => new DOMRect(),
+});
 window.requestAnimationFrame = (callback) =>
   window.setTimeout(() => callback(performance.now()), 0);
 window.cancelAnimationFrame = window.clearTimeout;

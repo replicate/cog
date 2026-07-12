@@ -227,7 +227,7 @@ function StructuredControl(props: FieldProps & { disabled: boolean }) {
       <LazyJsonEditor
         value={raw}
         label={`${props.name} JSON`}
-        className="ace-field"
+        className="json-field"
         readOnly={props.disabled}
         onChange={(next) => {
           setRaw(next);

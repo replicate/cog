@@ -12,16 +12,14 @@ type Props = {
 };
 
 export function RequestInspector({ view, trace, envelope }: Props) {
+  if (view === "logs") return <Logs logs={envelope?.logs} />;
   if (!trace) {
     const message =
       view === "timeline"
         ? "Run a prediction to see its event timeline."
-        : view === "logs"
-          ? "Run an async prediction to see its logs."
-          : "Run a prediction to inspect its request and response metadata.";
+        : "Run a prediction to inspect its request and response metadata.";
     return <div className="empty-output">{message}</div>;
   }
-  if (view === "logs") return <Logs logs={envelope?.logs} />;
   if (view === "timeline") return <Timeline trace={trace} />;
   return <RequestDetails trace={trace} envelope={envelope} />;
 }

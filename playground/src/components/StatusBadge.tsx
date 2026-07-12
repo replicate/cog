@@ -14,12 +14,12 @@ export function StatusBadge({ status }: { status?: string }) {
     setup_failed: "error",
     unhealthy: "error",
     unreachable: "error",
-    canceled: "secondary",
-    unknown: "secondary",
+    canceled: "neutral",
+    unknown: "neutral",
   };
   return (
     <output>
-      <Badge variant={variants[normalized] ?? "secondary"} appearance="dot">
+      <Badge variant={variants[normalized] ?? "neutral"} appearance="dot">
         {normalized}
       </Badge>
     </output>

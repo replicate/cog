@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HttpError } from "../../api/cog";
@@ -131,6 +131,26 @@ describe("usePrediction", () => {
     expect(result.current.running).toBe(false);
     expect(result.current.envelope?.status).toBe("failed");
     expect(result.current.error).toContain("ended before a terminal event");
+  });
+
+  it("publishes streaming output before the terminal event", async () => {
+    let release: () => void = () => undefined;
+    const api = fakeApi({
+      stream: vi.fn(() => progressiveStream((next) => (release = next))),
+    });
+    const { result } = renderHook(() => usePrediction(api));
+    let run: Promise<void> | undefined;
+
+    act(() => {
+      run = result.current.run({ ...options, mode: "stream" });
+    });
+    await waitFor(() => expect(result.current.output).toEqual(["hello "]));
+    expect(result.current.running).toBe(true);
+
+    release();
+    await act(async () => run);
+    expect(result.current.output).toEqual(["hello ", "world"]);
+    expect(result.current.running).toBe(false);
   });
 
   it("surfaces validation errors and marks the run as failed", async () => {
@@ -310,6 +330,14 @@ async function* eventStream(
 async function* pendingStream(setRelease: (release: () => void) => void) {
   yield { type: "start", data: { id: "p1", status: "processing" }, raw: "event: start" };
   await new Promise<void>((resolve) => setRelease(resolve));
+}
+
+async function* progressiveStream(setRelease: (release: () => void) => void) {
+  yield { type: "start", data: { id: "p1", status: "processing" }, raw: "event: start" };
+  yield { type: "output", data: { chunk: "hello " }, raw: "event: output" };
+  await new Promise<void>((resolve) => setRelease(resolve));
+  yield { type: "output", data: { chunk: "world" }, raw: "event: output" };
+  yield { type: "completed", data: { status: "succeeded" }, raw: "event: completed" };
 }
 
 class MockEventSource {

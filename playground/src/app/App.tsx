@@ -85,20 +85,45 @@ export function App() {
 
   const changeJsonInput = (next: string) => {
     setJsonInput(next);
-    setJsonError(inputObjectError(next));
+    try {
+      const parsed = parseInputObject(next);
+      setInput(parsed);
+      setJsonError("");
+    } catch (error) {
+      setJsonError(errorMessage(error));
+    }
+  };
+
+  const changeFormInput = (next: Record<string, unknown>) => {
+    setInput(next);
+    setJsonInput(JSON.stringify(next, null, 2));
+    setJsonError("");
   };
 
   const changeInputMode = (next: string) => {
     if (next === inputMode) return;
     if (next === "json") {
       setJsonInput(JSON.stringify(input, null, 2));
+      setJsonError("");
       setInputMode("json");
       return;
     }
     try {
       setInput(parseInputObject(jsonInput));
       setJsonError("");
-      setInputMode("form");
+    } catch {
+      setJsonInput(JSON.stringify(input, null, 2));
+      setJsonError("");
+    }
+    setInputMode("form");
+  };
+
+  const formatJsonInput = () => {
+    try {
+      const parsed = parseInputObject(jsonInput);
+      setInput(parsed);
+      setJsonInput(JSON.stringify(parsed, null, 2));
+      setJsonError("");
     } catch (error) {
       setJsonError(errorMessage(error));
     }
@@ -207,7 +232,7 @@ export function App() {
               document={connection.schema}
               schema={connection.capabilities.input}
               value={input}
-              onChange={setInput}
+              onChange={changeFormInput}
               onBusyChange={setFormBusy}
               onValidityChange={setFormValid}
             />
@@ -217,15 +242,11 @@ export function App() {
               <LazyJsonEditor
                 value={jsonInput}
                 label="Prediction input JSON"
-                className="ace-input"
+                className="json-input"
                 onChange={changeJsonInput}
               />
               {jsonError && <small className="field-error">{jsonError}</small>}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => formatJSON(jsonInput, setJsonInput, setJsonError)}
-              >
+              <Button size="sm" variant="ghost" onClick={formatJsonInput}>
                 Format
               </Button>
             </div>
@@ -245,30 +266,8 @@ export function App() {
   );
 }
 
-function formatJSON(
-  value: string,
-  onChange: (value: string) => void,
-  onError: (error: string) => void,
-) {
-  try {
-    onChange(JSON.stringify(parseInputObject(value), null, 2));
-    onError("");
-  } catch (error) {
-    onError(errorMessage(error));
-  }
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function inputObjectError(value: string): string {
-  try {
-    parseInputObject(value);
-    return "";
-  } catch (error) {
-    return errorMessage(error);
-  }
 }
 
 function parseInputObject(value: string): Record<string, unknown> {

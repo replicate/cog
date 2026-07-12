@@ -1,5 +1,21 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/editor/LazyJsonEditor", () => ({
+  LazyJsonEditor: ({
+    label,
+    readOnly,
+    value,
+  }: {
+    label: string;
+    readOnly?: boolean;
+    value: string;
+  }) => (
+    <pre aria-label={label} aria-readonly={readOnly}>
+      {value}
+    </pre>
+  ),
+}));
 
 import { OutputPanel } from "./OutputPanel";
 
@@ -37,7 +53,7 @@ describe("OutputPanel", () => {
     expect(screen.getByRole(role, { name: label })).toBeVisible();
   });
 
-  it("shows raw response and request inspector views", () => {
+  it("shows a highlighted response document and request inspector views", () => {
     render(
       <OutputPanel
         envelope={{ status: "succeeded" }}
@@ -60,8 +76,9 @@ describe("OutputPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Raw" }));
-    expect(screen.getByLabelText("Raw prediction events")).toHaveTextContent('{"answer":42}');
+    fireEvent.click(screen.getByRole("tab", { name: "Response" }));
+    expect(screen.getByLabelText("Prediction response")).toHaveTextContent('"answer": 42');
+    expect(screen.getByLabelText("Prediction response")).toHaveAttribute("aria-readonly", "true");
     fireEvent.click(screen.getByRole("tab", { name: "Request" }));
     expect(screen.getByText("Total duration")).toBeVisible();
     expect(screen.getByText("120 ms")).toBeVisible();
@@ -109,5 +126,115 @@ describe("OutputPanel", () => {
       />,
     );
     expect(screen.getByText("hello world")).toBeVisible();
+  });
+
+  it("renders progressive output as a live preview", () => {
+    const schema = {
+      type: "array",
+      items: { type: "string" },
+      "x-cog-array-display": "concatenate",
+    };
+    const { container, rerender } = render(
+      <OutputPanel output={["hello "]} outputSchema={schema} rawEvents={[]} running streaming />,
+    );
+
+    expect(screen.getByRole("log")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("hello")).toBeVisible();
+    expect(container.querySelector(".streaming-cursor")).toBeVisible();
+
+    rerender(
+      <OutputPanel
+        envelope={{ status: "succeeded" }}
+        output={["hello ", "world"]}
+        outputSchema={schema}
+        rawEvents={[]}
+        running={false}
+        streaming
+      />,
+    );
+    expect(screen.getByRole("log")).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByText("hello world")).toBeVisible();
+    expect(container.querySelector(".streaming-cursor")).not.toBeInTheDocument();
+  });
+
+  it("resumes following output when a new run starts", () => {
+    const { rerender } = render(
+      <OutputPanel output="first" rawEvents={[]} running={false} streaming />,
+    );
+    const output = screen.getByRole("log");
+    Object.defineProperties(output, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 1000 },
+      scrollTop: { configurable: true, value: 100, writable: true },
+    });
+    fireEvent.scroll(output);
+
+    rerender(<OutputPanel output="second" rawEvents={[]} running={false} streaming />);
+    expect(output.scrollTop).toBe(100);
+
+    rerender(<OutputPanel output="third" rawEvents={[]} running streaming />);
+    expect(output.scrollTop).toBe(1000);
+  });
+
+  it("returns to Output when a new run starts", () => {
+    const props = { output: "done", rawEvents: ['{"output":"done"}'], streaming: false };
+    const { rerender } = render(<OutputPanel {...props} running={false} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Response" }));
+    expect(screen.getByRole("tab", { name: "Response" })).toHaveAttribute("aria-selected", "true");
+
+    rerender(<OutputPanel {...props} output={undefined} running />);
+    expect(screen.getByRole("tab", { name: "Output" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("turns SSE frames into readable response JSON", () => {
+    render(
+      <OutputPanel
+        output="hello"
+        rawEvents={['event: output\ndata: {"chunk":"hello"}']}
+        running={false}
+        streaming
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Response" }));
+
+    expect(screen.getByLabelText("Prediction response")).toHaveTextContent('"event": "output"');
+    expect(screen.getByLabelText("Prediction response")).toHaveTextContent('"chunk": "hello"');
+  });
+
+  it("shows logs when the prediction has log output", () => {
+    render(
+      <OutputPanel
+        envelope={{ status: "succeeded", logs: "model log line" }}
+        output="done"
+        rawEvents={[]}
+        running={false}
+        streaming={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    expect(screen.getByText("model log line")).toBeVisible();
+  });
+
+  it("renders audio and video outputs", () => {
+    const { container, rerender } = render(
+      <OutputPanel
+        output="data:audio/wav;base64,AA=="
+        rawEvents={[]}
+        running={false}
+        streaming={false}
+      />,
+    );
+    expect(container.querySelector("audio")).toHaveAttribute("controls");
+
+    rerender(
+      <OutputPanel
+        output="data:video/mp4;base64,AA=="
+        rawEvents={[]}
+        running={false}
+        streaming={false}
+      />,
+    );
+    expect(container.querySelector("video")).toHaveAttribute("controls");
   });
 });
