@@ -339,6 +339,21 @@ depends = ["playground:install"]
 dir = "playground"
 run = "pnpm run test:coverage"
 
+[tasks."test:playground:e2e"]
+description = "Run playground browser tests against a real Cog server"
+depends = ["build:cog", "build:sdk", "build:coglet:wheel:linux-x64", "playground:install"]
+dir = "playground"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd .. && pwd)"
+BINARY="${COG_BINARY:-$(ls "$ROOT"/dist/go/*/cog | head -1)}"
+COG_BINARY="$BINARY" \
+COG_SDK_WHEEL="${COG_SDK_WHEEL:-$ROOT/dist}" \
+COGLET_WHEEL="${COGLET_WHEEL:-$ROOT/dist}" \
+pnpm run test:e2e
+"""
+
 [tasks."test:python:all"]
 description = "Run Python SDK tests on all supported Python versions"
 depends = ["build:coglet:wheel"]

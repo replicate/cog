@@ -62,4 +62,6 @@ target
 # Playground frontend
 /playground/node_modules/
 /playground/coverage/
+/playground/playwright-report/
+/playground/test-results/
 /pkg/cli/playground/
